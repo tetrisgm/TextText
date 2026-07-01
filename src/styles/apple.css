@@ -1,0 +1,310 @@
+/* ============================================================
+   APPLE DESIGN TOKENS + components  (scope: .applecms)
+   Built from Apple HIG: iOS/iPadOS system colors (light+dark), the
+   SF type scale with per-size tracking, 8pt spacing, macOS control
+   metrics, and material (backdrop-filter) recipes. Scoped to
+   .applecms so the public site's own theme is untouched; drop the
+   scope to make it global for the platform later.
+   Real SF comes from the system font stack (never webfont SF Pro).
+   ============================================================ */
+
+.applecms {
+  --ac-font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* type scale: size / line-height / tracking(em) */
+  --ac-fs-title2: 22px;      --ac-lh-title2: 28px;      --ac-tr-title2: 0.016em;
+  --ac-fs-title3: 20px;      --ac-lh-title3: 25px;      --ac-tr-title3: 0.019em;
+  --ac-fs-headline: 17px;    --ac-lh-headline: 22px;    --ac-tr-headline: -0.0253em;
+  --ac-fs-body: 17px;        --ac-lh-body: 22px;        --ac-tr-body: -0.0253em;
+  --ac-fs-callout: 16px;     --ac-lh-callout: 21px;     --ac-tr-callout: -0.0194em;
+  --ac-fs-subheadline: 15px; --ac-lh-subheadline: 20px; --ac-tr-subheadline: -0.0153em;
+  --ac-fs-footnote: 13px;    --ac-lh-footnote: 18px;    --ac-tr-footnote: -0.0062em;
+  --ac-fs-caption1: 12px;    --ac-lh-caption1: 16px;    --ac-tr-caption1: 0em;
+  --ac-fs-caption2: 11px;    --ac-lh-caption2: 13px;    --ac-tr-caption2: 0.0064em;
+
+  /* 8pt spacing */
+  --ac-sp-1: 4px; --ac-sp-2: 8px; --ac-sp-3: 12px; --ac-sp-4: 16px; --ac-sp-5: 20px; --ac-sp-6: 24px;
+
+  /* radii (macOS language) + heights */
+  --ac-radius-control: 6px;
+  --ac-radius-field: 6px;
+  --ac-radius-pill: 6px;
+  --ac-h-toolbar: 52px;
+  --ac-h-tbtn: 28px;
+
+  /* semantic labels (opacity-based; base 60,60,67 light) */
+  --ac-label: rgba(0,0,0,1);
+  --ac-label-2: rgba(60,60,67,0.60);
+  --ac-label-3: rgba(60,60,67,0.30);
+  --ac-label-4: rgba(60,60,67,0.18);
+  --ac-placeholder: rgba(60,60,67,0.30);
+
+  /* fills */
+  --ac-fill-1: rgba(120,120,128,0.20);
+  --ac-fill-2: rgba(120,120,128,0.16);
+  --ac-fill-3: rgba(118,118,128,0.12);
+  --ac-fill-4: rgba(116,116,128,0.08);
+
+  /* separators + backgrounds */
+  --ac-separator: rgba(60,60,67,0.29);
+  --ac-bg: #FFFFFF;
+  --ac-bg-2: #F2F2F7;
+
+  /* tint */
+  --ac-accent: #007AFF;
+  --ac-on-accent: #FFFFFF;
+  --ac-red: #FF3B30;
+  --ac-tinted-fill: rgba(0,122,255,0.15);
+
+  /* selection */
+  --ac-sel: var(--ac-accent);
+  --ac-sel-inactive: rgba(0,0,0,0.10);
+
+  /* material (chrome: bars/sidebar/toolbar) */
+  --ac-mat-bg: rgba(246,246,246,0.80);
+  --ac-mat-blur: blur(30px) saturate(180%);
+  --ac-mat-fallback: rgba(246,246,246,0.98);
+  --ac-hairline: rgba(0,0,0,0.12);
+
+  --ac-focus: 0 0 0 3px rgba(0,122,255,0.45);
+}
+
+/* dark tokens: applied on explicit [data-theme="dark"] and on the
+   prefers-color-scheme fallback the site uses (:not([data-theme="light"])) */
+[data-theme="dark"] .applecms {
+  --ac-label: rgba(255,255,255,1);
+  --ac-label-2: rgba(235,235,245,0.60);
+  --ac-label-3: rgba(235,235,245,0.30);
+  --ac-label-4: rgba(235,235,245,0.18);
+  --ac-placeholder: rgba(235,235,245,0.30);
+  --ac-fill-1: rgba(120,120,128,0.36);
+  --ac-fill-2: rgba(120,120,128,0.32);
+  --ac-fill-3: rgba(118,118,128,0.24);
+  --ac-fill-4: rgba(118,118,128,0.18);
+  --ac-separator: rgba(84,84,88,0.60);
+  --ac-bg: #1C1C1E;
+  --ac-bg-2: #000000;
+  --ac-accent: #0A84FF;
+  --ac-red: #FF453A;
+  --ac-tinted-fill: rgba(10,132,255,0.15);
+  --ac-sel-inactive: rgba(255,255,255,0.10);
+  --ac-mat-bg: rgba(30,30,30,0.80);
+  --ac-mat-blur: blur(30px) saturate(160%);
+  --ac-mat-fallback: rgba(30,30,30,0.98);
+  --ac-hairline: rgba(255,255,255,0.12);
+  --ac-focus: 0 0 0 3px rgba(10,132,255,0.45);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .applecms {
+    --ac-label: rgba(255,255,255,1);
+    --ac-label-2: rgba(235,235,245,0.60);
+    --ac-label-3: rgba(235,235,245,0.30);
+    --ac-label-4: rgba(235,235,245,0.18);
+    --ac-placeholder: rgba(235,235,245,0.30);
+    --ac-fill-1: rgba(120,120,128,0.36);
+    --ac-fill-2: rgba(120,120,128,0.32);
+    --ac-fill-3: rgba(118,118,128,0.24);
+    --ac-fill-4: rgba(118,118,128,0.18);
+    --ac-separator: rgba(84,84,88,0.60);
+    --ac-bg: #1C1C1E;
+    --ac-bg-2: #000000;
+    --ac-accent: #0A84FF;
+    --ac-red: #FF453A;
+    --ac-tinted-fill: rgba(10,132,255,0.15);
+    --ac-sel-inactive: rgba(255,255,255,0.10);
+    --ac-mat-bg: rgba(30,30,30,0.80);
+    --ac-mat-blur: blur(30px) saturate(160%);
+    --ac-mat-fallback: rgba(30,30,30,0.98);
+    --ac-hairline: rgba(255,255,255,0.12);
+    --ac-focus: 0 0 0 3px rgba(10,132,255,0.45);
+  }
+}
+
+/* base font on the scope */
+.applecms {
+  font-family: var(--ac-font-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  color: var(--ac-label);
+}
+
+/* ---- chrome material (toolbar, sidebar) ---- */
+.ac-chrome {
+  background: var(--ac-mat-bg);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ac-chrome { background: var(--ac-mat-fallback) !important; }
+}
+
+/* ---- toolbar ---- */
+.ac-toolbar {
+  display: flex; align-items: center; gap: var(--ac-sp-2);
+  height: var(--ac-h-toolbar); flex: 0 0 auto;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--ac-separator);
+}
+.ac-toolbar-title {
+  font: var(--fw, 590) var(--ac-fs-body)/1 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-body); color: var(--ac-label);
+  font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ac-toolbar-sub { font: 400 var(--ac-fs-caption1)/1.3 var(--ac-font-text); letter-spacing: var(--ac-tr-caption1); color: var(--ac-label-2); }
+
+/* ---- buttons ---- */
+.ac-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ac-h-tbtn); padding: 0 14px; border: 0; border-radius: var(--ac-radius-control);
+  font: 600 var(--ac-fs-footnote)/1 var(--ac-font-text); letter-spacing: var(--ac-tr-footnote);
+  cursor: pointer; white-space: nowrap; transition: filter .15s ease, background-color .15s ease;
+}
+.ac-btn:disabled { opacity: .4; pointer-events: none; }
+.ac-btn-filled { background: var(--ac-accent); color: var(--ac-on-accent); }
+.ac-btn-filled:not(:disabled):hover { filter: brightness(1.05); }
+.ac-btn-filled:not(:disabled):active { filter: brightness(.92); }
+.ac-btn-gray { background: var(--ac-fill-1); color: var(--ac-label); }
+.ac-btn-gray:not(:disabled):hover { background: var(--ac-fill-2); }
+.ac-btn-plain { background: transparent; color: var(--ac-accent); font-weight: 400; padding: 0 8px; }
+.ac-btn-plain:not(:disabled):hover { background: var(--ac-fill-4); }
+.ac-btn-plain.ac-danger { color: var(--ac-red); }
+
+/* icon button (toolbar toggle, account) */
+.ac-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 28px; padding: 0; border: 0; border-radius: var(--ac-radius-control);
+  background: transparent; color: var(--ac-label-2); cursor: pointer;
+}
+.ac-icon-btn:hover { background: var(--ac-fill-3); color: var(--ac-label); }
+
+/* ---- fields ---- */
+.ac-field {
+  width: 100%; box-sizing: border-box;
+  padding: 7px 10px; border: 1px solid var(--ac-separator); border-radius: var(--ac-radius-field);
+  font: 400 var(--ac-fs-subheadline)/1.4 var(--ac-font-text); letter-spacing: var(--ac-tr-subheadline);
+  color: var(--ac-label); background: var(--ac-bg); caret-color: var(--ac-accent); outline: none;
+}
+.ac-field::placeholder { color: var(--ac-placeholder); }
+.ac-field:focus-visible { border-color: var(--ac-accent); box-shadow: var(--ac-focus); }
+
+/* ---- sidebar (source list, chrome material) ---- */
+.ac-sidebar { display: flex; flex-direction: column; border-right: 1px solid var(--ac-separator); }
+.ac-search-wrap { position: relative; margin: 10px 10px 4px; flex: 0 0 auto; }
+.ac-search-icon { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--ac-label-2); opacity: .85; pointer-events: none; display: flex; }
+.ac-search {
+  width: 100%; box-sizing: border-box; height: 32px; padding: 0 30px 0 30px; border: 0;
+  border-radius: var(--ac-radius-field); background: var(--ac-fill-3); color: var(--ac-label);
+  font: 400 var(--ac-fs-subheadline)/1 var(--ac-font-text); letter-spacing: var(--ac-tr-subheadline); outline: none;
+}
+.ac-search::placeholder { color: var(--ac-placeholder); }
+.ac-search:focus-visible { box-shadow: var(--ac-focus); }
+
+.ac-list { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+
+/* collapsible SECTION HEADER (uppercase footnote + leading disclosure triangle + trailing count badge) */
+.ac-section {
+  display: flex; align-items: center; gap: 5px; width: 100%; text-align: left;
+  padding: 6px 8px 4px; border: 0; background: transparent; cursor: pointer; margin-top: 12px;
+}
+.ac-section:first-child { margin-top: 2px; }
+.ac-tri {
+  display: inline-flex; align-items: center; justify-content: center; width: 12px; flex: 0 0 auto;
+  color: var(--ac-label-2); transition: transform .18s ease;
+}
+.ac-section:hover .ac-tri { color: var(--ac-label); }
+@media (prefers-reduced-motion: reduce) { .ac-tri { transition: none; } }
+.ac-tri.ac-open { transform: rotate(90deg); }
+.ac-section-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 600 var(--ac-fs-footnote)/1 var(--ac-font-text); letter-spacing: var(--ac-tr-footnote);
+  color: var(--ac-label-2);
+}
+.ac-badge {
+  flex: 0 0 auto; min-width: 19px; text-align: center; padding: 1px 6px; border-radius: 9px;
+  background: var(--ac-fill-2); color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1)/1.4 var(--ac-font-text);
+}
+
+/* source-list ROW (nested item) */
+.ac-row {
+  display: block; width: 100%; text-align: left; padding: 6px 10px 6px 28px; border: 0;
+  border-radius: var(--ac-radius-pill); background: transparent; cursor: pointer;
+}
+.ac-row:not(.ac-row-on):hover { background: color-mix(in srgb, var(--ac-label) 6%, transparent); }
+.ac-row-on { background: var(--ac-sel); }
+.ac-row-title {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 var(--ac-fs-callout)/1.3 var(--ac-font-text); letter-spacing: var(--ac-tr-callout);
+  color: var(--ac-label);
+}
+.ac-row-on .ac-row-title { font-weight: 590; }
+.ac-row-sub {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px;
+  font: 400 var(--ac-fs-footnote)/1.25 var(--ac-font-text); letter-spacing: var(--ac-tr-footnote);
+  color: var(--ac-label-2);
+}
+.ac-row-on .ac-row-title, .ac-row-on .ac-row-sub { color: #fff; }
+.ac-row-on .ac-row-sub { opacity: .8; }
+
+/* account row (sidebar bottom) */
+.ac-account {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-top: 1px solid var(--ac-separator);
+}
+.ac-avatar { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; }
+.ac-account-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--ac-fs-subheadline)/1 var(--ac-font-text); letter-spacing: var(--ac-tr-subheadline); color: var(--ac-label); }
+
+/* draggable editor | preview splitter */
+.ac-split-handle {
+  flex: 0 0 auto; width: 9px; align-self: stretch; cursor: col-resize;
+  background: transparent; position: relative; z-index: 5;
+}
+.ac-split-handle::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%);
+  background: var(--ac-separator); transition: background .12s ease, width .12s ease;
+}
+.ac-split-handle:hover::before, .ac-split-handle:active::before { width: 3px; background: var(--ac-accent); }
+@media (prefers-reduced-motion: reduce) { .ac-split-handle::before { transition: none; } }
+
+/* ---- sidebar FOLDER row (Apple Notes) ---- */
+.ac-folder {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 6px 10px; margin: 1px 0; border: 0; border-radius: var(--ac-radius-pill);
+  background: transparent; cursor: pointer;
+}
+.ac-folder:not(.ac-folder-on):hover { background: color-mix(in srgb, var(--ac-label) 6%, transparent); }
+.ac-folder-on { background: var(--ac-sel); }
+.ac-folder-icon { display: inline-flex; align-items: center; color: var(--ac-accent); flex: 0 0 auto; }
+.ac-folder-on .ac-folder-icon { color: #fff; }
+.ac-folder-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 400 var(--ac-fs-callout)/1.3 var(--ac-font-text); letter-spacing: var(--ac-tr-callout); color: var(--ac-label);
+}
+.ac-folder-on .ac-folder-name { color: #fff; font-weight: 500; }
+.ac-folder-on .ac-badge { background: rgba(255,255,255,0.22); color: #fff; }
+
+/* back button (chevron + parent label) */
+.ac-back { gap: 2px; padding-left: 4px; font-weight: 400; }
+
+/* ---- main LIST view (the folder's items) ---- */
+.ac-listview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.ac-listview-head { padding: 18px 20px 6px; flex: 0 0 auto; }
+.ac-listview-title { font: 700 var(--ac-fs-title2)/1.1 var(--ac-font-text); letter-spacing: var(--ac-tr-title2); color: var(--ac-label); }
+.ac-listview-count { margin-top: 3px; font: 400 var(--ac-fs-subheadline)/1 var(--ac-font-text); letter-spacing: var(--ac-tr-subheadline); color: var(--ac-label-2); }
+.ac-notelist { flex: 1; overflow-y: auto; padding: 0 8px 24px; }
+.ac-noterow {
+  display: block; width: 100%; text-align: left; padding: 10px 12px; border: 0;
+  background: transparent; cursor: pointer; position: relative; border-radius: 6px;
+}
+.ac-noterow:hover { background: color-mix(in srgb, var(--ac-label) 5%, transparent); }
+.ac-noterow::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 1px; background: var(--ac-separator); }
+.ac-noterow:last-child::after { display: none; }
+.ac-noterow-title {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 590 var(--ac-fs-body)/1.3 var(--ac-font-text); letter-spacing: var(--ac-tr-body); color: var(--ac-label);
+}
+.ac-noterow-sub {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;
+  font: 400 var(--ac-fs-subheadline)/1.3 var(--ac-font-text); letter-spacing: var(--ac-tr-subheadline); color: var(--ac-label-2);
+}

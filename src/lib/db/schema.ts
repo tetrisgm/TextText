@@ -1,0 +1,68 @@
+// Drizzle schema for the hosted platform (Neon Postgres).
+// Not yet wired into the routes: until DATABASE_URL exists the app serves the
+// demo seed (src/lib/demo.ts). Auth.js adapter tables land with auth wiring.
+
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  uniqueIndex,
+  pgEnum,
+} from "drizzle-orm/pg-core";
+
+export const postStatus = pgEnum("post_status", ["draft", "published"]);
+
+export const users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** Apple `sub` claim; the primary identity (Sign in with Apple) */
+  appleSub: text("apple_sub").unique(),
+  email: text("email"),
+  name: text("name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const blogs = pgTable(
+  "blogs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** subdomain, e.g. "ramine" -> ramine.{ROOT_DOMAIN} */
+    handle: text("handle").notNull(),
+    name: text("name").notNull(),
+    tagline: text("tagline"),
+    /** hex accent, e.g. "#065ec6" */
+    accent: text("accent"),
+    /** one-line standing bio for the reader end card */
+    bioLine: text("bio_line"),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("blogs_handle_idx").on(t.handle)],
+);
+
+export const posts = pgTable(
+  "posts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    /** eyebrow label */
+    kicker: text("kicker"),
+    /** hex accent override; falls back to the blog accent */
+    accent: text("accent"),
+    cover: text("cover"),
+    coverCaption: text("cover_caption"),
+    /** markdown */
+    body: text("body").notNull().default(""),
+    status: postStatus("status").notNull().default("draft"),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("posts_blog_slug_idx").on(t.blogId, t.slug)],
+);
