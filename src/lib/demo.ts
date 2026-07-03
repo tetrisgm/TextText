@@ -7,7 +7,7 @@ import type { Blog, Post } from "./content";
 export const DEMO_BLOG: Blog = {
   handle: "demo",
   name: "The Demo Broadsheet",
-  author: "Ramine Darabiha",
+  author: "The Editor",
   tagline: "Writing on product, AI, and craft.",
   accent: "#065ec6",
   bioLine: "Writing on product, AI, and craft.",
