@@ -10,10 +10,12 @@ const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
 export const hasAppleProvider = Boolean(appleClientId && appleClientSecret);
 
 // A dev-only email login for exercising the authenticated flow without the
-// Apple Developer portal. Double-guarded: inert unless AUTH_DEV_LOGIN=1 AND the
-// build is not production, so it can never ship enabled by accident.
+// Apple Developer portal. Double-guarded: inert unless AUTH_DEV_LOGIN=1 AND we
+// are not in Vercel Production. That allows local dev and Vercel Preview (a
+// shareable test setup) while it can never run on the production deployment.
 export const devLoginEnabled =
-  process.env.AUTH_DEV_LOGIN === "1" && process.env.NODE_ENV !== "production";
+  process.env.AUTH_DEV_LOGIN === "1" &&
+  process.env.VERCEL_ENV !== "production";
 
 export const isAuthConfigured =
   (hasAppleProvider || devLoginEnabled) && Boolean(authSecret);
