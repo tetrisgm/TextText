@@ -589,6 +589,12 @@
   height: 36px;
   padding: 0 18px;
 }
+.applecms .ac-devsignin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ac-sp-3);
+  width: 100%;
+}
 
 /* ---- editor cover upload ---- */
 .applecms .ac-cover-actions {

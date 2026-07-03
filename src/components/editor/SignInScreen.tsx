@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { SignInButton } from "@/components/SignInButton";
+import { DevSignIn } from "@/components/editor/DevSignIn";
+import { devLoginEnabled, hasAppleProvider } from "@/auth";
 
 // Shown at /editor when auth is configured but no one is signed in. Keeps the
 // Apple editor chrome so the sign-in is part of the same surface, not a detour.
@@ -20,13 +22,15 @@ export function SignInScreen() {
         <div className="ac-signin-card">
           <h1 className="ac-signin-title">Sign in to write</h1>
           <p className="ac-signin-sub">
-            Your posts and drafts live in your own blog. Sign in with Apple to
-            continue.
+            Your posts and drafts live in your own blog. Sign in to continue.
           </p>
-          <SignInButton
-            className="ac-btn ac-btn-filled ac-signin-btn"
-            redirectTo="/editor"
-          />
+          {hasAppleProvider && (
+            <SignInButton
+              className="ac-btn ac-btn-filled ac-signin-btn"
+              redirectTo="/editor"
+            />
+          )}
+          {devLoginEnabled && <DevSignIn />}
         </div>
       </div>
     </div>
