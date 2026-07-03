@@ -3,6 +3,7 @@
 // demo seed (src/lib/demo.ts). Auth.js adapter tables land with auth wiring.
 
 import {
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -10,8 +11,10 @@ import {
   uniqueIndex,
   pgEnum,
 } from "drizzle-orm/pg-core";
+import type { GalleryItem, LinkRef } from "../content";
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
+export const postType = pgEnum("post_type", ["article", "project", "talk"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -55,6 +58,7 @@ export const posts = pgTable(
     blogId: uuid("blog_id")
       .notNull()
       .references(() => blogs.id),
+    type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     title: text("title").notNull(),
     /** eyebrow label */
@@ -63,6 +67,11 @@ export const posts = pgTable(
     accent: text("accent"),
     cover: text("cover"),
     coverCaption: text("cover_caption"),
+    gallery: jsonb("gallery").$type<GalleryItem[]>(),
+    links: jsonb("links").$type<LinkRef[]>(),
+    videoUrl: text("video_url"),
+    venue: text("venue"),
+    duration: text("duration"),
     /** markdown */
     body: text("body").notNull().default(""),
     status: postStatus("status").notNull().default("draft"),

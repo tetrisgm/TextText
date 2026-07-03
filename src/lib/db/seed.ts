@@ -46,6 +46,7 @@ async function main() {
       .insert(posts)
       .values({
         blogId: blog.id,
+        type: p.type,
         slug: p.slug,
         title: p.title,
         kicker: p.kicker ?? null,
@@ -54,6 +55,11 @@ async function main() {
         accent: p.accent ?? null,
         cover: p.cover ?? null,
         coverCaption: p.coverCaption ?? null,
+        gallery: p.gallery ?? null,
+        links: p.links ?? null,
+        videoUrl: p.videoUrl ?? null,
+        venue: p.venue ?? null,
+        duration: p.duration ?? null,
         body: p.body,
         status: p.status,
         publishedAt:

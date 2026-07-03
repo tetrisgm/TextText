@@ -335,6 +335,28 @@
   background: var(--ac-tinted-fill);
   color: var(--ac-accent);
 }
+.applecms .ac-newdraft {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ac-sp-2);
+}
+.applecms select.ac-newdraft-select {
+  width: auto;
+  min-width: 92px;
+  height: var(--ac-h-tbtn);
+  padding: 0 28px 0 10px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-fill-1);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-footnote)/1 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-footnote);
+  cursor: pointer;
+}
+.applecms select.ac-newdraft-select:hover {
+  background: var(--ac-fill-2);
+}
 .applecms .ac-workspace {
   display: flex;
   flex: 1;

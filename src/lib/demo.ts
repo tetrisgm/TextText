@@ -15,6 +15,39 @@ export const DEMO_BLOG: Blog = {
 
 export const DEMO_POSTS: Post[] = [
   {
+    type: "project",
+    slug: "signal-desk",
+    title: "Signal Desk",
+    kicker: "Project",
+    accent: "#1b7f5a",
+    date: "2026-07-03",
+    status: "published",
+    gallery: [
+      {
+        src: "https://picsum.photos/seed/signal-desk-board/1200/800",
+        caption: "The project dashboard balances dense status with clear editorial rhythm.",
+      },
+      {
+        src: "https://picsum.photos/seed/signal-desk-flow/1200/800",
+        caption: "Workflow views keep review, notes, and launch state in one scan.",
+      },
+      {
+        src: "https://picsum.photos/seed/signal-desk-detail/1200/800",
+        caption: "Detail pages reserve space for decisions instead of decorative chrome.",
+      },
+    ],
+    links: [
+      { label: "Prototype", href: "https://example.com/signal-desk" },
+      { label: "Source notes", href: "https://example.com/signal-desk/notes" },
+    ],
+    body: `Signal Desk is a compact workspace for product teams that need to turn research into shipping decisions without losing the editorial trail.
+
+## What it explores
+
+The interface treats every decision as a small published object: context, evidence, owner, and next review. The goal is not more process. It is a calmer record that can be scanned by a human or an agent before the next build.`,
+  },
+  {
+    type: "article",
     slug: "why-a-broadsheet",
     title: "Why your blog should read like a broadsheet",
     kicker: "Design notes",
@@ -38,6 +71,26 @@ Every post carries one color. It never floods a background and it never colors b
 Posts are markdown all the way down, with real semantics: headings, quotes, figures with captions. That makes every post as legible to an agent as it is to a person, which is the point.`,
   },
   {
+    type: "talk",
+    slug: "designing-quiet-ai-tools",
+    title: "Designing quiet AI tools",
+    kicker: "Talk",
+    accent: "#8a5a00",
+    videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    venue: "WriteConf Studio",
+    duration: "18 min",
+    date: "2026-06-30",
+    status: "published",
+    body: `This talk looks at how writing tools can make agentic help feel present without making the interface louder.
+
+## The core idea
+
+AI should earn space in the editor by preserving intent. The useful parts are often small: a clean summary, a precise diff, a draft that keeps the author's cadence, or a warning when a claim needs evidence.
+
+The design work is deciding what should stay quiet until the writer asks for it.`,
+  },
+  {
+    type: "article",
     slug: "hello-world",
     title: "A quiet hello",
     kicker: "Meta",
@@ -48,6 +101,7 @@ Posts are markdown all the way down, with real semantics: headings, quotes, figu
 If this page looks good, everything else will.`,
   },
   {
+    type: "article",
     slug: "notes-on-a-small-tool",
     title: "Notes on a small tool",
     kicker: "Draft",

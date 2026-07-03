@@ -28,5 +28,17 @@ export default async function PostPage({ params }: Props) {
   ]);
   if (!blog || !post) notFound();
 
-  return <Reader blog={blog} post={post} />;
+  let ReaderComponent = Reader;
+  switch (post.type) {
+    case "project":
+    case "talk":
+      // TODO(F2/F3): ProjectReader and TalkReader.
+      ReaderComponent = Reader;
+      break;
+    case "article":
+      ReaderComponent = Reader;
+      break;
+  }
+
+  return <ReaderComponent blog={blog} post={post} />;
 }

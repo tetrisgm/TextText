@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignOutButton } from "@/components/SignOutButton";
-import type { Blog, Post } from "@/lib/content";
+import type { Blog, Post, PostType } from "@/lib/content";
 import { formatArticleDate, readingTimeMin } from "@/lib/content";
 import {
   createDraftAction,
@@ -34,6 +34,12 @@ const FOLDERS: Array<{ id: FolderId; name: string }> = [
   { id: "all", name: "Posts" },
   { id: "drafts", name: "Drafts" },
   { id: "published", name: "Published" },
+];
+
+const POST_TYPES: Array<{ type: PostType; label: string }> = [
+  { type: "article", label: "Article" },
+  { type: "project", label: "Project" },
+  { type: "talk", label: "Talk" },
 ];
 
 function FolderGlyph() {
@@ -76,6 +82,10 @@ function statusLabel(status: Post["status"]) {
   return status === "draft" ? "Draft" : "Published";
 }
 
+function postTypeLabel(type: PostType) {
+  return POST_TYPES.find((entry) => entry.type === type)?.label ?? "Article";
+}
+
 function cleanAccountValue(value: string | undefined) {
   return value?.trim() || undefined;
 }
@@ -90,6 +100,7 @@ function accountInitial(label: string) {
 
 function itemMeta(post: Post) {
   return [
+    postTypeLabel(post.type),
     formatArticleDate(post.date),
     statusLabel(post.status),
     `${readingTimeMin(post.body)} min read`,
@@ -203,8 +214,9 @@ export function EditorApp({
     return Boolean(first && drafts[first] && isPlaceholderSlug(drafts[first].slug));
   });
   const [folder, setFolder] = useState<FolderId>("all");
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewMounted, setPreviewMounted] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+  const [previewMounted, setPreviewMounted] = useState(true);
+  const [newDraftType, setNewDraftType] = useState<PostType>("article");
   const [splitPct, setSplitPct] = useState(52);
   const [dragging, setDragging] = useState(false);
   // Below this width apple.css stacks the panes and disables the split, so the
@@ -541,7 +553,7 @@ export function EditorApp({
 
   const onNewDraft = useCallback(async () => {
     if (!dbEnabled) return;
-    const created = await createDraftAction();
+    const created = await createDraftAction(newDraftType);
     const id = `db:${created.id}`;
     setDrafts((current) => ({ ...current, [id]: created }));
     setIds((current) => [id, ...current]);
@@ -552,7 +564,7 @@ export function EditorApp({
     setSlugAutoForSelected(canAutoSlugPost(id, created, manualSlugByIdRef.current));
     setPostError(null);
     setLinkCopied(false);
-  }, [dbEnabled]);
+  }, [dbEnabled, newDraftType]);
 
   const onUploadCover = useCallback(
     async (file: File) => {
@@ -692,9 +704,25 @@ export function EditorApp({
           Preview
         </button>
         {dbEnabled && (
-          <button className="ac-btn ac-btn-gray" type="button" onClick={onNewDraft}>
-            New draft
-          </button>
+          <div className="ac-newdraft">
+            <select
+              className="ac-field ac-newdraft-select"
+              aria-label="Draft type"
+              value={newDraftType}
+              onChange={(event) =>
+                setNewDraftType(event.currentTarget.value as PostType)
+              }
+            >
+              {POST_TYPES.map((entry) => (
+                <option key={entry.type} value={entry.type}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+            <button className="ac-btn ac-btn-gray" type="button" onClick={onNewDraft}>
+              New draft
+            </button>
+          </div>
         )}
         {selectedPost && (
           <span
@@ -809,7 +837,9 @@ export function EditorApp({
               <>
                 <div className="ac-editor-pane-head">
                   <div className="ac-editor-title-block">
-                    <div className="ac-editor-eyebrow">{statusLabel(selectedPost.status)}</div>
+                    <div className="ac-editor-eyebrow">
+                      {postTypeLabel(selectedPost.type)} | {statusLabel(selectedPost.status)}
+                    </div>
                     <h1 className="ac-editor-heading">
                       {selectedPost.title || "Untitled"}
                     </h1>

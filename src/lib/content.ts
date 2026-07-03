@@ -13,9 +13,25 @@ export interface Blog {
   bioLine?: string;
 }
 
+export type PostType = "article" | "project" | "talk";
+
+export interface GalleryItem {
+  /** image or video URL */
+  src: string;
+  caption?: string;
+  /** optional poster image for video URLs */
+  poster?: string;
+}
+
+export interface LinkRef {
+  label: string;
+  href: string;
+}
+
 export interface Post {
   /** opaque database id; absent for demo/seed content and unsaved drafts */
   id?: string;
+  type: PostType;
   slug: string;
   title: string;
   /** eyebrow label, e.g. "Case study" */
@@ -29,6 +45,11 @@ export interface Post {
   /** ISO date, e.g. "2026-07-01" */
   date?: string;
   status: "draft" | "published";
+  gallery?: GalleryItem[];
+  links?: LinkRef[];
+  videoUrl?: string;
+  venue?: string;
+  duration?: string;
 }
 
 const MONTHS = [

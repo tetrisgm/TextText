@@ -4,7 +4,7 @@
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
-import type { Blog, Post } from "./content";
+import type { Blog, Post, PostType } from "./content";
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
@@ -36,6 +36,7 @@ function toISODate(value: Date | string | null): string | undefined {
 function mapPost(row: PostRow): Post {
   return {
     id: row.id,
+    type: row.type,
     slug: row.slug,
     title: row.title,
     kicker: row.kicker ?? undefined,
@@ -44,6 +45,11 @@ function mapPost(row: PostRow): Post {
     accent: row.accent ?? undefined,
     cover: row.cover ?? undefined,
     coverCaption: row.coverCaption ?? undefined,
+    gallery: row.gallery ?? undefined,
+    links: row.links ?? undefined,
+    videoUrl: row.videoUrl ?? undefined,
+    venue: row.venue ?? undefined,
+    duration: row.duration ?? undefined,
     body: row.body,
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
@@ -180,11 +186,17 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
   const base = {
+    type: post.type,
     title: post.title,
     kicker: post.kicker ?? null,
     accent: post.accent ?? null,
     cover: post.cover ?? null,
     coverCaption: post.coverCaption ?? null,
+    gallery: post.gallery ?? null,
+    links: post.links ?? null,
+    videoUrl: post.videoUrl ?? null,
+    venue: post.venue ?? null,
+    duration: post.duration ?? null,
     body: post.body,
     status: post.status,
     updatedAt: new Date(),
@@ -232,13 +244,16 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
 
 // Create an empty draft and return it (with its new id), for the editor's
 // "New draft" action. Requires a database.
-export async function createDraft(handle: string): Promise<Post> {
+export async function createDraft(
+  handle: string,
+  type: PostType = "article",
+): Promise<Post> {
   if (!db) throw new Error("createDraft requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)
-    .values({ blogId, slug, title: "Untitled", body: "", status: "draft" })
+    .values({ blogId, type, slug, title: "Untitled", body: "", status: "draft" })
     .returning();
   return mapPost(inserted[0]);
 }

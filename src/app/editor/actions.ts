@@ -1,6 +1,6 @@
 "use server";
 
-import type { Blog, Post } from "@/lib/content";
+import type { Blog, Post, PostType } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { BlogPatch } from "@/lib/store";
@@ -26,8 +26,8 @@ export async function savePostAction(post: Post): Promise<Post> {
   return savePost(await editorHandle(), post);
 }
 
-export async function createDraftAction(): Promise<Post> {
-  return createDraft(await editorHandle());
+export async function createDraftAction(type: PostType = "article"): Promise<Post> {
+  return createDraft(await editorHandle(), type);
 }
 
 export async function updateBlogAction(patch: BlogPatch): Promise<Blog> {
