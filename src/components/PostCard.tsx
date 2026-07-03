@@ -105,12 +105,8 @@ function cardStyle(blog: Blog, post: Post): CSSProperties | undefined {
   return undefined;
 }
 
-function FallbackPlate({ title }: { title: string }) {
-  return (
-    <span className="tvcard-fallback" aria-hidden="true">
-      <span>{title}</span>
-    </span>
-  );
+function FallbackPlate() {
+  return <span className="tvcard-fallback" aria-hidden="true" />;
 }
 
 export function PostCard({
@@ -339,7 +335,7 @@ export function PostCard({
                 />
               )
             ) : (
-              <FallbackPlate title={title} />
+              <FallbackPlate />
             )}
             {post.type === "talk" && <PlayBadge />}
             {post.type === "project" && (

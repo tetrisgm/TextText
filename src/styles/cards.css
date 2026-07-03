@@ -168,12 +168,7 @@ video.tvcard-cover[data-ready="true"] {
 .tvcard-fallback {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px;
-  text-align: center;
-  color: var(--ink);
+  display: block;
   background:
     radial-gradient(
       78% 90% at 20% 12%,
@@ -188,7 +183,6 @@ video.tvcard-cover[data-ready="true"] {
 }
 
 .tvcard--project .tvcard-fallback {
-  color: #fff;
   background:
     radial-gradient(
       80% 88% at 22% 12%,
@@ -200,16 +194,6 @@ video.tvcard-cover[data-ready="true"] {
       color-mix(in srgb, var(--post-accent, #1d1d1f) 44%, #111),
       #070707
     );
-}
-
-.tvcard-fallback span {
-  max-width: 92%;
-  font-family: var(--font-display, "Fraunces", Georgia, serif);
-  font-size: clamp(24px, 3vw, 38px);
-  font-weight: 600;
-  line-height: 1.08;
-  letter-spacing: 0;
-  text-wrap: balance;
 }
 
 .tvcard-scrim {

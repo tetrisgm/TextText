@@ -1,9 +1,11 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createPostAndRedirectAction } from "@/app/editor/actions";
 import { PostCard } from "@/components/PostCard";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
+import { blogFeedAlternateTypes, blogFeedHref } from "@/lib/feed-links";
 import { getCurrentUser } from "@/lib/session";
 import { getAllPosts, getBlog, getPosts, isBlogOwner } from "@/lib/store";
 import type { Blog, PostType } from "@/lib/content";
@@ -55,6 +57,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: blog.name,
     description: blog.tagline,
+    alternates: {
+      types: blogFeedAlternateTypes(handle, blog.name),
+    },
   };
 }
 
@@ -64,15 +69,27 @@ export default async function BlogHome({ params }: Props) {
   if (!blog) notFound();
   const owner = viewer ? await isBlogOwner(handle, viewer.sub) : false;
   const posts = owner ? await getAllPosts(handle) : await getPosts(handle);
+  const feedHref = blogFeedHref(handle);
 
   return (
     <main className="blog-home" style={blogStyle(blog)}>
       {owner && <BlogHomeShortcuts owner={owner} />}
       <header className="blog-home-header">
         <div className="blog-home-heading">
-          <div>
+          <div className="blog-home-copy">
             <h1 className="blog-home-name">{blog.name}</h1>
-            {blog.tagline && <p className="blog-home-tagline">{blog.tagline}</p>}
+            <div className="blog-home-meta">
+              {blog.tagline && (
+                <p className="blog-home-tagline">{blog.tagline}</p>
+              )}
+              <Link
+                className="blog-home-feed"
+                href={feedHref}
+                aria-label={`${blog.name} RSS feed`}
+              >
+                RSS
+              </Link>
+            </div>
           </div>
           {owner && <NewPostForm />}
         </div>

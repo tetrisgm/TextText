@@ -11,6 +11,7 @@ import {
 } from "@/lib/store";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import type { Post } from "@/lib/content";
+import { blogFeedAlternateTypes } from "@/lib/feed-links";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
 import { ProjectReader } from "@/components/ProjectReader";
@@ -158,6 +159,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description: post.body.split(/\n{2,}/)[0]?.slice(0, 160),
+    alternates: {
+      types: blogFeedAlternateTypes(handle, blog.name),
+    },
   };
   if (post.status !== "published") {
     metadata.robots = { index: false, follow: false };
