@@ -9,5 +9,11 @@ export default async function EditorPage() {
   ]);
   if (!blog) notFound();
 
-  return <EditorApp blog={blog} posts={posts} />;
+  return (
+    <EditorApp
+      blog={blog}
+      posts={posts}
+      dbEnabled={!!process.env.DATABASE_URL}
+    />
+  );
 }

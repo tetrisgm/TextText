@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Blog, Post } from "@/lib/content";
 import { formatArticleDate, readingTimeMin } from "@/lib/content";
+import { createDraftAction, savePostAction } from "@/app/editor/actions";
 
 type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
@@ -76,8 +77,16 @@ function optionalValue(value: string) {
   return value === "" ? undefined : value;
 }
 
-export function EditorApp({ blog, posts }: { blog: Blog; posts: Post[] }) {
-  const [ids] = useState(() => postIds(posts));
+export function EditorApp({
+  blog,
+  posts,
+  dbEnabled,
+}: {
+  blog: Blog;
+  posts: Post[];
+  dbEnabled: boolean;
+}) {
+  const [ids, setIds] = useState(() => postIds(posts));
   const [drafts, setDrafts] = useState(() => draftsById(posts));
   const [selectedId, setSelectedId] = useState(() => ids[0] ?? "");
   // The hex field's own text buffer, so a partial value like "#0a" can be typed
@@ -95,6 +104,8 @@ export function EditorApp({ blog, posts }: { blog: Blog; posts: Post[] }) {
   // Below this width apple.css stacks the panes and disables the split, so the
   // handle becomes a plain divider rather than an operable separator.
   const [stacked, setStacked] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const draftRef = useRef<{ blog: Blog; post: Post } | null>(null);
@@ -163,6 +174,32 @@ export function EditorApp({ blog, posts }: { blog: Blog; posts: Post[] }) {
     },
     [items, selectPost],
   );
+
+  const onSave = useCallback(async () => {
+    if (!dbEnabled || !selectedId || !selectedPost) return;
+    setSaving(true);
+    try {
+      const saved = await savePostAction(selectedPost);
+      setDrafts((current) =>
+        current[selectedId] ? { ...current, [selectedId]: saved } : current,
+      );
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 1500);
+    } finally {
+      setSaving(false);
+    }
+  }, [dbEnabled, selectedId, selectedPost]);
+
+  const onNewDraft = useCallback(async () => {
+    if (!dbEnabled) return;
+    const created = await createDraftAction();
+    const id = `db:${created.id}`;
+    setDrafts((current) => ({ ...current, [id]: created }));
+    setIds((current) => [id, ...current]);
+    setFolder("all");
+    setSelectedId(id);
+    setAccentText(created.accent ?? "");
+  }, [dbEnabled]);
 
   const postDraft = useCallback((targetWindow?: Window | null) => {
     const target = targetWindow ?? previewWindowRef.current;
@@ -247,8 +284,19 @@ export function EditorApp({ blog, posts }: { blog: Blog; posts: Post[] }) {
         >
           Preview
         </button>
-        <button className="ac-btn ac-btn-filled" type="button" disabled>
-          Publish
+        {dbEnabled && (
+          <button className="ac-btn ac-btn-gray" type="button" onClick={onNewDraft}>
+            New draft
+          </button>
+        )}
+        <button
+          className="ac-btn ac-btn-filled"
+          type="button"
+          disabled={!dbEnabled || !selectedPost || saving}
+          title={dbEnabled ? undefined : "Connect a database to save"}
+          onClick={onSave}
+        >
+          {saving ? "Saving" : justSaved ? "Saved" : "Save"}
         </button>
       </div>
 

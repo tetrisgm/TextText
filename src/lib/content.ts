@@ -14,6 +14,8 @@ export interface Blog {
 }
 
 export interface Post {
+  /** opaque database id; absent for demo/seed content and unsaved drafts */
+  id?: string;
   slug: string;
   title: string;
   /** eyebrow label, e.g. "Case study" */
