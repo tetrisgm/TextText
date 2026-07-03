@@ -1,16 +1,24 @@
 "use server";
 
 import type { Post } from "@/lib/content";
-import { createDraft, savePost } from "@/lib/store";
+import { isAuthConfigured } from "@/auth";
+import { getCurrentUser } from "@/lib/session";
+import { createDraft, ensureOwnerBlog, savePost } from "@/lib/store";
 
-// The editor operates on the demo blog today. When auth lands this resolves to
-// the signed-in user's blog handle instead.
-const EDITOR_HANDLE = "demo"; // TODO(auth): use the signed-in user's blog
+// The blog the editor writes to, resolved from the session on the SERVER so a
+// client can never target another user's blog. Auth off: the demo blog.
+async function editorHandle(): Promise<string> {
+  if (!isAuthConfigured) return "demo";
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not signed in");
+  const blog = await ensureOwnerBlog(user);
+  return blog.handle;
+}
 
 export async function savePostAction(post: Post): Promise<Post> {
-  return savePost(EDITOR_HANDLE, post);
+  return savePost(await editorHandle(), post);
 }
 
 export async function createDraftAction(): Promise<Post> {
-  return createDraft(EDITOR_HANDLE);
+  return createDraft(await editorHandle());
 }

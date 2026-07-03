@@ -8,6 +8,7 @@ import type { Blog, Post } from "./content";
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
+import { RESERVED_HANDLES } from "./tenants";
 
 type PostRow = typeof posts.$inferSelect;
 
@@ -198,4 +199,103 @@ export async function createDraft(handle: string): Promise<Post> {
     .values({ blogId, slug, title: "Untitled", body: "", status: "draft" })
     .returning();
   return mapPost(inserted[0]);
+}
+
+function slugifyHandle(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24)
+    .replace(/-+$/g, "");
+  return slug || "blog";
+}
+
+// A blog handle not already taken and not reserved, derived from a seed.
+async function uniqueHandle(seed: string): Promise<string> {
+  const base = slugifyHandle(seed);
+  for (let i = 0; i < 50; i += 1) {
+    const candidate = i === 0 ? base : `${base}-${i + 1}`;
+    if (RESERVED_HANDLES.has(candidate)) continue;
+    const taken = await db!
+      .select({ id: blogs.id })
+      .from(blogs)
+      .where(eq(blogs.handle, candidate))
+      .limit(1);
+    if (!taken[0]) return candidate;
+  }
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+// The blog owned by the user with this Apple sub, or null.
+export async function getOwnedBlog(sub: string): Promise<Blog | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({
+      handle: blogs.handle,
+      name: blogs.name,
+      tagline: blogs.tagline,
+      accent: blogs.accent,
+      bioLine: blogs.bioLine,
+      author: users.name,
+    })
+    .from(blogs)
+    .innerJoin(users, eq(blogs.ownerId, users.id))
+    .where(eq(users.appleSub, sub))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    handle: row.handle,
+    name: row.name,
+    author: row.author ?? "",
+    tagline: row.tagline ?? undefined,
+    accent: row.accent ?? undefined,
+    bioLine: row.bioLine ?? undefined,
+  };
+}
+
+// Get-or-create the signed-in user's blog. Upserts the user (keyed by Apple sub;
+// Apple only sends name/email on first authorization, so existing values are
+// preserved on later sign-ins) and provisions a starter blog on first sign-in.
+export async function ensureOwnerBlog(user: {
+  sub: string;
+  name?: string;
+  email?: string;
+}): Promise<Blog> {
+  if (!db) throw new Error("ensureOwnerBlog requires DATABASE_URL");
+  await db
+    .insert(users)
+    .values({
+      appleSub: user.sub,
+      name: user.name ?? null,
+      email: user.email ?? null,
+    })
+    .onConflictDoUpdate({
+      target: users.appleSub,
+      set: {
+        name: user.name ?? sql`${users.name}`,
+        email: user.email ?? sql`${users.email}`,
+      },
+    });
+
+  const existing = await getOwnedBlog(user.sub);
+  if (existing) return existing;
+
+  const owner = (
+    await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.appleSub, user.sub))
+      .limit(1)
+  )[0];
+  const handle = await uniqueHandle(
+    user.email?.split("@")[0] || user.name || "blog",
+  );
+  const name = user.name ? `${user.name}'s blog` : "My blog";
+  await db.insert(blogs).values({ handle, name, ownerId: owner.id });
+
+  const created = await getOwnedBlog(user.sub);
+  if (!created) throw new Error("failed to provision a blog");
+  return created;
 }

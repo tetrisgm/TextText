@@ -555,3 +555,37 @@
     height: 3px;
   }
 }
+
+/* ---- sign-in screen (auth gate) ---- */
+.applecms .ac-signin {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ac-bg);
+}
+.applecms .ac-signin-card {
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--ac-sp-4);
+}
+.applecms .ac-signin-title {
+  margin: 0;
+  font: 700 var(--ac-fs-title2)/1.15 var(--ac-font-text);
+  letter-spacing: 0;
+  color: var(--ac-label);
+}
+.applecms .ac-signin-sub {
+  margin: 0;
+  font: 400 var(--ac-fs-subheadline)/1.45 var(--ac-font-text);
+  color: var(--ac-label-2);
+}
+.applecms .ac-signin-btn {
+  height: 36px;
+  padding: 0 18px;
+}
