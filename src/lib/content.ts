@@ -18,7 +18,7 @@ export interface Post {
   title: string;
   /** eyebrow label, e.g. "Case study" */
   kicker?: string;
-  /** hex accent; falls back to the blog accent */
+  /** hex accent; empty string opts out of the blog accent */
   accent?: string;
   cover?: string;
   coverCaption?: string;
@@ -52,7 +52,11 @@ export function readingTimeMin(body: string | undefined): number {
 
 /** The accent a post renders with: its own, else the blog's, else none. */
 export function postAccent(blog: Blog, post: Post): string | undefined {
-  return post.accent || blog.accent || undefined;
+  if (post.accent !== undefined) {
+    const accent = post.accent.trim();
+    return accent || undefined;
+  }
+  return blog.accent || undefined;
 }
 
 /** Uppercase first letter for monogram avatars. */

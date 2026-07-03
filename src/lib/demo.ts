@@ -47,4 +47,17 @@ Posts are markdown all the way down, with real semantics: headings, quotes, figu
 
 If this page looks good, everything else will.`,
   },
+  {
+    slug: "notes-on-a-small-tool",
+    title: "Notes on a small tool",
+    kicker: "Draft",
+    accent: "",
+    date: "2026-07-02",
+    status: "draft",
+    body: `A good editor should make the next sentence feel near. The chrome can be precise, but it should never become the point.
+
+## What this draft is for
+
+This seed post keeps the Drafts folder honest while the product is still demo-backed. It is short enough to edit quickly and plain enough to show the neutral reader state.`,
+  },
 ];

@@ -24,6 +24,15 @@ export async function getPosts(handle: string): Promise<Post[]> {
   return [];
 }
 
+export async function getAllPosts(handle: string): Promise<Post[]> {
+  if (!hasDb) {
+    if (handle !== DEMO_BLOG.handle) return [];
+    return DEMO_POSTS;
+  }
+  // TODO(db): select all posts for the blog, newest first
+  return [];
+}
+
 export async function getPost(
   handle: string,
   slug: string,
