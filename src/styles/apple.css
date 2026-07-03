@@ -336,6 +336,16 @@
   color: var(--ac-on-accent);
   font: 600 12px/1 var(--ac-font-text);
 }
+.applecms .ac-account-signout {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--ac-label-2);
+  font-weight: 500;
+}
+.applecms .ac-account-signout:not(:disabled):hover {
+  color: var(--ac-label);
+}
 .applecms .ac-post-list {
   width: 320px;
   flex: 0 0 320px;

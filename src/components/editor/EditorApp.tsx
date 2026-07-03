@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SignOutButton } from "@/components/SignOutButton";
 import type { Blog, Post } from "@/lib/content";
 import { formatArticleDate, readingTimeMin } from "@/lib/content";
 import { createDraftAction, savePostAction } from "@/app/editor/actions";
@@ -9,6 +10,7 @@ import { MediaUploadError, uploadMedia } from "@/lib/upload";
 
 type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
+type EditorUser = { name?: string; email?: string };
 
 const PREVIEW_SRC = "/editor/preview?preview=1";
 const MIN_SPLIT = 35;
@@ -60,6 +62,18 @@ function statusLabel(status: Post["status"]) {
   return status === "draft" ? "Draft" : "Published";
 }
 
+function cleanAccountValue(value: string | undefined) {
+  return value?.trim() || undefined;
+}
+
+function accountName(user: EditorUser) {
+  return cleanAccountValue(user.name) ?? cleanAccountValue(user.email) ?? "Account";
+}
+
+function accountInitial(label: string) {
+  return Array.from(label.trim())[0]?.toUpperCase() ?? "A";
+}
+
 function itemMeta(post: Post) {
   return [
     formatArticleDate(post.date),
@@ -83,11 +97,13 @@ export function EditorApp({
   posts,
   dbEnabled,
   mediaEnabled,
+  user = null,
 }: {
   blog: Blog;
   posts: Post[];
   dbEnabled: boolean;
   mediaEnabled: boolean;
+  user?: EditorUser | null;
 }) {
   const [ids, setIds] = useState(() => postIds(posts));
   const [drafts, setDrafts] = useState(() => draftsById(posts));
@@ -291,6 +307,9 @@ export function EditorApp({
   }, []);
 
   const folderTitle = FOLDERS.find((entry) => entry.id === folder)?.name ?? "Posts";
+  const signedIn = Boolean(user);
+  const accountLabel = user ? accountName(user) : "Demo (read only)";
+  const avatarInitial = signedIn ? accountInitial(accountLabel) : "D";
 
   return (
     <div className="applecms ac-editor-app">
@@ -345,9 +364,12 @@ export function EditorApp({
           </div>
           <div className="ac-account">
             <span className="ac-avatar ac-editor-avatar" aria-hidden="true">
-              W
+              {avatarInitial}
             </span>
-            <span className="ac-account-name">Sign in with Apple: soon</span>
+            <span className="ac-account-name">{accountLabel}</span>
+            {signedIn && (
+              <SignOutButton className="ac-btn ac-btn-plain ac-account-signout" />
+            )}
           </div>
         </aside>
 

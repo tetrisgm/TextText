@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { EditorApp } from "@/components/editor/EditorApp";
 import { SignInScreen } from "@/components/editor/SignInScreen";
 import { isAuthConfigured } from "@/auth";
@@ -6,6 +7,8 @@ import { getCurrentUser } from "@/lib/session";
 import { ensureOwnerBlog, getAllPosts, getBlog } from "@/lib/store";
 
 export default async function EditorPage() {
+  await connection();
+
   const dbEnabled = !!process.env.DATABASE_URL;
   // Media needs a token, a database, and auth (uploads are per signed-in owner).
   const mediaEnabled =
@@ -27,6 +30,7 @@ export default async function EditorPage() {
         posts={posts}
         dbEnabled={false}
         mediaEnabled={false}
+        user={null}
       />
     );
   }
@@ -43,6 +47,7 @@ export default async function EditorPage() {
       posts={posts}
       dbEnabled={dbEnabled}
       mediaEnabled={mediaEnabled}
+      user={{ name: user.name, email: user.email }}
     />
   );
 }
