@@ -5,6 +5,7 @@ import {
   markdownLinkText,
   notFound,
   oneLine,
+  pipeDelimitedValue,
   plainTextSummary,
   postIsoDate,
   postMarkdownUrl,
@@ -54,14 +55,16 @@ function renderLlmsTxt(blog: Blog, posts: Post[], baseUrl: string): string {
     lines.push("No published posts.");
   } else {
     for (const post of posts) {
-      lines.push(
-        [
-          `- [${markdownLinkText(post.title)}](${postMarkdownUrl(baseUrl, post.slug)})`,
-          `Date: ${postIsoDate(post)}`,
-          `Canonical: ${postUrl(baseUrl, post.slug)}`,
-          `Summary: ${plainTextSummary(post.body)}`,
-        ].join(" | "),
+      const date = postIsoDate(post);
+      const fields = [
+        `- [${pipeDelimitedValue(markdownLinkText(post.title))}](${postMarkdownUrl(baseUrl, post.slug)})`,
+      ];
+      if (date) fields.push(`Date: ${date}`);
+      fields.push(
+        `Canonical: ${postUrl(baseUrl, post.slug)}`,
+        `Summary: ${pipeDelimitedValue(plainTextSummary(post.body))}`,
       );
+      lines.push(fields.join(" | "));
     }
   }
 

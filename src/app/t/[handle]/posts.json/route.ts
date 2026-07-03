@@ -28,14 +28,17 @@ export async function GET(_request: Request, { params }: Props) {
       url: baseUrl,
       llms_txt_url: llmsTxtUrl(baseUrl),
     },
-    posts: publishedNewestFirst(posts).map((post) => ({
-      slug: post.slug,
-      title: post.title,
-      kicker: post.kicker ?? null,
-      date: postIsoDate(post),
-      canonical_url: postUrl(baseUrl, post.slug),
-      markdown_url: postMarkdownUrl(baseUrl, post.slug),
-    })),
+    posts: publishedNewestFirst(posts).map((post) => {
+      const date = postIsoDate(post);
+      return {
+        slug: post.slug,
+        title: post.title,
+        kicker: post.kicker ?? null,
+        ...(date ? { date } : {}),
+        canonical_url: postUrl(baseUrl, post.slug),
+        markdown_url: postMarkdownUrl(baseUrl, post.slug),
+      };
+    }),
   };
 
   return new Response(JSON.stringify(listing, null, 2), {

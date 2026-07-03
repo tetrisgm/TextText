@@ -30,10 +30,9 @@ export async function GET(_request: Request, { params }: Props) {
 function renderPostMarkdown(post: Post, baseUrl: string): string {
   const lines = [`# ${oneLine(post.title)}`, ""];
   if (post.kicker) lines.push(`Kicker: ${oneLine(post.kicker)}`);
-  lines.push(
-    `Date: ${postIsoDate(post)}`,
-    `Canonical: ${postUrl(baseUrl, post.slug)}`,
-  );
+  const date = postIsoDate(post);
+  if (date) lines.push(`Date: ${date}`);
+  lines.push(`Canonical: ${postUrl(baseUrl, post.slug)}`);
 
   return `${lines.join("\n")}\n\n${post.body}`;
 }

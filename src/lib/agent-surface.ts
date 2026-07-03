@@ -1,13 +1,16 @@
 import type { Post } from "@/lib/content";
 
 const FALLBACK_ROOT_DOMAIN = "localhost:3000";
-const FALLBACK_DATE = new Date("1970-01-01T00:00:00.000Z");
 
 export function publishedNewestFirst(posts: Post[]): Post[] {
   return posts
     .filter((post) => post.status === "published")
     .sort((a, b) => {
-      const byDate = postDate(b).getTime() - postDate(a).getTime();
+      const aDate = postDate(a);
+      const bDate = postDate(b);
+      if (aDate && !bDate) return -1;
+      if (!aDate && bDate) return 1;
+      const byDate = (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
       return byDate || a.slug.localeCompare(b.slug);
     });
 }
@@ -34,8 +37,8 @@ export function llmsTxtUrl(baseUrl: string): string {
   return `${baseUrl}/llms.txt`;
 }
 
-export function postIsoDate(post: Post): string {
-  return postDate(post).toISOString().slice(0, 10);
+export function postIsoDate(post: Post): string | null {
+  return postDate(post)?.toISOString().slice(0, 10) ?? null;
 }
 
 export function plainTextSummary(markdown: string): string {
@@ -61,12 +64,16 @@ export function markdownLinkText(value: string): string {
   return oneLine(value).replace(/([\\[\]])/g, "\\$1");
 }
 
+export function pipeDelimitedValue(value: string): string {
+  return value.replace(/\|+/g, "/");
+}
+
 export function notFound(): Response {
   return new Response("Not found", { status: 404 });
 }
 
-function postDate(post: Post): Date {
-  return parseDate(post.date) ?? FALLBACK_DATE;
+function postDate(post: Post): Date | null {
+  return parseDate(post.date);
 }
 
 function parseDate(value: string | undefined): Date | null {
