@@ -473,6 +473,20 @@
   flex: 1 1 auto;
   min-height: 320px;
 }
+.applecms .ac-body-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ac-sp-3);
+  flex-wrap: wrap;
+}
+.applecms .ac-body-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ac-sp-3);
+  flex-wrap: wrap;
+}
 .applecms .ac-textarea {
   flex: 1 1 auto;
   min-height: 320px;

@@ -11,6 +11,7 @@ import { MediaUploadError, uploadMedia } from "@/lib/upload";
 type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
 type EditorUser = { name?: string; email?: string };
+type BodySelection = { start: number; end: number };
 
 const PREVIEW_SRC = "/editor/preview?preview=1";
 const MIN_SPLIT = 35;
@@ -92,6 +93,20 @@ function optionalValue(value: string) {
   return value === "" ? undefined : value;
 }
 
+function imageAltFromFileName(fileName: string | undefined) {
+  const name = fileName?.split(/[\\/]/).pop()?.trim();
+  if (!name) return "";
+
+  const withoutExtension = name.replace(/\.[^/.]+$/, "").trim();
+  if (!withoutExtension) return "";
+
+  return withoutExtension
+    .replace(/[_-]+/g, " ")
+    .replace(/[\[\]\(\)<>`!*#\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function EditorApp({
   blog,
   posts,
@@ -127,8 +142,14 @@ export function EditorApp({
   const [justSaved, setJustSaved] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [bodyImageUploading, setBodyImageUploading] = useState(false);
+  const [bodyUploadError, setBodyUploadError] = useState<string | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const bodyImageInputRef = useRef<HTMLInputElement>(null);
+  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const bodySelectionRef = useRef<BodySelection | null>(null);
+  const pendingBodyCaretRef = useRef<number | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const draftRef = useRef<{ blog: Blog; post: Post } | null>(null);
 
@@ -155,7 +176,27 @@ export function EditorApp({
 
   useEffect(() => {
     previewWindowRef.current = null;
+    bodySelectionRef.current = null;
+    pendingBodyCaretRef.current = null;
   }, [selectedId]);
+
+  useEffect(() => {
+    const position = pendingBodyCaretRef.current;
+    if (position === null) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const textarea = bodyTextareaRef.current;
+      if (!textarea) return;
+      const nextPosition = Math.min(position, textarea.value.length);
+      textarea.focus();
+      textarea.selectionStart = nextPosition;
+      textarea.selectionEnd = nextPosition;
+      bodySelectionRef.current = { start: nextPosition, end: nextPosition };
+      pendingBodyCaretRef.current = null;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  });
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 820px)");
@@ -196,6 +237,15 @@ export function EditorApp({
     },
     [items, selectPost],
   );
+
+  const storeBodySelection = useCallback(() => {
+    const textarea = bodyTextareaRef.current;
+    if (!textarea) return;
+    bodySelectionRef.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    };
+  }, []);
 
   const onSave = useCallback(async () => {
     if (!dbEnabled || !selectedId || !selectedPost) return;
@@ -239,6 +289,40 @@ export function EditorApp({
       }
     },
     [updateSelected],
+  );
+
+  const onUploadBodyImage = useCallback(
+    async (file: File) => {
+      if (!selectedPost) return;
+
+      const selection = bodySelectionRef.current;
+      setBodyImageUploading(true);
+      setBodyUploadError(null);
+
+      try {
+        const url = await uploadMedia(file);
+        const alt = imageAltFromFileName(file.name);
+        const body = selectedPost.body;
+        const selectionStart = selection
+          ? Math.min(selection.start, body.length)
+          : body.length;
+        const selectionEnd = selection ? Math.min(selection.end, body.length) : body.length;
+        const start = Math.min(selectionStart, selectionEnd);
+        const end = Math.max(selectionStart, selectionEnd);
+        const markdown = `![${alt}](${url})`;
+        const next = `${body.slice(0, start)}${markdown}${body.slice(end)}`;
+
+        pendingBodyCaretRef.current = start + markdown.length;
+        updateSelected({ body: next });
+      } catch (error) {
+        setBodyUploadError(
+          error instanceof MediaUploadError ? error.message : "Upload failed.",
+        );
+      } finally {
+        setBodyImageUploading(false);
+      }
+    },
+    [selectedPost, updateSelected],
   );
 
   const postDraft = useCallback((targetWindow?: Window | null) => {
@@ -583,17 +667,59 @@ export function EditorApp({
                     </label>
                   </div>
 
-                  <label className="ac-field-label ac-body-field">
-                    <span className="ac-label-text">Body</span>
+                  <div className="ac-field-label ac-body-field">
+                    <div className="ac-body-head">
+                      <label className="ac-label-text" htmlFor="ac-body-textarea">
+                        Body
+                      </label>
+                      {mediaEnabled && (
+                        <div className="ac-body-actions">
+                          <input
+                            ref={bodyImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            onChange={(event) => {
+                              const file = event.currentTarget.files?.[0];
+                              event.currentTarget.value = "";
+                              if (file) onUploadBodyImage(file);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="ac-btn ac-btn-gray"
+                            disabled={bodyImageUploading}
+                            onClick={() => bodyImageInputRef.current?.click()}
+                          >
+                            {bodyImageUploading ? "Uploading" : "Insert image"}
+                          </button>
+                          {bodyUploadError && (
+                            <span className="ac-field-error" role="alert">
+                              {bodyUploadError}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <textarea
+                      id="ac-body-textarea"
+                      ref={bodyTextareaRef}
                       className="ac-field ac-textarea"
                       value={selectedPost.body}
                       spellCheck
-                      onChange={(event) =>
-                        updateSelected({ body: event.currentTarget.value })
-                      }
+                      onFocus={storeBodySelection}
+                      onClick={storeBodySelection}
+                      onKeyUp={storeBodySelection}
+                      onSelect={storeBodySelection}
+                      onChange={(event) => {
+                        updateSelected({ body: event.currentTarget.value });
+                        bodySelectionRef.current = {
+                          start: event.currentTarget.selectionStart,
+                          end: event.currentTarget.selectionEnd,
+                        };
+                      }}
                     />
-                  </label>
+                  </div>
                 </form>
               </>
             ) : (
