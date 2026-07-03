@@ -127,21 +127,13 @@ export async function getPost(
 ): Promise<Post | null> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return null;
-    return (
-      DEMO_POSTS.find((p) => p.slug === slug && p.status === "published") ?? null
-    );
+    return DEMO_POSTS.find((p) => p.slug === slug) ?? null;
   }
   const rows = await db
     .select()
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(
-      and(
-        eq(blogs.handle, handle),
-        eq(posts.slug, slug),
-        eq(posts.status, "published"),
-      ),
-    )
+    .where(and(eq(blogs.handle, handle), eq(posts.slug, slug)))
     .limit(1);
   return rows[0] ? mapPost(rows[0].posts) : null;
 }
@@ -155,6 +147,40 @@ async function blogIdFor(handle: string): Promise<string> {
   const id = rows[0]?.id;
   if (!id) throw new Error(`unknown blog "${handle}"`);
   return id;
+}
+
+export async function isBlogOwner(
+  handle: string,
+  sub: string,
+): Promise<boolean> {
+  if (!db) return false;
+  const rows = await db
+    .select({ id: blogs.id })
+    .from(blogs)
+    .innerJoin(users, eq(blogs.ownerId, users.id))
+    .where(and(eq(blogs.handle, handle), eq(users.appleSub, sub)))
+    .limit(1);
+  return Boolean(rows[0]);
+}
+
+export async function getPostById(
+  handle: string,
+  id: string,
+): Promise<Post | null> {
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(and(eq(blogs.handle, handle), eq(posts.id, id)))
+    .limit(1);
+  return rows[0] ? mapPost(rows[0].posts) : null;
+}
+
+export async function deletePost(handle: string, id: string): Promise<void> {
+  if (!db) throw new Error("deletePost requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  await db.delete(posts).where(and(eq(posts.id, id), eq(posts.blogId, blogId)));
 }
 
 function isPostsBlogSlugConflict(error: unknown): boolean {

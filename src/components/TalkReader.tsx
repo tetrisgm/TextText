@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Blog, LinkRef, Post } from "@/lib/content";
@@ -9,6 +9,12 @@ import {
   postAccent,
   youtubeEmbedUrl,
 } from "@/lib/content";
+
+type ReaderSlots = {
+  title?: ReactNode;
+  kicker?: ReactNode;
+  body?: ReactNode;
+};
 
 function isExternalHref(href: string): boolean {
   return /^https?:\/\//i.test(href);
@@ -36,11 +42,20 @@ function LinksRow({ links }: { links: LinkRef[] }) {
   );
 }
 
-export function TalkReader({ blog, post }: { blog: Blog; post: Post }) {
+export function TalkReader({
+  blog,
+  post,
+  slots,
+}: {
+  blog: Blog;
+  post: Post;
+  slots?: ReaderSlots;
+}) {
   const accent = postAccent(blog, post);
   const style = accent
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
+  const title = post.title.trim() || "Untitled";
   const videoUrl = post.videoUrl?.trim();
   const embedSrc = videoUrl && isYouTube(videoUrl) ? youtubeEmbedUrl(videoUrl) : undefined;
   const fileVideoSrc =
@@ -67,7 +82,7 @@ export function TalkReader({ blog, post }: { blog: Blog; post: Post }) {
             <iframe
               className="talk-detail-iframe"
               src={embedSrc}
-              title={post.title}
+              title={title}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
             />
@@ -88,7 +103,7 @@ export function TalkReader({ blog, post }: { blog: Blog; post: Post }) {
               <img
                 className="talk-detail-cover"
                 src={post.cover}
-                alt={post.title}
+                alt={title}
                 loading="lazy"
               />
             )
@@ -97,28 +112,33 @@ export function TalkReader({ blog, post }: { blog: Blog; post: Post }) {
       )}
 
       <div className="talk-detail-meta">
-        <h1 className="talk-detail-title">{post.title}</h1>
+        {slots?.kicker ?? (
+          post.kicker && <div className="talk-detail-kicker">{post.kicker}</div>
+        )}
+        {slots?.title ?? <h1 className="talk-detail-title">{title}</h1>}
         {dateLine && <div className="talk-detail-date">{dateLine}</div>}
-        {post.body && (
+        {(slots?.body || post.body) && (
           <div className="talk-detail-desc reader-prose">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                img: ({ src, alt }) => (
-                  <span className="reader-figure">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={typeof src === "string" ? src : ""}
-                      alt={alt ?? ""}
-                      loading="lazy"
-                    />
-                    {alt && <span className="reader-figcaption">{alt}</span>}
-                  </span>
-                ),
-              }}
-            >
-              {post.body}
-            </ReactMarkdown>
+            {slots?.body ?? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  img: ({ src, alt }) => (
+                    <span className="reader-figure">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={typeof src === "string" ? src : ""}
+                        alt={alt ?? ""}
+                        loading="lazy"
+                      />
+                      {alt && <span className="reader-figcaption">{alt}</span>}
+                    </span>
+                  ),
+                }}
+              >
+                {post.body}
+              </ReactMarkdown>
+            )}
           </div>
         )}
         <LinksRow links={links} />

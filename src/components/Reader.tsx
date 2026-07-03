@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Blog, Post } from "@/lib/content";
@@ -13,6 +13,12 @@ import {
 // prose, and the author end card. Server component; markdown renders on the
 // server. The post's accent rides in as --post-accent and may be absent, in
 // which case every accent use in broadsheet.css degrades to neutral ink.
+
+type ReaderSlots = {
+  title?: ReactNode;
+  kicker?: ReactNode;
+  body?: ReactNode;
+};
 
 function Byline({ blog, post }: { blog: Blog; post: Post }) {
   const meta = [
@@ -52,23 +58,34 @@ function EndCard({ blog, post }: { blog: Blog; post: Post }) {
   );
 }
 
-export function Reader({ blog, post }: { blog: Blog; post: Post }) {
+export function Reader({
+  blog,
+  post,
+  slots,
+}: {
+  blog: Blog;
+  post: Post;
+  slots?: ReaderSlots;
+}) {
   const accent = postAccent(blog, post);
   const style = accent
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
+  const title = post.title.trim() || "Untitled";
   return (
     <article className="reader" style={style}>
       <header className="reader-masthead">
-        {post.kicker && <div className="reader-eyebrow">{post.kicker}</div>}
-        <h1 className="reader-title">{post.title}</h1>
+        {slots?.kicker ?? (
+          post.kicker && <div className="reader-eyebrow">{post.kicker}</div>
+        )}
+        {slots?.title ?? <h1 className="reader-title">{title}</h1>}
         <Byline blog={blog} post={post} />
         {post.cover && (
           <figure className="reader-cover">
             {/* Covers are user-provided remote URLs; plain img keeps the demo
                 free of next/image remote-domain config. Revisit with media. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={post.cover} alt={post.title} />
+            <img src={post.cover} alt={title} />
             {post.coverCaption && (
               <figcaption className="reader-figcaption">
                 {post.coverCaption}
@@ -78,21 +95,27 @@ export function Reader({ blog, post }: { blog: Blog; post: Post }) {
         )}
       </header>
       <div className="reader-prose">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            // Inline figures: ![caption](src); the alt doubles as the caption.
-            img: ({ src, alt }) => (
-              <span className="reader-figure">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={typeof src === "string" ? src : ""} alt={alt ?? ""} loading="lazy" />
-                {alt && <span className="reader-figcaption">{alt}</span>}
-              </span>
-            ),
-          }}
-        >
-          {post.body}
-        </ReactMarkdown>
+        {slots?.body ?? (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Inline figures: ![caption](src); the alt doubles as the caption.
+              img: ({ src, alt }) => (
+                <span className="reader-figure">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={typeof src === "string" ? src : ""}
+                    alt={alt ?? ""}
+                    loading="lazy"
+                  />
+                  {alt && <span className="reader-figcaption">{alt}</span>}
+                </span>
+              ),
+            }}
+          >
+            {post.body}
+          </ReactMarkdown>
+        )}
       </div>
       <EndCard blog={blog} post={post} />
     </article>

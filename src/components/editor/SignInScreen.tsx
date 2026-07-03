@@ -22,7 +22,7 @@ export function SignInScreen() {
         <div className="ac-signin-card">
           <h1 className="ac-signin-title">Sign in to write</h1>
           <p className="ac-signin-sub">
-            Your posts and drafts live in your own blog. Sign in to continue.
+            Your posts live on your own blog. Sign in to continue.
           </p>
           {hasAppleProvider && (
             <SignInButton
