@@ -66,7 +66,7 @@ export function TalkReader({
     post.duration,
   ]
     .filter(Boolean)
-    .join(" . ");
+    .join(" · ");
   const links = [
     ...(videoUrl && embedSrc
       ? [{ label: "Watch on YouTube", href: videoUrl }]
@@ -112,9 +112,6 @@ export function TalkReader({
       )}
 
       <div className="talk-detail-meta">
-        {slots?.kicker ?? (
-          post.kicker && <div className="talk-detail-kicker">{post.kicker}</div>
-        )}
         {slots?.title ?? <h1 className="talk-detail-title">{title}</h1>}
         {dateLine && <div className="talk-detail-date">{dateLine}</div>}
         {(slots?.body || post.body) && (

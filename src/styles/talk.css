@@ -1,7 +1,6 @@
 /* ============================= Write: talk reader =============================
    Video-first talk detail, ported from ramine.net and translated to Write's
-   neutral tokens. Accent use stays structural: the stage outline, meta rule,
-   link underline, and selection tint. */
+   neutral tokens. Accent use stays in links and selection tint. */
 
 .reader.talk-detail {
   max-width: min(1840px, calc((100vh - 260px) * 16 / 9));
@@ -20,25 +19,16 @@
   background: #0a0a0a;
   overflow: hidden;
   border-radius: 9px;
-  outline: 1px solid
-    color-mix(in srgb, var(--post-accent, var(--hairline)) 30%, var(--hairline));
-  outline-offset: -1px;
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--post-accent, var(--ink)) 18%, transparent),
-    0 18px 40px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
 }
 
 [data-theme="dark"] .talk-detail-stage {
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--post-accent, var(--ink)) 28%, transparent),
-    0 18px 40px rgba(0, 0, 0, 0.42);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .talk-detail-stage {
-    box-shadow:
-      0 1px 0 color-mix(in srgb, var(--post-accent, var(--ink)) 28%, transparent),
-      0 18px 40px rgba(0, 0, 0, 0.42);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
   }
 }
 
@@ -58,21 +48,7 @@
 }
 
 .talk-detail-meta {
-  position: relative;
   margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--hairline);
-}
-
-.talk-detail-meta::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: 0;
-  width: 40px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--post-accent, var(--ink));
 }
 
 .talk-detail-title {
@@ -80,30 +56,8 @@
   color: var(--ink);
   font-size: clamp(1.25rem, 1rem + 1vw, 1.75rem);
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
   line-height: 1.2;
-}
-
-.talk-detail-kicker {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  margin: 0 0 10px;
-  padding: 4px 9px 3px;
-  border: 1px solid
-    color-mix(in srgb, var(--post-accent, var(--hairline)) 34%, var(--hairline));
-  border-radius: 999px;
-  background: color-mix(
-    in srgb,
-    var(--post-accent, var(--bg-soft)) 8%,
-    var(--bg-soft)
-  );
-  color: color-mix(in srgb, var(--post-accent, var(--muted)) 58%, var(--ink));
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  line-height: 1;
-  text-transform: uppercase;
 }
 
 .talk-detail-date {
@@ -150,15 +104,17 @@
 
 .talk-detail-desc.reader-prose h2 {
   margin: 28px 0 10px;
-  padding-top: 18px;
+  padding-top: 0;
+  border-top: 0;
   color: var(--ink);
   font-size: 1.05rem;
   letter-spacing: 0;
   line-height: 1.25;
+  position: static;
 }
 
 .talk-detail-desc.reader-prose h2::before {
-  width: 28px;
+  display: none;
 }
 
 .talk-detail-desc.reader-prose h3 {
@@ -211,8 +167,4 @@
     border-radius: 6px;
   }
 
-  .talk-detail-meta {
-    margin-top: 16px;
-    padding-top: 16px;
-  }
 }
