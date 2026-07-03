@@ -1,17 +1,29 @@
 "use client";
 
 import Link from "next/link";
+import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignOutButton } from "@/components/SignOutButton";
 import type { Blog, Post } from "@/lib/content";
 import { formatArticleDate, readingTimeMin } from "@/lib/content";
-import { createDraftAction, savePostAction } from "@/app/editor/actions";
+import {
+  createDraftAction,
+  savePostAction,
+  updateBlogAction,
+} from "@/app/editor/actions";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
 
 type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
 type EditorUser = { name?: string; email?: string };
 type BodySelection = { start: number; end: number };
+type BlogSettingsFields = {
+  name: string;
+  handle: string;
+  accent: string;
+  tagline: string;
+  bioLine: string;
+};
 
 const PREVIEW_SRC = "/editor/preview?preview=1";
 const MIN_SPLIT = 35;
@@ -93,6 +105,20 @@ function optionalValue(value: string) {
   return value === "" ? undefined : value;
 }
 
+function blogSettingsFields(blog: Blog): BlogSettingsFields {
+  return {
+    name: blog.name,
+    handle: blog.handle,
+    accent: blog.accent ?? "",
+    tagline: blog.tagline ?? "",
+    bioLine: blog.bioLine ?? "",
+  };
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function imageAltFromFileName(fileName: string | undefined) {
   const name = fileName?.split(/[\\/]/).pop()?.trim();
   if (!name) return "";
@@ -108,7 +134,7 @@ function imageAltFromFileName(fileName: string | undefined) {
 }
 
 export function EditorApp({
-  blog,
+  blog: initialBlog,
   posts,
   dbEnabled,
   mediaEnabled,
@@ -120,6 +146,7 @@ export function EditorApp({
   mediaEnabled: boolean;
   user?: EditorUser | null;
 }) {
+  const [blog, setBlog] = useState(initialBlog);
   const [ids, setIds] = useState(() => postIds(posts));
   const [drafts, setDrafts] = useState(() => draftsById(posts));
   const [selectedId, setSelectedId] = useState(() => ids[0] ?? "");
@@ -144,10 +171,17 @@ export function EditorApp({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [bodyImageUploading, setBodyImageUploading] = useState(false);
   const [bodyUploadError, setBodyUploadError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState(() =>
+    blogSettingsFields(initialBlog),
+  );
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const bodyImageInputRef = useRef<HTMLInputElement>(null);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const settingsNameRef = useRef<HTMLInputElement>(null);
   const bodySelectionRef = useRef<BodySelection | null>(null);
   const pendingBodyCaretRef = useRef<number | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
@@ -169,10 +203,36 @@ export function EditorApp({
     () => (selectedPost ? { blog, post: selectedPost } : null),
     [blog, selectedPost],
   );
+  const signedIn = Boolean(user);
+  const canEditSettings = signedIn && dbEnabled;
 
   useEffect(() => {
     draftRef.current = selectedDraft;
   }, [selectedDraft]);
+
+  useEffect(() => {
+    setBlog(initialBlog);
+    setSettingsDraft(blogSettingsFields(initialBlog));
+  }, [initialBlog]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      settingsNameRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !settingsSaving) {
+        setSettingsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [settingsOpen, settingsSaving]);
 
   useEffect(() => {
     previewWindowRef.current = null;
@@ -227,6 +287,57 @@ export function EditorApp({
       });
     },
     [selectedId],
+  );
+
+  const openSettings = useCallback(() => {
+    if (!canEditSettings) return;
+    setSettingsDraft(blogSettingsFields(blog));
+    setSettingsError(null);
+    setSettingsOpen(true);
+  }, [blog, canEditSettings]);
+
+  const closeSettings = useCallback(() => {
+    if (settingsSaving) return;
+    setSettingsOpen(false);
+    setSettingsError(null);
+  }, [settingsSaving]);
+
+  const updateSettingsDraft = useCallback((patch: Partial<BlogSettingsFields>) => {
+    setSettingsDraft((current) => ({ ...current, ...patch }));
+    setSettingsError(null);
+  }, []);
+
+  const onSaveSettings = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!canEditSettings) return;
+
+      const accent = settingsDraft.accent.trim();
+      if (accent && !isHexColor(accent)) {
+        setSettingsError("Accent must be a hex color like #065ec6");
+        return;
+      }
+
+      setSettingsSaving(true);
+      setSettingsError(null);
+      try {
+        const saved = await updateBlogAction({
+          name: settingsDraft.name,
+          handle: settingsDraft.handle,
+          accent,
+          tagline: settingsDraft.tagline,
+          bioLine: settingsDraft.bioLine,
+        });
+        setBlog(saved);
+        setSettingsDraft(blogSettingsFields(saved));
+        setSettingsOpen(false);
+      } catch (error) {
+        setSettingsError(errorMessage(error, "Settings could not be saved"));
+      } finally {
+        setSettingsSaving(false);
+      }
+    },
+    [canEditSettings, settingsDraft],
   );
 
   const selectFolder = useCallback(
@@ -391,7 +502,6 @@ export function EditorApp({
   }, []);
 
   const folderTitle = FOLDERS.find((entry) => entry.id === folder)?.name ?? "Posts";
-  const signedIn = Boolean(user);
   const accountLabel = user ? accountName(user) : "Demo (read only)";
   const avatarInitial = signedIn ? accountInitial(accountLabel) : "D";
 
@@ -451,6 +561,15 @@ export function EditorApp({
               {avatarInitial}
             </span>
             <span className="ac-account-name">{accountLabel}</span>
+            {canEditSettings && (
+              <button
+                className="ac-btn ac-btn-plain ac-account-settings"
+                type="button"
+                onClick={openSettings}
+              >
+                Settings
+              </button>
+            )}
             {signedIn && (
               <SignOutButton className="ac-btn ac-btn-plain ac-account-signout" />
             )}
@@ -781,6 +900,129 @@ export function EditorApp({
           )}
         </div>
       </div>
+
+      {settingsOpen && canEditSettings && (
+        <div className="ac-modal-backdrop" onMouseDown={closeSettings}>
+          <section
+            className="ac-settings-panel ac-chrome"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ac-settings-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="ac-settings-head">
+              <h2 id="ac-settings-title" className="ac-settings-title">
+                Settings
+              </h2>
+            </div>
+            <form className="ac-settings-form" onSubmit={onSaveSettings}>
+              <label className="ac-field-label ac-settings-wide">
+                <span className="ac-label-text">Blog name</span>
+                <input
+                  ref={settingsNameRef}
+                  className="ac-field"
+                  value={settingsDraft.name}
+                  onChange={(event) =>
+                    updateSettingsDraft({ name: event.currentTarget.value })
+                  }
+                />
+              </label>
+
+              <label className="ac-field-label ac-settings-wide">
+                <span className="ac-label-text">Handle</span>
+                <input
+                  className="ac-field"
+                  value={settingsDraft.handle}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) =>
+                    updateSettingsDraft({ handle: event.currentTarget.value })
+                  }
+                />
+              </label>
+
+              <div className="ac-accent-row ac-settings-wide">
+                <label className="ac-field-label">
+                  <span className="ac-label-text">Accent swatch</span>
+                  <input
+                    className="ac-color-field"
+                    type="color"
+                    value={
+                      isHexColor(settingsDraft.accent.trim())
+                        ? settingsDraft.accent.trim()
+                        : "#000000"
+                    }
+                    onChange={(event) =>
+                      updateSettingsDraft({ accent: event.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label className="ac-field-label ac-accent-input">
+                  <span className="ac-label-text">Accent hex</span>
+                  <input
+                    className="ac-field"
+                    value={settingsDraft.accent}
+                    placeholder="#065ec6"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onChange={(event) =>
+                      updateSettingsDraft({ accent: event.currentTarget.value })
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="ac-field-label ac-settings-wide">
+                <span className="ac-label-text">Tagline</span>
+                <input
+                  className="ac-field"
+                  value={settingsDraft.tagline}
+                  onChange={(event) =>
+                    updateSettingsDraft({ tagline: event.currentTarget.value })
+                  }
+                />
+              </label>
+
+              <label className="ac-field-label ac-settings-wide">
+                <span className="ac-label-text">Bio line</span>
+                <input
+                  className="ac-field"
+                  value={settingsDraft.bioLine}
+                  onChange={(event) =>
+                    updateSettingsDraft({ bioLine: event.currentTarget.value })
+                  }
+                />
+              </label>
+
+              <div className="ac-settings-actions">
+                {settingsError && (
+                  <span className="ac-field-error ac-settings-error" role="alert">
+                    {settingsError}
+                  </span>
+                )}
+                <button
+                  className="ac-btn ac-btn-gray"
+                  type="button"
+                  disabled={settingsSaving}
+                  onClick={closeSettings}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="ac-btn ac-btn-filled"
+                  type="submit"
+                  disabled={settingsSaving}
+                >
+                  {settingsSaving ? "Saving" : "Save settings"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

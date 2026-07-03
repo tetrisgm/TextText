@@ -3,14 +3,29 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import type { Blog, Post } from "./content";
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
-import { RESERVED_HANDLES } from "./tenants";
+import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
 
 type PostRow = typeof posts.$inferSelect;
+type BlogRow = {
+  handle: string;
+  name: string;
+  tagline: string | null;
+  accent: string | null;
+  bioLine: string | null;
+  author: string | null;
+};
+export type BlogPatch = {
+  name?: string;
+  handle?: string;
+  accent?: string | null;
+  tagline?: string | null;
+  bioLine?: string | null;
+};
 
 function toISODate(value: Date | string | null): string | undefined {
   if (!value) return undefined;
@@ -35,6 +50,17 @@ function mapPost(row: PostRow): Post {
   };
 }
 
+function mapBlog(row: BlogRow): Blog {
+  return {
+    handle: row.handle,
+    name: row.name,
+    author: row.author ?? "",
+    tagline: row.tagline ?? undefined,
+    accent: row.accent ?? undefined,
+    bioLine: row.bioLine ?? undefined,
+  };
+}
+
 export async function getBlog(handle: string): Promise<Blog | null> {
   if (!db) {
     return handle === DEMO_BLOG.handle ? DEMO_BLOG : null;
@@ -54,14 +80,7 @@ export async function getBlog(handle: string): Promise<Blog | null> {
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  return {
-    handle: row.handle,
-    name: row.name,
-    author: row.author ?? "",
-    tagline: row.tagline ?? undefined,
-    accent: row.accent ?? undefined,
-    bioLine: row.bioLine ?? undefined,
-  };
+  return mapBlog(row);
 }
 
 async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post[]> {
@@ -201,14 +220,14 @@ export async function createDraft(handle: string): Promise<Post> {
   return mapPost(inserted[0]);
 }
 
-function slugifyHandle(value: string): string {
+function slugifyHandle(value: string, maxLength = 24, fallback = "blog"): string {
   const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 24)
+    .slice(0, maxLength)
     .replace(/-+$/g, "");
-  return slug || "blog";
+  return slug || fallback;
 }
 
 // A blog handle not already taken and not reserved, derived from a seed.
@@ -249,14 +268,139 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  return {
-    handle: row.handle,
-    name: row.name,
-    author: row.author ?? "",
-    tagline: row.tagline ?? undefined,
-    accent: row.accent ?? undefined,
-    bioLine: row.bioLine ?? undefined,
+  return mapBlog(row);
+}
+
+function hasPatchKey(
+  patch: Record<string, unknown>,
+  key: keyof BlogPatch,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+function cleanRequiredLine(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`${label} is required`);
+  const cleaned = value.trim().replace(/\s+/g, " ");
+  if (!cleaned) throw new Error(`${label} is required`);
+  return cleaned;
+}
+
+function cleanOptionalLine(value: unknown, label: string): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string") throw new Error(`${label} must be text`);
+  return value.trim().replace(/\s+/g, " ") || null;
+}
+
+function cleanBlogHandle(value: unknown): string {
+  const raw = cleanRequiredLine(value, "Handle");
+  const handle = slugifyHandle(raw, 32, "");
+  if (!handle) throw new Error("Enter a handle");
+  if (!TENANT_HANDLE_RE.test(handle)) {
+    throw new Error("Use 1 to 32 letters, numbers, or hyphens");
+  }
+  if (RESERVED_HANDLES.has(handle)) throw new Error("That handle is reserved");
+  return handle;
+}
+
+function cleanBlogAccent(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string") {
+    throw new Error("Accent must be a hex color");
+  }
+  const accent = value.trim();
+  if (!accent) return null;
+  if (!/^#[0-9a-fA-F]{6}$/.test(accent)) {
+    throw new Error("Accent must be a hex color like #065ec6");
+  }
+  return accent;
+}
+
+function isBlogsHandleConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as {
+    code?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+    detail?: unknown;
   };
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const constraint =
+    typeof candidate.constraint === "string" ? candidate.constraint : "";
+  const message =
+    typeof candidate.message === "string" ? candidate.message : "";
+  const detail = typeof candidate.detail === "string" ? candidate.detail : "";
+  if (constraint === "blogs_handle_idx") return true;
+  return code === "23505" && (message + detail).includes("blogs_handle_idx");
+}
+
+export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
+  if (!db) throw new Error("updateBlog requires DATABASE_URL");
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("Invalid blog settings");
+  }
+
+  const input = patch as Record<string, unknown>;
+  const owned = (
+    await db
+      .select({
+        id: blogs.id,
+        handle: blogs.handle,
+        name: blogs.name,
+        tagline: blogs.tagline,
+        accent: blogs.accent,
+        bioLine: blogs.bioLine,
+        author: users.name,
+      })
+      .from(blogs)
+      .innerJoin(users, eq(blogs.ownerId, users.id))
+      .where(eq(users.appleSub, sub))
+      .orderBy(asc(blogs.createdAt))
+      .limit(1)
+  )[0];
+  if (!owned) throw new Error("No blog found for this user");
+
+  const set: Partial<typeof blogs.$inferInsert> = {};
+
+  if (hasPatchKey(input, "name")) {
+    set.name = cleanRequiredLine(input.name, "Blog name");
+  }
+  if (hasPatchKey(input, "tagline")) {
+    set.tagline = cleanOptionalLine(input.tagline, "Tagline");
+  }
+  if (hasPatchKey(input, "bioLine")) {
+    set.bioLine = cleanOptionalLine(input.bioLine, "Bio line");
+  }
+  if (hasPatchKey(input, "accent")) {
+    set.accent = cleanBlogAccent(input.accent);
+  }
+  if (hasPatchKey(input, "handle")) {
+    const handle = cleanBlogHandle(input.handle);
+    if (handle !== owned.handle) {
+      const taken = await db
+        .select({ id: blogs.id })
+        .from(blogs)
+        .where(and(eq(blogs.handle, handle), ne(blogs.id, owned.id)))
+        .limit(1);
+      if (taken[0]) throw new Error("That handle is taken");
+      set.handle = handle;
+    }
+  }
+
+  if (Object.keys(set).length === 0) return mapBlog(owned);
+
+  try {
+    const updated = await db
+      .update(blogs)
+      .set(set)
+      .where(eq(blogs.id, owned.id))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new Error("No blog found for this user");
+    return mapBlog({ ...row, author: owned.author });
+  } catch (error) {
+    if (isBlogsHandleConflict(error)) throw new Error("That handle is taken");
+    throw error;
+  }
 }
 
 // Get-or-create the signed-in user's blog. Upserts the user (keyed by Apple sub;

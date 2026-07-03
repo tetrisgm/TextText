@@ -16,6 +16,8 @@ export const RESERVED_HANDLES = new Set([
   "assets", "blog", "docs", "help", "status", "dev", "staging",
 ]);
 
+export const TENANT_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
+
 function stripPort(host: string): string {
   return host.split(":")[0];
 }
@@ -33,6 +35,6 @@ export function tenantFromHost(host: string | null): string | null {
   const sub = bare.slice(0, -(rootBare.length + 1));
   if (!sub || sub.includes(".")) return null; // one level only
   if (RESERVED_HANDLES.has(sub)) return null;
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(sub)) return null;
+  if (!TENANT_HANDLE_RE.test(sub)) return null;
   return sub;
 }
