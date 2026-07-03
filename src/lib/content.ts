@@ -52,10 +52,72 @@ export interface Post {
   duration?: string;
 }
 
+const VIDEO_FILE_RE = /\.(mp4|webm)(?:[?#].*)?$/i;
+const YOUTUBE_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+const YOUTUBE_FALLBACK_RE =
+  /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+function normalizedUrl(value: string): URL | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed);
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function youtubeVideoId(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+
+  const parsed = normalizedUrl(url);
+  if (parsed) {
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    let id: string | null = null;
+
+    if (hostname === "youtu.be") {
+      id = parts[0] ?? null;
+    } else if (
+      hostname === "youtube.com" ||
+      hostname === "m.youtube.com" ||
+      hostname === "youtube-nocookie.com"
+    ) {
+      if (parts[0] === "watch") id = parsed.searchParams.get("v");
+      if (["embed", "shorts", "live"].includes(parts[0] ?? "")) {
+        id = parts[1] ?? null;
+      }
+    }
+
+    if (id && YOUTUBE_ID_RE.test(id)) return id;
+  }
+
+  const match = url.match(YOUTUBE_FALLBACK_RE);
+  return match?.[1] && YOUTUBE_ID_RE.test(match[1]) ? match[1] : undefined;
+}
+
+export function isYouTube(url: string | undefined): boolean {
+  return youtubeVideoId(url) !== undefined;
+}
+
+export function youtubeEmbedUrl(url: string): string | undefined {
+  const id = youtubeVideoId(url);
+  if (!id) return undefined;
+  return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
+}
+
+export function isVideoFile(url: string | undefined): boolean {
+  return !!url && VIDEO_FILE_RE.test(url);
+}
 
 /** "2026-06-25" -> "June 25, 2026"; bare years and unparseable values pass through. */
 export function formatArticleDate(date: string | undefined): string {

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getBlog, getPost } from "@/lib/store";
 import { Reader } from "@/components/Reader";
+import { TalkReader } from "@/components/TalkReader";
 
 interface Props {
   params: Promise<{ handle: string; slug: string }>;
@@ -28,17 +29,7 @@ export default async function PostPage({ params }: Props) {
   ]);
   if (!blog || !post) notFound();
 
-  let ReaderComponent = Reader;
-  switch (post.type) {
-    case "project":
-    case "talk":
-      // TODO(F2/F3): ProjectReader and TalkReader.
-      ReaderComponent = Reader;
-      break;
-    case "article":
-      ReaderComponent = Reader;
-      break;
-  }
+  const ReaderComponent = post.type === "talk" ? TalkReader : Reader;
 
   return <ReaderComponent blog={blog} post={post} />;
 }

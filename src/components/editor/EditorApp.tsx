@@ -1031,6 +1031,49 @@ export function EditorApp({
                         }
                       />
                     </label>
+
+                    {selectedPost.type === "talk" && (
+                      <>
+                        <label className="ac-field-label ac-form-span">
+                          <span className="ac-label-text">Video URL</span>
+                          <input
+                            className="ac-field"
+                            value={selectedPost.videoUrl ?? ""}
+                            onChange={(event) =>
+                              updateSelected({
+                                videoUrl: optionalValue(event.currentTarget.value),
+                              })
+                            }
+                          />
+                        </label>
+
+                        <label className="ac-field-label">
+                          <span className="ac-label-text">Venue</span>
+                          <input
+                            className="ac-field"
+                            value={selectedPost.venue ?? ""}
+                            onChange={(event) =>
+                              updateSelected({
+                                venue: optionalValue(event.currentTarget.value),
+                              })
+                            }
+                          />
+                        </label>
+
+                        <label className="ac-field-label">
+                          <span className="ac-label-text">Duration</span>
+                          <input
+                            className="ac-field"
+                            value={selectedPost.duration ?? ""}
+                            onChange={(event) =>
+                              updateSelected({
+                                duration: optionalValue(event.currentTarget.value),
+                              })
+                            }
+                          />
+                        </label>
+                      </>
+                    )}
                   </div>
 
                   <div className="ac-field-label ac-body-field">

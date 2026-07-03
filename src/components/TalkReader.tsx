@@ -1,0 +1,128 @@
+import type { CSSProperties } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Blog, LinkRef, Post } from "@/lib/content";
+import {
+  formatArticleDate,
+  isVideoFile,
+  isYouTube,
+  postAccent,
+  youtubeEmbedUrl,
+} from "@/lib/content";
+
+function isExternalHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
+
+function LinksRow({ links }: { links: LinkRef[] }) {
+  if (links.length === 0) return null;
+
+  return (
+    <nav className="talk-detail-links" aria-label="Talk links">
+      {links.map((link, index) => {
+        const external = isExternalHref(link.href);
+        return (
+          <a
+            key={`${link.href}:${index}`}
+            href={link.href}
+            target={external ? "_blank" : undefined}
+            rel={external ? "noreferrer" : undefined}
+          >
+            {link.label}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function TalkReader({ blog, post }: { blog: Blog; post: Post }) {
+  const accent = postAccent(blog, post);
+  const style = accent
+    ? ({ "--post-accent": accent } as CSSProperties)
+    : undefined;
+  const videoUrl = post.videoUrl?.trim();
+  const embedSrc = videoUrl && isYouTube(videoUrl) ? youtubeEmbedUrl(videoUrl) : undefined;
+  const fileVideoSrc =
+    videoUrl && !embedSrc && isVideoFile(videoUrl) ? videoUrl : undefined;
+  const dateLine = [
+    post.venue,
+    formatArticleDate(post.date),
+    post.duration,
+  ]
+    .filter(Boolean)
+    .join(" . ");
+  const links = [
+    ...(videoUrl && embedSrc
+      ? [{ label: "Watch on YouTube", href: videoUrl }]
+      : []),
+    ...(post.links ?? []),
+  ];
+
+  return (
+    <article className="reader talk-detail" style={style}>
+      {(embedSrc || fileVideoSrc || post.cover) && (
+        <div className="talk-detail-stage">
+          {embedSrc ? (
+            <iframe
+              className="talk-detail-iframe"
+              src={embedSrc}
+              title={post.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          ) : fileVideoSrc ? (
+            <video
+              className="talk-detail-iframe"
+              src={fileVideoSrc}
+              poster={post.cover}
+              controls
+              playsInline
+              preload="metadata"
+            />
+          ) : (
+            post.cover && (
+              // Covers are user-provided remote URLs; plain img avoids
+              // next/image remote-domain config for this early reader.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className="talk-detail-cover"
+                src={post.cover}
+                alt={post.title}
+                loading="lazy"
+              />
+            )
+          )}
+        </div>
+      )}
+
+      <div className="talk-detail-meta">
+        <h1 className="talk-detail-title">{post.title}</h1>
+        {dateLine && <div className="talk-detail-date">{dateLine}</div>}
+        {post.body && (
+          <div className="talk-detail-desc reader-prose">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                img: ({ src, alt }) => (
+                  <span className="reader-figure">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={typeof src === "string" ? src : ""}
+                      alt={alt ?? ""}
+                      loading="lazy"
+                    />
+                    {alt && <span className="reader-figcaption">{alt}</span>}
+                  </span>
+                ),
+              }}
+            >
+              {post.body}
+            </ReactMarkdown>
+          </div>
+        )}
+        <LinksRow links={links} />
+      </div>
+    </article>
+  );
+}
