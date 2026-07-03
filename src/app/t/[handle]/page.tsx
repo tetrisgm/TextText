@@ -188,7 +188,7 @@ export default async function BlogHome({ params }: Props) {
         </div>
       </header>
 
-      {posts.length > 0 ? (
+      {posts.length > 0 && (
         <div className="blog-card-grid">
           {posts.map((post) => (
             <BlogPostCard
@@ -200,10 +200,6 @@ export default async function BlogHome({ params }: Props) {
             />
           ))}
         </div>
-      ) : (
-        <p className="blog-home-empty">
-          {owner ? "No posts yet" : "No public posts yet"}
-        </p>
       )}
     </main>
   );

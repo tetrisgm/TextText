@@ -51,6 +51,26 @@ function slugify(value: string, fallback: string): string {
   return slug || fallback;
 }
 
+function isPlaceholderSlug(slug: string): boolean {
+  return slug.startsWith("untitled-");
+}
+
+function uniqueSlug(base: string, usedSlugs: readonly string[]): string {
+  const used = new Set(usedSlugs);
+  if (!used.has(base)) return base;
+
+  for (let index = 2; index < 100; index += 1) {
+    const suffix = `-${index}`;
+    const root = base.slice(0, 80 - suffix.length).replace(/-+$/g, "");
+    const candidate = `${root || "post"}${suffix}`;
+    if (!used.has(candidate)) return candidate;
+  }
+
+  const suffix = `-${Date.now().toString(36)}`;
+  const root = base.slice(0, 80 - suffix.length).replace(/-+$/g, "");
+  return `${root || "post"}${suffix}`;
+}
+
 function autoGrow(node: HTMLTextAreaElement | null) {
   if (!node) return;
   node.style.height = "0px";
@@ -81,7 +101,15 @@ function payloadKey(payload: ReturnType<typeof payloadFor>): string {
   return JSON.stringify(payload);
 }
 
-export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
+export function PostEditLayer({
+  blog,
+  post,
+  usedSlugs = [],
+}: {
+  blog: Blog;
+  post: Post;
+  usedSlugs?: string[];
+}) {
   const router = useRouter();
   const [draft, setDraft] = useState(() => initialDraft(post));
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -92,6 +120,7 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const skipSaveRef = useRef(true);
   const currentSlugRef = useRef(post.slug);
+  const autoSlugAllowedRef = useRef(isPlaceholderSlug(post.slug));
   const latestKeyRef = useRef("");
   const lastSavedKeyRef = useRef("");
   const saveTimerRef = useRef<number | null>(null);
@@ -103,6 +132,7 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
     setError(null);
     setMenuOpen(false);
     currentSlugRef.current = post.slug;
+    autoSlugAllowedRef.current = isPlaceholderSlug(post.slug);
     skipSaveRef.current = true;
   }, [post.id]);
 
@@ -166,9 +196,11 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
 
             if (saved.slug !== currentSlugRef.current) {
               currentSlugRef.current = saved.slug;
-              router.replace(`${postPath(blog.handle, saved.slug)}?edit=1`, {
-                scroll: false,
-              });
+              window.history.replaceState(
+                window.history.state,
+                "",
+                `${postPath(blog.handle, saved.slug)}?edit=1`,
+              );
             }
 
             if (saved.slug !== sentSlug) {
@@ -195,6 +227,32 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
     setDraft((current) => ({ ...current, ...patch }));
   }, []);
 
+  const deriveSlugFromTitle = useCallback(
+    (titleValue: string) => {
+      if (!autoSlugAllowedRef.current) return;
+
+      const title = titleValue.trim();
+      if (!title || title.toLowerCase() === "untitled") return;
+
+      setDraft((current) => {
+        if (!autoSlugAllowedRef.current) return current;
+        if (!isPlaceholderSlug(current.slug)) {
+          autoSlugAllowedRef.current = false;
+          return current;
+        }
+
+        const nextSlug = uniqueSlug(slugify(title, "post"), usedSlugs);
+        autoSlugAllowedRef.current = false;
+        return nextSlug === current.slug ? current : { ...current, slug: nextSlug };
+      });
+    },
+    [usedSlugs],
+  );
+
+  useEffect(() => {
+    deriveSlugFromTitle(post.title);
+  }, [deriveSlugFromTitle, post.id, post.title]);
+
   const displayPost = useMemo<Post>(
     () => ({
       ...post,
@@ -215,13 +273,6 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
         ? "talk-detail-title edit-title-field"
         : "reader-title edit-title-field";
 
-  const kickerClass =
-    post.type === "project"
-      ? "project-kicker edit-kicker"
-      : post.type === "talk"
-        ? "talk-detail-kicker edit-kicker"
-        : "reader-eyebrow edit-kicker";
-
   const slots = {
     title: (
       <textarea
@@ -233,25 +284,15 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
         rows={1}
         value={draft.title}
         onChange={(event) => updateDraft({ title: event.currentTarget.value })}
+        onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
+            deriveSlugFromTitle(event.currentTarget.value);
             bodyRef.current?.focus();
           }
         }}
       />
-    ),
-    kicker: (
-      <label className={kickerClass}>
-        <input
-          className="edit-kicker-input"
-          aria-label="Kicker"
-          placeholder="Kicker"
-          size={Math.max(8, Math.min(28, draft.kicker.length || 8))}
-          value={draft.kicker}
-          onChange={(event) => updateDraft({ kicker: event.currentTarget.value })}
-        />
-      </label>
     ),
     body: (
       <textarea
@@ -332,6 +373,17 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
           {menuOpen && (
             <div className="post-edit-menu">
               <label className="post-edit-menu-field">
+                <span>Kicker</span>
+                <input
+                  className="post-edit-kicker-menu"
+                  value={draft.kicker}
+                  placeholder="Optional kicker"
+                  onChange={(event) =>
+                    updateDraft({ kicker: event.currentTarget.value })
+                  }
+                />
+              </label>
+              <label className="post-edit-menu-field">
                 <span>Accent color</span>
                 <span className="post-edit-color-row">
                   <input
@@ -360,14 +412,16 @@ export function PostEditLayer({ blog, post }: { blog: Blog; post: Post }) {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  onChange={(event) =>
-                    updateDraft({ slug: slugify(event.currentTarget.value, "") })
-                  }
-                  onBlur={() =>
+                  onChange={(event) => {
+                    autoSlugAllowedRef.current = false;
+                    updateDraft({ slug: slugify(event.currentTarget.value, "") });
+                  }}
+                  onBlur={() => {
+                    autoSlugAllowedRef.current = false;
                     updateDraft({
                       slug: slugify(draft.slug, currentSlugRef.current),
-                    })
-                  }
+                    });
+                  }}
                 />
               </label>
               <button

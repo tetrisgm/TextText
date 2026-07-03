@@ -9,10 +9,10 @@ import {
   monogram,
 } from "@/lib/content";
 
-// The Broadsheet reader: masthead (eyebrow, serif title, byline, framed cover),
-// prose, and the author end card. Server component; markdown renders on the
-// server. The post's accent rides in as --post-accent and may be absent, in
-// which case every accent use in broadsheet.css degrades to neutral ink.
+// The Broadsheet reader: masthead (eyebrow, serif title, byline, framed cover)
+// and prose. Server component; markdown renders on the server. The post's
+// accent rides in as --post-accent and may be absent, in which case every
+// accent use in broadsheet.css degrades to neutral ink.
 
 type ReaderSlots = {
   title?: ReactNode;
@@ -37,24 +37,6 @@ function Byline({ blog, post }: { blog: Blog; post: Post }) {
         {meta && <span className="reader-byline-meta">{meta}</span>}
       </span>
     </div>
-  );
-}
-
-function EndCard({ blog, post }: { blog: Blog; post: Post }) {
-  const date = formatArticleDate(post.date);
-  return (
-    <aside className="reader-endcard">
-      <span className="reader-endcard-avatar" aria-hidden="true">
-        {monogram(blog.author)}
-      </span>
-      <div className="reader-endcard-text">
-        <span className="reader-endcard-name">Written by {blog.author}</span>
-        {blog.bioLine && (
-          <span className="reader-endcard-line">{blog.bioLine}</span>
-        )}
-        {date && <span className="reader-endcard-date">{date}</span>}
-      </div>
-    </aside>
   );
 }
 
@@ -117,7 +99,6 @@ export function Reader({
           </ReactMarkdown>
         )}
       </div>
-      <EndCard blog={blog} post={post} />
     </article>
   );
 }

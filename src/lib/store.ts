@@ -26,6 +26,11 @@ export type BlogPatch = {
   tagline?: string | null;
   bioLine?: string | null;
 };
+export type AdjacentPostLink = Pick<Post, "slug" | "title">;
+export type AdjacentPublishedPosts = {
+  previous: AdjacentPostLink | null;
+  next: AdjacentPostLink | null;
+};
 
 function toISODate(value: Date | string | null): string | undefined {
   if (!value) return undefined;
@@ -119,6 +124,24 @@ export async function getAllPosts(handle: string): Promise<Post[]> {
     return handle === DEMO_BLOG.handle ? DEMO_POSTS : [];
   }
   return selectPosts(handle, false);
+}
+
+export async function getAdjacentPublishedPosts(
+  handle: string,
+  slug: string,
+): Promise<AdjacentPublishedPosts> {
+  const published = await getPosts(handle);
+  const index = published.findIndex((post) => post.slug === slug);
+  if (index < 0) return { previous: null, next: null };
+
+  const previous = published[index - 1];
+  const next = published[index + 1];
+  return {
+    previous: previous
+      ? { slug: previous.slug, title: previous.title }
+      : null,
+    next: next ? { slug: next.slug, title: next.title } : null,
+  };
 }
 
 export async function getPost(

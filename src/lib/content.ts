@@ -9,7 +9,7 @@ export interface Blog {
   tagline?: string;
   /** hex accent for the blog; posts may override */
   accent?: string;
-  /** one-line standing bio for the end card */
+  /** one-line standing profile bio */
   bioLine?: string;
 }
 
