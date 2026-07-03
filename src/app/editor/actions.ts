@@ -160,7 +160,7 @@ export async function saveEditablePostAction(input: unknown): Promise<Post> {
     slug: patch.slug,
     accent: patch.accent,
   });
-  revalidateBlog(handle, [existing.slug, saved.slug]);
+  revalidateBlog(handle, [saved.slug]);
   return saved;
 }
 

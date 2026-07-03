@@ -4,6 +4,7 @@ import {
   startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -25,6 +26,20 @@ type DraftState = {
 };
 
 type SaveState = "saved" | "saving" | "error";
+
+type EditSession = {
+  draft: DraftState;
+  currentSlug: string;
+  autoSlugAllowed: boolean;
+  lastSavedKey: string;
+};
+
+type DraftSnapshot = {
+  postId: string | undefined;
+  draft: DraftState;
+};
+
+const editSessions = new Map<string, EditSession>();
 
 function initialDraft(post: Post): DraftState {
   return {
@@ -52,7 +67,8 @@ function slugify(value: string, fallback: string): string {
 }
 
 function isPlaceholderSlug(slug: string): boolean {
-  return slug.startsWith("untitled-");
+  const normalized = slug.trim().toLowerCase();
+  return normalized === "" || normalized.startsWith("untitled-");
 }
 
 function uniqueSlug(base: string, usedSlugs: readonly string[]): string {
@@ -101,6 +117,36 @@ function payloadKey(payload: ReturnType<typeof payloadFor>): string {
   return JSON.stringify(payload);
 }
 
+function createEditSession(post: Post): EditSession {
+  const draft = initialDraft(post);
+  const currentSlug = post.slug;
+  return {
+    draft,
+    currentSlug,
+    autoSlugAllowed: isPlaceholderSlug(post.slug),
+    lastSavedKey: post.id
+      ? payloadKey(payloadFor(post.id, draft, currentSlug))
+      : "",
+  };
+}
+
+function getEditSession(post: Post): EditSession {
+  if (!post.id) return createEditSession(post);
+  const existing = editSessions.get(post.id);
+  if (existing) return existing;
+
+  const session = createEditSession(post);
+  editSessions.set(post.id, session);
+  return session;
+}
+
+function patchEditSession(id: string | undefined, patch: Partial<EditSession>) {
+  if (!id) return;
+  const existing = editSessions.get(id);
+  if (!existing) return;
+  editSessions.set(id, { ...existing, ...patch });
+}
+
 export function PostEditLayer({
   blog,
   post,
@@ -111,29 +157,39 @@ export function PostEditLayer({
   usedSlugs?: string[];
 }) {
   const router = useRouter();
-  const [draft, setDraft] = useState(() => initialDraft(post));
+  const initialSession = getEditSession(post);
+  const [draftSnapshot, setDraftSnapshot] = useState<DraftSnapshot>(() => ({
+    postId: post.id,
+    draft: initialSession.draft,
+  }));
+  const draft = draftSnapshot.draft;
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const skipSaveRef = useRef(true);
-  const currentSlugRef = useRef(post.slug);
-  const autoSlugAllowedRef = useRef(isPlaceholderSlug(post.slug));
-  const latestKeyRef = useRef("");
-  const lastSavedKeyRef = useRef("");
+  const currentSlugRef = useRef(initialSession.currentSlug);
+  const autoSlugAllowedRef = useRef(initialSession.autoSlugAllowed);
+  const latestKeyRef = useRef(initialSession.lastSavedKey);
+  const lastSavedKeyRef = useRef(initialSession.lastSavedKey);
   const saveTimerRef = useRef<number | null>(null);
   const postId = post.id;
 
   useEffect(() => {
-    setDraft(initialDraft(post));
+    const session = getEditSession(post);
+    setDraftSnapshot({ postId: post.id, draft: session.draft });
     setSaveState("saved");
     setError(null);
     setMenuOpen(false);
-    currentSlugRef.current = post.slug;
-    autoSlugAllowedRef.current = isPlaceholderSlug(post.slug);
-    skipSaveRef.current = true;
+    currentSlugRef.current = session.currentSlug;
+    autoSlugAllowedRef.current = session.autoSlugAllowed;
+    latestKeyRef.current = session.lastSavedKey;
+    lastSavedKeyRef.current = session.lastSavedKey;
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
   }, [post.id]);
 
   useEffect(() => {
@@ -143,6 +199,16 @@ export function PostEditLayer({
   useEffect(() => {
     autoGrow(bodyRef.current);
   }, [draft.body, post.type]);
+
+  useLayoutEffect(() => {
+    if (draftSnapshot.postId !== postId) return;
+    patchEditSession(postId, {
+      draft,
+      currentSlug: currentSlugRef.current,
+      autoSlugAllowed: autoSlugAllowedRef.current,
+      lastSavedKey: lastSavedKeyRef.current,
+    });
+  }, [draft, draftSnapshot.postId, postId]);
 
   useEffect(() => {
     return () => {
@@ -159,15 +225,16 @@ export function PostEditLayer({
       return;
     }
 
+    if (draftSnapshot.postId !== postId) return;
+
     const payload = payloadFor(postId, draft, currentSlugRef.current);
     const key = payloadKey(payload);
     latestKeyRef.current = key;
-
-    if (skipSaveRef.current) {
-      skipSaveRef.current = false;
-      lastSavedKeyRef.current = key;
-      return;
-    }
+    patchEditSession(postId, {
+      draft,
+      currentSlug: currentSlugRef.current,
+      autoSlugAllowed: autoSlugAllowedRef.current,
+    });
 
     if (key === lastSavedKeyRef.current) {
       setSaveState("saved");
@@ -191,20 +258,23 @@ export function PostEditLayer({
           .then((saved) => {
             if (latestKeyRef.current !== sentKey) return;
             lastSavedKeyRef.current = sentKey;
+            patchEditSession(postId, { lastSavedKey: sentKey });
             setSaveState("saved");
             setError(null);
 
             if (saved.slug !== currentSlugRef.current) {
               currentSlugRef.current = saved.slug;
-              window.history.replaceState(
-                window.history.state,
-                "",
-                `${postPath(blog.handle, saved.slug)}?edit=1`,
-              );
+              patchEditSession(postId, { currentSlug: saved.slug });
+              router.replace(`${postPath(blog.handle, saved.slug)}?edit=1`, {
+                scroll: false,
+              });
             }
 
             if (saved.slug !== sentSlug) {
-              setDraft((current) => ({ ...current, slug: saved.slug }));
+              setDraftSnapshot((current) => ({
+                ...current,
+                draft: { ...current.draft, slug: saved.slug },
+              }));
             }
           })
           .catch((saveError) => {
@@ -221,10 +291,13 @@ export function PostEditLayer({
         saveTimerRef.current = null;
       }
     };
-  }, [blog.handle, draft, postId, router]);
+  }, [blog.handle, draft, draftSnapshot.postId, postId, router]);
 
   const updateDraft = useCallback((patch: Partial<DraftState>) => {
-    setDraft((current) => ({ ...current, ...patch }));
+    setDraftSnapshot((current) => ({
+      ...current,
+      draft: { ...current.draft, ...patch },
+    }));
   }, []);
 
   const deriveSlugFromTitle = useCallback(
@@ -234,16 +307,18 @@ export function PostEditLayer({
       const title = titleValue.trim();
       if (!title || title.toLowerCase() === "untitled") return;
 
-      setDraft((current) => {
+      setDraftSnapshot((current) => {
         if (!autoSlugAllowedRef.current) return current;
-        if (!isPlaceholderSlug(current.slug)) {
+        if (!isPlaceholderSlug(current.draft.slug)) {
           autoSlugAllowedRef.current = false;
-          return current;
+          return { ...current };
         }
 
         const nextSlug = uniqueSlug(slugify(title, "post"), usedSlugs);
         autoSlugAllowedRef.current = false;
-        return nextSlug === current.slug ? current : { ...current, slug: nextSlug };
+        return nextSlug === current.draft.slug
+          ? { ...current }
+          : { ...current, draft: { ...current.draft, slug: nextSlug } };
       });
     },
     [usedSlugs],
