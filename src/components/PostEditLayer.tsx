@@ -12,21 +12,21 @@ import {
 import { useRouter } from "next/navigation";
 import { deleteEditablePostAction, saveEditablePostAction } from "@/app/editor/actions";
 import type { Blog, Post } from "@/lib/content";
+import type { AdjacentPublishedPosts } from "@/lib/store";
+import {
+  initialDraft,
+  isPlaceholderSlug,
+  payloadFor,
+  payloadKey,
+  postPath,
+  slugify,
+  uniqueSlug,
+} from "@/lib/post-edit-draft";
+import type { DraftState, SaveState } from "@/lib/post-edit-draft";
+import { PostActionBar } from "@/components/PostActionBar";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
-import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
-
-type DraftState = {
-  title: string;
-  kicker: string;
-  body: string;
-  status: Post["status"];
-  slug: string;
-  accent: string;
-};
-
-type SaveState = "saved" | "saving" | "error";
 
 type EditSession = {
   draft: DraftState;
@@ -42,52 +42,6 @@ type DraftSnapshot = {
 
 const editSessions = new Map<string, EditSession>();
 
-function initialDraft(post: Post): DraftState {
-  return {
-    title: post.title,
-    kicker: post.kicker ?? "",
-    body: post.body,
-    status: post.status,
-    slug: post.slug,
-    accent: post.accent ?? "",
-  };
-}
-
-function isHexColor(value: string | undefined): value is string {
-  return Boolean(value && /^#[0-9a-fA-F]{6}$/.test(value));
-}
-
-function slugify(value: string, fallback: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80)
-    .replace(/-+$/g, "");
-  return slug || fallback;
-}
-
-function isPlaceholderSlug(slug: string): boolean {
-  const normalized = slug.trim().toLowerCase();
-  return normalized === "" || normalized.startsWith("untitled-");
-}
-
-function uniqueSlug(base: string, usedSlugs: readonly string[]): string {
-  const used = new Set(usedSlugs);
-  if (!used.has(base)) return base;
-
-  for (let index = 2; index < 100; index += 1) {
-    const suffix = `-${index}`;
-    const root = base.slice(0, 80 - suffix.length).replace(/-+$/g, "");
-    const candidate = `${root || "post"}${suffix}`;
-    if (!used.has(candidate)) return candidate;
-  }
-
-  const suffix = `-${Date.now().toString(36)}`;
-  const root = base.slice(0, 80 - suffix.length).replace(/-+$/g, "");
-  return `${root || "post"}${suffix}`;
-}
-
 function autoGrow(node: HTMLTextAreaElement | null) {
   if (!node) return;
   node.style.height = "0px";
@@ -98,24 +52,61 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function postPath(handle: string, slug: string): string {
-  return `/t/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}`;
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.25 8.25l3 3L12.75 4.75"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
 }
 
-function payloadFor(id: string, draft: DraftState, fallbackSlug: string) {
-  return {
-    id,
-    title: draft.title,
-    kicker: draft.kicker,
-    body: draft.body,
-    status: draft.status,
-    slug: slugify(draft.slug, fallbackSlug),
-    accent: draft.accent || null,
-  };
+function ErrorIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 4.25v4.25M8 11.75h.01"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
 }
 
-function payloadKey(payload: ReturnType<typeof payloadFor>): string {
-  return JSON.stringify(payload);
+function SaveStatusPill({
+  saveState,
+  error,
+}: {
+  saveState: SaveState;
+  error: string | null;
+}) {
+  const text =
+    saveState === "saving" ? "Saving" : saveState === "error" ? error : "Saved";
+  return (
+    <div
+      className={`post-save-pill applecms ac-chrome is-${saveState}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="post-save-pill-icon" aria-hidden="true">
+        {saveState === "saving" ? (
+          <span className="post-save-spinner" />
+        ) : saveState === "error" ? (
+          <ErrorIcon />
+        ) : (
+          <CheckIcon />
+        )}
+      </span>
+      <span className="post-save-pill-text">{text || "Could not save"}</span>
+    </div>
+  );
 }
 
 function createEditSession(post: Post): EditSession {
@@ -151,10 +142,14 @@ function patchEditSession(id: string | undefined, patch: Partial<EditSession>) {
 export function PostEditLayer({
   blog,
   post,
+  adjacent,
+  homePath,
   usedSlugs = [],
 }: {
   blog: Blog;
   post: Post;
+  adjacent: AdjacentPublishedPosts;
+  homePath: string;
   usedSlugs?: string[];
 }) {
   const router = useRouter();
@@ -166,7 +161,6 @@ export function PostEditLayer({
   const draft = draftSnapshot.draft;
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [error, setError] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -175,6 +169,7 @@ export function PostEditLayer({
   const latestKeyRef = useRef(initialSession.lastSavedKey);
   const lastSavedKeyRef = useRef(initialSession.lastSavedKey);
   const saveTimerRef = useRef<number | null>(null);
+  const leavingEditRef = useRef(false);
   const postId = post.id;
 
   useEffect(() => {
@@ -182,11 +177,11 @@ export function PostEditLayer({
     setDraftSnapshot({ postId: post.id, draft: session.draft });
     setSaveState("saved");
     setError(null);
-    setMenuOpen(false);
     currentSlugRef.current = session.currentSlug;
     autoSlugAllowedRef.current = session.autoSlugAllowed;
     latestKeyRef.current = session.lastSavedKey;
     lastSavedKeyRef.current = session.lastSavedKey;
+    leavingEditRef.current = false;
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -217,12 +212,6 @@ export function PostEditLayer({
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, []);
-
-  useEffect(() => {
-    const closeMenu = () => setMenuOpen(false);
-    window.addEventListener(CLOSE_EDIT_MENU_EVENT, closeMenu);
-    return () => window.removeEventListener(CLOSE_EDIT_MENU_EVENT, closeMenu);
   }, []);
 
   useEffect(() => {
@@ -272,9 +261,11 @@ export function PostEditLayer({
             if (saved.slug !== currentSlugRef.current) {
               currentSlugRef.current = saved.slug;
               patchEditSession(postId, { currentSlug: saved.slug });
-              router.replace(`${postPath(blog.handle, saved.slug)}?edit=1`, {
-                scroll: false,
-              });
+              if (!leavingEditRef.current) {
+                router.replace(`${postPath(blog.handle, saved.slug)}?edit=1`, {
+                  scroll: false,
+                });
+              }
             }
 
             if (saved.slug !== sentSlug) {
@@ -306,6 +297,83 @@ export function PostEditLayer({
       draft: { ...current.draft, ...patch },
     }));
   }, []);
+
+  const saveDraftNow = useCallback(
+    async (
+      patch: Partial<DraftState> = {},
+      options: { exitEdit?: boolean; navigatePath?: string } = {},
+    ) => {
+      if (!postId) {
+        setSaveState("error");
+        setError("Post cannot be edited");
+        return;
+      }
+
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      const nextDraft = { ...draft, ...patch };
+      const leavingEdit = Boolean(options.exitEdit || options.navigatePath);
+      if (leavingEdit) leavingEditRef.current = true;
+      const payload = payloadFor(postId, nextDraft, currentSlugRef.current);
+      const key = payloadKey(payload);
+      latestKeyRef.current = key;
+      patchEditSession(postId, {
+        draft: nextDraft,
+        currentSlug: currentSlugRef.current,
+        autoSlugAllowed: autoSlugAllowedRef.current,
+      });
+
+      const navigateAfterSave = (slug: string) => {
+        if (options.navigatePath) {
+          router.push(options.navigatePath);
+          return;
+        }
+        if (options.exitEdit) {
+          router.replace(postPath(blog.handle, slug), { scroll: false });
+        }
+      };
+
+      if (key === lastSavedKeyRef.current) {
+        navigateAfterSave(currentSlugRef.current);
+        return;
+      }
+
+      setSaveState("saving");
+      setError(null);
+
+      try {
+        const sentSlug = payload.slug;
+        const previousSlug = currentSlugRef.current;
+        const saved = await saveEditablePostAction(payload);
+        lastSavedKeyRef.current = key;
+        patchEditSession(postId, { lastSavedKey: key });
+        setSaveState("saved");
+        setError(null);
+
+        if (saved.slug !== previousSlug) {
+          currentSlugRef.current = saved.slug;
+          patchEditSession(postId, { currentSlug: saved.slug });
+        }
+
+        if (saved.slug !== sentSlug) {
+          setDraftSnapshot((current) => ({
+            ...current,
+            draft: { ...current.draft, slug: saved.slug },
+          }));
+        }
+
+        navigateAfterSave(saved.slug);
+      } catch (saveError) {
+        if (leavingEdit) leavingEditRef.current = false;
+        setSaveState("error");
+        setError(errorMessage(saveError, "Could not save"));
+      }
+    },
+    [blog.handle, draft, postId, router],
+  );
 
   const deriveSlugFromTitle = useCallback(
     (titleValue: string) => {
@@ -388,15 +456,6 @@ export function PostEditLayer({
     ),
   };
 
-  const colorValue = isHexColor(draft.accent)
-    ? draft.accent
-    : isHexColor(blog.accent)
-      ? blog.accent
-      : "#0066cc";
-
-  const saveText =
-    saveState === "saving" ? "Saving" : saveState === "error" ? error : "Saved";
-
   const deletePost = useCallback(() => {
     if (!postId || deleting) return;
     if (!window.confirm("Delete this post?")) return;
@@ -418,116 +477,33 @@ export function PostEditLayer({
 
   return (
     <>
-      <div className="post-edit-toolbar applecms ac-chrome" aria-label="Post editor">
-        <span
-          className={`post-edit-save-state ac-toolbar-status is-${saveState}`}
-          role="status"
-          aria-live="polite"
-        >
-          {saveText}
-        </span>
-        <div className="post-visibility-toggle ac-segmented" aria-label="Visibility">
-          <button
-            type="button"
-            className={
-              draft.status === "published"
-                ? "ac-segmented-button ac-active"
-                : "ac-segmented-button"
-            }
-            aria-pressed={draft.status === "published"}
-            onClick={() => updateDraft({ status: "published" })}
-          >
-            Public
-          </button>
-          <button
-            type="button"
-            className={
-              draft.status === "draft"
-                ? "ac-segmented-button ac-active"
-                : "ac-segmented-button"
-            }
-            aria-pressed={draft.status === "draft"}
-            onClick={() => updateDraft({ status: "draft" })}
-          >
-            Unlisted
-          </button>
-        </div>
-        <div className="post-edit-menu-wrap">
-          <button
-            type="button"
-            className="post-edit-menu-button ac-icon-btn"
-            aria-label="Post settings"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            ...
-          </button>
-          {menuOpen && (
-            <div className="post-edit-menu" data-post-edit-menu-open="true">
-              <label className="post-edit-menu-field">
-                <span>Kicker</span>
-                <input
-                  className="post-edit-kicker-menu"
-                  value={draft.kicker}
-                  placeholder="Optional kicker"
-                  onChange={(event) =>
-                    updateDraft({ kicker: event.currentTarget.value })
-                  }
-                />
-              </label>
-              <label className="post-edit-menu-field">
-                <span>Accent color</span>
-                <span className="post-edit-color-row">
-                  <input
-                    className="post-edit-color"
-                    type="color"
-                    aria-label="Accent color"
-                    value={colorValue}
-                    onChange={(event) =>
-                      updateDraft({ accent: event.currentTarget.value })
-                    }
-                  />
-                  <button
-                    className="post-edit-inherit ac-btn ac-btn-plain"
-                    type="button"
-                    onClick={() => updateDraft({ accent: "" })}
-                  >
-                    Inherit
-                  </button>
-                </span>
-              </label>
-              <label className="post-edit-menu-field">
-                <span>Slug</span>
-                <input
-                  className="post-edit-slug"
-                  value={draft.slug}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  onChange={(event) => {
-                    autoSlugAllowedRef.current = false;
-                    updateDraft({ slug: slugify(event.currentTarget.value, "") });
-                  }}
-                  onBlur={() => {
-                    autoSlugAllowedRef.current = false;
-                    updateDraft({
-                      slug: slugify(draft.slug, currentSlugRef.current),
-                    });
-                  }}
-                />
-              </label>
-              <button
-                className="post-edit-delete ac-btn"
-                type="button"
-                disabled={!postId || deleting}
-                onClick={deletePost}
-              >
-                {deleting ? "Deleting" : "Delete post"}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <PostActionBar
+        mode="edit"
+        owner
+        blog={blog}
+        post={post}
+        adjacent={adjacent}
+        homePath={homePath}
+        postPath={postPath(blog.handle, currentSlugRef.current)}
+        draft={draft}
+        deleting={deleting}
+        onDelete={deletePost}
+        onDone={() => saveDraftNow({}, { exitEdit: true })}
+        onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
+        onSlugBlur={() => {
+          autoSlugAllowedRef.current = false;
+          updateDraft({ slug: slugify(draft.slug, currentSlugRef.current) });
+        }}
+        onSlugInput={(value) => {
+          autoSlugAllowedRef.current = false;
+          updateDraft({ slug: slugify(value, "") });
+        }}
+        onUpdateDraft={updateDraft}
+        onVisibilityChange={(status) =>
+          saveDraftNow({ status }, { exitEdit: true })
+        }
+      />
+      <SaveStatusPill saveState={saveState} error={error} />
 
       {post.type === "talk" ? (
         <TalkReader blog={blog} post={displayPost} slots={slots} />

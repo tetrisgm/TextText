@@ -1,7 +1,5 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { getCurrentUser } from "@/lib/session";
 import {
   getAdjacentPublishedPosts,
@@ -10,12 +8,12 @@ import {
   getPost,
   isBlogOwner,
 } from "@/lib/store";
-import type { AdjacentPublishedPosts } from "@/lib/store";
 import type { Post } from "@/lib/content";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
 import { ProjectReader } from "@/components/ProjectReader";
+import { PostActionBar } from "@/components/PostActionBar";
 import { PostEditLayer } from "@/components/PostEditLayer";
 import { PostShortcuts } from "@/components/PostShortcuts";
 
@@ -23,11 +21,6 @@ interface Props {
   params: Promise<{ handle: string; slug: string }>;
   searchParams?: Promise<{ edit?: string | string[] }>;
 }
-
-const VISIBILITY_LABELS = {
-  published: "Public",
-  draft: "Unlisted",
-} as const;
 
 function queryValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -53,107 +46,6 @@ function isEmptyOwnedPost(post: Post): boolean {
     !post.cover?.trim() &&
     !(post.gallery && post.gallery.length > 0) &&
     !post.videoUrl?.trim()
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M3 3L13 13M13 3L3 13"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function ChevronIcon({ dir }: { dir: "left" | "right" }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d={dir === "left" ? "M10 3L5 8L10 13" : "M6 3L11 8L6 13"}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function OwnerTopControls({
-  handle,
-  slug,
-  status,
-}: {
-  handle: string;
-  slug: string;
-  status: "draft" | "published";
-}) {
-  return (
-    <div className="post-owner-controls applecms ac-chrome" aria-label="Post controls">
-      <span className={`post-owner-visibility ac-toolbar-status is-${status}`}>
-        {VISIBILITY_LABELS[status]}
-      </span>
-      <Link
-        className="post-owner-edit ac-btn ac-btn-filled"
-        href={`${postPath(handle, slug)}?edit=1`}
-      >
-        Edit
-      </Link>
-    </div>
-  );
-}
-
-function PostTopActionBar({ children }: { children: ReactNode }) {
-  return <div className="post-top-action-bar">{children}</div>;
-}
-
-function PostDetailControls({
-  handle,
-  adjacent,
-  closeHref,
-  closeLabel = "Close",
-  showAdjacent = true,
-}: {
-  handle: string;
-  adjacent: AdjacentPublishedPosts;
-  closeHref: string;
-  closeLabel?: string;
-  showAdjacent?: boolean;
-}) {
-  return (
-    <nav className="post-detail-controls" aria-label="Post navigation">
-      {showAdjacent && adjacent.previous && (
-        <Link
-          className="post-detail-nav"
-          href={postPath(handle, adjacent.previous.slug)}
-          aria-label={`Previous post: ${postTitle(adjacent.previous.title)}`}
-        >
-          <span className="post-detail-control-icon">
-            <ChevronIcon dir="left" />
-          </span>
-        </Link>
-      )}
-      {showAdjacent && adjacent.next && (
-        <Link
-          className="post-detail-nav"
-          href={postPath(handle, adjacent.next.slug)}
-          aria-label={`Next post: ${postTitle(adjacent.next.title)}`}
-        >
-          <span className="post-detail-control-icon">
-            <ChevronIcon dir="right" />
-          </span>
-        </Link>
-      )}
-      <Link className="post-detail-close" href={closeHref} aria-label={closeLabel}>
-        <span className="post-detail-control-icon">
-          <CloseIcon />
-        </span>
-      </Link>
-    </nav>
   );
 }
 
@@ -218,15 +110,6 @@ export default async function PostPage({ params, searchParams }: Props) {
   if (editMode) {
     return (
       <>
-        <PostTopActionBar>
-          <PostDetailControls
-            handle={handle}
-            adjacent={adjacent}
-            closeHref={currentPostPath}
-            closeLabel="Done"
-            showAdjacent={false}
-          />
-        </PostTopActionBar>
         <PostShortcuts
           homePath={homePath}
           previousPath={
@@ -235,23 +118,28 @@ export default async function PostPage({ params, searchParams }: Props) {
           nextPath={adjacent.next ? postPath(handle, adjacent.next.slug) : undefined}
           owner={owner}
         />
-        <PostEditLayer blog={blog} post={post} usedSlugs={usedSlugs} />
+        <PostEditLayer
+          blog={blog}
+          post={post}
+          adjacent={adjacent}
+          homePath={homePath}
+          usedSlugs={usedSlugs}
+        />
       </>
     );
   }
 
   return (
     <>
-      <PostTopActionBar>
-        {owner && (
-          <OwnerTopControls handle={handle} slug={post.slug} status={post.status} />
-        )}
-        <PostDetailControls
-          handle={handle}
-          adjacent={adjacent}
-          closeHref={homePath}
-        />
-      </PostTopActionBar>
+      <PostActionBar
+        mode="read"
+        owner={owner}
+        blog={blog}
+        post={post}
+        adjacent={adjacent}
+        homePath={homePath}
+        postPath={currentPostPath}
+      />
       <PostShortcuts
         homePath={homePath}
         previousPath={
