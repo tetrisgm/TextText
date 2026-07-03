@@ -11,7 +11,7 @@
   gap: 0;
   width: min(100%, 1520px);
   margin: 0 auto;
-  padding: clamp(40px, 5vw, 72px) 24px clamp(64px, 7vw, 104px);
+  padding: 72px 24px clamp(64px, 7vw, 104px);
 }
 
 .project-split-left {
@@ -517,7 +517,7 @@
       "left";
     gap: 28px;
     width: min(100%, 820px);
-    padding: 24px 20px 64px;
+    padding: 72px 20px 64px;
   }
 
   .project-split-left {
@@ -545,7 +545,7 @@
 
 @media (max-width: 720px) {
   .project-split {
-    padding: 16px 16px 48px;
+    padding: 64px 16px 48px;
   }
 
   .project-split-right {

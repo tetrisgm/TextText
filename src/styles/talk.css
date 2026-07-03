@@ -5,7 +5,7 @@
 .reader.talk-detail {
   max-width: min(1840px, calc((100vh - 260px) * 16 / 9));
   margin: 0 auto;
-  padding: 48px 32px 64px;
+  padding: 72px 32px 64px;
 }
 
 .reader.talk-detail::before {
@@ -160,7 +160,7 @@
 
 @media (max-width: 720px) {
   .reader.talk-detail {
-    padding: 24px 20px 48px;
+    padding: 64px 20px 48px;
   }
 
   .talk-detail-stage {

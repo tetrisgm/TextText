@@ -15,6 +15,7 @@ import type { Blog, Post } from "@/lib/content";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
 
 type DraftState = {
   title: string;
@@ -216,6 +217,12 @@ export function PostEditLayer({
         window.clearTimeout(saveTimerRef.current);
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const closeMenu = () => setMenuOpen(false);
+    window.addEventListener(CLOSE_EDIT_MENU_EVENT, closeMenu);
+    return () => window.removeEventListener(CLOSE_EDIT_MENU_EVENT, closeMenu);
   }, []);
 
   useEffect(() => {
@@ -446,7 +453,7 @@ export function PostEditLayer({
             ...
           </button>
           {menuOpen && (
-            <div className="post-edit-menu">
+            <div className="post-edit-menu" data-post-edit-menu-open="true">
               <label className="post-edit-menu-field">
                 <span>Kicker</span>
                 <input

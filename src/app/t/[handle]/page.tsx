@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createPostAndRedirectAction } from "@/app/editor/actions";
 import { PostCard } from "@/components/PostCard";
+import { BlogHomeShortcuts } from "@/components/PostShortcuts";
 import { getCurrentUser } from "@/lib/session";
 import { getAllPosts, getBlog, getPosts, isBlogOwner } from "@/lib/store";
 import type { Blog, PostType } from "@/lib/content";
@@ -66,6 +67,7 @@ export default async function BlogHome({ params }: Props) {
 
   return (
     <main className="blog-home" style={blogStyle(blog)}>
+      {owner && <BlogHomeShortcuts owner={owner} />}
       <header className="blog-home-header">
         <div className="blog-home-heading">
           <div>

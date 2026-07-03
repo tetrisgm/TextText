@@ -140,6 +140,13 @@ export async function createPostAndRedirectAction(formData: FormData) {
   redirect(blogPath(handle, `/${encodeURIComponent(post.slug)}?edit=1`));
 }
 
+export async function createArticleDraftPathAction(): Promise<string> {
+  const handle = await editorHandle();
+  const post = await createDraft(handle, "article");
+  revalidateBlog(handle, [post.slug]);
+  return blogPath(handle, `/${encodeURIComponent(post.slug)}`);
+}
+
 export async function saveEditablePostAction(input: unknown): Promise<Post> {
   const handle = await editorHandle();
   const id = cleanPostId(

@@ -302,7 +302,7 @@ export async function createDraft(
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)
-    .values({ blogId, type, slug, title: "Untitled", body: "", status: "draft" })
+    .values({ blogId, type, slug, title: "", body: "", status: "draft" })
     .returning();
   return mapPost(inserted[0]);
 }
