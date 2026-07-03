@@ -1054,6 +1054,15 @@ export function EditorApp({
 
       <div className="ac-workspace">
         <aside className="ac-sidebar ac-chrome ac-editor-sidebar">
+          <Link
+            href={`/t/${encodeURIComponent(blog.handle)}`}
+            className="ac-blog-home-link"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="ac-blog-home-name">{blog.name}</span>
+            <span className="ac-blog-home-meta">View blog</span>
+          </Link>
           <div className="ac-list ac-editor-folder-list">
             {FOLDERS.map((entry) => (
               <button
@@ -1493,16 +1502,16 @@ export function EditorApp({
                 ))}
               <section
                 className={`ac-preview-pane ${showPreview ? "" : "ac-preview-pane-hidden"}`}
-                aria-label="Broadsheet preview"
+                aria-label="Live preview"
                 style={{ flexBasis: `${100 - splitPct}%` }}
               >
                 <div className="ac-preview-head">
-                  <span>Broadsheet preview</span>
+                  <span>Live preview</span>
                 </div>
                 <iframe
                   key={selectedId}
                   className="ac-preview-frame"
-                  title="Broadsheet preview"
+                  title="Live preview"
                   src={PREVIEW_SRC}
                 />
               </section>

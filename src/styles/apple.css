@@ -366,6 +366,39 @@
   width: 260px;
   flex: 0 0 260px;
 }
+.applecms .ac-blog-home-link {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 10px 10px 0;
+  padding: 10px 10px 11px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--ac-label) 5%, transparent);
+  text-decoration: none;
+}
+.applecms .ac-blog-home-link:hover {
+  border-color: var(--ac-separator);
+  background: color-mix(in srgb, var(--ac-label) 8%, transparent);
+}
+.applecms .ac-blog-home-link:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+.applecms .ac-blog-home-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-callout)/1.25 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-callout);
+}
+.applecms .ac-blog-home-meta {
+  color: var(--ac-accent);
+  font: 600 var(--ac-fs-caption1)/1.2 var(--ac-font-text);
+  letter-spacing: 0;
+}
 .applecms .ac-editor-folder-list { padding-top: 10px; }
 .applecms .ac-editor-avatar {
   display: flex;

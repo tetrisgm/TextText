@@ -115,6 +115,12 @@ export function youtubeEmbedUrl(url: string): string | undefined {
   return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
 }
 
+export function youtubeThumb(url: string | undefined): string | undefined {
+  const id = youtubeVideoId(url);
+  if (!id) return undefined;
+  return `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+}
+
 export function isVideoFile(url: string | undefined): boolean {
   return !!url && VIDEO_FILE_RE.test(url);
 }
