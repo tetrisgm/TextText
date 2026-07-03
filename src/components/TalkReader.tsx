@@ -12,7 +12,7 @@ import {
 
 type ReaderSlots = {
   title?: ReactNode;
-  kicker?: ReactNode;
+  excerpt?: ReactNode;
   body?: ReactNode;
 };
 
@@ -56,6 +56,7 @@ export function TalkReader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const excerpt = post.excerpt?.trim();
   const videoUrl = post.videoUrl?.trim();
   const embedSrc = videoUrl && isYouTube(videoUrl) ? youtubeEmbedUrl(videoUrl) : undefined;
   const fileVideoSrc =
@@ -113,6 +114,9 @@ export function TalkReader({
 
       <div className="talk-detail-meta">
         {slots?.title ?? <h1 className="talk-detail-title">{title}</h1>}
+        {slots?.excerpt ?? (
+          excerpt && <p className="reader-dek talk-detail-dek">{excerpt}</p>
+        )}
         {dateLine && <div className="talk-detail-date">{dateLine}</div>}
         {(slots?.body || post.body) && (
           <div className="talk-detail-desc reader-prose">

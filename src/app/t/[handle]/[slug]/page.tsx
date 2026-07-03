@@ -42,6 +42,7 @@ function isEmptyOwnedPost(post: Post): boolean {
   const title = post.title.trim().toLowerCase();
   return (
     (!title || title === "untitled") &&
+    !post.excerpt?.trim() &&
     !post.body.trim() &&
     !post.cover?.trim() &&
     !(post.gallery && post.gallery.length > 0) &&
@@ -58,7 +59,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!blog || !post) return {};
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
-    description: post.body.split(/\n{2,}/)[0]?.slice(0, 160),
+    description:
+      post.excerpt?.trim() || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
     alternates: {
       types: blogFeedAlternateTypes(handle, blog.name),
     },

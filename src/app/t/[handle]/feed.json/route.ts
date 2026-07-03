@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: Props) {
     language: "en",
     items: posts.map((post) => {
       const url = postUrl(baseUrl, post.slug);
-      const summary = plainTextSummary(post.body);
+      const summary = post.excerpt?.trim() || plainTextSummary(post.body);
 
       return {
         id: url,

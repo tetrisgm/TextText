@@ -89,7 +89,7 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function postDesc(post: Post): string {
-  return post.kicker?.trim() || plainTextExcerpt(post.body) || postMeta(post);
+  return post.excerpt?.trim() || plainTextExcerpt(post.body) || postMeta(post);
 }
 
 function videoMimeType(src: string): string {

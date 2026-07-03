@@ -2,7 +2,7 @@ import type { Post } from "@/lib/content";
 
 export type DraftState = {
   title: string;
-  kicker: string;
+  excerpt: string;
   body: string;
   status: Post["status"];
   slug: string;
@@ -14,7 +14,7 @@ export type SaveState = "saved" | "saving" | "error";
 export function initialDraft(post: Post): DraftState {
   return {
     title: post.title,
-    kicker: post.kicker ?? "",
+    excerpt: post.excerpt ?? "",
     body: post.body,
     status: post.status,
     slug: post.slug,
@@ -65,7 +65,7 @@ export function payloadFor(id: string, draft: DraftState, fallbackSlug: string) 
   return {
     id,
     title: draft.title,
-    kicker: draft.kicker,
+    excerpt: draft.excerpt,
     body: draft.body,
     status: draft.status,
     slug: slugify(draft.slug, fallbackSlug),

@@ -33,7 +33,7 @@ export async function GET(_request: Request, { params }: Props) {
       return {
         slug: post.slug,
         title: post.title,
-        kicker: post.kicker ?? null,
+        excerpt: post.excerpt ?? null,
         ...(date ? { date } : {}),
         canonical_url: postUrl(baseUrl, post.slug),
         markdown_url: postMarkdownUrl(baseUrl, post.slug),

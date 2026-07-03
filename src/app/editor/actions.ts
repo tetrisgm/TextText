@@ -97,7 +97,7 @@ function editableInput(input: unknown, fallbackSlug: string) {
   return {
     id: cleanPostId(values.id),
     title: cleanLine(values.title, "Title"),
-    kicker: cleanLine(values.kicker ?? "", "Kicker") || undefined,
+    excerpt: cleanLine(values.excerpt ?? "", "Excerpt") || undefined,
     body: cleanBody(values.body),
     status: cleanStatus(values.status),
     slug: cleanSlug(values.slug, fallbackSlug),
@@ -161,7 +161,7 @@ export async function saveEditablePostAction(input: unknown): Promise<Post> {
   const saved = await savePost(handle, {
     ...existing,
     title: patch.title,
-    kicker: patch.kicker,
+    excerpt: patch.excerpt,
     body: patch.body,
     status: patch.status,
     slug: patch.slug,

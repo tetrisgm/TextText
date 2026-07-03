@@ -68,6 +68,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.talk-detail-dek.reader-dek {
+  max-width: 760px;
+  margin: 8px 0 0;
+  text-align: left;
+  font-size: clamp(1.05rem, 0.98rem + 0.45vw, 1.25rem);
+}
+
 .talk-detail-desc.reader-prose {
   margin: 12px 0 0;
   color: var(--ink-2);

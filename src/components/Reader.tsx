@@ -9,14 +9,14 @@ import {
   monogram,
 } from "@/lib/content";
 
-// The Broadsheet reader: masthead (eyebrow, serif title, byline, framed cover)
+// The Broadsheet reader: masthead (serif title, dek, byline, framed cover)
 // and prose. Server component; markdown renders on the server. The post's
 // accent rides in as --post-accent and may be absent, in which case every
 // accent use in broadsheet.css degrades to neutral ink.
 
 type ReaderSlots = {
   title?: ReactNode;
-  kicker?: ReactNode;
+  excerpt?: ReactNode;
   body?: ReactNode;
 };
 
@@ -54,13 +54,14 @@ export function Reader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const excerpt = post.excerpt?.trim();
   return (
     <article className="reader" style={style}>
       <header className="reader-masthead">
-        {slots?.kicker ?? (
-          post.kicker && <div className="reader-eyebrow">{post.kicker}</div>
-        )}
         {slots?.title ?? <h1 className="reader-title">{title}</h1>}
+        {slots?.excerpt ?? (
+          excerpt && <p className="reader-dek">{excerpt}</p>
+        )}
         <Byline blog={blog} post={post} />
         {post.cover && (
           <figure className="reader-cover">

@@ -1,8 +1,8 @@
 /* ========================= Write: the Broadsheet reader =====================
    The published-blog reading experience, ported from ramine.net's article
-   reader. One display serif (Fraunces) sets the headline, eyebrow, section
-   marks, and end matter over the body face; the post's accent survives only as
-   hairline-weight structural signals (eyebrow rule, section tick, pull-quote
+   reader. One display serif (Fraunces) sets the headline, section marks, and
+   end matter over the body face; the post's accent survives only as
+   hairline-weight structural signals (section tick, pull-quote
    spine, cover frame, byline rule, lead-in dots, tinted selection).
 
    Contract:
@@ -46,26 +46,6 @@
   text-align: center;
 }
 
-/* Eyebrow: serif caps label + short centered rule (the publication mark). */
-.reader-eyebrow {
-  font-family: var(--display);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-weight: 600;
-  font-size: 12px;
-  margin-bottom: 14px;
-  color: color-mix(in srgb, var(--post-accent, var(--muted)) 60%, var(--ink));
-}
-.reader-eyebrow::after {
-  content: "";
-  display: block;
-  width: 28px;
-  height: 2px;
-  margin: 10px auto 0;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--post-accent, var(--hairline)) 70%, transparent);
-}
-
 .reader-title {
   font-family: var(--display);
   font-weight: 600;
@@ -74,6 +54,18 @@
   letter-spacing: -0.018em;
   text-wrap: balance;
   margin: 0 0 16px;
+}
+
+.reader-dek {
+  max-width: 700px;
+  margin: -2px auto 18px;
+  color: color-mix(in srgb, var(--muted) 84%, var(--ink));
+  font-size: clamp(20px, 2vw, 22px);
+  font-weight: 450;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-align: center;
+  text-wrap: balance;
 }
 
 /* ---------- byline (closed by a full-measure hairline) ---------- */
@@ -556,7 +548,6 @@
 .post-share-invite:focus-visible,
 .post-share-visibility-button:focus-visible,
 .post-edit-slug:focus-visible,
-.post-edit-kicker-menu:focus-visible,
 .post-edit-color:focus-visible,
 .post-share-link-field:focus-visible {
   outline: none;
@@ -713,8 +704,7 @@
 .post-edit-inherit {
   flex: 1 0 auto;
 }
-.post-edit-slug,
-.post-edit-kicker-menu {
+.post-edit-slug {
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--ac-separator);
@@ -732,13 +722,6 @@
 }
 .post-edit-slug {
   padding: 0 10px;
-}
-.post-edit-kicker-menu {
-  padding: 0 10px;
-}
-.post-edit-kicker-menu::placeholder {
-  color: var(--ac-placeholder);
-  opacity: 1;
 }
 .post-edit-delete {
   width: 100%;
@@ -814,7 +797,8 @@
 }
 
 /* ---------- edit-in-place fields ---------- */
-.edit-title-field {
+.edit-title-field,
+.edit-excerpt-field {
   display: block;
   width: 100%;
   min-height: 1.1em;
@@ -834,11 +818,13 @@
   appearance: none;
 }
 .edit-title-field::placeholder,
+.edit-excerpt-field::placeholder,
 .edit-body-field::placeholder {
   color: color-mix(in srgb, var(--muted) 62%, transparent);
   opacity: 1;
 }
 .edit-title-field:focus-visible,
+.edit-excerpt-field:focus-visible,
 .edit-body-field:focus-visible {
   outline: none;
 }
@@ -850,6 +836,12 @@
   letter-spacing: -0.018em;
   text-wrap: balance;
   margin: 0 0 16px;
+}
+.reader-dek.edit-excerpt-field {
+  color: color-mix(in srgb, var(--muted) 84%, var(--ink));
+  font-size: clamp(20px, 2vw, 22px);
+  line-height: 1.45;
+  margin: -2px auto 18px;
 }
 .project-title.edit-title-field {
   margin: 0 0 24px;

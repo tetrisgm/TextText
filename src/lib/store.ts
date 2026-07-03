@@ -44,7 +44,7 @@ function mapPost(row: PostRow): Post {
     type: row.type,
     slug: row.slug,
     title: row.title,
-    kicker: row.kicker ?? undefined,
+    excerpt: row.excerpt ?? undefined,
     // A null accent means "inherit the blog accent"; an empty string is an
     // explicit opt-out. Preserve the distinction (see postAccent in content.ts).
     accent: row.accent ?? undefined,
@@ -237,7 +237,7 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
   const base = {
     type: post.type,
     title: post.title,
-    kicker: post.kicker ?? null,
+    excerpt: post.excerpt ?? null,
     accent: post.accent ?? null,
     cover: post.cover ?? null,
     coverCaption: post.coverCaption ?? null,
@@ -302,7 +302,15 @@ export async function createDraft(
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)
-    .values({ blogId, type, slug, title: "", body: "", status: "draft" })
+    .values({
+      blogId,
+      type,
+      slug,
+      title: "",
+      excerpt: "",
+      body: "",
+      status: "draft",
+    })
     .returning();
   return mapPost(inserted[0]);
 }

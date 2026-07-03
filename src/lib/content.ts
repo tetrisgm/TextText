@@ -34,8 +34,8 @@ export interface Post {
   type: PostType;
   slug: string;
   title: string;
-  /** eyebrow label, e.g. "Case study" */
-  kicker?: string;
+  /** short dek/standfirst shown under the title */
+  excerpt?: string;
   /** hex accent; empty string opts out of the blog accent */
   accent?: string;
   cover?: string;

@@ -42,7 +42,7 @@ export default async function Image({ params }: Props) {
 function renderImage(blog: Blog, post: Post) {
   const titleSize = displaySize(post.title);
   const ruleColor = hairlineColor(postAccent(blog, post));
-  const meta = [post.kicker, formatArticleDate(post.date)]
+  const meta = [post.excerpt, formatArticleDate(post.date)]
     .filter(Boolean)
     .join(" / ");
 

@@ -490,17 +490,6 @@ export function PostActionBar(props: Props) {
                   >
                     <div className="post-popover-heading">Settings</div>
                     <label className="post-edit-menu-field">
-                      <span>Kicker</span>
-                      <input
-                        className="post-edit-kicker-menu"
-                        value={activeDraft.kicker}
-                        placeholder="Optional kicker"
-                        onChange={(event) =>
-                          updateDraft({ kicker: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label className="post-edit-menu-field">
                       <span>Accent color</span>
                       <span className="post-edit-color-row">
                         <input

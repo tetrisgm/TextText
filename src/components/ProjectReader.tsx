@@ -7,7 +7,7 @@ import { postAccent } from "@/lib/content";
 
 type ReaderSlots = {
   title?: ReactNode;
-  kicker?: ReactNode;
+  excerpt?: ReactNode;
   body?: ReactNode;
 };
 
@@ -51,18 +51,19 @@ export function ProjectReader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const excerpt = post.excerpt?.trim();
 
   return (
     <article className="project-split" style={style}>
       <section className="project-split-left" aria-labelledby="project-title">
         <div className="project-split-inner">
-          {slots?.kicker ?? (
-            post.kicker && <div className="project-kicker">{post.kicker}</div>
-          )}
           {slots?.title ?? (
             <h1 className="project-title" id="project-title">
               {title}
             </h1>
+          )}
+          {slots?.excerpt ?? (
+            excerpt && <p className="reader-dek project-dek">{excerpt}</p>
           )}
           {(slots?.body || post.body) && (
             <div className="reader-prose project-prose">

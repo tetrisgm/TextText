@@ -49,7 +49,7 @@ async function main() {
         type: p.type,
         slug: p.slug,
         title: p.title,
-        kicker: p.kicker ?? null,
+        excerpt: p.excerpt ?? null,
         // preserve the accent tri-state: undefined -> null (inherit), "" stays
         // "" (explicit opt-out), a hex stays a hex.
         accent: p.accent ?? null,

@@ -37,7 +37,7 @@ function renderAtom(
     .map((post) => {
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toISOString();
-      const summary = plainTextSummary(post.body);
+      const summary = post.excerpt?.trim() || plainTextSummary(post.body);
 
       return [
         "  <entry>",

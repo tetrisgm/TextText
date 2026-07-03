@@ -61,7 +61,9 @@ export const posts = pgTable(
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     title: text("title").notNull(),
-    /** eyebrow label */
+    /** short dek/standfirst */
+    excerpt: text("excerpt"),
+    /** legacy unused eyebrow label */
     kicker: text("kicker"),
     /** hex accent override; falls back to the blog accent */
     accent: text("accent"),

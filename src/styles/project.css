@@ -37,29 +37,6 @@
   padding-left: clamp(32px, 4vw, 64px);
 }
 
-.project-kicker {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  margin-bottom: 16px;
-  padding: 5px 10px 4px;
-  border: 1px solid
-    color-mix(in srgb, var(--post-accent, var(--hairline)) 34%, var(--hairline));
-  border-radius: 999px;
-  background: color-mix(
-    in srgb,
-    var(--post-accent, var(--bg-soft)) 8%,
-    var(--bg-soft)
-  );
-  color: color-mix(in srgb, var(--post-accent, var(--muted)) 58%, var(--ink));
-  font-family: var(--display);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
 .project-title {
   margin: 0 0 24px;
   color: var(--ink);
@@ -69,6 +46,12 @@
   letter-spacing: 0;
   line-height: 1.08;
   text-wrap: balance;
+}
+
+.project-dek.reader-dek {
+  max-width: none;
+  margin: -10px 0 24px;
+  text-align: left;
 }
 
 .project-prose {

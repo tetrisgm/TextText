@@ -24,7 +24,6 @@ export default async function Home() {
       style={{ ["--post-accent" as string]: "#065ec6" }}
     >
       <header className="reader-masthead">
-        <div className="reader-eyebrow">Write</div>
         <h1 className="reader-title">Publish work that reads beautifully</h1>
       </header>
       <div className="reader-prose">

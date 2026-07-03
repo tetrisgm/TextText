@@ -36,7 +36,7 @@ function renderRss(
     .map((post) => {
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toUTCString();
-      const summary = plainTextSummary(post.body);
+      const summary = post.excerpt?.trim() || plainTextSummary(post.body);
 
       return [
         "    <item>",

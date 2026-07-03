@@ -1144,7 +1144,7 @@ export function EditorApp({
                     <input
                       className="ac-document-title-input"
                       value={selectedPost.title}
-                      placeholder="Untitled"
+                      placeholder="Give it a title"
                       onChange={(event) =>
                         updateSelectedTitle(event.currentTarget.value)
                       }
@@ -1260,13 +1260,13 @@ export function EditorApp({
 
                   <div className="ac-form-grid ac-details-grid">
                     <label className="ac-field-label">
-                      <span className="ac-label-text">Kicker</span>
+                      <span className="ac-label-text">Excerpt</span>
                       <input
                         className="ac-field"
-                        value={selectedPost.kicker ?? ""}
+                        value={selectedPost.excerpt ?? ""}
                         onChange={(event) =>
                           updateSelected({
-                            kicker: optionalValue(event.currentTarget.value),
+                            excerpt: optionalValue(event.currentTarget.value),
                           })
                         }
                       />

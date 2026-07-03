@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: Props) {
 
 function renderPostMarkdown(post: Post, baseUrl: string): string {
   const lines = [`# ${oneLine(post.title)}`, ""];
-  if (post.kicker) lines.push(`Kicker: ${oneLine(post.kicker)}`);
+  if (post.excerpt) lines.push(`Excerpt: ${oneLine(post.excerpt)}`);
   const date = postIsoDate(post);
   if (date) lines.push(`Date: ${date}`);
   lines.push(`Canonical: ${postUrl(baseUrl, post.slug)}`);

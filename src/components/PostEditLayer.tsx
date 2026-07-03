@@ -139,6 +139,19 @@ function patchEditSession(id: string | undefined, patch: Partial<EditSession>) {
   editSessions.set(id, { ...existing, ...patch });
 }
 
+function isEmptyNewPost(post: Post): boolean {
+  return (
+    post.status === "draft" &&
+    isPlaceholderSlug(post.slug) &&
+    !post.title.trim() &&
+    !post.excerpt?.trim() &&
+    !post.body.trim() &&
+    !post.cover?.trim() &&
+    !(post.gallery && post.gallery.length > 0) &&
+    !post.videoUrl?.trim()
+  );
+}
+
 export function PostEditLayer({
   blog,
   post,
@@ -163,6 +176,7 @@ export function PostEditLayer({
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
+  const excerptRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const currentSlugRef = useRef(initialSession.currentSlug);
   const autoSlugAllowedRef = useRef(initialSession.autoSlugAllowed);
@@ -193,8 +207,20 @@ export function PostEditLayer({
   }, [draft.title, post.type]);
 
   useEffect(() => {
+    autoGrow(excerptRef.current);
+  }, [draft.excerpt, post.type]);
+
+  useEffect(() => {
     autoGrow(bodyRef.current);
   }, [draft.body, post.type]);
+
+  useEffect(() => {
+    if (!isEmptyNewPost(post)) return;
+    const title = titleRef.current;
+    if (!title) return;
+    title.focus({ preventScroll: true });
+    title.setSelectionRange(title.value.length, title.value.length);
+  }, [post.id, post.slug, post]);
 
   useLayoutEffect(() => {
     if (draftSnapshot.postId !== postId) return;
@@ -407,7 +433,7 @@ export function PostEditLayer({
     () => ({
       ...post,
       title: draft.title,
-      kicker: draft.kicker || undefined,
+      excerpt: draft.excerpt || undefined,
       body: draft.body,
       status: draft.status,
       slug: draft.slug || post.slug,
@@ -422,6 +448,12 @@ export function PostEditLayer({
       : post.type === "talk"
         ? "talk-detail-title edit-title-field"
         : "reader-title edit-title-field";
+  const excerptClass =
+    post.type === "project"
+      ? "reader-dek project-dek edit-excerpt-field"
+      : post.type === "talk"
+        ? "reader-dek talk-detail-dek edit-excerpt-field"
+        : "reader-dek edit-excerpt-field";
 
   const slots = {
     title: (
@@ -430,7 +462,7 @@ export function PostEditLayer({
         id={post.type === "project" ? "project-title" : undefined}
         className={titleClass}
         aria-label="Title"
-        placeholder="Untitled"
+        placeholder="Give it a title"
         rows={1}
         value={draft.title}
         onChange={(event) => updateDraft({ title: event.currentTarget.value })}
@@ -442,6 +474,17 @@ export function PostEditLayer({
             bodyRef.current?.focus();
           }
         }}
+      />
+    ),
+    excerpt: (
+      <textarea
+        ref={excerptRef}
+        className={excerptClass}
+        aria-label="Excerpt"
+        placeholder="Add a short description"
+        rows={1}
+        value={draft.excerpt}
+        onChange={(event) => updateDraft({ excerpt: event.currentTarget.value })}
       />
     ),
     body: (
