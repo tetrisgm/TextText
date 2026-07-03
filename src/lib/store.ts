@@ -151,6 +151,24 @@ async function blogIdFor(handle: string): Promise<string> {
   return id;
 }
 
+function isPostsBlogSlugConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as {
+    code?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+    detail?: unknown;
+  };
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const constraint =
+    typeof candidate.constraint === "string" ? candidate.constraint : "";
+  const message =
+    typeof candidate.message === "string" ? candidate.message : "";
+  const detail = typeof candidate.detail === "string" ? candidate.detail : "";
+  if (constraint === "posts_blog_slug_idx") return true;
+  return code === "23505" && (message + detail).includes("posts_blog_slug_idx");
+}
+
 // Persist the editor's draft. Requires a database (the demo seed is read only).
 // Updates the row by id, scoped to this blog so a stale or foreign id can never
 // touch another tenant, so a slug edit renames in place; otherwise inserts,
@@ -180,31 +198,36 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
   // A draft omits published_at from the update so an existing publish date lives.
   const set = publishedAt === undefined ? base : { ...base, publishedAt };
 
-  if (post.id) {
-    const updated = await db
-      .update(posts)
-      .set({ ...set, slug: post.slug })
-      .where(and(eq(posts.id, post.id), eq(posts.blogId, blogId)))
-      .returning();
-    if (updated[0]) return mapPost(updated[0]);
-  }
+  try {
+    if (post.id) {
+      const updated = await db
+        .update(posts)
+        .set({ ...set, slug: post.slug })
+        .where(and(eq(posts.id, post.id), eq(posts.blogId, blogId)))
+        .returning();
+      if (updated[0]) return mapPost(updated[0]);
+    }
 
-  const inserted = await db
-    .insert(posts)
-    .values({
-      blogId,
-      slug: post.slug,
-      ...base,
-      publishedAt:
-        post.status === "published"
-          ? post.date
-            ? new Date(post.date)
-            : new Date()
-          : null,
-    })
-    .onConflictDoUpdate({ target: [posts.blogId, posts.slug], set })
-    .returning();
-  return mapPost(inserted[0]);
+    const inserted = await db
+      .insert(posts)
+      .values({
+        blogId,
+        slug: post.slug,
+        ...base,
+        publishedAt:
+          post.status === "published"
+            ? post.date
+              ? new Date(post.date)
+              : new Date()
+            : null,
+      })
+      .onConflictDoUpdate({ target: [posts.blogId, posts.slug], set })
+      .returning();
+    return mapPost(inserted[0]);
+  } catch (error) {
+    if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
+    throw error;
+  }
 }
 
 // Create an empty draft and return it (with its new id), for the editor's

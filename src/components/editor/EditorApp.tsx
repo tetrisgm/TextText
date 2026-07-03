@@ -17,6 +17,7 @@ type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
 type EditorUser = { name?: string; email?: string };
 type BodySelection = { start: number; end: number };
+type SaveIntent = "save" | "publish" | "unpublish";
 type BlogSettingsFields = {
   name: string;
   handle: string;
@@ -105,6 +106,46 @@ function optionalValue(value: string) {
   return value === "" ? undefined : value;
 }
 
+function slugify(value: string, fallback = "post") {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || fallback;
+}
+
+function isPlaceholderSlug(value: string | undefined) {
+  const slug = value?.trim().toLowerCase() ?? "";
+  return slug === "" || slug.startsWith("untitled-");
+}
+
+function canAutoSlugPost(
+  id: string,
+  post: Post | undefined,
+  manualSlugById: Record<string, boolean>,
+) {
+  return Boolean(
+    id &&
+      post &&
+      post.status === "draft" &&
+      !manualSlugById[id] &&
+      isPlaceholderSlug(post.slug),
+  );
+}
+
+function postSaveErrorMessage(error: unknown) {
+  const message = errorMessage(error, "Post could not be saved");
+  const haystack = message.toLowerCase();
+  if (
+    haystack.includes("posts_blog_slug_idx") ||
+    haystack.includes("duplicate key") ||
+    (haystack.includes("unique") && haystack.includes("slug"))
+  ) {
+    return "That URL is already used";
+  }
+  return message;
+}
+
 function blogSettingsFields(blog: Blog): BlogSettingsFields {
   return {
     name: blog.name,
@@ -157,6 +198,10 @@ export function EditorApp({
     const first = ids[0];
     return (first ? drafts[first]?.accent : undefined) ?? "";
   });
+  const [slugAutoForSelected, setSlugAutoForSelected] = useState(() => {
+    const first = ids[0];
+    return Boolean(first && drafts[first] && isPlaceholderSlug(drafts[first].slug));
+  });
   const [folder, setFolder] = useState<FolderId>("all");
   const [showPreview, setShowPreview] = useState(false);
   const [previewMounted, setPreviewMounted] = useState(false);
@@ -165,8 +210,10 @@ export function EditorApp({
   // Below this width apple.css stacks the panes and disables the split, so the
   // handle becomes a plain divider rather than an operable separator.
   const [stacked, setStacked] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saveIntent, setSaveIntent] = useState<SaveIntent | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [bodyImageUploading, setBodyImageUploading] = useState(false);
@@ -186,6 +233,10 @@ export function EditorApp({
   const pendingBodyCaretRef = useRef<number | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const draftRef = useRef<{ blog: Blog; post: Post } | null>(null);
+  const manualSlugByIdRef = useRef<Record<string, boolean>>({});
+  const copiedTimerRef = useRef<number | null>(null);
+  const savedTimerRef = useRef<number | null>(null);
+  const saving = saveIntent !== null;
 
   const items = useMemo(
     () =>
@@ -203,8 +254,24 @@ export function EditorApp({
     () => (selectedPost ? { blog, post: selectedPost } : null),
     [blog, selectedPost],
   );
+  const livePostPath = useMemo(() => {
+    const slug = selectedPost?.slug.trim();
+    if (!dbEnabled || selectedPost?.status !== "published" || !slug) return "";
+    return `/t/${encodeURIComponent(blog.handle)}/${encodeURIComponent(slug)}`;
+  }, [blog.handle, dbEnabled, selectedPost?.slug, selectedPost?.status]);
   const signedIn = Boolean(user);
   const canEditSettings = signedIn && dbEnabled;
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+      if (savedTimerRef.current !== null) {
+        window.clearTimeout(savedTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     draftRef.current = selectedDraft;
@@ -238,6 +305,7 @@ export function EditorApp({
     previewWindowRef.current = null;
     bodySelectionRef.current = null;
     pendingBodyCaretRef.current = null;
+    setLinkCopied(false);
   }, [selectedId]);
 
   useEffect(() => {
@@ -270,6 +338,11 @@ export function EditorApp({
     (id: string) => {
       setSelectedId(id);
       setAccentText(drafts[id]?.accent ?? "");
+      setSlugAutoForSelected(
+        canAutoSlugPost(id, drafts[id], manualSlugByIdRef.current),
+      );
+      setPostError(null);
+      setLinkCopied(false);
     },
     [drafts],
   );
@@ -277,6 +350,7 @@ export function EditorApp({
   const updateSelected = useCallback(
     (patch: Partial<Post>) => {
       if (!selectedId) return;
+      setPostError(null);
       setDrafts((current) => {
         const currentPost = current[selectedId];
         if (!currentPost) return current;
@@ -287,6 +361,27 @@ export function EditorApp({
       });
     },
     [selectedId],
+  );
+
+  const updateSelectedTitle = useCallback(
+    (title: string) => {
+      updateSelected({
+        title,
+        ...(slugAutoForSelected && selectedPost?.status === "draft"
+          ? { slug: slugify(title) }
+          : {}),
+      });
+    },
+    [selectedPost?.status, slugAutoForSelected, updateSelected],
+  );
+
+  const updateSelectedSlug = useCallback(
+    (slug: string) => {
+      if (selectedId) manualSlugByIdRef.current[selectedId] = true;
+      setSlugAutoForSelected(false);
+      updateSelected({ slug: slugify(slug, "") });
+    },
+    [selectedId, updateSelected],
   );
 
   const openSettings = useCallback(() => {
@@ -358,20 +453,91 @@ export function EditorApp({
     };
   }, []);
 
+  const postForPersist = useCallback(
+    (post: Post, status: Post["status"]) => {
+      const shouldAutoSlug =
+        post.status === "draft" &&
+        selectedId &&
+        !manualSlugByIdRef.current[selectedId] &&
+        (slugAutoForSelected || isPlaceholderSlug(post.slug));
+
+      return {
+        ...post,
+        status,
+        slug: shouldAutoSlug ? slugify(post.title) : post.slug.trim() || "post",
+      };
+    },
+    [selectedId, slugAutoForSelected],
+  );
+
+  const persistSelectedPost = useCallback(
+    async (post: Post, intent: SaveIntent) => {
+      if (!dbEnabled || !selectedId) return;
+      setSaveIntent(intent);
+      setPostError(null);
+      setLinkCopied(false);
+      try {
+        const saved = await savePostAction(post);
+        setDrafts((current) =>
+          current[selectedId] ? { ...current, [selectedId]: saved } : current,
+        );
+        if (saved.status === "published" && !isPlaceholderSlug(saved.slug)) {
+          setSlugAutoForSelected(false);
+        }
+        if (intent === "save") {
+          setJustSaved(true);
+          if (savedTimerRef.current !== null) {
+            window.clearTimeout(savedTimerRef.current);
+          }
+          savedTimerRef.current = window.setTimeout(() => {
+            setJustSaved(false);
+            savedTimerRef.current = null;
+          }, 1500);
+        }
+      } catch (error) {
+        setPostError(postSaveErrorMessage(error));
+      } finally {
+        setSaveIntent(null);
+      }
+    },
+    [dbEnabled, selectedId],
+  );
+
   const onSave = useCallback(async () => {
-    if (!dbEnabled || !selectedId || !selectedPost) return;
-    setSaving(true);
+    if (!selectedPost) return;
+    await persistSelectedPost(
+      postForPersist(selectedPost, selectedPost.status),
+      "save",
+    );
+  }, [persistSelectedPost, postForPersist, selectedPost]);
+
+  const onPublishToggle = useCallback(async () => {
+    if (!selectedPost) return;
+    const status: Post["status"] =
+      selectedPost.status === "published" ? "draft" : "published";
+    await persistSelectedPost(
+      postForPersist(selectedPost, status),
+      status === "published" ? "publish" : "unpublish",
+    );
+  }, [persistSelectedPost, postForPersist, selectedPost]);
+
+  const onCopyLiveLink = useCallback(async () => {
+    if (!dbEnabled || !livePostPath) return;
     try {
-      const saved = await savePostAction(selectedPost);
-      setDrafts((current) =>
-        current[selectedId] ? { ...current, [selectedId]: saved } : current,
-      );
-      setJustSaved(true);
-      window.setTimeout(() => setJustSaved(false), 1500);
-    } finally {
-      setSaving(false);
+      await navigator.clipboard.writeText(`${window.location.origin}${livePostPath}`);
+      setPostError(null);
+      setLinkCopied(true);
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+      copiedTimerRef.current = window.setTimeout(() => {
+        setLinkCopied(false);
+        copiedTimerRef.current = null;
+      }, 1500);
+    } catch {
+      setPostError("Could not copy link");
     }
-  }, [dbEnabled, selectedId, selectedPost]);
+  }, [dbEnabled, livePostPath]);
 
   const onNewDraft = useCallback(async () => {
     if (!dbEnabled) return;
@@ -382,6 +548,10 @@ export function EditorApp({
     setFolder("all");
     setSelectedId(id);
     setAccentText(created.accent ?? "");
+    manualSlugByIdRef.current[id] = false;
+    setSlugAutoForSelected(canAutoSlugPost(id, created, manualSlugByIdRef.current));
+    setPostError(null);
+    setLinkCopied(false);
   }, [dbEnabled]);
 
   const onUploadCover = useCallback(
@@ -526,14 +696,40 @@ export function EditorApp({
             New draft
           </button>
         )}
+        {selectedPost && (
+          <span
+            className={`ac-toolbar-status ${
+              selectedPost.status === "published" ? "ac-toolbar-status-live" : ""
+            }`}
+          >
+            {statusLabel(selectedPost.status)}
+          </span>
+        )}
         <button
-          className="ac-btn ac-btn-filled"
+          className={`ac-btn ${
+            selectedPost?.status === "published" ? "ac-btn-gray" : "ac-btn-filled"
+          }`}
+          type="button"
+          disabled={!dbEnabled || !selectedPost || saving}
+          title={dbEnabled ? undefined : "Connect a database to publish"}
+          onClick={onPublishToggle}
+        >
+          {selectedPost?.status === "published"
+            ? saveIntent === "unpublish"
+              ? "Unpublishing"
+              : "Unpublish"
+            : saveIntent === "publish"
+              ? "Publishing"
+              : "Publish"}
+        </button>
+        <button
+          className="ac-btn ac-btn-gray"
           type="button"
           disabled={!dbEnabled || !selectedPost || saving}
           title={dbEnabled ? undefined : "Connect a database to save"}
           onClick={onSave}
         >
-          {saving ? "Saving" : justSaved ? "Saved" : "Save"}
+          {saveIntent === "save" ? "Saving" : justSaved ? "Saved" : "Save"}
         </button>
       </div>
 
@@ -612,13 +808,47 @@ export function EditorApp({
             {selectedPost ? (
               <>
                 <div className="ac-editor-pane-head">
-                  <div>
+                  <div className="ac-editor-title-block">
                     <div className="ac-editor-eyebrow">{statusLabel(selectedPost.status)}</div>
                     <h1 className="ac-editor-heading">
                       {selectedPost.title || "Untitled"}
                     </h1>
+                    {postError && (
+                      <span className="ac-field-error ac-editor-error" role="alert">
+                        {postError}
+                      </span>
+                    )}
                   </div>
-                  <span className="ac-status-pill">{selectedPost.slug || "no-slug"}</span>
+                  <div className="ac-editor-head-actions">
+                    <span className="ac-status-pill">
+                      {selectedPost.slug || "no-slug"}
+                    </span>
+                    {livePostPath && (
+                      <div className="ac-live-link" aria-label="Published post link">
+                        <span className="ac-live-url">{livePostPath}</span>
+                        <a
+                          className="ac-btn ac-btn-gray"
+                          href={livePostPath}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View
+                        </a>
+                        <button
+                          className="ac-btn ac-btn-gray"
+                          type="button"
+                          onClick={onCopyLiveLink}
+                        >
+                          Copy link
+                        </button>
+                        {linkCopied && (
+                          <span className="ac-copy-note" role="status">
+                            Copied
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <form
@@ -632,7 +862,7 @@ export function EditorApp({
                         className="ac-field"
                         value={selectedPost.title}
                         onChange={(event) =>
-                          updateSelected({ title: event.currentTarget.value })
+                          updateSelectedTitle(event.currentTarget.value)
                         }
                       />
                     </label>
@@ -669,26 +899,13 @@ export function EditorApp({
                       <input
                         className="ac-field"
                         value={selectedPost.slug}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         onChange={(event) =>
-                          updateSelected({ slug: event.currentTarget.value })
+                          updateSelectedSlug(event.currentTarget.value)
                         }
                       />
-                    </label>
-
-                    <label className="ac-field-label">
-                      <span className="ac-label-text">Status</span>
-                      <select
-                        className="ac-field"
-                        value={selectedPost.status}
-                        onChange={(event) =>
-                          updateSelected({
-                            status: event.currentTarget.value as Post["status"],
-                          })
-                        }
-                      >
-                        <option value="draft">Draft</option>
-                        <option value="published">Published</option>
-                      </select>
                     </label>
 
                     <div className="ac-accent-row">
