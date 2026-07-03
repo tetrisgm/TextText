@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "../styles/tokens.css";
 import "../styles/broadsheet.css";
+import "../styles/cards.css";
 import "../styles/talk.css";
 import "../styles/project.css";
 import "../styles/apple.css";

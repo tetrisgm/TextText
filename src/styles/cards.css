@@ -1,0 +1,421 @@
+/* ---------- ramine SpatialCard cards ---------- */
+.tv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 6px;
+  margin-inline: -6px;
+}
+
+.tvcard {
+  --rx: 0deg;
+  --ry: 0deg;
+  --mx: 50%;
+  --my: 16%;
+  --lift: 0px;
+  --scale: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  padding: 6px;
+  border-radius: 24px;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  perspective: 2600px;
+  transition:
+    scale 0.26s cubic-bezier(0.2, 0.7, 0.2, 1),
+    translate 0.26s cubic-bezier(0.2, 0.7, 0.2, 1),
+    z-index 0s 0.26s;
+}
+
+.tvcard-inner {
+  position: relative;
+  display: block;
+  border-radius: 18px;
+  background: transparent;
+  will-change: transform;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transition: none;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 16px 36px rgba(0, 0, 0, 0.16);
+}
+
+.tvcard-inner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.1),
+    0 44px 80px rgba(0, 0, 0, 0.24);
+  opacity: 0;
+  transition: opacity 0.26s var(--ease);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.tvcard--project .tvcard-inner {
+  box-shadow:
+    0 2px 7px rgba(0, 0, 0, 0.1),
+    0 16px 38px rgba(0, 0, 0, 0.2);
+}
+
+.tvcard--project .tvcard-inner::after {
+  box-shadow:
+    0 11px 24px rgba(0, 0, 0, 0.12),
+    0 46px 82px rgba(0, 0, 0, 0.3);
+}
+
+@media (hover: hover) {
+  .tvcard.is-hover {
+    scale: 1.12;
+    translate: 0 -12px;
+    z-index: 1;
+    transition:
+      scale 0.26s cubic-bezier(0.2, 0.7, 0.2, 1),
+      translate 0.26s cubic-bezier(0.2, 0.7, 0.2, 1),
+      z-index 0s;
+  }
+
+  .tvcard.is-hover .tvcard-inner::after {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .tvcard-inner {
+    transition: transform 0.16s ease-out;
+  }
+
+  .tvcard[data-pressing] .tvcard-inner {
+    transition: none;
+  }
+
+  .tvcard {
+    touch-action: manipulation;
+  }
+}
+
+.tvcard-tilt {
+  position: relative;
+  display: block;
+}
+
+.tvcard-media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--bg-soft);
+}
+
+.tvcard--project .tvcard-media {
+  aspect-ratio: 4 / 5;
+}
+
+.tvcard--article .tvcard-media,
+.tvcard--talk .tvcard-media,
+.tvcard--writing .tvcard-media,
+.tvcard--blog .tvcard-media {
+  aspect-ratio: 4 / 3;
+  border-radius: 18px 18px 0 0;
+  transform: translateZ(0);
+}
+
+.tvcard-cover,
+.tvcard-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+video.tvcard-cover {
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+}
+
+video.tvcard-cover[data-ready="true"] {
+  opacity: 1;
+}
+
+.tvcard-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    148deg,
+    rgba(255, 255, 255, 0.18),
+    rgba(255, 255, 255, 0) 42%
+  );
+  z-index: 1;
+}
+
+.tvcard-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  text-align: center;
+  color: var(--ink);
+  background:
+    radial-gradient(
+      78% 90% at 20% 12%,
+      color-mix(in srgb, var(--post-accent, var(--ink)) 18%, transparent),
+      transparent 62%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--post-accent, var(--bg-soft-2)) 9%, var(--bg-soft-2)),
+      var(--bg-soft)
+    );
+}
+
+.tvcard--project .tvcard-fallback {
+  color: #fff;
+  background:
+    radial-gradient(
+      80% 88% at 22% 12%,
+      color-mix(in srgb, var(--post-accent, #fff) 34%, transparent),
+      transparent 62%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--post-accent, #1d1d1f) 44%, #111),
+      #070707
+    );
+}
+
+.tvcard-fallback span {
+  max-width: 92%;
+  font-family: var(--font-display, "Fraunces", Georgia, serif);
+  font-size: clamp(24px, 3vw, 38px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.tvcard-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    transparent 38%,
+    rgba(0, 0, 0, 0.55) 72%,
+    rgba(0, 0, 0, 0.9)
+  );
+}
+
+.tvcard-sheen {
+  display: none;
+}
+
+.tvcard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tvcard--article .tvcard-body,
+.tvcard--talk .tvcard-body,
+.tvcard--writing .tvcard-body,
+.tvcard--blog .tvcard-body {
+  padding: 18px 20px 22px;
+  background: var(--bg);
+  color: var(--ink);
+  border-radius: 0 0 18px 18px;
+}
+
+.tvcard--project .tvcard-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20px;
+  gap: 5px;
+  color: #fff;
+  z-index: 2;
+}
+
+.tvcard-chip-row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tvcard-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.tvcard-unlisted {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 4px 9px;
+  min-height: 20px;
+  border: 1px solid color-mix(in srgb, var(--muted) 22%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.tvcard--project .tvcard-unlisted {
+  margin-bottom: 3px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.tvcard-title {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tvcard--article .tvcard-title,
+.tvcard--talk .tvcard-title,
+.tvcard--writing .tvcard-title,
+.tvcard--blog .tvcard-title {
+  color: var(--ink);
+  min-height: 2.44em;
+}
+
+.tvcard--project .tvcard-title {
+  color: #fff;
+  font-size: clamp(22px, 1.9vw, 27px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.tvcard-desc {
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tvcard-meta {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.tvcard--article .tvcard-desc,
+.tvcard--talk .tvcard-desc,
+.tvcard--writing .tvcard-desc,
+.tvcard--blog .tvcard-desc {
+  color: var(--muted);
+  min-height: 2.8em;
+}
+
+.tvcard--project .tvcard-desc {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tvcard-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.25s var(--ease);
+}
+
+@media (hover: hover) {
+  .tvcard.is-hover .tvcard-play {
+    opacity: 0;
+  }
+}
+
+.tvcard:focus {
+  outline: none;
+}
+
+.tvcard:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tvcard-play svg {
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tvcard,
+  .tvcard.is-hover,
+  .tvcard-inner,
+  .tvcard-inner::after,
+  .tvcard-play,
+  video.tvcard-cover {
+    transition: none;
+  }
+
+  .tvcard.is-hover {
+    scale: 1;
+    translate: 0 0;
+  }
+
+  .tvcard-inner {
+    transform: none;
+    will-change: auto;
+  }
+
+  .tvcard.is-hover .tvcard-inner::after {
+    opacity: 0;
+  }
+
+  .tvcard.is-hover .tvcard-play {
+    opacity: 1;
+  }
+}
