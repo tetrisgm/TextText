@@ -1,3 +1,6 @@
+import { isAuthConfigured } from "@/auth";
+import { getCurrentUser } from "@/lib/session";
+
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 1024 * 1024;
 const UPLOAD_FIELD_NAME = "file";
@@ -42,6 +45,12 @@ export async function POST(request: Request) {
 
   if (!token) {
     return jsonError("Media upload is not configured.", 503);
+  }
+
+  // When auth is configured, uploads are for signed-in users only (the endpoint
+  // writes to the owner's Blob store, so it must not be open to the public).
+  if (isAuthConfigured && !(await getCurrentUser())) {
+    return jsonError("Sign in to upload media.", 401);
   }
 
   const contentType = request.headers.get("content-type") ?? "";

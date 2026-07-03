@@ -589,3 +589,16 @@
   height: 36px;
   padding: 0 18px;
 }
+
+/* ---- editor cover upload ---- */
+.applecms .ac-cover-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ac-sp-3);
+  flex-wrap: wrap;
+}
+.applecms .ac-field-error {
+  font: 400 var(--ac-fs-footnote)/1.3 var(--ac-font-text);
+  letter-spacing: 0;
+  color: var(--ac-red);
+}

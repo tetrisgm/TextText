@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Blog, Post } from "@/lib/content";
 import { formatArticleDate, readingTimeMin } from "@/lib/content";
 import { createDraftAction, savePostAction } from "@/app/editor/actions";
+import { MediaUploadError, uploadMedia } from "@/lib/upload";
 
 type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
@@ -81,10 +82,12 @@ export function EditorApp({
   blog,
   posts,
   dbEnabled,
+  mediaEnabled,
 }: {
   blog: Blog;
   posts: Post[];
   dbEnabled: boolean;
+  mediaEnabled: boolean;
 }) {
   const [ids, setIds] = useState(() => postIds(posts));
   const [drafts, setDrafts] = useState(() => draftsById(posts));
@@ -106,7 +109,10 @@ export function EditorApp({
   const [stacked, setStacked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const splitRef = useRef<HTMLDivElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const draftRef = useRef<{ blog: Blog; post: Post } | null>(null);
 
@@ -200,6 +206,24 @@ export function EditorApp({
     setSelectedId(id);
     setAccentText(created.accent ?? "");
   }, [dbEnabled]);
+
+  const onUploadCover = useCallback(
+    async (file: File) => {
+      setCoverUploading(true);
+      setUploadError(null);
+      try {
+        const url = await uploadMedia(file);
+        updateSelected({ cover: url });
+      } catch (error) {
+        setUploadError(
+          error instanceof MediaUploadError ? error.message : "Upload failed.",
+        );
+      } finally {
+        setCoverUploading(false);
+      }
+    },
+    [updateSelected],
+  );
 
   const postDraft = useCallback((targetWindow?: Window | null) => {
     const target = targetWindow ?? previewWindowRef.current;
@@ -493,6 +517,35 @@ export function EditorApp({
                         }
                       />
                     </label>
+
+                    {mediaEnabled && (
+                      <div className="ac-form-span ac-cover-actions">
+                        <input
+                          ref={coverInputRef}
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={(event) => {
+                            const file = event.currentTarget.files?.[0];
+                            event.currentTarget.value = "";
+                            if (file) onUploadCover(file);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ac-btn ac-btn-gray"
+                          disabled={coverUploading}
+                          onClick={() => coverInputRef.current?.click()}
+                        >
+                          {coverUploading ? "Uploading" : "Upload image"}
+                        </button>
+                        {uploadError && (
+                          <span className="ac-field-error" role="alert">
+                            {uploadError}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <label className="ac-field-label ac-form-span">
                       <span className="ac-label-text">Cover caption</span>
