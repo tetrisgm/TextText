@@ -26,7 +26,7 @@ export const blogs = pgTable(
   "blogs",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    /** subdomain, e.g. "ramine" -> ramine.{ROOT_DOMAIN} */
+    /** subdomain, e.g. "acme" -> acme.{ROOT_DOMAIN} */
     handle: text("handle").notNull(),
     name: text("name").notNull(),
     tagline: text("tagline"),

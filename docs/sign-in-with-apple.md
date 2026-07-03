@@ -28,22 +28,22 @@ the Account Holder or Admin role).
 
 Identifiers -> (+) -> **App IDs** -> App -> Continue.
 - Description: e.g. `Write`.
-- **Explicit** App ID, Bundle ID in reverse-DNS, e.g. `net.ramine.write`.
+- **Explicit** App ID, Bundle ID in reverse-DNS, e.g. `com.example.write`.
 - Tick the **Sign in with Apple** capability. Continue -> Register.
 
 ## 2. Services ID  (this value becomes `AUTH_APPLE_ID`)
 
 Identifiers -> (+) -> **Services IDs** -> Continue.
 - Description: e.g. `Write Web Sign In`.
-- Identifier in reverse-DNS, distinct from the App ID, e.g. `net.ramine.write.web`.
+- Identifier in reverse-DNS, distinct from the App ID, e.g. `com.example.write.web`.
 - Continue -> Register.
 
 Then select that Services ID, tick **Sign in with Apple**, click **Configure**:
 - **Primary App ID**: the App ID from step 1 (only Sign-in-enabled App IDs show).
 - **Domains and Subdomains**: the bare host, no scheme, no trailing slash, e.g.
-  `write.ramine.net`.
+  `write.example.com`.
 - **Return URLs**: the full HTTPS callback, exactly:
-  `https://write.ramine.net/api/auth/callback/apple`
+  `https://write.example.com/api/auth/callback/apple`
   (path is Auth.js's `/api/auth` basePath + `/callback/apple`; no trailing slash,
   it must match byte-for-byte what Auth.js sends).
 - Save.
@@ -52,7 +52,7 @@ You do **not** need to host `apple-developer-domain-association.txt`. Apple only
 requires that file for the separate private email-relay service, not for OAuth
 sign in.
 
-`AUTH_APPLE_ID` = this Services ID string (e.g. `net.ramine.write.web`). It is
+`AUTH_APPLE_ID` = this Services ID string (e.g. `com.example.write.web`). It is
 NOT the App ID / bundle ID.
 
 ## 3. Sign in with Apple Key (.p8)
@@ -80,7 +80,7 @@ ES256 / raw-R||S signature Apple requires):
 node scripts/apple-client-secret.mjs \
   --team-id ABCDE12345 \
   --key-id KEY1234567 \
-  --services-id net.ramine.write.web \
+  --services-id com.example.write.web \
   --p8 ~/Downloads/AuthKey_KEY1234567.p8
 ```
 
