@@ -418,25 +418,35 @@ export function PostEditLayer({
 
   return (
     <>
-      <div className="post-edit-toolbar" aria-label="Post editor">
+      <div className="post-edit-toolbar applecms ac-chrome" aria-label="Post editor">
         <span
-          className={`post-edit-save-state is-${saveState}`}
+          className={`post-edit-save-state ac-toolbar-status is-${saveState}`}
           role="status"
           aria-live="polite"
         >
           {saveText}
         </span>
-        <div className="post-visibility-toggle" aria-label="Visibility">
+        <div className="post-visibility-toggle ac-segmented" aria-label="Visibility">
           <button
             type="button"
-            className={draft.status === "published" ? "active" : ""}
+            className={
+              draft.status === "published"
+                ? "ac-segmented-button ac-active"
+                : "ac-segmented-button"
+            }
+            aria-pressed={draft.status === "published"}
             onClick={() => updateDraft({ status: "published" })}
           >
             Public
           </button>
           <button
             type="button"
-            className={draft.status === "draft" ? "active" : ""}
+            className={
+              draft.status === "draft"
+                ? "ac-segmented-button ac-active"
+                : "ac-segmented-button"
+            }
+            aria-pressed={draft.status === "draft"}
             onClick={() => updateDraft({ status: "draft" })}
           >
             Unlisted
@@ -445,7 +455,7 @@ export function PostEditLayer({
         <div className="post-edit-menu-wrap">
           <button
             type="button"
-            className="post-edit-menu-button"
+            className="post-edit-menu-button ac-icon-btn"
             aria-label="Post settings"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
@@ -478,7 +488,7 @@ export function PostEditLayer({
                     }
                   />
                   <button
-                    className="post-edit-inherit"
+                    className="post-edit-inherit ac-btn ac-btn-plain"
                     type="button"
                     onClick={() => updateDraft({ accent: "" })}
                   >
@@ -507,7 +517,7 @@ export function PostEditLayer({
                 />
               </label>
               <button
-                className="post-edit-delete"
+                className="post-edit-delete ac-btn"
                 type="button"
                 disabled={!postId || deleting}
                 onClick={deletePost}

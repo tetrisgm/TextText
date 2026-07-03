@@ -121,7 +121,6 @@ export function PostCard({
   owner: boolean;
 }) {
   const ref = useRef<HTMLAnchorElement>(null);
-  const reducedMotionRef = useRef(false);
   const [videoReady, setVideoReady] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -205,22 +204,6 @@ export function PostCard({
     [],
   );
 
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => {
-      reducedMotionRef.current = media.matches;
-      if (media.matches) {
-        setHovered(false);
-        tiltTarget.current = { ...NEUTRAL };
-        tiltCurrent.current = { ...NEUTRAL };
-        applyTilt();
-      }
-    };
-    sync();
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
-  });
-
   const endHover = () => {
     setHovered(false);
     tiltTarget.current = { ...NEUTRAL };
@@ -263,7 +246,6 @@ export function PostCard({
 
   const onPointerMove = (e: PointerEvent<HTMLAnchorElement>) => {
     if (e.pointerType !== "mouse") return;
-    if (reducedMotionRef.current) return;
     if (document.documentElement.classList.contains("hover-frozen")) return;
     const el = ref.current;
     if (!el) return;

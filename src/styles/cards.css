@@ -374,32 +374,3 @@ video.tvcard-cover[data-ready="true"] {
   height: 20px;
   margin-left: 2px;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .tvcard,
-  .tvcard.is-hover,
-  .tvcard-inner,
-  .tvcard-inner::after,
-  .tvcard-play,
-  video.tvcard-cover {
-    transition: none;
-  }
-
-  .tvcard.is-hover {
-    scale: 1;
-    translate: 0 0;
-  }
-
-  .tvcard-inner {
-    transform: none;
-    will-change: auto;
-  }
-
-  .tvcard.is-hover .tvcard-inner::after {
-    opacity: 0;
-  }
-
-  .tvcard.is-hover .tvcard-play {
-    opacity: 1;
-  }
-}

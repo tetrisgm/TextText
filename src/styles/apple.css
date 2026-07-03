@@ -171,6 +171,46 @@
 .ac-btn-plain.ac-danger { color: var(--ac-red); }
 .applecms a.ac-btn { text-decoration: none; }
 
+/* ---- segmented control ---- */
+.ac-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--ac-h-tbtn);
+  padding: 2px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-fill-3);
+}
+.ac-segmented-button {
+  min-width: 0;
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-footnote)/1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ac-segmented-button:not(.ac-active):hover {
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+}
+.ac-segmented-button.ac-active {
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.08),
+    0 0 0 0.5px var(--ac-hairline);
+}
+.ac-segmented-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
 /* icon button (toolbar toggle, account) */
 .ac-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { getCurrentUser } from "@/lib/session";
 import {
   getAdjacentPublishedPosts,
@@ -92,15 +93,22 @@ function OwnerTopControls({
   status: "draft" | "published";
 }) {
   return (
-    <div className="post-owner-controls" aria-label="Post controls">
-      <span className={`post-owner-visibility is-${status}`}>
+    <div className="post-owner-controls applecms ac-chrome" aria-label="Post controls">
+      <span className={`post-owner-visibility ac-toolbar-status is-${status}`}>
         {VISIBILITY_LABELS[status]}
       </span>
-      <Link className="post-owner-edit" href={`${postPath(handle, slug)}?edit=1`}>
+      <Link
+        className="post-owner-edit ac-btn ac-btn-filled"
+        href={`${postPath(handle, slug)}?edit=1`}
+      >
         Edit
       </Link>
     </div>
   );
+}
+
+function PostTopActionBar({ children }: { children: ReactNode }) {
+  return <div className="post-top-action-bar">{children}</div>;
 }
 
 function PostDetailControls({
@@ -210,13 +218,15 @@ export default async function PostPage({ params, searchParams }: Props) {
   if (editMode) {
     return (
       <>
-        <PostDetailControls
-          handle={handle}
-          adjacent={adjacent}
-          closeHref={currentPostPath}
-          closeLabel="Done"
-          showAdjacent={false}
-        />
+        <PostTopActionBar>
+          <PostDetailControls
+            handle={handle}
+            adjacent={adjacent}
+            closeHref={currentPostPath}
+            closeLabel="Done"
+            showAdjacent={false}
+          />
+        </PostTopActionBar>
         <PostShortcuts
           homePath={homePath}
           previousPath={
@@ -232,14 +242,16 @@ export default async function PostPage({ params, searchParams }: Props) {
 
   return (
     <>
-      <PostDetailControls
-        handle={handle}
-        adjacent={adjacent}
-        closeHref={homePath}
-      />
-      {owner && (
-        <OwnerTopControls handle={handle} slug={post.slug} status={post.status} />
-      )}
+      <PostTopActionBar>
+        {owner && (
+          <OwnerTopControls handle={handle} slug={post.slug} status={post.status} />
+        )}
+        <PostDetailControls
+          handle={handle}
+          adjacent={adjacent}
+          closeHref={homePath}
+        />
+      </PostTopActionBar>
       <PostShortcuts
         homePath={homePath}
         previousPath={

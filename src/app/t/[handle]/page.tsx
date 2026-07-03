@@ -70,6 +70,12 @@ export default async function BlogHome({ params }: Props) {
   const owner = viewer ? await isBlogOwner(handle, viewer.sub) : false;
   const posts = owner ? await getAllPosts(handle) : await getPosts(handle);
   const feedHref = blogFeedHref(handle);
+  const encodedHandle = encodeURIComponent(handle);
+  const feedLinks = [
+    { href: feedHref, label: "RSS" },
+    { href: `/t/${encodedHandle}/atom.xml`, label: "Atom" },
+    { href: `/t/${encodedHandle}/feed.json`, label: "JSON Feed" },
+  ];
 
   return (
     <main className="blog-home" style={blogStyle(blog)}>
@@ -82,13 +88,6 @@ export default async function BlogHome({ params }: Props) {
               {blog.tagline && (
                 <p className="blog-home-tagline">{blog.tagline}</p>
               )}
-              <Link
-                className="blog-home-feed"
-                href={feedHref}
-                aria-label={`${blog.name} RSS feed`}
-              >
-                RSS
-              </Link>
             </div>
           </div>
           {owner && <NewPostForm />}
@@ -108,6 +107,20 @@ export default async function BlogHome({ params }: Props) {
           ))}
         </div>
       )}
+
+      <footer className="blog-home-footer" aria-label="Feeds">
+        <span className="blog-home-footer-label">Feeds</span>
+        {feedLinks.map((feed) => (
+          <Link
+            key={feed.href}
+            className="blog-home-footer-link"
+            href={feed.href}
+            aria-label={`${blog.name} ${feed.label} feed`}
+          >
+            {feed.label}
+          </Link>
+        ))}
+      </footer>
     </main>
   );
 }
