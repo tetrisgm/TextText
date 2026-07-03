@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { ProjectReader } from "@/components/ProjectReader";
 import type { Blog, Post } from "@/lib/content";
 
 type DraftState = {
@@ -60,7 +61,12 @@ export default function EditorPreviewPage() {
 
   if (!enabled || !draft) return <main aria-hidden="true" />;
 
-  const ReaderComponent = draft.post.type === "talk" ? TalkReader : Reader;
+  const ReaderComponent =
+    draft.post.type === "talk"
+      ? TalkReader
+      : draft.post.type === "project"
+        ? ProjectReader
+        : Reader;
 
   return <ReaderComponent blog={draft.blog} post={draft.post} />;
 }

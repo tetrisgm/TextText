@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getBlog, getPost } from "@/lib/store";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { ProjectReader } from "@/components/ProjectReader";
 
 interface Props {
   params: Promise<{ handle: string; slug: string }>;
@@ -29,7 +30,12 @@ export default async function PostPage({ params }: Props) {
   ]);
   if (!blog || !post) notFound();
 
-  const ReaderComponent = post.type === "talk" ? TalkReader : Reader;
+  const ReaderComponent =
+    post.type === "talk"
+      ? TalkReader
+      : post.type === "project"
+        ? ProjectReader
+        : Reader;
 
   return <ReaderComponent blog={blog} post={post} />;
 }
