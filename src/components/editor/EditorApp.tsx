@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SignOutButton } from "@/components/SignOutButton";
-import type { Blog, Post, PostType } from "@/lib/content";
+import type { Blog, GalleryItem, LinkRef, Post, PostType } from "@/lib/content";
 import { formatArticleDate, readingTimeMin } from "@/lib/content";
 import {
   createDraftAction,
@@ -185,6 +185,274 @@ function imageAltFromFileName(fileName: string | undefined) {
     .trim();
 }
 
+function compactLinks(links: LinkRef[]) {
+  const next = links.filter((link) => link.label.trim() || link.href.trim());
+  return next.length > 0 ? next : undefined;
+}
+
+function compactGallery(gallery: GalleryItem[]) {
+  return gallery.length > 0 ? gallery : undefined;
+}
+
+function GalleryEditor({
+  gallery,
+  mediaEnabled,
+  uploading,
+  uploadError,
+  onUploadImage,
+  onChange,
+}: {
+  gallery: GalleryItem[];
+  mediaEnabled: boolean;
+  uploading: boolean;
+  uploadError: string | null;
+  onUploadImage: (file: File) => void;
+  onChange: (gallery: GalleryItem[] | undefined) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const updateItem = (index: number, patch: Partial<GalleryItem>) => {
+    onChange(
+      compactGallery(
+        gallery.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...patch } : item,
+        ),
+      ),
+    );
+  };
+
+  const moveItem = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= gallery.length) return;
+    const next = [...gallery];
+    const [item] = next.splice(index, 1);
+    if (!item) return;
+    next.splice(target, 0, item);
+    onChange(next);
+  };
+
+  const removeItem = (index: number) => {
+    onChange(compactGallery(gallery.filter((_, itemIndex) => itemIndex !== index)));
+  };
+
+  return (
+    <section className="ac-nested-editor ac-gallery-editor" aria-labelledby="ac-gallery-title">
+      <div className="ac-nested-editor-head">
+        <h3 id="ac-gallery-title" className="ac-nested-editor-title">
+          Gallery
+        </h3>
+        {mediaEnabled && (
+          <>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) onUploadImage(file);
+              }}
+            />
+            <button
+              className="ac-btn ac-btn-gray"
+              type="button"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {uploading ? "Uploading" : "Add image"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {uploadError && (
+        <span className="ac-field-error ac-nested-error" role="alert">
+          {uploadError}
+        </span>
+      )}
+
+      {gallery.length > 0 ? (
+        <div className="ac-gallery-list">
+          {gallery.map((item, index) => (
+            <div className="ac-gallery-row" key={`${item.src}:${index}`}>
+              <div className="ac-gallery-thumb">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={item.src} alt="" className="ac-gallery-thumb-img" />
+              </div>
+              <label className="ac-field-label ac-gallery-caption">
+                <span className="ac-label-text">Caption</span>
+                <input
+                  className="ac-field"
+                  value={item.caption ?? ""}
+                  onChange={(event) =>
+                    updateItem(index, {
+                      caption: optionalValue(event.currentTarget.value),
+                    })
+                  }
+                />
+              </label>
+              <div className="ac-row-actions">
+                <button
+                  className="ac-btn ac-btn-gray"
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => moveItem(index, -1)}
+                >
+                  Move up
+                </button>
+                <button
+                  className="ac-btn ac-btn-gray"
+                  type="button"
+                  disabled={index === gallery.length - 1}
+                  onClick={() => moveItem(index, 1)}
+                >
+                  Move down
+                </button>
+                <button
+                  className="ac-btn ac-btn-plain ac-danger"
+                  type="button"
+                  onClick={() => removeItem(index)}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="ac-nested-empty">No gallery images</div>
+      )}
+    </section>
+  );
+}
+
+function LinksEditor({
+  links,
+  onChange,
+}: {
+  links: LinkRef[];
+  onChange: (links: LinkRef[] | undefined) => void;
+}) {
+  const [pendingLink, setPendingLink] = useState<LinkRef | null>(null);
+
+  const updateLink = (index: number, patch: Partial<LinkRef>) => {
+    onChange(
+      compactLinks(
+        links.map((link, linkIndex) =>
+          linkIndex === index ? { ...link, ...patch } : link,
+        ),
+      ),
+    );
+  };
+
+  const updatePendingLink = (patch: Partial<LinkRef>) => {
+    const next = { ...(pendingLink ?? { label: "", href: "" }), ...patch };
+    setPendingLink(next);
+    if (!next.label.trim() && !next.href.trim()) return;
+    onChange(compactLinks([...links, next]));
+    setPendingLink(null);
+  };
+
+  const removeLink = (index: number) => {
+    onChange(compactLinks(links.filter((_, linkIndex) => linkIndex !== index)));
+  };
+
+  return (
+    <section className="ac-nested-editor ac-links-editor" aria-labelledby="ac-links-title">
+      <div className="ac-nested-editor-head">
+        <h3 id="ac-links-title" className="ac-nested-editor-title">
+          Links
+        </h3>
+        <button
+          className="ac-btn ac-btn-gray"
+          type="button"
+          disabled={pendingLink !== null}
+          onClick={() => setPendingLink({ label: "", href: "" })}
+        >
+          Add link
+        </button>
+      </div>
+
+      {links.length > 0 || pendingLink ? (
+        <div className="ac-links-list">
+          {links.map((link, index) => (
+            <div className="ac-link-row" key={`${link.href}:${index}`}>
+              <label className="ac-field-label">
+                <span className="ac-label-text">Label</span>
+                <input
+                  className="ac-field"
+                  value={link.label}
+                  onChange={(event) =>
+                    updateLink(index, { label: event.currentTarget.value })
+                  }
+                />
+              </label>
+              <label className="ac-field-label">
+                <span className="ac-label-text">URL</span>
+                <input
+                  className="ac-field"
+                  value={link.href}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) =>
+                    updateLink(index, { href: event.currentTarget.value })
+                  }
+                />
+              </label>
+              <button
+                className="ac-btn ac-btn-plain ac-danger ac-link-remove"
+                type="button"
+                onClick={() => removeLink(index)}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+
+          {pendingLink && (
+            <div className="ac-link-row">
+              <label className="ac-field-label">
+                <span className="ac-label-text">Label</span>
+                <input
+                  className="ac-field"
+                  value={pendingLink.label}
+                  onChange={(event) =>
+                    updatePendingLink({ label: event.currentTarget.value })
+                  }
+                />
+              </label>
+              <label className="ac-field-label">
+                <span className="ac-label-text">URL</span>
+                <input
+                  className="ac-field"
+                  value={pendingLink.href}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) =>
+                    updatePendingLink({ href: event.currentTarget.value })
+                  }
+                />
+              </label>
+              <button
+                className="ac-btn ac-btn-plain ac-danger ac-link-remove"
+                type="button"
+                onClick={() => setPendingLink(null)}
+              >
+                Remove
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="ac-nested-empty">No links</div>
+      )}
+    </section>
+  );
+}
+
 export function EditorApp({
   blog: initialBlog,
   posts,
@@ -228,6 +496,8 @@ export function EditorApp({
   const [linkCopied, setLinkCopied] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+  const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
   const [bodyImageUploading, setBodyImageUploading] = useState(false);
   const [bodyUploadError, setBodyUploadError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -318,6 +588,7 @@ export function EditorApp({
     bodySelectionRef.current = null;
     pendingBodyCaretRef.current = null;
     setLinkCopied(false);
+    setGalleryUploadError(null);
   }, [selectedId]);
 
   useEffect(() => {
@@ -584,6 +855,26 @@ export function EditorApp({
     [updateSelected],
   );
 
+  const onUploadGalleryImage = useCallback(
+    async (file: File) => {
+      if (!selectedPost) return;
+
+      setGalleryUploading(true);
+      setGalleryUploadError(null);
+      try {
+        const url = await uploadMedia(file);
+        updateSelected({ gallery: [...(selectedPost.gallery ?? []), { src: url }] });
+      } catch (error) {
+        setGalleryUploadError(
+          error instanceof MediaUploadError ? error.message : "Upload failed.",
+        );
+      } finally {
+        setGalleryUploading(false);
+      }
+    },
+    [selectedPost, updateSelected],
+  );
+
   const onUploadBodyImage = useCallback(
     async (file: File) => {
       if (!selectedPost) return;
@@ -834,25 +1125,35 @@ export function EditorApp({
             style={showPreview ? { flexBasis: `${splitPct}%` } : undefined}
           >
             {selectedPost ? (
-              <>
-                <div className="ac-editor-pane-head">
-                  <div className="ac-editor-title-block">
-                    <div className="ac-editor-eyebrow">
+              <form
+                className="ac-editor-form ac-composer-form"
+                onSubmit={(event) => event.preventDefault()}
+              >
+                <section className="ac-writing-sheet" aria-label="Writing">
+                  <label className="ac-document-title-label">
+                    <span className="ac-sr-only">Title</span>
+                    <input
+                      className="ac-document-title-input"
+                      value={selectedPost.title}
+                      placeholder="Untitled"
+                      onChange={(event) =>
+                        updateSelectedTitle(event.currentTarget.value)
+                      }
+                    />
+                  </label>
+
+                  <div className="ac-document-meta">
+                    <span className="ac-editor-eyebrow">
                       {postTypeLabel(selectedPost.type)} | {statusLabel(selectedPost.status)}
-                    </div>
-                    <h1 className="ac-editor-heading">
-                      {selectedPost.title || "Untitled"}
-                    </h1>
+                    </span>
+                    <span className="ac-status-pill">
+                      {selectedPost.slug || "no-slug"}
+                    </span>
                     {postError && (
                       <span className="ac-field-error ac-editor-error" role="alert">
                         {postError}
                       </span>
                     )}
-                  </div>
-                  <div className="ac-editor-head-actions">
-                    <span className="ac-status-pill">
-                      {selectedPost.slug || "no-slug"}
-                    </span>
                     {livePostPath && (
                       <div className="ac-live-link" aria-label="Published post link">
                         <span className="ac-live-url">{livePostPath}</span>
@@ -879,24 +1180,76 @@ export function EditorApp({
                       </div>
                     )}
                   </div>
-                </div>
 
-                <form
-                  className="ac-editor-form"
-                  onSubmit={(event) => event.preventDefault()}
+                  <div className="ac-field-label ac-body-field">
+                    <div className="ac-body-head">
+                      <label className="ac-label-text" htmlFor="ac-body-textarea">
+                        Body
+                      </label>
+                      {mediaEnabled && (
+                        <div className="ac-body-actions">
+                          <input
+                            ref={bodyImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            onChange={(event) => {
+                              const file = event.currentTarget.files?.[0];
+                              event.currentTarget.value = "";
+                              if (file) onUploadBodyImage(file);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="ac-btn ac-btn-gray"
+                            disabled={bodyImageUploading}
+                            onClick={() => bodyImageInputRef.current?.click()}
+                          >
+                            {bodyImageUploading ? "Uploading" : "Insert image"}
+                          </button>
+                          {bodyUploadError && (
+                            <span className="ac-field-error" role="alert">
+                              {bodyUploadError}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <textarea
+                      id="ac-body-textarea"
+                      ref={bodyTextareaRef}
+                      className="ac-field ac-textarea"
+                      value={selectedPost.body}
+                      spellCheck
+                      onFocus={storeBodySelection}
+                      onClick={storeBodySelection}
+                      onKeyUp={storeBodySelection}
+                      onSelect={storeBodySelection}
+                      onChange={(event) => {
+                        updateSelected({ body: event.currentTarget.value });
+                        bodySelectionRef.current = {
+                          start: event.currentTarget.selectionStart,
+                          end: event.currentTarget.selectionEnd,
+                        };
+                      }}
+                    />
+                  </div>
+                </section>
+
+                <section
+                  className="ac-details-section"
+                  aria-labelledby="ac-details-title"
                 >
-                  <div className="ac-form-grid">
-                    <label className="ac-field-label ac-form-span">
-                      <span className="ac-label-text">Title</span>
-                      <input
-                        className="ac-field"
-                        value={selectedPost.title}
-                        onChange={(event) =>
-                          updateSelectedTitle(event.currentTarget.value)
-                        }
-                      />
-                    </label>
+                  <div className="ac-details-head">
+                    <h2 id="ac-details-title" className="ac-details-title">
+                      Details
+                    </h2>
+                    <span className="ac-details-subtitle">
+                      {postTypeLabel(selectedPost.type)}
+                    </span>
+                  </div>
 
+                  <div className="ac-form-grid ac-details-grid">
                     <label className="ac-field-label">
                       <span className="ac-label-text">Kicker</span>
                       <input
@@ -978,7 +1331,9 @@ export function EditorApp({
                     </div>
 
                     <label className="ac-field-label ac-form-span">
-                      <span className="ac-label-text">Cover URL</span>
+                      <span className="ac-label-text">
+                        {selectedPost.type === "talk" ? "Poster or cover URL" : "Cover URL"}
+                      </span>
                       <input
                         className="ac-field"
                         value={selectedPost.cover ?? ""}
@@ -1076,61 +1431,26 @@ export function EditorApp({
                     )}
                   </div>
 
-                  <div className="ac-field-label ac-body-field">
-                    <div className="ac-body-head">
-                      <label className="ac-label-text" htmlFor="ac-body-textarea">
-                        Body
-                      </label>
-                      {mediaEnabled && (
-                        <div className="ac-body-actions">
-                          <input
-                            ref={bodyImageInputRef}
-                            type="file"
-                            accept="image/*"
-                            hidden
-                            onChange={(event) => {
-                              const file = event.currentTarget.files?.[0];
-                              event.currentTarget.value = "";
-                              if (file) onUploadBodyImage(file);
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="ac-btn ac-btn-gray"
-                            disabled={bodyImageUploading}
-                            onClick={() => bodyImageInputRef.current?.click()}
-                          >
-                            {bodyImageUploading ? "Uploading" : "Insert image"}
-                          </button>
-                          {bodyUploadError && (
-                            <span className="ac-field-error" role="alert">
-                              {bodyUploadError}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <textarea
-                      id="ac-body-textarea"
-                      ref={bodyTextareaRef}
-                      className="ac-field ac-textarea"
-                      value={selectedPost.body}
-                      spellCheck
-                      onFocus={storeBodySelection}
-                      onClick={storeBodySelection}
-                      onKeyUp={storeBodySelection}
-                      onSelect={storeBodySelection}
-                      onChange={(event) => {
-                        updateSelected({ body: event.currentTarget.value });
-                        bodySelectionRef.current = {
-                          start: event.currentTarget.selectionStart,
-                          end: event.currentTarget.selectionEnd,
-                        };
-                      }}
+                  {selectedPost.type === "project" && (
+                    <GalleryEditor
+                      gallery={selectedPost.gallery ?? []}
+                      mediaEnabled={mediaEnabled}
+                      uploading={galleryUploading}
+                      uploadError={galleryUploadError}
+                      onUploadImage={onUploadGalleryImage}
+                      onChange={(gallery) => updateSelected({ gallery })}
                     />
-                  </div>
-                </form>
-              </>
+                  )}
+
+                  {(selectedPost.type === "project" || selectedPost.type === "talk") && (
+                    <LinksEditor
+                      key={`${selectedId}:${selectedPost.type}:links`}
+                      links={selectedPost.links ?? []}
+                      onChange={(links) => updateSelected({ links })}
+                    />
+                  )}
+                </section>
+              </form>
             ) : (
               <div className="ac-empty-editor">Select a post</div>
             )}
