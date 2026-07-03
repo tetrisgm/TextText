@@ -1,5 +1,6 @@
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
+import { ensureOwnerBlog } from "@/lib/store";
 
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 1024 * 1024;
@@ -35,9 +36,9 @@ function safePathSegment(name: string) {
   return safe || "upload";
 }
 
-function uploadPathname(file: File) {
+function uploadPathname(handle: string, file: File) {
   const date = new Date().toISOString().slice(0, 10);
-  return `${UPLOAD_PREFIX}/${date}/${safePathSegment(file.name)}`;
+  return `${UPLOAD_PREFIX}/${safePathSegment(handle)}/${date}/${safePathSegment(file.name)}`;
 }
 
 export async function POST(request: Request) {
@@ -47,9 +48,13 @@ export async function POST(request: Request) {
     return jsonError("Media upload is not configured.", 503);
   }
 
-  // When auth is configured, uploads are for signed-in users only (the endpoint
-  // writes to the owner's Blob store, so it must not be open to the public).
-  if (isAuthConfigured && !(await getCurrentUser())) {
+  // Uploads always require a signed-in user; this is never an open public
+  // endpoint. Demo mode (auth off) has no owner to attribute media to.
+  if (!isAuthConfigured) {
+    return jsonError("Media upload requires authentication.", 503);
+  }
+  const user = await getCurrentUser();
+  if (!user) {
     return jsonError("Sign in to upload media.", 401);
   }
 
@@ -89,8 +94,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    const { handle } = await ensureOwnerBlog(user);
     const { put } = await import("@vercel/blob");
-    const blob = await put(uploadPathname(file), file, {
+    const blob = await put(uploadPathname(handle, file), file, {
       access: "public",
       addRandomSuffix: true,
       contentType: file.type,

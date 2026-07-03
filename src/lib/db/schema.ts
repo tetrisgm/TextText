@@ -39,7 +39,13 @@ export const blogs = pgTable(
       .references(() => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("blogs_handle_idx").on(t.handle)],
+  (t) => [
+    uniqueIndex("blogs_handle_idx").on(t.handle),
+    // One blog per owner (today): the editor provisions and resolves exactly
+    // one, and this lets ensureOwnerBlog rely on the DB to settle the race on a
+    // first sign-in rather than a read-then-write.
+    uniqueIndex("blogs_owner_idx").on(t.ownerId),
+  ],
 );
 
 export const posts = pgTable(

@@ -6,9 +6,10 @@ import { getCurrentUser } from "@/lib/session";
 import { createDraft, ensureOwnerBlog, savePost } from "@/lib/store";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
-// client can never target another user's blog. Auth off: the demo blog.
+// client can never target another user's blog. Writing always requires auth;
+// demo mode (auth off) is read only, so these actions refuse there.
 async function editorHandle(): Promise<string> {
-  if (!isAuthConfigured) return "demo";
+  if (!isAuthConfigured) throw new Error("Editing requires signing in");
   const user = await getCurrentUser();
   if (!user) throw new Error("Not signed in");
   const blog = await ensureOwnerBlog(user);

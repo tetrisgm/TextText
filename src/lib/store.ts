@@ -3,7 +3,7 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Blog, Post } from "./content";
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
@@ -224,7 +224,10 @@ async function uniqueHandle(seed: string): Promise<string> {
       .limit(1);
     if (!taken[0]) return candidate;
   }
-  return `${base}-${Date.now().toString(36)}`;
+  // Fallback: keep it inside the 32-char tenant-handle limit (tenants.ts regex).
+  const suffix = Date.now().toString(36);
+  const short = base.slice(0, 30 - suffix.length).replace(/-+$/, "") || "blog";
+  return `${short}-${suffix}`;
 }
 
 // The blog owned by the user with this Apple sub, or null.
@@ -242,6 +245,7 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
     .from(blogs)
     .innerJoin(users, eq(blogs.ownerId, users.id))
     .where(eq(users.appleSub, sub))
+    .orderBy(asc(blogs.createdAt))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
@@ -289,11 +293,25 @@ export async function ensureOwnerBlog(user: {
       .where(eq(users.appleSub, user.sub))
       .limit(1)
   )[0];
-  const handle = await uniqueHandle(
-    user.email?.split("@")[0] || user.name || "blog",
-  );
   const name = user.name ? `${user.name}'s blog` : "My blog";
-  await db.insert(blogs).values({ handle, name, ownerId: owner.id });
+  const seed = user.email?.split("@")[0] || user.name || "blog";
+
+  // Provision the blog. ON CONFLICT DO NOTHING lets the DB settle the races: a
+  // concurrent first sign-in that already made this owner's blog (owner unique
+  // index) is a no-op, and a handle taken by a different owner (handle unique
+  // index) just retries with a fresh handle. Either way we end with exactly one.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const handle = await uniqueHandle(seed);
+    const inserted = await db
+      .insert(blogs)
+      .values({ handle, name, ownerId: owner.id })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted[0]) break;
+    const settled = await getOwnedBlog(user.sub);
+    if (settled) return settled; // another request created this owner's blog
+    // otherwise the handle collided with a different owner; try another handle
+  }
 
   const created = await getOwnedBlog(user.sub);
   if (!created) throw new Error("failed to provision a blog");
