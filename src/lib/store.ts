@@ -132,13 +132,16 @@ async function blogIdFor(handle: string): Promise<string> {
 }
 
 // Persist the editor's draft. Requires a database (the demo seed is read only).
-// Updates the row by id when the post already exists, so a slug edit renames in
-// place; otherwise inserts, upserting on the (blog, slug) unique index. A first
-// publish stamps published_at; re-saving a published post keeps the original.
+// Updates the row by id, scoped to this blog so a stale or foreign id can never
+// touch another tenant, so a slug edit renames in place; otherwise inserts,
+// upserting on the (blog, slug) unique index. For a published post, published_at
+// follows the editor's Date field (or is stamped now on first publish); a draft
+// leaves any existing published_at untouched, so unpublish then republish keeps
+// the original date.
 export async function savePost(handle: string, post: Post): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  const fields = {
+  const base = {
     title: post.title,
     kicker: post.kicker ?? null,
     accent: post.accent ?? null,
@@ -148,16 +151,20 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     status: post.status,
     updatedAt: new Date(),
   };
-  const keepOrStampPublished =
+  const publishedAt =
     post.status === "published"
-      ? sql`COALESCE(${posts.publishedAt}, now())`
-      : null;
+      ? post.date
+        ? new Date(post.date)
+        : sql`COALESCE(${posts.publishedAt}, now())`
+      : undefined;
+  // A draft omits published_at from the update so an existing publish date lives.
+  const set = publishedAt === undefined ? base : { ...base, publishedAt };
 
   if (post.id) {
     const updated = await db
       .update(posts)
-      .set({ ...fields, slug: post.slug, publishedAt: keepOrStampPublished })
-      .where(eq(posts.id, post.id))
+      .set({ ...set, slug: post.slug })
+      .where(and(eq(posts.id, post.id), eq(posts.blogId, blogId)))
       .returning();
     if (updated[0]) return mapPost(updated[0]);
   }
@@ -167,13 +174,15 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     .values({
       blogId,
       slug: post.slug,
-      ...fields,
-      publishedAt: post.status === "published" ? new Date() : null,
+      ...base,
+      publishedAt:
+        post.status === "published"
+          ? post.date
+            ? new Date(post.date)
+            : new Date()
+          : null,
     })
-    .onConflictDoUpdate({
-      target: [posts.blogId, posts.slug],
-      set: { ...fields, publishedAt: keepOrStampPublished },
-    })
+    .onConflictDoUpdate({ target: [posts.blogId, posts.slug], set })
     .returning();
   return mapPost(inserted[0]);
 }
