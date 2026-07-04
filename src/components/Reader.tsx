@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { Blog, Post } from "@/lib/content";
 import {
   formatArticleDate,
+  isVideoFile,
   readingTimeMin,
   postAccent,
   monogram,
@@ -58,29 +59,32 @@ export function Reader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const excerpt = post.excerpt?.trim();
-  const realCover = post.cover?.trim();
   const resolvedCover = resolveCover(post);
   const cover = slots?.cover ?? (
-    resolvedCover ? (
-      <figure className="reader-cover">
-        {/* Covers can be remote uploads or local curated fallbacks. Plain img
-            avoids next/image remote-domain config. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={resolvedCover} alt={title} />
-        {realCover && post.coverCaption && (
-          <figcaption className="reader-figcaption">
-            {post.coverCaption}
-          </figcaption>
-        )}
-      </figure>
-    ) : null
+    <figure className="reader-cover">
+      {isVideoFile(resolvedCover) ? (
+        <video src={resolvedCover} controls playsInline preload="metadata" />
+      ) : (
+        <>
+          {/* Covers can be remote uploads or local curated fallbacks. Plain img
+              avoids next/image remote-domain config. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={resolvedCover} alt={title} />
+        </>
+      )}
+      {post.coverCaption && (
+        <figcaption className="reader-figcaption">
+          {post.coverCaption}
+        </figcaption>
+      )}
+    </figure>
   );
   const className = `reader${slots?.toolbar ? " has-editor-toolbar" : ""}`;
 
   return (
     <article className={className} style={style}>
-      {slots?.toolbar}
       {cover}
+      {slots?.toolbar}
       <header className="reader-masthead">
         {slots?.title ?? <h1 className="reader-title">{title}</h1>}
         {slots?.excerpt ?? (

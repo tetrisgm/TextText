@@ -18,9 +18,11 @@
   --display: var(--font-display, "Fraunces", Georgia, serif);
   position: relative;
   min-width: 0;
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 72px 24px 96px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 96px;
+  overflow-x: clip;
   overflow-wrap: anywhere;
 }
 
@@ -45,6 +47,9 @@
 
 /* ---------- masthead ---------- */
 .reader-masthead {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 24px;
   text-align: center;
 }
 
@@ -113,21 +118,22 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- top cover hero (steps out past the text measure) ---------- */
+/* ---------- top cover hero ---------- */
 .reader-cover {
   position: relative;
-  left: 50%;
-  width: min(1100px, calc(100vw - 48px));
+  width: 100%;
   max-width: none;
-  margin: 0 0 42px;
-  transform: translateX(-50%);
+  margin: 0 0 44px;
 }
 .reader-cover img,
 .reader-cover video {
   width: 100%;
-  aspect-ratio: 21 / 9;
+  height: 42.85vw;
+  min-height: 240px;
+  max-height: min(540px, 58svh);
   object-fit: cover;
-  border-radius: 16px;
+  object-position: center;
+  border-radius: 0;
   display: block;
   background: var(--bg-soft);
 }
@@ -135,6 +141,7 @@
   display: block;
   max-width: 760px;
   margin: 12px auto 0;
+  padding: 0 24px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--muted);
@@ -144,6 +151,7 @@
 /* ---------- prose (narrow column; media steps out wider) ---------- */
 .reader-prose {
   min-width: 0;
+  padding: 0 24px;
   font-size: 18px;
   line-height: 1.72;
   color: var(--ink-2);
@@ -1493,22 +1501,28 @@
 }
 .edit-cover-media {
   position: relative;
+  background: var(--bg-soft);
+  overflow: hidden;
 }
 .edit-cover-toolbar,
 .talk-edit-cover-controls {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
   z-index: 4;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+  max-width: calc(100% - 24px);
   opacity: 0;
   transition: opacity 0.16s var(--ease);
 }
 .edit-cover:hover .edit-cover-toolbar,
 .edit-cover:focus-within .edit-cover-toolbar,
 .edit-cover.is-dragging-cover .edit-cover-toolbar,
+.edit-cover.is-uploading-cover .edit-cover-toolbar,
 .talk-edit-stage:hover .talk-edit-cover-controls,
 .talk-edit-stage:focus-within .talk-edit-cover-controls {
   opacity: 1;
@@ -1531,50 +1545,33 @@
   background: rgba(20, 20, 24, 0.78);
 }
 .edit-cover-action:disabled,
-.edit-cover-empty-button:disabled {
+.talk-edit-empty-button:disabled {
   cursor: default;
   opacity: 0.55;
 }
-.edit-cover.is-dragging-cover img {
+.edit-cover.is-dragging-cover img,
+.edit-cover.is-dragging-cover video {
   filter: brightness(0.82);
 }
-.reader-cover.edit-cover-empty {
-  width: min(860px, calc(100vw - 48px));
-  max-width: none;
-  margin-bottom: 36px;
-  min-height: 46px;
-  aspect-ratio: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 12px;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--ink) 5%, transparent),
-      color-mix(in srgb, var(--ink) 2%, transparent)
-    );
-  color: var(--muted);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 14%, transparent);
-  transition:
-    background 0.16s var(--ease),
-    box-shadow 0.16s var(--ease);
+.edit-cover-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 26%, transparent);
+  color: #fff;
+  font: 650 14px/1.2 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s var(--ease);
 }
-.reader-cover.edit-cover-empty.is-dragging-cover,
-.reader-cover.edit-cover-empty:focus-within {
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--post-accent, var(--ink)) 10%, transparent),
-      color-mix(in srgb, var(--ink) 3%, transparent)
-    );
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--post-accent, var(--muted)) 30%, transparent);
+.edit-cover.is-dragging-cover .edit-cover-drop-hint {
+  opacity: 1;
 }
-.edit-cover-empty-button {
+.talk-edit-empty-button {
   border: 0;
   min-height: 30px;
   padding: 0 13px;
@@ -1589,12 +1586,12 @@
     color 0.15s var(--ease),
     box-shadow 0.15s var(--ease);
 }
-.edit-cover-empty-button:hover,
-.edit-cover-empty-button:focus-visible {
+.talk-edit-empty-button:hover,
+.talk-edit-empty-button:focus-visible {
   background: color-mix(in srgb, var(--ink) 12%, transparent);
   color: var(--ink);
 }
-.edit-cover-empty-button:focus-visible {
+.talk-edit-empty-button:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
 }
@@ -1633,6 +1630,133 @@
   }
 }
 
+.cover-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(18px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: color-mix(in srgb, #000 26%, transparent);
+}
+.cover-picker-sheet {
+  width: min(980px, 100%);
+  max-height: min(760px, calc(100dvh - 36px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--hairline) 76%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.54) inset,
+    0 32px 84px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  -webkit-backdrop-filter: saturate(170%) blur(22px);
+  backdrop-filter: saturate(170%) blur(22px);
+}
+.cover-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
+}
+.cover-picker-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font: 650 15px/1.2 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+}
+.cover-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cover-picker-secondary {
+  min-height: 30px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: color-mix(in srgb, var(--muted) 55%, var(--ink));
+  font: 650 12px/1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.cover-picker-secondary:hover,
+.cover-picker-secondary:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--ink);
+}
+.cover-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.cover-picker-card {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0;
+  background: var(--bg-soft);
+  cursor: pointer;
+  overflow: hidden;
+}
+.cover-picker-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.18s var(--ease), filter 0.18s var(--ease);
+}
+.cover-picker-card:hover img,
+.cover-picker-card:focus-visible img {
+  transform: scale(1.025);
+  filter: saturate(1.04);
+}
+.cover-picker-card:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+.cover-picker-card.is-selected {
+  border-color: color-mix(in srgb, var(--post-accent, var(--accent)) 58%, var(--ink));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--post-accent, var(--accent)) 20%, transparent),
+    0 8px 22px rgba(0, 0, 0, 0.14);
+}
+[data-theme="dark"] .cover-picker-sheet {
+  background: color-mix(in srgb, var(--bg-soft-2) 92%, transparent);
+  border-color: color-mix(in srgb, var(--hairline) 82%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 32px 84px rgba(0, 0, 0, 0.54);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cover-picker-sheet {
+    background: color-mix(in srgb, var(--bg-soft-2) 92%, transparent);
+    border-color: color-mix(in srgb, var(--hairline) 82%, transparent);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.08) inset,
+      0 32px 84px rgba(0, 0, 0, 0.54);
+  }
+}
+@media (hover: none) {
+  .edit-cover .edit-cover-toolbar {
+    opacity: 1;
+  }
+}
+
 /* ---------- motion: one gated reveal; static state is the finished state ---------- */
 @keyframes coverReveal {
   from {
@@ -1653,7 +1777,6 @@
 /* ---------- responsive ---------- */
 @media (max-width: 880px) {
   .reader {
-    padding-top: 72px;
     padding-bottom: 64px;
   }
   .reader-title {
@@ -1729,11 +1852,10 @@
 }
 @media (max-width: 560px) {
   .reader {
-    padding-top: 64px;
     padding-bottom: 48px;
   }
   .reader.has-editor-toolbar {
-    padding-top: 118px;
+    padding-top: 0;
   }
   .reader-title {
     font-size: 30px;
@@ -1813,20 +1935,49 @@
     height: 16px;
   }
   .reader-cover {
-    width: calc(100vw - 32px);
     margin: 0 0 32px;
-  }
-  .reader-cover.edit-cover-empty {
-    width: calc(100vw - 32px);
-    margin-bottom: 30px;
-    min-height: 44px;
-    padding: 7px 10px;
-    border-radius: 12px;
   }
   .reader-cover img,
   .reader-cover video {
-    aspect-ratio: 16 / 9;
-    border-radius: 14px;
+    height: 56vw;
+    min-height: 220px;
+    max-height: min(320px, 48svh);
+    border-radius: 0;
+  }
+  .edit-cover-toolbar {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    max-width: calc(100% - 20px);
+  }
+  .edit-cover-action {
+    min-height: 30px;
+    padding-inline: 10px;
+  }
+  .cover-picker-backdrop {
+    align-items: flex-end;
+    padding-inline: 0;
+    padding-bottom: 0;
+  }
+  .cover-picker-sheet {
+    width: 100%;
+    max-height: min(720px, calc(100dvh - 20px));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .cover-picker-header {
+    align-items: flex-start;
+    padding: 13px 12px;
+  }
+  .cover-picker-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .cover-picker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 7px;
+    padding: 10px;
   }
   .blog-home {
     padding: 38px 18px 0;

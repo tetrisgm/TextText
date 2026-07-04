@@ -42,6 +42,8 @@ import type { BodyEditorHandle } from "@/components/BodyEditor";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { resolveCover } from "@/lib/cover";
+import { COVER_PILE } from "@/lib/cover-pile";
 
 type EditSession = {
   draft: DraftState;
@@ -140,30 +142,130 @@ function uploadErrorMessage(error: unknown): string {
     : errorMessage(error, "Upload failed.");
 }
 
+function randomPileCover(currentCover: string): string {
+  const available = COVER_PILE.filter((cover) => cover !== currentCover);
+  const pile = available.length > 0 ? available : COVER_PILE;
+  return pile[Math.floor(Math.random() * pile.length)] ?? COVER_PILE[0] ?? "";
+}
+
+function CoverPicker({
+  open,
+  selectedCover,
+  onClose,
+  onSelect,
+  onShuffle,
+}: {
+  open: boolean;
+  selectedCover: string;
+  onClose: () => void;
+  onSelect: (cover: string) => void;
+  onShuffle: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="cover-picker-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="cover-picker-sheet applecms"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Change cover"
+      >
+        <div className="cover-picker-header">
+          <h2>Change cover</h2>
+          <div className="cover-picker-actions">
+            <button
+              type="button"
+              className="cover-picker-secondary"
+              onClick={onShuffle}
+            >
+              Shuffle
+            </button>
+            <button
+              type="button"
+              className="cover-picker-secondary"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="cover-picker-grid">
+          {COVER_PILE.map((cover) => (
+            <button
+              key={cover}
+              type="button"
+              className={`cover-picker-card${
+                cover === selectedCover ? " is-selected" : ""
+              }`}
+              aria-label={`Use ${cover.replace("/covers/", "").replace(".jpg", "")}`}
+              aria-pressed={cover === selectedCover}
+              onClick={() => {
+                onSelect(cover);
+                onClose();
+              }}
+            >
+              {/* Curated local covers are served from public/covers. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={cover} alt="" loading="lazy" decoding="async" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditableCover({
   title,
   cover,
+  customCover,
   caption,
   uploading,
   error,
   onUploadFile,
+  onPickCover,
+  onShuffleCover,
   onCaptionChange,
-  onRemove,
+  onResetCover,
 }: {
   title: string;
   cover: string;
+  customCover: string;
   caption: string;
   uploading: boolean;
   error: string | null;
   onUploadFile: (file: File) => void;
+  onPickCover: (cover: string) => void;
+  onShuffleCover: () => void;
   onCaptionChange: (caption: string) => void;
-  onRemove: () => void;
+  onResetCover: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [draggingCover, setDraggingCover] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const chooseFile = (files: FileList | null) => {
     const file = files
-      ? Array.from(files).find((item) => item.type.startsWith("image/"))
+      ? Array.from(files).find(
+          (item) =>
+            item.type.startsWith("image/") || item.type.startsWith("video/"),
+        )
       : undefined;
     if (file) onUploadFile(file);
   };
@@ -192,79 +294,53 @@ function EditableCover({
     chooseFile(event.dataTransfer.files);
   };
 
-  const input = (
-    <input
-      ref={inputRef}
-      type="file"
-      accept="image/*"
-      hidden
-      onChange={(event) => {
-        chooseFile(event.currentTarget.files);
-        event.currentTarget.value = "";
-      }}
-    />
-  );
-
-  if (!cover) {
-    return (
-      <div
-        className={`reader-cover edit-cover-empty applecms${
-          draggingCover ? " is-dragging-cover" : ""
-        }`}
-        onDragEnter={onCoverDrag}
-        onDragOver={onCoverDrag}
-        onDragLeave={onCoverDragLeave}
-        onDrop={onCoverDrop}
-      >
-        {input}
-        <button
-          type="button"
-          className="edit-cover-empty-button"
-          disabled={uploading}
-          onClick={() => inputRef.current?.click()}
-        >
-          {uploading ? "Uploading" : "Add a cover"}
-        </button>
-        {error && (
-          <span className="edit-cover-error" role="alert">
-            {error}
-          </span>
-        )}
-      </div>
-    );
-  }
-
   return (
     <figure
       className={`reader-cover edit-cover applecms${
         draggingCover ? " is-dragging-cover" : ""
-      }`}
+      }${uploading ? " is-uploading-cover" : ""}`}
       onDragEnter={onCoverDrag}
       onDragOver={onCoverDrag}
       onDragLeave={onCoverDragLeave}
       onDrop={onCoverDrop}
     >
       <div className="edit-cover-media">
-        {input}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={cover} alt={title} />
+        {isVideoFile(cover) ? (
+          <video src={cover} controls playsInline preload="metadata" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cover} alt={title} />
+        )}
+        <div className="edit-cover-drop-hint" aria-hidden="true">
+          Drop to replace cover
+        </div>
         <div className="edit-cover-toolbar">
           <button
             type="button"
             className="edit-cover-action"
             disabled={uploading}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => setPickerOpen(true)}
           >
-            {uploading ? "Uploading" : "Change"}
+            {uploading ? "Uploading" : "Change cover"}
           </button>
           <button
             type="button"
             className="edit-cover-action"
             disabled={uploading}
-            onClick={onRemove}
+            onClick={onShuffleCover}
           >
-            Remove
+            Shuffle
           </button>
+          {customCover && (
+            <button
+              type="button"
+              className="edit-cover-action"
+              disabled={uploading}
+              onClick={onResetCover}
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
       <figcaption className="reader-figcaption edit-cover-caption">
@@ -281,6 +357,13 @@ function EditableCover({
           {error}
         </span>
       )}
+      <CoverPicker
+        open={pickerOpen}
+        selectedCover={customCover}
+        onClose={() => setPickerOpen(false)}
+        onSelect={onPickCover}
+        onShuffle={onShuffleCover}
+      />
     </figure>
   );
 }
@@ -365,7 +448,7 @@ function EditableTalkStage({
         <div className="talk-edit-stage-empty">
           <button
             type="button"
-            className="edit-cover-empty-button"
+            className="talk-edit-empty-button"
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
           >
@@ -806,6 +889,21 @@ export function PostEditLayer({
     [updateDraft, uploadEndpoint],
   );
 
+  const pickPileCover = useCallback(
+    (cover: string) => {
+      setCoverUploadError(null);
+      updateDraft({ cover });
+    },
+    [updateDraft],
+  );
+
+  const shufflePileCover = useCallback(() => {
+    const cover = randomPileCover(draft.cover.trim());
+    if (!cover) return;
+    setCoverUploadError(null);
+    updateDraft({ cover });
+  }, [draft.cover, updateDraft]);
+
   const removeCover = useCallback(() => {
     setCoverUploadError(null);
     updateDraft({ cover: "", coverCaption: "" });
@@ -1019,13 +1117,16 @@ export function PostEditLayer({
     cover: (
       <EditableCover
         title={titleText}
-        cover={draft.cover}
+        cover={resolveCover(displayPost)}
+        customCover={draft.cover.trim()}
         caption={draft.coverCaption}
         uploading={coverUploading}
         error={coverUploadError}
         onUploadFile={uploadCover}
+        onPickCover={pickPileCover}
+        onShuffleCover={shufflePileCover}
         onCaptionChange={(coverCaption) => updateDraft({ coverCaption })}
-        onRemove={removeCover}
+        onResetCover={removeCover}
       />
     ),
     gallery: (
