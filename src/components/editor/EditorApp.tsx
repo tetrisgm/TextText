@@ -21,7 +21,6 @@ type SaveIntent = "save" | "publish" | "unpublish";
 type BlogSettingsFields = {
   name: string;
   handle: string;
-  accent: string;
   tagline: string;
   bioLine: string;
 };
@@ -109,10 +108,6 @@ function itemMeta(post: Post) {
     .join(" | ");
 }
 
-function isHexColor(value: string | undefined) {
-  return /^#[0-9a-fA-F]{6}$/.test(value ?? "");
-}
-
 function optionalValue(value: string) {
   return value === "" ? undefined : value;
 }
@@ -161,7 +156,6 @@ function blogSettingsFields(blog: Blog): BlogSettingsFields {
   return {
     name: blog.name,
     handle: blog.handle,
-    accent: blog.accent ?? "",
     tagline: blog.tagline ?? "",
     bioLine: blog.bioLine ?? "",
   };
@@ -470,13 +464,6 @@ export function EditorApp({
   const [ids, setIds] = useState(() => postIds(posts));
   const [drafts, setDrafts] = useState(() => draftsById(posts));
   const [selectedId, setSelectedId] = useState(() => ids[0] ?? "");
-  // The hex field's own text buffer, so a partial value like "#0a" can be typed
-  // without streaming an invalid color to the preview. Only a valid hex or an
-  // empty string is ever committed to the draft accent.
-  const [accentText, setAccentText] = useState(() => {
-    const first = ids[0];
-    return (first ? drafts[first]?.accent : undefined) ?? "";
-  });
   const [slugAutoForSelected, setSlugAutoForSelected] = useState(() => {
     const first = ids[0];
     return Boolean(first && drafts[first] && isPlaceholderSlug(drafts[first].slug));
@@ -620,7 +607,6 @@ export function EditorApp({
   const selectPost = useCallback(
     (id: string) => {
       setSelectedId(id);
-      setAccentText(drafts[id]?.accent ?? "");
       setSlugAutoForSelected(
         canAutoSlugPost(id, drafts[id], manualSlugByIdRef.current),
       );
@@ -690,19 +676,12 @@ export function EditorApp({
       event.preventDefault();
       if (!canEditSettings) return;
 
-      const accent = settingsDraft.accent.trim();
-      if (accent && !isHexColor(accent)) {
-        setSettingsError("Accent must be a hex color like #065ec6");
-        return;
-      }
-
       setSettingsSaving(true);
       setSettingsError(null);
       try {
         const saved = await updateBlogAction({
           name: settingsDraft.name,
           handle: settingsDraft.handle,
-          accent,
           tagline: settingsDraft.tagline,
           bioLine: settingsDraft.bioLine,
         });
@@ -830,7 +809,6 @@ export function EditorApp({
     setIds((current) => [id, ...current]);
     setFolder("all");
     setSelectedId(id);
-    setAccentText(created.accent ?? "");
     manualSlugByIdRef.current[id] = false;
     setSlugAutoForSelected(canAutoSlugPost(id, created, manualSlugByIdRef.current));
     setPostError(null);
@@ -1300,45 +1278,6 @@ export function EditorApp({
                       />
                     </label>
 
-                    <div className="ac-accent-row">
-                      <label className="ac-field-label">
-                        <span className="ac-label-text">Accent swatch</span>
-                        <input
-                          className="ac-color-field"
-                          type="color"
-                          value={
-                            isHexColor(selectedPost.accent)
-                              ? selectedPost.accent
-                              : "#000000"
-                          }
-                          onChange={(event) => {
-                            const value = event.currentTarget.value;
-                            updateSelected({ accent: value });
-                            setAccentText(value);
-                          }}
-                        />
-                      </label>
-
-                      <label className="ac-field-label ac-accent-input">
-                        <span className="ac-label-text">Accent hex</span>
-                        <input
-                          className="ac-field"
-                          value={accentText}
-                          placeholder={blog.accent ?? "#065ec6"}
-                          onChange={(event) => {
-                            const value = event.currentTarget.value;
-                            setAccentText(value);
-                            const hex = value.trim();
-                            // Commit only a valid hex or an explicit clear; keep
-                            // partial input in the field without streaming an
-                            // invalid --post-accent to the preview.
-                            if (hex === "") updateSelected({ accent: "" });
-                            else if (isHexColor(hex)) updateSelected({ accent: hex });
-                          }}
-                        />
-                      </label>
-                    </div>
-
                     <label className="ac-field-label ac-form-span">
                       <span className="ac-label-text">
                         {selectedPost.type === "talk" ? "Poster or cover URL" : "Cover URL"}
@@ -1560,39 +1499,6 @@ export function EditorApp({
                   }
                 />
               </label>
-
-              <div className="ac-accent-row ac-settings-wide">
-                <label className="ac-field-label">
-                  <span className="ac-label-text">Accent swatch</span>
-                  <input
-                    className="ac-color-field"
-                    type="color"
-                    value={
-                      isHexColor(settingsDraft.accent.trim())
-                        ? settingsDraft.accent.trim()
-                        : "#000000"
-                    }
-                    onChange={(event) =>
-                      updateSettingsDraft({ accent: event.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label className="ac-field-label ac-accent-input">
-                  <span className="ac-label-text">Accent hex</span>
-                  <input
-                    className="ac-field"
-                    value={settingsDraft.accent}
-                    placeholder="#065ec6"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    onChange={(event) =>
-                      updateSettingsDraft({ accent: event.currentTarget.value })
-                    }
-                  />
-                </label>
-              </div>
 
               <label className="ac-field-label ac-settings-wide">
                 <span className="ac-label-text">Tagline</span>

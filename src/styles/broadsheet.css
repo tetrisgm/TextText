@@ -362,45 +362,28 @@
   gap: 10px 14px;
   max-width: 760px;
 }
-.blog-new-post {
+.blog-create-form {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 200;
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-end;
+  min-height: 46px;
+  max-width: calc(100vw - 16px);
   padding: 5px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 999px;
-  background: var(--bg-soft-2);
+  border-radius: 14px;
+  box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.48);
+  --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
 }
-.blog-new-post-select {
-  height: 34px;
-  min-width: 112px;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
+.blog-create-button {
+  flex: 0 0 auto;
   letter-spacing: 0;
+}
+.blog-create-button:focus-visible {
   outline: none;
-}
-.blog-new-post-button {
-  height: 34px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--bg);
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0;
-  cursor: pointer;
-}
-.blog-new-post-button:focus-visible,
-.blog-new-post-select:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--post-accent, var(--accent)) 55%, transparent);
-  outline-offset: 2px;
+  box-shadow: var(--ac-focus);
 }
 .blog-home-footer {
   display: flex;
@@ -483,7 +466,6 @@
 .post-owner-edit,
 .post-action-share,
 .post-edit-menu-button,
-.post-edit-inherit,
 .post-edit-delete,
 .post-share-copy,
 .post-share-invite {
@@ -558,13 +540,11 @@
 .post-owner-edit:focus-visible,
 .post-action-share:focus-visible,
 .post-type-switcher .ac-segmented-button:focus-visible,
-.post-edit-inherit:focus-visible,
 .post-edit-delete:focus-visible,
 .post-share-copy:focus-visible,
 .post-share-invite:focus-visible,
 .post-share-visibility-button:focus-visible,
 .post-edit-slug:focus-visible,
-.post-edit-color:focus-visible,
 .post-share-link-field:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
@@ -587,7 +567,9 @@
   color: var(--ac-label);
 }
 .post-edit-menu {
-  width: min(270px, calc(100vw - 24px));
+  width: min(190px, calc(100vw - 24px));
+  gap: 0;
+  padding: 6px;
 }
 .post-popover-heading {
   color: var(--ac-label);
@@ -703,23 +685,6 @@
   opacity: 0.45;
   cursor: default;
 }
-.post-edit-color-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.post-edit-color {
-  width: 42px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--ac-separator);
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-}
-.post-edit-inherit {
-  flex: 1 0 auto;
-}
 .post-edit-slug {
   width: 100%;
   min-height: 34px;
@@ -741,8 +706,20 @@
 }
 .post-edit-delete {
   width: 100%;
-  background: var(--ac-red);
-  color: #fff;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ac-red);
+  font: 650 var(--ac-fs-footnote)/1 var(--ac-font-text);
+  cursor: pointer;
+}
+.post-edit-delete:not(:disabled):hover {
+  background: var(--ac-fill-4);
 }
 .post-edit-delete:disabled {
   cursor: default;

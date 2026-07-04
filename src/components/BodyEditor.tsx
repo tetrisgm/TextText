@@ -60,7 +60,6 @@ const initialActiveState: ActiveState = {
 
 const textColors = [
   { label: "Ink", token: "--ink" },
-  { label: "Accent", token: "--post-accent" },
   { label: "Blue", value: "#0066cc" },
   { label: "Red", value: "#af1e2d" },
 ] as const;

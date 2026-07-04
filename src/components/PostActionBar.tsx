@@ -14,7 +14,6 @@ import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
   initialDraft,
-  isHexColor,
   payloadFor,
   postPath as postPathFor,
   slugify,
@@ -93,16 +92,12 @@ function ChevronIcon({ dir }: { dir: "left" | "right" }) {
   );
 }
 
-function GearIcon() {
+function EllipsisIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M8 1.75V3M8 13v1.25M3.6 3.6l.88.88M11.52 11.52l.88.88M1.75 8H3M13 8h1.25M3.6 12.4l.88-.88M11.52 4.48l.88-.88"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.4"
-      />
+      <circle cx="4" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="12" cy="8" r="1.25" fill="currentColor" />
     </svg>
   );
 }
@@ -272,11 +267,6 @@ export function PostActionBar(props: Props) {
   const activeSlug = slugify(activeDraft.slug, props.post.slug);
   const publicPath = postPathFor(props.blog.handle, activeSlug);
   const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
-  const colorValue = isHexColor(activeDraft.accent)
-    ? activeDraft.accent
-    : isHexColor(props.blog.accent)
-      ? props.blog.accent
-      : "#0066cc";
   const visibility =
     activeDraft.status === "published"
       ? {
@@ -324,18 +314,6 @@ export function PostActionBar(props: Props) {
       }
     },
     [props.blog.handle, props.post.id, props.post.slug, router],
-  );
-
-  const updateDraft = useCallback(
-    (patch: Partial<DraftState>) => {
-      if (props.mode === "edit") {
-        props.onUpdateDraft(patch);
-        return;
-      }
-
-      setReadDraft((current) => ({ ...current, ...patch }));
-    },
-    [props],
   );
 
   const updateSlugInput = useCallback(
@@ -562,46 +540,29 @@ export function PostActionBar(props: Props) {
                 <button
                   type="button"
                   className="post-edit-menu-button ac-icon-btn"
-                  aria-label="Post settings"
+                  aria-label="Post actions"
                   aria-expanded={settingsOpen}
+                  aria-haspopup="menu"
                   onClick={openSettings}
                 >
-                  <GearIcon />
+                  <EllipsisIcon />
                 </button>
                 {settingsOpen && (
                   <div
                     className="post-edit-menu"
                     data-post-edit-menu-open="true"
-                    role="dialog"
-                    aria-label="Post settings"
+                    role="menu"
+                    aria-label="Post actions"
                   >
-                    <div className="post-popover-heading">Settings</div>
-                    <label className="post-edit-menu-field">
-                      <span>Accent color</span>
-                      <span className="post-edit-color-row">
-                        <input
-                          className="post-edit-color"
-                          type="color"
-                          aria-label="Accent color"
-                          value={colorValue}
-                          onChange={(event) =>
-                            updateDraft({ accent: event.currentTarget.value })
-                          }
-                        />
-                        <button
-                          className="post-edit-inherit ac-btn ac-btn-plain"
-                          type="button"
-                          onClick={() => updateDraft({ accent: "" })}
-                        >
-                          Inherit
-                        </button>
-                      </span>
-                    </label>
                     <button
-                      className="post-edit-delete ac-btn"
+                      className="post-edit-delete"
                       type="button"
+                      role="menuitem"
                       disabled={!props.post.id || props.deleting}
-                      onClick={props.onDelete}
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        props.onDelete();
+                      }}
                     >
                       {props.deleting ? "Deleting" : "Delete post"}
                     </button>

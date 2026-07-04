@@ -8,17 +8,11 @@ import { BlogHomeShortcuts } from "@/components/PostShortcuts";
 import { blogFeedAlternateTypes, blogFeedHref } from "@/lib/feed-links";
 import { getCurrentUser } from "@/lib/session";
 import { getAllPosts, getBlog, getPosts, isBlogOwner } from "@/lib/store";
-import type { Blog, PostType } from "@/lib/content";
+import type { Blog } from "@/lib/content";
 
 interface Props {
   params: Promise<{ handle: string }>;
 }
-
-const TYPE_LABELS: Record<PostType, string> = {
-  article: "Article",
-  project: "Project",
-  talk: "Talk",
-};
 
 function blogStyle(blog: Blog): CSSProperties | undefined {
   return blog.accent
@@ -26,29 +20,19 @@ function blogStyle(blog: Blog): CSSProperties | undefined {
     : undefined;
 }
 
-function NewPostForm() {
+function CreatePostForm() {
   return (
-    <form className="blog-new-post" action={createPostAndRedirectAction}>
-      <select
-        className="blog-new-post-select"
-        name="type"
-        defaultValue="article"
-        aria-label="Post type"
-      >
-        {POST_TYPES.map((type) => (
-          <option key={type} value={type}>
-            {TYPE_LABELS[type]}
-          </option>
-        ))}
-      </select>
-      <button className="blog-new-post-button" type="submit">
-        New post
+    <form
+      className="blog-create-form applecms ac-chrome"
+      action={createPostAndRedirectAction}
+    >
+      <input type="hidden" name="type" value="article" />
+      <button className="blog-create-button ac-btn ac-btn-filled" type="submit">
+        Create
       </button>
     </form>
   );
 }
-
-const POST_TYPES: PostType[] = ["article", "project", "talk"];
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
@@ -80,6 +64,7 @@ export default async function BlogHome({ params }: Props) {
   return (
     <main className="blog-home" style={blogStyle(blog)}>
       {owner && <BlogHomeShortcuts owner={owner} />}
+      {owner && <CreatePostForm />}
       <header className="blog-home-header">
         <div className="blog-home-heading">
           <div className="blog-home-copy">
@@ -90,7 +75,6 @@ export default async function BlogHome({ params }: Props) {
               )}
             </div>
           </div>
-          {owner && <NewPostForm />}
         </div>
       </header>
 
