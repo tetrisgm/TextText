@@ -12,6 +12,7 @@ import {
   ensureOwnerBlog,
   getPostById,
   savePost,
+  setPostPinned,
   updateBlog,
 } from "@/lib/store";
 
@@ -235,12 +236,23 @@ export async function saveEditablePostAction(input: unknown): Promise<Post> {
     status: patch.status,
     slug: patch.slug,
     accent: patch.accent,
+    pinned: existing.pinned,
     gallery: patch.gallery,
     videoUrl: patch.videoUrl,
     venue: patch.venue,
     duration: patch.duration,
   });
   revalidateBlog(handle, [saved.slug]);
+  return saved;
+}
+
+export async function toggleEditablePostPinnedAction(id: unknown): Promise<Post> {
+  const handle = await editorHandle();
+  const postId = cleanPostId(id);
+  const existing = await getPostById(handle, postId);
+  if (!existing) throw new Error("Post not found");
+  const saved = await setPostPinned(handle, postId, !existing.pinned);
+  revalidateBlog(handle, [existing.slug]);
   return saved;
 }
 

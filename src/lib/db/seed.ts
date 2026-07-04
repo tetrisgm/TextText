@@ -62,6 +62,7 @@ async function main() {
         duration: p.duration ?? null,
         body: p.body,
         status: p.status,
+        pinned: p.pinned ?? false,
         publishedAt:
           p.status === "published" && p.date ? new Date(p.date) : null,
       })

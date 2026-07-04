@@ -11,6 +11,7 @@ import {
 } from "@/lib/content";
 
 type ReaderSlots = {
+  toolbar?: ReactNode;
   stage?: ReactNode;
   title?: ReactNode;
   excerpt?: ReactNode;
@@ -79,6 +80,7 @@ export function TalkReader({
 
   return (
     <article className="reader talk-detail" style={style}>
+      {slots?.toolbar}
       {slots?.stage ??
         ((embedSrc || fileVideoSrc || post.cover) && (
           <div className="talk-detail-stage">

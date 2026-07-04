@@ -6,6 +6,7 @@ import type { Blog, LinkRef, Post } from "@/lib/content";
 import { postAccent } from "@/lib/content";
 
 type ReaderSlots = {
+  toolbar?: ReactNode;
   title?: ReactNode;
   excerpt?: ReactNode;
   body?: ReactNode;
@@ -53,9 +54,13 @@ export function ProjectReader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const excerpt = post.excerpt?.trim();
+  const className = `project-split${
+    slots?.toolbar ? " has-editor-toolbar" : ""
+  }`;
 
   return (
-    <article className="project-split" style={style}>
+    <article className={className} style={style}>
+      {slots?.toolbar}
       <section className="project-split-left" aria-labelledby="project-title">
         <div className="project-split-inner">
           {slots?.title ?? (

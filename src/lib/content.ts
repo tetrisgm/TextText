@@ -45,6 +45,8 @@ export interface Post {
   /** ISO date, e.g. "2026-07-01" */
   date?: string;
   status: "draft" | "published";
+  /** owner-curated placement at the top of public and owner lists */
+  pinned?: boolean;
   gallery?: GalleryItem[];
   links?: LinkRef[];
   videoUrl?: string;

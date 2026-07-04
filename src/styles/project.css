@@ -723,6 +723,13 @@
     padding: 72px 20px 64px;
   }
 
+  .project-split.has-editor-toolbar {
+    grid-template-areas:
+      "toolbar"
+      "right"
+      "left";
+  }
+
   .project-split-left {
     padding-right: 0;
     border-right: 0;

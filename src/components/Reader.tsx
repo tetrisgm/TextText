@@ -15,6 +15,7 @@ import {
 // accent use in broadsheet.css degrades to neutral ink.
 
 type ReaderSlots = {
+  toolbar?: ReactNode;
   title?: ReactNode;
   excerpt?: ReactNode;
   cover?: ReactNode;
@@ -73,6 +74,7 @@ export function Reader({
   );
   return (
     <article className="reader" style={style}>
+      {slots?.toolbar}
       {cover}
       <header className="reader-masthead">
         {slots?.title ?? <h1 className="reader-title">{title}</h1>}

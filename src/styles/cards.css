@@ -263,6 +263,14 @@ video.tvcard-cover[data-ready="true"] {
   gap: 8px;
 }
 
+.tvcard-marker-row {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
 .tvcard-chip {
   align-self: flex-start;
   display: inline-flex;
@@ -293,11 +301,37 @@ video.tvcard-cover[data-ready="true"] {
   letter-spacing: 0;
 }
 
+.tvcard-pinned {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 20px;
+  padding: 4px 9px;
+  border: 1px solid
+    color-mix(in srgb, var(--post-accent, var(--accent)) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--post-accent, var(--accent)) 7%, transparent);
+  color: color-mix(in srgb, var(--post-accent, var(--muted)) 34%, var(--muted));
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
 .tvcard--project .tvcard-unlisted {
-  margin-bottom: 3px;
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.13);
   color: rgba(255, 255, 255, 0.78);
+}
+
+.tvcard--project .tvcard-marker-row {
+  margin-bottom: 3px;
+}
+
+.tvcard--project .tvcard-pinned {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .tvcard-title {

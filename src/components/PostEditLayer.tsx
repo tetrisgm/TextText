@@ -885,8 +885,6 @@ export function PostEditLayer({
       : displayPost.type === "talk"
         ? "talk-detail-title edit-title-field"
         : "reader-title edit-title-field";
-  const isArticle =
-    displayPost.type !== "project" && displayPost.type !== "talk";
   const excerptClass =
     displayPost.type === "project"
       ? "reader-dek project-dek edit-excerpt-field"
@@ -967,30 +965,28 @@ export function PostEditLayer({
   );
 
   const slots = {
+    toolbar: (
+      <div
+        ref={setBodyToolbarHost}
+        className="body-editor-toolbar-anchor"
+      />
+    ),
     title: (
-      <>
-        {!isArticle && (
-          <div
-            ref={setBodyToolbarHost}
-            className="body-editor-toolbar-anchor"
-          />
-        )}
-        <textarea
-          ref={titleRef}
-          id={displayPost.type === "project" ? "project-title" : undefined}
-          className={titleClass}
-          aria-label="Title"
-          placeholder="Give it a title"
-          autoFocus={shouldAutoFocusTitle}
-          rows={1}
-          value={draft.title}
-          onChange={(event) =>
-            updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
-          }
-          onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
-          onKeyDown={onTitleKeyDown}
-        />
-      </>
+      <textarea
+        ref={titleRef}
+        id={displayPost.type === "project" ? "project-title" : undefined}
+        className={titleClass}
+        aria-label="Title"
+        placeholder="Give it a title"
+        autoFocus={shouldAutoFocusTitle}
+        rows={1}
+        value={draft.title}
+        onChange={(event) =>
+          updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
+        }
+        onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
+        onKeyDown={onTitleKeyDown}
+      />
     ),
     excerpt: (
       <textarea
@@ -1006,12 +1002,6 @@ export function PostEditLayer({
     ),
     body: (
       <div onKeyDown={onBodyKeyDown}>
-        {isArticle && (
-          <div
-            ref={setBodyToolbarHost}
-            className="body-editor-toolbar-anchor"
-          />
-        )}
         <BodyEditor
           ref={bodyRef}
           value={draft.body}

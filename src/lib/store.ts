@@ -58,6 +58,7 @@ function mapPost(row: PostRow): Post {
     body: row.body,
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
+    pinned: row.pinned,
   };
 }
 
@@ -105,23 +106,36 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
         : eq(blogs.handle, handle),
     )
     .orderBy(
+      desc(posts.pinned),
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
   return rows.map((r) => mapPost(r.posts));
 }
 
+function pinnedFirst(items: Post[]): Post[] {
+  return items
+    .map((post, index) => ({ post, index }))
+    .sort((a, b) => {
+      if (Boolean(a.post.pinned) !== Boolean(b.post.pinned)) {
+        return Number(Boolean(b.post.pinned)) - Number(Boolean(a.post.pinned));
+      }
+      return a.index - b.index;
+    })
+    .map(({ post }) => post);
+}
+
 export async function getPosts(handle: string): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
-    return DEMO_POSTS.filter((p) => p.status === "published");
+    return pinnedFirst(DEMO_POSTS.filter((p) => p.status === "published"));
   }
   return selectPosts(handle, true);
 }
 
 export async function getAllPosts(handle: string): Promise<Post[]> {
   if (!db) {
-    return handle === DEMO_BLOG.handle ? DEMO_POSTS : [];
+    return handle === DEMO_BLOG.handle ? pinnedFirst(DEMO_POSTS) : [];
   }
   return selectPosts(handle, false);
 }
@@ -206,6 +220,22 @@ export async function deletePost(handle: string, id: string): Promise<void> {
   await db.delete(posts).where(and(eq(posts.id, id), eq(posts.blogId, blogId)));
 }
 
+export async function setPostPinned(
+  handle: string,
+  id: string,
+  pinned: boolean,
+): Promise<Post> {
+  if (!db) throw new Error("setPostPinned requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const updated = await db
+    .update(posts)
+    .set({ pinned })
+    .where(and(eq(posts.id, id), eq(posts.blogId, blogId)))
+    .returning();
+  if (!updated[0]) throw new Error("Post not found");
+  return mapPost(updated[0]);
+}
+
 function isPostsBlogSlugConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as {
@@ -248,6 +278,7 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     duration: post.duration ?? null,
     body: post.body,
     status: post.status,
+    pinned: post.pinned ?? false,
     updatedAt: new Date(),
   };
   const publishedAt =

@@ -3,6 +3,7 @@
 // demo seed (src/lib/demo.ts). Auth.js adapter tables land with auth wiring.
 
 import {
+  boolean,
   jsonb,
   pgTable,
   text,
@@ -77,6 +78,7 @@ export const posts = pgTable(
     /** markdown */
     body: text("body").notNull().default(""),
     status: postStatus("status").notNull().default("draft"),
+    pinned: boolean("pinned").notNull().default(false),
     publishedAt: timestamp("published_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

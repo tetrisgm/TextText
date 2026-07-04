@@ -4,7 +4,10 @@ import type { CSSProperties, MouseEvent, PointerEvent } from "react";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { deleteEditablePostAction } from "@/app/editor/actions";
+import {
+  deleteEditablePostAction,
+  toggleEditablePostPinnedAction,
+} from "@/app/editor/actions";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
   formatArticleDate,
@@ -129,6 +132,7 @@ export function PostCard({
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [pinning, setPinning] = useState(false);
 
   const title = postTitle(post);
   const desc = postDesc(post);
@@ -136,6 +140,7 @@ export function PostCard({
   const isVideoCover = isVideoFile(cover);
   const accent = postAccent(blog, post);
   const showUnlisted = owner && post.status === "draft";
+  const showPinned = Boolean(post.pinned);
 
   const attachVideo = useCallback((node: HTMLVideoElement | null) => {
     if (node) {
@@ -329,6 +334,30 @@ export function PostCard({
     });
   };
 
+  const onTogglePinned = (event: MouseEvent<HTMLButtonElement>) => {
+    stopMenuNavigation(event);
+    const postId = post.id;
+    if (!owner || !postId || pinning) return;
+
+    setPinning(true);
+    startTransition(() => {
+      void toggleEditablePostPinnedAction(postId)
+        .then(() => {
+          setMenuOpen(false);
+          setPinning(false);
+          router.refresh();
+        })
+        .catch((error) => {
+          setPinning(false);
+          window.alert(
+            error instanceof Error && error.message
+              ? error.message
+              : "Could not update pin",
+          );
+        });
+    });
+  };
+
   const className = [
     "tvcard",
     `tvcard--${post.type}`,
@@ -392,8 +421,15 @@ export function PostCard({
             <span className="tvcard-body">
               {post.type === "project" ? (
                 <>
-                  {showUnlisted && (
-                    <span className="tvcard-unlisted">Unlisted</span>
+                  {(showPinned || showUnlisted) && (
+                    <span className="tvcard-marker-row">
+                      {showPinned && (
+                        <span className="tvcard-pinned">Pinned</span>
+                      )}
+                      {showUnlisted && (
+                        <span className="tvcard-unlisted">Unlisted</span>
+                      )}
+                    </span>
                   )}
                   <span className="tvcard-title">{title}</span>
                   <span className="tvcard-desc">{desc}</span>
@@ -407,6 +443,9 @@ export function PostCard({
                     >
                       {TYPE_LABELS[post.type]}
                     </span>
+                    {showPinned && (
+                      <span className="tvcard-pinned">Pinned</span>
+                    )}
                     {showUnlisted && (
                       <span className="tvcard-unlisted">Unlisted</span>
                     )}
@@ -437,6 +476,15 @@ export function PostCard({
           </button>
           {menuOpen && (
             <div className="tvcard-menu" role="menu" aria-label="Post options">
+              <button
+                type="button"
+                className="tvcard-menu-item"
+                role="menuitem"
+                disabled={!post.id || pinning}
+                onClick={onTogglePinned}
+              >
+                {pinning ? "Updating" : post.pinned ? "Unpin" : "Pin"}
+              </button>
               <button
                 type="button"
                 className="tvcard-menu-item is-danger"
