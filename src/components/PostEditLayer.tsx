@@ -39,6 +39,7 @@ import type { DraftState, SaveState } from "@/lib/post-edit-draft";
 import { PostActionBar } from "@/components/PostActionBar";
 import { BodyEditor } from "@/components/BodyEditor";
 import type { BodyEditorHandle } from "@/components/BodyEditor";
+import { hasOpenEditMenu } from "@/components/PostShortcuts";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
@@ -538,6 +539,44 @@ function SaveStatusPill({
   saveState: SaveState;
   error: string | null;
 }) {
+  const [visible, setVisible] = useState(false);
+  const savedTimerRef = useRef<number | null>(null);
+  const sawActivityRef = useRef(false);
+
+  useEffect(() => {
+    if (savedTimerRef.current !== null) {
+      window.clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = null;
+    }
+
+    if (saveState === "saving" || saveState === "error") {
+      sawActivityRef.current = true;
+      setVisible(true);
+      return;
+    }
+
+    if (!sawActivityRef.current) {
+      setVisible(false);
+      return;
+    }
+
+    setVisible(true);
+    savedTimerRef.current = window.setTimeout(() => {
+      setVisible(false);
+      sawActivityRef.current = false;
+      savedTimerRef.current = null;
+    }, 1800);
+
+    return () => {
+      if (savedTimerRef.current !== null) {
+        window.clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = null;
+      }
+    };
+  }, [saveState]);
+
+  if (!visible) return null;
+
   const text =
     saveState === "saving" ? "Saving" : saveState === "error" ? error : "Saved";
   return (
@@ -872,6 +911,25 @@ export function PostEditLayer({
     },
     [blog.handle, draft, postId, router],
   );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key !== "Escape") return;
+      if (hasOpenEditMenu()) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      if (leavingEditRef.current) return;
+      void saveDraftNow({}, { exitEdit: true });
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [saveDraftNow]);
 
   const uploadCover = useCallback(
     async (file: File) => {

@@ -2,10 +2,10 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { createPostAndRedirectAction } from "@/app/editor/actions";
 import {
   BlogNameForm,
   ClaimBlogButton,
+  CreatePostTypePicker,
 } from "@/components/BlogHomeEditorControls";
 import { PostCard } from "@/components/PostCard";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
@@ -34,21 +34,6 @@ function queryValue(value: string | string[] | undefined): string | undefined {
 function isDefaultBlogName(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return !normalized || normalized === "untitled blog";
-}
-
-function CreatePostForm({ handle }: { handle: string }) {
-  return (
-    <form
-      className="blog-create-form applecms ac-chrome"
-      action={createPostAndRedirectAction}
-    >
-      <input type="hidden" name="handle" value={handle} />
-      <input type="hidden" name="type" value="article" />
-      <button className="blog-create-button ac-btn ac-btn-filled" type="submit">
-        Create
-      </button>
-    </form>
-  );
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -88,9 +73,32 @@ export default async function BlogHome({ params, searchParams }: Props) {
   ];
 
   return (
-    <main className="blog-home" style={blogStyle(blog)}>
+    <main
+      className={`blog-home${canEdit ? " has-editor-actions" : ""}${
+        showClaim ? " has-claim-actions" : ""
+      }`}
+      style={blogStyle(blog)}
+    >
       {canEdit && <BlogHomeShortcuts owner={canEdit} handle={handle} />}
-      {canEdit && <CreatePostForm handle={handle} />}
+      {canEdit && (
+        <div
+          className="blog-home-action-bar applecms"
+          aria-label="Blog controls"
+        >
+          <div className="blog-home-action-toolbar ac-chrome">
+            {showClaim && (
+              <ClaimBlogButton
+                handle={handle}
+                publicPath={`/t/${encodedHandle}`}
+                signedIn={Boolean(viewer)}
+                authConfigured={isAuthConfigured}
+                autoClaim={queryValue(query.claim) === "1"}
+              />
+            )}
+            <CreatePostTypePicker handle={handle} />
+          </div>
+        </div>
+      )}
       <header className="blog-home-header">
         <div className="blog-home-heading">
           <div className="blog-home-copy">
@@ -106,15 +114,6 @@ export default async function BlogHome({ params, searchParams }: Props) {
             </div>
           </div>
         </div>
-        {showClaim && (
-          <ClaimBlogButton
-            handle={handle}
-            publicPath={`/t/${encodedHandle}`}
-            signedIn={Boolean(viewer)}
-            authConfigured={isAuthConfigured}
-            autoClaim={queryValue(query.claim) === "1"}
-          />
-        )}
       </header>
 
       {posts.length > 0 && (

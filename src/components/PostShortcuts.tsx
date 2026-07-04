@@ -19,7 +19,7 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   return element.isContentEditable;
 }
 
-function hasOpenEditMenu(): boolean {
+export function hasOpenEditMenu(): boolean {
   return Boolean(document.querySelector('[data-post-edit-menu-open="true"]'));
 }
 
@@ -67,20 +67,25 @@ export function PostShortcuts({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && hasOpenEditMenu()) {
+      if (event.defaultPrevented) return;
+
+      if (event.key === "Escape") {
+        if (hasOpenEditMenu()) {
+          event.preventDefault();
+          window.dispatchEvent(new CustomEvent(CLOSE_EDIT_MENU_EVENT));
+          return;
+        }
+
         event.preventDefault();
-        window.dispatchEvent(new CustomEvent(CLOSE_EDIT_MENU_EVENT));
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        router.push(homePath);
         return;
       }
 
       if (isTypingTarget(event.target)) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        router.push(homePath);
-        return;
-      }
 
       const key = event.key.toLowerCase();
       const targetPath =

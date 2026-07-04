@@ -481,13 +481,15 @@ export function PostActionBar(props: Props) {
                 >
                   <div className="post-popover-heading">Share</div>
                   <section className="post-share-section">
-                    <div className="post-share-section-label">Public link</div>
+                    <div className="post-share-section-label">
+                      Link to this page:
+                    </div>
                     <div className="post-share-link-row">
                       <input
                         className="post-share-link-field"
                         value={publicUrl}
                         readOnly
-                        aria-label="Public link"
+                        aria-label="Link to this page:"
                       />
                       <button
                         type="button"
@@ -583,32 +585,34 @@ export function PostActionBar(props: Props) {
           </div>
         )}
         <nav className="post-detail-controls" aria-label="Post navigation">
-          <NavControl
-            href={previousPath}
-            label={
-              props.adjacent.previous
-                ? `Previous post: ${postTitle(props.adjacent.previous.title)}`
-                : "No previous post"
-            }
-            disabled={!previousPath}
-            mode={props.mode}
-            onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
-          >
-            <ChevronIcon dir="left" />
-          </NavControl>
-          <NavControl
-            href={nextPath}
-            label={
-              props.adjacent.next
-                ? `Next post: ${postTitle(props.adjacent.next.title)}`
-                : "No next post"
-            }
-            disabled={!nextPath}
-            mode={props.mode}
-            onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
-          >
-            <ChevronIcon dir="right" />
-          </NavControl>
+          {props.mode === "read" && (
+            <>
+              <NavControl
+                href={previousPath}
+                label={
+                  props.adjacent.previous
+                    ? `Previous post: ${postTitle(props.adjacent.previous.title)}`
+                    : "No previous post"
+                }
+                disabled={!previousPath}
+                mode={props.mode}
+              >
+                <ChevronIcon dir="left" />
+              </NavControl>
+              <NavControl
+                href={nextPath}
+                label={
+                  props.adjacent.next
+                    ? `Next post: ${postTitle(props.adjacent.next.title)}`
+                    : "No next post"
+                }
+                disabled={!nextPath}
+                mode={props.mode}
+              >
+                <ChevronIcon dir="right" />
+              </NavControl>
+            </>
+          )}
           <NavControl
             href={props.homePath}
             label="Close"

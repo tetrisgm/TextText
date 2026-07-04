@@ -1,10 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import type { RefObject } from "react";
 import { useRouter } from "next/navigation";
-import { claimBlog, updateBlogNameAction } from "@/app/editor/actions";
+import {
+  claimBlog,
+  createPostAndRedirectAction,
+  updateBlogNameAction,
+} from "@/app/editor/actions";
+import type { PostType } from "@/lib/content";
 
 type ActionError = string | null;
+
+const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
+  { type: "article", label: "Article" },
+  { type: "project", label: "Project" },
+  { type: "talk", label: "Talk" },
+];
 
 function signInUrl(handle: string): string {
   const callbackUrl = `/t/${encodeURIComponent(handle)}?claim=1`;
@@ -13,6 +25,83 @@ function signInUrl(handle: string): string {
 
 function cleanDraftName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function useDismissPopover<T extends HTMLElement>(
+  open: boolean,
+  ref: RefObject<T | null>,
+  onClose: () => void,
+) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const node = ref.current;
+      if (!node || !(event.target instanceof Node)) return;
+      if (!node.contains(event.target)) onClose();
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [onClose, open, ref]);
+}
+
+export function CreatePostTypePicker({ handle }: { handle: string }) {
+  const [open, setOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const closePicker = useCallback(() => setOpen(false), []);
+  useDismissPopover(open, pickerRef, closePicker);
+
+  return (
+    <div className="blog-create-picker" ref={pickerRef}>
+      <button
+        className="blog-create-button ac-btn ac-btn-filled"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        Create
+      </button>
+      {open && (
+        <div
+          className="blog-create-popover"
+          data-post-edit-menu-open="true"
+          role="menu"
+          aria-label="Choose post type"
+        >
+          {POST_TYPE_OPTIONS.map((option) => (
+            <form
+              key={option.type}
+              className="blog-create-option-form"
+              action={createPostAndRedirectAction}
+            >
+              <input type="hidden" name="handle" value={handle} />
+              <input type="hidden" name="type" value={option.type} />
+              <button
+                className="blog-create-option"
+                type="submit"
+                role="menuitem"
+              >
+                {option.label}
+              </button>
+            </form>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function BlogNameForm({
@@ -221,12 +310,12 @@ export function ClaimBlogButton({
   return (
     <div className="blog-claim-row applecms">
       <label className="blog-public-link">
-        <span className="blog-public-link-label">Public link</span>
+        <span className="blog-public-link-label">Link to this page:</span>
         <input
           className="blog-public-link-field"
           value={publicUrl}
           readOnly
-          aria-label="Public link"
+          aria-label="Link to this page:"
           onClick={(event) => copyPublicLink(event.currentTarget)}
           onFocus={(event) => event.currentTarget.select()}
         />
