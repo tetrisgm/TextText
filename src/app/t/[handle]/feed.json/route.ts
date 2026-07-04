@@ -1,4 +1,5 @@
 import type { Post } from "@/lib/content";
+import { resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
 
 interface Props {
@@ -31,6 +32,7 @@ export async function GET(_request: Request, { params }: Props) {
         id: url,
         url,
         title: post.title,
+        image: resolveCoverUrl(post, baseUrl),
         summary,
         content_text: summary,
         date_published: postDate(post).toISOString(),

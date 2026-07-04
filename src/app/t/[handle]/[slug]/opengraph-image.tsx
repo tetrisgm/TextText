@@ -7,6 +7,7 @@ import {
   type Blog,
   type Post,
 } from "@/lib/content";
+import { coverMimeType, resolveCover } from "@/lib/cover";
 import { getBlog, getPost } from "@/lib/store";
 
 interface Props {
@@ -22,7 +23,6 @@ export const contentType = "image/png";
 
 const PAPER = "#f6f1e8";
 const INK = "#181510";
-const MUTED = "#5f594f";
 const HAIRLINE = "#2a251f";
 
 export default async function Image({ params }: Props) {
@@ -32,14 +32,15 @@ export default async function Image({ params }: Props) {
     getPost(handle, slug),
   ]);
   if (!blog || !post) return new Response("Not found", { status: 404 });
+  const coverSrc = await imageSourceForOg(resolveCover(post));
 
-  return new ImageResponse(renderImage(blog, post), {
+  return new ImageResponse(renderImage(blog, post, coverSrc), {
     ...size,
     fonts: await loadFonts(),
   });
 }
 
-function renderImage(blog: Blog, post: Post) {
+function renderImage(blog: Blog, post: Post, coverSrc: string) {
   const titleSize = displaySize(post.title);
   const ruleColor = hairlineColor(postAccent(blog, post));
   const meta = [post.excerpt, formatArticleDate(post.date)]
@@ -53,21 +54,43 @@ function renderImage(blog: Blog, post: Post) {
         height: "100%",
         display: "flex",
         flexDirection: "column",
+        position: "relative",
+        overflow: "hidden",
         background: PAPER,
         color: INK,
         padding: "70px 84px 64px",
       }}
     >
+      <img
+        src={coverSrc}
+        alt=""
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+        }}
+      />
       <div
         style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "linear-gradient(90deg, rgba(10, 10, 10, 0.78) 0%, rgba(10, 10, 10, 0.58) 48%, rgba(10, 10, 10, 0.18) 100%)",
+        }}
+      />
+      <div
+        style={{
+          position: "relative",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottom: `1px solid ${HAIRLINE}`,
+          borderBottom: "1px solid rgba(255, 255, 255, 0.72)",
           paddingBottom: 20,
           fontFamily: "Inter",
           fontSize: 22,
-          color: MUTED,
+          color: "rgba(255, 255, 255, 0.82)",
           letterSpacing: 0,
         }}
       >
@@ -76,6 +99,7 @@ function renderImage(blog: Blog, post: Post) {
       </div>
       <div
         style={{
+          position: "relative",
           width: 126,
           height: 3,
           background: ruleColor,
@@ -85,25 +109,28 @@ function renderImage(blog: Blog, post: Post) {
       />
       <div
         style={{
+          position: "relative",
           display: "flex",
           fontFamily: "Fraunces",
           fontSize: titleSize,
           lineHeight: 0.94,
           letterSpacing: 0,
           maxWidth: 990,
+          color: "#fff",
         }}
       >
         {post.title}
       </div>
       <div
         style={{
+          position: "relative",
           display: "flex",
           marginTop: "auto",
-          borderTop: `1px solid ${HAIRLINE}`,
+          borderTop: "1px solid rgba(255, 255, 255, 0.72)",
           paddingTop: 22,
           fontFamily: "Inter",
           fontSize: 28,
-          color: MUTED,
+          color: "rgba(255, 255, 255, 0.84)",
           letterSpacing: 0,
         }}
       >
@@ -111,6 +138,20 @@ function renderImage(blog: Blog, post: Post) {
       </div>
     </div>
   );
+}
+
+async function imageSourceForOg(src: string): Promise<string> {
+  if (!src.startsWith("/")) return src;
+
+  try {
+    const imageData = await readFile(
+      join(process.cwd(), "public", src.replace(/^\/+/, "")),
+      "base64",
+    );
+    return `data:${coverMimeType(src)};base64,${imageData}`;
+  } catch {
+    return src;
+  }
 }
 
 async function loadFonts() {

@@ -9,6 +9,7 @@ import {
   postAccent,
   youtubeEmbedUrl,
 } from "@/lib/content";
+import { resolveCover } from "@/lib/cover";
 
 type ReaderSlots = {
   toolbar?: ReactNode;
@@ -60,6 +61,7 @@ export function TalkReader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const excerpt = post.excerpt?.trim();
+  const cover = resolveCover(post);
   const videoUrl = post.videoUrl?.trim();
   const embedSrc = videoUrl && isYouTube(videoUrl) ? youtubeEmbedUrl(videoUrl) : undefined;
   const fileVideoSrc =
@@ -82,7 +84,7 @@ export function TalkReader({
     <article className="reader talk-detail" style={style}>
       {slots?.toolbar}
       {slots?.stage ??
-        ((embedSrc || fileVideoSrc || post.cover) && (
+        ((embedSrc || fileVideoSrc || cover) && (
           <div className="talk-detail-stage">
             {embedSrc ? (
               <iframe
@@ -96,23 +98,20 @@ export function TalkReader({
               <video
                 className="talk-detail-iframe"
                 src={fileVideoSrc}
-                poster={post.cover}
+                poster={cover}
                 controls
                 playsInline
                 preload="metadata"
               />
             ) : (
-              post.cover && (
-                // Covers are user-provided remote URLs; plain img avoids
-                // next/image remote-domain config for this early reader.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className="talk-detail-cover"
-                  src={post.cover}
-                  alt={title}
-                  loading="lazy"
-                />
-              )
+              // Covers can be remote uploads or local curated fallbacks.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className="talk-detail-cover"
+                src={cover}
+                alt={title}
+                loading="lazy"
+              />
             )}
           </div>
         ))}

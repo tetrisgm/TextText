@@ -8,6 +8,7 @@ import {
   postAccent,
   monogram,
 } from "@/lib/content";
+import { resolveCover } from "@/lib/cover";
 
 // The Broadsheet reader: top cover hero, masthead (serif title, dek, byline),
 // and prose. Server component; markdown renders on the server. The post's
@@ -57,14 +58,16 @@ export function Reader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const excerpt = post.excerpt?.trim();
+  const realCover = post.cover?.trim();
+  const resolvedCover = resolveCover(post);
   const cover = slots?.cover ?? (
-    post.cover ? (
+    resolvedCover ? (
       <figure className="reader-cover">
-        {/* Covers are user-provided remote URLs; plain img keeps the demo
-            free of next/image remote-domain config. Revisit with media. */}
+        {/* Covers can be remote uploads or local curated fallbacks. Plain img
+            avoids next/image remote-domain config. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={post.cover} alt={title} />
-        {post.coverCaption && (
+        <img src={resolvedCover} alt={title} />
+        {realCover && post.coverCaption && (
           <figcaption className="reader-figcaption">
             {post.coverCaption}
           </figcaption>

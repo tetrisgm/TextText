@@ -15,8 +15,8 @@ import {
   isYouTube,
   postAccent,
   readingTimeMin,
-  youtubeThumb,
 } from "@/lib/content";
+import { resolveCover } from "@/lib/cover";
 
 const TYPE_LABELS: Record<PostType, string> = {
   article: "ARTICLE",
@@ -48,10 +48,10 @@ function projectThumbnail(post: Post): string | undefined {
   return src;
 }
 
-function postThumbnail(post: Post): string | undefined {
-  if (post.type === "article") return post.cover?.trim() || undefined;
-  if (post.type === "project") return projectThumbnail(post);
-  return post.cover?.trim() || youtubeThumb(post.videoUrl);
+function postThumbnail(post: Post): string {
+  if (post.type === "article") return resolveCover(post);
+  if (post.type === "project") return projectThumbnail(post) || resolveCover(post);
+  return resolveCover(post);
 }
 
 function postMeta(post: Post): string {
@@ -108,10 +108,6 @@ function cardStyle(blog: Blog, post: Post): CSSProperties | undefined {
     return { "--post-accent": "var(--ink)" } as CSSProperties;
   }
   return undefined;
-}
-
-function FallbackPlate() {
-  return <span className="tvcard-fallback" aria-hidden="true" />;
 }
 
 export function PostCard({
@@ -382,35 +378,31 @@ export function PostCard({
         <span className="tvcard-inner">
           <span className="tvcard-tilt">
             <span className="tvcard-media">
-              {cover ? (
-                isVideoCover ? (
-                  <video
-                    ref={attachVideo}
-                    className="tvcard-cover"
-                    data-ready={videoReady ? "true" : undefined}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    preload="auto"
-                    aria-hidden="true"
-                    onCanPlay={() => setVideoReady(true)}
-                  >
-                    <source src={cover} type={videoMimeType(cover)} />
-                  </video>
-                ) : (
-                  // User media can be remote, so plain img avoids next/image config.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    className="tvcard-cover"
-                    src={cover}
-                    alt={title}
-                    decoding="async"
-                    loading="lazy"
-                  />
-                )
+              {isVideoCover ? (
+                <video
+                  ref={attachVideo}
+                  className="tvcard-cover"
+                  data-ready={videoReady ? "true" : undefined}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  aria-hidden="true"
+                  onCanPlay={() => setVideoReady(true)}
+                >
+                  <source src={cover} type={videoMimeType(cover)} />
+                </video>
               ) : (
-                <FallbackPlate />
+                // User media can be remote, so plain img avoids next/image config.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="tvcard-cover"
+                  src={cover}
+                  alt={title}
+                  decoding="async"
+                  loading="lazy"
+                />
               )}
               {post.type === "talk" && <PlayBadge />}
               {post.type === "project" && (

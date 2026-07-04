@@ -1,4 +1,5 @@
 import type { Blog, Post } from "@/lib/content";
+import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
 
 interface Props {
@@ -38,11 +39,13 @@ function renderAtom(
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toISOString();
       const summary = post.excerpt?.trim() || plainTextSummary(post.body);
+      const imageUrl = resolveCoverUrl(post, baseUrl);
 
       return [
         "  <entry>",
         `    <title type="text">${escapeXml(post.title)}</title>`,
         `    <link href="${escapeXml(url)}" />`,
+        `    <link rel="enclosure" type="${escapeXml(coverMimeType(imageUrl))}" href="${escapeXml(imageUrl)}" />`,
         `    <id>${escapeXml(url)}</id>`,
         `    <published>${escapeXml(published)}</published>`,
         `    <updated>${escapeXml(published)}</updated>`,

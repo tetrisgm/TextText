@@ -1,4 +1,5 @@
 import type { Blog, Post } from "@/lib/content";
+import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
 
 interface Props {
@@ -37,6 +38,7 @@ function renderRss(
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toUTCString();
       const summary = post.excerpt?.trim() || plainTextSummary(post.body);
+      const imageUrl = resolveCoverUrl(post, baseUrl);
 
       return [
         "    <item>",
@@ -44,6 +46,7 @@ function renderRss(
         `      <link>${escapeXml(url)}</link>`,
         `      <guid isPermaLink="true">${escapeXml(url)}</guid>`,
         `      <pubDate>${escapeXml(published)}</pubDate>`,
+        `      <media:content url="${escapeXml(imageUrl)}" medium="image" type="${escapeXml(coverMimeType(imageUrl))}" />`,
         `      <description>${escapeXml(summary)}</description>`,
         `      <dc:creator>${escapeXml(blog.author)}</dc:creator>`,
         "    </item>",
@@ -53,7 +56,7 @@ function renderRss(
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">',
+    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">',
     "  <channel>",
     `    <title>${escapeXml(blog.name)}</title>`,
     `    <link>${escapeXml(baseUrl)}</link>`,
