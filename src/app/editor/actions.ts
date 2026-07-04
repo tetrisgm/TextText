@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { Blog, Post, PostType } from "@/lib/content";
+import type { Blog, GalleryItem, Post, PostType } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { BlogPatch } from "@/lib/store";
@@ -45,6 +45,11 @@ function cleanPostType(value: unknown): PostType {
   return POST_TYPES.includes(value as PostType) ? (value as PostType) : "article";
 }
 
+function cleanEditablePostType(value: unknown): PostType {
+  if (POST_TYPES.includes(value as PostType)) return value as PostType;
+  throw new Error("Type must be Article, Project, or Talk");
+}
+
 function cleanPostId(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Post not found");
@@ -60,6 +65,11 @@ function cleanStatus(value: unknown): Post["status"] {
 function cleanLine(value: unknown, label: string): string {
   if (typeof value !== "string") throw new Error(`${label} must be text`);
   return value.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function cleanOptionalLine(value: unknown, label: string): string | undefined {
+  if (value == null) return undefined;
+  return cleanLine(value, label) || undefined;
 }
 
 function cleanBody(value: unknown): string {
@@ -89,19 +99,75 @@ function cleanSlug(value: unknown, fallback: string): string {
   return slug || fallback;
 }
 
-function editableInput(input: unknown, fallbackSlug: string) {
+function hasInputKey(values: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(values, key);
+}
+
+function cleanGalleryItem(value: unknown, index: number): GalleryItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Gallery item ${index + 1} must be an object`);
+  }
+
+  const values = value as Record<string, unknown>;
+  const src = cleanOptionalLine(values.src, `Gallery item ${index + 1} URL`);
+  if (!src) return null;
+
+  const caption = cleanOptionalLine(
+    values.caption,
+    `Gallery item ${index + 1} caption`,
+  );
+  const poster = cleanOptionalLine(
+    values.poster,
+    `Gallery item ${index + 1} poster`,
+  );
+  const item: GalleryItem = { src };
+  if (caption) item.caption = caption;
+  if (poster) item.poster = poster;
+  return item;
+}
+
+function cleanGallery(value: unknown): GalleryItem[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error("Gallery must be a list");
+  return value
+    .map((item, index) => cleanGalleryItem(item, index))
+    .filter((item): item is GalleryItem => item !== null);
+}
+
+function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("Invalid post");
   }
   const values = input as Record<string, unknown>;
   return {
     id: cleanPostId(values.id),
+    type: hasInputKey(values, "type")
+      ? cleanEditablePostType(values.type)
+      : existing.type,
     title: cleanLine(values.title, "Title"),
     excerpt: cleanLine(values.excerpt ?? "", "Excerpt") || undefined,
+    cover: hasInputKey(values, "cover")
+      ? cleanOptionalLine(values.cover, "Cover")
+      : existing.cover,
+    coverCaption: hasInputKey(values, "coverCaption")
+      ? cleanOptionalLine(values.coverCaption, "Cover caption")
+      : existing.coverCaption,
     body: cleanBody(values.body),
     status: cleanStatus(values.status),
     slug: cleanSlug(values.slug, fallbackSlug),
     accent: cleanAccent(values.accent),
+    gallery: hasInputKey(values, "gallery")
+      ? cleanGallery(values.gallery)
+      : (existing.gallery ?? []),
+    videoUrl: hasInputKey(values, "videoUrl")
+      ? cleanOptionalLine(values.videoUrl, "Video URL")
+      : existing.videoUrl,
+    venue: hasInputKey(values, "venue")
+      ? cleanOptionalLine(values.venue, "Venue")
+      : existing.venue,
+    duration: hasInputKey(values, "duration")
+      ? cleanOptionalLine(values.duration, "Duration")
+      : existing.duration,
   };
 }
 
@@ -157,15 +223,22 @@ export async function saveEditablePostAction(input: unknown): Promise<Post> {
   const existing = await getPostById(handle, id);
   if (!existing) throw new Error("Post not found");
 
-  const patch = editableInput(input, existing.slug);
+  const patch = editableInput(input, existing, existing.slug);
   const saved = await savePost(handle, {
     ...existing,
+    type: patch.type,
     title: patch.title,
     excerpt: patch.excerpt,
+    cover: patch.cover,
+    coverCaption: patch.coverCaption,
     body: patch.body,
     status: patch.status,
     slug: patch.slug,
     accent: patch.accent,
+    gallery: patch.gallery,
+    videoUrl: patch.videoUrl,
+    venue: patch.venue,
+    duration: patch.duration,
   });
   revalidateBlog(handle, [saved.slug]);
   return saved;

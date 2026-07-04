@@ -11,7 +11,7 @@ import type { ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { saveEditablePostAction } from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
-import type { Blog, Post } from "@/lib/content";
+import type { Blog, Post, PostType } from "@/lib/content";
 import {
   initialDraft,
   isHexColor,
@@ -55,6 +55,12 @@ type EditProps = CommonProps & {
 };
 
 type Props = ReadProps | EditProps;
+
+const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
+  { type: "article", label: "Article" },
+  { type: "project", label: "Project" },
+  { type: "talk", label: "Talk" },
+];
 
 function postTitle(title: string): string {
   return title.trim() || "Untitled";
@@ -330,6 +336,16 @@ export function PostActionBar(props: Props) {
     void readSave({ ...readDraft, status: visibility.next });
   }, [props, readDraft, readSave, visibility.next]);
 
+  const changeType = useCallback(
+    (type: PostType) => {
+      if (props.mode !== "edit" || type === activeDraft.type) return;
+      setShareOpen(false);
+      setSettingsOpen(false);
+      props.onUpdateDraft({ type });
+    },
+    [activeDraft.type, props],
+  );
+
   const copyLink = useCallback(() => {
     if (!navigator.clipboard) return;
     void navigator.clipboard.writeText(publicUrl).then(() => {
@@ -378,12 +394,38 @@ export function PostActionBar(props: Props) {
       </span>
     ) : null;
 
+  const typeSwitcher =
+    props.mode === "edit" ? (
+      <div
+        className="post-type-switcher ac-segmented"
+        role="radiogroup"
+        aria-label="Post type"
+      >
+        {POST_TYPE_OPTIONS.map((option) => {
+          const active = activeDraft.type === option.type;
+          return (
+            <button
+              key={option.type}
+              type="button"
+              className={`ac-segmented-button${active ? " ac-active" : ""}`}
+              role="radio"
+              aria-checked={active}
+              onClick={() => changeType(option.type)}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
+
   return (
     <div className="post-top-action-bar applecms" aria-label="Post controls">
       <div className="post-action-toolbar ac-chrome">
         {props.owner && (
           <div className="post-action-owner-group">
             {doneControl}
+            {typeSwitcher}
             <div className="post-action-popover-wrap" ref={shareWrapRef}>
               <button
                 type="button"

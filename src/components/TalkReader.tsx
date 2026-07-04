@@ -11,8 +11,10 @@ import {
 } from "@/lib/content";
 
 type ReaderSlots = {
+  stage?: ReactNode;
   title?: ReactNode;
   excerpt?: ReactNode;
+  talkMeta?: ReactNode;
   body?: ReactNode;
 };
 
@@ -77,47 +79,50 @@ export function TalkReader({
 
   return (
     <article className="reader talk-detail" style={style}>
-      {(embedSrc || fileVideoSrc || post.cover) && (
-        <div className="talk-detail-stage">
-          {embedSrc ? (
-            <iframe
-              className="talk-detail-iframe"
-              src={embedSrc}
-              title={title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-            />
-          ) : fileVideoSrc ? (
-            <video
-              className="talk-detail-iframe"
-              src={fileVideoSrc}
-              poster={post.cover}
-              controls
-              playsInline
-              preload="metadata"
-            />
-          ) : (
-            post.cover && (
-              // Covers are user-provided remote URLs; plain img avoids
-              // next/image remote-domain config for this early reader.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                className="talk-detail-cover"
-                src={post.cover}
-                alt={title}
-                loading="lazy"
+      {slots?.stage ??
+        ((embedSrc || fileVideoSrc || post.cover) && (
+          <div className="talk-detail-stage">
+            {embedSrc ? (
+              <iframe
+                className="talk-detail-iframe"
+                src={embedSrc}
+                title={title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
               />
-            )
-          )}
-        </div>
-      )}
+            ) : fileVideoSrc ? (
+              <video
+                className="talk-detail-iframe"
+                src={fileVideoSrc}
+                poster={post.cover}
+                controls
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              post.cover && (
+                // Covers are user-provided remote URLs; plain img avoids
+                // next/image remote-domain config for this early reader.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="talk-detail-cover"
+                  src={post.cover}
+                  alt={title}
+                  loading="lazy"
+                />
+              )
+            )}
+          </div>
+        ))}
 
       <div className="talk-detail-meta">
         {slots?.title ?? <h1 className="talk-detail-title">{title}</h1>}
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek talk-detail-dek">{excerpt}</p>
         )}
-        {dateLine && <div className="talk-detail-date">{dateLine}</div>}
+        {slots?.talkMeta ?? (
+          dateLine && <div className="talk-detail-date">{dateLine}</div>
+        )}
         {(slots?.body || post.body) && (
           <div className="talk-detail-desc reader-prose">
             {slots?.body ?? (

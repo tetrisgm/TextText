@@ -11,6 +11,13 @@ type LightboxImage = {
   alt: string;
 };
 
+type ProjectGalleryEdit = {
+  uploading: boolean;
+  uploadError: string | null;
+  onAddImages: (files: File[]) => void;
+  onChange: (gallery: GalleryItem[]) => void;
+};
+
 function Chevron({ direction }: { direction: "left" | "right" }) {
   const d = direction === "left" ? "M11 3L5 9L11 15" : "M5 3L11 9L5 15";
 
@@ -114,7 +121,13 @@ function SlideMedia({
   );
 }
 
-export function ProjectGallery({ post }: { post: Post }) {
+export function ProjectGallery({
+  post,
+  edit,
+}: {
+  post: Post;
+  edit?: ProjectGalleryEdit;
+}) {
   const slides = post.gallery ?? [];
   const slideCount = slides.length;
   const [emblaRef, emblaApi] = useEmblaCarousel({
@@ -128,6 +141,7 @@ export function ProjectGallery({ post }: { post: Post }) {
   const [loadedSlides, setLoadedSlides] = useState<Set<number>>(() => new Set());
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const [navPeek, setNavPeek] = useState(true);
+  const addInputRef = useRef<HTMLInputElement>(null);
   const autoplayStoppedRef = useRef(false);
   const autoplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -256,14 +270,120 @@ export function ProjectGallery({ post }: { post: Post }) {
     [emblaApi, stopAutoplay],
   );
 
-  if (slideCount === 0) return null;
+  const addImages = useCallback(
+    (files: FileList | null) => {
+      const next = Array.from(files ?? []);
+      if (next.length > 0) edit?.onAddImages(next);
+    },
+    [edit],
+  );
+
+  const updateSlide = useCallback(
+    (index: number, patch: Partial<GalleryItem>) => {
+      if (!edit) return;
+      edit.onChange(
+        slides.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...patch } : item,
+        ),
+      );
+    },
+    [edit, slides],
+  );
+
+  const moveSlide = useCallback(
+    (index: number, direction: -1 | 1) => {
+      if (!edit) return;
+      const target = index + direction;
+      if (target < 0 || target >= slides.length) return;
+      const next = [...slides];
+      const [item] = next.splice(index, 1);
+      if (!item) return;
+      next.splice(target, 0, item);
+      edit.onChange(next);
+      window.requestAnimationFrame(() => emblaApi?.scrollTo(target));
+    },
+    [edit, emblaApi, slides],
+  );
+
+  const removeSlide = useCallback(
+    (index: number) => {
+      if (!edit) return;
+      edit.onChange(slides.filter((_, itemIndex) => itemIndex !== index));
+    },
+    [edit, slides],
+  );
+
+  if (slideCount === 0) {
+    if (!edit) return null;
+
+    return (
+      <div className="proj-gallery-empty applecms">
+        <input
+          ref={addInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(event) => {
+            addImages(event.currentTarget.files);
+            event.currentTarget.value = "";
+          }}
+        />
+        <button
+          type="button"
+          className="proj-gallery-empty-button ac-btn ac-btn-gray"
+          disabled={edit.uploading}
+          onClick={() => addInputRef.current?.click()}
+        >
+          {edit.uploading ? "Uploading" : "Add images"}
+        </button>
+        {edit.uploadError && (
+          <span className="proj-gallery-error" role="alert">
+            {edit.uploadError}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
-      className={"proj-carousel with-thumbs" + (navPeek ? " nav-peek" : "")}
+      className={
+        "proj-carousel with-thumbs" +
+        (navPeek ? " nav-peek" : "") +
+        (edit ? " is-editing" : "")
+      }
       aria-roledescription="carousel"
       aria-label={`${post.title} media`}
     >
+      {edit && (
+        <div className="proj-gallery-edit-bar applecms">
+          <input
+            ref={addInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(event) => {
+              addImages(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
+          />
+          <button
+            type="button"
+            className="proj-gallery-add ac-btn ac-btn-gray"
+            disabled={edit.uploading}
+            onClick={() => addInputRef.current?.click()}
+          >
+            {edit.uploading ? "Uploading" : "Add images"}
+          </button>
+          {edit.uploadError && (
+            <span className="proj-gallery-error" role="alert">
+              {edit.uploadError}
+            </span>
+          )}
+        </div>
+      )}
       <div className="proj-carousel-stage">
         {canPrev && (
           <button
@@ -324,8 +444,51 @@ export function ProjectGallery({ post }: { post: Post }) {
                           />
                         )}
                       </div>
-                      {item.caption && (
-                        <p className="proj-carousel-caption">{item.caption}</p>
+                      {edit ? (
+                        <div className="proj-gallery-item-editor applecms">
+                          <div className="proj-gallery-item-actions">
+                            <button
+                              type="button"
+                              className="ac-btn ac-btn-gray"
+                              disabled={index === 0}
+                              onClick={() => moveSlide(index, -1)}
+                            >
+                              Prev
+                            </button>
+                            <button
+                              type="button"
+                              className="ac-btn ac-btn-gray"
+                              disabled={index === slideCount - 1}
+                              onClick={() => moveSlide(index, 1)}
+                            >
+                              Next
+                            </button>
+                            <button
+                              type="button"
+                              className="ac-btn ac-btn-plain ac-danger"
+                              onClick={() => removeSlide(index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            className="proj-gallery-caption-input"
+                            value={item.caption ?? ""}
+                            placeholder="Add caption"
+                            aria-label={`Caption for image ${index + 1}`}
+                            onChange={(event) =>
+                              updateSlide(index, {
+                                caption: event.currentTarget.value || undefined,
+                              })
+                            }
+                          />
+                        </div>
+                      ) : (
+                        item.caption && (
+                          <p className="proj-carousel-caption">
+                            {item.caption}
+                          </p>
+                        )
                       )}
                     </div>
                   </div>

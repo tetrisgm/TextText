@@ -9,6 +9,7 @@ type ReaderSlots = {
   title?: ReactNode;
   excerpt?: ReactNode;
   body?: ReactNode;
+  gallery?: ReactNode;
 };
 
 function isExternalHref(href: string): boolean {
@@ -96,7 +97,7 @@ export function ProjectReader({
       </section>
 
       <aside className="project-split-right" aria-label="Project gallery">
-        <ProjectGallery post={post} />
+        {slots?.gallery ?? <ProjectGallery post={post} />}
       </aside>
     </article>
   );

@@ -11,7 +11,14 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { deleteEditablePostAction, saveEditablePostAction } from "@/app/editor/actions";
-import type { Blog, Post } from "@/lib/content";
+import { ProjectGallery } from "@/components/ProjectGallery";
+import type { Blog, GalleryItem, Post } from "@/lib/content";
+import {
+  isVideoFile,
+  isYouTube,
+  youtubeEmbedUrl,
+} from "@/lib/content";
+import { MediaUploadError, uploadMedia } from "@/lib/upload";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   initialDraft,
@@ -77,6 +84,277 @@ function ErrorIcon() {
       />
       <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" />
     </svg>
+  );
+}
+
+function uploadErrorMessage(error: unknown): string {
+  return error instanceof MediaUploadError
+    ? error.message
+    : errorMessage(error, "Upload failed.");
+}
+
+function EditableCover({
+  title,
+  cover,
+  caption,
+  uploading,
+  error,
+  onUploadFile,
+  onCaptionChange,
+  onRemove,
+}: {
+  title: string;
+  cover: string;
+  caption: string;
+  uploading: boolean;
+  error: string | null;
+  onUploadFile: (file: File) => void;
+  onCaptionChange: (caption: string) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const chooseFile = (files: FileList | null) => {
+    const file = files?.[0];
+    if (file) onUploadFile(file);
+  };
+
+  const input = (
+    <input
+      ref={inputRef}
+      type="file"
+      accept="image/*"
+      hidden
+      onChange={(event) => {
+        chooseFile(event.currentTarget.files);
+        event.currentTarget.value = "";
+      }}
+    />
+  );
+
+  if (!cover) {
+    return (
+      <div className="reader-cover edit-cover-empty applecms">
+        {input}
+        <button
+          type="button"
+          className="edit-cover-empty-button"
+          disabled={uploading}
+          onClick={() => inputRef.current?.click()}
+        >
+          {uploading ? "Uploading" : "Add cover"}
+        </button>
+        {error && (
+          <span className="edit-cover-error" role="alert">
+            {error}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <figure className="reader-cover edit-cover applecms">
+      <div className="edit-cover-media">
+        {input}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={cover} alt={title} />
+        <div className="edit-cover-toolbar">
+          <button
+            type="button"
+            className="edit-cover-action"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {uploading ? "Uploading" : "Change"}
+          </button>
+          <button
+            type="button"
+            className="edit-cover-action"
+            disabled={uploading}
+            onClick={onRemove}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+      <figcaption className="reader-figcaption edit-cover-caption">
+        <input
+          className="edit-cover-caption-input"
+          value={caption}
+          placeholder="Add caption"
+          aria-label="Cover caption"
+          onChange={(event) => onCaptionChange(event.currentTarget.value)}
+        />
+      </figcaption>
+      {error && (
+        <span className="edit-cover-error" role="alert">
+          {error}
+        </span>
+      )}
+    </figure>
+  );
+}
+
+function EditableTalkStage({
+  title,
+  cover,
+  videoUrl,
+  uploading,
+  error,
+  onUploadFile,
+  onRemove,
+}: {
+  title: string;
+  cover: string;
+  videoUrl: string;
+  uploading: boolean;
+  error: string | null;
+  onUploadFile: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const trimmedVideoUrl = videoUrl.trim();
+  const embedSrc =
+    trimmedVideoUrl && isYouTube(trimmedVideoUrl)
+      ? youtubeEmbedUrl(trimmedVideoUrl)
+      : undefined;
+  const fileVideoSrc =
+    trimmedVideoUrl && !embedSrc && isVideoFile(trimmedVideoUrl)
+      ? trimmedVideoUrl
+      : undefined;
+  const canEditCover = !embedSrc;
+  const empty = !embedSrc && !fileVideoSrc && !cover;
+
+  const chooseFile = (files: FileList | null) => {
+    const file = files?.[0];
+    if (file) onUploadFile(file);
+  };
+
+  return (
+    <div
+      className={`talk-detail-stage talk-edit-stage applecms${
+        empty ? " is-empty" : ""
+      }`}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => {
+          chooseFile(event.currentTarget.files);
+          event.currentTarget.value = "";
+        }}
+      />
+      {embedSrc ? (
+        <iframe
+          className="talk-detail-iframe"
+          src={embedSrc}
+          title={title}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      ) : fileVideoSrc ? (
+        <video
+          className="talk-detail-iframe"
+          src={fileVideoSrc}
+          poster={cover || undefined}
+          controls
+          playsInline
+          preload="metadata"
+        />
+      ) : cover ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className="talk-detail-cover"
+          src={cover}
+          alt={title}
+          loading="lazy"
+        />
+      ) : (
+        <div className="talk-edit-stage-empty">
+          <button
+            type="button"
+            className="edit-cover-empty-button"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {uploading ? "Uploading" : "Add cover"}
+          </button>
+        </div>
+      )}
+      {canEditCover && !empty && (
+        <div className="talk-edit-cover-controls">
+          <button
+            type="button"
+            className="edit-cover-action"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {uploading ? "Uploading" : cover ? "Change" : "Add cover"}
+          </button>
+          {cover && (
+            <button
+              type="button"
+              className="edit-cover-action"
+              disabled={uploading}
+              onClick={onRemove}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      )}
+      {error && (
+        <span className="edit-cover-error talk-edit-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TalkMetaEditor({
+  videoUrl,
+  venue,
+  duration,
+  onChange,
+}: {
+  videoUrl: string;
+  venue: string;
+  duration: string;
+  onChange: (patch: Partial<DraftState>) => void;
+}) {
+  return (
+    <div className="talk-edit-fields applecms" aria-label="Talk details">
+      <label className="talk-edit-field">
+        <span>Video URL</span>
+        <input
+          value={videoUrl}
+          placeholder="YouTube or video file URL"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          onChange={(event) => onChange({ videoUrl: event.currentTarget.value })}
+        />
+      </label>
+      <label className="talk-edit-field">
+        <span>Venue</span>
+        <input
+          value={venue}
+          placeholder="Venue"
+          onChange={(event) => onChange({ venue: event.currentTarget.value })}
+        />
+      </label>
+      <label className="talk-edit-field">
+        <span>Duration</span>
+        <input
+          value={duration}
+          placeholder="Duration"
+          onChange={(event) => onChange({ duration: event.currentTarget.value })}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -175,6 +453,10 @@ export function PostEditLayer({
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+  const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -191,6 +473,10 @@ export function PostEditLayer({
     setDraftSnapshot({ postId: post.id, draft: session.draft });
     setSaveState("saved");
     setError(null);
+    setCoverUploading(false);
+    setCoverUploadError(null);
+    setGalleryUploading(false);
+    setGalleryUploadError(null);
     currentSlugRef.current = session.currentSlug;
     autoSlugAllowedRef.current = session.autoSlugAllowed;
     latestKeyRef.current = session.lastSavedKey;
@@ -204,15 +490,15 @@ export function PostEditLayer({
 
   useEffect(() => {
     autoGrow(titleRef.current);
-  }, [draft.title, post.type]);
+  }, [draft.title, draft.type]);
 
   useEffect(() => {
     autoGrow(excerptRef.current);
-  }, [draft.excerpt, post.type]);
+  }, [draft.excerpt, draft.type]);
 
   useEffect(() => {
     autoGrow(bodyRef.current);
-  }, [draft.body, post.type]);
+  }, [draft.body, draft.type]);
 
   useEffect(() => {
     if (!isEmptyNewPost(post)) return;
@@ -324,6 +610,16 @@ export function PostEditLayer({
     }));
   }, []);
 
+  const updateDraftFrom = useCallback(
+    (updater: (draft: DraftState) => DraftState) => {
+      setDraftSnapshot((current) => ({
+        ...current,
+        draft: updater(current.draft),
+      }));
+    },
+    [],
+  );
+
   const saveDraftNow = useCallback(
     async (
       patch: Partial<DraftState> = {},
@@ -401,6 +697,52 @@ export function PostEditLayer({
     [blog.handle, draft, postId, router],
   );
 
+  const uploadCover = useCallback(
+    async (file: File) => {
+      setCoverUploading(true);
+      setCoverUploadError(null);
+      try {
+        const url = await uploadMedia(file);
+        updateDraft({ cover: url });
+      } catch (uploadError) {
+        setCoverUploadError(uploadErrorMessage(uploadError));
+      } finally {
+        setCoverUploading(false);
+      }
+    },
+    [updateDraft],
+  );
+
+  const removeCover = useCallback(() => {
+    setCoverUploadError(null);
+    updateDraft({ cover: "", coverCaption: "" });
+  }, [updateDraft]);
+
+  const uploadGalleryImages = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+
+      setGalleryUploading(true);
+      setGalleryUploadError(null);
+      try {
+        const uploaded: GalleryItem[] = [];
+        for (const file of files) {
+          const url = await uploadMedia(file);
+          uploaded.push({ src: url });
+        }
+        updateDraftFrom((current) => ({
+          ...current,
+          gallery: [...current.gallery, ...uploaded],
+        }));
+      } catch (uploadError) {
+        setGalleryUploadError(uploadErrorMessage(uploadError));
+      } finally {
+        setGalleryUploading(false);
+      }
+    },
+    [updateDraftFrom],
+  );
+
   const deriveSlugFromTitle = useCallback(
     (titleValue: string) => {
       if (!autoSlugAllowedRef.current) return;
@@ -432,34 +774,42 @@ export function PostEditLayer({
   const displayPost = useMemo<Post>(
     () => ({
       ...post,
+      type: draft.type,
       title: draft.title,
       excerpt: draft.excerpt || undefined,
+      cover: draft.cover || undefined,
+      coverCaption: draft.coverCaption || undefined,
       body: draft.body,
       status: draft.status,
       slug: draft.slug || post.slug,
       accent: draft.accent || undefined,
+      gallery: draft.gallery,
+      videoUrl: draft.videoUrl || undefined,
+      venue: draft.venue || undefined,
+      duration: draft.duration || undefined,
     }),
     [draft, post],
   );
 
   const titleClass =
-    post.type === "project"
+    displayPost.type === "project"
       ? "project-title edit-title-field"
-      : post.type === "talk"
+      : displayPost.type === "talk"
         ? "talk-detail-title edit-title-field"
         : "reader-title edit-title-field";
   const excerptClass =
-    post.type === "project"
+    displayPost.type === "project"
       ? "reader-dek project-dek edit-excerpt-field"
-      : post.type === "talk"
+      : displayPost.type === "talk"
         ? "reader-dek talk-detail-dek edit-excerpt-field"
         : "reader-dek edit-excerpt-field";
+  const titleText = displayPost.title.trim() || "Untitled";
 
   const slots = {
     title: (
       <textarea
         ref={titleRef}
-        id={post.type === "project" ? "project-title" : undefined}
+        id={displayPost.type === "project" ? "project-title" : undefined}
         className={titleClass}
         aria-label="Title"
         placeholder="Give it a title"
@@ -495,6 +845,48 @@ export function PostEditLayer({
         placeholder="Start writing"
         value={draft.body}
         onChange={(event) => updateDraft({ body: event.currentTarget.value })}
+      />
+    ),
+    cover: (
+      <EditableCover
+        title={titleText}
+        cover={draft.cover}
+        caption={draft.coverCaption}
+        uploading={coverUploading}
+        error={coverUploadError}
+        onUploadFile={uploadCover}
+        onCaptionChange={(coverCaption) => updateDraft({ coverCaption })}
+        onRemove={removeCover}
+      />
+    ),
+    gallery: (
+      <ProjectGallery
+        post={displayPost}
+        edit={{
+          uploading: galleryUploading,
+          uploadError: galleryUploadError,
+          onAddImages: uploadGalleryImages,
+          onChange: (gallery) => updateDraft({ gallery }),
+        }}
+      />
+    ),
+    stage: (
+      <EditableTalkStage
+        title={titleText}
+        cover={draft.cover}
+        videoUrl={draft.videoUrl}
+        uploading={coverUploading}
+        error={coverUploadError}
+        onUploadFile={uploadCover}
+        onRemove={removeCover}
+      />
+    ),
+    talkMeta: (
+      <TalkMetaEditor
+        videoUrl={draft.videoUrl}
+        venue={draft.venue}
+        duration={draft.duration}
+        onChange={updateDraft}
       />
     ),
   };
@@ -548,9 +940,9 @@ export function PostEditLayer({
       />
       <SaveStatusPill saveState={saveState} error={error} />
 
-      {post.type === "talk" ? (
+      {displayPost.type === "talk" ? (
         <TalkReader blog={blog} post={displayPost} slots={slots} />
-      ) : post.type === "project" ? (
+      ) : displayPost.type === "project" ? (
         <ProjectReader blog={blog} post={displayPost} slots={slots} />
       ) : (
         <Reader blog={blog} post={displayPost} slots={slots} />

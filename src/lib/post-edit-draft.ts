@@ -1,24 +1,38 @@
-import type { Post } from "@/lib/content";
+import type { GalleryItem, Post } from "@/lib/content";
 
 export type DraftState = {
+  type: Post["type"];
   title: string;
   excerpt: string;
+  cover: string;
+  coverCaption: string;
   body: string;
   status: Post["status"];
   slug: string;
   accent: string;
+  gallery: GalleryItem[];
+  videoUrl: string;
+  venue: string;
+  duration: string;
 };
 
 export type SaveState = "saved" | "saving" | "error";
 
 export function initialDraft(post: Post): DraftState {
   return {
+    type: post.type,
     title: post.title,
     excerpt: post.excerpt ?? "",
+    cover: post.cover ?? "",
+    coverCaption: post.coverCaption ?? "",
     body: post.body,
     status: post.status,
     slug: post.slug,
     accent: post.accent ?? "",
+    gallery: post.gallery ?? [],
+    videoUrl: post.videoUrl ?? "",
+    venue: post.venue ?? "",
+    duration: post.duration ?? "",
   };
 }
 
@@ -64,12 +78,19 @@ export function postPath(handle: string, slug: string): string {
 export function payloadFor(id: string, draft: DraftState, fallbackSlug: string) {
   return {
     id,
+    type: draft.type,
     title: draft.title,
     excerpt: draft.excerpt,
+    cover: draft.cover || null,
+    coverCaption: draft.coverCaption || null,
     body: draft.body,
     status: draft.status,
     slug: slugify(draft.slug, fallbackSlug),
     accent: draft.accent || null,
+    gallery: draft.gallery,
+    videoUrl: draft.videoUrl || null,
+    venue: draft.venue || null,
+    duration: draft.duration || null,
   };
 }
 
