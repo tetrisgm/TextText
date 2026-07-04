@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import useEmblaCarousel from "embla-carousel-react";
 import type { GalleryItem, Post } from "@/lib/content";
@@ -14,9 +21,15 @@ type LightboxImage = {
 type ProjectGalleryEdit = {
   uploading: boolean;
   uploadError: string | null;
-  onAddImages: (files: File[]) => void;
+  onAddMedia: (files: File[]) => void;
   onChange: (gallery: GalleryItem[]) => void;
 };
+
+const MEDIA_ACCEPT = "image/*,video/*";
+
+function hasDraggedFiles(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
 
 function Chevron({ direction }: { direction: "left" | "right" }) {
   const d = direction === "left" ? "M11 3L5 9L11 15" : "M5 3L11 9L5 15";
@@ -141,7 +154,9 @@ export function ProjectGallery({
   const [loadedSlides, setLoadedSlides] = useState<Set<number>>(() => new Set());
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const [navPeek, setNavPeek] = useState(true);
+  const [isDraggingMedia, setIsDraggingMedia] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const autoplayStoppedRef = useRef(false);
   const autoplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -270,12 +285,76 @@ export function ProjectGallery({
     [emblaApi, stopAutoplay],
   );
 
-  const addImages = useCallback(
+  const addMedia = useCallback(
     (files: FileList | null) => {
       const next = Array.from(files ?? []);
-      if (next.length > 0) edit?.onAddImages(next);
+      if (next.length > 0) edit?.onAddMedia(next);
     },
     [edit],
+  );
+
+  const openFilePicker = useCallback(() => {
+    if (edit?.uploading) return;
+    addInputRef.current?.click();
+  }, [edit?.uploading]);
+
+  const clearMediaDrag = useCallback(() => {
+    dragDepthRef.current = 0;
+    setIsDraggingMedia(false);
+  }, []);
+
+  const handleMediaDragEnter = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (!edit || !hasDraggedFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dragDepthRef.current += 1;
+      setIsDraggingMedia(true);
+    },
+    [edit],
+  );
+
+  const handleMediaDragOver = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (!edit || !hasDraggedFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = edit.uploading ? "none" : "copy";
+      setIsDraggingMedia(true);
+    },
+    [edit],
+  );
+
+  const handleMediaDragLeave = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (!edit || !hasDraggedFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setIsDraggingMedia(false);
+    },
+    [edit],
+  );
+
+  const handleMediaDrop = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (!edit || !hasDraggedFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const files = event.dataTransfer.files;
+      clearMediaDrag();
+      if (!edit.uploading) addMedia(files);
+    },
+    [addMedia, clearMediaDrag, edit],
+  );
+
+  const handleEmptyKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openFilePicker();
+    },
+    [openFilePicker],
   );
 
   const updateSlide = useCallback(
@@ -317,26 +396,43 @@ export function ProjectGallery({
     if (!edit) return null;
 
     return (
-      <div className="proj-gallery-empty applecms">
+      <div
+        className={
+          "proj-gallery-empty applecms" +
+          (isDraggingMedia ? " is-dragging-media" : "") +
+          (edit.uploading ? " is-uploading" : "")
+        }
+        role="button"
+        tabIndex={edit.uploading ? -1 : 0}
+        aria-label="Add photos or video"
+        aria-disabled={edit.uploading}
+        onClick={openFilePicker}
+        onKeyDown={handleEmptyKeyDown}
+        onDragEnter={handleMediaDragEnter}
+        onDragOver={handleMediaDragOver}
+        onDragLeave={handleMediaDragLeave}
+        onDrop={handleMediaDrop}
+        onDragEnd={clearMediaDrag}
+      >
         <input
           ref={addInputRef}
           type="file"
-          accept="image/*"
+          accept={MEDIA_ACCEPT}
           multiple
           hidden
           onChange={(event) => {
-            addImages(event.currentTarget.files);
+            addMedia(event.currentTarget.files);
             event.currentTarget.value = "";
           }}
         />
-        <button
-          type="button"
-          className="proj-gallery-empty-button ac-btn ac-btn-gray"
-          disabled={edit.uploading}
-          onClick={() => addInputRef.current?.click()}
-        >
-          {edit.uploading ? "Uploading" : "Add images"}
-        </button>
+        <span className="proj-gallery-empty-copy">
+          <span className="proj-gallery-empty-title">
+            {edit.uploading ? "Uploading" : "Drag photos or video here"}
+          </span>
+          <span className="proj-gallery-empty-subtitle">
+            {edit.uploading ? "Adding media" : "or click to choose"}
+          </span>
+        </span>
         {edit.uploadError && (
           <span className="proj-gallery-error" role="alert">
             {edit.uploadError}
@@ -351,21 +447,27 @@ export function ProjectGallery({
       className={
         "proj-carousel with-thumbs" +
         (navPeek ? " nav-peek" : "") +
-        (edit ? " is-editing" : "")
+        (edit ? " is-editing" : "") +
+        (isDraggingMedia ? " is-dragging-media" : "")
       }
       aria-roledescription="carousel"
       aria-label={`${post.title} media`}
+      onDragEnter={handleMediaDragEnter}
+      onDragOver={handleMediaDragOver}
+      onDragLeave={handleMediaDragLeave}
+      onDrop={handleMediaDrop}
+      onDragEnd={clearMediaDrag}
     >
       {edit && (
         <div className="proj-gallery-edit-bar applecms">
           <input
             ref={addInputRef}
             type="file"
-            accept="image/*"
+            accept={MEDIA_ACCEPT}
             multiple
             hidden
             onChange={(event) => {
-              addImages(event.currentTarget.files);
+              addMedia(event.currentTarget.files);
               event.currentTarget.value = "";
             }}
           />
@@ -373,15 +475,20 @@ export function ProjectGallery({
             type="button"
             className="proj-gallery-add ac-btn ac-btn-gray"
             disabled={edit.uploading}
-            onClick={() => addInputRef.current?.click()}
+            onClick={openFilePicker}
           >
-            {edit.uploading ? "Uploading" : "Add images"}
+            {edit.uploading ? "Uploading" : "Add media"}
           </button>
           {edit.uploadError && (
             <span className="proj-gallery-error" role="alert">
               {edit.uploadError}
             </span>
           )}
+        </div>
+      )}
+      {edit && isDraggingMedia && (
+        <div className="proj-gallery-drop-overlay" aria-hidden="true">
+          <span>Drop to add</span>
         </div>
       )}
       <div className="proj-carousel-stage">

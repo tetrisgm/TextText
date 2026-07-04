@@ -2,7 +2,7 @@ import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import { ensureOwnerBlog } from "@/lib/store";
 
-const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 1024 * 1024;
 const UPLOAD_FIELD_NAME = "file";
 const UPLOAD_PREFIX = "editor/media";
@@ -11,8 +11,9 @@ function jsonError(message: string, status: number) {
   return Response.json({ error: message }, { status });
 }
 
-function isImageContentType(contentType: string) {
-  return contentType.toLowerCase().startsWith("image/");
+function isMediaContentType(contentType: string) {
+  const normalized = contentType.toLowerCase();
+  return normalized.startsWith("image/") || normalized.startsWith("video/");
 }
 
 function isUploadFile(value: FormDataEntryValue | null): value is File {
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
 
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_SIZE_BYTES) {
-    return jsonError("Image file must be 8 MB or smaller.", 413);
+    return jsonError("Media must be 50 MB or smaller.", 413);
   }
 
   let formData: FormData;
@@ -77,20 +78,20 @@ export async function POST(request: Request) {
 
   const files = formData.getAll(UPLOAD_FIELD_NAME).filter(isUploadFile);
   if (files.length !== 1) {
-    return jsonError("Upload exactly one image file in the file field.", 400);
+    return jsonError("Upload exactly one media file in the file field.", 400);
   }
 
   const file = files[0];
   if (file.size === 0) {
-    return jsonError("Image file must not be empty.", 400);
+    return jsonError("Media file must not be empty.", 400);
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return jsonError("Image file must be 8 MB or smaller.", 413);
+    return jsonError("Media must be 50 MB or smaller.", 413);
   }
 
-  if (!isImageContentType(file.type)) {
-    return jsonError("Only image uploads are supported.", 415);
+  if (!isMediaContentType(file.type)) {
+    return jsonError("Only photos and videos can be uploaded.", 415);
   }
 
   try {

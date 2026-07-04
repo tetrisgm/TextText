@@ -147,6 +147,21 @@
   grid-template-rows: minmax(0, 1fr) auto;
   background: var(--bg);
 }
+.proj-carousel.is-editing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--post-accent, var(--ink)) 6%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--post-accent, var(--ink)) 24%, transparent);
+  opacity: 0;
+  transition: opacity 0.16s var(--ease);
+}
+.proj-carousel.is-editing.is-dragging-media::after {
+  opacity: 1;
+}
 .proj-carousel.is-editing .proj-carousel-slide {
   padding-top: 76px;
   padding-bottom: 104px;
@@ -451,15 +466,78 @@
   }
 }
 .proj-gallery-empty {
+  position: relative;
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   height: 100%;
   min-height: inherit;
-  border: 1px dashed color-mix(in srgb, var(--muted) 34%, transparent);
+  border: 0;
+  background: transparent;
   color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+}
+.proj-gallery-empty::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--post-accent, var(--ink)) 6%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--post-accent, var(--ink)) 24%, transparent);
+  opacity: 0;
+  transition: opacity 0.16s var(--ease);
+}
+.proj-gallery-empty.is-dragging-media::after {
+  opacity: 1;
+}
+.proj-gallery-empty.is-uploading {
+  cursor: progress;
+}
+.proj-gallery-empty-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  pointer-events: none;
+}
+.proj-gallery-empty-title {
+  color: color-mix(in srgb, var(--muted) 86%, var(--ink));
+  font: 650 16px/1.35 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+}
+.proj-gallery-empty:focus-visible .proj-gallery-empty-title {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.proj-gallery-empty-subtitle {
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+  font: 500 13px/1.35 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
+}
+.proj-gallery-empty .proj-gallery-error {
+  position: relative;
+  z-index: 1;
+  max-width: min(360px, 78vw);
+  text-align: center;
+}
+.proj-gallery-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--muted) 82%, var(--ink));
+  font: 650 15px/1.35 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  letter-spacing: 0;
   text-align: center;
 }
 .proj-gallery-item-editor {

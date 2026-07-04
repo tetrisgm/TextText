@@ -2,7 +2,7 @@
 
 export const MEDIA_UPLOAD_ENDPOINT = "/editor/upload";
 export const MEDIA_UPLOAD_FIELD_NAME = "file";
-export const MEDIA_UPLOAD_MAX_SIZE_BYTES = 8 * 1024 * 1024;
+export const MEDIA_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024;
 
 export interface MediaUploadProgress {
   loaded: number;
@@ -32,8 +32,9 @@ interface UploadResponse {
   error?: unknown;
 }
 
-function imageTypeIsAllowed(file: File) {
-  return file.type.toLowerCase().startsWith("image/");
+function mediaTypeIsAllowed(file: File) {
+  const type = file.type.toLowerCase();
+  return type.startsWith("image/") || type.startsWith("video/");
 }
 
 function uploadMessage(payload: UploadResponse | null, fallback: string) {
@@ -64,15 +65,15 @@ function progressFromEvent(event: ProgressEvent, fallbackTotal: number): MediaUp
 
 export function uploadMedia(file: File, options: UploadMediaOptions = {}) {
   if (file.size === 0) {
-    return Promise.reject(new MediaUploadError("Image file must not be empty."));
+    return Promise.reject(new MediaUploadError("Media file must not be empty."));
   }
 
   if (file.size > MEDIA_UPLOAD_MAX_SIZE_BYTES) {
-    return Promise.reject(new MediaUploadError("Image file must be 8 MB or smaller."));
+    return Promise.reject(new MediaUploadError("Media must be 50 MB or smaller."));
   }
 
-  if (!imageTypeIsAllowed(file)) {
-    return Promise.reject(new MediaUploadError("Only image uploads are supported."));
+  if (!mediaTypeIsAllowed(file)) {
+    return Promise.reject(new MediaUploadError("Only photos and videos can be uploaded."));
   }
 
   const {

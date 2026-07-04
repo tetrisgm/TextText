@@ -52,7 +52,7 @@ export interface Post {
   duration?: string;
 }
 
-const VIDEO_FILE_RE = /\.(mp4|webm)(?:[?#].*)?$/i;
+const VIDEO_FILE_RE = /\.(mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i;
 const YOUTUBE_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
 const YOUTUBE_FALLBACK_RE =
   /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;

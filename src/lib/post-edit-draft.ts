@@ -18,10 +18,15 @@ export type DraftState = {
 
 export type SaveState = "saved" | "saving" | "error";
 
+export function isUnsetTitle(value: string): boolean {
+  const normalized = value.trim();
+  return normalized === "" || normalized.toLowerCase() === "untitled";
+}
+
 export function initialDraft(post: Post): DraftState {
   return {
     type: post.type,
-    title: post.title,
+    title: isUnsetTitle(post.title) ? "" : post.title,
     excerpt: post.excerpt ?? "",
     cover: post.cover ?? "",
     coverCaption: post.coverCaption ?? "",

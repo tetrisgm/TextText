@@ -23,6 +23,7 @@ import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   initialDraft,
   isPlaceholderSlug,
+  isUnsetTitle,
   payloadFor,
   payloadKey,
   postPath,
@@ -417,17 +418,8 @@ function patchEditSession(id: string | undefined, patch: Partial<EditSession>) {
   editSessions.set(id, { ...existing, ...patch });
 }
 
-function isEmptyNewPost(post: Post): boolean {
-  return (
-    post.status === "draft" &&
-    isPlaceholderSlug(post.slug) &&
-    !post.title.trim() &&
-    !post.excerpt?.trim() &&
-    !post.body.trim() &&
-    !post.cover?.trim() &&
-    !(post.gallery && post.gallery.length > 0) &&
-    !post.videoUrl?.trim()
-  );
+function shouldFocusTitleOnEdit(post: Post): boolean {
+  return isUnsetTitle(post.title);
 }
 
 export function PostEditLayer({
@@ -500,13 +492,15 @@ export function PostEditLayer({
     autoGrow(bodyRef.current);
   }, [draft.body, draft.type]);
 
+  const shouldAutoFocusTitle = shouldFocusTitleOnEdit(post);
+
   useEffect(() => {
-    if (!isEmptyNewPost(post)) return;
+    if (!shouldAutoFocusTitle) return;
     const title = titleRef.current;
     if (!title) return;
     title.focus({ preventScroll: true });
     title.setSelectionRange(title.value.length, title.value.length);
-  }, [post.id, post.slug, post]);
+  }, [post.id, shouldAutoFocusTitle]);
 
   useLayoutEffect(() => {
     if (draftSnapshot.postId !== postId) return;
@@ -718,7 +712,7 @@ export function PostEditLayer({
     updateDraft({ cover: "", coverCaption: "" });
   }, [updateDraft]);
 
-  const uploadGalleryImages = useCallback(
+  const uploadGalleryMedia = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
 
@@ -748,7 +742,7 @@ export function PostEditLayer({
       if (!autoSlugAllowedRef.current) return;
 
       const title = titleValue.trim();
-      if (!title || title.toLowerCase() === "untitled") return;
+      if (isUnsetTitle(title)) return;
 
       setDraftSnapshot((current) => {
         if (!autoSlugAllowedRef.current) return current;
@@ -813,9 +807,12 @@ export function PostEditLayer({
         className={titleClass}
         aria-label="Title"
         placeholder="Give it a title"
+        autoFocus={shouldAutoFocusTitle}
         rows={1}
         value={draft.title}
-        onChange={(event) => updateDraft({ title: event.currentTarget.value })}
+        onChange={(event) =>
+          updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
+        }
         onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
@@ -865,7 +862,7 @@ export function PostEditLayer({
         edit={{
           uploading: galleryUploading,
           uploadError: galleryUploadError,
-          onAddImages: uploadGalleryImages,
+          onAddMedia: uploadGalleryMedia,
           onChange: (gallery) => updateDraft({ gallery }),
         }}
       />
