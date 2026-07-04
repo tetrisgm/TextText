@@ -3,18 +3,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  BlogNameForm,
-  BlogDisplaySettings,
-  ClaimBlogButton,
-  CreatePostTypePicker,
+  BlogHomeShell,
 } from "@/components/BlogHomeEditorControls";
 import { PostCard } from "@/components/PostCard";
-import { BlogHomeShortcuts } from "@/components/PostShortcuts";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { blogFeedAlternateTypes, blogFeedHref } from "@/lib/feed-links";
 import { getCurrentUser } from "@/lib/session";
-import { getAllPosts, getBlog, getPosts } from "@/lib/store";
+import {
+  DEFAULT_ANONYMOUS_BLOG_NAME,
+  getAllPosts,
+  getBlog,
+  getPosts,
+} from "@/lib/store";
 import {
   formatArticleDate,
   isVideoFile,
@@ -42,8 +43,11 @@ function queryValue(value: string | string[] | undefined): string | undefined {
 }
 
 function isDefaultBlogName(name: string): boolean {
-  const normalized = name.trim().toLowerCase();
-  return !normalized || normalized === "untitled blog";
+  const normalized = name.trim().replace(/\s+/g, " ").toLowerCase();
+  return (
+    !normalized ||
+    normalized === DEFAULT_ANONYMOUS_BLOG_NAME.toLowerCase()
+  );
 }
 
 const TYPE_LABELS: Record<PostType, string> = {
@@ -220,7 +224,9 @@ export default async function BlogHome({ params, searchParams }: Props) {
   const posts = canEdit ? await getAllPosts(handle) : await getPosts(handle);
   const feedHref = blogFeedHref(handle);
   const encodedHandle = encodeURIComponent(handle);
-  const editableBlogName = isDefaultBlogName(blog.name) ? "" : blog.name;
+  const isUnnamedBlog = isDefaultBlogName(blog.name);
+  const editableBlogName = isUnnamedBlog ? "" : blog.name;
+  const showNamingCeremony = canEdit && isUnnamedBlog;
   const showClaim = canEdit && access.isUnclaimed && access.isTokenEditor;
   const feedLinks = [
     { href: feedHref, label: "RSS" },
@@ -229,54 +235,22 @@ export default async function BlogHome({ params, searchParams }: Props) {
   ];
 
   return (
-    <main
-      className={`blog-home${canEdit ? " has-editor-actions" : ""}${
-        showClaim ? " has-claim-actions" : ""
-      }`}
+    <BlogHomeShell
+      handle={handle}
+      blogName={blog.name}
+      initialName={editableBlogName}
+      tagline={blog.tagline}
+      canEdit={canEdit}
+      showClaim={showClaim}
+      publicPath={`/t/${encodedHandle}`}
+      signedIn={Boolean(viewer)}
+      authConfigured={isAuthConfigured}
+      autoClaim={queryValue(query.claim) === "1"}
+      initialCardStyle={blog.cardStyle}
+      initialHomeLayout={blog.homeLayout}
+      initialNamingCeremony={showNamingCeremony}
       style={blogStyle(blog)}
     >
-      {canEdit && <BlogHomeShortcuts owner={canEdit} handle={handle} />}
-      {canEdit && (
-        <div
-          className="blog-home-action-bar applecms"
-          aria-label="Blog controls"
-        >
-          <div className="blog-home-action-toolbar ac-chrome">
-            {showClaim && (
-              <ClaimBlogButton
-                handle={handle}
-                publicPath={`/t/${encodedHandle}`}
-                signedIn={Boolean(viewer)}
-                authConfigured={isAuthConfigured}
-                autoClaim={queryValue(query.claim) === "1"}
-              />
-            )}
-            <BlogDisplaySettings
-              handle={handle}
-              initialCardStyle={blog.cardStyle}
-              initialHomeLayout={blog.homeLayout}
-            />
-            <CreatePostTypePicker handle={handle} />
-          </div>
-        </div>
-      )}
-      <header className="blog-home-header">
-        <div className="blog-home-heading">
-          <div className="blog-home-copy">
-            {canEdit ? (
-              <BlogNameForm handle={handle} initialName={editableBlogName} />
-            ) : (
-              <h1 className="blog-home-name">{blog.name}</h1>
-            )}
-            <div className="blog-home-meta">
-              {blog.tagline && (
-                <p className="blog-home-tagline">{blog.tagline}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
-
       {posts.length > 0 && blog.homeLayout === "timeline" && (
         <BlogTimeline
           blog={blog}
@@ -315,6 +289,6 @@ export default async function BlogHome({ params, searchParams }: Props) {
           ))}
         </footer>
       )}
-    </main>
+    </BlogHomeShell>
   );
 }

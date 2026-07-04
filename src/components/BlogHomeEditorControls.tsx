@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
 import {
   claimBlog,
@@ -9,10 +9,32 @@ import {
   updateBlogAction,
   updateBlogNameAction,
 } from "@/app/editor/actions";
+import { BlogHomeShortcuts } from "@/components/PostShortcuts";
 import type { BlogCardStyle, BlogHomeLayout, PostType } from "@/lib/content";
 
 type ActionError = string | null;
 type BlogSettingKey = "cardStyle" | "homeLayout";
+type NamingFlightStyle = Pick<
+  CSSProperties,
+  "left" | "position" | "top" | "transform" | "width"
+>;
+type BlogHomeShellProps = {
+  handle: string;
+  blogName: string;
+  initialName: string;
+  tagline?: string;
+  canEdit: boolean;
+  showClaim: boolean;
+  publicPath: string;
+  signedIn: boolean;
+  authConfigured: boolean;
+  autoClaim: boolean;
+  initialCardStyle: BlogCardStyle;
+  initialHomeLayout: BlogHomeLayout;
+  initialNamingCeremony: boolean;
+  style?: CSSProperties;
+  children: ReactNode;
+};
 
 const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
   { type: "article", label: "Article" },
@@ -27,6 +49,7 @@ const HOME_LAYOUT_OPTIONS: Array<{ value: BlogHomeLayout; label: string }> = [
   { value: "cards", label: "Cards" },
   { value: "timeline", label: "Timeline" },
 ];
+const NAME_FLIGHT_MS = 520;
 
 function signInUrl(handle: string): string {
   const callbackUrl = `/t/${encodeURIComponent(handle)}?claim=1`;
@@ -65,6 +88,95 @@ function useDismissPopover<T extends HTMLElement>(
       window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [onClose, open, ref]);
+}
+
+function shouldReduceMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+export function BlogHomeShell({
+  handle,
+  blogName,
+  initialName,
+  tagline,
+  canEdit,
+  showClaim,
+  publicPath,
+  signedIn,
+  authConfigured,
+  autoClaim,
+  initialCardStyle,
+  initialHomeLayout,
+  initialNamingCeremony,
+  style,
+  children,
+}: BlogHomeShellProps) {
+  const [namingCeremonyActive, setNamingCeremonyActive] = useState(
+    initialNamingCeremony,
+  );
+
+  useEffect(() => {
+    setNamingCeremonyActive(initialNamingCeremony);
+  }, [handle, initialNamingCeremony]);
+
+  const showEditorChrome = canEdit && !namingCeremonyActive;
+  const rootClassName = `blog-home${
+    showEditorChrome ? " has-editor-actions" : ""
+  }${showEditorChrome && showClaim ? " has-claim-actions" : ""}${
+    namingCeremonyActive ? " is-naming-ceremony" : ""
+  }`;
+
+  return (
+    <main className={rootClassName} style={style}>
+      {showEditorChrome && <BlogHomeShortcuts owner={canEdit} handle={handle} />}
+      {showEditorChrome && (
+        <div
+          className="blog-home-action-bar applecms"
+          aria-label="Blog controls"
+        >
+          <div className="blog-home-action-toolbar ac-chrome">
+            {showClaim && (
+              <ClaimBlogButton
+                handle={handle}
+                publicPath={publicPath}
+                signedIn={signedIn}
+                authConfigured={authConfigured}
+                autoClaim={autoClaim}
+              />
+            )}
+            <BlogDisplaySettings
+              handle={handle}
+              initialCardStyle={initialCardStyle}
+              initialHomeLayout={initialHomeLayout}
+            />
+            <CreatePostTypePicker handle={handle} />
+          </div>
+        </div>
+      )}
+      <header className="blog-home-header">
+        <div className="blog-home-heading">
+          <div className="blog-home-copy">
+            {canEdit ? (
+              <BlogNameForm
+                handle={handle}
+                initialName={initialName}
+                ceremonyActive={namingCeremonyActive}
+                onCeremonyComplete={() => setNamingCeremonyActive(false)}
+              />
+            ) : (
+              <h1 className="blog-home-name">{blogName}</h1>
+            )}
+            {!namingCeremonyActive && (
+              <div className="blog-home-meta">
+                {tagline && <p className="blog-home-tagline">{tagline}</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+      {!namingCeremonyActive && children}
+    </main>
+  );
 }
 
 export function CreatePostTypePicker({ handle }: { handle: string }) {
@@ -266,18 +378,30 @@ export function BlogDisplaySettings({
 export function BlogNameForm({
   handle,
   initialName,
+  ceremonyActive = false,
+  onCeremonyComplete,
 }: {
   handle: string;
   initialName: string;
+  ceremonyActive?: boolean;
+  onCeremonyComplete?: () => void;
 }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<ActionError>(null);
   const [saving, setSaving] = useState(false);
+  const [flying, setFlying] = useState(false);
+  const [flightStyle, setFlightStyle] = useState<NamingFlightStyle>();
   const [, startTransition] = useTransition();
+  const formRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const committedName = useRef(initialName);
   const requestId = useRef(0);
   const skipNextBlur = useRef(false);
+  const flightComplete = useRef(false);
+  const flightTimer = useRef<number | null>(null);
+  const flightFrames = useRef<number[]>([]);
 
   useEffect(() => {
     committedName.current = initialName;
@@ -285,11 +409,106 @@ export function BlogNameForm({
     setError(null);
   }, [initialName]);
 
+  useEffect(() => {
+    if (!ceremonyActive || flying) return;
+    const frame = window.requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [ceremonyActive, flying]);
+
+  useEffect(() => {
+    if (ceremonyActive) {
+      flightComplete.current = false;
+      return;
+    }
+
+    setFlying(false);
+    setFlightStyle(undefined);
+  }, [ceremonyActive, handle]);
+
+  useEffect(() => {
+    return () => {
+      if (flightTimer.current !== null) {
+        window.clearTimeout(flightTimer.current);
+      }
+      for (const frame of flightFrames.current) {
+        window.cancelAnimationFrame(frame);
+      }
+      flightFrames.current = [];
+    };
+  }, []);
+
+  const finishCeremony = useCallback(() => {
+    if (flightComplete.current) return;
+    flightComplete.current = true;
+
+    if (flightTimer.current !== null) {
+      window.clearTimeout(flightTimer.current);
+      flightTimer.current = null;
+    }
+
+    setFlying(false);
+    setFlightStyle(undefined);
+    onCeremonyComplete?.();
+    router.refresh();
+  }, [onCeremonyComplete, router]);
+
+  const startCeremonyFlight = useCallback(() => {
+    if (!ceremonyActive) {
+      router.refresh();
+      return;
+    }
+
+    const form = formRef.current;
+    const target = targetRef.current;
+    if (!form || !target || shouldReduceMotion()) {
+      finishCeremony();
+      return;
+    }
+
+    const startRect = form.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    setFlying(true);
+    setFlightStyle({
+      position: "fixed",
+      top: startRect.top,
+      left: startRect.left,
+      width: startRect.width,
+      transform: "none",
+    });
+
+    const firstFrame = window.requestAnimationFrame(() => {
+      const secondFrame = window.requestAnimationFrame(() => {
+        setFlightStyle({
+          position: "fixed",
+          top: targetRect.top,
+          left: targetRect.left,
+          width: targetRect.width,
+          transform: "none",
+        });
+      });
+      flightFrames.current.push(secondFrame);
+    });
+    flightFrames.current.push(firstFrame);
+
+    flightTimer.current = window.setTimeout(
+      finishCeremony,
+      NAME_FLIGHT_MS + 120,
+    );
+  }, [ceremonyActive, finishCeremony, router]);
+
   const commitName = useCallback(
     (value: string) => {
+      if (saving || flying) return;
+
       const nextName = cleanDraftName(value);
       setName(nextName);
       setError(null);
+
+      if (ceremonyActive && !nextName) {
+        return;
+      }
 
       if (nextName === committedName.current) return;
 
@@ -310,7 +529,11 @@ export function BlogNameForm({
             setName((currentName) =>
               cleanDraftName(currentName) === nextName ? savedName : currentName,
             );
-            router.refresh();
+            if (ceremonyActive) {
+              startCeremonyFlight();
+            } else {
+              router.refresh();
+            }
           })
           .catch(() => {
             if (requestId.current === currentRequestId) {
@@ -324,51 +547,113 @@ export function BlogNameForm({
           });
       });
     },
-    [handle, router],
+    [
+      ceremonyActive,
+      flying,
+      handle,
+      router,
+      saving,
+      startCeremonyFlight,
+    ],
   );
 
-  return (
-    <div
-      className="blog-name-form"
-      aria-busy={saving}
-    >
-      <input
-        className="blog-name-input"
-        value={name}
-        placeholder="Name your blog"
-        aria-label="Blog name"
-        onBlur={(event) => {
-          if (skipNextBlur.current) {
-            skipNextBlur.current = false;
-            return;
-          }
-          commitName(event.currentTarget.value);
-        }}
-        onChange={(event) => {
-          setName(event.currentTarget.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            event.currentTarget.blur();
-            return;
-          }
+  const cleanedName = cleanDraftName(name);
+  const canConfirm = Boolean(cleanedName) && !saving && !flying;
+  const formClassName = `blog-name-form${
+    ceremonyActive ? " is-ceremony" : ""
+  }${flying ? " is-flying" : ""}`;
 
-          if (event.key === "Escape") {
-            event.preventDefault();
-            skipNextBlur.current = true;
-            setName(committedName.current);
-            setError(null);
-            event.currentTarget.blur();
-          }
-        }}
-      />
-      {error && (
-        <span className="blog-home-control-error" role="alert">
-          {error}
-        </span>
+  return (
+    <>
+      {ceremonyActive && (
+        <div
+          className="blog-name-form blog-name-target"
+          ref={targetRef}
+          aria-hidden="true"
+        >
+          <div className="blog-name-input blog-name-target-input">
+            {cleanedName || "Name your blog"}
+          </div>
+        </div>
       )}
-    </div>
+      <div
+        className={formClassName}
+        ref={formRef}
+        style={flightStyle}
+        aria-busy={saving}
+        onTransitionEnd={(event) => {
+          if (
+            !flying ||
+            event.target !== formRef.current ||
+            event.propertyName !== "top"
+          ) {
+            return;
+          }
+          finishCeremony();
+        }}
+      >
+        <input
+          ref={inputRef}
+          className="blog-name-input"
+          value={name}
+          placeholder="Name your blog"
+          aria-label="Blog name"
+          aria-describedby={
+            ceremonyActive ? "blog-name-ceremony-note" : undefined
+          }
+          autoFocus={ceremonyActive}
+          disabled={flying}
+          onBlur={(event) => {
+            if (skipNextBlur.current) {
+              skipNextBlur.current = false;
+              return;
+            }
+            commitName(event.currentTarget.value);
+          }}
+          onChange={(event) => {
+            setName(event.currentTarget.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitName(event.currentTarget.value);
+              return;
+            }
+
+            if (event.key === "Escape") {
+              event.preventDefault();
+              skipNextBlur.current = true;
+              setName(committedName.current);
+              setError(null);
+              if (!ceremonyActive) {
+                event.currentTarget.blur();
+              }
+            }
+          }}
+        />
+        {ceremonyActive && (
+          <>
+            <p className="blog-name-ceremony-note" id="blog-name-ceremony-note">
+              You can change it later
+            </p>
+            <button
+              className="blog-name-confirm ac-btn ac-btn-filled"
+              type="button"
+              disabled={!canConfirm}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => commitName(name)}
+            >
+              {saving ? "Confirming" : "Confirm"}
+            </button>
+          </>
+        )}
+        {error && (
+          <span className="blog-home-control-error" role="alert">
+            {error}
+          </span>
+        )}
+      </div>
+    </>
   );
 }
 

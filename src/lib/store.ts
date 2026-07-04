@@ -58,7 +58,7 @@ export type StoreUser = {
   email?: string;
 };
 
-const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
+export const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
 const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
 const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "cards";
 

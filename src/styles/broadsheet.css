@@ -378,6 +378,13 @@
   margin: 0 0 12px;
   --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
 }
+.blog-home.is-naming-ceremony {
+  min-height: 100dvh;
+}
+.blog-name-target {
+  visibility: hidden;
+  pointer-events: none;
+}
 .blog-name-input {
   width: 100%;
   min-width: 0;
@@ -404,6 +411,59 @@
 }
 .blog-name-input:focus-visible {
   border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 55%, var(--muted));
+}
+.blog-name-form.is-ceremony {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 220;
+  width: min(760px, calc(100vw - 36px));
+  max-width: none;
+  margin: 0;
+  justify-items: center;
+  text-align: center;
+  transform: translate(-50%, -36px);
+}
+.blog-name-form.is-ceremony .blog-name-input {
+  text-align: center;
+  border-bottom-color: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+.blog-name-form.is-ceremony .blog-name-input:focus-visible {
+  border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 60%, var(--muted));
+}
+.blog-name-ceremony-note {
+  margin: 14px 0 0;
+  color: color-mix(in srgb, var(--muted) 82%, var(--ink));
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+.blog-name-confirm {
+  min-width: 112px;
+  margin-top: 18px;
+  letter-spacing: 0;
+}
+.blog-name-form.is-flying {
+  z-index: 230;
+  justify-items: start;
+  text-align: left;
+  transition:
+    top 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.blog-name-form.is-flying .blog-name-input {
+  text-align: left;
+  transition: border-color 0.22s var(--ease);
+}
+.blog-name-form.is-flying .blog-name-ceremony-note,
+.blog-name-form.is-flying .blog-name-confirm {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.16s var(--ease),
+    transform 0.16s var(--ease);
 }
 .blog-claim-row {
   display: flex;
@@ -1198,6 +1258,13 @@
 @media (prefers-reduced-motion: reduce) {
   .post-save-pill.is-saved {
     animation: none;
+  }
+  .blog-name-form.is-flying {
+    transition: none;
+  }
+  .blog-name-form.is-flying .blog-name-ceremony-note,
+  .blog-name-form.is-flying .blog-name-confirm {
+    transition: none;
   }
 }
 
@@ -2007,6 +2074,9 @@
   .blog-name-input {
     font-size: 42px;
   }
+  .blog-name-form.is-ceremony {
+    transform: translate(-50%, -28px);
+  }
 }
 @media (max-width: 720px) {
   .post-top-action-bar {
@@ -2231,6 +2301,10 @@
   }
   .blog-name-input {
     font-size: 34px;
+  }
+  .blog-name-form.is-ceremony {
+    width: min(760px, calc(100vw - 36px));
+    transform: translate(-50%, -23px);
   }
   .blog-home-tagline {
     font-size: 16px;
