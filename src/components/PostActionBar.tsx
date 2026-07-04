@@ -121,6 +121,26 @@ function ShareIcon() {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M10.9 2.35a1.55 1.55 0 0 1 2.2 2.2l-7.95 7.95-2.9.75.75-2.9 7.9-8Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <path
+        d="M9.75 3.55 11.9 5.7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.35"
+      />
+    </svg>
+  );
+}
+
 function useDismissPopover<T extends HTMLElement>(
   open: boolean,
   ref: RefObject<T | null>,
@@ -383,6 +403,9 @@ export function PostActionBar(props: Props) {
         className="post-owner-edit ac-btn ac-btn-filled"
         href={`${props.postPath}?edit=1`}
       >
+        <span className="post-action-button-icon">
+          <PencilIcon />
+        </span>
         Edit
       </Link>
     );
@@ -567,7 +590,6 @@ export function PostActionBar(props: Props) {
           </div>
         )}
         <nav className="post-detail-controls" aria-label="Post navigation">
-          {props.owner && <span className="post-action-divider" aria-hidden="true" />}
           {props.adjacent.previous && (
             <NavControl
               href={postPathFor(props.blog.handle, props.adjacent.previous.slug)}

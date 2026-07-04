@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { deleteEditablePostAction, saveEditablePostAction } from "@/app/editor/actions";
 import { ProjectGallery } from "@/components/ProjectGallery";
@@ -114,9 +115,36 @@ function EditableCover({
   onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [draggingCover, setDraggingCover] = useState(false);
   const chooseFile = (files: FileList | null) => {
-    const file = files?.[0];
+    const file = files
+      ? Array.from(files).find((item) => item.type.startsWith("image/"))
+      : undefined;
     if (file) onUploadFile(file);
+  };
+  const hasCoverDrop = (event: DragEvent<HTMLElement>) =>
+    Array.from(event.dataTransfer.types).includes("Files");
+  const onCoverDrag = (event: DragEvent<HTMLElement>) => {
+    if (!hasCoverDrop(event)) return;
+    event.preventDefault();
+    if (uploading) return;
+    event.dataTransfer.dropEffect = "copy";
+    setDraggingCover(true);
+  };
+  const onCoverDragLeave = (event: DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+    setDraggingCover(false);
+  };
+  const onCoverDrop = (event: DragEvent<HTMLElement>) => {
+    if (!hasCoverDrop(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingCover(false);
+    if (uploading) return;
+    chooseFile(event.dataTransfer.files);
   };
 
   const input = (
@@ -134,7 +162,15 @@ function EditableCover({
 
   if (!cover) {
     return (
-      <div className="reader-cover edit-cover-empty applecms">
+      <div
+        className={`reader-cover edit-cover-empty applecms${
+          draggingCover ? " is-dragging-cover" : ""
+        }`}
+        onDragEnter={onCoverDrag}
+        onDragOver={onCoverDrag}
+        onDragLeave={onCoverDragLeave}
+        onDrop={onCoverDrop}
+      >
         {input}
         <button
           type="button"
@@ -142,7 +178,7 @@ function EditableCover({
           disabled={uploading}
           onClick={() => inputRef.current?.click()}
         >
-          {uploading ? "Uploading" : "Add cover"}
+          {uploading ? "Uploading" : "Add a cover"}
         </button>
         {error && (
           <span className="edit-cover-error" role="alert">
@@ -154,7 +190,15 @@ function EditableCover({
   }
 
   return (
-    <figure className="reader-cover edit-cover applecms">
+    <figure
+      className={`reader-cover edit-cover applecms${
+        draggingCover ? " is-dragging-cover" : ""
+      }`}
+      onDragEnter={onCoverDrag}
+      onDragOver={onCoverDrag}
+      onDragLeave={onCoverDragLeave}
+      onDrop={onCoverDrop}
+    >
       <div className="edit-cover-media">
         {input}
         {/* eslint-disable-next-line @next/next/no-img-element */}
