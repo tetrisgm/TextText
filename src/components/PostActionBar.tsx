@@ -174,16 +174,32 @@ function useDismissPopover<T extends HTMLElement>(
 function NavControl({
   href,
   label,
+  disabled = false,
   mode,
   onNavigate,
   children,
 }: {
-  href: string;
+  href?: string;
   label: string;
+  disabled?: boolean;
   mode: Props["mode"];
   onNavigate?: (path: string) => Promise<void>;
   children: ReactNode;
 }) {
+  if (disabled || !href) {
+    return (
+      <button
+        type="button"
+        className="post-detail-nav is-disabled"
+        aria-label={label}
+        aria-disabled="true"
+        disabled
+      >
+        <span className="post-detail-control-icon">{children}</span>
+      </button>
+    );
+  }
+
   if (mode === "edit" && onNavigate) {
     return (
       <button
@@ -441,6 +457,12 @@ export function PostActionBar(props: Props) {
         })}
       </div>
     ) : null;
+  const previousPath = props.adjacent.previous
+    ? postPathFor(props.blog.handle, props.adjacent.previous.slug)
+    : undefined;
+  const nextPath = props.adjacent.next
+    ? postPathFor(props.blog.handle, props.adjacent.next.slug)
+    : undefined;
 
   return (
     <div className="post-top-action-bar applecms" aria-label="Post controls">
@@ -590,26 +612,32 @@ export function PostActionBar(props: Props) {
           </div>
         )}
         <nav className="post-detail-controls" aria-label="Post navigation">
-          {props.adjacent.previous && (
-            <NavControl
-              href={postPathFor(props.blog.handle, props.adjacent.previous.slug)}
-              label={`Previous post: ${postTitle(props.adjacent.previous.title)}`}
-              mode={props.mode}
-              onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
-            >
-              <ChevronIcon dir="left" />
-            </NavControl>
-          )}
-          {props.adjacent.next && (
-            <NavControl
-              href={postPathFor(props.blog.handle, props.adjacent.next.slug)}
-              label={`Next post: ${postTitle(props.adjacent.next.title)}`}
-              mode={props.mode}
-              onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
-            >
-              <ChevronIcon dir="right" />
-            </NavControl>
-          )}
+          <NavControl
+            href={previousPath}
+            label={
+              props.adjacent.previous
+                ? `Previous post: ${postTitle(props.adjacent.previous.title)}`
+                : "No previous post"
+            }
+            disabled={!previousPath}
+            mode={props.mode}
+            onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
+          >
+            <ChevronIcon dir="left" />
+          </NavControl>
+          <NavControl
+            href={nextPath}
+            label={
+              props.adjacent.next
+                ? `Next post: ${postTitle(props.adjacent.next.title)}`
+                : "No next post"
+            }
+            disabled={!nextPath}
+            mode={props.mode}
+            onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
+          >
+            <ChevronIcon dir="right" />
+          </NavControl>
           <NavControl
             href={props.homePath}
             label="Close"

@@ -5,18 +5,15 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import useEmblaCarousel from "embla-carousel-react";
+import { isTypingTarget } from "@/components/PostShortcuts";
 import type { GalleryItem, Post } from "@/lib/content";
 import { isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
-
-type LightboxImage = {
-  src: string;
-  alt: string;
-};
 
 type ProjectGalleryEdit = {
   uploading: boolean;
@@ -47,6 +44,10 @@ function Chevron({ direction }: { direction: "left" | "right" }) {
   );
 }
 
+function isImageItem(item: GalleryItem): boolean {
+  return !isVideoFile(item.src) && !isYouTube(item.src);
+}
+
 function CloseIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -73,7 +74,7 @@ function SlideMedia({
   title: string;
   isAutoplayStopped: () => boolean;
   onEnded: () => void;
-  onOpenImage: (image: LightboxImage) => void;
+  onOpenImage: () => void;
   onStopAutoplay: () => void;
   onLoaded: () => void;
 }) {
@@ -118,7 +119,7 @@ function SlideMedia({
       className="proj-carousel-image-button"
       onClick={() => {
         onStopAutoplay();
-        onOpenImage({ src: item.src, alt: caption || title });
+        onOpenImage();
       }}
       aria-label="Open image"
     >
@@ -152,13 +153,35 @@ export function ProjectGallery({
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(false);
   const [loadedSlides, setLoadedSlides] = useState<Set<number>>(() => new Set());
-  const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [navPeek, setNavPeek] = useState(true);
   const [isDraggingMedia, setIsDraggingMedia] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const autoplayStoppedRef = useRef(false);
   const autoplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const imageSlideIndexes = useMemo(
+    () =>
+      slides.reduce<number[]>((indexes, item, index) => {
+        if (isImageItem(item)) indexes.push(index);
+        return indexes;
+      }, []),
+    [slides],
+  );
+  const lightboxPosition =
+    lightboxIndex === null ? -1 : imageSlideIndexes.indexOf(lightboxIndex);
+  const canLightboxPrev = lightboxPosition > 0;
+  const canLightboxNext =
+    lightboxPosition >= 0 && lightboxPosition < imageSlideIndexes.length - 1;
+  const lightboxItem =
+    lightboxIndex === null ? undefined : slides[lightboxIndex];
+  const lightboxImage =
+    lightboxItem && isImageItem(lightboxItem)
+      ? {
+          src: lightboxItem.src,
+          alt: lightboxItem.caption || post.title,
+        }
+      : null;
 
   const clearAutoplayTimer = useCallback(() => {
     if (autoplayTimerRef.current !== null) {
@@ -251,17 +274,6 @@ export function ProjectGallery({
     };
   }, [clearAutoplayTimer, emblaApi, slideCount, slides]);
 
-  useEffect(() => {
-    if (!lightboxImage) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLightboxImage(null);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [lightboxImage]);
-
   const advanceFromVideo = useCallback(() => {
     if (autoplayStoppedRef.current) return;
     emblaApi?.scrollNext();
@@ -284,6 +296,79 @@ export function ProjectGallery({
     },
     [emblaApi, stopAutoplay],
   );
+
+  const openLightbox = useCallback(
+    (index: number) => {
+      stopAutoplay();
+      setLightboxIndex(index);
+    },
+    [stopAutoplay],
+  );
+
+  const moveLightbox = useCallback(
+    (direction: -1 | 1) => {
+      if (lightboxIndex === null) return;
+      const currentPosition = imageSlideIndexes.indexOf(lightboxIndex);
+      const targetIndex = imageSlideIndexes[currentPosition + direction];
+      if (targetIndex === undefined) return;
+      stopAutoplay();
+      setLightboxIndex(targetIndex);
+      emblaApi?.scrollTo(targetIndex);
+    },
+    [emblaApi, imageSlideIndexes, lightboxIndex, stopAutoplay],
+  );
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const item = slides[lightboxIndex];
+    if (!item || !isImageItem(item)) setLightboxIndex(null);
+  }, [lightboxIndex, slides]);
+
+  useEffect(() => {
+    if (!emblaApi || slideCount < 2 || lightboxIndex !== null) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+      event.preventDefault();
+      if (event.key === "ArrowLeft") {
+        scrollPrev();
+      } else {
+        scrollNext();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [emblaApi, lightboxIndex, scrollNext, scrollPrev, slideCount]);
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setLightboxIndex(null);
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveLightbox(-1);
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveLightbox(1);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightboxIndex, moveLightbox]);
 
   const addMedia = useCallback(
     (files: FileList | null) => {
@@ -540,7 +625,7 @@ export function ProjectGallery({
                           title={post.title}
                           isAutoplayStopped={isAutoplayStopped}
                           onEnded={advanceFromVideo}
-                          onOpenImage={setLightboxImage}
+                          onOpenImage={() => openLightbox(index)}
                           onStopAutoplay={stopAutoplay}
                           onLoaded={() => markLoaded(index)}
                         />
@@ -638,15 +723,27 @@ export function ProjectGallery({
             role="dialog"
             aria-modal="true"
             aria-label="Expanded image"
-            onClick={() => setLightboxImage(null)}
+            onClick={() => setLightboxIndex(null)}
           >
             <button
               type="button"
               className="media-lightbox-close"
-              onClick={() => setLightboxImage(null)}
+              onClick={() => setLightboxIndex(null)}
               aria-label="Close"
             >
               <CloseIcon />
+            </button>
+            <button
+              type="button"
+              className="media-lightbox-nav prev"
+              aria-label="Previous image"
+              disabled={!canLightboxPrev}
+              onClick={(event) => {
+                event.stopPropagation();
+                moveLightbox(-1);
+              }}
+            >
+              <Chevron direction="left" />
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -655,6 +752,18 @@ export function ProjectGallery({
               alt={lightboxImage.alt}
               onClick={(event) => event.stopPropagation()}
             />
+            <button
+              type="button"
+              className="media-lightbox-nav next"
+              aria-label="Next image"
+              disabled={!canLightboxNext}
+              onClick={(event) => {
+                event.stopPropagation();
+                moveLightbox(1);
+              }}
+            >
+              <Chevron direction="right" />
+            </button>
           </div>,
           document.body,
         )}

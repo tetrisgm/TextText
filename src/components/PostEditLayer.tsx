@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { DragEvent } from "react";
+import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { deleteEditablePostAction, saveEditablePostAction } from "@/app/editor/actions";
 import { ProjectGallery } from "@/components/ProjectGallery";
@@ -57,6 +57,45 @@ function autoGrow(node: HTMLTextAreaElement | null) {
   if (!node) return;
   node.style.height = "0px";
   node.style.height = `${node.scrollHeight}px`;
+}
+
+function focusTextareaEnd(node: HTMLTextAreaElement | null) {
+  if (!node) return;
+  node.focus({ preventScroll: true });
+  node.setSelectionRange(node.value.length, node.value.length);
+}
+
+function textareaCaretOnFirstLine(node: HTMLTextAreaElement): boolean {
+  const selectionStart = node.selectionStart ?? 0;
+  const firstBreak = node.value.indexOf("\n");
+  return firstBreak === -1 || selectionStart <= firstBreak;
+}
+
+function textareaCaretOnLastLine(node: HTMLTextAreaElement): boolean {
+  const selectionEnd = node.selectionEnd ?? 0;
+  const lastBreak = node.value.lastIndexOf("\n");
+  return lastBreak === -1 || selectionEnd > lastBreak;
+}
+
+function editableCaretOnFirstLine(container: HTMLElement): boolean {
+  const editor = container.querySelector<HTMLElement>(".body-editor-content");
+  const selection = window.getSelection();
+  if (!editor || !selection || selection.rangeCount === 0) return false;
+  if (!editor.textContent?.trim()) return true;
+
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return false;
+
+  const caretRange = range.cloneRange();
+  caretRange.collapse(true);
+  const caretRect =
+    caretRange.getClientRects()[0] ?? caretRange.getBoundingClientRect();
+  if (caretRect.height === 0 && caretRect.width === 0) return false;
+
+  const editorRect = editor.getBoundingClientRect();
+  const lineHeight = parseFloat(window.getComputedStyle(editor).lineHeight);
+  const threshold = Number.isFinite(lineHeight) ? lineHeight * 0.8 : 24;
+  return caretRect.top <= editorRect.top + threshold;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -507,6 +546,18 @@ export function PostEditLayer({
   const leavingEditRef = useRef(false);
   const postId = post.id;
 
+  const focusTitle = useCallback(() => {
+    focusTextareaEnd(titleRef.current);
+  }, []);
+
+  const focusExcerpt = useCallback(() => {
+    focusTextareaEnd(excerptRef.current);
+  }, []);
+
+  const focusBody = useCallback(() => {
+    bodyRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const session = getEditSession(post);
     setDraftSnapshot({ postId: post.id, draft: session.draft });
@@ -842,6 +893,77 @@ export function PostEditLayer({
         : "reader-dek edit-excerpt-field";
   const titleText = displayPost.title.trim() || "Untitled";
 
+  const onTitleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        deriveSlugFromTitle(event.currentTarget.value);
+        focusBody();
+        return;
+      }
+
+      if (event.key === "Tab" && !event.shiftKey) {
+        event.preventDefault();
+        focusExcerpt();
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        focusExcerpt();
+      }
+    },
+    [deriveSlugFromTitle, focusBody, focusExcerpt],
+  );
+
+  const onExcerptKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          focusTitle();
+        } else {
+          focusBody();
+        }
+        return;
+      }
+
+      if (event.key === "ArrowDown" && textareaCaretOnLastLine(event.currentTarget)) {
+        event.preventDefault();
+        focusBody();
+        return;
+      }
+
+      if (event.key === "ArrowUp" && textareaCaretOnFirstLine(event.currentTarget)) {
+        event.preventDefault();
+        focusTitle();
+      }
+    },
+    [focusBody, focusTitle],
+  );
+
+  const onBodyKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key === "Tab" && event.shiftKey) {
+        event.preventDefault();
+        focusExcerpt();
+        return;
+      }
+
+      if (event.key === "ArrowUp" && editableCaretOnFirstLine(event.currentTarget)) {
+        event.preventDefault();
+        focusExcerpt();
+      }
+    },
+    [focusExcerpt],
+  );
+
   const slots = {
     title: (
       <>
@@ -862,13 +984,7 @@ export function PostEditLayer({
             updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
           }
           onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              deriveSlugFromTitle(event.currentTarget.value);
-              bodyRef.current?.focus();
-            }
-          }}
+          onKeyDown={onTitleKeyDown}
         />
       </>
     ),
@@ -881,15 +997,18 @@ export function PostEditLayer({
         rows={1}
         value={draft.excerpt}
         onChange={(event) => updateDraft({ excerpt: event.currentTarget.value })}
+        onKeyDown={onExcerptKeyDown}
       />
     ),
     body: (
-      <BodyEditor
-        ref={bodyRef}
-        value={draft.body}
-        onChange={(body) => updateDraft({ body })}
-        toolbarHost={bodyToolbarHost}
-      />
+      <div onKeyDown={onBodyKeyDown}>
+        <BodyEditor
+          ref={bodyRef}
+          value={draft.body}
+          onChange={(body) => updateDraft({ body })}
+          toolbarHost={bodyToolbarHost}
+        />
+      </div>
     ),
     cover: (
       <EditableCover

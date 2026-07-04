@@ -317,9 +317,13 @@
 /* ---------- blog home (post cards) ---------- */
 .blog-home {
   --display: var(--font-display, "Fraunces", Georgia, serif);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100dvh;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 72px 24px 104px;
+  padding: 72px 24px 0;
 }
 .blog-home-header {
   max-width: none;
@@ -403,7 +407,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 14px;
-  margin-top: 64px;
+  margin-top: auto;
   padding-top: 22px;
   border-top: 1px solid var(--hairline-2);
   color: var(--muted);
@@ -523,6 +527,15 @@
 .post-detail-nav:hover .post-detail-control-icon,
 .post-detail-nav:focus-visible .post-detail-control-icon {
   background: rgba(0, 0, 0, 0.6);
+}
+.post-detail-nav.is-disabled {
+  cursor: default;
+}
+.post-detail-nav.is-disabled .post-detail-control-icon,
+.post-detail-nav.is-disabled:hover .post-detail-control-icon,
+.post-detail-nav.is-disabled:focus-visible .post-detail-control-icon {
+  background: rgba(0, 0, 0, 0.24);
+  color: rgba(255, 255, 255, 0.46);
 }
 .post-detail-nav:focus-visible {
   outline: none;
@@ -1434,7 +1447,7 @@
   }
   .blog-home {
     padding-top: 56px;
-    padding-bottom: 72px;
+    padding-bottom: 0;
   }
   .blog-home-header {
     margin-bottom: 34px;
@@ -1548,7 +1561,7 @@
     border-radius: 14px;
   }
   .blog-home {
-    padding: 38px 18px 56px;
+    padding: 38px 18px 0;
   }
   .blog-home-name {
     font-size: 34px;

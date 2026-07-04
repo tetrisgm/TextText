@@ -6,7 +6,7 @@ import { createArticleDraftPathAction } from "@/app/editor/actions";
 
 const CLOSE_EDIT_MENU_EVENT = "post-edit-menu-close";
 
-function isTypingTarget(target: EventTarget | null): boolean {
+export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   if (
     target instanceof HTMLInputElement ||
@@ -82,9 +82,9 @@ export function PostShortcuts({
 
       const key = event.key.toLowerCase();
       const targetPath =
-        key === "j" || event.key === "ArrowRight"
+        key === "j"
           ? nextPath
-          : key === "k" || event.key === "ArrowLeft"
+          : key === "k"
             ? previousPath
             : undefined;
 

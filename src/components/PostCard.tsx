@@ -1,8 +1,10 @@
 "use client";
 
-import type { CSSProperties, PointerEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { deleteEditablePostAction } from "@/app/editor/actions";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
   formatArticleDate,
@@ -120,9 +122,13 @@ export function PostCard({
   post: Post;
   owner: boolean;
 }) {
+  const router = useRouter();
   const ref = useRef<HTMLAnchorElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const title = postTitle(post);
   const desc = postDesc(post);
@@ -204,6 +210,29 @@ export function PostCard({
     [],
   );
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      const menu = menuRef.current;
+      if (!menu || !(event.target instanceof Node)) return;
+      if (!menu.contains(event.target)) setMenuOpen(false);
+    };
+
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMenuOpen(false);
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [menuOpen]);
+
   const endHover = () => {
     setHovered(false);
     tiltTarget.current = { ...NEUTRAL };
@@ -266,6 +295,40 @@ export function PostCard({
     endHover();
   };
 
+  const stopMenuNavigation = (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    stopMenuNavigation(event);
+    setMenuOpen((open) => !open);
+  };
+
+  const onDelete = (event: MouseEvent<HTMLButtonElement>) => {
+    stopMenuNavigation(event);
+    const postId = post.id;
+    if (!owner || !postId || deleting) return;
+    if (!window.confirm("Delete this post?")) return;
+
+    setDeleting(true);
+    startTransition(() => {
+      void deleteEditablePostAction(postId)
+        .then(() => {
+          setMenuOpen(false);
+          router.refresh();
+        })
+        .catch((error) => {
+          setDeleting(false);
+          window.alert(
+            error instanceof Error && error.message
+              ? error.message
+              : "Could not delete",
+          );
+        });
+    });
+  };
+
   const className = [
     "tvcard",
     `tvcard--${post.type}`,
@@ -276,84 +339,117 @@ export function PostCard({
     .join(" ");
 
   return (
-    <Link
-      ref={ref}
-      href={`/t/${handle}/${post.slug}`}
-      prefetch={true}
-      className={className}
-      style={cardStyle(blog, post)}
-      onPointerMove={onPointerMove}
-      onPointerLeave={onPointerLeave}
-      aria-label={title}
-    >
-      <span className="tvcard-inner">
-        <span className="tvcard-tilt">
-          <span className="tvcard-media">
-            {cover ? (
-              isVideoCover ? (
-                <video
-                  ref={attachVideo}
-                  className="tvcard-cover"
-                  data-ready={videoReady ? "true" : undefined}
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  preload="auto"
-                  aria-hidden="true"
-                  onCanPlay={() => setVideoReady(true)}
-                >
-                  <source src={cover} type={videoMimeType(cover)} />
-                </video>
-              ) : (
-                // User media can be remote, so plain img avoids next/image config.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className="tvcard-cover"
-                  src={cover}
-                  alt={title}
-                  decoding="async"
-                  loading="lazy"
-                />
-              )
-            ) : (
-              <FallbackPlate />
-            )}
-            {post.type === "talk" && <PlayBadge />}
-            {post.type === "project" && (
-              <span className="tvcard-scrim" aria-hidden="true" />
-            )}
-            <span className="tvcard-sheen" aria-hidden="true" />
-          </span>
-          <span className="tvcard-body">
-            {post.type === "project" ? (
-              <>
-                {showUnlisted && (
-                  <span className="tvcard-unlisted">Unlisted</span>
-                )}
-                <span className="tvcard-title">{title}</span>
-                <span className="tvcard-desc">{desc}</span>
-              </>
-            ) : (
-              <>
-                <span className="tvcard-chip-row">
-                  <span
-                    className="tvcard-chip"
-                    style={{ background: accent ?? "var(--ink)" }}
+    <div className="tvcard-shell">
+      <Link
+        ref={ref}
+        href={`/t/${handle}/${post.slug}`}
+        prefetch={true}
+        className={className}
+        style={cardStyle(blog, post)}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
+        aria-label={title}
+      >
+        <span className="tvcard-inner">
+          <span className="tvcard-tilt">
+            <span className="tvcard-media">
+              {cover ? (
+                isVideoCover ? (
+                  <video
+                    ref={attachVideo}
+                    className="tvcard-cover"
+                    data-ready={videoReady ? "true" : undefined}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="auto"
+                    aria-hidden="true"
+                    onCanPlay={() => setVideoReady(true)}
                   >
-                    {TYPE_LABELS[post.type]}
-                  </span>
+                    <source src={cover} type={videoMimeType(cover)} />
+                  </video>
+                ) : (
+                  // User media can be remote, so plain img avoids next/image config.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="tvcard-cover"
+                    src={cover}
+                    alt={title}
+                    decoding="async"
+                    loading="lazy"
+                  />
+                )
+              ) : (
+                <FallbackPlate />
+              )}
+              {post.type === "talk" && <PlayBadge />}
+              {post.type === "project" && (
+                <span className="tvcard-scrim" aria-hidden="true" />
+              )}
+              <span className="tvcard-sheen" aria-hidden="true" />
+            </span>
+            <span className="tvcard-body">
+              {post.type === "project" ? (
+                <>
                   {showUnlisted && (
                     <span className="tvcard-unlisted">Unlisted</span>
                   )}
-                </span>
-                <span className="tvcard-title">{title}</span>
-                <span className="tvcard-desc">{desc}</span>
-              </>
-            )}
+                  <span className="tvcard-title">{title}</span>
+                  <span className="tvcard-desc">{desc}</span>
+                </>
+              ) : (
+                <>
+                  <span className="tvcard-chip-row">
+                    <span
+                      className="tvcard-chip"
+                      style={{ background: accent ?? "var(--ink)" }}
+                    >
+                      {TYPE_LABELS[post.type]}
+                    </span>
+                    {showUnlisted && (
+                      <span className="tvcard-unlisted">Unlisted</span>
+                    )}
+                  </span>
+                  <span className="tvcard-title">{title}</span>
+                  <span className="tvcard-desc">{desc}</span>
+                </>
+              )}
+            </span>
           </span>
         </span>
-      </span>
-    </Link>
+      </Link>
+      {owner && (
+        <div
+          ref={menuRef}
+          className={`tvcard-menu-wrap${menuOpen ? " is-open" : ""}`}
+          onClick={stopMenuNavigation}
+        >
+          <button
+            type="button"
+            className="tvcard-menu-button"
+            aria-label="Post options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={toggleMenu}
+          >
+            ...
+          </button>
+          {menuOpen && (
+            <div className="tvcard-menu" role="menu" aria-label="Post options">
+              <button
+                type="button"
+                className="tvcard-menu-item is-danger"
+                role="menuitem"
+                disabled={!post.id || deleting}
+                onClick={onDelete}
+              >
+                {deleting ? "Deleting" : "Delete"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
