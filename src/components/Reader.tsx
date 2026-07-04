@@ -75,8 +75,10 @@ export function Reader({
       </figure>
     ) : null
   );
+  const className = `reader${slots?.toolbar ? " has-editor-toolbar" : ""}`;
+
   return (
-    <article className="reader" style={style}>
+    <article className={className} style={style}>
       {slots?.toolbar}
       {cover}
       <header className="reader-masthead">

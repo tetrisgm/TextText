@@ -17,9 +17,11 @@
 .reader {
   --display: var(--font-display, "Fraunces", Georgia, serif);
   position: relative;
+  min-width: 0;
   max-width: 980px;
   margin: 0 auto;
   padding: 72px 24px 96px;
+  overflow-wrap: anywhere;
 }
 
 /* Ambient accent: a quiet warm wash behind the headline. No accent -> no wash. */
@@ -141,10 +143,12 @@
 
 /* ---------- prose (narrow column; media steps out wider) ---------- */
 .reader-prose {
+  min-width: 0;
   font-size: 18px;
   line-height: 1.72;
   color: var(--ink-2);
   text-align: left;
+  overflow-wrap: anywhere;
 }
 .reader-prose > p,
 .reader-prose > h2,
@@ -295,12 +299,15 @@
 /* Inline figures: ![caption](src) renders as a figure; alt doubles as caption. */
 .reader-figure {
   display: block;
+  max-width: 100%;
   margin: 30px auto 10px;
 }
 .reader-figure img,
 .reader-figure video {
   display: block;
   width: 100%;
+  max-width: 100%;
+  height: auto;
   border-radius: 16px;
 }
 
@@ -466,6 +473,16 @@
   outline: 2px solid color-mix(in srgb, var(--post-accent, var(--accent)) 55%, transparent);
   outline-offset: 3px;
 }
+
+/* ---------- landing ---------- */
+.landing-product-stage,
+.landing-shot-frame {
+  min-width: 0;
+}
+.landing-shot-image {
+  max-width: 100%;
+  height: auto;
+}
 /* ---------- floating detail chrome ---------- */
 .post-top-action-bar {
   position: fixed;
@@ -494,6 +511,9 @@
 }
 .post-type-switcher {
   flex: 0 0 auto;
+}
+.post-type-label-short {
+  display: none;
 }
 .post-type-switcher .ac-segmented-button {
   min-width: 58px;
@@ -1131,9 +1151,11 @@
   width: 100%;
 }
 .body-editor-content {
+  min-width: 0;
   min-height: 300px;
   outline: none;
   caret-color: var(--post-accent, var(--accent));
+  overflow-wrap: anywhere;
 }
 .body-editor-content:empty::before {
   content: attr(data-placeholder);
@@ -1550,17 +1572,30 @@
   .body-editor-toolbar-anchor {
     top: max(58px, calc(env(safe-area-inset-top) + 58px));
   }
+  .blog-create-button {
+    min-height: 40px;
+  }
 }
 @media (max-width: 560px) {
   .reader {
     padding-top: 64px;
     padding-bottom: 48px;
   }
+  .reader.has-editor-toolbar {
+    padding-top: 118px;
+  }
   .reader-title {
     font-size: 30px;
+    letter-spacing: 0;
   }
   .reader-title.edit-title-field {
     font-size: 30px;
+    letter-spacing: 0;
+  }
+  .reader-dek,
+  .reader-dek.edit-excerpt-field {
+    font-size: 18px;
+    line-height: 1.42;
   }
   .reader-prose {
     font-size: 17px;
@@ -1588,18 +1623,43 @@
     font-size: 19px;
   }
   .body-editor-toolbar-anchor {
+    top: max(112px, calc(env(safe-area-inset-top) + 112px));
     min-height: 40px;
     margin-bottom: 14px;
+    max-width: none;
+    padding-inline: 12px;
+  }
+  .body-editor-toolbar-shell {
+    width: 100%;
+    max-width: calc(100vw - 24px);
   }
   .body-editor-toolbar {
+    width: 100%;
+    min-height: 50px;
     justify-content: flex-start;
+    padding: 4px;
+    scroll-padding-inline: 4px;
+  }
+  .body-editor-tool,
+  .body-editor-color-tool {
+    width: 40px;
+    height: 40px;
+  }
+  .body-editor-tool svg {
+    width: 20px;
+    height: 20px;
   }
   .body-editor-text-tool {
-    min-width: 38px;
-    padding-inline: 8px;
+    min-width: 44px;
+    height: 40px;
+    padding-inline: 10px;
   }
   .body-editor-label {
     display: none;
+  }
+  .body-editor-color-tool::before {
+    width: 16px;
+    height: 16px;
   }
   .reader-cover {
     width: calc(100vw - 32px);
@@ -1620,10 +1680,144 @@
   .blog-home {
     padding: 38px 18px 0;
   }
+  .blog-create-form {
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    min-height: 54px;
+    padding: 5px;
+  }
+  .blog-create-button {
+    min-height: 44px;
+    height: 44px;
+  }
   .blog-home-name {
+    font-size: 34px;
+  }
+  .blog-name-input {
     font-size: 34px;
   }
   .blog-home-tagline {
     font-size: 16px;
+  }
+  .blog-home-footer {
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .landing-page {
+    padding-top: 56px;
+  }
+  .landing-page .reader-title {
+    font-size: 32px;
+  }
+  .landing-page .reader-dek {
+    font-size: 18px;
+  }
+  .landing-cta-wrap .ac-btn {
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+  .landing-product-stage {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+    width: calc(100vw - 32px) !important;
+    margin-top: 40px !important;
+  }
+  .landing-shot-frame {
+    border-radius: 12px !important;
+    padding: 6px !important;
+  }
+  .landing-footer {
+    margin-top: 42px !important;
+  }
+  .post-top-action-bar {
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    left: max(8px, env(safe-area-inset-left));
+    max-width: none;
+  }
+  .post-action-toolbar {
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+  .post-top-action-bar.is-edit .post-action-owner-group {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .post-top-action-bar.is-read .post-action-owner-group {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+  .post-top-action-bar.is-edit .post-detail-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .post-owner-edit,
+  .post-action-share {
+    min-height: 44px;
+    height: 44px;
+    padding-inline: 12px;
+  }
+  .post-edit-menu-button,
+  .post-detail-nav,
+  .post-detail-control-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .post-type-switcher {
+    height: 44px;
+    padding: 4px;
+  }
+  .post-type-switcher .ac-segmented-button {
+    min-width: 48px;
+    height: 34px;
+    padding-inline: 8px;
+  }
+  .post-share-popover,
+  .post-edit-menu {
+    position: fixed;
+    top: max(64px, calc(env(safe-area-inset-top) + 64px));
+    right: max(8px, env(safe-area-inset-right));
+    left: max(8px, env(safe-area-inset-left));
+    width: auto;
+    max-height: calc(100dvh - 84px);
+    overflow: auto;
+  }
+  .post-top-action-bar.is-edit .post-share-popover,
+  .post-top-action-bar.is-edit .post-edit-menu {
+    top: max(116px, calc(env(safe-area-inset-top) + 116px));
+    max-height: calc(100dvh - 136px);
+  }
+  .post-edit-menu {
+    left: auto;
+    width: min(190px, calc(100vw - 16px));
+  }
+}
+@media (max-width: 420px) {
+  .post-type-label-full {
+    display: none;
+  }
+  .post-type-label-short {
+    display: inline;
+  }
+  .post-type-switcher .ac-segmented-button {
+    min-width: 44px;
+    padding-inline: 7px;
+  }
+}
+@media (max-width: 360px) {
+  .post-action-share {
+    gap: 0;
+    width: 44px;
+    padding-inline: 0;
+    font-size: 0;
+  }
+  .post-action-share .post-action-button-icon {
+    width: 18px;
+    height: 18px;
   }
 }

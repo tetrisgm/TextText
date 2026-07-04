@@ -2,6 +2,7 @@
 .tv-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-items: stretch;
   gap: 16px;
   margin-top: 6px;
   margin-inline: -6px;
@@ -10,6 +11,8 @@
 .tvcard-shell {
   position: relative;
   min-width: 0;
+  height: 100%;
+  display: flex;
 }
 
 .tvcard {
@@ -29,8 +32,9 @@
   -webkit-touch-callout: none;
   margin: 0;
   width: 100%;
+  height: 100%;
   box-sizing: border-box;
-  display: block;
+  display: flex;
   text-align: left;
   font: inherit;
   color: inherit;
@@ -45,7 +49,10 @@
 
 .tvcard-inner {
   position: relative;
-  display: block;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
   border-radius: 18px;
   background: transparent;
   will-change: transform;
@@ -124,16 +131,34 @@
   .tvcard {
     touch-action: manipulation;
   }
+
+  .tvcard-menu-wrap {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .tvcard-menu-button {
+    width: 44px;
+    height: 44px;
+    padding-bottom: 4px;
+  }
 }
 
 .tvcard-tilt {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
 }
 
 .tvcard-media {
   position: relative;
   display: block;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   border-radius: 18px;
   background: var(--bg-soft);
@@ -141,6 +166,7 @@
 
 .tvcard--project .tvcard-media {
   aspect-ratio: 4 / 5;
+  height: 100%;
 }
 
 .tvcard--article .tvcard-media,
@@ -233,12 +259,14 @@ video.tvcard-cover[data-ready="true"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .tvcard--article .tvcard-body,
 .tvcard--talk .tvcard-body,
 .tvcard--writing .tvcard-body,
 .tvcard--blog .tvcard-body {
+  flex: 0 0 auto;
   padding: 18px 20px 22px;
   background: var(--bg);
   color: var(--ink);

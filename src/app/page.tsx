@@ -89,9 +89,10 @@ function ProductShot({
   width: number;
 }) {
   return (
-    <figure style={shotFrameStyle}>
+    <figure className="landing-shot-frame" style={shotFrameStyle}>
       <Image
         alt={alt}
+        className="landing-shot-image"
         height={height}
         sizes="(max-width: 900px) calc(100vw - 64px), 520px"
         src={src}
@@ -117,8 +118,8 @@ export default async function Home() {
   }
 
   return (
-    <main className="reader applecms" style={landingStyle}>
-      <header className="reader-masthead">
+    <main className="reader applecms landing-page" style={landingStyle}>
+      <header className="reader-masthead landing-hero">
         <h1 className="reader-title">Publish work that reads beautifully</h1>
         <p className="reader-dek">
           Write is a place to publish articles, projects, and talks in a calm
@@ -135,6 +136,7 @@ export default async function Home() {
           }}
         />
         <div
+          className="landing-cta-wrap"
           style={{
             display: "flex",
             justifyContent: "center",
@@ -173,7 +175,11 @@ export default async function Home() {
         </div>
       </header>
 
-      <section aria-label="Product screenshots" style={productStageStyle}>
+      <section
+        aria-label="Product screenshots"
+        className="landing-product-stage"
+        style={productStageStyle}
+      >
         <ProductShot
           alt="Write blog home showing a publication header and article cards"
           height={1103}
@@ -188,7 +194,7 @@ export default async function Home() {
         />
       </section>
 
-      <footer style={footerStyle}>
+      <footer className="landing-footer" style={footerStyle}>
         See the{" "}
         <Link href="/t/demo" style={footerLinkStyle}>
           demo

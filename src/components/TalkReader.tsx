@@ -80,8 +80,12 @@ export function TalkReader({
     ...(post.links ?? []),
   ];
 
+  const className = `reader talk-detail${
+    slots?.toolbar ? " has-editor-toolbar" : ""
+  }`;
+
   return (
-    <article className="reader talk-detail" style={style}>
+    <article className={className} style={style}>
       {slots?.toolbar}
       {slots?.stage ??
         ((embedSrc || fileVideoSrc || cover) && (

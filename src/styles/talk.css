@@ -58,6 +58,7 @@
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .talk-detail-date {
@@ -80,6 +81,7 @@
   color: var(--ink-2);
   font-size: 0.9375rem;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .talk-detail-desc.reader-prose > p,
@@ -297,8 +299,16 @@
     padding: 64px 20px 48px;
   }
 
+  .reader.talk-detail.has-editor-toolbar {
+    padding-top: 118px;
+  }
+
   .talk-detail-stage {
     border-radius: 6px;
+  }
+
+  .talk-detail-title {
+    letter-spacing: 0;
   }
 
   .talk-edit-fields {

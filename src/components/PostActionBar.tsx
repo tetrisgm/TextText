@@ -55,10 +55,14 @@ type EditProps = CommonProps & {
 
 type Props = ReadProps | EditProps;
 
-const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
-  { type: "article", label: "Article" },
-  { type: "project", label: "Project" },
-  { type: "talk", label: "Talk" },
+const POST_TYPE_OPTIONS: Array<{
+  type: PostType;
+  label: string;
+  shortLabel: string;
+}> = [
+  { type: "article", label: "Article", shortLabel: "Art" },
+  { type: "project", label: "Project", shortLabel: "Proj" },
+  { type: "talk", label: "Talk", shortLabel: "Talk" },
 ];
 
 function postTitle(title: string): string {
@@ -429,7 +433,10 @@ export function PostActionBar(props: Props) {
               aria-checked={active}
               onClick={() => changeType(option.type)}
             >
-              {option.label}
+              <span className="post-type-label-full">{option.label}</span>
+              <span className="post-type-label-short" aria-hidden="true">
+                {option.shortLabel}
+              </span>
             </button>
           );
         })}
@@ -443,7 +450,10 @@ export function PostActionBar(props: Props) {
     : undefined;
 
   return (
-    <div className="post-top-action-bar applecms" aria-label="Post controls">
+    <div
+      className={`post-top-action-bar applecms is-${props.mode}`}
+      aria-label="Post controls"
+    >
       <div className="post-action-toolbar ac-chrome">
         {props.owner && (
           <div className="post-action-owner-group">

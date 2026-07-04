@@ -46,6 +46,7 @@
   letter-spacing: 0;
   line-height: 1.08;
   text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
 .project-dek.reader-dek {
@@ -58,6 +59,7 @@
   color: var(--ink-2);
   font-size: 16.5px;
   line-height: 1.68;
+  overflow-wrap: anywhere;
 }
 
 .project-prose > p,
@@ -758,6 +760,10 @@
     padding: 64px 16px 48px;
   }
 
+  .project-split.has-editor-toolbar {
+    padding-top: 118px;
+  }
+
   .project-split-right {
     height: min(58vh, 460px);
     min-height: 300px;
@@ -765,6 +771,12 @@
 
   .project-title {
     font-size: 31px;
+    letter-spacing: 0;
+  }
+
+  .project-dek.reader-dek {
+    font-size: 18px;
+    line-height: 1.42;
   }
 
   .project-prose {
@@ -825,13 +837,30 @@
   }
 
   .media-lightbox-nav {
-    width: 54px;
-    height: 92px;
+    width: 58px;
+    height: 96px;
+  }
+
+  .media-lightbox {
+    padding: max(58px, calc(env(safe-area-inset-top) + 58px)) 14px
+      max(18px, env(safe-area-inset-bottom));
+  }
+
+  .media-lightbox-img {
+    max-width: calc(100vw - 28px);
+    max-height: calc(100dvh - 92px);
+  }
+
+  .media-lightbox-close {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    width: 48px;
+    height: 48px;
   }
 
   .media-lightbox-nav::before {
-    width: 42px;
-    height: 42px;
+    width: 48px;
+    height: 48px;
   }
 
   .media-lightbox-nav svg {
