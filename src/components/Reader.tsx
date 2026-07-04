@@ -56,6 +56,21 @@ export function Reader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const excerpt = post.excerpt?.trim();
+  const cover = slots?.cover ?? (
+    post.cover ? (
+      <figure className="reader-cover">
+        {/* Covers are user-provided remote URLs; plain img keeps the demo
+            free of next/image remote-domain config. Revisit with media. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={post.cover} alt={title} />
+        {post.coverCaption && (
+          <figcaption className="reader-figcaption">
+            {post.coverCaption}
+          </figcaption>
+        )}
+      </figure>
+    ) : null
+  );
   return (
     <article className="reader" style={style}>
       <header className="reader-masthead">
@@ -64,20 +79,7 @@ export function Reader({
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
         <Byline blog={blog} post={post} />
-        {slots?.cover ??
-          (post.cover && (
-            <figure className="reader-cover">
-              {/* Covers are user-provided remote URLs; plain img keeps the demo
-                  free of next/image remote-domain config. Revisit with media. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={post.cover} alt={title} />
-              {post.coverCaption && (
-                <figcaption className="reader-figcaption">
-                  {post.coverCaption}
-                </figcaption>
-              )}
-            </figure>
-          ))}
+        {cover}
       </header>
       <div className="reader-prose">
         {slots?.body ?? (

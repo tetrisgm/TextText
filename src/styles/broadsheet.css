@@ -1311,16 +1311,16 @@
   filter: brightness(0.82);
 }
 .reader-cover.edit-cover-empty {
-  min-height: 132px;
-  max-height: 160px;
+  max-width: 680px;
+  min-height: 46px;
   aspect-ratio: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 20px;
+  padding: 8px 12px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 12px;
   background:
     linear-gradient(
       135deg,
@@ -1539,10 +1539,9 @@
     margin: 12px auto 8px;
   }
   .reader-cover.edit-cover-empty {
-    min-height: 118px;
-    max-height: 144px;
-    padding: 16px;
-    border-radius: 14px;
+    min-height: 44px;
+    padding: 7px 10px;
+    border-radius: 12px;
   }
   .reader-cover img,
   .reader-cover video {
