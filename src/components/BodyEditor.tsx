@@ -5,15 +5,23 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { unified } from "unified";
-import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
+import type { Editor } from "@tiptap/core";
+import { EditorContent, useEditor } from "@tiptap/react";
+import type { SelectionBookmark } from "@tiptap/pm/state";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import TextAlign from "@tiptap/extension-text-align";
+import TextStyle from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
+import Image from "@tiptap/extension-image";
+import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
+import { Markdown } from "tiptap-markdown";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
 
 export type BodyEditorHandle = {
@@ -27,18 +35,6 @@ type BodyEditorProps = {
   uploadEndpoint?: string;
 };
 
-type MarkdownNode = {
-  type: string;
-  children?: MarkdownNode[];
-  value?: string;
-  depth?: number;
-  url?: string;
-  alt?: string | null;
-  ordered?: boolean;
-  start?: number | null;
-  lang?: string | null;
-};
-
 type ActiveState = {
   bold: boolean;
   italic: boolean;
@@ -48,7 +44,11 @@ type ActiveState = {
   align: "left" | "center";
 };
 
-const markdownProcessor = unified().use(remarkParse).use(remarkGfm);
+type MarkdownStorage = {
+  markdown?: {
+    getMarkdown?: () => string;
+  };
+};
 
 const initialActiveState: ActiveState = {
   bold: false,
@@ -60,262 +60,91 @@ const initialActiveState: ActiveState = {
 };
 
 const textColors = [
-  { label: "Ink", token: "--ink" },
+  { label: "Ink", token: "--ink", value: null },
   { label: "Blue", value: "#0066cc" },
   { label: "Red", value: "#af1e2d" },
 ] as const;
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+const MarkdownUnderline = Underline.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize: { open: "", close: "" },
+      },
+    };
+  },
+});
+
+const MarkdownTextStyle = TextStyle.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize: { open: "", close: "" },
+      },
+    };
+  },
+});
+
+const editorExtensions = [
+  StarterKit.configure({
+    heading: {
+      levels: [2, 3],
+    },
+  }),
+  MarkdownUnderline,
+  TextAlign.configure({
+    types: ["heading", "paragraph"],
+    alignments: ["left", "center"],
+  }),
+  MarkdownTextStyle,
+  Color,
+  Image,
+  Link.configure({
+    autolink: true,
+    linkOnPaste: true,
+    openOnClick: false,
+  }),
+  Placeholder.configure({
+    placeholder: "Start writing",
+  }),
+  Markdown.configure({
+    html: false,
+    bulletListMarker: "-",
+  }),
+];
+
+function editorMarkdown(editor: Editor): string {
+  const storage = editor.storage as Editor["storage"] & MarkdownStorage;
+  return storage.markdown?.getMarkdown?.() ?? "";
 }
 
-function escapeAttribute(value: string): string {
-  return escapeHtml(value).replace(/'/g, "&#39;");
+function activeState(editor: Editor | null): ActiveState {
+  if (!editor) return initialActiveState;
+
+  return {
+    bold: editor.isActive("bold"),
+    italic: editor.isActive("italic"),
+    underline: editor.isActive("underline"),
+    strike: editor.isActive("strike"),
+    block: editor.isActive("heading", { level: 2 })
+      ? "title"
+      : editor.isActive("heading", { level: 3 })
+        ? "subheading"
+        : "body",
+    align: editor.isActive({ textAlign: "center" }) ? "center" : "left",
+  };
 }
 
-function markdownToHtml(markdown: string): string {
-  const tree = markdownProcessor.parse(markdown) as MarkdownNode;
-  return (tree.children ?? []).map(blockNodeToHtml).join("");
-}
+function colorIsActive(
+  editor: Editor | null,
+  color: (typeof textColors)[number],
+): boolean {
+  if (!editor) return false;
+  if (color.value) return editor.isActive("textStyle", { color: color.value });
 
-function blockNodeToHtml(node: MarkdownNode): string {
-  switch (node.type) {
-    case "paragraph":
-      return `<p>${inlineNodesToHtml(node.children)}</p>`;
-    case "heading": {
-      const tag = node.depth === 3 ? "h3" : "h2";
-      return `<${tag}>${inlineNodesToHtml(node.children)}</${tag}>`;
-    }
-    case "blockquote":
-      return `<blockquote>${(node.children ?? []).map(blockNodeToHtml).join("")}</blockquote>`;
-    case "list": {
-      const tag = node.ordered ? "ol" : "ul";
-      const start =
-        node.ordered && node.start && node.start > 1
-          ? ` start="${node.start}"`
-          : "";
-      return `<${tag}${start}>${(node.children ?? []).map(listItemToHtml).join("")}</${tag}>`;
-    }
-    case "code": {
-      const lang = node.lang ? ` class="language-${escapeAttribute(node.lang)}"` : "";
-      return `<pre><code${lang}>${escapeHtml(node.value ?? "")}</code></pre>`;
-    }
-    case "thematicBreak":
-      return "<hr>";
-    case "html":
-      return `<p>${escapeHtml(node.value ?? "")}</p>`;
-    default:
-      return inlineNodesToHtml([node]);
-  }
-}
-
-function listItemToHtml(node: MarkdownNode): string {
-  const children = node.children ?? [];
-  return `<li>${children.map(blockNodeToHtml).join("")}</li>`;
-}
-
-function inlineNodesToHtml(nodes: MarkdownNode[] | undefined): string {
-  return (nodes ?? []).map(inlineNodeToHtml).join("");
-}
-
-function inlineNodeToHtml(node: MarkdownNode): string {
-  switch (node.type) {
-    case "text":
-      return escapeHtml(node.value ?? "");
-    case "strong":
-      return `<strong>${inlineNodesToHtml(node.children)}</strong>`;
-    case "emphasis":
-      return `<em>${inlineNodesToHtml(node.children)}</em>`;
-    case "delete":
-      return `<s>${inlineNodesToHtml(node.children)}</s>`;
-    case "inlineCode":
-      return `<code>${escapeHtml(node.value ?? "")}</code>`;
-    case "break":
-      return "<br>";
-    case "link": {
-      const href = escapeAttribute(node.url ?? "");
-      return `<a href="${href}">${inlineNodesToHtml(node.children)}</a>`;
-    }
-    case "image": {
-      const src = escapeAttribute(node.url ?? "");
-      const alt = escapeAttribute(node.alt ?? "");
-      const caption = node.alt
-        ? `<span class="reader-figcaption">${escapeHtml(node.alt)}</span>`
-        : "";
-      return `<span class="reader-figure"><img src="${src}" alt="${alt}" loading="lazy">${caption}</span>`;
-    }
-    case "html":
-      return escapeHtml(node.value ?? "");
-    default:
-      return inlineNodesToHtml(node.children);
-  }
-}
-
-function escapeMarkdownText(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\*/g, "\\*")
-    .replace(/_/g, "\\_")
-    .replace(/~/g, "\\~")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
-}
-
-function cleanMarkdownBlock(value: string): string {
-  return value
-    .replace(/\u00a0/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function childrenToInlineMarkdown(node: Node): string {
-  return Array.from(node.childNodes).map(nodeToInlineMarkdown).join("");
-}
-
-function nodeToInlineMarkdown(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) {
-    return escapeMarkdownText(node.textContent ?? "");
-  }
-
-  if (!(node instanceof HTMLElement)) return "";
-
-  const tag = node.tagName.toLowerCase();
-  if (tag === "br") return "\n";
-  if (tag === "img") {
-    const src = node.getAttribute("src") ?? "";
-    const alt = node.getAttribute("alt") ?? "";
-    return src ? `![${escapeMarkdownText(alt)}](${src})` : "";
-  }
-  if (tag === "strong" || tag === "b") {
-    const value = childrenToInlineMarkdown(node);
-    return value ? `**${value}**` : "";
-  }
-  if (tag === "em" || tag === "i") {
-    const value = childrenToInlineMarkdown(node);
-    return value ? `*${value}*` : "";
-  }
-  if (tag === "s" || tag === "strike" || tag === "del") {
-    const value = childrenToInlineMarkdown(node);
-    return value ? `~~${value}~~` : "";
-  }
-  if (tag === "code") {
-    const value = (node.textContent ?? "").replace(/`/g, "\\`");
-    return value ? `\`${value}\`` : "";
-  }
-  if (tag === "a") {
-    const href = node.getAttribute("href") ?? "";
-    const label = childrenToInlineMarkdown(node) || href;
-    return href ? `[${label}](${href})` : label;
-  }
-  if (node.classList.contains("reader-figure")) {
-    const image = node.querySelector("img");
-    if (!image) return childrenToInlineMarkdown(node);
-    const src = image.getAttribute("src") ?? "";
-    const caption =
-      node.querySelector(".reader-figcaption")?.textContent?.trim() ||
-      image.getAttribute("alt") ||
-      "";
-    return src ? `![${escapeMarkdownText(caption)}](${src})` : "";
-  }
-
-  return childrenToInlineMarkdown(node);
-}
-
-function blockToMarkdown(node: Node, index = 1): string {
-  if (node.nodeType === Node.TEXT_NODE) {
-    return cleanMarkdownBlock(escapeMarkdownText(node.textContent ?? ""));
-  }
-  if (!(node instanceof HTMLElement)) return "";
-
-  const tag = node.tagName.toLowerCase();
-
-  if (tag === "h2") return `## ${cleanMarkdownBlock(childrenToInlineMarkdown(node))}`;
-  if (tag === "h3") return `### ${cleanMarkdownBlock(childrenToInlineMarkdown(node))}`;
-  if (tag === "blockquote") {
-    const value = serializeChildren(node);
-    return value
-      .split("\n")
-      .map((line) => (line ? `> ${line}` : ">"))
-      .join("\n");
-  }
-  if (tag === "ul" || tag === "ol") return listToMarkdown(node, tag === "ol");
-  if (tag === "li") {
-    const value = serializeChildren(node) || childrenToInlineMarkdown(node);
-    return `${index}. ${cleanMarkdownBlock(value)}`;
-  }
-  if (tag === "pre") {
-    const code = node.textContent?.replace(/\n+$/g, "") ?? "";
-    return code ? `\`\`\`\n${code}\n\`\`\`` : "";
-  }
-  if (tag === "hr") return "---";
-  if (tag === "img") return nodeToInlineMarkdown(node);
-
-  return cleanMarkdownBlock(childrenToInlineMarkdown(node));
-}
-
-function listToMarkdown(list: HTMLElement, ordered: boolean): string {
-  const items = Array.from(list.children).filter(
-    (child): child is HTMLElement => child instanceof HTMLElement && child.tagName.toLowerCase() === "li",
+  return !textColors.some(
+    (item) => item.value && editor.isActive("textStyle", { color: item.value }),
   );
-  return items
-    .map((item, itemIndex) => {
-      const marker = ordered ? `${itemIndex + 1}.` : "-";
-      const blocks = Array.from(item.childNodes)
-        .map((child) => blockToMarkdown(child, itemIndex + 1))
-        .filter(Boolean);
-      const value = cleanMarkdownBlock(blocks.join("\n"));
-      const indented = value.replace(/\n/g, "\n  ");
-      return `${marker} ${indented}`;
-    })
-    .join("\n");
-}
-
-function serializeChildren(root: HTMLElement): string {
-  return Array.from(root.childNodes)
-    .map((child, index) => blockToMarkdown(child, index + 1))
-    .map(cleanMarkdownBlock)
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-function editorMarkdown(root: HTMLElement): string {
-  return `${serializeChildren(root).trim()}`;
-}
-
-function closestElement(node: Node | null): HTMLElement | null {
-  if (!node) return null;
-  return node instanceof HTMLElement ? node : node.parentElement;
-}
-
-function closestBlock(node: Node | null, root: HTMLElement): HTMLElement {
-  let current = closestElement(node);
-  while (current && current !== root) {
-    const tag = current.tagName.toLowerCase();
-    if (
-      tag === "p" ||
-      tag === "div" ||
-      tag === "h2" ||
-      tag === "h3" ||
-      tag === "li" ||
-      tag === "blockquote"
-    ) {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return root;
-}
-
-function selectionIsInside(root: HTMLElement): boolean {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return false;
-  const range = selection.getRangeAt(0);
-  return root.contains(range.commonAncestorContainer);
 }
 
 function uploadErrorMessage(error: unknown): string {
@@ -440,219 +269,213 @@ function ImageIcon() {
 
 export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
   function BodyEditor({ value, onChange, toolbarHost, uploadEndpoint }, ref) {
-    const editorRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const savedRangeRef = useRef<Range | null>(null);
     const lastEmittedRef = useRef(value);
+    const onChangeRef = useRef(onChange);
+    const selectionBookmarkRef = useRef<SelectionBookmark | null>(null);
     const [mounted, setMounted] = useState(false);
-    const [editorHtml, setEditorHtml] = useState(() => markdownToHtml(value));
-    const [active, setActive] = useState<ActiveState>(initialActiveState);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+
+    useEffect(() => {
+      onChangeRef.current = onChange;
+    }, [onChange]);
 
     useEffect(() => {
       setMounted(true);
     }, []);
 
-    useEffect(() => {
-      if (value === lastEmittedRef.current) return;
-      lastEmittedRef.current = value;
-      setEditorHtml(markdownToHtml(value));
-    }, [value]);
-
-    const saveSelection = useCallback(() => {
-      const editor = editorRef.current;
-      const selection = window.getSelection();
-      if (!editor || !selection || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      if (!editor.contains(range.commonAncestorContainer)) return;
-      savedRangeRef.current = range.cloneRange();
+    const saveSelectionBookmark = useCallback((editor: Editor) => {
+      selectionBookmarkRef.current = editor.state.selection.getBookmark();
     }, []);
 
-    const placeCaretAtEnd = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      range.collapse(false);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      savedRangeRef.current = range.cloneRange();
-    }, []);
-
-    const restoreSelection = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      editor.focus({ preventScroll: true });
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      const range = savedRangeRef.current;
-      if (range && editor.contains(range.commonAncestorContainer)) {
-        selection?.addRange(range);
-      } else {
-        placeCaretAtEnd();
-      }
-    }, [placeCaretAtEnd]);
-
-    const emitMarkdown = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      const next = editorMarkdown(editor);
-      lastEmittedRef.current = next;
-      onChange(next);
-    }, [onChange]);
-
-    const updateActiveState = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor || !selectionIsInside(editor)) return;
-
-      const selection = window.getSelection();
-      const block = closestBlock(selection?.anchorNode ?? null, editor);
-      const tag = block.tagName.toLowerCase();
-      const textAlign = window.getComputedStyle(block).textAlign;
-      setActive({
-        bold: document.queryCommandState("bold"),
-        italic: document.queryCommandState("italic"),
-        underline: document.queryCommandState("underline"),
-        strike: document.queryCommandState("strikeThrough"),
-        block:
-          tag === "h2" ? "title" : tag === "h3" ? "subheading" : "body",
-        align: textAlign === "center" ? "center" : "left",
-      });
-    }, []);
-
-    const runCommand = useCallback(
-      (command: string, argument?: string) => {
-        restoreSelection();
-        document.execCommand(command, false, argument);
-        saveSelection();
-        emitMarkdown();
-        updateActiveState();
+    const editor = useEditor({
+      extensions: editorExtensions,
+      content: value,
+      immediatelyRender: false,
+      editorProps: {
+        attributes: {
+          class: "body-editor-content",
+          role: "textbox",
+          "aria-label": "Body",
+          "aria-multiline": "true",
+        },
       },
-      [emitMarkdown, restoreSelection, saveSelection, updateActiveState],
-    );
+      onSelectionUpdate: ({ editor }) => {
+        saveSelectionBookmark(editor);
+      },
+      onFocus: ({ editor }) => {
+        saveSelectionBookmark(editor);
+      },
+      onUpdate: ({ editor }) => {
+        const next = editorMarkdown(editor);
+        lastEmittedRef.current = next;
+        onChangeRef.current(next);
+      },
+    });
+
+    useEffect(() => {
+      if (!editor) return;
+      if (value === lastEmittedRef.current) return;
+
+      lastEmittedRef.current = value;
+      editor.commands.setContent(value, false);
+    }, [editor, value]);
+
+    const restoreSelectionBookmark = useCallback((editor: Editor) => {
+      const bookmark = selectionBookmarkRef.current;
+      if (!bookmark) return;
+
+      try {
+        const selection = bookmark.resolve(editor.state.doc);
+        editor.view.dispatch(editor.state.tr.setSelection(selection));
+      } catch {
+        selectionBookmarkRef.current = null;
+      }
+    }, []);
 
     const applyBlock = useCallback(
       (block: ActiveState["block"]) => {
-        const tag = block === "title" ? "h2" : block === "subheading" ? "h3" : "p";
-        runCommand("formatBlock", tag);
+        if (!editor) return;
+        const chain = editor.chain().focus();
+
+        if (block === "body") {
+          chain.setParagraph().run();
+          return;
+        }
+
+        chain
+          .toggleHeading({ level: block === "title" ? 2 : 3 })
+          .run();
       },
-      [runCommand],
+      [editor],
     );
 
     const applyColor = useCallback(
       (color: (typeof textColors)[number]) => {
-        const editor = editorRef.current;
         if (!editor) return;
-        const styles = window.getComputedStyle(editor);
-        const resolved =
-          "token" in color
-            ? styles.getPropertyValue(color.token).trim() || styles.color
-            : color.value;
-        runCommand("foreColor", resolved);
+        const chain = editor.chain().focus();
+
+        if (color.value) {
+          chain.setColor(color.value).run();
+        } else {
+          chain.unsetColor().run();
+        }
       },
-      [runCommand],
+      [editor],
     );
 
     const chooseImage = useCallback(() => {
-      saveSelection();
+      if (!editor) return;
+      saveSelectionBookmark(editor);
       fileInputRef.current?.click();
-    }, [saveSelection]);
+    }, [editor, saveSelectionBookmark]);
 
     const insertImage = useCallback(
       async (file: File) => {
+        if (!editor) return;
+
         setUploading(true);
         setUploadError(null);
         try {
           const url = await uploadMedia(file, { endpoint: uploadEndpoint });
-          restoreSelection();
-          document.execCommand("insertImage", false, url);
-          saveSelection();
-          emitMarkdown();
-          updateActiveState();
+          restoreSelectionBookmark(editor);
+          editor.chain().focus().setImage({ src: url }).run();
+          saveSelectionBookmark(editor);
         } catch (error) {
           setUploadError(uploadErrorMessage(error));
         } finally {
           setUploading(false);
         }
       },
-      [emitMarkdown, restoreSelection, saveSelection, updateActiveState],
+      [editor, restoreSelectionBookmark, saveSelectionBookmark, uploadEndpoint],
     );
 
     useImperativeHandle(
       ref,
       () => ({
         focus: () => {
-          const editor = editorRef.current;
-          if (!editor) return;
-          editor.focus({ preventScroll: true });
-          placeCaretAtEnd();
+          editor?.commands.focus("end", { scrollIntoView: false });
         },
       }),
-      [placeCaretAtEnd],
+      [editor],
     );
 
-    useEffect(() => {
-      const onSelectionChange = () => {
-        const editor = editorRef.current;
-        if (!editor || !selectionIsInside(editor)) return;
-        saveSelection();
-        updateActiveState();
-      };
-      document.addEventListener("selectionchange", onSelectionChange);
-      return () => {
-        document.removeEventListener("selectionchange", onSelectionChange);
-      };
-    }, [saveSelection, updateActiveState]);
+    const active = activeState(editor);
+    const editorDisabled = !editor;
 
-    const toolbar = useMemo(
-      () => (
-        <div className="body-editor-toolbar-shell">
-          <div className="body-editor-toolbar applecms" role="toolbar" aria-label="Body formatting">
-            <div className="body-editor-toolgroup" aria-label="Inline style">
-              <ToolbarButton label="Bold" active={active.bold} onPress={() => runCommand("bold")}>
-                <BoldIcon />
-              </ToolbarButton>
-              <ToolbarButton label="Italic" active={active.italic} onPress={() => runCommand("italic")}>
-                <ItalicIcon />
-              </ToolbarButton>
-              <ToolbarButton label="Underline" active={active.underline} onPress={() => runCommand("underline")}>
-                <UnderlineIcon />
-              </ToolbarButton>
-              <ToolbarButton label="Strikethrough" active={active.strike} onPress={() => runCommand("strikeThrough")}>
-                <StrikeIcon />
-              </ToolbarButton>
-            </div>
-            <div className="body-editor-toolgroup is-text" aria-label="Text size">
-              {[
-                ["body", "Body"],
-                ["title", "Title"],
-                ["subheading", "Sub"],
-              ].map(([valueName, label]) => (
-                <button
-                  key={valueName}
-                  type="button"
-                  className={`body-editor-text-tool${active.block === valueName ? " is-active" : ""}`}
-                  aria-pressed={active.block === valueName}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    applyBlock(valueName as ActiveState["block"]);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="body-editor-toolgroup is-color" aria-label="Text color">
-              <span className="body-editor-label">Color</span>
-              {textColors.map((color) => (
+    const toolbar = (
+      <div className="body-editor-toolbar-shell">
+        <div className="body-editor-toolbar applecms" role="toolbar" aria-label="Body formatting">
+          <div className="body-editor-toolgroup" aria-label="Inline style">
+            <ToolbarButton
+              label="Bold"
+              active={active.bold}
+              disabled={editorDisabled}
+              onPress={() => editor?.chain().focus().toggleBold().run()}
+            >
+              <BoldIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Italic"
+              active={active.italic}
+              disabled={editorDisabled}
+              onPress={() => editor?.chain().focus().toggleItalic().run()}
+            >
+              <ItalicIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Underline"
+              active={active.underline}
+              disabled={editorDisabled}
+              onPress={() => editor?.chain().focus().toggleUnderline().run()}
+            >
+              <UnderlineIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Strikethrough"
+              active={active.strike}
+              disabled={editorDisabled}
+              onPress={() => editor?.chain().focus().toggleStrike().run()}
+            >
+              <StrikeIcon />
+            </ToolbarButton>
+          </div>
+          <div className="body-editor-toolgroup is-text" aria-label="Text size">
+            {[
+              ["body", "Body"],
+              ["title", "Title"],
+              ["subheading", "Sub"],
+            ].map(([valueName, label]) => (
+              <button
+                key={valueName}
+                type="button"
+                className={`body-editor-text-tool${active.block === valueName ? " is-active" : ""}`}
+                aria-pressed={active.block === valueName}
+                disabled={editorDisabled}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  if (!editorDisabled) applyBlock(valueName as ActiveState["block"]);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="body-editor-toolgroup is-color" aria-label="Text color">
+            <span className="body-editor-label">Color</span>
+            {textColors.map((color) => {
+              const isActive = colorIsActive(editor, color);
+
+              return (
                 <button
                   key={color.label}
                   type="button"
-                  className="body-editor-color-tool"
+                  className={`body-editor-color-tool${isActive ? " is-active" : ""}`}
                   aria-label={color.label}
+                  aria-pressed={isActive}
                   title={color.label}
+                  disabled={editorDisabled}
                   style={{
                     "--body-editor-swatch":
                       "token" in color
@@ -661,46 +484,46 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
                   } as CSSProperties}
                   onMouseDown={(event) => {
                     event.preventDefault();
-                    applyColor(color);
+                    if (!editorDisabled) applyColor(color);
                   }}
                 />
-              ))}
-            </div>
-            <div className="body-editor-toolgroup" aria-label="Alignment">
-              <ToolbarButton label="Align left" active={active.align === "left"} onPress={() => runCommand("justifyLeft")}>
-                <AlignLeftIcon />
-              </ToolbarButton>
-              <ToolbarButton label="Align center" active={active.align === "center"} onPress={() => runCommand("justifyCenter")}>
-                <AlignCenterIcon />
-              </ToolbarButton>
-            </div>
-            <div className="body-editor-toolgroup" aria-label="Media">
-              <ToolbarButton label="Insert image" disabled={uploading} onPress={chooseImage}>
-                {uploading ? <span className="body-editor-spinner" /> : <ImageIcon />}
-              </ToolbarButton>
-            </div>
+              );
+            })}
           </div>
-          {uploadError && (
-            <div className="body-editor-upload-error" role="alert">
-              {uploadError}
-            </div>
-          )}
+          <div className="body-editor-toolgroup" aria-label="Alignment">
+            <ToolbarButton
+              label="Align left"
+              active={active.align === "left"}
+              disabled={editorDisabled}
+              onPress={() => editor?.chain().focus().setTextAlign("left").run()}
+            >
+              <AlignLeftIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Align center"
+              active={active.align === "center"}
+              disabled={editorDisabled}
+              onPress={() => editor?.chain().focus().setTextAlign("center").run()}
+            >
+              <AlignCenterIcon />
+            </ToolbarButton>
+          </div>
+          <div className="body-editor-toolgroup" aria-label="Media">
+            <ToolbarButton
+              label="Insert image"
+              disabled={editorDisabled || uploading}
+              onPress={chooseImage}
+            >
+              {uploading ? <span className="body-editor-spinner" /> : <ImageIcon />}
+            </ToolbarButton>
+          </div>
         </div>
-      ),
-      [
-        active.align,
-        active.block,
-        active.bold,
-        active.italic,
-        active.strike,
-        active.underline,
-        applyBlock,
-        applyColor,
-        chooseImage,
-        runCommand,
-        uploadError,
-        uploading,
-      ],
+        {uploadError && (
+          <div className="body-editor-upload-error" role="alert">
+            {uploadError}
+          </div>
+        )}
+      </div>
     );
 
     return (
@@ -718,39 +541,12 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
           }}
         />
         <div className="body-editor">
-          {mounted ? (
-            <div
-              ref={editorRef}
-              className="body-editor-content"
-              contentEditable
-              suppressContentEditableWarning
-              role="textbox"
-              aria-label="Body"
-              aria-multiline="true"
-              data-placeholder="Start writing"
-              dangerouslySetInnerHTML={{ __html: editorHtml }}
-              onBlur={saveSelection}
-              onInput={() => {
-                saveSelection();
-                emitMarkdown();
-                updateActiveState();
-              }}
-              onKeyUp={() => {
-                saveSelection();
-                updateActiveState();
-              }}
-              onMouseUp={() => {
-                saveSelection();
-                updateActiveState();
-              }}
-              onFocus={() => {
-                saveSelection();
-                updateActiveState();
-              }}
-            />
+          {mounted && editor ? (
+            <EditorContent editor={editor} />
           ) : (
             <div
               className="body-editor-content is-mounting"
+              data-placeholder="Start writing"
               aria-hidden="true"
             />
           )}

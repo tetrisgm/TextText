@@ -1209,12 +1209,15 @@
 .body-editor-text-tool:focus-visible,
 .body-editor-color-tool:focus-visible,
 .body-editor-tool.is-active,
-.body-editor-text-tool.is-active {
+.body-editor-text-tool.is-active,
+.body-editor-color-tool.is-active {
   color: var(--ink);
   background: color-mix(in srgb, var(--ink) 9%, transparent);
   outline: none;
 }
-.body-editor-tool:disabled {
+.body-editor-tool:disabled,
+.body-editor-text-tool:disabled,
+.body-editor-color-tool:disabled {
   cursor: default;
   color: color-mix(in srgb, var(--muted) 50%, transparent);
 }
@@ -1296,6 +1299,13 @@
   display: block;
   max-width: 680px;
   margin: 0 auto;
+  color: color-mix(in srgb, var(--muted) 62%, transparent);
+}
+.body-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
   color: color-mix(in srgb, var(--muted) 62%, transparent);
 }
 .reader-prose .body-editor-content > p,
@@ -1424,6 +1434,18 @@
   border: 0;
   padding: 0;
 }
+.reader-prose .body-editor-content > img {
+  display: block;
+  width: 100%;
+  max-width: 880px;
+  height: auto;
+  margin: 30px auto 32px;
+  border-radius: 16px;
+}
+.body-editor-content .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--post-accent, var(--accent)) 45%, transparent);
+  outline-offset: 3px;
+}
 .project-prose .body-editor-content {
   min-height: 240px;
 }
@@ -1465,6 +1487,10 @@
 }
 .project-prose .body-editor-content pre {
   max-width: none;
+}
+.project-prose .body-editor-content > img {
+  max-width: none;
+  margin: 24px 0 28px;
 }
 .project-prose .body-editor-content:empty::before,
 .talk-detail-desc.reader-prose .body-editor-content:empty::before {
