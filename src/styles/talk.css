@@ -140,6 +140,61 @@
   line-height: 1.42;
 }
 
+.talk-detail-desc.reader-prose .body-editor-content {
+  min-height: 150px;
+}
+.talk-detail-desc.reader-prose .body-editor-content > p,
+.talk-detail-desc.reader-prose .body-editor-content > h2,
+.talk-detail-desc.reader-prose .body-editor-content > h3,
+.talk-detail-desc.reader-prose .body-editor-content > ul,
+.talk-detail-desc.reader-prose .body-editor-content > ol,
+.talk-detail-desc.reader-prose .body-editor-content > pre,
+.talk-detail-desc.reader-prose .body-editor-content > blockquote {
+  max-width: none;
+  margin-inline: 0;
+}
+.talk-detail-desc.reader-prose .body-editor-content > p {
+  margin: 0 0 12px;
+}
+.talk-detail-desc.reader-prose .body-editor-content > p:last-child {
+  margin-bottom: 0;
+}
+.talk-detail-desc.reader-prose .body-editor-content > p:first-child {
+  color: var(--ink-2);
+  font-size: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: inherit;
+}
+.talk-detail-desc.reader-prose .body-editor-content h2 {
+  margin: 28px 0 10px;
+  padding-top: 0;
+  border-top: 0;
+  color: var(--ink);
+  font-size: 1.05rem;
+  letter-spacing: 0;
+  line-height: 1.25;
+  position: static;
+}
+.talk-detail-desc.reader-prose .body-editor-content h2::before,
+.talk-detail-desc.reader-prose .body-editor-content > p > strong:first-child::before {
+  display: none;
+}
+.talk-detail-desc.reader-prose .body-editor-content h3 {
+  margin: 22px 0 8px;
+  color: var(--ink);
+  font-size: 0.98rem;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+.talk-detail-desc.reader-prose .body-editor-content blockquote {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border-radius: 0 8px 8px 0;
+  font-size: 1.05rem;
+  line-height: 1.42;
+}
+
 .talk-detail-links {
   display: flex;
   flex-wrap: wrap;

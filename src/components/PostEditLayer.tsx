@@ -33,6 +33,8 @@ import {
 } from "@/lib/post-edit-draft";
 import type { DraftState, SaveState } from "@/lib/post-edit-draft";
 import { PostActionBar } from "@/components/PostActionBar";
+import { BodyEditor } from "@/components/BodyEditor";
+import type { BodyEditorHandle } from "@/components/BodyEditor";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
@@ -493,9 +495,10 @@ export function PostEditLayer({
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
+  const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<BodyEditorHandle>(null);
   const currentSlugRef = useRef(initialSession.currentSlug);
   const autoSlugAllowedRef = useRef(initialSession.autoSlugAllowed);
   const latestKeyRef = useRef(initialSession.lastSavedKey);
@@ -531,10 +534,6 @@ export function PostEditLayer({
   useEffect(() => {
     autoGrow(excerptRef.current);
   }, [draft.excerpt, draft.type]);
-
-  useEffect(() => {
-    autoGrow(bodyRef.current);
-  }, [draft.body, draft.type]);
 
   const shouldAutoFocusTitle = shouldFocusTitleOnEdit(post);
 
@@ -845,27 +844,33 @@ export function PostEditLayer({
 
   const slots = {
     title: (
-      <textarea
-        ref={titleRef}
-        id={displayPost.type === "project" ? "project-title" : undefined}
-        className={titleClass}
-        aria-label="Title"
-        placeholder="Give it a title"
-        autoFocus={shouldAutoFocusTitle}
-        rows={1}
-        value={draft.title}
-        onChange={(event) =>
-          updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
-        }
-        onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            deriveSlugFromTitle(event.currentTarget.value);
-            bodyRef.current?.focus();
+      <>
+        <div
+          ref={setBodyToolbarHost}
+          className="body-editor-toolbar-anchor"
+        />
+        <textarea
+          ref={titleRef}
+          id={displayPost.type === "project" ? "project-title" : undefined}
+          className={titleClass}
+          aria-label="Title"
+          placeholder="Give it a title"
+          autoFocus={shouldAutoFocusTitle}
+          rows={1}
+          value={draft.title}
+          onChange={(event) =>
+            updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
           }
-        }}
-      />
+          onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              deriveSlugFromTitle(event.currentTarget.value);
+              bodyRef.current?.focus();
+            }
+          }}
+        />
+      </>
     ),
     excerpt: (
       <textarea
@@ -879,13 +884,11 @@ export function PostEditLayer({
       />
     ),
     body: (
-      <textarea
+      <BodyEditor
         ref={bodyRef}
-        className="edit-body-field"
-        aria-label="Body"
-        placeholder="Start writing"
         value={draft.body}
-        onChange={(event) => updateDraft({ body: event.currentTarget.value })}
+        onChange={(body) => updateDraft({ body })}
+        toolbarHost={bodyToolbarHost}
       />
     ),
     cover: (
