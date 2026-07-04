@@ -9,7 +9,7 @@ import {
   monogram,
 } from "@/lib/content";
 
-// The Broadsheet reader: masthead (serif title, dek, byline, framed cover)
+// The Broadsheet reader: top cover hero, masthead (serif title, dek, byline),
 // and prose. Server component; markdown renders on the server. The post's
 // accent rides in as --post-accent and may be absent, in which case every
 // accent use in broadsheet.css degrades to neutral ink.
@@ -73,13 +73,13 @@ export function Reader({
   );
   return (
     <article className="reader" style={style}>
+      {cover}
       <header className="reader-masthead">
         {slots?.title ?? <h1 className="reader-title">{title}</h1>}
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
         <Byline blog={blog} post={post} />
-        {cover}
       </header>
       <div className="reader-prose">
         {slots?.body ?? (

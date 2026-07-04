@@ -3,7 +3,7 @@
    reader. One display serif (Fraunces) sets the headline, section marks, and
    end matter over the body face; the post's accent survives only as
    hairline-weight structural signals (section tick, pull-quote
-   spine, cover frame, byline rule, lead-in dots, tinted selection).
+   spine, cover hero, byline rule, lead-in dots, tinted selection).
 
    Contract:
    - The static state is always the finished state; no layout depends on motion.
@@ -111,33 +111,28 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- framed cover-as-hero (steps out past the text measure) ---------- */
+/* ---------- top cover hero (steps out past the text measure) ---------- */
 .reader-cover {
-  max-width: 1000px;
-  margin: 20px auto 8px;
+  position: relative;
+  left: 50%;
+  width: min(1100px, calc(100vw - 48px));
+  max-width: none;
+  margin: 0 0 42px;
+  transform: translateX(-50%);
 }
 .reader-cover img,
 .reader-cover video {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 21 / 9;
   object-fit: cover;
-  border-radius: 18px;
+  border-radius: 16px;
   display: block;
-  outline: 1px solid var(--hairline);
-  outline-offset: -1px;
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--post-accent, var(--ink)) 20%, transparent),
-    0 24px 60px -30px rgba(0, 0, 0, 0.35);
-}
-[data-theme="dark"] .reader-cover img,
-[data-theme="dark"] .reader-cover video {
-  box-shadow: 0 1px 0
-    color-mix(in srgb, var(--post-accent, var(--ink)) 32%, transparent);
+  background: var(--bg-soft);
 }
 .reader-figcaption {
   display: block;
-  max-width: 680px;
-  margin: 10px auto 0;
+  max-width: 760px;
+  margin: 12px auto 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--muted);
@@ -1301,7 +1296,9 @@
   filter: brightness(0.82);
 }
 .reader-cover.edit-cover-empty {
-  max-width: 680px;
+  width: min(860px, calc(100vw - 48px));
+  max-width: none;
+  margin-bottom: 36px;
   min-height: 46px;
   aspect-ratio: auto;
   display: flex;
@@ -1526,15 +1523,19 @@
     display: none;
   }
   .reader-cover {
-    margin: 12px auto 8px;
+    width: calc(100vw - 32px);
+    margin: 0 0 32px;
   }
   .reader-cover.edit-cover-empty {
+    width: calc(100vw - 32px);
+    margin-bottom: 30px;
     min-height: 44px;
     padding: 7px 10px;
     border-radius: 12px;
   }
   .reader-cover img,
   .reader-cover video {
+    aspect-ratio: 16 / 9;
     border-radius: 14px;
   }
   .blog-home {
