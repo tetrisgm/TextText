@@ -38,6 +38,8 @@ export const blogs = pgTable(
     accent: text("accent"),
     /** one-line standing bio for the reader end card */
     bioLine: text("bio_line"),
+    cardStyle: text("card_style").notNull().default("cover"),
+    homeLayout: text("home_layout").notNull().default("cards"),
     ownerId: uuid("owner_id").references(() => users.id),
     /** SHA-256 hash of the anonymous editor token; null after claim */
     editTokenHash: text("edit_token_hash"),

@@ -6,16 +6,26 @@ import { useRouter } from "next/navigation";
 import {
   claimBlog,
   createPostAndRedirectAction,
+  updateBlogAction,
   updateBlogNameAction,
 } from "@/app/editor/actions";
-import type { PostType } from "@/lib/content";
+import type { BlogCardStyle, BlogHomeLayout, PostType } from "@/lib/content";
 
 type ActionError = string | null;
+type BlogSettingKey = "cardStyle" | "homeLayout";
 
 const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
   { type: "article", label: "Article" },
   { type: "project", label: "Project" },
   { type: "talk", label: "Talk" },
+];
+const CARD_STYLE_OPTIONS: Array<{ value: BlogCardStyle; label: string }> = [
+  { value: "cover", label: "Cover" },
+  { value: "minimal", label: "Minimal" },
+];
+const HOME_LAYOUT_OPTIONS: Array<{ value: BlogHomeLayout; label: string }> = [
+  { value: "cards", label: "Cards" },
+  { value: "timeline", label: "Timeline" },
 ];
 
 function signInUrl(handle: string): string {
@@ -98,6 +108,155 @@ export function CreatePostTypePicker({ handle }: { handle: string }) {
               </button>
             </form>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function BlogDisplaySettings({
+  handle,
+  initialCardStyle,
+  initialHomeLayout,
+}: {
+  handle: string;
+  initialCardStyle: BlogCardStyle;
+  initialHomeLayout: BlogHomeLayout;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [cardStyle, setCardStyle] = useState(initialCardStyle);
+  const [homeLayout, setHomeLayout] = useState(initialHomeLayout);
+  const [pending, setPending] = useState<BlogSettingKey | null>(null);
+  const [error, setError] = useState<ActionError>(null);
+  const [, startTransition] = useTransition();
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const closeSettings = useCallback(() => setOpen(false), []);
+  useDismissPopover(open, settingsRef, closeSettings);
+
+  useEffect(() => {
+    setCardStyle(initialCardStyle);
+    setHomeLayout(initialHomeLayout);
+    setError(null);
+  }, [initialCardStyle, initialHomeLayout]);
+
+  const commit = useCallback(
+    (key: BlogSettingKey, value: BlogCardStyle | BlogHomeLayout) => {
+      const previous = { cardStyle, homeLayout };
+      const next =
+        key === "cardStyle"
+          ? { cardStyle: value as BlogCardStyle, homeLayout }
+          : { cardStyle, homeLayout: value as BlogHomeLayout };
+
+      if (
+        next.cardStyle === previous.cardStyle &&
+        next.homeLayout === previous.homeLayout
+      ) {
+        return;
+      }
+
+      setCardStyle(next.cardStyle);
+      setHomeLayout(next.homeLayout);
+      setError(null);
+      setPending(key);
+
+      startTransition(() => {
+        void updateBlogAction(
+          key === "cardStyle"
+            ? { cardStyle: next.cardStyle }
+            : { homeLayout: next.homeLayout },
+          handle,
+        )
+          .then((saved) => {
+            setCardStyle(saved.cardStyle);
+            setHomeLayout(saved.homeLayout);
+            router.refresh();
+          })
+          .catch(() => {
+            setCardStyle(previous.cardStyle);
+            setHomeLayout(previous.homeLayout);
+            setError("Could not save");
+          })
+          .finally(() => {
+            setPending((current) => (current === key ? null : current));
+          });
+      });
+    },
+    [cardStyle, handle, homeLayout, router],
+  );
+
+  return (
+    <div className="blog-settings-picker" ref={settingsRef}>
+      <button
+        className="blog-settings-button ac-btn ac-btn-gray"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        Settings
+      </button>
+      {open && (
+        <div
+          className="blog-settings-popover"
+          data-post-edit-menu-open="true"
+          role="dialog"
+          aria-label="Blog settings"
+        >
+          <div className="blog-settings-section">
+            <span className="blog-settings-label">Card style</span>
+            <div
+              className="ac-segmented blog-settings-segmented"
+              role="group"
+              aria-label="Card style"
+            >
+              {CARD_STYLE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`ac-segmented-button${
+                    cardStyle === option.value ? " ac-active" : ""
+                  }`}
+                  aria-pressed={cardStyle === option.value}
+                  disabled={Boolean(pending)}
+                  onClick={() => commit("cardStyle", option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="blog-settings-section">
+            <span className="blog-settings-label">Home layout</span>
+            <div
+              className="ac-segmented blog-settings-segmented"
+              role="group"
+              aria-label="Home layout"
+            >
+              {HOME_LAYOUT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`ac-segmented-button${
+                    homeLayout === option.value ? " ac-active" : ""
+                  }`}
+                  aria-pressed={homeLayout === option.value}
+                  disabled={Boolean(pending)}
+                  onClick={() => commit("homeLayout", option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <span className="ac-sr-only" role="status">
+            {pending ? "Saving" : ""}
+          </span>
+          {error && (
+            <span className="blog-home-control-error" role="alert">
+              {error}
+            </span>
+          )}
         </div>
       )}
     </div>

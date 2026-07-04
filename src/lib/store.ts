@@ -4,7 +4,13 @@
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
-import type { Blog, Post, PostType } from "./content";
+import type {
+  Blog,
+  BlogCardStyle,
+  BlogHomeLayout,
+  Post,
+  PostType,
+} from "./content";
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
@@ -17,6 +23,8 @@ type BlogRow = {
   tagline: string | null;
   accent: string | null;
   bioLine: string | null;
+  cardStyle: string | null;
+  homeLayout: string | null;
   author: string | null;
 };
 export type BlogPatch = {
@@ -25,6 +33,8 @@ export type BlogPatch = {
   accent?: string | null;
   tagline?: string | null;
   bioLine?: string | null;
+  cardStyle?: BlogCardStyle;
+  homeLayout?: BlogHomeLayout;
 };
 export type AdjacentPostLink = Pick<Post, "slug" | "title">;
 export type AdjacentPublishedPosts = {
@@ -49,6 +59,8 @@ export type StoreUser = {
 };
 
 const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
+const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
+const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "cards";
 
 function toISODate(value: Date | string | null): string | undefined {
   if (!value) return undefined;
@@ -88,6 +100,8 @@ function mapBlog(row: BlogRow): Blog {
     tagline: row.tagline ?? undefined,
     accent: row.accent ?? undefined,
     bioLine: row.bioLine ?? undefined,
+    cardStyle: cleanStoredCardStyle(row.cardStyle),
+    homeLayout: cleanStoredHomeLayout(row.homeLayout),
   };
 }
 
@@ -102,6 +116,8 @@ export async function getBlog(handle: string): Promise<Blog | null> {
       tagline: blogs.tagline,
       accent: blogs.accent,
       bioLine: blogs.bioLine,
+      cardStyle: blogs.cardStyle,
+      homeLayout: blogs.homeLayout,
       author: users.name,
     })
     .from(blogs)
@@ -421,6 +437,8 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
       tagline: blogs.tagline,
       accent: blogs.accent,
       bioLine: blogs.bioLine,
+      cardStyle: blogs.cardStyle,
+      homeLayout: blogs.homeLayout,
       author: users.name,
     })
     .from(blogs)
@@ -504,6 +522,24 @@ function cleanBlogAccent(value: unknown): string | null {
   return accent;
 }
 
+function cleanStoredCardStyle(value: unknown): BlogCardStyle {
+  return value === "minimal" ? "minimal" : DEFAULT_CARD_STYLE;
+}
+
+function cleanStoredHomeLayout(value: unknown): BlogHomeLayout {
+  return value === "timeline" ? "timeline" : DEFAULT_HOME_LAYOUT;
+}
+
+function cleanBlogCardStyle(value: unknown): BlogCardStyle {
+  if (value === "cover" || value === "minimal") return value;
+  throw new Error("Card style must be Cover or Minimal");
+}
+
+function cleanBlogHomeLayout(value: unknown): BlogHomeLayout {
+  if (value === "cards" || value === "timeline") return value;
+  throw new Error("Home layout must be Cards or Timeline");
+}
+
 function isBlogsHandleConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as {
@@ -560,6 +596,8 @@ export async function updateBlogByHandle(
         tagline: blogs.tagline,
         accent: blogs.accent,
         bioLine: blogs.bioLine,
+        cardStyle: blogs.cardStyle,
+        homeLayout: blogs.homeLayout,
         author: users.name,
       })
       .from(blogs)
@@ -583,6 +621,12 @@ export async function updateBlogByHandle(
   }
   if (hasPatchKey(input, "accent")) {
     set.accent = cleanBlogAccent(input.accent);
+  }
+  if (hasPatchKey(input, "cardStyle")) {
+    set.cardStyle = cleanBlogCardStyle(input.cardStyle);
+  }
+  if (hasPatchKey(input, "homeLayout")) {
+    set.homeLayout = cleanBlogHomeLayout(input.homeLayout);
   }
   if (hasPatchKey(input, "handle")) {
     if (!options.allowHandleChange) {

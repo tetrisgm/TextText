@@ -12,7 +12,6 @@ import type { Blog, Post, PostType } from "@/lib/content";
 import {
   formatArticleDate,
   isVideoFile,
-  isYouTube,
   postAccent,
   readingTimeMin,
 } from "@/lib/content";
@@ -38,19 +37,7 @@ function postTitle(post: Post): string {
   return post.title.trim() || "Untitled";
 }
 
-function projectThumbnail(post: Post): string | undefined {
-  const first = post.gallery?.[0];
-  const src = first?.src?.trim();
-  if (!src) return undefined;
-  if (isVideoFile(src) || isYouTube(src)) {
-    return first?.poster?.trim() || undefined;
-  }
-  return src;
-}
-
 function postThumbnail(post: Post): string {
-  if (post.type === "article") return resolveCover(post);
-  if (post.type === "project") return projectThumbnail(post) || resolveCover(post);
   return resolveCover(post);
 }
 
@@ -101,7 +88,7 @@ function videoMimeType(src: string): string {
   return /\.webm(?:[?#].*)?$/i.test(src) ? "video/webm" : "video/mp4";
 }
 
-function cardStyle(blog: Blog, post: Post): CSSProperties | undefined {
+function cardAccentStyle(blog: Blog, post: Post): CSSProperties | undefined {
   const accent = postAccent(blog, post);
   if (accent) return { "--post-accent": accent } as CSSProperties;
   if (post.accent !== undefined) {
@@ -133,8 +120,10 @@ export function PostCard({
   const title = postTitle(post);
   const desc = postDesc(post);
   const cover = postThumbnail(post);
-  const isVideoCover = isVideoFile(cover);
+  const isMinimal = blog.cardStyle === "minimal";
+  const isVideoCover = !isMinimal && isVideoFile(cover);
   const accent = postAccent(blog, post);
+  const date = formatArticleDate(post.date);
   const showUnlisted = owner && post.status === "draft";
   const showPinned = Boolean(post.pinned);
 
@@ -357,6 +346,7 @@ export function PostCard({
   const className = [
     "tvcard",
     `tvcard--${post.type}`,
+    `tvcard--style-${blog.cardStyle}`,
     cover ? "" : "tvcard--no-cover",
     hovered ? "is-hover" : "",
   ]
@@ -364,87 +354,72 @@ export function PostCard({
     .join(" ");
 
   return (
-    <div className="tvcard-shell">
+    <div
+      className={`tvcard-shell${
+        isMinimal ? " tvcard-shell--minimal" : ""
+      }`}
+    >
       <Link
         ref={ref}
         href={`/t/${handle}/${post.slug}`}
         prefetch={true}
         className={className}
-        style={cardStyle(blog, post)}
+        style={cardAccentStyle(blog, post)}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         aria-label={title}
       >
         <span className="tvcard-inner">
           <span className="tvcard-tilt">
-            <span className="tvcard-media">
-              {isVideoCover ? (
-                <video
-                  ref={attachVideo}
-                  className="tvcard-cover"
-                  data-ready={videoReady ? "true" : undefined}
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  preload="auto"
-                  aria-hidden="true"
-                  onCanPlay={() => setVideoReady(true)}
-                >
-                  <source src={cover} type={videoMimeType(cover)} />
-                </video>
-              ) : (
-                // User media can be remote, so plain img avoids next/image config.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className="tvcard-cover"
-                  src={cover}
-                  alt={title}
-                  decoding="async"
-                  loading="lazy"
-                />
-              )}
-              {post.type === "talk" && <PlayBadge />}
-              {post.type === "project" && (
-                <span className="tvcard-scrim" aria-hidden="true" />
-              )}
-              <span className="tvcard-sheen" aria-hidden="true" />
-            </span>
+            {!isMinimal && (
+              <span className="tvcard-media">
+                {isVideoCover ? (
+                  <video
+                    ref={attachVideo}
+                    className="tvcard-cover"
+                    data-ready={videoReady ? "true" : undefined}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="auto"
+                    aria-hidden="true"
+                    onCanPlay={() => setVideoReady(true)}
+                  >
+                    <source src={cover} type={videoMimeType(cover)} />
+                  </video>
+                ) : (
+                  // User media can be remote, so plain img avoids next/image config.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="tvcard-cover"
+                    src={cover}
+                    alt={title}
+                    decoding="async"
+                    loading="lazy"
+                  />
+                )}
+                {post.type === "talk" && <PlayBadge />}
+                <span className="tvcard-sheen" aria-hidden="true" />
+              </span>
+            )}
             <span className="tvcard-body">
-              {post.type === "project" ? (
-                <>
-                  {(showPinned || showUnlisted) && (
-                    <span className="tvcard-marker-row">
-                      {showPinned && (
-                        <span className="tvcard-pinned">Pinned</span>
-                      )}
-                      {showUnlisted && (
-                        <span className="tvcard-unlisted">Unlisted</span>
-                      )}
-                    </span>
-                  )}
-                  <span className="tvcard-title">{title}</span>
-                  <span className="tvcard-desc">{desc}</span>
-                </>
-              ) : (
-                <>
-                  <span className="tvcard-chip-row">
-                    <span
-                      className="tvcard-chip"
-                      style={{ background: accent ?? "var(--ink)" }}
-                    >
-                      {TYPE_LABELS[post.type]}
-                    </span>
-                    {showPinned && (
-                      <span className="tvcard-pinned">Pinned</span>
-                    )}
-                    {showUnlisted && (
-                      <span className="tvcard-unlisted">Unlisted</span>
-                    )}
-                  </span>
-                  <span className="tvcard-title">{title}</span>
-                  <span className="tvcard-desc">{desc}</span>
-                </>
+              <span className="tvcard-chip-row">
+                <span
+                  className="tvcard-chip"
+                  style={{ background: accent ?? "var(--ink)" }}
+                >
+                  {TYPE_LABELS[post.type]}
+                </span>
+                {showPinned && <span className="tvcard-pinned">Pinned</span>}
+                {showUnlisted && (
+                  <span className="tvcard-unlisted">Unlisted</span>
+                )}
+              </span>
+              <span className="tvcard-title">{title}</span>
+              <span className="tvcard-desc">{desc}</span>
+              {isMinimal && date && (
+                <span className="tvcard-date">{date}</span>
               )}
             </span>
           </span>

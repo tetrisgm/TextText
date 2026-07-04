@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   BlogNameForm,
+  BlogDisplaySettings,
   ClaimBlogButton,
   CreatePostTypePicker,
 } from "@/components/BlogHomeEditorControls";
@@ -14,7 +15,16 @@ import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { blogFeedAlternateTypes, blogFeedHref } from "@/lib/feed-links";
 import { getCurrentUser } from "@/lib/session";
 import { getAllPosts, getBlog, getPosts } from "@/lib/store";
-import type { Blog } from "@/lib/content";
+import {
+  formatArticleDate,
+  isVideoFile,
+  isYouTube,
+  postAccent,
+  readingTimeMin,
+  youtubeThumb,
+} from "@/lib/content";
+import type { Blog, Post, PostType } from "@/lib/content";
+import { resolveCover } from "@/lib/cover";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -34,6 +44,152 @@ function queryValue(value: string | string[] | undefined): string | undefined {
 function isDefaultBlogName(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return !normalized || normalized === "untitled blog";
+}
+
+const TYPE_LABELS: Record<PostType, string> = {
+  article: "ARTICLE",
+  project: "PROJECT",
+  talk: "TALK",
+};
+
+function postTitle(post: Post): string {
+  return post.title.trim() || "Untitled";
+}
+
+function oneLine(value: string): string {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripMarkdown(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function truncate(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const sliced = value.slice(0, maxLength - 3).trimEnd();
+  const wordBreak = sliced.lastIndexOf(" ");
+  const base = wordBreak > 70 ? sliced.slice(0, wordBreak) : sliced;
+  return `${base}...`;
+}
+
+function plainTextExcerpt(markdown: string | undefined): string {
+  if (!markdown) return "";
+  return truncate(oneLine(stripMarkdown(markdown)), 180);
+}
+
+function timelineExcerpt(post: Post): string {
+  return post.excerpt?.trim() || plainTextExcerpt(post.body);
+}
+
+function timelineMeta(post: Post): string {
+  return [formatArticleDate(post.date), `${readingTimeMin(post.body)} min read`]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function timelineImageSrc(src: string): string {
+  if (!isYouTube(src)) return src;
+  return youtubeThumb(src) ?? src;
+}
+
+function postStyle(blog: Blog, post: Post): CSSProperties | undefined {
+  const accent = postAccent(blog, post);
+  if (accent) return { "--post-accent": accent } as CSSProperties;
+  if (post.accent !== undefined) {
+    return { "--post-accent": "var(--ink)" } as CSSProperties;
+  }
+  return undefined;
+}
+
+function BlogTimeline({
+  blog,
+  handle,
+  posts,
+  owner,
+}: {
+  blog: Blog;
+  handle: string;
+  posts: Post[];
+  owner: boolean;
+}) {
+  return (
+    <div className="blog-timeline" aria-label="Posts">
+      {posts.map((post) => {
+        const title = postTitle(post);
+        const cover = resolveCover(post);
+        const meta = timelineMeta(post);
+        const excerpt = timelineExcerpt(post);
+        const thumbnail = timelineImageSrc(cover);
+        const accent = postAccent(blog, post);
+        const showUnlisted = owner && post.status === "draft";
+
+        return (
+          <Link
+            key={post.slug}
+            className="blog-timeline-row"
+            href={`/t/${handle}/${post.slug}`}
+            prefetch={true}
+            style={postStyle(blog, post)}
+          >
+            <span className="blog-timeline-copy">
+              <span className="blog-timeline-chip-row">
+                <span
+                  className="blog-timeline-chip"
+                  style={{ background: accent ?? "var(--ink)" }}
+                >
+                  {TYPE_LABELS[post.type]}
+                </span>
+                {post.pinned && (
+                  <span className="blog-timeline-marker">Pinned</span>
+                )}
+                {showUnlisted && (
+                  <span className="blog-timeline-marker">Unlisted</span>
+                )}
+              </span>
+              <span className="blog-timeline-title">{title}</span>
+              <span className="blog-timeline-meta">{meta}</span>
+              {excerpt && (
+                <span className="blog-timeline-excerpt">{excerpt}</span>
+              )}
+            </span>
+            <span className="blog-timeline-thumb" aria-hidden="true">
+              {isVideoFile(cover) ? (
+                <video
+                  className="blog-timeline-thumb-media"
+                  src={cover}
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                // User media can be remote, so plain img avoids next/image config.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="blog-timeline-thumb-media"
+                  src={thumbnail}
+                  alt=""
+                  decoding="async"
+                  loading="lazy"
+                />
+              )}
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -95,6 +251,11 @@ export default async function BlogHome({ params, searchParams }: Props) {
                 autoClaim={queryValue(query.claim) === "1"}
               />
             )}
+            <BlogDisplaySettings
+              handle={handle}
+              initialCardStyle={blog.cardStyle}
+              initialHomeLayout={blog.homeLayout}
+            />
             <CreatePostTypePicker handle={handle} />
           </div>
         </div>
@@ -116,7 +277,16 @@ export default async function BlogHome({ params, searchParams }: Props) {
         </div>
       </header>
 
-      {posts.length > 0 && (
+      {posts.length > 0 && blog.homeLayout === "timeline" && (
+        <BlogTimeline
+          blog={blog}
+          handle={handle}
+          posts={posts}
+          owner={canEdit}
+        />
+      )}
+
+      {posts.length > 0 && blog.homeLayout === "cards" && (
         <div className="tv-grid">
           {posts.map((post) => (
             <PostCard

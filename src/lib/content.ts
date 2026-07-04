@@ -11,8 +11,12 @@ export interface Blog {
   accent?: string;
   /** one-line standing profile bio */
   bioLine?: string;
+  cardStyle: BlogCardStyle;
+  homeLayout: BlogHomeLayout;
 }
 
+export type BlogCardStyle = "cover" | "minimal";
+export type BlogHomeLayout = "cards" | "timeline";
 export type PostType = "article" | "project" | "talk";
 
 export interface GalleryItem {

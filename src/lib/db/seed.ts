@@ -30,6 +30,8 @@ async function main() {
       tagline: DEMO_BLOG.tagline ?? null,
       accent: DEMO_BLOG.accent ?? null,
       bioLine: DEMO_BLOG.bioLine ?? null,
+      cardStyle: DEMO_BLOG.cardStyle,
+      homeLayout: DEMO_BLOG.homeLayout,
       ownerId: owner.id,
     })
     .onConflictDoNothing({ target: blogs.handle });

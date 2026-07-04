@@ -12,6 +12,8 @@ export const DEMO_BLOG: Blog = {
   accent: "#0f766e",
   bioLine:
     "Mina Park writes about product systems, design detail, and the editorial craft of software.",
+  cardStyle: "cover",
+  homeLayout: "cards",
 };
 
 export const DEMO_POSTS: Post[] = [
