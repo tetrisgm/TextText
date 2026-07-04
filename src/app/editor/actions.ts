@@ -7,14 +7,25 @@ import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { BlogPatch } from "@/lib/store";
 import {
+  claimBlogForUser,
+  createAnonymousBlogRecord,
   createDraft,
   deletePost,
   ensureOwnerBlog,
   getPostById,
   savePost,
   setPostPinned,
-  updateBlog,
+  updateBlogByHandle,
 } from "@/lib/store";
+import {
+  deleteAnonymousEditCookie,
+  friendlyAnonymousSeed,
+  generateEditToken,
+  getBlogEditAccess,
+  hashEditToken,
+  setAnonymousEditCookie,
+} from "@/lib/blog-edit-auth";
+import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
 // client can never target another user's blog. Writing always requires auth;
@@ -29,6 +40,16 @@ async function editorUser() {
 async function editorHandle(): Promise<string> {
   const user = await editorUser();
   const blog = await ensureOwnerBlog(user);
+  return blog.handle;
+}
+
+async function createAnonymousBlogHandle(): Promise<string> {
+  const token = generateEditToken();
+  const blog = await createAnonymousBlogRecord(
+    hashEditToken(token),
+    friendlyAnonymousSeed(),
+  );
+  await setAnonymousEditCookie(blog.id, token);
   return blog.handle;
 }
 
@@ -56,6 +77,15 @@ function cleanPostId(value: unknown): string {
     throw new Error("Post not found");
   }
   return value.trim();
+}
+
+function cleanHandle(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Blog not found");
+  }
+  const handle = value.trim().toLowerCase();
+  if (!TENANT_HANDLE_RE.test(handle)) throw new Error("Blog not found");
+  return handle;
 }
 
 function cleanStatus(value: unknown): Post["status"] {
@@ -187,35 +217,89 @@ function revalidateBlog(handle: string, slugs: string[] = []) {
   }
 }
 
+async function editableHandleFor(handleInput?: unknown) {
+  const handle =
+    handleInput === undefined ? await editorHandle() : cleanHandle(handleInput);
+  const access = await getBlogEditAccess(handle);
+  if (!access.canEdit) throw new Error("You cannot edit this blog");
+  return { handle, access };
+}
+
+function actionErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export async function createAnonymousBlog(): Promise<string> {
+  return createAnonymousBlogHandle();
+}
+
+export async function startBlogAction() {
+  const user = await getCurrentUser();
+  const handle = user
+    ? (await ensureOwnerBlog(user)).handle
+    : await createAnonymousBlogHandle();
+  redirect(blogPath(handle));
+}
+
 export async function savePostAction(post: Post): Promise<Post> {
-  return savePost(await editorHandle(), post);
+  const { handle } = await editableHandleFor();
+  const saved = await savePost(handle, post);
+  revalidateBlog(handle, [saved.slug]);
+  return saved;
 }
 
-export async function createDraftAction(type: PostType = "article"): Promise<Post> {
-  return createDraft(await editorHandle(), type);
+export async function createDraftAction(
+  type: PostType = "article",
+  handleInput?: unknown,
+): Promise<Post> {
+  const { handle } = await editableHandleFor(handleInput);
+  const post = await createDraft(handle, type);
+  revalidateBlog(handle, [post.slug]);
+  return post;
 }
 
-export async function updateBlogAction(patch: BlogPatch): Promise<Blog> {
-  const user = await editorUser();
-  return updateBlog(user.sub, patch);
+export async function updateBlogAction(
+  patch: BlogPatch,
+  handleInput?: unknown,
+): Promise<Blog> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const updated = await updateBlogByHandle(handle, patch, {
+    allowHandleChange: access.isOwner,
+  });
+  revalidateBlog(handle);
+  if (updated.handle !== handle) revalidateBlog(updated.handle);
+  return updated;
 }
 
 export async function createPostAndRedirectAction(formData: FormData) {
-  const handle = await editorHandle();
+  const handleValue = formData.get("handle");
+  const { handle } = await editableHandleFor(
+    typeof handleValue === "string" && handleValue.trim()
+      ? handleValue
+      : undefined,
+  );
   const post = await createDraft(handle, cleanPostType(formData.get("type")));
   revalidateBlog(handle, [post.slug]);
   redirect(blogPath(handle, `/${encodeURIComponent(post.slug)}?edit=1`));
 }
 
-export async function createArticleDraftPathAction(): Promise<string> {
-  const handle = await editorHandle();
+export async function createArticleDraftPathAction(
+  handleInput?: unknown,
+): Promise<string> {
+  const { handle } = await editableHandleFor(handleInput);
   const post = await createDraft(handle, "article");
   revalidateBlog(handle, [post.slug]);
   return blogPath(handle, `/${encodeURIComponent(post.slug)}`);
 }
 
-export async function saveEditablePostAction(input: unknown): Promise<Post> {
-  const handle = await editorHandle();
+export async function saveEditablePostAction(
+  handleOrInput: unknown,
+  maybeInput?: unknown,
+): Promise<Post> {
+  const { handle } = await editableHandleFor(
+    maybeInput === undefined ? undefined : handleOrInput,
+  );
+  const input = maybeInput === undefined ? handleOrInput : maybeInput;
   const id = cleanPostId(
     input && typeof input === "object" && !Array.isArray(input)
       ? (input as Record<string, unknown>).id
@@ -246,8 +330,14 @@ export async function saveEditablePostAction(input: unknown): Promise<Post> {
   return saved;
 }
 
-export async function toggleEditablePostPinnedAction(id: unknown): Promise<Post> {
-  const handle = await editorHandle();
+export async function toggleEditablePostPinnedAction(
+  handleOrId: unknown,
+  maybeId?: unknown,
+): Promise<Post> {
+  const { handle } = await editableHandleFor(
+    maybeId === undefined ? undefined : handleOrId,
+  );
+  const id = maybeId === undefined ? handleOrId : maybeId;
   const postId = cleanPostId(id);
   const existing = await getPostById(handle, postId);
   if (!existing) throw new Error("Post not found");
@@ -257,13 +347,69 @@ export async function toggleEditablePostPinnedAction(id: unknown): Promise<Post>
 }
 
 export async function deleteEditablePostAction(
-  id: unknown,
+  handleOrId: unknown,
+  maybeId?: unknown,
 ): Promise<{ handle: string }> {
-  const handle = await editorHandle();
+  const { handle } = await editableHandleFor(
+    maybeId === undefined ? undefined : handleOrId,
+  );
+  const id = maybeId === undefined ? handleOrId : maybeId;
   const postId = cleanPostId(id);
   const existing = await getPostById(handle, postId);
   if (!existing) throw new Error("Post not found");
   await deletePost(handle, postId);
   revalidateBlog(handle, [existing.slug]);
   return { handle };
+}
+
+export async function updateBlogNameAction(
+  handleInput: unknown,
+  nameInput: unknown,
+): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+  try {
+    const { handle, access } = await editableHandleFor(handleInput);
+    const updated = await updateBlogByHandle(
+      handle,
+      { name: typeof nameInput === "string" ? nameInput : "" },
+      { allowHandleChange: access.isOwner },
+    );
+    revalidateBlog(handle);
+    return { ok: true, name: updated.name };
+  } catch (error) {
+    return { ok: false, error: actionErrorMessage(error, "Could not save") };
+  }
+}
+
+export async function claimBlog(
+  handleInput: unknown,
+): Promise<
+  | { ok: true; handle: string }
+  | { ok: false; error: string; signInRequired?: boolean }
+> {
+  const handle = cleanHandle(handleInput);
+  const user = await getCurrentUser();
+  if (!user) {
+    return {
+      ok: false,
+      error: "Sign in to claim this blog",
+      signInRequired: true,
+    };
+  }
+
+  const access = await getBlogEditAccess(handle);
+  if (!access.isUnclaimed) {
+    return { ok: false, error: "This blog is already claimed" };
+  }
+  if (!access.canEdit || !access.isTokenEditor) {
+    return { ok: false, error: "You cannot claim this blog" };
+  }
+
+  try {
+    const blog = await claimBlogForUser(handle, user);
+    if (access.blogId) await deleteAnonymousEditCookie(access.blogId);
+    revalidateBlog(handle);
+    return { ok: true, handle: blog.handle };
+  } catch (error) {
+    return { ok: false, error: actionErrorMessage(error, "Could not claim") };
+  }
 }

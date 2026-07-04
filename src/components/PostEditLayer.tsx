@@ -19,7 +19,11 @@ import {
   isYouTube,
   youtubeEmbedUrl,
 } from "@/lib/content";
-import { MediaUploadError, uploadMedia } from "@/lib/upload";
+import {
+  MediaUploadError,
+  mediaUploadEndpointForHandle,
+  uploadMedia,
+} from "@/lib/upload";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   initialDraft,
@@ -545,6 +549,7 @@ export function PostEditLayer({
   const saveTimerRef = useRef<number | null>(null);
   const leavingEditRef = useRef(false);
   const postId = post.id;
+  const uploadEndpoint = mediaUploadEndpointForHandle(blog.handle);
 
   const focusTitle = useCallback(() => {
     focusTextareaEnd(titleRef.current);
@@ -650,7 +655,7 @@ export function PostEditLayer({
       const sentSlug = payload.slug;
 
       startTransition(() => {
-        void saveEditablePostAction(payload)
+        void saveEditablePostAction(blog.handle, payload)
           .then((saved) => {
             if (latestKeyRef.current !== sentKey) return;
             lastSavedKeyRef.current = sentKey;
@@ -757,7 +762,7 @@ export function PostEditLayer({
       try {
         const sentSlug = payload.slug;
         const previousSlug = currentSlugRef.current;
-        const saved = await saveEditablePostAction(payload);
+        const saved = await saveEditablePostAction(blog.handle, payload);
         lastSavedKeyRef.current = key;
         patchEditSession(postId, { lastSavedKey: key });
         setSaveState("saved");
@@ -790,7 +795,7 @@ export function PostEditLayer({
       setCoverUploading(true);
       setCoverUploadError(null);
       try {
-        const url = await uploadMedia(file);
+        const url = await uploadMedia(file, { endpoint: uploadEndpoint });
         updateDraft({ cover: url });
       } catch (uploadError) {
         setCoverUploadError(uploadErrorMessage(uploadError));
@@ -798,7 +803,7 @@ export function PostEditLayer({
         setCoverUploading(false);
       }
     },
-    [updateDraft],
+    [updateDraft, uploadEndpoint],
   );
 
   const removeCover = useCallback(() => {
@@ -815,7 +820,7 @@ export function PostEditLayer({
       try {
         const uploaded: GalleryItem[] = [];
         for (const file of files) {
-          const url = await uploadMedia(file);
+          const url = await uploadMedia(file, { endpoint: uploadEndpoint });
           uploaded.push({ src: url });
         }
         updateDraftFrom((current) => ({
@@ -828,7 +833,7 @@ export function PostEditLayer({
         setGalleryUploading(false);
       }
     },
-    [updateDraftFrom],
+    [updateDraftFrom, uploadEndpoint],
   );
 
   const deriveSlugFromTitle = useCallback(
@@ -1007,6 +1012,7 @@ export function PostEditLayer({
           value={draft.body}
           onChange={(body) => updateDraft({ body })}
           toolbarHost={bodyToolbarHost}
+          uploadEndpoint={uploadEndpoint}
         />
       </div>
     ),
@@ -1061,7 +1067,7 @@ export function PostEditLayer({
     setSaveState("saving");
     setError(null);
     startTransition(() => {
-      void deleteEditablePostAction(postId)
+      void deleteEditablePostAction(blog.handle, postId)
         .then(({ handle }) => {
           router.push(`/t/${encodeURIComponent(handle)}`);
         })
@@ -1071,7 +1077,7 @@ export function PostEditLayer({
           setError(errorMessage(deleteError, "Could not delete"));
         });
     });
-  }, [deleting, postId, router]);
+  }, [blog.handle, deleting, postId, router]);
 
   return (
     <>

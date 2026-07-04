@@ -314,7 +314,7 @@ export function PostCard({
 
     setDeleting(true);
     startTransition(() => {
-      void deleteEditablePostAction(postId)
+      void deleteEditablePostAction(handle, postId)
         .then(() => {
           setMenuOpen(false);
           router.refresh();
@@ -337,7 +337,7 @@ export function PostCard({
 
     setPinning(true);
     startTransition(() => {
-      void toggleEditablePostPinnedAction(postId)
+      void toggleEditablePostPinnedAction(handle, postId)
         .then(() => {
           setMenuOpen(false);
           setPinning(false);

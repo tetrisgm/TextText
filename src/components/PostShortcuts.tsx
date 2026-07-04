@@ -27,7 +27,7 @@ function newDraftTarget(path: string): string {
   return `${path}?edit=1`;
 }
 
-function useCreateArticleShortcut(owner: boolean) {
+function useCreateArticleShortcut(owner: boolean, handle?: string) {
   const router = useRouter();
   const creatingRef = useRef(false);
 
@@ -35,7 +35,7 @@ function useCreateArticleShortcut(owner: boolean) {
     if (!owner || creatingRef.current) return;
     creatingRef.current = true;
     startTransition(() => {
-      void createArticleDraftPathAction()
+      void createArticleDraftPathAction(handle)
         .then((path) => {
           router.push(newDraftTarget(path));
         })
@@ -46,7 +46,7 @@ function useCreateArticleShortcut(owner: boolean) {
           creatingRef.current = false;
         });
     });
-  }, [owner, router]);
+  }, [handle, owner, router]);
 }
 
 export function PostShortcuts({
@@ -54,14 +54,16 @@ export function PostShortcuts({
   previousPath,
   nextPath,
   owner,
+  handle,
 }: {
   homePath: string;
   previousPath?: string;
   nextPath?: string;
   owner: boolean;
+  handle?: string;
 }) {
   const router = useRouter();
-  const createArticle = useCreateArticleShortcut(owner);
+  const createArticle = useCreateArticleShortcut(owner, handle);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -107,8 +109,14 @@ export function PostShortcuts({
   return null;
 }
 
-export function BlogHomeShortcuts({ owner }: { owner: boolean }) {
-  const createArticle = useCreateArticleShortcut(owner);
+export function BlogHomeShortcuts({
+  owner,
+  handle,
+}: {
+  owner: boolean;
+  handle?: string;
+}) {
+  const createArticle = useCreateArticleShortcut(owner, handle);
 
   useEffect(() => {
     if (!owner) return;

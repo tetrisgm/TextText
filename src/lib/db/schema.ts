@@ -38,9 +38,9 @@ export const blogs = pgTable(
     accent: text("accent"),
     /** one-line standing bio for the reader end card */
     bioLine: text("bio_line"),
-    ownerId: uuid("owner_id")
-      .notNull()
-      .references(() => users.id),
+    ownerId: uuid("owner_id").references(() => users.id),
+    /** SHA-256 hash of the anonymous editor token; null after claim */
+    editTokenHash: text("edit_token_hash"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [

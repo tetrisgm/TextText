@@ -1,22 +1,13 @@
 import Link from "next/link";
+import { startBlogAction } from "@/app/editor/actions";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
-import { getOwnedBlog } from "@/lib/store";
 
 // Platform landing (root domain). Deliberately set in the product's own
 // reader voice: the landing IS a specimen of the typography.
 export default async function Home() {
   const user = isAuthConfigured ? await getCurrentUser() : null;
-  const blog = user ? await getOwnedBlog(user.sub) : null;
-  const primaryCta = user
-    ? {
-        href: blog ? `/t/${encodeURIComponent(blog.handle)}` : "/editor",
-        label: "Go to your blog",
-      }
-    : {
-        href: "/editor",
-        label: "Sign in",
-      };
+  const primaryLabel = user ? "Go to your blog" : "Start a blog";
 
   return (
     <main
@@ -32,22 +23,24 @@ export default async function Home() {
           broadsheet typography, quiet structure, and a reading column that puts
           the work first.
         </p>
-        <p style={{ textAlign: "center", marginTop: 30, marginBottom: 18 }}>
-          <Link
-            className="ac-btn ac-btn-filled"
-            href={primaryCta.href}
-            style={{
-              borderBottom: 0,
-              color: "var(--ac-on-accent)",
-              fontSize: 16,
-              height: 46,
-              paddingInline: 24,
-              textDecoration: "none",
-            }}
-          >
-            {primaryCta.label}
-          </Link>
-        </p>
+        <div style={{ textAlign: "center", marginTop: 30, marginBottom: 18 }}>
+          <form action={startBlogAction}>
+            <button
+              className="ac-btn ac-btn-filled"
+              type="submit"
+              style={{
+                borderBottom: 0,
+                color: "var(--ac-on-accent)",
+                fontSize: 16,
+                height: 46,
+                paddingInline: 24,
+                textDecoration: "none",
+              }}
+            >
+              {primaryLabel}
+            </button>
+          </form>
+        </div>
         <p
           style={{
             color: "var(--muted)",

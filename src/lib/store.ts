@@ -3,7 +3,7 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import type { Blog, Post, PostType } from "./content";
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
@@ -31,6 +31,24 @@ export type AdjacentPublishedPosts = {
   previous: AdjacentPostLink | null;
   next: AdjacentPostLink | null;
 };
+export type BlogEditRecord = {
+  id: string;
+  handle: string;
+  name: string;
+  ownerId: string | null;
+  editTokenHash: string | null;
+};
+export type AnonymousBlogRecord = {
+  id: string;
+  handle: string;
+};
+export type StoreUser = {
+  sub: string;
+  name?: string;
+  email?: string;
+};
+
+const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
 
 function toISODate(value: Date | string | null): string | undefined {
   if (!value) return undefined;
@@ -66,7 +84,7 @@ function mapBlog(row: BlogRow): Blog {
   return {
     handle: row.handle,
     name: row.name,
-    author: row.author ?? "",
+    author: row.author?.trim() || row.name.trim() || "Anonymous",
     tagline: row.tagline ?? undefined,
     accent: row.accent ?? undefined,
     bioLine: row.bioLine ?? undefined,
@@ -87,7 +105,7 @@ export async function getBlog(handle: string): Promise<Blog | null> {
       author: users.name,
     })
     .from(blogs)
-    .innerJoin(users, eq(blogs.ownerId, users.id))
+    .leftJoin(users, eq(blogs.ownerId, users.id))
     .where(eq(blogs.handle, handle))
     .limit(1);
   const row = rows[0];
@@ -186,6 +204,24 @@ async function blogIdFor(handle: string): Promise<string> {
   return id;
 }
 
+export async function getBlogEditRecord(
+  handle: string,
+): Promise<BlogEditRecord | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({
+      id: blogs.id,
+      handle: blogs.handle,
+      name: blogs.name,
+      ownerId: blogs.ownerId,
+      editTokenHash: blogs.editTokenHash,
+    })
+    .from(blogs)
+    .where(eq(blogs.handle, handle))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function isBlogOwner(
   handle: string,
   sub: string,
@@ -194,7 +230,7 @@ export async function isBlogOwner(
   const rows = await db
     .select({ id: blogs.id })
     .from(blogs)
-    .innerJoin(users, eq(blogs.ownerId, users.id))
+    .leftJoin(users, eq(blogs.ownerId, users.id))
     .where(and(eq(blogs.handle, handle), eq(users.appleSub, sub)))
     .limit(1);
   return Boolean(rows[0]);
@@ -388,13 +424,40 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
       author: users.name,
     })
     .from(blogs)
-    .innerJoin(users, eq(blogs.ownerId, users.id))
+    .leftJoin(users, eq(blogs.ownerId, users.id))
     .where(eq(users.appleSub, sub))
     .orderBy(asc(blogs.createdAt))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
   return mapBlog(row);
+}
+
+async function upsertUser(user: StoreUser): Promise<{ id: string; name: string | null }> {
+  await db!
+    .insert(users)
+    .values({
+      appleSub: user.sub,
+      name: user.name ?? null,
+      email: user.email ?? null,
+    })
+    .onConflictDoUpdate({
+      target: users.appleSub,
+      set: {
+        name: user.name ?? sql`${users.name}`,
+        email: user.email ?? sql`${users.email}`,
+      },
+    });
+
+  const row = (
+    await db!
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(eq(users.appleSub, user.sub))
+      .limit(1)
+  )[0];
+  if (!row) throw new Error("failed to resolve user");
+  return row;
 }
 
 function hasPatchKey(
@@ -459,14 +522,36 @@ function isBlogsHandleConflict(error: unknown): boolean {
   return code === "23505" && (message + detail).includes("blogs_handle_idx");
 }
 
-export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
+function isBlogsOwnerConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as {
+    code?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+    detail?: unknown;
+  };
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const constraint =
+    typeof candidate.constraint === "string" ? candidate.constraint : "";
+  const message =
+    typeof candidate.message === "string" ? candidate.message : "";
+  const detail = typeof candidate.detail === "string" ? candidate.detail : "";
+  if (constraint === "blogs_owner_idx") return true;
+  return code === "23505" && (message + detail).includes("blogs_owner_idx");
+}
+
+export async function updateBlogByHandle(
+  handle: string,
+  patch: BlogPatch,
+  options: { allowHandleChange?: boolean } = {},
+): Promise<Blog> {
   if (!db) throw new Error("updateBlog requires DATABASE_URL");
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
     throw new Error("Invalid blog settings");
   }
 
   const input = patch as Record<string, unknown>;
-  const owned = (
+  const existing = (
     await db
       .select({
         id: blogs.id,
@@ -478,12 +563,12 @@ export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
         author: users.name,
       })
       .from(blogs)
-      .innerJoin(users, eq(blogs.ownerId, users.id))
-      .where(eq(users.appleSub, sub))
+      .leftJoin(users, eq(blogs.ownerId, users.id))
+      .where(eq(blogs.handle, handle))
       .orderBy(asc(blogs.createdAt))
       .limit(1)
   )[0];
-  if (!owned) throw new Error("No blog found for this user");
+  if (!existing) throw new Error("Blog not found");
 
   const set: Partial<typeof blogs.$inferInsert> = {};
 
@@ -500,31 +585,103 @@ export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
     set.accent = cleanBlogAccent(input.accent);
   }
   if (hasPatchKey(input, "handle")) {
+    if (!options.allowHandleChange) {
+      throw new Error("Claim the blog before changing its URL");
+    }
     const handle = cleanBlogHandle(input.handle);
-    if (handle !== owned.handle) {
+    if (handle !== existing.handle) {
       const taken = await db
         .select({ id: blogs.id })
         .from(blogs)
-        .where(and(eq(blogs.handle, handle), ne(blogs.id, owned.id)))
+        .where(and(eq(blogs.handle, handle), ne(blogs.id, existing.id)))
         .limit(1);
       if (taken[0]) throw new Error("That handle is taken");
       set.handle = handle;
     }
   }
 
-  if (Object.keys(set).length === 0) return mapBlog(owned);
+  if (Object.keys(set).length === 0) return mapBlog(existing);
 
   try {
     const updated = await db
       .update(blogs)
       .set(set)
-      .where(eq(blogs.id, owned.id))
+      .where(eq(blogs.id, existing.id))
       .returning();
     const row = updated[0];
-    if (!row) throw new Error("No blog found for this user");
-    return mapBlog({ ...row, author: owned.author });
+    if (!row) throw new Error("Blog not found");
+    return mapBlog({ ...row, author: existing.author });
   } catch (error) {
     if (isBlogsHandleConflict(error)) throw new Error("That handle is taken");
+    throw error;
+  }
+}
+
+export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
+  if (!db) throw new Error("updateBlog requires DATABASE_URL");
+  const owned = (
+    await db
+      .select({ handle: blogs.handle })
+      .from(blogs)
+      .leftJoin(users, eq(blogs.ownerId, users.id))
+      .where(eq(users.appleSub, sub))
+      .orderBy(asc(blogs.createdAt))
+      .limit(1)
+  )[0];
+  if (!owned) throw new Error("No blog found for this user");
+  return updateBlogByHandle(owned.handle, patch, { allowHandleChange: true });
+}
+
+export async function createAnonymousBlogRecord(
+  editTokenHash: string,
+  seed: string,
+): Promise<AnonymousBlogRecord> {
+  if (!db) throw new Error("createAnonymousBlog requires DATABASE_URL");
+  if (!editTokenHash) throw new Error("edit token hash is required");
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const handle = await uniqueHandle(attempt === 0 ? seed : `${seed}-${attempt + 1}`);
+    const inserted = await db
+      .insert(blogs)
+      .values({
+        handle,
+        name: DEFAULT_ANONYMOUS_BLOG_NAME,
+        ownerId: null,
+        editTokenHash,
+      })
+      .onConflictDoNothing()
+      .returning({ id: blogs.id, handle: blogs.handle });
+    if (inserted[0]) return inserted[0];
+  }
+
+  throw new Error("failed to create a blog");
+}
+
+export async function claimBlogForUser(
+  handle: string,
+  user: StoreUser,
+): Promise<Blog> {
+  if (!db) throw new Error("claimBlog requires DATABASE_URL");
+
+  const owner = await upsertUser(user);
+  const existingOwned = await getOwnedBlog(user.sub);
+  if (existingOwned) throw new Error("You already have a blog");
+
+  const target = await getBlogEditRecord(handle);
+  if (!target) throw new Error("Blog not found");
+  if (target.ownerId) throw new Error("This blog is already claimed");
+
+  try {
+    const updated = await db
+      .update(blogs)
+      .set({ ownerId: owner.id, editTokenHash: null })
+      .where(and(eq(blogs.id, target.id), isNull(blogs.ownerId)))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new Error("This blog is already claimed");
+    return mapBlog({ ...row, author: owner.name });
+  } catch (error) {
+    if (isBlogsOwnerConflict(error)) throw new Error("You already have a blog");
     throw error;
   }
 }
@@ -532,37 +689,12 @@ export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
 // Get-or-create the signed-in user's blog. Upserts the user (keyed by Apple sub;
 // Apple only sends name/email on first authorization, so existing values are
 // preserved on later sign-ins) and provisions a starter blog on first sign-in.
-export async function ensureOwnerBlog(user: {
-  sub: string;
-  name?: string;
-  email?: string;
-}): Promise<Blog> {
+export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
   if (!db) throw new Error("ensureOwnerBlog requires DATABASE_URL");
-  await db
-    .insert(users)
-    .values({
-      appleSub: user.sub,
-      name: user.name ?? null,
-      email: user.email ?? null,
-    })
-    .onConflictDoUpdate({
-      target: users.appleSub,
-      set: {
-        name: user.name ?? sql`${users.name}`,
-        email: user.email ?? sql`${users.email}`,
-      },
-    });
+  const owner = await upsertUser(user);
 
   const existing = await getOwnedBlog(user.sub);
   if (existing) return existing;
-
-  const owner = (
-    await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.appleSub, user.sub))
-      .limit(1)
-  )[0];
   const name = user.name ? `${user.name}'s blog` : "My blog";
   const seed = user.email?.split("@")[0] || user.name || "blog";
 

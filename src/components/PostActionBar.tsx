@@ -294,7 +294,7 @@ export function PostActionBar(props: Props) {
 
       try {
         const payload = payloadFor(props.post.id, nextDraft, props.post.slug);
-        const saved = await saveEditablePostAction(payload);
+        const saved = await saveEditablePostAction(props.blog.handle, payload);
         setReadDraft(initialDraft(saved));
         setReadSaveState("saved");
         setReadError(null);

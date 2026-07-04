@@ -24,6 +24,7 @@ type BodyEditorProps = {
   value: string;
   onChange: (value: string) => void;
   toolbarHost?: HTMLElement | null;
+  uploadEndpoint?: string;
 };
 
 type MarkdownNode = {
@@ -438,7 +439,7 @@ function ImageIcon() {
 }
 
 export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
-  function BodyEditor({ value, onChange, toolbarHost }, ref) {
+  function BodyEditor({ value, onChange, toolbarHost, uploadEndpoint }, ref) {
     const editorRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
@@ -564,7 +565,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         setUploading(true);
         setUploadError(null);
         try {
-          const url = await uploadMedia(file);
+          const url = await uploadMedia(file, { endpoint: uploadEndpoint });
           restoreSelection();
           document.execCommand("insertImage", false, url);
           saveSelection();

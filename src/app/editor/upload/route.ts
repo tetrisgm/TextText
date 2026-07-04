@@ -1,6 +1,8 @@
 import { isAuthConfigured } from "@/auth";
+import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
 import { ensureOwnerBlog } from "@/lib/store";
+import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 1024 * 1024;
@@ -49,14 +51,25 @@ export async function POST(request: Request) {
     return jsonError("Media upload is not configured.", 503);
   }
 
-  // Uploads always require a signed-in user; this is never an open public
-  // endpoint. Demo mode (auth off) has no owner to attribute media to.
-  if (!isAuthConfigured) {
-    return jsonError("Media upload requires authentication.", 503);
-  }
-  const user = await getCurrentUser();
-  if (!user) {
-    return jsonError("Sign in to upload media.", 401);
+  const requestedHandle = new URL(request.url).searchParams.get("handle");
+  let uploadHandle: string;
+  if (requestedHandle) {
+    const handle = requestedHandle.trim().toLowerCase();
+    if (!TENANT_HANDLE_RE.test(handle)) return jsonError("Blog not found.", 404);
+    const access = await getBlogEditAccess(handle);
+    if (!access.canEdit) return jsonError("You cannot upload to this blog.", 403);
+    uploadHandle = handle;
+  } else {
+    // The legacy /editor upload path resolves the claimed owner's blog from the
+    // session. Public blog editing passes an explicit handle and is checked above.
+    if (!isAuthConfigured) {
+      return jsonError("Media upload requires authentication.", 503);
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return jsonError("Sign in to upload media.", 401);
+    }
+    uploadHandle = (await ensureOwnerBlog(user)).handle;
   }
 
   const contentType = request.headers.get("content-type") ?? "";
@@ -95,9 +108,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { handle } = await ensureOwnerBlog(user);
     const { put } = await import("@vercel/blob");
-    const blob = await put(uploadPathname(handle, file), file, {
+    const blob = await put(uploadPathname(uploadHandle, file), file, {
       access: "public",
       addRandomSuffix: true,
       contentType: file.type,

@@ -1,12 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { getCurrentUser } from "@/lib/session";
+import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import {
   getAdjacentPublishedPosts,
   getAllPosts,
   getBlog,
   getPost,
-  isBlogOwner,
 } from "@/lib/store";
 import type { Post } from "@/lib/content";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
@@ -73,19 +72,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PostPage({ params, searchParams }: Props) {
   const { handle, slug } = await params;
-  const [blog, post, viewer] = await Promise.all([
+  const [blog, post, access] = await Promise.all([
     getBlog(handle),
     getPost(handle, slug),
-    getCurrentUser(),
+    getBlogEditAccess(handle),
   ]);
   const query = searchParams ? await searchParams : {};
   if (!blog || !post) notFound();
-  const owner = viewer ? await isBlogOwner(handle, viewer.sub) : false;
-  const editMode = owner && queryValue(query.edit) === "1";
+  const canEdit = access.canEdit;
+  const editMode = canEdit && queryValue(query.edit) === "1";
   const currentPostPath = postPath(handle, post.slug);
   const homePath = blogPath(handle);
 
-  if (owner && !editMode && isEmptyOwnedPost(post)) {
+  if (canEdit && !editMode && isEmptyOwnedPost(post)) {
     redirect(`${currentPostPath}?edit=1`);
   }
 
@@ -118,7 +117,8 @@ export default async function PostPage({ params, searchParams }: Props) {
             adjacent.previous ? postPath(handle, adjacent.previous.slug) : undefined
           }
           nextPath={adjacent.next ? postPath(handle, adjacent.next.slug) : undefined}
-          owner={owner}
+          owner={canEdit}
+          handle={handle}
         />
         <PostEditLayer
           blog={blog}
@@ -135,7 +135,7 @@ export default async function PostPage({ params, searchParams }: Props) {
     <>
       <PostActionBar
         mode="read"
-        owner={owner}
+        owner={canEdit}
         blog={blog}
         post={post}
         adjacent={adjacent}
@@ -148,7 +148,8 @@ export default async function PostPage({ params, searchParams }: Props) {
           adjacent.previous ? postPath(handle, adjacent.previous.slug) : undefined
         }
         nextPath={adjacent.next ? postPath(handle, adjacent.next.slug) : undefined}
-        owner={owner}
+        owner={canEdit}
+        handle={handle}
       />
       <ReaderComponent blog={blog} post={post} />
     </>
