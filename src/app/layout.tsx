@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { ROOT_DOMAIN } from "@/lib/tenants";
 import "../styles/tokens.css";
 import "../styles/broadsheet.css";
 import "../styles/cards.css";
@@ -25,10 +26,35 @@ const fraunces = localFont({
   display: "swap",
 });
 
+const title = "Write";
+const description =
+  "A calm publishing home for articles, projects, and talks with broadsheet type and clean editing.";
+
+function rootUrl(): URL {
+  const root = ROOT_DOMAIN.replace(/^https?:\/\//, "");
+  const protocol = root.startsWith("localhost") || root.startsWith("127.")
+    ? "http"
+    : "https";
+  return new URL(`${protocol}://${root}`);
+}
+
 export const metadata: Metadata = {
-  title: "Write",
-  description:
-    "A blog that reads like a broadsheet. Apple-grade writing and publishing.",
+  metadataBase: rootUrl(),
+  applicationName: title,
+  title,
+  description,
+  openGraph: {
+    title,
+    description,
+    siteName: title,
+    type: "website",
+    url: "/",
+  },
+  twitter: {
+    card: "summary",
+    title,
+    description,
+  },
 };
 
 export default function RootLayout({

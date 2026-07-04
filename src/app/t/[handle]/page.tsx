@@ -51,6 +51,36 @@ function CreatePostForm({ handle }: { handle: string }) {
   );
 }
 
+function FirstRunPrompt({ handle }: { handle: string }) {
+  return (
+    <section
+      className="blog-first-run"
+      aria-labelledby="blog-first-run-title"
+    >
+      <span className="blog-first-run-kicker">Fresh page</span>
+      <h2 className="blog-first-run-title" id="blog-first-run-title">
+        Begin with the first piece.
+      </h2>
+      <p className="blog-first-run-copy">
+        A quiet publication is ready for one clear thought.
+      </p>
+      <form
+        className="blog-first-run-form applecms"
+        action={createPostAndRedirectAction}
+      >
+        <input type="hidden" name="handle" value={handle} />
+        <input type="hidden" name="type" value="article" />
+        <button
+          className="blog-first-run-button ac-btn ac-btn-filled"
+          type="submit"
+        >
+          Write your first post
+        </button>
+      </form>
+    </section>
+  );
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
   const blog = await getBlog(handle);
@@ -77,6 +107,7 @@ export default async function BlogHome({ params, searchParams }: Props) {
   if (!blog) notFound();
   const canEdit = access.canEdit;
   const posts = canEdit ? await getAllPosts(handle) : await getPosts(handle);
+  const showFirstRunPrompt = canEdit && posts.length === 0;
   const feedHref = blogFeedHref(handle);
   const encodedHandle = encodeURIComponent(handle);
   const showNameForm = canEdit && isDefaultBlogName(blog.name);
@@ -129,6 +160,8 @@ export default async function BlogHome({ params, searchParams }: Props) {
           ))}
         </div>
       )}
+
+      {showFirstRunPrompt && <FirstRunPrompt handle={handle} />}
 
       <footer className="blog-home-footer" aria-label="Feeds">
         <span className="blog-home-footer-label">Feeds</span>
