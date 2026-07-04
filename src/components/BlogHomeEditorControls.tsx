@@ -11,76 +11,142 @@ function signInUrl(handle: string): string {
   return `/api/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 }
 
-export function BlogNameForm({ handle }: { handle: string }) {
+function cleanDraftName(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+export function BlogNameForm({
+  handle,
+  initialName,
+}: {
+  handle: string;
+  initialName: string;
+}) {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [error, setError] = useState<ActionError>(null);
   const [saving, setSaving] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const disabled = saving || pending;
+  const [, startTransition] = useTransition();
+  const committedName = useRef(initialName);
+  const requestId = useRef(0);
+  const skipNextBlur = useRef(false);
+
+  useEffect(() => {
+    committedName.current = initialName;
+    setName(initialName);
+    setError(null);
+  }, [initialName]);
+
+  const commitName = useCallback(
+    (value: string) => {
+      const nextName = cleanDraftName(value);
+      setName(nextName);
+      setError(null);
+
+      if (nextName === committedName.current) return;
+
+      const currentRequestId = requestId.current + 1;
+      requestId.current = currentRequestId;
+      setSaving(true);
+      startTransition(() => {
+        void updateBlogNameAction(handle, nextName)
+          .then((result) => {
+            if (requestId.current !== currentRequestId) return;
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+
+            const savedName = result.name;
+            committedName.current = savedName;
+            setName((currentName) =>
+              cleanDraftName(currentName) === nextName ? savedName : currentName,
+            );
+            router.refresh();
+          })
+          .catch(() => {
+            if (requestId.current === currentRequestId) {
+              setError("Could not save");
+            }
+          })
+          .finally(() => {
+            if (requestId.current === currentRequestId) {
+              setSaving(false);
+            }
+          });
+      });
+    },
+    [handle, router],
+  );
 
   return (
-    <form
+    <div
       className="blog-name-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        setError(null);
-        setSaving(true);
-        startTransition(() => {
-          void updateBlogNameAction(handle, name)
-            .then((result) => {
-              if (!result.ok) {
-                setError(result.error);
-                return;
-              }
-              router.refresh();
-            })
-            .catch(() => setError("Could not save"))
-            .finally(() => setSaving(false));
-        });
-      }}
+      aria-busy={saving}
     >
       <input
         className="blog-name-input"
         value={name}
         placeholder="Name your blog"
         aria-label="Blog name"
-        disabled={disabled}
-        onChange={(event) => setName(event.currentTarget.value)}
+        onBlur={(event) => {
+          if (skipNextBlur.current) {
+            skipNextBlur.current = false;
+            return;
+          }
+          commitName(event.currentTarget.value);
+        }}
+        onChange={(event) => {
+          setName(event.currentTarget.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+            return;
+          }
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            skipNextBlur.current = true;
+            setName(committedName.current);
+            setError(null);
+            event.currentTarget.blur();
+          }
+        }}
       />
-      <button
-        className="blog-name-save ac-btn ac-btn-filled"
-        type="submit"
-        disabled={disabled}
-      >
-        {disabled ? "Saving" : "Save"}
-      </button>
       {error && (
         <span className="blog-home-control-error" role="alert">
           {error}
         </span>
       )}
-    </form>
+    </div>
   );
 }
 
 export function ClaimBlogButton({
   handle,
+  publicPath,
   signedIn,
   authConfigured,
   autoClaim = false,
 }: {
   handle: string;
+  publicPath: string;
   signedIn: boolean;
   authConfigured: boolean;
   autoClaim?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<ActionError>(null);
+  const [origin, setOrigin] = useState("");
+  const [copied, setCopied] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [pending, startTransition] = useTransition();
   const autoStarted = useRef(false);
+  const copiedTimer = useRef<number | null>(null);
   const disabled = claiming || pending;
+  const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
 
   const runClaim = useCallback(() => {
     setError(null);
@@ -113,22 +179,69 @@ export function ClaimBlogButton({
     });
   }, [authConfigured, handle, router, signedIn]);
 
+  const copyPublicLink = useCallback(
+    (input: HTMLInputElement) => {
+      input.select();
+      if (!navigator.clipboard) return;
+      void navigator.clipboard
+        .writeText(publicUrl)
+        .then(() => {
+          setCopied(true);
+          if (copiedTimer.current !== null) {
+            window.clearTimeout(copiedTimer.current);
+          }
+          copiedTimer.current = window.setTimeout(() => {
+            setCopied(false);
+            copiedTimer.current = null;
+          }, 1400);
+        })
+        .catch(() => {});
+    },
+    [publicUrl],
+  );
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
   useEffect(() => {
     if (!autoClaim || !signedIn || autoStarted.current) return;
     autoStarted.current = true;
     runClaim();
   }, [autoClaim, runClaim, signedIn]);
 
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current !== null) {
+        window.clearTimeout(copiedTimer.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="blog-claim-control">
+    <div className="blog-claim-row applecms">
+      <label className="blog-public-link">
+        <span className="blog-public-link-label">Public link</span>
+        <input
+          className="blog-public-link-field"
+          value={publicUrl}
+          readOnly
+          aria-label="Public link"
+          onClick={(event) => copyPublicLink(event.currentTarget)}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      </label>
       <button
         className="blog-claim-button ac-btn ac-btn-gray"
         type="button"
         disabled={disabled}
         onClick={runClaim}
       >
-        {disabled ? "Claiming" : "Claim this blog"}
+        {disabled ? "Claiming" : "Claim to keep it forever"}
       </button>
+      <span className="ac-sr-only" role="status">
+        {copied ? "Copied" : ""}
+      </span>
       {error && (
         <span className="blog-home-control-error" role="alert">
           {error}

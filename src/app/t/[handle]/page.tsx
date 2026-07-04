@@ -51,36 +51,6 @@ function CreatePostForm({ handle }: { handle: string }) {
   );
 }
 
-function FirstRunPrompt({ handle }: { handle: string }) {
-  return (
-    <section
-      className="blog-first-run"
-      aria-labelledby="blog-first-run-title"
-    >
-      <span className="blog-first-run-kicker">Fresh page</span>
-      <h2 className="blog-first-run-title" id="blog-first-run-title">
-        Begin with the first piece.
-      </h2>
-      <p className="blog-first-run-copy">
-        A quiet publication is ready for one clear thought.
-      </p>
-      <form
-        className="blog-first-run-form applecms"
-        action={createPostAndRedirectAction}
-      >
-        <input type="hidden" name="handle" value={handle} />
-        <input type="hidden" name="type" value="article" />
-        <button
-          className="blog-first-run-button ac-btn ac-btn-filled"
-          type="submit"
-        >
-          Write your first post
-        </button>
-      </form>
-    </section>
-  );
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
   const blog = await getBlog(handle);
@@ -107,11 +77,10 @@ export default async function BlogHome({ params, searchParams }: Props) {
   if (!blog) notFound();
   const canEdit = access.canEdit;
   const posts = canEdit ? await getAllPosts(handle) : await getPosts(handle);
-  const showFirstRunPrompt = canEdit && posts.length === 0;
   const feedHref = blogFeedHref(handle);
   const encodedHandle = encodeURIComponent(handle);
-  const showNameForm = canEdit && isDefaultBlogName(blog.name);
-  const showClaim = access.isUnclaimed && access.isTokenEditor;
+  const editableBlogName = isDefaultBlogName(blog.name) ? "" : blog.name;
+  const showClaim = canEdit && access.isUnclaimed && access.isTokenEditor;
   const feedLinks = [
     { href: feedHref, label: "RSS" },
     { href: `/t/${encodedHandle}/atom.xml`, label: "Atom" },
@@ -125,8 +94,8 @@ export default async function BlogHome({ params, searchParams }: Props) {
       <header className="blog-home-header">
         <div className="blog-home-heading">
           <div className="blog-home-copy">
-            {showNameForm ? (
-              <BlogNameForm handle={handle} />
+            {canEdit ? (
+              <BlogNameForm handle={handle} initialName={editableBlogName} />
             ) : (
               <h1 className="blog-home-name">{blog.name}</h1>
             )}
@@ -136,15 +105,16 @@ export default async function BlogHome({ params, searchParams }: Props) {
               )}
             </div>
           </div>
-          {showClaim && (
-            <ClaimBlogButton
-              handle={handle}
-              signedIn={Boolean(viewer)}
-              authConfigured={isAuthConfigured}
-              autoClaim={queryValue(query.claim) === "1"}
-            />
-          )}
         </div>
+        {showClaim && (
+          <ClaimBlogButton
+            handle={handle}
+            publicPath={`/t/${encodedHandle}`}
+            signedIn={Boolean(viewer)}
+            authConfigured={isAuthConfigured}
+            autoClaim={queryValue(query.claim) === "1"}
+          />
+        )}
       </header>
 
       {posts.length > 0 && (
@@ -161,21 +131,21 @@ export default async function BlogHome({ params, searchParams }: Props) {
         </div>
       )}
 
-      {showFirstRunPrompt && <FirstRunPrompt handle={handle} />}
-
-      <footer className="blog-home-footer" aria-label="Feeds">
-        <span className="blog-home-footer-label">Feeds</span>
-        {feedLinks.map((feed) => (
-          <Link
-            key={feed.href}
-            className="blog-home-footer-link"
-            href={feed.href}
-            aria-label={`${blog.name} ${feed.label} feed`}
-          >
-            {feed.label}
-          </Link>
-        ))}
-      </footer>
+      {posts.length > 0 && (
+        <footer className="blog-home-footer" aria-label="Feeds">
+          <span className="blog-home-footer-label">Feeds</span>
+          {feedLinks.map((feed) => (
+            <Link
+              key={feed.href}
+              className="blog-home-footer-link"
+              href={feed.href}
+              aria-label={`${blog.name} ${feed.label} feed`}
+            >
+              {feed.label}
+            </Link>
+          ))}
+        </footer>
+      )}
     </main>
   );
 }
