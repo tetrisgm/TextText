@@ -2,10 +2,11 @@
 // zero-setup demo. Run once after pushing the schema: `npm run db:seed`.
 // Idempotent: re-running does not duplicate rows.
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { blogs, posts, users } from "./schema";
 import { DEMO_BLOG, DEMO_POSTS } from "../demo";
+import { ensureWorkspaceFolders, folderPathForPostType } from "../store";
 
 async function main() {
   if (!db) throw new Error("db:seed requires DATABASE_URL");
@@ -54,11 +55,21 @@ async function main() {
       .limit(1)
   )[0];
 
+  // The three system folders (Blog, Notes, Bookmarks); each post lands in the
+  // folder matching its type.
+  const workspaceFolders = await ensureWorkspaceFolders(blog.id);
+  const folderIdByPath = new Map(
+    workspaceFolders.map((folder) => [folder.path, folder.id]),
+  );
+
   for (const p of DEMO_POSTS) {
+    const folderId = folderIdByPath.get(folderPathForPostType(p.type));
+    if (!folderId) throw new Error(`no folder for a "${p.type}" post`);
     await db
       .insert(posts)
       .values({
         blogId: blog.id,
+        folderId,
         type: p.type,
         slug: p.slug,
         title: p.title,
@@ -80,10 +91,17 @@ async function main() {
         publishedAt:
           p.status === "published" && p.date ? new Date(p.date) : null,
       })
-      .onConflictDoNothing({ target: [posts.blogId, posts.slug] });
+      // The slug index is partial (deleted_at is null), so the conflict
+      // target must carry the same predicate to match it.
+      .onConflictDoNothing({
+        target: [posts.blogId, posts.slug],
+        where: sql`${posts.deletedAt} is null`,
+      });
   }
 
-  console.log(`Seeded blog "${DEMO_BLOG.handle}" with ${DEMO_POSTS.length} posts.`);
+  console.log(
+    `Seeded blog "${DEMO_BLOG.handle}" with ${workspaceFolders.length} folders and ${DEMO_POSTS.length} posts.`,
+  );
 }
 
 main()

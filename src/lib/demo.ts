@@ -219,4 +219,55 @@ This is where editorial discipline helps. Write one sentence. Make the action ob
 
 That small promise is the craft of an empty state: begin here, leave when ready, and come back to something that still makes sense.`,
   },
+  // Notes and bookmarks live in their own folders and are always unlisted:
+  // status stays "draft" forever, and they never appear in feeds or manifests.
+  {
+    type: "note",
+    slug: "ideas-for-the-next-issue",
+    title: "Ideas for the next issue",
+    date: "2026-07-04",
+    status: "draft",
+    body: `Working list, in no particular order.
+
+- The economics of quiet interfaces
+- Interview a two-person studio about shipping a weekly changelog
+- Revisit the broadsheet piece once reader mail arrives
+- Something short about margins as a trust signal`,
+  },
+  {
+    type: "note",
+    slug: "reading-list-notes",
+    title: "Reading list notes",
+    date: "2026-06-27",
+    status: "draft",
+    body: `Highlights from this month's reading. "The Shape of Design" holds up on structure as generosity; the chapter on improvisation pairs well with the durable-defaults draft. Pull one quote, not three.`,
+  },
+  {
+    type: "bookmark",
+    slug: "usability-testing-101",
+    title: "Usability Testing 101",
+    links: [
+      {
+        label: "nngroup.com",
+        href: "https://www.nngroup.com/articles/usability-testing-101/",
+      },
+    ],
+    date: "2026-07-01",
+    status: "draft",
+    body: "The cleanest baseline reference to hand a team before their first study.",
+  },
+  {
+    type: "bookmark",
+    slug: "summary-of-key-rules",
+    title: "Summary of key rules",
+    links: [
+      {
+        label: "practicaltypography.com",
+        href: "https://practicaltypography.com/summary-of-key-rules.html",
+      },
+    ],
+    date: "2026-06-24",
+    status: "draft",
+    body: "Butterick's checklist earns a place next to every reader stylesheet decision.",
+  },
 ];

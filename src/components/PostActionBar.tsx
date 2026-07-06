@@ -69,6 +69,12 @@ const POST_TYPE_OPTIONS: Array<{
   { type: "talk", label: "Video post" },
 ];
 
+// Notes and bookmarks never change type and never publish; the action bar
+// must not offer either control (the server refuses both anyway).
+function isUnlistedPostType(type: PostType): boolean {
+  return type === "note" || type === "bookmark";
+}
+
 function subscribeClientSnapshot() {
   return () => {};
 }
@@ -318,6 +324,7 @@ export function PostActionBar(props: Props) {
   }, []);
 
   const activeDraft = props.mode === "edit" ? props.draft : readDraft;
+  const unlistedItem = isUnlistedPostType(activeDraft.type);
   const activeSlug = slugify(activeDraft.slug, props.post.slug);
   const publicPath = postPathFor(props.blog.handle, activeSlug);
   const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
@@ -421,6 +428,11 @@ export function PostActionBar(props: Props) {
   const changeType = useCallback(
     (type: PostType) => {
       if (props.mode !== "edit" || type === activeDraft.type) return;
+      // Unlisted kinds are type-locked; the menu never offers this, but keep
+      // the guard so no code path can send a doomed request.
+      if (isUnlistedPostType(activeDraft.type) || isUnlistedPostType(type)) {
+        return;
+      }
       setShareOpen(false);
       setSettingsOpen(false);
       props.onUpdateDraft({ type });
@@ -551,17 +563,30 @@ export function PostActionBar(props: Props) {
           </section>
           <section className="post-share-section">
             <div className="post-share-section-label">Who can see this</div>
-            <button
-              type="button"
-              className="post-share-visibility-button"
-              onClick={changeVisibility}
-            >
-              <span className="post-share-visibility-copy">
-                <strong>{visibility.label}</strong>
-                <span>{visibility.detail}</span>
-              </span>
-              <span className="post-share-action-word">Change</span>
-            </button>
+            {unlistedItem ? (
+              <div className="post-share-visibility-static">
+                <span className="post-share-visibility-copy">
+                  <strong>Only people with the link (unlisted)</strong>
+                  <span>
+                    {activeDraft.type === "note"
+                      ? "Notes stay unlisted."
+                      : "Bookmarks stay unlisted."}
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="post-share-visibility-button"
+                onClick={changeVisibility}
+              >
+                <span className="post-share-visibility-copy">
+                  <strong>{visibility.label}</strong>
+                  <span>{visibility.detail}</span>
+                </span>
+                <span className="post-share-action-word">Change</span>
+              </button>
+            )}
             {readStatus}
           </section>
           <section className="post-share-section post-share-future">
@@ -625,46 +650,48 @@ export function PostActionBar(props: Props) {
                         role="menu"
                         aria-label="Post actions"
                       >
-                        <div
-                          className="post-edit-menu-section"
-                          role="group"
-                          aria-label="Turn into"
-                        >
+                        {!unlistedItem && (
                           <div
-                            className="post-edit-menu-section-title"
-                            role="presentation"
+                            className="post-edit-menu-section"
+                            role="group"
+                            aria-label="Turn into"
                           >
-                            Turn into
+                            <div
+                              className="post-edit-menu-section-title"
+                              role="presentation"
+                            >
+                              Turn into
+                            </div>
+                            {POST_TYPE_OPTIONS.map((option) => {
+                              const active = activeDraft.type === option.type;
+                              return (
+                                <button
+                                  key={option.type}
+                                  className={`post-edit-menu-item post-turn-into-item${
+                                    active ? " is-active" : ""
+                                  }`}
+                                  type="button"
+                                  role="menuitemradio"
+                                  aria-checked={active}
+                                  onClick={() => {
+                                    if (active) {
+                                      setSettingsOpen(false);
+                                      return;
+                                    }
+                                    changeType(option.type);
+                                  }}
+                                >
+                                  <span>{option.label}</span>
+                                  {active && (
+                                    <span className="post-turn-into-check">
+                                      <MenuCheckIcon />
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
                           </div>
-                          {POST_TYPE_OPTIONS.map((option) => {
-                            const active = activeDraft.type === option.type;
-                            return (
-                              <button
-                                key={option.type}
-                                className={`post-edit-menu-item post-turn-into-item${
-                                  active ? " is-active" : ""
-                                }`}
-                                type="button"
-                                role="menuitemradio"
-                                aria-checked={active}
-                                onClick={() => {
-                                  if (active) {
-                                    setSettingsOpen(false);
-                                    return;
-                                  }
-                                  changeType(option.type);
-                                }}
-                              >
-                                <span>{option.label}</span>
-                                {active && (
-                                  <span className="post-turn-into-check">
-                                    <MenuCheckIcon />
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        )}
                         {showAddHeaderItem && (
                           <button
                             className="post-edit-menu-item"

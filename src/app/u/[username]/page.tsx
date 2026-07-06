@@ -10,7 +10,7 @@ interface Props {
   params: Promise<{ username: string }>;
   searchParams?: Promise<{
     card?: string | string[];
-    claim?: string | string[];
+    folder?: string | string[];
     layout?: string | string[];
   }>;
 }

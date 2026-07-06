@@ -15,7 +15,11 @@ export default async function Image({ params }: Props) {
     getBlog(handle),
     getPost(handle, slug),
   ]);
-  if (!blog || !post) return new Response("Not found", { status: 404 });
+  // Notes and bookmarks are unlisted forever: their pages 404 for anyone who
+  // cannot edit, so their titles must not leak through a rendered OG image.
+  if (!blog || !post || post.type === "note" || post.type === "bookmark") {
+    return new Response("Not found", { status: 404 });
+  }
 
   return postOgImage(blog, post);
 }

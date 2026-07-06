@@ -9,6 +9,7 @@ import type {
   Post,
   PostType,
 } from "@/lib/content";
+import { isSafeLinkHref } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { CurrentUser } from "@/lib/session";
@@ -23,6 +24,7 @@ import {
   getAllPosts,
   getBlog,
   getOwnedBlog,
+  getOwnerPlan,
   getPostById,
   savePost,
   setPostPinned,
@@ -39,15 +41,18 @@ import {
   setAnonymousEditCookie,
 } from "@/lib/blog-edit-auth";
 import {
-  ANONYMOUS_MAX_POSTS,
   ANONYMOUS_POST_LIMIT_COPY,
+  cleanPlanTier,
+  planLimits,
 } from "@/lib/product-limits";
+import type { PlanTier } from "@/lib/product-limits";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 import {
   blogHomePath,
   blogPostEditPath,
   tenantPostPath,
 } from "@/lib/public-paths";
+import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
@@ -79,6 +84,13 @@ async function resolveOwnedWorkspace(user: CurrentUser): Promise<Blog> {
     try {
       const claimed = await claimBlogForUser(guest.handle, user);
       await deleteAnonymousEditCookie(guest.id);
+      await recordAction({
+        actorType: "human",
+        actionName: "claim_workspace",
+        targetType: "workspace",
+        targetId: guest.id,
+        inputSummary: claimed.handle,
+      });
       await revalidateBlog(claimed.handle);
       return claimed;
     } catch {
@@ -116,14 +128,36 @@ async function createAnonymousBlogHandle(
   return blog.handle;
 }
 
+// The Blog folder's public vocabulary; the blog-home Create picker offers
+// exactly these. Notes and bookmarks are created through
+// createFolderItemAction and never through the blog picker.
 const POST_TYPES: PostType[] = ["article", "project", "talk"];
+const ALL_POST_TYPES: PostType[] = [...POST_TYPES, "note", "bookmark"];
+
 function cleanPostType(value: unknown): PostType {
   return POST_TYPES.includes(value as PostType) ? (value as PostType) : "article";
 }
 
-function cleanEditablePostType(value: unknown): PostType {
-  if (POST_TYPES.includes(value as PostType)) return value as PostType;
-  throw new Error("Type must be Article, Media post, or Video post");
+// Notes and bookmarks live in their own folders and are always unlisted.
+function isUnlistedPostType(type: PostType): boolean {
+  return type === "note" || type === "bookmark";
+}
+
+function cleanEditablePostType(value: unknown, existing: PostType): PostType {
+  if (!ALL_POST_TYPES.includes(value as PostType)) {
+    throw new Error("Type must be Article, Media post, or Video post");
+  }
+  const next = value as PostType;
+  // An item never crosses between the blog vocabulary and the unlisted kinds
+  // (note <-> bookmark moves are folder moves, not type edits, so they are
+  // refused here too). Blog kinds keep their switcher freedom.
+  if (
+    next !== existing &&
+    (isUnlistedPostType(next) || isUnlistedPostType(existing))
+  ) {
+    throw new Error("This item cannot change type");
+  }
+  return next;
 }
 
 function cleanPostId(value: unknown): string {
@@ -243,6 +277,9 @@ function cleanLinks(value: unknown): LinkRef[] {
     const label = cleanOptionalLine(values.label, `Link ${index + 1} label`);
     const href = cleanOptionalLine(values.href, `Link ${index + 1} URL`);
     if (!href) continue;
+    if (!isSafeLinkHref(href)) {
+      throw new Error(`Link ${index + 1} must be a web, mail, or in-site URL`);
+    }
     links.push({ label: label || href, href });
   }
   return links;
@@ -262,11 +299,12 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
     throw new Error("Invalid post");
   }
   const values = input as Record<string, unknown>;
+  const type = hasInputKey(values, "type")
+    ? cleanEditablePostType(values.type, existing.type)
+    : existing.type;
   return {
     id: cleanPostId(values.id),
-    type: hasInputKey(values, "type")
-      ? cleanEditablePostType(values.type)
-      : existing.type,
+    type,
     title: cleanLine(values.title, "Title"),
     excerpt: cleanLine(values.excerpt ?? "", "Excerpt") || undefined,
     cover: hasInputKey(values, "cover")
@@ -279,7 +317,12 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
       ? cleanCoverHeight(values.coverHeight)
       : existing.coverHeight,
     body: cleanBody(values.body),
-    status: cleanStatus(values.status),
+    // A note or bookmark is unlisted forever: whatever the client sends, its
+    // status stays draft (cross-group type changes are refused above, so the
+    // resolved type covers the existing type too).
+    status: isUnlistedPostType(type)
+      ? ("draft" as const)
+      : cleanStatus(values.status),
     slug: cleanSlug(values.slug, fallbackSlug),
     accent: cleanAccent(values.accent),
     gallery: hasInputKey(values, "gallery")
@@ -328,14 +371,41 @@ async function editableHandleFor(handleInput?: unknown) {
   return { handle, access };
 }
 
+// One audit row per mutation. The editor UI is a human actor; the blog owner
+// is the actor id when the session holds one, and guests audit as null.
+async function auditEdit(
+  access: Awaited<ReturnType<typeof getBlogEditAccess>>,
+  actionName: string,
+  targetType: "workspace" | "item",
+  targetId: string | null | undefined,
+  summary?: string,
+) {
+  await recordAction({
+    actorUserId: access.isOwner ? access.ownerId : null,
+    actorType: "human",
+    actionName,
+    targetType,
+    targetId,
+    inputSummary: summary,
+  });
+}
+
 async function enforceAnonymousPostLimit(
   handle: string,
   access: Awaited<ReturnType<typeof getBlogEditAccess>>,
 ) {
-  if (!access.isUnclaimed) return;
+  // Every tier has a server-enforced item cap: guests are held to the
+  // try-before-signup limit, owners to their plan's.
+  const tier: PlanTier = access.isUnclaimed
+    ? "anonymous"
+    : cleanPlanTier(await getOwnerPlan(handle));
   const count = await countAllPosts(handle);
-  if (count >= ANONYMOUS_MAX_POSTS) {
-    throw new Error(ANONYMOUS_POST_LIMIT_COPY);
+  if (count >= planLimits(tier).maxPosts) {
+    throw new Error(
+      tier === "anonymous"
+        ? ANONYMOUS_POST_LIMIT_COPY
+        : "This workspace reached its item limit.",
+    );
   }
 }
 
@@ -344,11 +414,16 @@ function actionErrorMessage(error: unknown, fallback: string): string {
 }
 
 function firstWritableArticle(posts: Post[]): Post | undefined {
+  // Notes and bookmarks never volunteer as the starter draft: they belong to
+  // their own folders and would open in the wrong editor.
+  const blogPosts = posts.filter((post) => !isUnlistedPostType(post.type));
   return (
-    posts.find((post) => post.type === "article" && post.status === "draft") ??
-    posts.find((post) => post.status === "draft") ??
-    posts.find((post) => post.type === "article") ??
-    posts[0]
+    blogPosts.find(
+      (post) => post.type === "article" && post.status === "draft",
+    ) ??
+    blogPosts.find((post) => post.status === "draft") ??
+    blogPosts.find((post) => post.type === "article") ??
+    blogPosts[0]
   );
 }
 
@@ -421,6 +496,7 @@ export async function savePostAction(post: Post): Promise<Post> {
       ...patch,
       pinned: existing.pinned,
     });
+    await auditEdit(access, "save_post", "item", saved.id, saved.title);
     await revalidateBlog(handle, [existing.slug, saved.slug]);
     return saved;
   }
@@ -436,6 +512,7 @@ export async function savePostAction(post: Post): Promise<Post> {
     ...created,
     ...patch,
   });
+  await auditEdit(access, "create_post", "item", saved.id, saved.title);
   await revalidateBlog(handle, [saved.slug]);
   return saved;
 }
@@ -446,9 +523,78 @@ export async function createDraftAction(
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
   await enforceAnonymousPostLimit(handle, access);
-  const post = await createDraft(handle, type);
+  // Blog kinds only: notes and bookmarks go through createFolderItemAction.
+  const post = await createDraft(handle, cleanPostType(type));
+  await auditEdit(access, "create_post", "item", post.id, post.type);
   await revalidateBlog(handle, [post.slug]);
   return post;
+}
+
+function cleanItemFolder(value: unknown): "notes" | "bookmarks" {
+  if (value === "notes" || value === "bookmarks") return value;
+  throw new Error("Folder not found");
+}
+
+// A bookmark's link: http(s) only, at most 2048 characters, absolute. Bare
+// host input ("example.com") gets https:// prepended, same forgiveness as the
+// reader's normalizedUrl.
+function cleanBookmarkUrl(value: unknown): URL {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("A bookmark needs a link");
+  }
+  const raw = value.trim();
+  if (raw.length > 2048) throw new Error("That link is too long");
+  let url: URL | null = null;
+  try {
+    url = new URL(raw);
+  } catch {
+    try {
+      url = new URL(`https://${raw}`);
+    } catch {
+      url = null;
+    }
+  }
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    throw new Error("A bookmark link must start with http or https");
+  }
+  if (url.toString().length > 2048) throw new Error("That link is too long");
+  return url;
+}
+
+// Create an item in the Notes or Bookmarks folder. Both are born (and stay)
+// unlisted drafts: a note is an empty article-shaped draft, a bookmark keeps
+// its URL in links[0] and uses the body for commentary.
+export async function createFolderItemAction(
+  handleInput: unknown,
+  folderInput: "notes" | "bookmarks",
+  input?: { url?: string; title?: string },
+): Promise<Post> {
+  const folder = cleanItemFolder(folderInput);
+  const { handle, access } = await editableHandleFor(handleInput);
+  await enforceAnonymousPostLimit(handle, access);
+
+  if (folder === "notes") {
+    const created = await createDraft(handle, "note");
+    const title = cleanOptionalLine(input?.title, "Title");
+    const post = title ? await savePost(handle, { ...created, title }) : created;
+    await auditEdit(access, "create_note", "item", post.id, post.title);
+    await revalidateBlog(handle, [post.slug]);
+    return post;
+  }
+
+  const url = cleanBookmarkUrl(input?.url);
+  const host = url.hostname.replace(/^www\./, "");
+  const title = cleanOptionalLine(input?.title, "Title") || host;
+  const created = await createDraft(handle, "bookmark");
+  const saved = await savePost(handle, {
+    ...created,
+    title,
+    links: [{ label: host || title, href: url.toString() }],
+    body: "",
+  });
+  await auditEdit(access, "create_bookmark", "item", saved.id, url.toString());
+  await revalidateBlog(handle, [saved.slug]);
+  return saved;
 }
 
 export async function updateBlogAction(
@@ -459,6 +605,13 @@ export async function updateBlogAction(
   const updated = await updateBlogByHandle(handle, patch, {
     allowHandleChange: access.isOwner,
   });
+  await auditEdit(
+    access,
+    "update_blog",
+    "workspace",
+    access.blogId,
+    Object.keys(patch as Record<string, unknown>).join(", "),
+  );
   await revalidateBlog(handle);
   if (updated.handle !== handle) await revalidateBlog(updated.handle);
   return updated;
@@ -473,6 +626,7 @@ export async function createPostAndRedirectAction(formData: FormData) {
   );
   await enforceAnonymousPostLimit(handle, access);
   const post = await createDraft(handle, cleanPostType(formData.get("type")));
+  await auditEdit(access, "create_post", "item", post.id, post.type);
   await revalidateBlog(handle, [post.slug]);
   const blog = await getBlog(handle);
   const path = blog
@@ -487,6 +641,7 @@ export async function createArticleDraftPathAction(
   const { handle, access } = await editableHandleFor(handleInput);
   await enforceAnonymousPostLimit(handle, access);
   const post = await createDraft(handle, "article");
+  await auditEdit(access, "create_post", "item", post.id, post.type);
   await revalidateBlog(handle, [post.slug]);
   const blog = await getBlog(handle);
   return blog
@@ -498,7 +653,7 @@ export async function saveEditablePostAction(
   handleOrInput: unknown,
   maybeInput?: unknown,
 ): Promise<Post> {
-  const { handle } = await editableHandleFor(
+  const { handle, access } = await editableHandleFor(
     maybeInput === undefined ? undefined : handleOrInput,
   );
   const input = maybeInput === undefined ? handleOrInput : maybeInput;
@@ -516,6 +671,7 @@ export async function saveEditablePostAction(
     ...patch,
     pinned: existing.pinned,
   });
+  await auditEdit(access, "save_post", "item", saved.id, saved.title);
   await revalidateBlog(handle, [existing.slug, saved.slug]);
   return saved;
 }
@@ -524,7 +680,7 @@ export async function toggleEditablePostPinnedAction(
   handleOrId: unknown,
   maybeId?: unknown,
 ): Promise<Post> {
-  const { handle } = await editableHandleFor(
+  const { handle, access } = await editableHandleFor(
     maybeId === undefined ? undefined : handleOrId,
   );
   const id = maybeId === undefined ? handleOrId : maybeId;
@@ -532,6 +688,13 @@ export async function toggleEditablePostPinnedAction(
   const existing = await getPostById(handle, postId);
   if (!existing) throw new Error("Post not found");
   const saved = await setPostPinned(handle, postId, !existing.pinned);
+  await auditEdit(
+    access,
+    saved.pinned ? "pin_post" : "unpin_post",
+    "item",
+    saved.id,
+    saved.title,
+  );
   await revalidateBlog(handle, [existing.slug]);
   return saved;
 }
@@ -551,6 +714,7 @@ export async function deleteEditablePostAction(
   // an unclaimed blog's starter draft is NOT deletable by arbitrary visitors.
   if (!access.canEdit) throw new Error("You cannot edit this blog");
   await deletePost(handle, postId);
+  await auditEdit(access, "delete_post", "item", postId, existing.title);
   await revalidateBlog(handle, [existing.slug]);
   return { handle };
 }
@@ -571,6 +735,13 @@ export async function trashEditableBlogAction(
     }
     const existingPosts = await getAllPosts(handle);
     await trashBlogPosts(handle);
+    await auditEdit(
+      access,
+      "trash_workspace_posts",
+      "workspace",
+      access.blogId,
+      `${existingPosts.length} posts`,
+    );
     await revalidateBlog(handle, existingPosts.map((post) => post.slug));
     return { ok: true, path: blogPath(handle), openSidebar: true };
   } catch (error) {
@@ -592,6 +763,7 @@ export async function updateBlogNameAction(
       { name: typeof nameInput === "string" ? nameInput : "" },
       { allowHandleChange: access.isOwner },
     );
+    await auditEdit(access, "rename_blog", "workspace", access.blogId, updated.name);
     await revalidateBlog(handle);
     return { ok: true, name: updated.name };
   } catch (error) {
@@ -626,6 +798,13 @@ export async function claimBlog(
   try {
     const blog = await claimBlogForUser(handle, user);
     if (access.blogId) await deleteAnonymousEditCookie(access.blogId);
+    await recordAction({
+      actorType: "human",
+      actionName: "claim_workspace",
+      targetType: "workspace",
+      targetId: access.blogId,
+      inputSummary: blog.handle,
+    });
     await revalidateBlog(handle);
     return { ok: true, handle: blog.handle };
   } catch (error) {

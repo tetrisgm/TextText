@@ -1,6 +1,6 @@
 import { markdownFileHash } from "@/lib/content-hash";
 import { renderFolderManifest } from "@/lib/markdown-files";
-import { getAllPosts, getFolders } from "@/lib/store";
+import { getFolderPosts, getFolders } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../../auth";
 import {
   ifNoneMatchSatisfied,
@@ -26,12 +26,11 @@ export async function GET(request: Request, { params }: Props) {
   if (!folder) return syncError(404, "Folder not found");
 
   // Drafts included: the manifest is the owner's machine view of the whole
-  // folder, unlike the public folder.json. A post without a folderId (not yet
-  // backfilled) counts as living in the default "blog" folder.
-  const posts = (await getAllPosts(blog.handle)).filter(
-    (post) =>
-      post.id &&
-      (post.folderId ? post.folderId === folder.id : folder.path === "blog"),
+  // folder, unlike the public folder.json. getFolderPosts scopes to THIS
+  // folder; a post without a folderId (not yet backfilled) counts as living
+  // in the default "blog" folder.
+  const posts = (await getFolderPosts(blog.handle, folder.path)).filter(
+    (post) => Boolean(post.id),
   );
   const manifest = renderFolderManifest(
     blog,

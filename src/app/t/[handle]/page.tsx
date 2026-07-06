@@ -7,6 +7,7 @@ import {
   BlogHomeShell,
 } from "@/components/BlogHomeEditorControls";
 import { BlogHomeWorkspaceShell } from "@/components/PostWorkspaceShell";
+import { FolderPage } from "@/components/FolderPage";
 import { PostCard } from "@/components/PostCard";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
@@ -21,9 +22,10 @@ import {
 } from "@/lib/feed-links";
 import {
   DEFAULT_ANONYMOUS_BLOG_NAME,
-  getAllPosts,
   getBlog,
-  getPosts,
+  getFolderCounts,
+  getFolderPosts,
+  getFolders,
 } from "@/lib/store";
 import {
   formatArticleDate,
@@ -90,6 +92,8 @@ const TYPE_LABELS: Record<PostType, string> = {
   article: "Article",
   project: "Media",
   talk: "Video",
+  note: "Note",
+  bookmark: "Bookmark",
 };
 
 function postTitle(post: Post): string {
@@ -350,7 +354,26 @@ export async function BlogHomeForHandle({
           homeLayout: previewHomeLayout ?? blog.homeLayout,
         }
       : blog;
-  const posts = canEdit ? await getAllPosts(handle) : await getPosts(handle);
+  // The blog home lists ONLY the Blog folder: notes and bookmarks live in
+  // their own folder views and never mix into the cards, even for the owner.
+  const [posts, folders, counts] = await Promise.all([
+    getFolderPosts(handle, "blog", { publishedOnly: !canEdit }),
+    canEdit ? getFolders(handle) : Promise.resolve([]),
+    canEdit ? getFolderCounts(handle) : Promise.resolve({}),
+  ]);
+  // A non-blog ?folder= opens that folder's workspace view (owner only); the
+  // server fetches its items so the folder page always renders real content.
+  const requestedFolder = queryValue(query.folder);
+  const activeFolder =
+    canEdit && requestedFolder && requestedFolder !== "blog"
+      ? folders.find(
+          (folder) =>
+            folder.path === requestedFolder && folder.mode !== "blog",
+        ) ?? null
+      : null;
+  const folderItems = activeFolder
+    ? await getFolderPosts(handle, activeFolder.path)
+    : [];
   // The single layout leads with the newest published post; an owner's
   // unpublished drafts never displace what visitors see.
   const singlePost =
@@ -437,12 +460,23 @@ export async function BlogHomeForHandle({
   return canEdit ? (
     <BlogHomeWorkspaceShell
       blog={blog}
-      initialFolder={queryValue(query.folder)}
+      activeFolder={activeFolder ? activeFolder.path : "blog"}
+      counts={counts}
+      folders={folders}
+      homePath={blogHomePath(blog)}
       initialSidebarCollapsed={initialSidebarCollapsed}
-      posts={posts}
       showGuestSignIn={isGuestWorkspace && isAuthConfigured}
     >
-      {home}
+      {activeFolder ? (
+        <FolderPage
+          blog={blog}
+          folder={activeFolder}
+          handle={handle}
+          items={folderItems}
+        />
+      ) : (
+        home
+      )}
     </BlogHomeWorkspaceShell>
   ) : (
     home

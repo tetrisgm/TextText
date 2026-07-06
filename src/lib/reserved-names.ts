@@ -15,6 +15,7 @@ const BASE_RESERVED_NAMES = [
   "blog",
   "bookmarks",
   "cdn",
+  "connect",
   "dashboard",
   "demo",
   "dev",

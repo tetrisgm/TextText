@@ -10,7 +10,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { PostActionBar } from "@/components/PostActionBar";
-import type { Blog, Post } from "@/lib/content";
+import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
@@ -19,57 +19,41 @@ import {
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
 
-export type SidebarFolderId = "blog" | "bookmarks" | "notes";
-
-export type SidebarFolder = {
-  id: SidebarFolderId;
-  name: string;
-  description: string;
-};
+/** A folder's workspace-unique path segment, e.g. "blog" or "notes". */
+export type SidebarFolderId = string;
 
 type AdjacentPosts = AdjacentPublishedPosts;
 
 let sidebarCollapsedMemory: boolean | null = null;
 const sidebarCollapsedListeners = new Set<() => void>();
 
-const SIDEBAR_FOLDERS: SidebarFolder[] = [
-  {
-    id: "blog",
-    name: "Blog",
-    description: "Articles, media posts, and videos.",
-  },
+// One quiet line per folder mode; folder rows show it under the name.
+const MODE_DESCRIPTIONS: Record<FolderMode, string> = {
+  blog: "Articles, media posts, and videos.",
+  notes: "Private Markdown notes.",
+  bookmarks: "Links and sources for later.",
+};
+
+// Rendered only if a caller cannot provide real folders, so the sidebar never
+// collapses to nothing; real pages thread getFolders results through.
+const FALLBACK_FOLDERS: Folder[] = [
+  { id: "blog", name: "Blog", path: "blog", mode: "blog", position: 0 },
+  { id: "notes", name: "Notes", path: "notes", mode: "notes", position: 1 },
   {
     id: "bookmarks",
     name: "Bookmarks",
-    description: "Links and sources for later.",
-  },
-  {
-    id: "notes",
-    name: "Notes",
-    description: "Private Markdown notes.",
+    path: "bookmarks",
+    mode: "bookmarks",
+    position: 2,
   },
 ];
 
-const SIDEBAR_EXPLAINERS: Record<
-  SidebarFolderId,
-  { title: string; body: string; meta: string }
-> = {
-  blog: {
-    title: "How the Blog folder works",
-    body: "Published articles, media posts, and videos are Markdown files in this folder.",
-    meta: "Starter item",
-  },
-  bookmarks: {
-    title: "How Bookmarks work",
-    body: "Save links with notes, quotes, and context so references stay near your writing.",
-    meta: "Starter item",
-  },
-  notes: {
-    title: "How Notes work",
-    body: "Keep rough Markdown notes private, then turn the useful ones into posts later.",
-    meta: "Starter item",
-  },
-};
+/** Client-safe mirror of store.ts folderPathForPostType. */
+export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
+  if (type === "note") return "notes";
+  if (type === "bookmark") return "bookmarks";
+  return "blog";
+}
 
 function readDocumentCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -174,10 +158,6 @@ export function useWorkspaceSidebarCollapsed(initialCollapsed = true) {
   return { sidebarCollapsed, setSidebarCollapsed: setCollapsed, toggleSidebarCollapsed };
 }
 
-export function sidebarFolderFor(id: SidebarFolderId): SidebarFolder {
-  return SIDEBAR_FOLDERS.find((folder) => folder.id === id) ?? SIDEBAR_FOLDERS[0]!;
-}
-
 function FolderIcon() {
   return (
     <svg viewBox="0 0 18 16" fill="none" aria-hidden="true">
@@ -224,9 +204,9 @@ function NoteIcon() {
   );
 }
 
-function SidebarFolderIcon({ folder }: { folder: SidebarFolderId }) {
-  if (folder === "bookmarks") return <BookmarkIcon />;
-  if (folder === "notes") return <NoteIcon />;
+function SidebarFolderIcon({ mode }: { mode: FolderMode }) {
+  if (mode === "bookmarks") return <BookmarkIcon />;
+  if (mode === "notes") return <NoteIcon />;
   return <FolderIcon />;
 }
 
@@ -330,21 +310,24 @@ export function PostFolderSidebar({
   blog,
   activeFolder,
   collapsed,
+  counts,
+  folders,
   homePath,
   onSelectFolder,
   onToggleCollapsed,
-  posts,
   showGuestSignIn = false,
 }: {
   blog: Blog;
   activeFolder: SidebarFolderId;
   collapsed: boolean;
+  counts: Record<string, number>;
+  folders: Folder[];
   homePath?: string;
   onSelectFolder: (folder: SidebarFolderId) => void;
   onToggleCollapsed: () => void;
-  posts: Post[];
   showGuestSignIn?: boolean;
 }) {
+  const navFolders = folders.length > 0 ? folders : FALLBACK_FOLDERS;
   const homeContent = (
     <>
       <span className="post-editor-home-icon" aria-hidden="true">
@@ -388,9 +371,10 @@ export function PostFolderSidebar({
         aria-label="Folders"
         onKeyDown={onSidebarNavKeyDown}
       >
-        {SIDEBAR_FOLDERS.map((folder) => {
-          const selected = folder.id === activeFolder;
-          const count = folder.id === "blog" ? posts.length : null;
+        {navFolders.map((folder) => {
+          const selected = folder.path === activeFolder;
+          // Real counts only: an empty folder shows nothing, never a fake 1.
+          const count = counts[folder.path] ?? 0;
           return (
             <button
               key={folder.id}
@@ -399,17 +383,19 @@ export function PostFolderSidebar({
               aria-current={selected ? "true" : undefined}
               title={collapsed ? folder.name : undefined}
               onClick={() => {
-                onSelectFolder(folder.id);
+                onSelectFolder(folder.path);
               }}
             >
               <span className="post-editor-folder-icon" aria-hidden="true">
-                <SidebarFolderIcon folder={folder.id} />
+                <SidebarFolderIcon mode={folder.mode} />
               </span>
               <span className="post-editor-folder-copy">
                 <span className="post-editor-folder-name">{folder.name}</span>
-                <span className="post-editor-folder-meta">{folder.description}</span>
+                <span className="post-editor-folder-meta">
+                  {MODE_DESCRIPTIONS[folder.mode]}
+                </span>
               </span>
-              {count !== null && (
+              {count > 0 && (
                 <span className="post-editor-folder-count" aria-hidden="true">
                   {count}
                 </span>
@@ -435,19 +421,21 @@ export function WorkspaceSidebarChrome({
   activeFolder,
   blog,
   collapsed,
+  counts,
+  folders,
   homePath,
   onSelectFolder,
   onToggleCollapsed,
-  posts,
   showGuestSignIn = false,
 }: {
   activeFolder: SidebarFolderId;
   blog: Blog;
   collapsed: boolean;
+  counts: Record<string, number>;
+  folders: Folder[];
   homePath?: string;
   onSelectFolder: (folder: SidebarFolderId) => void;
   onToggleCollapsed: () => void;
-  posts: Post[];
   showGuestSignIn?: boolean;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -515,10 +503,11 @@ export function WorkspaceSidebarChrome({
           blog={blog}
           activeFolder={activeFolder}
           collapsed={collapsed}
+          counts={counts}
+          folders={folders}
           homePath={homePath}
           onSelectFolder={selectFolder}
           onToggleCollapsed={toggleSidebar}
-          posts={posts}
           showGuestSignIn={showGuestSignIn}
         />
       </div>
@@ -533,73 +522,41 @@ export function WorkspaceSidebarChrome({
   );
 }
 
-export function FolderContentsPage({
-  folder,
-}: {
-  folder: SidebarFolder;
-}) {
-  const explainer = SIDEBAR_EXPLAINERS[folder.id];
-
-  return (
-    <main className="post-folder-page" aria-labelledby="post-folder-page-title">
-      <header className="post-folder-page-header">
-        <span>Folder</span>
-        <h1 id="post-folder-page-title">{folder.name}</h1>
-        <p>{folder.description}</p>
-      </header>
-      <section className="post-folder-page-items" aria-label={`${folder.name} items`}>
-        <article className="post-folder-page-card">
-          <span>{explainer.meta}</span>
-          <h2>{explainer.title}</h2>
-          <p>{explainer.body}</p>
-        </article>
-      </section>
-    </main>
-  );
-}
-
-function isSidebarFolderId(value: unknown): value is SidebarFolderId {
-  return value === "blog" || value === "bookmarks" || value === "notes";
-}
-
-function replaceFolderQueryParam(folder: SidebarFolderId) {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
-  if (folder === "blog") {
-    url.searchParams.delete("folder");
-  } else {
-    url.searchParams.set("folder", folder);
-  }
-  window.history.replaceState(window.history.state, "", url);
-}
-
 export function BlogHomeWorkspaceShell({
+  activeFolder = "blog",
   blog,
   children,
-  initialFolder = "blog",
+  counts,
+  folders,
+  homePath,
   initialSidebarCollapsed = true,
-  posts,
   showGuestSignIn = false,
 }: {
+  activeFolder?: SidebarFolderId;
   blog: Blog;
   children: ReactNode;
-  initialFolder?: string;
+  counts: Record<string, number>;
+  folders: Folder[];
+  homePath: string;
   initialSidebarCollapsed?: boolean;
-  posts: Post[];
   showGuestSignIn?: boolean;
 }) {
-  const [workspaceView, setWorkspaceView] = useState<SidebarFolderId>(
-    isSidebarFolderId(initialFolder) ? initialFolder : "blog",
-  );
+  const router = useRouter();
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
-  const activeSidebarConfig = sidebarFolderFor(workspaceView);
 
-  const selectFolder = useCallback((folder: SidebarFolderId) => {
-    setWorkspaceView(folder);
-    // Keep the URL addressable (?folder=notes) without a server round-trip.
-    replaceFolderQueryParam(folder);
-  }, []);
+  // Folders carry real server-rendered contents, so selecting one is a real
+  // navigation (the server fetches that folder's items), not a history swap.
+  const selectFolder = useCallback(
+    (folder: SidebarFolderId) => {
+      router.push(
+        folder === "blog"
+          ? homePath
+          : `${homePath}?folder=${encodeURIComponent(folder)}`,
+      );
+    },
+    [homePath, router],
+  );
 
   return (
     <div
@@ -609,23 +566,20 @@ export function BlogHomeWorkspaceShell({
     >
       <WorkspaceSidebarChrome
         blog={blog}
-        activeFolder={workspaceView}
+        activeFolder={activeFolder}
         collapsed={sidebarCollapsed}
+        counts={counts}
+        folders={folders}
         onSelectFolder={selectFolder}
         onToggleCollapsed={toggleSidebarCollapsed}
-        posts={posts}
         showGuestSignIn={showGuestSignIn}
       />
       <div
         className={`post-editor-content${
-          workspaceView === "blog" ? " is-blog-folder-view" : ""
+          activeFolder === "blog" ? " is-blog-folder-view" : ""
         }`}
       >
-        {workspaceView === "blog" ? (
-          children
-        ) : (
-          <FolderContentsPage folder={activeSidebarConfig} />
-        )}
+        {children}
       </div>
     </div>
   );
@@ -635,21 +589,23 @@ export function PostReadWorkspaceShell({
   adjacent,
   blog,
   children,
+  counts,
+  folders,
   homePath,
   initialSidebarCollapsed = true,
   post,
   postPath,
-  posts,
   showGuestSignIn = false,
 }: {
   adjacent: AdjacentPosts;
   blog: Blog;
   children: ReactNode;
+  counts: Record<string, number>;
+  folders: Folder[];
   homePath: string;
   initialSidebarCollapsed?: boolean;
   post: Post;
   postPath: string;
-  posts: Post[];
   showGuestSignIn?: boolean;
 }) {
   const router = useRouter();
@@ -676,12 +632,13 @@ export function PostReadWorkspaceShell({
     >
       <WorkspaceSidebarChrome
         blog={blog}
-        activeFolder="blog"
+        activeFolder={sidebarFolderPathForPostType(post.type)}
         collapsed={sidebarCollapsed}
+        counts={counts}
+        folders={folders}
         homePath={homePath}
         onSelectFolder={selectSidebarFolder}
         onToggleCollapsed={toggleSidebarCollapsed}
-        posts={posts}
         showGuestSignIn={showGuestSignIn}
       />
       <div className="post-editor-content">

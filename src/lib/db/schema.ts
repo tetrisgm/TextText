@@ -17,7 +17,15 @@ import {
 import type { GalleryItem, LinkRef } from "../content";
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
-export const postType = pgEnum("post_type", ["article", "project", "talk"]);
+// article/project/talk live in the Blog folder; note and bookmark are the
+// item kinds of the Notes and Bookmarks folders (always unlisted).
+export const postType = pgEnum("post_type", [
+  "article",
+  "project",
+  "talk",
+  "note",
+  "bookmark",
+]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -27,8 +35,36 @@ export const users = pgTable("users", {
   username: text("username"),
   email: text("email"),
   name: text("name"),
+  /** pricing tier: "free" | "paid" (guests have no user row at all) */
+  plan: text("plan").notNull().default("free"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
+
+// Collaboration seed: a person granted a role on a workspace, folder, or a
+// single item. Realtime editing arrives later; the permission shape lands
+// now so no new surface hardcodes owner-only access.
+export const collaborators = pgTable(
+  "collaborators",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** "workspace" | "folder" | "item" */
+    scopeType: text("scope_type").notNull(),
+    scopeId: uuid("scope_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** "editor" | "reviewer" | "viewer" (the owner is blogs.owner_id) */
+    role: text("role").notNull().default("viewer"),
+    invitedById: uuid("invited_by_id").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [
+    uniqueIndex("collaborators_scope_user_idx")
+      .on(t.scopeType, t.scopeId, t.userId)
+      .where(sql`${t.revokedAt} is null`),
+  ],
+);
 
 export const blogs = pgTable(
   "blogs",

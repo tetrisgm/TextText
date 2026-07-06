@@ -1,6 +1,7 @@
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import { createDraft, deletePost, savePost } from "@/lib/store";
 import { resolveSyncWorkspace } from "../auth";
+import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { clientSaveError, syncError, syncManifestItem } from "../sync";
 
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
-  const { blog } = workspace;
+  const { blog, userId } = workspace;
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
   try {
@@ -29,6 +30,14 @@ export async function POST(request: Request) {
       date: parsed.fields.date,
       slug: parsed.fields.slug ?? created.slug,
       body: parsed.body,
+    });
+    await recordAction({
+      actorUserId: userId,
+      actorType: "external_agent",
+      actionName: "sync.create_file",
+      targetType: "item",
+      targetId: saved.id,
+      inputSummary: saved.title,
     });
     revalidateBlogPaths(blog, [saved.slug]);
     return Response.json({ item: syncManifestItem(blog, saved) }, { status: 201 });

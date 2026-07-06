@@ -1,7 +1,13 @@
 import type { Blog, Post } from "@/lib/content";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
-import { deletePost, getPostById, savePost } from "@/lib/store";
+import {
+  deletePost,
+  folderPathForPostType,
+  getPostById,
+  savePost,
+} from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
+import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   clientSaveError,
@@ -19,7 +25,12 @@ interface Props {
 
 export const dynamic = "force-dynamic";
 
-type WorkspacePost = { blog: Blog; post: Post; postId: string };
+type WorkspacePost = {
+  blog: Blog;
+  post: Post;
+  postId: string;
+  userId: string;
+};
 
 // Auth, then the post, scoped to the token owner's blog: a foreign id can
 // never resolve, so 404 covers both "not yours" and "does not exist".
@@ -33,7 +44,7 @@ async function resolveWorkspacePost(
   if (!isUuid(postId)) return syncError(404, "Post not found");
   const post = await getPostById(workspace.blog.handle, postId);
   if (!post) return syncError(404, "Post not found");
-  return { blog: workspace.blog, post, postId };
+  return { blog: workspace.blog, post, postId, userId: workspace.userId };
 }
 
 export async function GET(request: Request, { params }: Props) {
@@ -61,7 +72,7 @@ export async function GET(request: Request, { params }: Props) {
 export async function PUT(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post } = resolved;
+  const { blog, post, userId } = resolved;
 
   // If-Match is the sync conflict signal: the client must prove its edit is
   // based on the file the server has now. 428 asks for the header; 412 means
@@ -80,6 +91,16 @@ export async function PUT(request: Request, { params }: Props) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
 
+  // The file's kind may only change within the item's folder (same rule as
+  // the editor and the MCP update_item tool): the store never moves a post
+  // between folders on save, and relabeling a note or bookmark as a blog
+  // kind would let one file update publish something the owner filed as
+  // private (savePost's always-draft guard keys off the incoming type).
+  const nextType = parsed.fields.type ?? post.type;
+  if (folderPathForPostType(nextType) !== folderPathForPostType(post.type)) {
+    return syncError(400, "This item cannot change type");
+  }
+
   try {
     // Fields absent from the file keep their stored values; the body is
     // always the file's. The slug follows the file when it sets one. The date
@@ -95,6 +116,14 @@ export async function PUT(request: Request, { params }: Props) {
       slug: parsed.fields.slug ?? post.slug,
       body: parsed.body,
     });
+    await recordAction({
+      actorUserId: userId,
+      actorType: "external_agent",
+      actionName: "sync.put_file",
+      targetType: "item",
+      targetId: saved.id,
+      inputSummary: saved.title,
+    });
     revalidateBlogPaths(blog, [post.slug, saved.slug]);
     // The new manifest entry (with the NEW hash) lets the client update its
     // index without refetching the file it just wrote.
@@ -109,9 +138,17 @@ export async function PUT(request: Request, { params }: Props) {
 export async function DELETE(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post, postId } = resolved;
+  const { blog, post, postId, userId } = resolved;
 
   await deletePost(blog.handle, postId);
+  await recordAction({
+    actorUserId: userId,
+    actorType: "external_agent",
+    actionName: "sync.delete_file",
+    targetType: "item",
+    targetId: postId,
+    inputSummary: post.title,
+  });
   revalidateBlogPaths(blog, [post.slug]);
   return new Response(null, { status: 204 });
 }

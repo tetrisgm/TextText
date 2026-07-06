@@ -18,7 +18,12 @@ export interface Blog {
 
 export type BlogCardStyle = "cover" | "minimal";
 export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
-export type PostType = "article" | "project" | "talk";
+/**
+ * article/project/talk are the Blog folder's public kinds; note and bookmark
+ * belong to the Notes and Bookmarks folders and are always unlisted.
+ */
+export type PostType = "article" | "project" | "talk" | "note" | "bookmark";
+export type BlogPostType = "article" | "project" | "talk";
 
 // Product surfaces share the same lower-level content/media/permission
 // primitives, but remain distinct user-facing jobs.
@@ -88,6 +93,20 @@ export interface Post {
   /** full ISO timestamps for sync/conflict detection; absent on demo content */
   createdAt?: string;
   updatedAt?: string;
+}
+
+/**
+ * Whether a user-supplied link href is safe to render as a clickable link:
+ * web URLs, mail links, and in-site references only. Rejects javascript:,
+ * data:, and every other scheme.
+ */
+export function isSafeLinkHref(value: string): boolean {
+  const href = value.trim();
+  if (!href) return false;
+  if (href.startsWith("/") || href.startsWith("#")) return true;
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(href)?.[1]?.toLowerCase();
+  if (!scheme) return true; // schemeless relative reference
+  return scheme === "http" || scheme === "https" || scheme === "mailto";
 }
 
 const VIDEO_FILE_RE = /\.(mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i;

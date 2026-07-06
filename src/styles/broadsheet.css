@@ -1811,6 +1811,138 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-weight: 600;
   line-height: 1.42;
 }
+/* Folder item lists (Notes, Bookmarks): the quiet blog-index rhythm, with
+   every color read from the workspace tokens so both themes hold. */
+.post-folder-toolbar {
+  width: min(100%, 760px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: -6px auto 0;
+}
+.post-folder-create {
+  min-width: 118px;
+}
+.post-folder-error {
+  color: #d70015;
+  font: 600 13px/1.35 var(--font-body);
+  letter-spacing: 0;
+}
+[data-theme="dark"] .post-folder-error {
+  color: #ff6961;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .post-folder-error {
+    color: #ff6961;
+  }
+}
+.post-folder-new-form {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.post-folder-field {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 14px/1.3 var(--font-body);
+  letter-spacing: 0;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.post-folder-field::placeholder {
+  color: var(--muted);
+}
+.post-folder-field:focus-visible {
+  box-shadow: var(--ac-focus);
+}
+.post-folder-field.is-url {
+  flex: 1 1 240px;
+}
+.post-folder-field.is-title {
+  flex: 1 1 170px;
+}
+.post-folder-list {
+  display: grid;
+  border-top: 1px solid var(--hairline);
+}
+.post-folder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: baseline;
+  min-height: 60px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+  text-decoration: none;
+}
+.post-folder-row.is-bookmark {
+  align-items: start;
+}
+.post-folder-row-link {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.post-folder-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+.post-folder-row-meta {
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.post-folder-row-excerpt {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.42;
+  letter-spacing: 0;
+}
+.post-folder-row-edit {
+  align-self: start;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: 650 13px/1 var(--font-body);
+  letter-spacing: 0;
+  text-decoration: none;
+  cursor: pointer;
+}
+.post-folder-row-edit:hover,
+.post-folder-row-edit:focus-visible {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+}
+.post-folder-row-edit:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
 
 /* ---------- owner and edit controls ---------- */
 .post-edit-menu-button {
@@ -1926,6 +2058,21 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-share-visibility-button:hover {
   background: var(--ac-fill-3);
+}
+/* The locked variant for notes and bookmarks: same plate, nothing to press. */
+.post-share-visibility-static {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 11px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 9px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  text-align: left;
 }
 .post-share-visibility-copy {
   display: grid;
@@ -3317,6 +3464,18 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
   .post-folder-page-header p {
     font-size: 18px;
+  }
+  .post-folder-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    align-items: start;
+  }
+  .post-folder-row-title {
+    white-space: normal;
+  }
+  .post-folder-row-edit {
+    justify-self: start;
+    margin-left: -9px;
   }
   .post-top-action-bar {
     top: max(8px, env(safe-area-inset-top));

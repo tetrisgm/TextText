@@ -29,6 +29,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!blog) return {};
   const post = await getPost(blog.handle, slug);
   if (!post) return {};
+  // Never describe an unlisted note or bookmark in page metadata; the page
+  // itself 404s for anyone who cannot edit (same rule as the /t mirror).
+  if (post.type === "note" || post.type === "bookmark") return {};
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:

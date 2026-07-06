@@ -9,6 +9,7 @@ import type {
   Post,
   PostType,
 } from "@/lib/content";
+import { isSafeLinkHref } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { isNoCoverValue } from "@/lib/cover";
 
@@ -16,13 +17,19 @@ export const WRITE_FOLDER_SCHEMA = "write.folder.v1";
 export const WRITE_MARKDOWN_FILE_SCHEMA = "write.markdown-file.v1";
 export const DEFAULT_FOLDER_MODE = "blog";
 export const BLOG_FOLDER_VIEWS = ["timeline", "index", "grid", "single"] as const;
+// The Blog folder's public vocabulary; Notes and Bookmarks folders each carry
+// their single native kind.
 export const BLOG_ITEM_KINDS = ["article", "media_post", "video_post"] as const;
+export const NOTES_ITEM_KINDS = ["note"] as const;
+export const BOOKMARKS_ITEM_KINDS = ["bookmark"] as const;
 
 export type BlogItemKind = (typeof BLOG_ITEM_KINDS)[number];
+/** Every kind the markdown surface can carry across folder modes. */
+export type MarkdownItemKind = BlogItemKind | "note" | "bookmark";
 
 export type MarkdownFolderItem = {
   file: string;
-  kind: BlogItemKind;
+  kind: MarkdownItemKind;
   slug: string;
   title: string;
   status: Post["status"];
@@ -44,7 +51,7 @@ export type MarkdownFolderManifest = {
     name: string;
     mode: FolderMode;
     views: typeof BLOG_FOLDER_VIEWS;
-    itemKinds: typeof BLOG_ITEM_KINDS;
+    itemKinds: readonly MarkdownItemKind[];
     activeView: BlogHomeLayout;
     id?: string;
     path?: string;
@@ -60,20 +67,40 @@ export type RenderFolderManifestOptions = {
   postUrlFor?: (post: Post) => string;
 };
 
-export function itemKindForPostType(type: PostType): BlogItemKind {
+export function itemKindForPostType(type: PostType): MarkdownItemKind {
   if (type === "project") return "media_post";
   if (type === "talk") return "video_post";
+  if (type === "note") return "note";
+  if (type === "bookmark") return "bookmark";
   return "article";
 }
 
 export function postTypeForItemKind(kind: ItemKind): PostType {
   if (kind === "media_post") return "project";
   if (kind === "video_post") return "talk";
+  if (kind === "note") return "note";
+  if (kind === "bookmark") return "bookmark";
   return "article";
+}
+
+/** The kinds a folder's manifest advertises, by its mode; blog is the default. */
+export function itemKindsForFolderMode(
+  mode: FolderMode | undefined,
+): readonly MarkdownItemKind[] {
+  if (mode === "notes") return NOTES_ITEM_KINDS;
+  if (mode === "bookmarks") return BOOKMARKS_ITEM_KINDS;
+  return BLOG_ITEM_KINDS;
 }
 
 export function markdownFilePathForPost(post: Pick<Post, "slug">): string {
   return `posts/${post.slug}.md`;
+}
+
+/** The folder mode an item's kind belongs to (a note's file says mode notes). */
+export function folderModeForPostType(type: PostType): FolderMode {
+  if (type === "note") return "notes";
+  if (type === "bookmark") return "bookmarks";
+  return "blog";
 }
 
 export function renderFolderManifest(
@@ -89,7 +116,7 @@ export function renderFolderManifest(
       name: blog.name,
       mode: folder?.mode ?? DEFAULT_FOLDER_MODE,
       views: BLOG_FOLDER_VIEWS,
-      itemKinds: BLOG_ITEM_KINDS,
+      itemKinds: itemKindsForFolderMode(folder?.mode),
       activeView: blog.homeLayout,
       ...(folder ? { id: folder.id, path: folder.path } : {}),
     },
@@ -128,7 +155,7 @@ export function renderPostMarkdownFile({
     schema: WRITE_MARKDOWN_FILE_SCHEMA,
     folder: blog.handle,
     folderName: blog.name,
-    mode: DEFAULT_FOLDER_MODE,
+    mode: folderModeForPostType(post.type),
     kind: itemKindForPostType(post.type),
     type: post.type,
     slug: post.slug,
@@ -208,6 +235,8 @@ const POST_TYPE_BY_VOCAB: Record<string, PostType> = {
   article: "article",
   project: "project",
   talk: "talk",
+  note: "note",
+  bookmark: "bookmark",
   media_post: "project",
   video_post: "talk",
 };
@@ -339,7 +368,7 @@ function fieldPostType(value: unknown, key: string): PostType {
     if (type) return type;
   }
   throw new Error(
-    `${key} must be one of article, project, talk, media_post, video_post`,
+    `${key} must be one of article, project, talk, note, bookmark, media_post, video_post`,
   );
 }
 
@@ -413,6 +442,9 @@ function fieldLinks(value: unknown): LinkRef[] {
     const values = entry as Record<string, unknown>;
     const href = fieldOptionalText(values.href, `link ${index + 1} href`);
     if (!href) continue;
+    if (!isSafeLinkHref(href)) {
+      throw new Error(`link ${index + 1} href must be a web, mail, or in-site URL`);
+    }
     const label = fieldOptionalText(values.label, `link ${index + 1} label`);
     links.push({ label: label || href, href });
   }

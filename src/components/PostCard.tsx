@@ -21,6 +21,8 @@ const TYPE_LABELS: Record<PostType, string> = {
   article: "Article",
   project: "Media",
   talk: "Video",
+  note: "Note",
+  bookmark: "Bookmark",
 };
 
 function PlayBadge() {

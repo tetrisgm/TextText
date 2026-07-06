@@ -3,7 +3,7 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type {
   Blog,
   BlogCardStyle,
@@ -297,14 +297,28 @@ async function blogIdFor(handle: string): Promise<string> {
   return id;
 }
 
-const DEFAULT_FOLDER = {
-  name: "Blog",
-  path: "blog",
-  mode: "blog" as FolderMode,
-  position: 0,
-};
+// Every workspace has these three system folders. ensureWorkspaceFolders
+// creates any that are missing, so workspaces from before Notes and Bookmarks
+// landed gain them lazily on first read.
+const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
+  { name: "Blog", path: "blog", mode: "blog", position: 0 },
+  { name: "Notes", path: "notes", mode: "notes", position: 1 },
+  { name: "Bookmarks", path: "bookmarks", mode: "bookmarks", position: 2 },
+];
 
-const DEMO_FOLDER: Folder = { id: "demo-blog-folder", ...DEFAULT_FOLDER };
+const DEFAULT_FOLDER_PATH = "blog";
+
+const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
+  id: `demo-${folder.path}-folder`,
+  ...folder,
+}));
+
+/** The system folder path a post of this type lives in. */
+export function folderPathForPostType(type: PostType): string {
+  if (type === "note") return "notes";
+  if (type === "bookmark") return "bookmarks";
+  return DEFAULT_FOLDER_PATH;
+}
 
 function mapFolder(row: typeof folders.$inferSelect): Folder {
   return {
@@ -321,44 +335,168 @@ function cleanFolderMode(value: string | null): FolderMode {
   return "blog";
 }
 
-// Get-or-create the default "blog" folder. ON CONFLICT DO NOTHING settles
-// races on the (blog, path) partial unique index, same pattern as blogs.
-export async function ensureDefaultFolder(blogId: string): Promise<Folder> {
-  if (!db) return DEMO_FOLDER;
-  const inserted = await db
+// Get-or-create ALL the system folders: one multi-row INSERT with ON CONFLICT
+// DO NOTHING settles races on the (blog, path) partial unique index, same
+// pattern as blogs, then one SELECT reads the settled rows back in order.
+export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> {
+  if (!db) return DEMO_FOLDERS;
+  await db
     .insert(folders)
-    .values({ blogId, ...DEFAULT_FOLDER })
-    .onConflictDoNothing()
-    .returning();
-  if (inserted[0]) return mapFolder(inserted[0]);
-
-  const existing = await db
+    .values(WORKSPACE_FOLDERS.map((folder) => ({ blogId, ...folder })))
+    .onConflictDoNothing();
+  const rows = await db
     .select()
     .from(folders)
     .where(
       and(
         eq(folders.blogId, blogId),
-        eq(folders.path, DEFAULT_FOLDER.path),
+        inArray(
+          folders.path,
+          WORKSPACE_FOLDERS.map((folder) => folder.path),
+        ),
         isNull(folders.deletedAt),
       ),
     )
-    .limit(1);
-  if (!existing[0]) throw new Error("failed to ensure the default folder");
-  return mapFolder(existing[0]);
+    .orderBy(asc(folders.position), asc(folders.createdAt));
+  if (rows.length < WORKSPACE_FOLDERS.length) {
+    throw new Error("failed to ensure the workspace folders");
+  }
+  return rows.map(mapFolder);
+}
+
+// Get-or-create the default "blog" folder (the whole system set is ensured on
+// the way, so any caller of the default folder also heals older workspaces).
+export async function ensureDefaultFolder(blogId: string): Promise<Folder> {
+  return folderForPostType(blogId, "article");
+}
+
+// The system folder a post of this type belongs in, ensured to exist.
+async function folderForPostType(
+  blogId: string,
+  type: PostType,
+): Promise<Folder> {
+  const ensured = await ensureWorkspaceFolders(blogId);
+  const path = folderPathForPostType(type);
+  const folder = ensured.find((entry) => entry.path === path);
+  if (!folder) throw new Error(`failed to ensure the "${path}" folder`);
+  return folder;
 }
 
 export async function getFolders(handle: string): Promise<Folder[]> {
   if (!db) {
-    return handle === DEMO_BLOG.handle ? [DEMO_FOLDER] : [];
+    return handle === DEMO_BLOG.handle ? DEMO_FOLDERS : [];
   }
   const blogId = await blogIdFor(handle);
+  // Ensure the system folders exist first: workspaces created before Notes
+  // and Bookmarks landed gain them here on read.
+  const ensured = await ensureWorkspaceFolders(blogId);
   const rows = await db
     .select()
     .from(folders)
     .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt)))
     .orderBy(asc(folders.position), asc(folders.createdAt));
-  if (rows.length === 0) return [await ensureDefaultFolder(blogId)];
+  if (rows.length === 0) return ensured;
   return rows.map(mapFolder);
+}
+
+// Posts scoped to one folder of the workspace, identified by its path. Posts
+// with a NULL folder_id (created before the folders backfill) count as living
+// in the default "blog" folder.
+export async function getFolderPosts(
+  handle: string,
+  folderPath: string,
+  opts: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  const publishedOnly = opts.publishedOnly ?? false;
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle) return [];
+    return pinnedFirst(
+      DEMO_POSTS.filter(
+        (post) =>
+          folderPathForPostType(post.type) === folderPath &&
+          (!publishedOnly || post.status === "published"),
+      ),
+    );
+  }
+
+  const inFolder =
+    folderPath === DEFAULT_FOLDER_PATH
+      ? or(isNull(posts.folderId), eq(folders.path, folderPath))
+      : eq(folders.path, folderPath);
+  const rows = await db
+    .select()
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .leftJoin(
+      folders,
+      and(eq(posts.folderId, folders.id), isNull(folders.deletedAt)),
+    )
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        publishedOnly ? eq(posts.status, "published") : undefined,
+        inFolder,
+      ),
+    )
+    .orderBy(
+      desc(posts.pinned),
+      publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
+      desc(posts.createdAt),
+    );
+  return rows.map((r) => mapPost(r.posts));
+}
+
+// Live (not trashed) item counts per folder path, drafts included, in one
+// grouped query. A NULL folder_id counts toward the default "blog" folder.
+export async function getFolderCounts(
+  handle: string,
+): Promise<Record<string, number>> {
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle) return {};
+    const counts: Record<string, number> = {};
+    for (const post of DEMO_POSTS) {
+      const path = folderPathForPostType(post.type);
+      counts[path] = (counts[path] ?? 0) + 1;
+    }
+    return counts;
+  }
+  const rows = await db
+    .select({ path: folders.path, count: sql<number>`count(*)::int` })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .leftJoin(
+      folders,
+      and(eq(posts.folderId, folders.id), isNull(folders.deletedAt)),
+    )
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .groupBy(folders.path);
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    // The left join leaves path NULL for unbackfilled posts; those are blog's.
+    const path = row.path ?? DEFAULT_FOLDER_PATH;
+    counts[path] = (counts[path] ?? 0) + Number(row.count);
+  }
+  return counts;
+}
+
+/** The owner's pricing plan for a blog, or null (unclaimed / demo mode). */
+export async function getOwnerPlan(handle: string): Promise<string | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({ plan: users.plan })
+    .from(blogs)
+    .leftJoin(users, eq(blogs.ownerId, users.id))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
+    .limit(1);
+  return rows[0]?.plan ?? null;
 }
 
 export async function getBlogEditRecord(
@@ -518,8 +656,12 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
   // Never taken from the client Post: an update keeps the stored folder and
-  // an insert lands in the default folder (moves are a store-level concern).
-  const defaultFolder = await ensureDefaultFolder(blogId);
+  // an insert lands in the folder matching the post's type (moves are a
+  // store-level concern).
+  const insertFolder = await folderForPostType(blogId, post.type);
+  // Notes and bookmarks are always unlisted: no save path may publish them.
+  const status =
+    post.type === "note" || post.type === "bookmark" ? "draft" : post.status;
   const base = {
     type: post.type,
     title: post.title,
@@ -534,12 +676,12 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     venue: post.venue ?? null,
     duration: post.duration ?? null,
     body: post.body,
-    status: post.status,
+    status,
     pinned: post.pinned ?? false,
     updatedAt: new Date(),
   };
   const publishedAt =
-    post.status === "published"
+    status === "published"
       ? post.date
         ? new Date(post.date)
         : sql`COALESCE(${posts.publishedAt}, now())`
@@ -567,11 +709,11 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
       .insert(posts)
       .values({
         blogId,
-        folderId: defaultFolder.id,
+        folderId: insertFolder.id,
         slug: post.slug,
         ...base,
         publishedAt:
-          post.status === "published"
+          status === "published"
             ? post.date
               ? new Date(post.date)
               : new Date()
@@ -593,14 +735,15 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
 }
 
 // Create an empty draft and return it (with its new id), for the editor's
-// "New draft" action. Requires a database.
+// "New draft" action. Requires a database. The draft lands in the system
+// folder matching its type: note -> notes, bookmark -> bookmarks, else blog.
 export async function createDraft(
   handle: string,
   type: PostType = "article",
 ): Promise<Post> {
   if (!db) throw new Error("createDraft requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  const folder = await ensureDefaultFolder(blogId);
+  const folder = await folderForPostType(blogId, type);
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)

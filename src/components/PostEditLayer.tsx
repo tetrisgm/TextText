@@ -13,7 +13,6 @@ import type {
   CSSProperties,
   DragEvent,
   KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -25,10 +24,11 @@ import { ProjectGallery } from "@/components/ProjectGallery";
 import {
   WorkspaceSidebarChrome,
   closeExpandedWorkspaceSidebar,
+  sidebarFolderPathForPostType,
   useWorkspaceSidebarCollapsed,
 } from "@/components/PostWorkspaceShell";
 import type { SidebarFolderId } from "@/components/PostWorkspaceShell";
-import type { Blog, GalleryItem, Post } from "@/lib/content";
+import type { Blog, Folder, GalleryItem, Post } from "@/lib/content";
 import {
   isVideoFile,
   isYouTube,
@@ -661,16 +661,13 @@ function isEmptyDraft(draft: DraftState): boolean {
   );
 }
 
-function postIdentity(post: Post): string {
-  return post.id ?? post.slug;
-}
-
 export function PostEditLayer({
   blog,
   post,
   adjacent,
   homePath,
-  folderPosts = [],
+  counts = {},
+  folders = [],
   initialSidebarCollapsed = true,
   mediaEnabled = true,
   usedSlugs = [],
@@ -679,7 +676,8 @@ export function PostEditLayer({
   post: Post;
   adjacent: AdjacentPublishedPosts;
   homePath: string;
-  folderPosts?: Post[];
+  counts?: Record<string, number>;
+  folders?: Folder[];
   initialSidebarCollapsed?: boolean;
   mediaEnabled?: boolean;
   usedSlugs?: string[];
@@ -704,9 +702,6 @@ export function PostEditLayer({
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
   const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(null);
-  const [deletedPostIds, setDeletedPostIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -1101,15 +1096,6 @@ export function PostEditLayer({
   const resolvedHeaderCover = resolveCover(displayPost);
   const hasArticleHeaderImage =
     displayPost.type === "article" && Boolean(resolvedHeaderCover);
-  const sidebarPosts = useMemo(() => {
-    const byKey = new Map<string, Post>();
-    for (const item of folderPosts) byKey.set(postIdentity(item), item);
-    byKey.set(postIdentity(displayPost), displayPost);
-    return Array.from(byKey.values()).filter((item) => {
-      if (!item.id) return true;
-      return !deletedPostIds.has(item.id);
-    });
-  }, [deletedPostIds, displayPost, folderPosts]);
 
   // Folder rows always navigate to the workspace home (saving the draft on
   // the way out), the same sidebar behavior as the home and read shells.
@@ -1310,11 +1296,6 @@ export function PostEditLayer({
         .then(() => {
           setDeleteDialogOpen(false);
           editSessions.delete(postId);
-          setDeletedPostIds((current) => {
-            const next = new Set(current);
-            next.add(postId);
-            return next;
-          });
           setDeleting(false);
           setSaveState("saved");
           setError(null);
@@ -1346,12 +1327,13 @@ export function PostEditLayer({
     >
       <WorkspaceSidebarChrome
         blog={blog}
-        activeFolder="blog"
+        activeFolder={sidebarFolderPathForPostType(post.type)}
         collapsed={sidebarCollapsed}
+        counts={counts}
+        folders={folders}
         homePath={homePath}
         onSelectFolder={selectSidebarFolder}
         onToggleCollapsed={toggleSidebarCollapsed}
-        posts={sidebarPosts}
       />
       <div className="post-editor-content">
         <PostActionBar

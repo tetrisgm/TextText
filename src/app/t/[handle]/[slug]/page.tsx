@@ -7,6 +7,8 @@ import {
   getAdjacentPublishedPosts,
   getAllPosts,
   getBlog,
+  getFolderCounts,
+  getFolders,
   getPost,
   getPostById,
 } from "@/lib/store";
@@ -40,6 +42,12 @@ function postTitle(title: string): string {
   return title.trim() || "Untitled";
 }
 
+// Notes and bookmarks are unlisted forever: they exist only inside the
+// owner's workspace and must 404 for everyone else.
+function isUnlistedItem(post: Post): boolean {
+  return post.type === "note" || post.type === "bookmark";
+}
+
 function isEmptyOwnedPost(post: Post): boolean {
   const title = post.title.trim().toLowerCase();
   return (
@@ -59,6 +67,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     getPost(handle, slug),
   ]);
   if (!blog || !post) return {};
+  // Never describe an unlisted note or bookmark in page metadata; the page
+  // itself 404s for anyone who cannot edit.
+  if (isUnlistedItem(post)) return {};
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
@@ -108,6 +119,7 @@ export async function PostPageForHandle({
   }
 
   if (!post) notFound();
+  if (isUnlistedItem(post) && !canEdit) notFound();
   const editMode = canEdit && editRequested;
   if (redirectClaimed && blog.username) {
     const path = blogPostPath(blog, post);
@@ -133,11 +145,11 @@ export async function PostPageForHandle({
     redirect(blogPostEditPath(blog, post));
   }
 
-  const [adjacent, allPosts] = await Promise.all([
+  const [adjacent, allPosts, folders, counts] = await Promise.all([
     getAdjacentPublishedPosts(handle, post.slug),
-    editMode || canEdit
-      ? getAllPosts(handle)
-      : Promise.resolve([]),
+    canEdit ? getAllPosts(handle) : Promise.resolve([]),
+    canEdit ? getFolders(handle) : Promise.resolve([]),
+    canEdit ? getFolderCounts(handle) : Promise.resolve({}),
   ]);
   const usedSlugs = editMode
     ? allPosts
@@ -177,7 +189,8 @@ export async function PostPageForHandle({
           adjacent={adjacent}
           homePath={homePath}
           mediaEnabled={access.isOwner}
-          folderPosts={allPosts}
+          counts={counts}
+          folders={folders}
           initialSidebarCollapsed={initialSidebarCollapsed}
           usedSlugs={usedSlugs}
         />
@@ -193,11 +206,12 @@ export async function PostPageForHandle({
         <PostReadWorkspaceShell
           adjacent={adjacent}
           blog={blog}
+          counts={counts}
+          folders={folders}
           homePath={homePath}
           initialSidebarCollapsed={initialSidebarCollapsed}
           post={post}
           postPath={currentPostPath}
-          posts={allPosts}
           showGuestSignIn={showGuestSignIn}
         >
           {reader}
