@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/session";
 
 const signInHref = `/api/auth/signin?callbackUrl=${encodeURIComponent("/start")}`;
 
@@ -23,7 +24,11 @@ const starterFolders = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  // The landing reflects the session: a signed-in writer gets straight back
+  // into their workspace instead of being asked to sign in again.
+  const user = await getCurrentUser();
+
   return (
     <main className="write-landing applecms">
       <nav className="write-landing-nav" aria-label="Write">
@@ -31,12 +36,20 @@ export default function Home() {
           Write
         </Link>
         <div className="write-landing-nav-actions">
-          <a className="write-landing-link" href={signInHref}>
-            Sign in
-          </a>
-          <Link className="write-landing-button" href="/start">
-            Get started
-          </Link>
+          {user ? (
+            <Link className="write-landing-button" href="/start?to=home">
+              Open your workspace
+            </Link>
+          ) : (
+            <>
+              <a className="write-landing-link" href={signInHref}>
+                Sign in
+              </a>
+              <Link className="write-landing-button" href="/start">
+                Get started
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 
@@ -50,12 +63,20 @@ export default function Home() {
             folders and content across devices.
           </p>
           <div className="write-landing-actions">
-            <Link className="write-landing-primary" href="/start">
-              Get started
-            </Link>
-            <a className="write-landing-secondary" href={signInHref}>
-              Sign in
-            </a>
+            {user ? (
+              <Link className="write-landing-primary" href="/start?to=home">
+                Open your workspace
+              </Link>
+            ) : (
+              <>
+                <Link className="write-landing-primary" href="/start">
+                  Get started
+                </Link>
+                <a className="write-landing-secondary" href={signInHref}>
+                  Sign in
+                </a>
+              </>
+            )}
           </div>
         </div>
 

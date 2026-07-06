@@ -59,6 +59,70 @@ export const blogs = pgTable(
   ],
 );
 
+// Every mutation through the action layer records who did what to what,
+// so AI/agent edits stay auditable and reversible-by-inspection. actorType
+// distinguishes a human in the UI from the AI sidecar from an external agent.
+export const actionAudit = pgTable("action_audit", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  /** "human" | "ai" | "external_agent" */
+  actorType: text("actor_type").notNull().default("human"),
+  actionName: text("action_name").notNull(),
+  /** "workspace" | "folder" | "item" | "mode" */
+  targetType: text("target_type").notNull(),
+  targetId: text("target_id"),
+  inputSummary: text("input_summary"),
+  outputSummary: text("output_summary"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Scoped bearer tokens for the machine surface (sync API today, MCP next).
+// Only the SHA-256 hash is stored; the raw token is shown once at creation.
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    /** space-separated scopes; "sync" grants read/write on owned content */
+    scopes: text("scopes").notNull().default("sync"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [uniqueIndex("api_tokens_hash_idx").on(t.tokenHash)],
+);
+
+// A workspace (blogs row) holds folders; folders hold items (posts rows). The
+// folder's mode decides how its items are rendered and edited: "blog" today,
+// "notes" and "bookmarks" as they land. Every blog has at least the default
+// "blog" folder (ensured lazily and by backfill).
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id),
+    name: text("name").notNull(),
+    /** URL-safe segment inside the workspace, e.g. "blog", "notes" */
+    path: text("path").notNull(),
+    mode: text("mode").notNull().default("blog"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    uniqueIndex("folders_blog_path_idx")
+      .on(t.blogId, t.path)
+      .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
 export const posts = pgTable(
   "posts",
   {
@@ -66,6 +130,8 @@ export const posts = pgTable(
     blogId: uuid("blog_id")
       .notNull()
       .references(() => blogs.id),
+    /** owning folder; null only until the backfill/lazy-ensure touches it */
+    folderId: uuid("folder_id").references(() => folders.id),
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     title: text("title").notNull(),

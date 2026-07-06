@@ -8,11 +8,13 @@ import type {
   Blog,
   BlogCardStyle,
   BlogHomeLayout,
+  Folder,
+  FolderMode,
   Post,
   PostType,
 } from "./content";
 import { db } from "./db/client";
-import { blogs, posts, users } from "./db/schema";
+import { blogs, folders, posts, users } from "./db/schema";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import {
   RESERVED_USERNAMES,
@@ -98,6 +100,9 @@ function mapPost(row: PostRow): Post {
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
     pinned: row.pinned,
+    folderId: row.folderId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -292,6 +297,70 @@ async function blogIdFor(handle: string): Promise<string> {
   return id;
 }
 
+const DEFAULT_FOLDER = {
+  name: "Blog",
+  path: "blog",
+  mode: "blog" as FolderMode,
+  position: 0,
+};
+
+const DEMO_FOLDER: Folder = { id: "demo-blog-folder", ...DEFAULT_FOLDER };
+
+function mapFolder(row: typeof folders.$inferSelect): Folder {
+  return {
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    mode: cleanFolderMode(row.mode),
+    position: row.position,
+  };
+}
+
+function cleanFolderMode(value: string | null): FolderMode {
+  if (value === "notes" || value === "bookmarks") return value;
+  return "blog";
+}
+
+// Get-or-create the default "blog" folder. ON CONFLICT DO NOTHING settles
+// races on the (blog, path) partial unique index, same pattern as blogs.
+export async function ensureDefaultFolder(blogId: string): Promise<Folder> {
+  if (!db) return DEMO_FOLDER;
+  const inserted = await db
+    .insert(folders)
+    .values({ blogId, ...DEFAULT_FOLDER })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted[0]) return mapFolder(inserted[0]);
+
+  const existing = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        eq(folders.path, DEFAULT_FOLDER.path),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!existing[0]) throw new Error("failed to ensure the default folder");
+  return mapFolder(existing[0]);
+}
+
+export async function getFolders(handle: string): Promise<Folder[]> {
+  if (!db) {
+    return handle === DEMO_BLOG.handle ? [DEMO_FOLDER] : [];
+  }
+  const blogId = await blogIdFor(handle);
+  const rows = await db
+    .select()
+    .from(folders)
+    .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt)))
+    .orderBy(asc(folders.position), asc(folders.createdAt));
+  if (rows.length === 0) return [await ensureDefaultFolder(blogId)];
+  return rows.map(mapFolder);
+}
+
 export async function getBlogEditRecord(
   handle: string,
 ): Promise<BlogEditRecord | null> {
@@ -448,6 +517,9 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
 export async function savePost(handle: string, post: Post): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
+  // Never taken from the client Post: an update keeps the stored folder and
+  // an insert lands in the default folder (moves are a store-level concern).
+  const defaultFolder = await ensureDefaultFolder(blogId);
   const base = {
     type: post.type,
     title: post.title,
@@ -495,6 +567,7 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
       .insert(posts)
       .values({
         blogId,
+        folderId: defaultFolder.id,
         slug: post.slug,
         ...base,
         publishedAt:
@@ -527,11 +600,13 @@ export async function createDraft(
 ): Promise<Post> {
   if (!db) throw new Error("createDraft requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
+  const folder = await ensureDefaultFolder(blogId);
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)
     .values({
       blogId,
+      folderId: folder.id,
       type,
       slug,
       title: "",
@@ -595,6 +670,17 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
   const row = rows[0];
   if (!row) return null;
   return mapBlog(row);
+}
+
+// The users row id for an Apple sub (api_tokens hangs off users.id), or null.
+export async function getUserIdBySub(sub: string): Promise<string | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.appleSub, sub))
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 async function upsertUser(

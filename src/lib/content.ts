@@ -23,6 +23,18 @@ export type PostType = "article" | "project" | "talk";
 // Product surfaces share the same lower-level content/media/permission
 // primitives, but remain distinct user-facing jobs.
 export type Surface = "blog" | "notes" | "bookmarks" | "feeds" | "group";
+
+/** How a folder renders and edits its items. */
+export type FolderMode = "blog" | "notes" | "bookmarks";
+
+export interface Folder {
+  id: string;
+  name: string;
+  /** URL-safe segment inside the workspace, e.g. "blog", "notes" */
+  path: string;
+  mode: FolderMode;
+  position: number;
+}
 export type ItemKind =
   | "article"
   | "media_post"
@@ -71,6 +83,11 @@ export interface Post {
   videoUrl?: string;
   venue?: string;
   duration?: string;
+  /** owning folder id; absent for demo/seed content until folders backfill */
+  folderId?: string;
+  /** full ISO timestamps for sync/conflict detection; absent on demo content */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 const VIDEO_FILE_RE = /\.(mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i;

@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type {
   Blog,
@@ -49,6 +48,7 @@ import {
   blogPostEditPath,
   tenantPostPath,
 } from "@/lib/public-paths";
+import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
 // client can never target another user's blog. Writing always requires auth;
@@ -117,16 +117,6 @@ async function createAnonymousBlogHandle(
 }
 
 const POST_TYPES: PostType[] = ["article", "project", "talk"];
-const BLOG_FEED_PATHS = [
-  "posts.json",
-  "feed.json",
-  "feed.xml",
-  "atom.xml",
-  "sitemap.xml",
-  "llms.txt",
-  "folder.json",
-];
-
 function cleanPostType(value: unknown): PostType {
   return POST_TYPES.includes(value as PostType) ? (value as PostType) : "article";
 }
@@ -324,24 +314,10 @@ function tenantPostEditPath(handle: string, post: Pick<Post, "id" | "slug">): st
 }
 
 async function revalidateBlog(handle: string, slugs: string[] = []) {
-  const uniqueSlugs = [...new Set(slugs.filter(Boolean))];
-  const roots = [blogPath(handle)];
-
   // A claimed blog is served from /u/{username} (the /@ alias rewrites there),
   // so its cache entries must be invalidated alongside the /t mirror.
   const blog = await getBlog(handle).catch(() => null);
-  if (blog?.username) roots.push(`/u/${encodeURIComponent(blog.username)}`);
-
-  for (const root of roots) {
-    revalidatePath(root);
-    for (const feedPath of BLOG_FEED_PATHS) {
-      revalidatePath(`${root}/${feedPath}`);
-    }
-    for (const slug of uniqueSlugs) {
-      revalidatePath(`${root}/${encodeURIComponent(slug)}`);
-      revalidatePath(`${root}/${encodeURIComponent(slug)}/index.md`);
-    }
-  }
+  revalidateBlogPaths(blog ?? { handle }, slugs);
 }
 
 async function editableHandleFor(handleInput?: unknown) {
