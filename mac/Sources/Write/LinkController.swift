@@ -13,7 +13,7 @@ final class LinkController {
     enum State {
         case idle
         case starting
-        case waiting(code: String, expiresAt: Date)
+        case waiting(code: String, expiresAt: Date, verifyURL: URL)
         case failed(String)
     }
 
@@ -61,7 +61,8 @@ final class LinkController {
                 let expiresAt = Self.parseISO(start.expiresAt) ?? Date().addingTimeInterval(600)
                 DispatchQueue.main.async {
                     guard !self.isStale(gen) else { return }
-                    self.state = .waiting(code: start.code, expiresAt: expiresAt)
+                    self.state = .waiting(
+                        code: start.code, expiresAt: expiresAt, verifyURL: verifyURL)
                     self.onChange?()
                     self.onActivity?("Linking: confirm code \(start.code) in your browser")
                     NSWorkspace.shared.open(verifyURL)
@@ -77,6 +78,14 @@ final class LinkController {
     func cancel() {
         _ = bumpGeneration()
         setState(.idle)
+    }
+
+    /// Re-open the SAME approval page for the pending code (a lost or stale
+    /// browser tab must never require minting a fresh code: two live codes
+    /// mean the user can approve one the app no longer polls).
+    func reopenApproval() {
+        guard case .waiting(_, _, let verifyURL) = state else { return }
+        NSWorkspace.shared.open(verifyURL)
     }
 
     // MARK: Internals

@@ -50,8 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         linkController.onChange = { [weak self] in self?.refreshUI() }
         linkController.onActivity = { [weak self] message in self?.appendActivity(message) }
         linkController.onLinked = { [weak self] _ in
-            self?.engine.syncNow()
-            self?.refreshUI()
+            guard let self else { return }
+            self.engine.syncNow()
+            self.refreshUI()
+            // Success must be SEEN: the user is in the browser at this
+            // moment, and the window flipping to "Linked as ..." is the
+            // confirmation both sides promised.
+            NSApp.activate(ignoringOtherApps: true)
+            self.showStatusWindow()
         }
 
         setupStatusItem()
@@ -129,6 +135,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Account
 
     private func signIn() {
+        // A pending code means a live approval page: reopen THAT page rather
+        // than minting a second code the first tab could wrongly approve.
+        if case .waiting = linkController.state {
+            linkController.reopenApproval()
+            return
+        }
         guard !linkController.isLinking else { return }
         linkController.begin(serverOrigin: resolveServerOrigin(credentials: nil))
     }
@@ -283,10 +295,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         header.isEnabled = false
         menu.addItem(header)
 
-        if case .waiting(let code, _) = linkController.state {
+        if case .waiting(let code, _, _) = linkController.state {
             let codeItem = NSMenuItem(title: "Code: \(code) (confirm in your browser)", action: nil, keyEquivalent: "")
             codeItem.isEnabled = false
             menu.addItem(codeItem)
+            menu.addItem(item("Open Approval Page", #selector(reopenApprovalAction)))
+        }
+        if case .failed = linkController.state {
+            menu.addItem(item("Try Linking Again", #selector(signInAction)))
         }
 
         let last = NSMenuItem(title: lastSyncLine(), action: nil, keyEquivalent: "")
@@ -364,6 +380,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showStatusWindowAction() { showStatusWindow() }
 
+    @objc private func signInAction() { signIn() }
+
+    @objc private func reopenApprovalAction() { linkController.reopenApproval() }
+
     @objc private func checkUpdates() {
         guard let updater else { return } // dev build: the menu item is hidden anyway
         NSApp.activate(ignoringOtherApps: true) // Sparkle's alert needs a frontmost app
@@ -386,6 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 signIn: { [weak self] in self?.signIn() },
                 signOut: { [weak self] in self?.signOut() },
                 cancelLink: { [weak self] in self?.linkController.cancel() },
+                reopenApproval: { [weak self] in self?.linkController.reopenApproval() },
                 changeFolder: { [weak self] in self?.changeSyncFolder() },
                 openFolder: { [weak self] in self?.openFolderAction() },
                 syncNow: { [weak self] in self?.engine.syncNow() }
@@ -421,15 +442,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             accountLine = "Linked as \(blog.map { $0.name.isEmpty ? $0.handle : $0.name } ?? credentials.tokenName)"
             accountDetail = "\(credentials.tokenName) · \(credentials.serverOrigin)"
         }
+        var linkFailed = false
+        var waitingApproval = false
         switch linkController.state {
         case .starting:
             accountLine = "Linking…"
-        case .waiting(let code, _):
+        case .waiting(let code, _, _):
             accountLine = "Waiting for approval"
+            waitingApproval = true
             linkCode = code
             linkHint = "Confirm this code matches the one in your browser"
         case .failed(let message):
-            accountDetail = message
+            // The failure IS the headline; buried small print taught the
+            // owner nothing when a code quietly expired.
+            accountLine = message
+            linkHint = "Click Try Again to get a fresh code."
+            linkFailed = true
         case .idle:
             break
         }
@@ -441,6 +469,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             linkHint: linkHint,
             linked: linked,
             linking: linkController.isLinking,
+            linkFailed: linkFailed,
+            waitingApproval: waitingApproval,
             folderPath: syncRoot().path,
             lastSyncLine: lastSyncLine(),
             busy: engine.isSyncing,

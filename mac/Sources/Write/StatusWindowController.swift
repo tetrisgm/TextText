@@ -2,12 +2,14 @@ import AppKit
 
 /// Everything the status window shows, computed by the AppDelegate.
 struct StatusModel {
-    var accountLine: String        // "Linked as My Blog" / "Not linked"
+    var accountLine: String        // "Linked as My Blog" / "Not linked" / a failure headline
     var accountDetail: String?     // token name + server, small print
     var linkCode: String?          // shown big while waiting for approval
     var linkHint: String?          // "Confirm this code in your browser"
     var linked: Bool
     var linking: Bool
+    var linkFailed: Bool           // expired/failed: the button becomes Try Again
+    var waitingApproval: Bool      // pending code: offer to reopen the SAME page
     var folderPath: String
     var lastSyncLine: String
     var busy: Bool
@@ -22,6 +24,7 @@ final class StatusWindowController: NSWindowController {
         var signIn: () -> Void = {}
         var signOut: () -> Void = {}
         var cancelLink: () -> Void = {}
+        var reopenApproval: () -> Void = {}
         var changeFolder: () -> Void = {}
         var openFolder: () -> Void = {}
         var syncNow: () -> Void = {}
@@ -34,6 +37,7 @@ final class StatusWindowController: NSWindowController {
     private let codeLabel = NSTextField(labelWithString: "")
     private let linkHintLabel = NSTextField(labelWithString: "")
     private let accountButton = NSButton(title: "Sign In", target: nil, action: nil)
+    private let reopenButton = NSButton(title: "Open Approval Page", target: nil, action: nil)
     private let folderLabel = NSTextField(labelWithString: "")
     private let changeButton = NSButton(title: "Change", target: nil, action: nil)
     private let openButton = NSButton(title: "Open", target: nil, action: nil)
@@ -44,6 +48,7 @@ final class StatusWindowController: NSWindowController {
 
     private var linking = false
     private var linked = false
+    private var linkFailed = false
 
     init(actions: Actions) {
         self.actions = actions
@@ -80,6 +85,9 @@ final class StatusWindowController: NSWindowController {
 
         accountButton.target = self
         accountButton.action = #selector(accountAction)
+        reopenButton.target = self
+        reopenButton.action = #selector(reopenAction)
+        reopenButton.isHidden = true
 
         folderLabel.font = .systemFont(ofSize: 12)
         folderLabel.lineBreakMode = .byTruncatingMiddle
@@ -109,7 +117,7 @@ final class StatusWindowController: NSWindowController {
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
 
-        let accountRow = NSStackView(views: [accountLabel, NSView(), accountButton])
+        let accountRow = NSStackView(views: [accountLabel, NSView(), reopenButton, accountButton])
         accountRow.orientation = .horizontal
 
         let folderTitle = sectionTitle("Sync folder")
@@ -165,8 +173,10 @@ final class StatusWindowController: NSWindowController {
     func refresh(_ model: StatusModel) {
         linked = model.linked
         linking = model.linking
+        linkFailed = model.linkFailed
 
         accountLabel.stringValue = model.accountLine
+        accountLabel.textColor = model.linkFailed ? .systemRed : .labelColor
         accountDetailLabel.stringValue = model.accountDetail ?? ""
         accountDetailLabel.isHidden = (model.accountDetail ?? "").isEmpty
 
@@ -175,8 +185,12 @@ final class StatusWindowController: NSWindowController {
         linkHintLabel.stringValue = model.linkHint ?? ""
         linkHintLabel.isHidden = model.linkHint == nil
 
+        reopenButton.isHidden = !model.waitingApproval
+
         if model.linking {
             accountButton.title = "Cancel"
+        } else if model.linkFailed {
+            accountButton.title = "Try Again"
         } else if model.linked {
             accountButton.title = "Sign Out"
         } else {
@@ -199,9 +213,12 @@ final class StatusWindowController: NSWindowController {
 
     @objc private func accountAction() {
         if linking { actions.cancelLink() }
+        else if linkFailed { actions.signIn() } // Try Again mints a fresh code
         else if linked { actions.signOut() }
         else { actions.signIn() }
     }
+
+    @objc private func reopenAction() { actions.reopenApproval() }
 
     @objc private func changeFolderAction() { actions.changeFolder() }
     @objc private func openFolderAction() { actions.openFolder() }
