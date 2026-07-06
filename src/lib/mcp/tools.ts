@@ -13,7 +13,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Blog, Post } from "@/lib/content";
 import { recordAction } from "@/lib/audit";
-import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   createDraft,
@@ -302,7 +302,7 @@ export function registerWriteTools(server: McpServer): void {
           type,
           status,
           date: parsed.fields.date,
-          slug: parsed.fields.slug ?? created.slug,
+          slug: slugForNewFile(parsed.fields, created.slug),
           body: parsed.body,
         });
         await auditMcp(extra, "mcp.create_item", saved.id, saved.title);

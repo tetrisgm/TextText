@@ -1,4 +1,4 @@
-import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import { createDraft, deletePost, savePost } from "@/lib/store";
 import { resolveSyncWorkspace } from "../auth";
 import { recordAction } from "@/lib/audit";
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       ...created,
       ...parsed.fields,
       date: parsed.fields.date,
-      slug: parsed.fields.slug ?? created.slug,
+      slug: slugForNewFile(parsed.fields, created.slug),
       body: parsed.body,
     });
     await recordAction({

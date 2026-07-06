@@ -20,6 +20,7 @@ const BASE_RESERVED_NAMES = [
   "demo",
   "dev",
   "docs",
+  "download",
   "editor",
   "feeds",
   "groups",

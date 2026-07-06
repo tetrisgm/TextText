@@ -141,7 +141,9 @@ export default function AiDocsPage() {
           <p className="connect-body">
             For file-level sync clients, the base URL is{" "}
             <code className="connect-inline-code">{origin}/api/sync/v1</code>,
-            with the same bearer tokens.
+            with the same bearer tokens. The Write app for Mac at{" "}
+            <code className="connect-inline-code">{origin}/download</code> is
+            one such client.
           </p>
           <div className="connect-table-wrap">
             <table className="connect-table">

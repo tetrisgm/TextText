@@ -465,6 +465,21 @@ function slugify(value: string): string {
     .replace(/-+$/g, "");
 }
 
+/**
+ * The slug for a newly created file: an explicit slug wins, else it derives
+ * from the title, else the caller's fallback (the placeholder draft slug).
+ * Sync and MCP creates use this so "My Great Note.md" with a title never
+ * ships as untitled-xxxx.
+ */
+export function slugForNewFile(
+  fields: Pick<ParsedPostFields, "slug" | "title">,
+  fallback: string,
+): string {
+  if (fields.slug) return fields.slug;
+  const fromTitle = fields.title ? slugify(fields.title) : "";
+  return fromTitle || fallback;
+}
+
 function addOptional(
   target: Record<string, unknown>,
   key: string,
