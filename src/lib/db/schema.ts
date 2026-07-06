@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -184,6 +185,28 @@ export const folders = pgTable(
     uniqueIndex("folders_blog_path_idx")
       .on(t.blogId, t.path)
       .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
+// Auth.js email magic-link verification tokens (the only auth state the
+// database holds; sessions stay JWT). `token` is stored pre-hashed: @auth/core
+// SHA-256-hashes `${token}${secret}` before it ever reaches the adapter, both
+// when creating and when consuming, so a leaked row cannot forge a link.
+// Rows are single-use (consumed via delete ... returning) and short-lived.
+export const verificationTokens = pgTable(
+  "verification_tokens",
+  {
+    /** the normalized (lowercased, trimmed) email address */
+    identifier: text("identifier").notNull(),
+    /** SHA-256 hash of the raw link token + auth secret */
+    token: text("token").notNull(),
+    expires: timestamp("expires").notNull(),
+  },
+  (t) => [
+    primaryKey({
+      name: "verification_tokens_identifier_token_pk",
+      columns: [t.identifier, t.token],
+    }),
   ],
 );
 
