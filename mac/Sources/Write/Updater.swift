@@ -21,6 +21,22 @@ import Sparkle
 /// Construct this only AFTER moveToApplicationsIfNeeded: Sparkle cannot
 /// update a translocated or Downloads copy.
 final class Updater: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
+    /// Whether this build carries a usable update config: a real EdDSA public
+    /// key (32 base64 bytes, so the committed REPLACE_WITH placeholder fails)
+    /// and an https feed URL. Dev and localhost builds fail this, and the
+    /// updater must then never be constructed: Sparkle would fail to start
+    /// and greet the first launch with an "Unable to Check for Updates"
+    /// alert for a feature that intentionally does not exist yet.
+    static var isConfigured: Bool {
+        let info = Bundle.main.infoDictionary ?? [:]
+        guard let key = info["SUPublicEDKey"] as? String,
+              let keyData = Data(base64Encoded: key), keyData.count == 32,
+              let feed = info["SUFeedURL"] as? String,
+              let feedURL = URL(string: feed), feedURL.scheme == "https"
+        else { return false }
+        return true
+    }
+
     private var controller: SPUStandardUpdaterController!
     private let isBusy: () -> Bool
     private var deferredWhileBusy = false // an update withheld mid-sync; re-surface once idle

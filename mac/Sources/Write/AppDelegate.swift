@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store = StateStore()
     private var engine: SyncEngine!
     private var linkController: LinkController!
-    private var updater: Updater!          // created AFTER the move check; Sparkle must
+    private var updater: Updater?          // created AFTER the move check; Sparkle must
                                            // never download into a translocated/Downloads copy
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
@@ -27,7 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // app-translocation; one click here fixes both (the LetsMove pattern).
         if moveToApplicationsIfNeeded() { return } // relaunching from the new home
 
-        updater = Updater(isBusy: { [weak self] in self?.engine?.isSyncing ?? false })
+        // Only when the build carries a real feed + key; otherwise the
+        // updater stays dormant and invisible (no Sparkle, no launch alert).
+        if Updater.isConfigured {
+            updater = Updater(isBusy: { [weak self] in self?.engine?.isSyncing ?? false })
+        }
         registerLoginItemByDefault()
         NSApp.mainMenu = buildMainMenu()
 
@@ -303,7 +307,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let login = item("Start \(appName) at Login", #selector(toggleLoginItem))
         login.state = loginItemEnabled ? .on : .off
         menu.addItem(login)
-        menu.addItem(item("Check for Updates…", #selector(checkUpdates)))
+        // Dev builds carry no update config; the item would only apologize.
+        if updater != nil {
+            menu.addItem(item("Check for Updates…", #selector(checkUpdates)))
+        }
         menu.addItem(.separator())
         menu.addItem(item("Quit \(appName)", #selector(quit)))
     }
@@ -358,6 +365,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func showStatusWindowAction() { showStatusWindow() }
 
     @objc private func checkUpdates() {
+        guard let updater else { return } // dev build: the menu item is hidden anyway
         NSApp.activate(ignoringOtherApps: true) // Sparkle's alert needs a frontmost app
         // Sparkle can't update an app running from Downloads or a
         // translocated mount; offer the move first, it relaunches from
