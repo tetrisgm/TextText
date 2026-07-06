@@ -280,3 +280,20 @@
   .connect-main { padding-top: 36px; }
   .connect-form { flex-direction: column; }
 }
+
+/* ---- device link approval ---- */
+.connect-link-actions {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.connect-link-done {
+  margin: 0;
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
+}
+.connect-link-error {
+  margin: 0;
+  color: var(--ac-red);
+  font: 500 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+}

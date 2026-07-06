@@ -20,10 +20,8 @@ import {
   createAnonymousBlogRecord,
   createDraft,
   deletePost,
-  ensureOwnerBlog,
   getAllPosts,
   getBlog,
-  getOwnedBlog,
   getOwnerPlan,
   getPostById,
   savePost,
@@ -54,6 +52,7 @@ import {
 } from "@/lib/public-paths";
 import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { resolveOwnedWorkspace } from "@/lib/workspace";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
 // client can never target another user's blog. Writing always requires auth;
@@ -71,35 +70,6 @@ async function editorHandle(): Promise<string> {
   return blog.handle;
 }
 
-// The signed-in user's workspace. An owned blog wins; otherwise the browser's
-// unclaimed guest workspace is CLAIMED (this is the save-your-work moment, so
-// signing in must never strand the guest blog by provisioning a fresh one);
-// only when neither exists is a starter blog provisioned.
-async function resolveOwnedWorkspace(user: CurrentUser): Promise<Blog> {
-  const owned = await getOwnedBlog(user.sub);
-  if (owned) return ensureOwnerBlog(user);
-
-  const guest = await getActiveGuestBlogFromCookie();
-  if (guest) {
-    try {
-      const claimed = await claimBlogForUser(guest.handle, user);
-      await deleteAnonymousEditCookie(guest.id);
-      await recordAction({
-        actorType: "human",
-        actionName: "claim_workspace",
-        targetType: "workspace",
-        targetId: guest.id,
-        inputSummary: claimed.handle,
-      });
-      await revalidateBlog(claimed.handle);
-      return claimed;
-    } catch {
-      // A concurrent claim or a race settles below; never block sign-in.
-    }
-  }
-
-  return ensureOwnerBlog(user);
-}
 
 function cleanHomeLayout(value: unknown): BlogHomeLayout {
   if (

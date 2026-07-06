@@ -112,6 +112,34 @@ export const actionAudit = pgTable("action_audit", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Device-link handshake: an app shows a short code and opens the browser;
+// the signed-in owner approves; the app's poll then mints its api_token.
+// The row is the handshake state only: the raw token is never stored (it is
+// minted at claim time), and rows are single-use and short-lived.
+export const deviceLinks = pgTable(
+  "device_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** short human-checkable code shown by the app and in the approve page */
+    code: text("code").notNull(),
+    /** SHA-256 of the app-held poll secret; the actual credential */
+    pollTokenHash: text("poll_token_hash").notNull(),
+    /** the requesting app's self-reported name, shown at approval */
+    appName: text("app_name").notNull(),
+    status: text("status").notNull().default("pending"),
+    approvedByUserId: uuid("approved_by_user_id").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    claimedAt: timestamp("claimed_at"),
+  },
+  (t) => [
+    uniqueIndex("device_links_code_idx")
+      .on(t.code)
+      .where(sql`${t.claimedAt} is null`),
+    uniqueIndex("device_links_poll_idx").on(t.pollTokenHash),
+  ],
+);
+
 // Scoped bearer tokens for the machine surface (sync API today, MCP next).
 // Only the SHA-256 hash is stored; the raw token is shown once at creation.
 export const apiTokens = pgTable(
