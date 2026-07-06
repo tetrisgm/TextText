@@ -32,8 +32,19 @@ portfolio this was extracted from; it stays its own thing).
   blogs live at `/@{username}` (served by `src/app/u/[username]`). `/start`
   is the single entry point into a workspace; signing in claims the browser's
   guest workspace.
+- Content model: a workspace (blogs row) holds three system folders (Blog,
+  Notes, Bookmarks); posts carry folder_id and a type (article/project/talk
+  are Blog's public kinds; note and bookmark are unlisted FOREVER, enforced
+  at the action, store, sync, and MCP layers). Every item round-trips as a
+  markdown file (src/lib/markdown-files.ts render + parse).
+- Machine surfaces: /api/sync/v1 (bearer wsk_ tokens, manifest hashes,
+  If-Match conflicts) and /api/mcp (same tokens, 7 tools). Tokens are minted
+  at /connect; agent docs live at /docs/ai and /llms.txt. Every mutation
+  writes an action_audit row.
 - `src/lib/store.ts`: the ONLY content access point (demo seed without
   DATABASE_URL, Neon Postgres with it). Routes never import demo.ts directly.
+- `src/lib/modes.ts`: validated declarative view specs (AI generates specs,
+  never code).
 - `src/styles/`: tokens.css (neutral palette), broadsheet.css (reader),
   apple.css (editor chrome, scoped .applecms).
 - `src/components/Reader.tsx`: the reader.
