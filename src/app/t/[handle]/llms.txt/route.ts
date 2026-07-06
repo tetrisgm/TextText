@@ -1,6 +1,7 @@
 import type { Blog, Post } from "@/lib/content";
 import {
   blogBaseUrl,
+  folderJsonUrl,
   llmsTxtUrl,
   markdownLinkText,
   notFound,
@@ -24,7 +25,7 @@ export async function GET(_request: Request, { params }: Props) {
   const [blog, posts] = await Promise.all([getBlog(handle), getPosts(handle)]);
   if (!blog) return notFound();
 
-  const baseUrl = blogBaseUrl(handle);
+  const baseUrl = blogBaseUrl(blog);
 
   return new Response(renderLlmsTxt(blog, publishedNewestFirst(posts), baseUrl), {
     headers: {
@@ -44,6 +45,7 @@ function renderLlmsTxt(blog: Blog, posts: Post[], baseUrl: string): string {
 
   lines.push(
     `Home: ${baseUrl}`,
+    `Folder JSON: ${folderJsonUrl(baseUrl)}`,
     `LLMS: ${llmsTxtUrl(baseUrl)}`,
     `Posts JSON: ${postsJsonUrl(baseUrl)}`,
     "",

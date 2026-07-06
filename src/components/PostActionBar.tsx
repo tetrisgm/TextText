@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
@@ -19,13 +20,9 @@ import {
   slugify,
 } from "@/lib/post-edit-draft";
 import type { DraftState, SaveState } from "@/lib/post-edit-draft";
+import type { AdjacentPublishedPosts } from "@/lib/store";
 
-type AdjacentPostLink = Pick<Post, "slug" | "title">;
-
-type AdjacentPosts = {
-  previous: AdjacentPostLink | null;
-  next: AdjacentPostLink | null;
-};
+type AdjacentPosts = AdjacentPublishedPosts;
 
 type CommonProps = {
   blog: Blog;
@@ -44,8 +41,10 @@ type EditProps = CommonProps & {
   mode: "edit";
   draft: DraftState;
   deleting: boolean;
+  hasHeaderImage: boolean;
   onDelete: () => void;
   onDone: () => Promise<void>;
+  onAddHeaderImage: () => void;
   onNavigate: (path: string) => Promise<void>;
   onSlugBlur: () => void;
   onSlugInput: (value: string) => void;
@@ -54,28 +53,53 @@ type EditProps = CommonProps & {
 };
 
 type Props = ReadProps | EditProps;
+type ReadState = {
+  source: Post;
+  draft: DraftState;
+  saveState: SaveState;
+  error: string | null;
+};
 
 const POST_TYPE_OPTIONS: Array<{
   type: PostType;
   label: string;
-  shortLabel: string;
 }> = [
-  { type: "article", label: "Article", shortLabel: "Art" },
-  { type: "project", label: "Project", shortLabel: "Proj" },
-  { type: "talk", label: "Talk", shortLabel: "Talk" },
+  { type: "article", label: "Article" },
+  { type: "project", label: "Media post" },
+  { type: "talk", label: "Video post" },
 ];
+
+function subscribeClientSnapshot() {
+  return () => {};
+}
+
+function getBrowserOrigin() {
+  if (typeof window === "undefined") return "";
+  return window.location.origin;
+}
+
+function getServerOrigin() {
+  return "";
+}
 
 function postTitle(title: string): string {
   return title.trim() || "Untitled";
 }
 
-function CloseIcon() {
+function postEditPath(postPath: string, postId?: string): string {
+  const params = new URLSearchParams({ edit: "1" });
+  if (postId) params.set("id", postId);
+  return `${postPath}?${params.toString()}`;
+}
+
+function BackIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        d="M3 3L13 13M13 3L3 13"
+        d="M10.25 3.25 5.5 8l4.75 4.75M6 8h7"
         stroke="currentColor"
         strokeLinecap="round"
+        strokeLinejoin="round"
         strokeWidth="1.8"
       />
     </svg>
@@ -102,6 +126,20 @@ function EllipsisIcon() {
       <circle cx="4" cy="8" r="1.25" fill="currentColor" />
       <circle cx="8" cy="8" r="1.25" fill="currentColor" />
       <circle cx="12" cy="8" r="1.25" fill="currentColor" />
+    </svg>
+  );
+}
+
+function MenuCheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="m4 8.15 2.35 2.35L12 5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
@@ -228,27 +266,39 @@ export function PostActionBar(props: Props) {
   const copiedTimerRef = useRef<number | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [origin, setOrigin] = useState("");
+  const origin = useSyncExternalStore(
+    subscribeClientSnapshot,
+    getBrowserOrigin,
+    getServerOrigin,
+  );
   const [copied, setCopied] = useState(false);
-  const [readDraft, setReadDraft] = useState(() => initialDraft(props.post));
-  const [readSaveState, setReadSaveState] = useState<SaveState>("saved");
-  const [readError, setReadError] = useState<string | null>(null);
+  const [readState, setReadState] = useState<ReadState>(() => ({
+    source: props.post,
+    draft: initialDraft(props.post),
+    saveState: "saved",
+    error: null,
+  }));
 
   const closeShare = useCallback(() => setShareOpen(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   useDismissPopover(shareOpen, shareWrapRef, closeShare);
   useDismissPopover(settingsOpen, settingsWrapRef, closeSettings);
 
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
-
-  useEffect(() => {
-    if (props.mode !== "read") return;
-    setReadDraft(initialDraft(props.post));
-    setReadSaveState("saved");
-    setReadError(null);
-  }, [props.mode, props.post]);
+  let readDraft = readState.draft;
+  let readSaveState = readState.saveState;
+  let readError = readState.error;
+  if (props.mode === "read" && readState.source !== props.post) {
+    const nextReadState = {
+      source: props.post,
+      draft: initialDraft(props.post),
+      saveState: "saved" as const,
+      error: null,
+    };
+    setReadState(nextReadState);
+    readDraft = nextReadState.draft;
+    readSaveState = nextReadState.saveState;
+    readError = nextReadState.error;
+  }
 
   useEffect(() => {
     const closePopovers = () => {
@@ -287,21 +337,30 @@ export function PostActionBar(props: Props) {
   const readSave = useCallback(
     async (nextDraft: DraftState) => {
       if (!props.post.id) {
-        setReadSaveState("error");
-        setReadError("Post cannot be edited");
+        setReadState((current) => ({
+          ...current,
+          saveState: "error",
+          error: "Post cannot be edited",
+        }));
         return;
       }
 
-      setReadDraft(nextDraft);
-      setReadSaveState("saving");
-      setReadError(null);
+      setReadState((current) => ({
+        ...current,
+        draft: nextDraft,
+        saveState: "saving",
+        error: null,
+      }));
 
       try {
         const payload = payloadFor(props.post.id, nextDraft, props.post.slug);
         const saved = await saveEditablePostAction(props.blog.handle, payload);
-        setReadDraft(initialDraft(saved));
-        setReadSaveState("saved");
-        setReadError(null);
+        setReadState({
+          source: props.post,
+          draft: initialDraft(saved),
+          saveState: "saved",
+          error: null,
+        });
 
         if (saved.slug !== props.post.slug) {
           router.replace(postPathFor(props.blog.handle, saved.slug), {
@@ -309,15 +368,17 @@ export function PostActionBar(props: Props) {
           });
         }
       } catch (saveError) {
-        setReadSaveState("error");
-        setReadError(
-          saveError instanceof Error && saveError.message
-            ? saveError.message
-            : "Could not save",
-        );
+        setReadState((current) => ({
+          ...current,
+          saveState: "error",
+          error:
+            saveError instanceof Error && saveError.message
+              ? saveError.message
+              : "Could not save",
+        }));
       }
     },
-    [props.blog.handle, props.post.id, props.post.slug, router],
+    [props.blog.handle, props.post, router],
   );
 
   const updateSlugInput = useCallback(
@@ -327,7 +388,10 @@ export function PostActionBar(props: Props) {
         return;
       }
 
-      setReadDraft((current) => ({ ...current, slug: slugify(value, "") }));
+      setReadState((current) => ({
+        ...current,
+        draft: { ...current.draft, slug: slugify(value, "") },
+      }));
     },
     [props],
   );
@@ -399,7 +463,7 @@ export function PostActionBar(props: Props) {
     ) : (
       <Link
         className="post-owner-edit ac-btn ac-btn-filled"
-        href={`${props.postPath}?edit=1`}
+        href={postEditPath(props.postPath, props.post.id)}
       >
         <span className="post-action-button-icon">
           <PencilIcon />
@@ -415,214 +479,255 @@ export function PostActionBar(props: Props) {
       </span>
     ) : null;
 
-  const typeSwitcher =
-    props.mode === "edit" ? (
-      <div
-        className="post-type-switcher ac-segmented"
-        role="radiogroup"
-        aria-label="Post type"
-      >
-        {POST_TYPE_OPTIONS.map((option) => {
-          const active = activeDraft.type === option.type;
-          return (
-            <button
-              key={option.type}
-              type="button"
-              className={`ac-segmented-button${active ? " ac-active" : ""}`}
-              role="radio"
-              aria-checked={active}
-              onClick={() => changeType(option.type)}
-            >
-              <span className="post-type-label-full">{option.label}</span>
-              <span className="post-type-label-short" aria-hidden="true">
-                {option.shortLabel}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    ) : null;
   const previousPath = props.adjacent.previous
     ? postPathFor(props.blog.handle, props.adjacent.previous.slug)
     : undefined;
   const nextPath = props.adjacent.next
     ? postPathFor(props.blog.handle, props.adjacent.next.slug)
     : undefined;
-
-  return (
-    <div
-      className={`post-top-action-bar applecms is-${props.mode}`}
-      aria-label="Post controls"
-    >
-      <div className="post-action-toolbar ac-chrome">
-        {props.owner && (
-          <div className="post-action-owner-group">
-            {doneControl}
-            {typeSwitcher}
-            <div className="post-action-popover-wrap" ref={shareWrapRef}>
+  const showPostNav = props.mode === "read" && Boolean(previousPath || nextPath);
+  const showTopActionBar = props.owner || showPostNav;
+  const showAddHeaderItem =
+    props.mode === "edit" &&
+    activeDraft.type === "article" &&
+    !props.hasHeaderImage;
+  const shareControl = (
+    <div className="post-action-popover-wrap" ref={shareWrapRef}>
+      <button
+        type="button"
+        className="post-action-share ac-btn ac-btn-gray"
+        aria-expanded={shareOpen}
+        aria-label="Share post"
+        onClick={openShare}
+      >
+        <span className="post-action-button-icon">
+          <ShareIcon />
+        </span>
+        Share
+      </button>
+      {shareOpen && (
+        <div
+          className="post-share-popover"
+          data-post-edit-menu-open="true"
+          role="dialog"
+          aria-label="Share"
+        >
+          <div className="post-popover-heading">Share</div>
+          <section className="post-share-section">
+            <div className="post-share-section-label">
+              Link to this page:
+            </div>
+            <div className="post-share-link-row">
+              <input
+                className="post-share-link-field"
+                value={publicUrl}
+                readOnly
+                aria-label="Link to this page:"
+              />
               <button
                 type="button"
-                className="post-action-share ac-btn ac-btn-gray"
-                aria-expanded={shareOpen}
-                aria-label="Share post"
-                onClick={openShare}
+                className="post-share-copy ac-btn ac-btn-gray"
+                onClick={copyLink}
               >
-                <span className="post-action-button-icon">
-                  <ShareIcon />
-                </span>
-                Share
+                {copied ? "Copied" : "Copy link"}
               </button>
-              {shareOpen && (
-                <div
-                  className="post-share-popover"
-                  data-post-edit-menu-open="true"
-                  role="dialog"
-                  aria-label="Share"
-                >
-                  <div className="post-popover-heading">Share</div>
-                  <section className="post-share-section">
-                    <div className="post-share-section-label">
-                      Link to this page:
-                    </div>
-                    <div className="post-share-link-row">
-                      <input
-                        className="post-share-link-field"
-                        value={publicUrl}
-                        readOnly
-                        aria-label="Link to this page:"
-                      />
-                      <button
-                        type="button"
-                        className="post-share-copy ac-btn ac-btn-gray"
-                        onClick={copyLink}
-                      >
-                        {copied ? "Copied" : "Copy link"}
-                      </button>
-                    </div>
-                  </section>
-                  <section className="post-share-section">
-                    <label className="post-edit-menu-field">
-                      <span>Slug</span>
-                      <input
-                        className="post-edit-slug"
-                        value={activeDraft.slug}
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={(event) =>
-                          updateSlugInput(event.currentTarget.value)
-                        }
-                        onBlur={commitSlug}
-                      />
-                    </label>
-                  </section>
-                  <section className="post-share-section">
-                    <div className="post-share-section-label">Who can see this</div>
-                    <button
-                      type="button"
-                      className="post-share-visibility-button"
-                      onClick={changeVisibility}
-                    >
-                      <span className="post-share-visibility-copy">
-                        <strong>{visibility.label}</strong>
-                        <span>{visibility.detail}</span>
-                      </span>
-                      <span className="post-share-action-word">Change</span>
-                    </button>
-                    {readStatus}
-                  </section>
-                  <section className="post-share-section post-share-future">
-                    <div>
-                      <div className="post-share-section-label">Who can edit</div>
-                      <p>Collaborators and invites will appear here.</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="post-share-invite ac-btn ac-btn-gray"
-                      disabled
-                    >
-                      Invite people
-                    </button>
-                  </section>
-                </div>
-              )}
             </div>
-            {props.mode === "edit" && (
-              <div className="post-action-popover-wrap" ref={settingsWrapRef}>
-                <button
-                  type="button"
-                  className="post-edit-menu-button ac-icon-btn"
-                  aria-label="Post actions"
-                  aria-expanded={settingsOpen}
-                  aria-haspopup="menu"
-                  onClick={openSettings}
-                >
-                  <EllipsisIcon />
-                </button>
-                {settingsOpen && (
-                  <div
-                    className="post-edit-menu"
-                    data-post-edit-menu-open="true"
-                    role="menu"
-                    aria-label="Post actions"
-                  >
+          </section>
+          <section className="post-share-section">
+            <label className="post-edit-menu-field">
+              <span>Slug</span>
+              <input
+                className="post-edit-slug"
+                value={activeDraft.slug}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                onChange={(event) =>
+                  updateSlugInput(event.currentTarget.value)
+                }
+                onBlur={commitSlug}
+              />
+            </label>
+          </section>
+          <section className="post-share-section">
+            <div className="post-share-section-label">Who can see this</div>
+            <button
+              type="button"
+              className="post-share-visibility-button"
+              onClick={changeVisibility}
+            >
+              <span className="post-share-visibility-copy">
+                <strong>{visibility.label}</strong>
+                <span>{visibility.detail}</span>
+              </span>
+              <span className="post-share-action-word">Change</span>
+            </button>
+            {readStatus}
+          </section>
+          <section className="post-share-section post-share-future">
+            <div>
+              <div className="post-share-section-label">Who can edit</div>
+              <p>Collaborators and invites will appear here.</p>
+            </div>
+            <button
+              type="button"
+              className="post-share-invite ac-btn ac-btn-gray"
+              disabled
+            >
+              Invite people
+            </button>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <nav
+        className={`post-back-action-bar applecms is-${props.mode}`}
+        aria-label="Post navigation"
+      >
+        <NavControl
+          href={props.homePath}
+          label="Back"
+          mode={props.mode}
+          onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
+        >
+          <BackIcon />
+        </NavControl>
+      </nav>
+      {showTopActionBar && (
+        <div
+          className={`post-top-action-bar applecms is-${props.mode}`}
+          aria-label="Post controls"
+        >
+          <div className="post-action-toolbar ac-chrome">
+            {props.owner && (
+              <div className="post-action-owner-group">
+                {shareControl}
+                {props.mode === "edit" && (
+                  <div className="post-action-popover-wrap" ref={settingsWrapRef}>
                     <button
-                      className="post-edit-delete"
                       type="button"
-                      role="menuitem"
-                      disabled={!props.post.id || props.deleting}
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        props.onDelete();
-                      }}
+                      className="post-edit-menu-button ac-icon-btn"
+                      aria-label="Post actions"
+                      aria-expanded={settingsOpen}
+                      aria-haspopup="menu"
+                      onClick={openSettings}
                     >
-                      {props.deleting ? "Deleting" : "Delete post"}
+                      <EllipsisIcon />
                     </button>
+                    {settingsOpen && (
+                      <div
+                        className="post-edit-menu"
+                        data-post-edit-menu-open="true"
+                        role="menu"
+                        aria-label="Post actions"
+                      >
+                        <div
+                          className="post-edit-menu-section"
+                          role="group"
+                          aria-label="Turn into"
+                        >
+                          <div
+                            className="post-edit-menu-section-title"
+                            role="presentation"
+                          >
+                            Turn into
+                          </div>
+                          {POST_TYPE_OPTIONS.map((option) => {
+                            const active = activeDraft.type === option.type;
+                            return (
+                              <button
+                                key={option.type}
+                                className={`post-edit-menu-item post-turn-into-item${
+                                  active ? " is-active" : ""
+                                }`}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={active}
+                                onClick={() => {
+                                  if (active) {
+                                    setSettingsOpen(false);
+                                    return;
+                                  }
+                                  changeType(option.type);
+                                }}
+                              >
+                                <span>{option.label}</span>
+                                {active && (
+                                  <span className="post-turn-into-check">
+                                    <MenuCheckIcon />
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {showAddHeaderItem && (
+                          <button
+                            className="post-edit-menu-item"
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setSettingsOpen(false);
+                              props.onAddHeaderImage();
+                            }}
+                          >
+                            Add header image
+                          </button>
+                        )}
+                        <button
+                          className="post-edit-delete"
+                          type="button"
+                          role="menuitem"
+                          disabled={!props.post.id || props.deleting}
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            props.onDelete();
+                          }}
+                        >
+                          {props.deleting ? "Deleting" : "Delete post"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
+                {doneControl}
               </div>
             )}
+            {showPostNav && (
+              <nav className="post-detail-controls" aria-label="Post navigation">
+                <NavControl
+                  href={previousPath}
+                  label={
+                    props.adjacent.previous
+                      ? `Previous post: ${postTitle(props.adjacent.previous.title)}`
+                      : "No previous post"
+                  }
+                  disabled={!previousPath}
+                  mode={props.mode}
+                >
+                  <ChevronIcon dir="left" />
+                </NavControl>
+                <NavControl
+                  href={nextPath}
+                  label={
+                    props.adjacent.next
+                      ? `Next post: ${postTitle(props.adjacent.next.title)}`
+                      : "No next post"
+                  }
+                  disabled={!nextPath}
+                  mode={props.mode}
+                >
+                  <ChevronIcon dir="right" />
+                </NavControl>
+              </nav>
+            )}
           </div>
-        )}
-        <nav className="post-detail-controls" aria-label="Post navigation">
-          {props.mode === "read" && (
-            <>
-              <NavControl
-                href={previousPath}
-                label={
-                  props.adjacent.previous
-                    ? `Previous post: ${postTitle(props.adjacent.previous.title)}`
-                    : "No previous post"
-                }
-                disabled={!previousPath}
-                mode={props.mode}
-              >
-                <ChevronIcon dir="left" />
-              </NavControl>
-              <NavControl
-                href={nextPath}
-                label={
-                  props.adjacent.next
-                    ? `Next post: ${postTitle(props.adjacent.next.title)}`
-                    : "No next post"
-                }
-                disabled={!nextPath}
-                mode={props.mode}
-              >
-                <ChevronIcon dir="right" />
-              </NavControl>
-            </>
-          )}
-          <NavControl
-            href={props.homePath}
-            label="Close"
-            mode={props.mode}
-            onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
-          >
-            <CloseIcon />
-          </NavControl>
-        </nav>
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 }

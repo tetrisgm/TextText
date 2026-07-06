@@ -1,11 +1,14 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import {
   getAdjacentPublishedPosts,
   getAllPosts,
   getBlog,
   getPost,
+  getPostById,
 } from "@/lib/store";
 import type { Post } from "@/lib/content";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
@@ -14,12 +17,20 @@ import { TalkReader } from "@/components/TalkReader";
 import { ProjectReader } from "@/components/ProjectReader";
 import { PostActionBar } from "@/components/PostActionBar";
 import { PostEditLayer } from "@/components/PostEditLayer";
+import { PostReadWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { PostShortcuts } from "@/components/PostShortcuts";
+import { isNoCoverValue } from "@/lib/cover";
+import { blogHomePath, blogPostEditPath, blogPostPath } from "@/lib/public-paths";
+import {
+  WORKSPACE_SIDEBAR_COOKIE,
+  parseWorkspaceSidebarCollapsed,
+} from "@/lib/workspace-sidebar-state";
 
 interface Props {
   params: Promise<{ handle: string; slug: string }>;
-  searchParams?: Promise<{ edit?: string | string[] }>;
+  searchParams?: Promise<{ edit?: string | string[]; id?: string | string[] }>;
 }
+type PostPageQuery = { edit?: string | string[]; id?: string | string[] };
 
 function queryValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -29,21 +40,13 @@ function postTitle(title: string): string {
   return title.trim() || "Untitled";
 }
 
-function postPath(handle: string, slug: string): string {
-  return `/t/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}`;
-}
-
-function blogPath(handle: string): string {
-  return `/t/${encodeURIComponent(handle)}`;
-}
-
 function isEmptyOwnedPost(post: Post): boolean {
   const title = post.title.trim().toLowerCase();
   return (
     (!title || title === "untitled") &&
     !post.excerpt?.trim() &&
     !post.body.trim() &&
-    !post.cover?.trim() &&
+    (!post.cover?.trim() || isNoCoverValue(post.cover)) &&
     !(post.gallery && post.gallery.length > 0) &&
     !post.videoUrl?.trim()
   );
@@ -61,7 +64,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description:
       post.excerpt?.trim() || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
     alternates: {
-      types: blogFeedAlternateTypes(handle, blog.name),
+      types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
   if (post.status !== "published") {
@@ -70,36 +73,79 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return metadata;
 }
 
-export default async function PostPage({ params, searchParams }: Props) {
-  const { handle, slug } = await params;
-  const [blog, post, access] = await Promise.all([
+export async function PostPageForHandle({
+  handle,
+  redirectClaimed = true,
+  searchParams,
+  slug,
+}: {
+  handle: string;
+  redirectClaimed?: boolean;
+  searchParams?: Promise<PostPageQuery>;
+  slug: string;
+}) {
+  const queryPromise: Promise<PostPageQuery> =
+    searchParams ?? Promise.resolve({});
+  const [blog, postBySlug, access, query, cookieStore] = await Promise.all([
     getBlog(handle),
     getPost(handle, slug),
     getBlogEditAccess(handle),
+    queryPromise,
+    cookies(),
   ]);
-  const query = searchParams ? await searchParams : {};
-  if (!blog || !post) notFound();
+  if (!blog) notFound();
+  const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(
+    cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value,
+  );
   const canEdit = access.canEdit;
-  const editMode = canEdit && queryValue(query.edit) === "1";
-  const currentPostPath = postPath(handle, post.slug);
-  const homePath = blogPath(handle);
+  const editRequested = queryValue(query.edit) === "1";
+  const editId = queryValue(query.id);
+  let post = postBySlug;
 
-  if (canEdit && !editMode && isEmptyOwnedPost(post)) {
-    redirect(`${currentPostPath}?edit=1`);
+  if (!post && canEdit && editRequested && editId) {
+    post = await getPostById(handle, editId);
+    if (post) redirect(blogPostEditPath(blog, post));
   }
 
-  const [adjacent, usedSlugs] = await Promise.all([
+  if (!post) notFound();
+  const editMode = canEdit && editRequested;
+  if (redirectClaimed && blog.username) {
+    const path = blogPostPath(blog, post);
+    redirect(
+      editMode
+        ? blogPostEditPath(blog, post)
+        : editRequested
+          ? `${path}?edit=1`
+          : path,
+    );
+  }
+
+  const currentPostPath = blogPostPath(blog, post);
+  const homePath = blogHomePath(blog);
+  const showGuestSignIn =
+    canEdit && access.isUnclaimed && access.isTokenEditor && isAuthConfigured;
+
+  if (editMode && post.id && editId !== post.id) {
+    redirect(blogPostEditPath(blog, post));
+  }
+
+  if (canEdit && !editMode && isEmptyOwnedPost(post)) {
+    redirect(blogPostEditPath(blog, post));
+  }
+
+  const [adjacent, allPosts] = await Promise.all([
     getAdjacentPublishedPosts(handle, post.slug),
-    editMode
-      ? getAllPosts(handle).then((posts) =>
-          posts
-            .filter((candidate) =>
-              post.id ? candidate.id !== post.id : candidate.slug !== post.slug,
-            )
-            .map((candidate) => candidate.slug),
-        )
+    editMode || canEdit
+      ? getAllPosts(handle)
       : Promise.resolve([]),
   ]);
+  const usedSlugs = editMode
+    ? allPosts
+        .filter((candidate) =>
+          post.id ? candidate.id !== post.id : candidate.slug !== post.slug,
+        )
+        .map((candidate) => candidate.slug)
+    : [];
 
   const ReaderComponent =
     post.type === "talk"
@@ -114,44 +160,86 @@ export default async function PostPage({ params, searchParams }: Props) {
         <PostShortcuts
           homePath={homePath}
           previousPath={
-            adjacent.previous ? postPath(handle, adjacent.previous.slug) : undefined
+            adjacent.previous
+              ? blogPostPath(blog, { slug: adjacent.previous.slug })
+              : undefined
           }
-          nextPath={adjacent.next ? postPath(handle, adjacent.next.slug) : undefined}
+          nextPath={
+            adjacent.next ? blogPostPath(blog, { slug: adjacent.next.slug }) : undefined
+          }
           owner={canEdit}
           handle={handle}
         />
         <PostEditLayer
+          key={post.id ?? post.slug}
           blog={blog}
           post={post}
           adjacent={adjacent}
           homePath={homePath}
+          mediaEnabled={access.isOwner}
+          folderPosts={allPosts}
+          initialSidebarCollapsed={initialSidebarCollapsed}
           usedSlugs={usedSlugs}
         />
       </>
     );
   }
 
+  const reader = <ReaderComponent blog={blog} post={post} />;
+
   return (
     <>
-      <PostActionBar
-        mode="read"
-        owner={canEdit}
-        blog={blog}
-        post={post}
-        adjacent={adjacent}
-        homePath={homePath}
-        postPath={currentPostPath}
-      />
+      {canEdit ? (
+        <PostReadWorkspaceShell
+          adjacent={adjacent}
+          blog={blog}
+          homePath={homePath}
+          initialSidebarCollapsed={initialSidebarCollapsed}
+          post={post}
+          postPath={currentPostPath}
+          posts={allPosts}
+          showGuestSignIn={showGuestSignIn}
+        >
+          {reader}
+        </PostReadWorkspaceShell>
+      ) : (
+        <>
+          <PostActionBar
+            mode="read"
+            owner={canEdit}
+            blog={blog}
+            post={post}
+            adjacent={adjacent}
+            homePath={homePath}
+            postPath={currentPostPath}
+          />
+          {reader}
+        </>
+      )}
       <PostShortcuts
         homePath={homePath}
         previousPath={
-          adjacent.previous ? postPath(handle, adjacent.previous.slug) : undefined
+          adjacent.previous
+            ? blogPostPath(blog, { slug: adjacent.previous.slug })
+            : undefined
         }
-        nextPath={adjacent.next ? postPath(handle, adjacent.next.slug) : undefined}
+        nextPath={
+          adjacent.next ? blogPostPath(blog, { slug: adjacent.next.slug }) : undefined
+        }
         owner={canEdit}
         handle={handle}
       />
-      <ReaderComponent blog={blog} post={post} />
     </>
+  );
+}
+
+export default async function PostPage({ params, searchParams }: Props) {
+  const { handle, slug } = await params;
+  return (
+    <PostPageForHandle
+      handle={handle}
+      searchParams={searchParams}
+      slug={slug}
+    />
   );
 }

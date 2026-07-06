@@ -6,6 +6,7 @@ export type DraftState = {
   excerpt: string;
   cover: string;
   coverCaption: string;
+  coverHeight: number | null;
   body: string;
   status: Post["status"];
   slug: string;
@@ -30,6 +31,7 @@ export function initialDraft(post: Post): DraftState {
     excerpt: post.excerpt ?? "",
     cover: post.cover ?? "",
     coverCaption: post.coverCaption ?? "",
+    coverHeight: post.coverHeight ?? null,
     body: post.body,
     status: post.status,
     slug: post.slug,
@@ -88,6 +90,7 @@ export function payloadFor(id: string, draft: DraftState, fallbackSlug: string) 
     excerpt: draft.excerpt,
     cover: draft.cover || null,
     coverCaption: draft.coverCaption || null,
+    coverHeight: draft.coverHeight,
     body: draft.body,
     status: draft.status,
     slug: slugify(draft.slug, fallbackSlug),

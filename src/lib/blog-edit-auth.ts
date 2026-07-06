@@ -7,31 +7,60 @@ import {
 } from "crypto";
 import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/session";
-import { getBlogEditRecord, isBlogOwner } from "@/lib/store";
+import {
+  getBlogEditRecord,
+  getUnclaimedBlogEditRecordsByIds,
+  isBlogOwner,
+} from "@/lib/store";
 
 const EDIT_COOKIE_PREFIX = "wr_edit_";
 const EDIT_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 5;
 const SEED_ADJECTIVES = [
   "bright",
-  "quiet",
-  "fresh",
-  "open",
-  "plain",
+  "calm",
   "clear",
   "daily",
+  "early",
   "field",
+  "fresh",
+  "gentle",
+  "honest",
+  "open",
+  "plain",
+  "quiet",
+  "small",
+  "soft",
+  "steady",
+  "tidy",
+] as const;
+const SEED_COLORS = [
+  "amber",
+  "blue",
+  "green",
+  "indigo",
+  "ivory",
+  "linen",
+  "olive",
+  "pearl",
+  "silver",
+  "slate",
+  "white",
 ] as const;
 const SEED_NOUNS = [
-  "notes",
-  "pages",
-  "draft",
-  "letter",
-  "studio",
-  "ledger",
+  "archive",
+  "brook",
+  "desk",
+  "field",
   "journal",
-  "dispatch",
+  "lantern",
+  "letter",
+  "notebook",
+  "pages",
+  "paper",
+  "river",
+  "studio",
+  "window",
 ] as const;
-
 export type BlogEditAccess = {
   canEdit: boolean;
   isOwner: boolean;
@@ -47,8 +76,11 @@ function randomSeedWord(values: readonly string[]): string {
 }
 
 export function friendlyAnonymousSeed(): string {
-  const suffix = randomBytes(2).toString("hex");
-  return `${randomSeedWord(SEED_ADJECTIVES)}-${randomSeedWord(SEED_NOUNS)}-${suffix}`;
+  return [
+    randomSeedWord(SEED_ADJECTIVES),
+    randomSeedWord(SEED_COLORS),
+    randomSeedWord(SEED_NOUNS),
+  ].join("-");
 }
 
 export function generateEditToken(): string {
@@ -82,6 +114,15 @@ export async function setAnonymousEditCookie(
 export async function deleteAnonymousEditCookie(blogId: string): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(editCookieName(blogId));
+}
+
+export async function deleteAllGuestEditCookies(): Promise<void> {
+  const cookieStore = await cookies();
+  for (const cookie of cookieStore.getAll()) {
+    if (cookie.name.startsWith(EDIT_COOKIE_PREFIX)) {
+      cookieStore.delete(cookie.name);
+    }
+  }
 }
 
 function safeHashMatches(actual: string, expected: string): boolean {
@@ -147,4 +188,39 @@ export async function getBlogEditAccess(
 
 export async function canEditBlog(handle: string): Promise<boolean> {
   return (await getBlogEditAccess(handle)).canEdit;
+}
+
+export async function getActiveGuestBlogFromCookie(): Promise<{
+  id: string;
+  handle: string;
+} | null> {
+  const cookieStore = await cookies();
+  const editCookies = cookieStore
+    .getAll()
+    .filter((cookie) => cookie.name.startsWith(EDIT_COOKIE_PREFIX));
+  if (editCookies.length === 0) return null;
+
+  const tokenByBlogId = new Map(
+    editCookies.map((cookie) => [
+      cookie.name.slice(EDIT_COOKIE_PREFIX.length),
+      cookie.value,
+    ]),
+  );
+  const records = await getUnclaimedBlogEditRecordsByIds([
+    ...tokenByBlogId.keys(),
+  ]);
+
+  for (const record of records) {
+    const token = tokenByBlogId.get(record.id);
+    const tokenHash = token ? hashEditToken(token) : "";
+    if (
+      tokenHash &&
+      record.editTokenHash &&
+      safeHashMatches(tokenHash, record.editTokenHash)
+    ) {
+      return { id: record.id, handle: record.handle };
+    }
+  }
+
+  return null;
 }

@@ -9,10 +9,25 @@ import {
   useRef,
   useState,
 } from "react";
-import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type {
+  CSSProperties,
+  DragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { useRouter } from "next/navigation";
-import { deleteEditablePostAction, saveEditablePostAction } from "@/app/editor/actions";
+import {
+  deleteEditablePostAction,
+  saveEditablePostAction,
+} from "@/app/editor/actions";
 import { ProjectGallery } from "@/components/ProjectGallery";
+import {
+  WorkspaceSidebarChrome,
+  closeExpandedWorkspaceSidebar,
+  useWorkspaceSidebarCollapsed,
+} from "@/components/PostWorkspaceShell";
+import type { SidebarFolderId } from "@/components/PostWorkspaceShell";
 import type { Blog, GalleryItem, Post } from "@/lib/content";
 import {
   isVideoFile,
@@ -31,7 +46,6 @@ import {
   isUnsetTitle,
   payloadFor,
   payloadKey,
-  postPath,
   slugify,
   uniqueSlug,
 } from "@/lib/post-edit-draft";
@@ -39,12 +53,15 @@ import type { DraftState, SaveState } from "@/lib/post-edit-draft";
 import { PostActionBar } from "@/components/PostActionBar";
 import { BodyEditor } from "@/components/BodyEditor";
 import type { BodyEditorHandle } from "@/components/BodyEditor";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { hasOpenEditMenu } from "@/components/PostShortcuts";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
-import { resolveCover } from "@/lib/cover";
+import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
 import { COVER_PILE } from "@/lib/cover-pile";
+import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
+import { ANONYMOUS_MEDIA_UPLOAD_COPY } from "@/lib/product-limits";
 
 type EditSession = {
   draft: DraftState;
@@ -59,6 +76,10 @@ type DraftSnapshot = {
 };
 
 const editSessions = new Map<string, EditSession>();
+
+const COVER_HEIGHT_MIN = 220;
+const COVER_HEIGHT_MAX = 760;
+const COVER_HEIGHT_STEP = 24;
 
 function autoGrow(node: HTMLTextAreaElement | null) {
   if (!node) return;
@@ -149,130 +170,48 @@ function randomPileCover(currentCover: string): string {
   return pile[Math.floor(Math.random() * pile.length)] ?? COVER_PILE[0] ?? "";
 }
 
-function CoverPicker({
-  open,
-  selectedCover,
-  onClose,
-  onSelect,
-  onShuffle,
-}: {
-  open: boolean;
-  selectedCover: string;
-  onClose: () => void;
-  onSelect: (cover: string) => void;
-  onShuffle: () => void;
-}) {
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="cover-picker-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="cover-picker-sheet applecms"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Change cover"
-      >
-        <div className="cover-picker-header">
-          <h2>Change cover</h2>
-          <div className="cover-picker-actions">
-            <button
-              type="button"
-              className="cover-picker-secondary"
-              onClick={onShuffle}
-            >
-              Shuffle
-            </button>
-            <button
-              type="button"
-              className="cover-picker-secondary"
-              onClick={onClose}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-        <div className="cover-picker-grid">
-          {COVER_PILE.map((cover) => (
-            <button
-              key={cover}
-              type="button"
-              className={`cover-picker-card${
-                cover === selectedCover ? " is-selected" : ""
-              }`}
-              aria-label={`Use ${cover.replace("/covers/", "").replace(".jpg", "")}`}
-              aria-pressed={cover === selectedCover}
-              onClick={() => {
-                onSelect(cover);
-                onClose();
-              }}
-            >
-              {/* Curated local covers are served from public/covers. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={cover} alt="" loading="lazy" decoding="async" />
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+function clampCoverHeight(value: number): number {
+  return Math.min(COVER_HEIGHT_MAX, Math.max(COVER_HEIGHT_MIN, Math.round(value)));
 }
 
 function EditableCover({
   title,
   cover,
-  customCover,
-  caption,
+  coverHeight,
+  mediaEnabled,
   uploading,
   error,
+  onChangeCover,
+  onCoverHeightChange,
   onUploadFile,
-  onPickCover,
-  onShuffleCover,
-  onCaptionChange,
-  onResetCover,
+  onRemoveCover,
 }: {
   title: string;
   cover: string;
-  customCover: string;
-  caption: string;
+  coverHeight: number | null;
+  mediaEnabled: boolean;
   uploading: boolean;
   error: string | null;
+  onChangeCover: () => void;
+  onCoverHeightChange: (height: number) => void;
   onUploadFile: (file: File) => void;
-  onPickCover: (cover: string) => void;
-  onShuffleCover: () => void;
-  onCaptionChange: (caption: string) => void;
-  onResetCover: () => void;
+  onRemoveCover: () => void;
 }) {
+  const figureRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [draggingCover, setDraggingCover] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [resizingCover, setResizingCover] = useState(false);
   const chooseFile = (files: FileList | null) => {
+    if (!mediaEnabled) return;
     const file = files
-      ? Array.from(files).find(
-          (item) =>
-            item.type.startsWith("image/") || item.type.startsWith("video/"),
-        )
+      ? Array.from(files).find((item) => item.type.startsWith("image/"))
       : undefined;
     if (file) onUploadFile(file);
   };
   const hasCoverDrop = (event: DragEvent<HTMLElement>) =>
     Array.from(event.dataTransfer.types).includes("Files");
   const onCoverDrag = (event: DragEvent<HTMLElement>) => {
+    if (!mediaEnabled) return;
     if (!hasCoverDrop(event)) return;
     event.preventDefault();
     if (uploading) return;
@@ -287,6 +226,7 @@ function EditableCover({
     setDraggingCover(false);
   };
   const onCoverDrop = (event: DragEvent<HTMLElement>) => {
+    if (!mediaEnabled) return;
     if (!hasCoverDrop(event)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -294,17 +234,88 @@ function EditableCover({
     if (uploading) return;
     chooseFile(event.dataTransfer.files);
   };
+  const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const media = figureRef.current?.querySelector<HTMLElement>(".edit-cover-media");
+    if (!media) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const startY = event.clientY;
+    const startHeight = media.getBoundingClientRect().height;
+    setResizingCover(true);
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      onCoverHeightChange(clampCoverHeight(startHeight + moveEvent.clientY - startY));
+    };
+    const onPointerUp = () => {
+      setResizingCover(false);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+    window.addEventListener("pointercancel", onPointerUp, { once: true });
+  };
+  const onResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const currentHeight =
+      coverHeight ?? figureRef.current?.querySelector<HTMLElement>(".edit-cover-media")
+        ?.getBoundingClientRect().height ?? 420;
+    const step = event.shiftKey ? COVER_HEIGHT_STEP * 2 : COVER_HEIGHT_STEP;
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      onCoverHeightChange(clampCoverHeight(currentHeight - step));
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      onCoverHeightChange(clampCoverHeight(currentHeight + step));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      onCoverHeightChange(COVER_HEIGHT_MIN);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      onCoverHeightChange(COVER_HEIGHT_MAX);
+    }
+  };
+  const coverStyle = coverHeight
+    ? ({ "--reader-cover-height": `${coverHeight}px` } as CSSProperties)
+    : undefined;
 
   return (
     <figure
+      ref={figureRef}
       className={`reader-cover edit-cover applecms${
         draggingCover ? " is-dragging-cover" : ""
-      }${uploading ? " is-uploading-cover" : ""}`}
+      }${uploading ? " is-uploading-cover" : ""}${
+        resizingCover ? " is-resizing-cover" : ""
+      }`}
+      style={coverStyle}
       onDragEnter={onCoverDrag}
       onDragOver={onCoverDrag}
       onDragLeave={onCoverDragLeave}
       onDrop={onCoverDrop}
     >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => {
+          chooseFile(event.currentTarget.files);
+          event.currentTarget.value = "";
+        }}
+      />
       <div className="edit-cover-media">
         {isVideoFile(cover) ? (
           <video src={cover} controls playsInline preload="metadata" />
@@ -313,58 +324,54 @@ function EditableCover({
           <img src={cover} alt={title} />
         )}
         <div className="edit-cover-drop-hint" aria-hidden="true">
-          Drop to replace cover
+          {mediaEnabled ? "Drop to replace image" : "Choose a local image"}
         </div>
         <div className="edit-cover-toolbar">
           <button
             type="button"
             className="edit-cover-action"
             disabled={uploading}
-            onClick={() => setPickerOpen(true)}
+            onClick={onChangeCover}
           >
-            {uploading ? "Uploading" : "Change cover"}
+            Change image
+          </button>
+          <button
+            type="button"
+            className="edit-cover-action"
+            disabled={uploading || !mediaEnabled}
+            onClick={() => inputRef.current?.click()}
+          >
+            {uploading ? "Uploading" : "Upload image"}
           </button>
           <button
             type="button"
             className="edit-cover-action"
             disabled={uploading}
-            onClick={onShuffleCover}
+            onClick={onRemoveCover}
           >
-            Shuffle
+            Remove
           </button>
-          {customCover && (
-            <button
-              type="button"
-              className="edit-cover-action"
-              disabled={uploading}
-              onClick={onResetCover}
-            >
-              Reset
-            </button>
-          )}
+        </div>
+        <div
+          role="slider"
+          tabIndex={0}
+          className="edit-cover-resize-handle"
+          aria-label="Resize header image"
+          aria-orientation="vertical"
+          aria-valuemin={COVER_HEIGHT_MIN}
+          aria-valuemax={COVER_HEIGHT_MAX}
+          aria-valuenow={Math.round(coverHeight ?? 420)}
+          onPointerDown={onResizePointerDown}
+          onKeyDown={onResizeKeyDown}
+        >
+          <span aria-hidden="true" />
         </div>
       </div>
-      <figcaption className="reader-figcaption edit-cover-caption">
-        <input
-          className="edit-cover-caption-input"
-          value={caption}
-          placeholder="Add caption"
-          aria-label="Cover caption"
-          onChange={(event) => onCaptionChange(event.currentTarget.value)}
-        />
-      </figcaption>
       {error && (
         <span className="edit-cover-error" role="alert">
           {error}
         </span>
       )}
-      <CoverPicker
-        open={pickerOpen}
-        selectedCover={customCover}
-        onClose={() => setPickerOpen(false)}
-        onSelect={onPickCover}
-        onShuffle={onShuffleCover}
-      />
     </figure>
   );
 }
@@ -373,6 +380,7 @@ function EditableTalkStage({
   title,
   cover,
   videoUrl,
+  mediaEnabled,
   uploading,
   error,
   onUploadFile,
@@ -381,6 +389,7 @@ function EditableTalkStage({
   title: string;
   cover: string;
   videoUrl: string;
+  mediaEnabled: boolean;
   uploading: boolean;
   error: string | null;
   onUploadFile: (file: File) => void;
@@ -400,6 +409,7 @@ function EditableTalkStage({
   const empty = !embedSrc && !fileVideoSrc && !cover;
 
   const chooseFile = (files: FileList | null) => {
+    if (!mediaEnabled) return;
     const file = files?.[0];
     if (file) onUploadFile(file);
   };
@@ -447,17 +457,19 @@ function EditableTalkStage({
         />
       ) : (
         <div className="talk-edit-stage-empty">
-          <button
-            type="button"
-            className="talk-edit-empty-button"
-            disabled={uploading}
-            onClick={() => inputRef.current?.click()}
-          >
-            {uploading ? "Uploading" : "Add cover"}
-          </button>
+          {mediaEnabled && (
+            <button
+              type="button"
+              className="talk-edit-empty-button"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {uploading ? "Uploading" : "Add cover"}
+            </button>
+          )}
         </div>
       )}
-      {canEditCover && !empty && (
+      {mediaEnabled && canEditCover && !empty && (
         <div className="talk-edit-cover-controls">
           <button
             type="button"
@@ -539,9 +551,21 @@ function SaveStatusPill({
   saveState: SaveState;
   error: string | null;
 }) {
-  const [visible, setVisible] = useState(false);
+  const [savedFlash, setSavedFlash] = useState({
+    saveState,
+    visible: false,
+  });
   const savedTimerRef = useRef<number | null>(null);
-  const sawActivityRef = useRef(false);
+
+  if (savedFlash.saveState !== saveState) {
+    const nextSavedFlash = {
+      saveState,
+      visible:
+        saveState === "saved" &&
+        (savedFlash.saveState === "saving" || savedFlash.saveState === "error"),
+    };
+    setSavedFlash(nextSavedFlash);
+  }
 
   useEffect(() => {
     if (savedTimerRef.current !== null) {
@@ -549,21 +573,10 @@ function SaveStatusPill({
       savedTimerRef.current = null;
     }
 
-    if (saveState === "saving" || saveState === "error") {
-      sawActivityRef.current = true;
-      setVisible(true);
-      return;
-    }
+    if (!savedFlash.visible) return;
 
-    if (!sawActivityRef.current) {
-      setVisible(false);
-      return;
-    }
-
-    setVisible(true);
     savedTimerRef.current = window.setTimeout(() => {
-      setVisible(false);
-      sawActivityRef.current = false;
+      setSavedFlash((current) => ({ ...current, visible: false }));
       savedTimerRef.current = null;
     }, 1800);
 
@@ -573,7 +586,10 @@ function SaveStatusPill({
         savedTimerRef.current = null;
       }
     };
-  }, [saveState]);
+  }, [savedFlash.visible]);
+
+  const visible =
+    saveState === "saving" || saveState === "error" || savedFlash.visible;
 
   if (!visible) return null;
 
@@ -633,17 +649,39 @@ function shouldFocusTitleOnEdit(post: Post): boolean {
   return isUnsetTitle(post.title);
 }
 
+function isEmptyDraft(draft: DraftState): boolean {
+  const title = draft.title.trim().toLowerCase();
+  return (
+    (!title || title === "untitled") &&
+    !draft.excerpt.trim() &&
+    !draft.body.trim() &&
+    (!draft.cover.trim() || isNoCoverValue(draft.cover)) &&
+    draft.gallery.length === 0 &&
+    !draft.videoUrl.trim()
+  );
+}
+
+function postIdentity(post: Post): string {
+  return post.id ?? post.slug;
+}
+
 export function PostEditLayer({
   blog,
   post,
   adjacent,
   homePath,
+  folderPosts = [],
+  initialSidebarCollapsed = true,
+  mediaEnabled = true,
   usedSlugs = [],
 }: {
   blog: Blog;
   post: Post;
   adjacent: AdjacentPublishedPosts;
   homePath: string;
+  folderPosts?: Post[];
+  initialSidebarCollapsed?: boolean;
+  mediaEnabled?: boolean;
   usedSlugs?: string[];
 }) {
   const router = useRouter();
@@ -653,14 +691,24 @@ export function PostEditLayer({
     draft: initialSession.draft,
   }));
   const draft = draftSnapshot.draft;
-  const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [error, setError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>(() =>
+    post.id ? "saved" : "error",
+  );
+  const [error, setError] = useState<string | null>(() =>
+    post.id ? null : "Post cannot be edited",
+  );
   const [deleting, setDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
   const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [deletedPostIds, setDeletedPostIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const { sidebarCollapsed, toggleSidebarCollapsed } =
+    useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<BodyEditorHandle>(null);
@@ -684,26 +732,6 @@ export function PostEditLayer({
   const focusBody = useCallback(() => {
     bodyRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    const session = getEditSession(post);
-    setDraftSnapshot({ postId: post.id, draft: session.draft });
-    setSaveState("saved");
-    setError(null);
-    setCoverUploading(false);
-    setCoverUploadError(null);
-    setGalleryUploading(false);
-    setGalleryUploadError(null);
-    currentSlugRef.current = session.currentSlug;
-    autoSlugAllowedRef.current = session.autoSlugAllowed;
-    latestKeyRef.current = session.lastSavedKey;
-    lastSavedKeyRef.current = session.lastSavedKey;
-    leavingEditRef.current = false;
-    if (saveTimerRef.current !== null) {
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-  }, [post.id]);
 
   useEffect(() => {
     autoGrow(titleRef.current);
@@ -742,11 +770,7 @@ export function PostEditLayer({
   }, []);
 
   useEffect(() => {
-    if (!postId) {
-      setSaveState("error");
-      setError("Post cannot be edited");
-      return;
-    }
+    if (!postId) return;
 
     if (draftSnapshot.postId !== postId) return;
 
@@ -789,7 +813,7 @@ export function PostEditLayer({
               currentSlugRef.current = saved.slug;
               patchEditSession(postId, { currentSlug: saved.slug });
               if (!leavingEditRef.current) {
-                router.replace(`${postPath(blog.handle, saved.slug)}?edit=1`, {
+                router.replace(blogPostEditPath(blog, saved), {
                   scroll: false,
                 });
               }
@@ -816,7 +840,7 @@ export function PostEditLayer({
         saveTimerRef.current = null;
       }
     };
-  }, [blog.handle, draft, draftSnapshot.postId, postId, router]);
+  }, [blog, draft, draftSnapshot.postId, postId, router]);
 
   const updateDraft = useCallback((patch: Partial<DraftState>) => {
     setDraftSnapshot((current) => ({
@@ -864,12 +888,20 @@ export function PostEditLayer({
       });
 
       const navigateAfterSave = (slug: string) => {
+        if (leavingEdit && postId) {
+          // The server copy is now authoritative; a kept session would
+          // resurrect this draft over later edits from another tab or agent.
+          editSessions.delete(postId);
+        }
         if (options.navigatePath) {
           router.push(options.navigatePath);
           return;
         }
         if (options.exitEdit) {
-          router.replace(postPath(blog.handle, slug), { scroll: false });
+          router.replace(
+            isEmptyDraft(nextDraft) ? homePath : blogPostPath(blog, { slug }),
+            { scroll: false },
+          );
         }
       };
 
@@ -909,7 +941,7 @@ export function PostEditLayer({
         setError(errorMessage(saveError, "Could not save"));
       }
     },
-    [blog.handle, draft, postId, router],
+    [blog, draft, homePath, postId, router],
   );
 
   useEffect(() => {
@@ -917,6 +949,13 @@ export function PostEditLayer({
       if (event.defaultPrevented) return;
       if (event.key !== "Escape") return;
       if (hasOpenEditMenu()) return;
+
+      // An expanded sidebar consumes Escape first; exiting edit is the last resort.
+      if (closeExpandedWorkspaceSidebar()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
 
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -933,43 +972,48 @@ export function PostEditLayer({
 
   const uploadCover = useCallback(
     async (file: File) => {
+      if (!mediaEnabled) {
+        setCoverUploadError(ANONYMOUS_MEDIA_UPLOAD_COPY);
+        return;
+      }
       setCoverUploading(true);
       setCoverUploadError(null);
       try {
         const url = await uploadMedia(file, { endpoint: uploadEndpoint });
-        updateDraft({ cover: url });
+        updateDraft({ cover: url, coverCaption: "" });
       } catch (uploadError) {
         setCoverUploadError(uploadErrorMessage(uploadError));
       } finally {
         setCoverUploading(false);
       }
     },
-    [updateDraft, uploadEndpoint],
-  );
-
-  const pickPileCover = useCallback(
-    (cover: string) => {
-      setCoverUploadError(null);
-      updateDraft({ cover });
-    },
-    [updateDraft],
+    [mediaEnabled, updateDraft, uploadEndpoint],
   );
 
   const shufflePileCover = useCallback(() => {
-    const cover = randomPileCover(draft.cover.trim());
+    const cover = randomPileCover(
+      isNoCoverValue(draft.cover) ? "" : draft.cover.trim(),
+    );
     if (!cover) return;
     setCoverUploadError(null);
-    updateDraft({ cover });
+    updateDraft({ cover, coverCaption: "" });
   }, [draft.cover, updateDraft]);
 
   const removeCover = useCallback(() => {
     setCoverUploadError(null);
-    updateDraft({ cover: "", coverCaption: "" });
-  }, [updateDraft]);
+    updateDraft({
+      cover: draft.type === "article" ? NO_COVER_VALUE : "",
+      coverCaption: "",
+    });
+  }, [draft.type, updateDraft]);
 
   const uploadGalleryMedia = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
+      if (!mediaEnabled) {
+        setGalleryUploadError(ANONYMOUS_MEDIA_UPLOAD_COPY);
+        return;
+      }
 
       setGalleryUploading(true);
       setGalleryUploadError(null);
@@ -989,7 +1033,7 @@ export function PostEditLayer({
         setGalleryUploading(false);
       }
     },
-    [updateDraftFrom, uploadEndpoint],
+    [mediaEnabled, updateDraftFrom, uploadEndpoint],
   );
 
   const deriveSlugFromTitle = useCallback(
@@ -1028,6 +1072,7 @@ export function PostEditLayer({
       excerpt: draft.excerpt || undefined,
       cover: draft.cover || undefined,
       coverCaption: draft.coverCaption || undefined,
+      coverHeight: draft.coverHeight ?? undefined,
       body: draft.body,
       status: draft.status,
       slug: draft.slug || post.slug,
@@ -1053,6 +1098,28 @@ export function PostEditLayer({
         ? "reader-dek talk-detail-dek edit-excerpt-field"
         : "reader-dek edit-excerpt-field";
   const titleText = displayPost.title.trim() || "Untitled";
+  const resolvedHeaderCover = resolveCover(displayPost);
+  const hasArticleHeaderImage =
+    displayPost.type === "article" && Boolean(resolvedHeaderCover);
+  const sidebarPosts = useMemo(() => {
+    const byKey = new Map<string, Post>();
+    for (const item of folderPosts) byKey.set(postIdentity(item), item);
+    byKey.set(postIdentity(displayPost), displayPost);
+    return Array.from(byKey.values()).filter((item) => {
+      if (!item.id) return true;
+      return !deletedPostIds.has(item.id);
+    });
+  }, [deletedPostIds, displayPost, folderPosts]);
+
+  // Folder rows always navigate to the workspace home (saving the draft on
+  // the way out), the same sidebar behavior as the home and read shells.
+  const selectSidebarFolder = useCallback(
+    (folder: SidebarFolderId) => {
+      const path = folder === "blog" ? homePath : `${homePath}?folder=${folder}`;
+      void saveDraftNow({}, { navigatePath: path });
+    },
+    [homePath, saveDraftNow],
+  );
 
   const onTitleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -1167,32 +1234,34 @@ export function PostEditLayer({
           ref={bodyRef}
           value={draft.body}
           onChange={(body) => updateDraft({ body })}
+          mediaEnabled={mediaEnabled}
           toolbarHost={bodyToolbarHost}
           uploadEndpoint={uploadEndpoint}
         />
       </div>
     ),
-    cover: (
+    cover: hasArticleHeaderImage ? (
       <EditableCover
         title={titleText}
-        cover={resolveCover(displayPost)}
-        customCover={draft.cover.trim()}
-        caption={draft.coverCaption}
+        cover={resolvedHeaderCover}
+        coverHeight={draft.coverHeight}
+        mediaEnabled={mediaEnabled}
         uploading={coverUploading}
         error={coverUploadError}
+        onChangeCover={shufflePileCover}
+        onCoverHeightChange={(coverHeight) => updateDraft({ coverHeight })}
         onUploadFile={uploadCover}
-        onPickCover={pickPileCover}
-        onShuffleCover={shufflePileCover}
-        onCaptionChange={(coverCaption) => updateDraft({ coverCaption })}
-        onResetCover={removeCover}
+        onRemoveCover={removeCover}
       />
-    ),
+    ) : null,
     gallery: (
       <ProjectGallery
         post={displayPost}
         edit={{
           uploading: galleryUploading,
           uploadError: galleryUploadError,
+          disabled: !mediaEnabled,
+          disabledReason: !mediaEnabled ? ANONYMOUS_MEDIA_UPLOAD_COPY : undefined,
           onAddMedia: uploadGalleryMedia,
           onChange: (gallery) => updateDraft({ gallery }),
         }}
@@ -1201,8 +1270,9 @@ export function PostEditLayer({
     stage: (
       <EditableTalkStage
         title={titleText}
-        cover={draft.cover}
+        cover={isNoCoverValue(draft.cover) ? "" : draft.cover}
         videoUrl={draft.videoUrl}
+        mediaEnabled={mediaEnabled}
         uploading={coverUploading}
         error={coverUploadError}
         onUploadFile={uploadCover}
@@ -1219,62 +1289,119 @@ export function PostEditLayer({
     ),
   };
 
+  const requestDeletePost = useCallback(() => {
+    if (!postId || deleting) return;
+    setError(null);
+    setDeleteDialogOpen(true);
+  }, [deleting, postId]);
+
   const deletePost = useCallback(() => {
     if (!postId || deleting) return;
-    if (!window.confirm("Delete this post?")) return;
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    leavingEditRef.current = true;
     setDeleting(true);
     setSaveState("saving");
     setError(null);
     startTransition(() => {
       void deleteEditablePostAction(blog.handle, postId)
-        .then(({ handle }) => {
-          router.push(`/t/${encodeURIComponent(handle)}`);
+        .then(() => {
+          setDeleteDialogOpen(false);
+          editSessions.delete(postId);
+          setDeletedPostIds((current) => {
+            const next = new Set(current);
+            next.add(postId);
+            return next;
+          });
+          setDeleting(false);
+          setSaveState("saved");
+          setError(null);
+          if (homePath) {
+            router.replace(homePath);
+            return;
+          }
+          router.refresh();
         })
         .catch((deleteError) => {
+          leavingEditRef.current = false;
           setDeleting(false);
+          setDeleteDialogOpen(false);
           setSaveState("error");
           setError(errorMessage(deleteError, "Could not delete"));
         });
     });
-  }, [blog.handle, deleting, postId, router]);
+  }, [blog.handle, deleting, homePath, postId, router]);
+
+  const renderedPostPath = blogPostPath(blog, {
+    slug: slugify(draft.slug, post.slug),
+  });
 
   return (
-    <>
-      <PostActionBar
-        mode="edit"
-        owner
+    <div
+      className={`post-editor-shell applecms has-sidebar${
+        sidebarCollapsed ? " is-sidebar-collapsed" : ""
+      } is-edit-workspace-shell`}
+    >
+      <WorkspaceSidebarChrome
         blog={blog}
-        post={post}
-        adjacent={adjacent}
+        activeFolder="blog"
+        collapsed={sidebarCollapsed}
         homePath={homePath}
-        postPath={postPath(blog.handle, currentSlugRef.current)}
-        draft={draft}
-        deleting={deleting}
-        onDelete={deletePost}
-        onDone={() => saveDraftNow({}, { exitEdit: true })}
-        onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
-        onSlugBlur={() => {
-          autoSlugAllowedRef.current = false;
-          updateDraft({ slug: slugify(draft.slug, currentSlugRef.current) });
-        }}
-        onSlugInput={(value) => {
-          autoSlugAllowedRef.current = false;
-          updateDraft({ slug: slugify(value, "") });
-        }}
-        onUpdateDraft={updateDraft}
-        onVisibilityChange={(status) =>
-          saveDraftNow({ status }, { exitEdit: true })
-        }
+        onSelectFolder={selectSidebarFolder}
+        onToggleCollapsed={toggleSidebarCollapsed}
+        posts={sidebarPosts}
       />
-      <SaveStatusPill saveState={saveState} error={error} />
+      <div className="post-editor-content">
+        <PostActionBar
+          mode="edit"
+          owner
+          blog={blog}
+          post={post}
+          adjacent={adjacent}
+          homePath={homePath}
+          postPath={renderedPostPath}
+          draft={draft}
+          deleting={deleting}
+          hasHeaderImage={hasArticleHeaderImage}
+          onDelete={requestDeletePost}
+          onDone={() => saveDraftNow({}, { exitEdit: true })}
+          onAddHeaderImage={shufflePileCover}
+          onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
+          onSlugBlur={() => {
+            autoSlugAllowedRef.current = false;
+            updateDraft({ slug: slugify(draft.slug, currentSlugRef.current) });
+          }}
+          onSlugInput={(value) => {
+            autoSlugAllowedRef.current = false;
+            updateDraft({ slug: slugify(value, "") });
+          }}
+          onUpdateDraft={updateDraft}
+          onVisibilityChange={(status) =>
+            saveDraftNow({ status }, { exitEdit: true })
+          }
+        />
+        <SaveStatusPill saveState={saveState} error={error} />
 
-      {displayPost.type === "talk" ? (
-        <TalkReader blog={blog} post={displayPost} slots={slots} />
-      ) : displayPost.type === "project" ? (
-        <ProjectReader blog={blog} post={displayPost} slots={slots} />
-      ) : (
-        <Reader blog={blog} post={displayPost} slots={slots} />
-      )}
-    </>
+        {displayPost.type === "talk" ? (
+          <TalkReader blog={blog} post={displayPost} slots={slots} />
+        ) : displayPost.type === "project" ? (
+          <ProjectReader blog={blog} post={displayPost} slots={slots} />
+        ) : (
+          <Reader blog={blog} post={displayPost} slots={slots} />
+        )}
+      </div>
+      <ConfirmationDialog
+        open={deleteDialogOpen}
+        title="Delete post?"
+        message="This moves the post to Trash."
+        confirmLabel="Delete"
+        confirmingLabel="Deleting"
+        confirming={deleting}
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={deletePost}
+      />
+    </div>
   );
 }

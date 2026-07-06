@@ -1,15 +1,24 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import {
   BlogHomeShell,
 } from "@/components/BlogHomeEditorControls";
+import { BlogHomeWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { PostCard } from "@/components/PostCard";
+import { ProjectReader } from "@/components/ProjectReader";
+import { Reader } from "@/components/Reader";
+import { TalkReader } from "@/components/TalkReader";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
-import { blogFeedAlternateTypes, blogFeedHref } from "@/lib/feed-links";
-import { getCurrentUser } from "@/lib/session";
+import {
+  blogAtomHref,
+  blogFeedAlternateTypes,
+  blogFeedHref,
+  blogJsonFeedHref,
+} from "@/lib/feed-links";
 import {
   DEFAULT_ANONYMOUS_BLOG_NAME,
   getAllPosts,
@@ -24,13 +33,23 @@ import {
   readingTimeMin,
   youtubeThumb,
 } from "@/lib/content";
-import type { Blog, Post, PostType } from "@/lib/content";
+import type { Blog, BlogCardStyle, BlogHomeLayout, Post, PostType } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
+import { blogHomePath, blogPostPath } from "@/lib/public-paths";
+import {
+  WORKSPACE_SIDEBAR_COOKIE,
+  parseWorkspaceSidebarCollapsed,
+} from "@/lib/workspace-sidebar-state";
 
 interface Props {
   params: Promise<{ handle: string }>;
-  searchParams?: Promise<{ claim?: string | string[] }>;
+  searchParams?: Promise<BlogHomeQuery>;
 }
+type BlogHomeQuery = {
+  card?: string | string[];
+  folder?: string | string[];
+  layout?: string | string[];
+};
 
 function blogStyle(blog: Blog): CSSProperties | undefined {
   return blog.accent
@@ -42,6 +61,23 @@ function queryValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function queryHomeLayout(value: string | undefined): BlogHomeLayout | null {
+  if (
+    value === "single" ||
+    value === "timeline" ||
+    value === "grid" ||
+    value === "index"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function queryCardStyle(value: string | undefined): BlogCardStyle | null {
+  if (value === "cover" || value === "minimal") return value;
+  return null;
+}
+
 function isDefaultBlogName(name: string): boolean {
   const normalized = name.trim().replace(/\s+/g, " ").toLowerCase();
   return (
@@ -51,9 +87,9 @@ function isDefaultBlogName(name: string): boolean {
 }
 
 const TYPE_LABELS: Record<PostType, string> = {
-  article: "ARTICLE",
-  project: "PROJECT",
-  talk: "TALK",
+  article: "Article",
+  project: "Media",
+  talk: "Video",
 };
 
 function postTitle(post: Post): string {
@@ -119,12 +155,10 @@ function postStyle(blog: Blog, post: Post): CSSProperties | undefined {
 
 function BlogTimeline({
   blog,
-  handle,
   posts,
   owner,
 }: {
   blog: Blog;
-  handle: string;
   posts: Post[];
   owner: boolean;
 }) {
@@ -135,24 +169,20 @@ function BlogTimeline({
         const cover = resolveCover(post);
         const meta = timelineMeta(post);
         const excerpt = timelineExcerpt(post);
-        const thumbnail = timelineImageSrc(cover);
-        const accent = postAccent(blog, post);
+        const thumbnail = cover ? timelineImageSrc(cover) : "";
         const showUnlisted = owner && post.status === "draft";
 
         return (
           <Link
             key={post.slug}
-            className="blog-timeline-row"
-            href={`/t/${handle}/${post.slug}`}
+            className={`blog-timeline-row${thumbnail ? "" : " is-no-thumb"}`}
+            href={blogPostPath(blog, post)}
             prefetch={true}
             style={postStyle(blog, post)}
           >
             <span className="blog-timeline-copy">
               <span className="blog-timeline-chip-row">
-                <span
-                  className="blog-timeline-chip"
-                  style={{ background: accent ?? "var(--ink)" }}
-                >
+                <span className="blog-timeline-chip">
                   {TYPE_LABELS[post.type]}
                 </span>
                 {post.pinned && (
@@ -168,32 +198,98 @@ function BlogTimeline({
                 <span className="blog-timeline-excerpt">{excerpt}</span>
               )}
             </span>
-            <span className="blog-timeline-thumb" aria-hidden="true">
-              {isVideoFile(cover) ? (
-                <video
-                  className="blog-timeline-thumb-media"
-                  src={cover}
-                  muted
-                  playsInline
-                  preload="metadata"
-                />
-              ) : (
-                // User media can be remote, so plain img avoids next/image config.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className="blog-timeline-thumb-media"
-                  src={thumbnail}
-                  alt=""
-                  decoding="async"
-                  loading="lazy"
-                />
-              )}
+            {thumbnail && (
+              <span className="blog-timeline-thumb" aria-hidden="true">
+                {isVideoFile(cover) ? (
+                  <video
+                    className="blog-timeline-thumb-media"
+                    src={cover}
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                ) : (
+                  // User media can be remote, so plain img avoids next/image config.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="blog-timeline-thumb-media"
+                    src={thumbnail}
+                    alt=""
+                    decoding="async"
+                    loading="lazy"
+                  />
+                )}
+              </span>
+            )}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function BlogIndex({
+  blog,
+  posts,
+  owner,
+}: {
+  blog: Blog;
+  posts: Post[];
+  owner: boolean;
+}) {
+  return (
+    <div className="blog-index-list" aria-label="Posts">
+      {posts.map((post) => {
+        const showUnlisted = owner && post.status === "draft";
+        return (
+          <Link
+            key={post.slug}
+            className="blog-index-row"
+            href={blogPostPath(blog, post)}
+            prefetch={true}
+            style={postStyle(blog, post)}
+          >
+            <span className="blog-index-title">{postTitle(post)}</span>
+            <span className="blog-index-meta">
+              {[formatArticleDate(post.date), TYPE_LABELS[post.type]]
+                .filter(Boolean)
+                .join(" / ")}
+              {post.pinned ? " / Pinned" : ""}
+              {showUnlisted ? " / Unlisted" : ""}
             </span>
           </Link>
         );
       })}
     </div>
   );
+}
+
+function BlogSingleHome({ blog, post }: { blog: Blog; post: Post }) {
+  const ReaderComponent =
+    post.type === "talk"
+      ? TalkReader
+      : post.type === "project"
+        ? ProjectReader
+        : Reader;
+
+  return (
+    <div className="blog-single-home">
+      <ReaderComponent blog={blog} post={post} />
+    </div>
+  );
+}
+
+function BlogEmptyState({ layout }: { layout: Blog["homeLayout"] }) {
+  if (layout === "timeline") return null;
+
+  const copy =
+    layout === "single"
+      ? "Start writing. Save to get a link."
+      : layout === "index"
+        ? "Create the first page in this index."
+        : "Add the first item to your collection.";
+
+  return <p className="blog-home-empty">{copy}</p>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -204,74 +300,120 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: blog.name,
     description: blog.tagline,
     alternates: {
-      types: blogFeedAlternateTypes(handle, blog.name),
+      types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
 }
 
-export default async function BlogHome({ params, searchParams }: Props) {
-  const { handle } = await params;
-  const queryPromise: Promise<{ claim?: string | string[] }> =
+export async function BlogHomeForHandle({
+  handle,
+  redirectClaimed = true,
+  searchParams,
+}: {
+  handle: string;
+  redirectClaimed?: boolean;
+  searchParams?: Promise<BlogHomeQuery>;
+}) {
+  const queryPromise: Promise<BlogHomeQuery> =
     searchParams ?? Promise.resolve({});
-  const [blog, access, viewer, query] = await Promise.all([
+  const [blog, access, query, cookieStore] = await Promise.all([
     getBlog(handle),
     getBlogEditAccess(handle),
-    getCurrentUser(),
     queryPromise,
+    cookies(),
   ]);
   if (!blog) notFound();
+  const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(
+    cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value,
+  );
+  if (redirectClaimed && blog.username) {
+    const redirectParams = new URLSearchParams();
+    for (const key of ["card", "folder", "layout"] as const) {
+      const value = queryValue(query[key]);
+      if (value) redirectParams.set(key, value);
+    }
+    const suffix = redirectParams.toString()
+      ? `?${redirectParams.toString()}`
+      : "";
+    redirect(`${blogHomePath(blog)}${suffix}`);
+  }
   const canEdit = access.canEdit;
+  // ?layout= and ?card= preview a look without saving it, for everyone; the
+  // editor's Layout popover is what persists a choice.
+  const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
+  const previewCardStyle = queryCardStyle(queryValue(query.card));
+  const displayBlog: Blog =
+    previewHomeLayout || previewCardStyle
+      ? {
+          ...blog,
+          cardStyle: previewCardStyle ?? blog.cardStyle,
+          homeLayout: previewHomeLayout ?? blog.homeLayout,
+        }
+      : blog;
   const posts = canEdit ? await getAllPosts(handle) : await getPosts(handle);
-  const feedHref = blogFeedHref(handle);
-  const encodedHandle = encodeURIComponent(handle);
+  // The single layout leads with the newest published post; an owner's
+  // unpublished drafts never displace what visitors see.
+  const singlePost =
+    posts.find((post) => post.status === "published") ?? posts[0];
+  const feedHref = blogFeedHref(blog);
   const isUnnamedBlog = isDefaultBlogName(blog.name);
   const editableBlogName = isUnnamedBlog ? "" : blog.name;
   const showNamingCeremony = canEdit && isUnnamedBlog;
-  const showClaim = canEdit && access.isUnclaimed && access.isTokenEditor;
+  const isGuestWorkspace =
+    canEdit && access.isUnclaimed && access.isTokenEditor;
   const feedLinks = [
     { href: feedHref, label: "RSS" },
-    { href: `/t/${encodedHandle}/atom.xml`, label: "Atom" },
-    { href: `/t/${encodedHandle}/feed.json`, label: "JSON Feed" },
+    { href: blogAtomHref(blog), label: "Atom" },
+    { href: blogJsonFeedHref(blog), label: "JSON Feed" },
   ];
 
-  return (
+  const home = (
     <BlogHomeShell
       handle={handle}
-      blogName={blog.name}
+      blogName={displayBlog.name}
       initialName={editableBlogName}
-      tagline={blog.tagline}
+      tagline={displayBlog.tagline}
       canEdit={canEdit}
-      showClaim={showClaim}
-      publicPath={`/t/${encodedHandle}`}
-      signedIn={Boolean(viewer)}
+      isGuestWorkspace={isGuestWorkspace}
       authConfigured={isAuthConfigured}
-      autoClaim={queryValue(query.claim) === "1"}
+      publicPath={blogHomePath(blog)}
       initialCardStyle={blog.cardStyle}
       initialHomeLayout={blog.homeLayout}
       initialNamingCeremony={showNamingCeremony}
-      style={blogStyle(blog)}
+      style={blogStyle(displayBlog)}
     >
-      {posts.length > 0 && blog.homeLayout === "timeline" && (
+      {posts.length === 0 && !canEdit && (
+        <BlogEmptyState layout={displayBlog.homeLayout} />
+      )}
+
+      {singlePost && displayBlog.homeLayout === "single" && (
+        <BlogSingleHome blog={displayBlog} post={singlePost} />
+      )}
+
+      {posts.length > 0 && displayBlog.homeLayout === "timeline" && (
         <BlogTimeline
-          blog={blog}
-          handle={handle}
+          blog={displayBlog}
           posts={posts}
           owner={canEdit}
         />
       )}
 
-      {posts.length > 0 && blog.homeLayout === "cards" && (
+      {posts.length > 0 && displayBlog.homeLayout === "grid" && (
         <div className="tv-grid">
           {posts.map((post) => (
             <PostCard
               key={post.slug}
-              blog={blog}
+              blog={displayBlog}
               handle={handle}
               post={post}
               owner={canEdit}
             />
           ))}
         </div>
+      )}
+
+      {posts.length > 0 && displayBlog.homeLayout === "index" && (
+        <BlogIndex blog={displayBlog} posts={posts} owner={canEdit} />
       )}
 
       {posts.length > 0 && (
@@ -291,4 +433,23 @@ export default async function BlogHome({ params, searchParams }: Props) {
       )}
     </BlogHomeShell>
   );
+
+  return canEdit ? (
+    <BlogHomeWorkspaceShell
+      blog={blog}
+      initialFolder={queryValue(query.folder)}
+      initialSidebarCollapsed={initialSidebarCollapsed}
+      posts={posts}
+      showGuestSignIn={isGuestWorkspace && isAuthConfigured}
+    >
+      {home}
+    </BlogHomeWorkspaceShell>
+  ) : (
+    home
+  );
+}
+
+export default async function BlogHome({ params, searchParams }: Props) {
+  const { handle } = await params;
+  return <BlogHomeForHandle handle={handle} searchParams={searchParams} />;
 }

@@ -2,30 +2,53 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { Blog, GalleryItem, Post, PostType } from "@/lib/content";
+import type {
+  Blog,
+  BlogHomeLayout,
+  GalleryItem,
+  LinkRef,
+  Post,
+  PostType,
+} from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
+import type { CurrentUser } from "@/lib/session";
 import type { BlogPatch } from "@/lib/store";
 import {
   claimBlogForUser,
+  countAllPosts,
   createAnonymousBlogRecord,
   createDraft,
   deletePost,
   ensureOwnerBlog,
+  getAllPosts,
+  getBlog,
+  getOwnedBlog,
   getPostById,
   savePost,
   setPostPinned,
+  trashBlogPosts,
   updateBlogByHandle,
 } from "@/lib/store";
 import {
   deleteAnonymousEditCookie,
   friendlyAnonymousSeed,
   generateEditToken,
+  getActiveGuestBlogFromCookie,
   getBlogEditAccess,
   hashEditToken,
   setAnonymousEditCookie,
 } from "@/lib/blog-edit-auth";
+import {
+  ANONYMOUS_MAX_POSTS,
+  ANONYMOUS_POST_LIMIT_COPY,
+} from "@/lib/product-limits";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
+import {
+  blogHomePath,
+  blogPostEditPath,
+  tenantPostPath,
+} from "@/lib/public-paths";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
 // client can never target another user's blog. Writing always requires auth;
@@ -39,15 +62,55 @@ async function editorUser() {
 
 async function editorHandle(): Promise<string> {
   const user = await editorUser();
-  const blog = await ensureOwnerBlog(user);
+  const blog = await resolveOwnedWorkspace(user);
   return blog.handle;
 }
 
-async function createAnonymousBlogHandle(): Promise<string> {
+// The signed-in user's workspace. An owned blog wins; otherwise the browser's
+// unclaimed guest workspace is CLAIMED (this is the save-your-work moment, so
+// signing in must never strand the guest blog by provisioning a fresh one);
+// only when neither exists is a starter blog provisioned.
+async function resolveOwnedWorkspace(user: CurrentUser): Promise<Blog> {
+  const owned = await getOwnedBlog(user.sub);
+  if (owned) return ensureOwnerBlog(user);
+
+  const guest = await getActiveGuestBlogFromCookie();
+  if (guest) {
+    try {
+      const claimed = await claimBlogForUser(guest.handle, user);
+      await deleteAnonymousEditCookie(guest.id);
+      await revalidateBlog(claimed.handle);
+      return claimed;
+    } catch {
+      // A concurrent claim or a race settles below; never block sign-in.
+    }
+  }
+
+  return ensureOwnerBlog(user);
+}
+
+function cleanHomeLayout(value: unknown): BlogHomeLayout {
+  if (
+    value === "single" ||
+    value === "timeline" ||
+    value === "grid" ||
+    value === "index"
+  ) {
+    return value;
+  }
+  if (value === "cards") return "grid";
+  return "grid";
+}
+
+async function createAnonymousBlogHandle(
+  layoutInput?: unknown,
+): Promise<string> {
   const token = generateEditToken();
+  const homeLayout = cleanHomeLayout(layoutInput);
   const blog = await createAnonymousBlogRecord(
     hashEditToken(token),
     friendlyAnonymousSeed(),
+    homeLayout,
   );
   await setAnonymousEditCookie(blog.id, token);
   return blog.handle;
@@ -61,6 +124,7 @@ const BLOG_FEED_PATHS = [
   "atom.xml",
   "sitemap.xml",
   "llms.txt",
+  "folder.json",
 ];
 
 function cleanPostType(value: unknown): PostType {
@@ -69,7 +133,7 @@ function cleanPostType(value: unknown): PostType {
 
 function cleanEditablePostType(value: unknown): PostType {
   if (POST_TYPES.includes(value as PostType)) return value as PostType;
-  throw new Error("Type must be Article, Project, or Talk");
+  throw new Error("Type must be Article, Media post, or Video post");
 }
 
 function cleanPostId(value: unknown): string {
@@ -119,6 +183,18 @@ function cleanAccent(value: unknown): string | undefined {
   return accent;
 }
 
+function cleanCoverHeight(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("Header height must be a number");
+  }
+  const rounded = Math.round(value);
+  if (rounded < 180 || rounded > 860) {
+    throw new Error("Header height is outside the supported range");
+  }
+  return rounded;
+}
+
 function cleanSlug(value: unknown, fallback: string): string {
   if (typeof value !== "string") throw new Error("Slug must be text");
   const slug = value
@@ -165,6 +241,32 @@ function cleanGallery(value: unknown): GalleryItem[] {
     .filter((item): item is GalleryItem => item !== null);
 }
 
+function cleanLinks(value: unknown): LinkRef[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error("Links must be a list");
+  const links: LinkRef[] = [];
+  for (const [index, item] of value.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`Link ${index + 1} must be an object`);
+    }
+    const values = item as Record<string, unknown>;
+    const label = cleanOptionalLine(values.label, `Link ${index + 1} label`);
+    const href = cleanOptionalLine(values.href, `Link ${index + 1} URL`);
+    if (!href) continue;
+    links.push({ label: label || href, href });
+  }
+  return links;
+}
+
+function cleanDate(value: unknown): string | undefined {
+  if (value == null || value === "") return undefined;
+  if (typeof value !== "string") throw new Error("Date must be text");
+  const date = value.trim();
+  if (!date) return undefined;
+  if (Number.isNaN(new Date(date).getTime())) throw new Error("Date is invalid");
+  return date;
+}
+
 function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("Invalid post");
@@ -183,6 +285,9 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
     coverCaption: hasInputKey(values, "coverCaption")
       ? cleanOptionalLine(values.coverCaption, "Cover caption")
       : existing.coverCaption,
+    coverHeight: hasInputKey(values, "coverHeight")
+      ? cleanCoverHeight(values.coverHeight)
+      : existing.coverHeight,
     body: cleanBody(values.body),
     status: cleanStatus(values.status),
     slug: cleanSlug(values.slug, fallbackSlug),
@@ -190,6 +295,12 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
     gallery: hasInputKey(values, "gallery")
       ? cleanGallery(values.gallery)
       : (existing.gallery ?? []),
+    links: hasInputKey(values, "links")
+      ? cleanLinks(values.links)
+      : (existing.links ?? []),
+    date: hasInputKey(values, "date")
+      ? cleanDate(values.date)
+      : existing.date,
     videoUrl: hasInputKey(values, "videoUrl")
       ? cleanOptionalLine(values.videoUrl, "Video URL")
       : existing.videoUrl,
@@ -206,14 +317,30 @@ function blogPath(handle: string, path = ""): string {
   return `/t/${encodeURIComponent(handle)}${path}`;
 }
 
-function revalidateBlog(handle: string, slugs: string[] = []) {
-  revalidatePath(blogPath(handle));
-  for (const feedPath of BLOG_FEED_PATHS) {
-    revalidatePath(blogPath(handle, `/${feedPath}`));
-  }
-  for (const slug of new Set(slugs.filter(Boolean))) {
-    revalidatePath(blogPath(handle, `/${encodeURIComponent(slug)}`));
-    revalidatePath(blogPath(handle, `/${encodeURIComponent(slug)}/index.md`));
+function tenantPostEditPath(handle: string, post: Pick<Post, "id" | "slug">): string {
+  const params = new URLSearchParams({ edit: "1" });
+  if (post.id) params.set("id", post.id);
+  return `${tenantPostPath(handle, post.slug)}?${params.toString()}`;
+}
+
+async function revalidateBlog(handle: string, slugs: string[] = []) {
+  const uniqueSlugs = [...new Set(slugs.filter(Boolean))];
+  const roots = [blogPath(handle)];
+
+  // A claimed blog is served from /u/{username} (the /@ alias rewrites there),
+  // so its cache entries must be invalidated alongside the /t mirror.
+  const blog = await getBlog(handle).catch(() => null);
+  if (blog?.username) roots.push(`/u/${encodeURIComponent(blog.username)}`);
+
+  for (const root of roots) {
+    revalidatePath(root);
+    for (const feedPath of BLOG_FEED_PATHS) {
+      revalidatePath(`${root}/${feedPath}`);
+    }
+    for (const slug of uniqueSlugs) {
+      revalidatePath(`${root}/${encodeURIComponent(slug)}`);
+      revalidatePath(`${root}/${encodeURIComponent(slug)}/index.md`);
+    }
   }
 }
 
@@ -225,26 +352,115 @@ async function editableHandleFor(handleInput?: unknown) {
   return { handle, access };
 }
 
+async function enforceAnonymousPostLimit(
+  handle: string,
+  access: Awaited<ReturnType<typeof getBlogEditAccess>>,
+) {
+  if (!access.isUnclaimed) return;
+  const count = await countAllPosts(handle);
+  if (count >= ANONYMOUS_MAX_POSTS) {
+    throw new Error(ANONYMOUS_POST_LIMIT_COPY);
+  }
+}
+
 function actionErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-export async function createAnonymousBlog(): Promise<string> {
-  return createAnonymousBlogHandle();
+function firstWritableArticle(posts: Post[]): Post | undefined {
+  return (
+    posts.find((post) => post.type === "article" && post.status === "draft") ??
+    posts.find((post) => post.status === "draft") ??
+    posts.find((post) => post.type === "article") ??
+    posts[0]
+  );
 }
 
-export async function startBlogAction() {
+async function ensureFirstArticleDraftPath(
+  handle: string,
+  access?: Awaited<ReturnType<typeof getBlogEditAccess>>,
+): Promise<string> {
+  const posts = await getAllPosts(handle);
+  let post = firstWritableArticle(posts);
+
+  if (!post) {
+    if (access) await enforceAnonymousPostLimit(handle, access);
+    post = await createDraft(handle, "article");
+  }
+
+  await revalidateBlog(handle, [post.slug]);
+  const blog = await getBlog(handle);
+  if (blog) return blogPostEditPath(blog, post);
+  return tenantPostEditPath(handle, post);
+}
+
+export async function createStarterDraftPath(layoutInput?: unknown): Promise<string> {
   const user = await getCurrentUser();
-  const handle = user
-    ? (await ensureOwnerBlog(user)).handle
-    : await createAnonymousBlogHandle();
-  redirect(blogPath(handle));
+  const hasLayoutInput = layoutInput !== undefined && layoutInput !== null;
+  const layout = cleanHomeLayout(layoutInput);
+  if (user) {
+    const handle = (await resolveOwnedWorkspace(user)).handle;
+    if (hasLayoutInput) {
+      await updateBlogByHandle(handle, { homeLayout: layout }, { allowHandleChange: true });
+    }
+    return ensureFirstArticleDraftPath(handle);
+  }
+
+  const activeGuest = await getActiveGuestBlogFromCookie();
+  const handle = activeGuest?.handle ?? await createAnonymousBlogHandle(layout);
+  const access = await getBlogEditAccess(handle);
+
+  if (activeGuest && hasLayoutInput) {
+    await updateBlogByHandle(handle, { homeLayout: layout }, { allowHandleChange: false });
+  }
+
+  return ensureFirstArticleDraftPath(handle, access);
+}
+
+// Where "keep this workspace" lands: the signed-in user's workspace home,
+// claiming the browser's guest blog on the way when there is one.
+export async function resolveWorkspaceHomePath(): Promise<string> {
+  const user = await getCurrentUser();
+  if (user) {
+    const blog = await resolveOwnedWorkspace(user);
+    return blogHomePath(blog);
+  }
+
+  const activeGuest = await getActiveGuestBlogFromCookie();
+  if (activeGuest) return blogPath(activeGuest.handle);
+  return blogPath(await createAnonymousBlogHandle());
 }
 
 export async function savePostAction(post: Post): Promise<Post> {
-  const { handle } = await editableHandleFor();
-  const saved = await savePost(handle, post);
-  revalidateBlog(handle, [saved.slug]);
+  const { handle, access } = await editableHandleFor();
+
+  // The legacy editor sends a whole Post object; run it through the same
+  // sanitization as the inline editor instead of trusting the client shape.
+  if (post.id) {
+    const existing = await getPostById(handle, post.id);
+    if (!existing) throw new Error("Post not found");
+    const patch = editableInput(post, existing, existing.slug);
+    const saved = await savePost(handle, {
+      ...existing,
+      ...patch,
+      pinned: existing.pinned,
+    });
+    await revalidateBlog(handle, [existing.slug, saved.slug]);
+    return saved;
+  }
+
+  await enforceAnonymousPostLimit(handle, access);
+  const created = await createDraft(handle, cleanPostType(post.type));
+  const patch = editableInput(
+    { ...post, id: created.id },
+    created,
+    created.slug,
+  );
+  const saved = await savePost(handle, {
+    ...created,
+    ...patch,
+  });
+  await revalidateBlog(handle, [saved.slug]);
   return saved;
 }
 
@@ -252,9 +468,10 @@ export async function createDraftAction(
   type: PostType = "article",
   handleInput?: unknown,
 ): Promise<Post> {
-  const { handle } = await editableHandleFor(handleInput);
+  const { handle, access } = await editableHandleFor(handleInput);
+  await enforceAnonymousPostLimit(handle, access);
   const post = await createDraft(handle, type);
-  revalidateBlog(handle, [post.slug]);
+  await revalidateBlog(handle, [post.slug]);
   return post;
 }
 
@@ -266,30 +483,39 @@ export async function updateBlogAction(
   const updated = await updateBlogByHandle(handle, patch, {
     allowHandleChange: access.isOwner,
   });
-  revalidateBlog(handle);
-  if (updated.handle !== handle) revalidateBlog(updated.handle);
+  await revalidateBlog(handle);
+  if (updated.handle !== handle) await revalidateBlog(updated.handle);
   return updated;
 }
 
 export async function createPostAndRedirectAction(formData: FormData) {
   const handleValue = formData.get("handle");
-  const { handle } = await editableHandleFor(
+  const { handle, access } = await editableHandleFor(
     typeof handleValue === "string" && handleValue.trim()
       ? handleValue
       : undefined,
   );
+  await enforceAnonymousPostLimit(handle, access);
   const post = await createDraft(handle, cleanPostType(formData.get("type")));
-  revalidateBlog(handle, [post.slug]);
-  redirect(blogPath(handle, `/${encodeURIComponent(post.slug)}?edit=1`));
+  await revalidateBlog(handle, [post.slug]);
+  const blog = await getBlog(handle);
+  const path = blog
+    ? blogPostEditPath(blog, post)
+    : tenantPostEditPath(handle, post);
+  redirect(path);
 }
 
 export async function createArticleDraftPathAction(
   handleInput?: unknown,
 ): Promise<string> {
-  const { handle } = await editableHandleFor(handleInput);
+  const { handle, access } = await editableHandleFor(handleInput);
+  await enforceAnonymousPostLimit(handle, access);
   const post = await createDraft(handle, "article");
-  revalidateBlog(handle, [post.slug]);
-  return blogPath(handle, `/${encodeURIComponent(post.slug)}`);
+  await revalidateBlog(handle, [post.slug]);
+  const blog = await getBlog(handle);
+  return blog
+    ? blogPostEditPath(blog, post)
+    : tenantPostEditPath(handle, post);
 }
 
 export async function saveEditablePostAction(
@@ -311,22 +537,10 @@ export async function saveEditablePostAction(
   const patch = editableInput(input, existing, existing.slug);
   const saved = await savePost(handle, {
     ...existing,
-    type: patch.type,
-    title: patch.title,
-    excerpt: patch.excerpt,
-    cover: patch.cover,
-    coverCaption: patch.coverCaption,
-    body: patch.body,
-    status: patch.status,
-    slug: patch.slug,
-    accent: patch.accent,
+    ...patch,
     pinned: existing.pinned,
-    gallery: patch.gallery,
-    videoUrl: patch.videoUrl,
-    venue: patch.venue,
-    duration: patch.duration,
   });
-  revalidateBlog(handle, [saved.slug]);
+  await revalidateBlog(handle, [existing.slug, saved.slug]);
   return saved;
 }
 
@@ -342,7 +556,7 @@ export async function toggleEditablePostPinnedAction(
   const existing = await getPostById(handle, postId);
   if (!existing) throw new Error("Post not found");
   const saved = await setPostPinned(handle, postId, !existing.pinned);
-  revalidateBlog(handle, [existing.slug]);
+  await revalidateBlog(handle, [existing.slug]);
   return saved;
 }
 
@@ -350,16 +564,45 @@ export async function deleteEditablePostAction(
   handleOrId: unknown,
   maybeId?: unknown,
 ): Promise<{ handle: string }> {
-  const { handle } = await editableHandleFor(
-    maybeId === undefined ? undefined : handleOrId,
-  );
+  const handle =
+    maybeId === undefined ? await editorHandle() : cleanHandle(handleOrId);
   const id = maybeId === undefined ? handleOrId : maybeId;
   const postId = cleanPostId(id);
+  const access = await getBlogEditAccess(handle);
   const existing = await getPostById(handle, postId);
   if (!existing) throw new Error("Post not found");
+  // Deleting always requires the edit credential (owner or the guest cookie);
+  // an unclaimed blog's starter draft is NOT deletable by arbitrary visitors.
+  if (!access.canEdit) throw new Error("You cannot edit this blog");
   await deletePost(handle, postId);
-  revalidateBlog(handle, [existing.slug]);
+  await revalidateBlog(handle, [existing.slug]);
   return { handle };
+}
+
+export async function trashEditableBlogAction(
+  handleInput: unknown,
+): Promise<
+  | { ok: true; path: string; openSidebar: boolean }
+  | { ok: false; error: string }
+> {
+  try {
+    const { handle, access } = await editableHandleFor(handleInput);
+    if (!access.isUnclaimed) {
+      return {
+        ok: false,
+        error: "Trash is available for guest workspaces first.",
+      };
+    }
+    const existingPosts = await getAllPosts(handle);
+    await trashBlogPosts(handle);
+    await revalidateBlog(handle, existingPosts.map((post) => post.slug));
+    return { ok: true, path: blogPath(handle), openSidebar: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: actionErrorMessage(error, "Could not move folder to Trash"),
+    };
+  }
 }
 
 export async function updateBlogNameAction(
@@ -373,7 +616,7 @@ export async function updateBlogNameAction(
       { name: typeof nameInput === "string" ? nameInput : "" },
       { allowHandleChange: access.isOwner },
     );
-    revalidateBlog(handle);
+    await revalidateBlog(handle);
     return { ok: true, name: updated.name };
   } catch (error) {
     return { ok: false, error: actionErrorMessage(error, "Could not save") };
@@ -407,7 +650,7 @@ export async function claimBlog(
   try {
     const blog = await claimBlogForUser(handle, user);
     if (access.blogId) await deleteAnonymousEditCookie(access.blogId);
-    revalidateBlog(handle);
+    await revalidateBlog(handle);
     return { ok: true, handle: blog.handle };
   } catch (error) {
     return { ok: false, error: actionErrorMessage(error, "Could not claim") };

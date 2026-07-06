@@ -1,206 +1,102 @@
-import type { CSSProperties } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import {
-  createAnonymousBlog,
-  startBlogAction,
-} from "@/app/editor/actions";
-import { getCurrentUser } from "@/lib/session";
-import { getOwnedBlog } from "@/lib/store";
-import { redirect } from "next/navigation";
 
-const landingStyle = {
-  "--post-accent": "#065ec6",
-} as CSSProperties;
+const signInHref = `/api/auth/signin?callbackUrl=${encodeURIComponent("/start")}`;
 
-const ctaStyle: CSSProperties = {
-  borderBottom: 0,
-  boxShadow: "0 18px 42px -28px var(--post-accent)",
-  color: "var(--ac-on-accent)",
-  fontSize: 17,
-  height: 50,
-  letterSpacing: 0,
-  paddingInline: 28,
-  textDecoration: "none",
-};
+const starterFolders = [
+  {
+    name: "Blog",
+    meta: "Posts",
+    title: "Your public writing folder",
+    body: "Articles, media posts, and videos live here as Markdown files.",
+  },
+  {
+    name: "Bookmarks",
+    meta: "Links",
+    title: "Saved references",
+    body: "Keep sources, excerpts, and links close to the writing they support.",
+  },
+  {
+    name: "Notes",
+    meta: "Drafts",
+    title: "Private thinking",
+    body: "Capture rough ideas first, then turn the useful ones into posts.",
+  },
+];
 
-const productStageStyle: CSSProperties = {
-  display: "grid",
-  gap: 22,
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 430px), 1fr))",
-  left: "50%",
-  margin: "58px 0 0",
-  maxWidth: "1120px",
-  position: "relative",
-  transform: "translateX(-50%)",
-  width: "min(1120px, calc(100vw - 32px))",
-};
-
-const shotFrameStyle: CSSProperties = {
-  background:
-    "linear-gradient(180deg, var(--bg-soft-2), color-mix(in srgb, var(--bg-soft) 82%, var(--bg)))",
-  border: "1px solid color-mix(in srgb, var(--hairline) 84%, transparent)",
-  borderRadius: 16,
-  boxShadow: "0 32px 90px -62px rgba(0, 0, 0, 0.62)",
-  margin: 0,
-  overflow: "hidden",
-  padding: 10,
-};
-
-const shotImageStyle: CSSProperties = {
-  background: "var(--bg-soft)",
-  borderRadius: 10,
-  display: "block",
-  height: "auto",
-  width: "100%",
-};
-
-const footerStyle: CSSProperties = {
-  borderTop: "1px solid var(--hairline-2)",
-  color: "var(--muted)",
-  fontSize: 14,
-  lineHeight: 1.5,
-  margin: "64px auto 0",
-  maxWidth: 680,
-  paddingTop: 20,
-  textAlign: "center",
-};
-
-const footerLinkStyle: CSSProperties = {
-  borderBottom:
-    "1px solid color-mix(in srgb, var(--post-accent) 28%, transparent)",
-  color: "color-mix(in srgb, var(--post-accent) 46%, var(--ink))",
-  textDecoration: "none",
-};
-
-function blogPath(handle: string): string {
-  return `/t/${encodeURIComponent(handle)}`;
-}
-
-function ProductShot({
-  alt,
-  height,
-  src,
-  width,
-}: {
-  alt: string;
-  height: number;
-  src: string;
-  width: number;
-}) {
+export default function Home() {
   return (
-    <figure className="landing-shot-frame" style={shotFrameStyle}>
-      <Image
-        alt={alt}
-        className="landing-shot-image"
-        height={height}
-        sizes="(max-width: 900px) calc(100vw - 64px), 520px"
-        src={src}
-        style={shotImageStyle}
-        width={width}
-      />
-    </figure>
-  );
-}
-
-// Platform landing (root domain). Deliberately set in the product's own
-// reader voice: the landing IS a specimen of the typography.
-export default async function Home() {
-  const user = await getCurrentUser();
-  const ownedBlog = user ? await getOwnedBlog(user.sub) : null;
-  const ownedBlogHref = ownedBlog ? blogPath(ownedBlog.handle) : null;
-
-  async function startAnonymousBlog() {
-    "use server";
-
-    const handle = await createAnonymousBlog();
-    redirect(blogPath(handle));
-  }
-
-  return (
-    <main className="reader applecms landing-page" style={landingStyle}>
-      <header className="reader-masthead landing-hero">
-        <h1 className="reader-title">Publish work that reads beautifully</h1>
-        <p className="reader-dek">
-          Write is a place to publish articles, projects, and talks in a calm
-          reading column with broadsheet type and your own URL.
-        </p>
-        <span
-          aria-hidden="true"
-          style={{
-            background: "var(--post-accent)",
-            display: "block",
-            height: 1,
-            margin: "24px auto 26px",
-            width: 72,
-          }}
-        />
-        <div
-          className="landing-cta-wrap"
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginTop: 0,
-          }}
-        >
-          {ownedBlogHref ? (
-            <Link
-              className="ac-btn ac-btn-filled"
-              href={ownedBlogHref}
-              style={ctaStyle}
-            >
-              Start a blog
-            </Link>
-          ) : user ? (
-            <form action={startBlogAction}>
-              <button
-                className="ac-btn ac-btn-filled"
-                style={ctaStyle}
-                type="submit"
-              >
-                Start a blog
-              </button>
-            </form>
-          ) : (
-            <form action={startAnonymousBlog}>
-              <button
-                className="ac-btn ac-btn-filled"
-                style={ctaStyle}
-                type="submit"
-              >
-                Start a blog
-              </button>
-            </form>
-          )}
+    <main className="write-landing applecms">
+      <nav className="write-landing-nav" aria-label="Write">
+        <Link className="write-landing-mark" href="/">
+          Write
+        </Link>
+        <div className="write-landing-nav-actions">
+          <a className="write-landing-link" href={signInHref}>
+            Sign in
+          </a>
+          <Link className="write-landing-button" href="/start">
+            Get started
+          </Link>
         </div>
-      </header>
+      </nav>
 
-      <section
-        aria-label="Product screenshots"
-        className="landing-product-stage"
-        style={productStageStyle}
-      >
-        <ProductShot
-          alt="Write blog home showing a publication header and article cards"
-          height={1103}
-          src="/shots/home.jpg"
-          width={1500}
-        />
-        <ProductShot
-          alt="Write reader view showing a published article page"
-          height={1147}
-          src="/shots/reader.jpg"
-          width={1500}
-        />
+      <section className="write-landing-hero">
+        <div className="write-landing-copy">
+          <p className="write-landing-kicker">Folders. Markdown. Publishing.</p>
+          <h1>A writing space that starts as files.</h1>
+          <p>
+            Open Write and you get a folder called Blog, plus Bookmarks and
+            Notes. Start as a guest, then sign in when you want the same
+            folders and content across devices.
+          </p>
+          <div className="write-landing-actions">
+            <Link className="write-landing-primary" href="/start">
+              Get started
+            </Link>
+            <a className="write-landing-secondary" href={signInHref}>
+              Sign in
+            </a>
+          </div>
+        </div>
+
+        <div className="write-landing-product" aria-label="Write preview">
+          <div className="write-landing-sidebar" aria-hidden="true">
+            <div className="write-landing-sidebar-dot" />
+            {starterFolders.map((folder) => (
+              <div
+                key={folder.name}
+                className={`write-landing-folder${
+                  folder.name === "Blog" ? " is-active" : ""
+                }`}
+              >
+                <span>{folder.name}</span>
+                <small>{folder.meta}</small>
+              </div>
+            ))}
+          </div>
+          <div className="write-landing-editor" aria-hidden="true">
+            <div className="write-landing-editor-bar">
+              <span>Blog</span>
+              <span>Saved here</span>
+            </div>
+            <div className="write-landing-editor-title">Give it a title</div>
+            <div className="write-landing-editor-line is-wide" />
+            <div className="write-landing-editor-line" />
+            <div className="write-landing-editor-line is-short" />
+          </div>
+        </div>
       </section>
 
-      <footer className="landing-footer" style={footerStyle}>
-        See the{" "}
-        <Link href="/t/demo" style={footerLinkStyle}>
-          demo
-        </Link>
-        .
-      </footer>
+      <section className="write-landing-folders" aria-label="Starter folders">
+        {starterFolders.map((folder) => (
+          <article key={folder.name} className="write-landing-folder-card">
+            <span>{folder.meta}</span>
+            <h2>{folder.name}</h2>
+            <h3>{folder.title}</h3>
+            <p>{folder.body}</p>
+          </article>
+        ))}
+      </section>
     </main>
   );
 }

@@ -69,8 +69,8 @@
   inset: 0;
   border-radius: 18px;
   box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.1),
-    0 44px 80px rgba(0, 0, 0, 0.24);
+    0 5px 12px rgba(0, 0, 0, 0.06),
+    0 16px 34px rgba(0, 0, 0, 0.12);
   opacity: 0;
   transition: opacity 0.26s var(--ease);
   pointer-events: none;
@@ -79,8 +79,8 @@
 
 @media (hover: hover) {
   .tvcard.is-hover {
-    scale: 1.12;
-    translate: 0 -12px;
+    scale: 1.035;
+    translate: 0 -6px;
     z-index: 1;
     transition:
       scale 0.26s cubic-bezier(0.2, 0.7, 0.2, 1),
@@ -89,12 +89,12 @@
   }
 
   .tvcard.is-hover .tvcard-inner::after {
-    opacity: 1;
+    opacity: 0.55;
   }
 
   .tvcard:hover {
-    scale: 1.12;
-    translate: 0 -12px;
+    scale: 1.035;
+    translate: 0 -6px;
     z-index: 1;
     transition:
       scale 0.26s cubic-bezier(0.2, 0.7, 0.2, 1),
@@ -103,7 +103,7 @@
   }
 
   .tvcard:hover .tvcard-inner::after {
-    opacity: 1;
+    opacity: 0.55;
   }
 }
 
@@ -219,16 +219,17 @@ video.tvcard-cover[data-ready="true"] {
   border-radius: 0 0 18px 18px;
 }
 
+.tvcard--no-cover .tvcard-body {
+  flex: 1 1 auto;
+  border-radius: 18px;
+}
+
 .tvcard--style-minimal .tvcard-inner {
   background: color-mix(in srgb, var(--bg) 94%, var(--bg-soft));
   border: 1px solid var(--hairline-2);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 12px 30px rgba(0, 0, 0, 0.09);
-}
-
-.tvcard--style-minimal .tvcard-inner::after {
-  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.18);
 }
 
 .tvcard--style-minimal .tvcard-body {
@@ -329,6 +330,14 @@ video.tvcard-cover[data-ready="true"] {
   font-weight: 600;
   line-height: 1.35;
   letter-spacing: 0;
+}
+
+.tvcard-body .post-byline.is-card {
+  color: color-mix(in srgb, var(--muted) 86%, var(--ink));
+}
+
+.tvcard-body .post-byline.is-card .post-byline-meta {
+  color: color-mix(in srgb, var(--muted) 88%, var(--ink));
 }
 
 .tvcard-play {
@@ -476,6 +485,14 @@ video.tvcard-cover[data-ready="true"] {
   color: #af1e2d;
 }
 
+.tvcard-menu-error {
+  display: block;
+  padding: 6px 10px 4px;
+  color: #af1e2d;
+  font: 600 12px/1.3 var(--font-body, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif);
+  letter-spacing: 0;
+}
+
 .tvcard-menu-item:disabled {
   cursor: default;
   opacity: 0.55;
@@ -490,5 +507,17 @@ video.tvcard-cover[data-ready="true"] {
   :root:not([data-theme="light"]) .tvcard-menu {
     background: color-mix(in srgb, var(--bg-soft-2) 88%, transparent);
     border-color: var(--hairline);
+  }
+}
+
+[data-theme="dark"] .tvcard-menu-item.is-danger,
+[data-theme="dark"] .tvcard-menu-error {
+  color: #ff6961;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tvcard-menu-item.is-danger,
+  :root:not([data-theme="light"]) .tvcard-menu-error {
+    color: #ff6961;
   }
 }

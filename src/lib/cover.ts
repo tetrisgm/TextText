@@ -3,8 +3,15 @@ import { COVER_PILE } from "@/lib/cover-pile";
 
 type CoverPost = Pick<Post, "cover" | "id" | "slug" | "title">;
 
+export const NO_COVER_VALUE = "__write_no_cover__";
+
+export function isNoCoverValue(value: string | null | undefined): boolean {
+  return value?.trim() === NO_COVER_VALUE;
+}
+
 export function resolveCover(post: CoverPost): string {
   const cover = post.cover?.trim();
+  if (isNoCoverValue(cover)) return "";
   if (cover) return cover;
 
   const fallback = COVER_PILE[stableHash(coverHashBasis(post)) % COVER_PILE.length];
@@ -12,7 +19,8 @@ export function resolveCover(post: CoverPost): string {
 }
 
 export function resolveCoverUrl(post: CoverPost, baseUrl: string): string {
-  return new URL(resolveCover(post), baseUrl).toString();
+  const cover = resolveCover(post);
+  return cover ? new URL(cover, baseUrl).toString() : "";
 }
 
 export function coverMimeType(src: string): string {

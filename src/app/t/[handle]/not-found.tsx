@@ -1,27 +1,32 @@
-import Link from "next/link";
+"use client";
 
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+// Not-found pages get no route params, so the blog home link is derived from
+// the URL. Path-based access (/t/{handle}/...) links back to /t/{handle};
+// host-based tenants ({handle}.domain) live at the root, so "/" is home.
 export default function TenantNotFound() {
+  const pathname = usePathname() ?? "";
+  const match = pathname.match(/^\/t\/([^/]+)/);
+  const homeHref = match ? `/t/${match[1]}` : "/";
+
   return (
     <main className="not-found-page">
-      <div className="not-found-inner">
-        <span className="not-found-kicker">Not found</span>
-        <h1 className="not-found-title">Nothing is published here.</h1>
-        <p className="not-found-copy">
-          This blog or post is unavailable, unpublished, or no longer at this
-          address.
-        </p>
-        <div className="not-found-actions">
-          <Link className="not-found-link" href="/">
-            Return home
-          </Link>
-          <Link
-            className="not-found-link not-found-link-secondary"
-            href="/t/demo"
-          >
-            Read the demo
-          </Link>
-        </div>
-      </div>
+      <Image
+        className="not-found-gif"
+        src="/travolta-looking-around.gif"
+        alt="John Travolta as Vincent Vega looking around a room, finding nothing"
+        width={480}
+        height={204}
+        priority
+        unoptimized
+      />
+      <h1 className="not-found-title">This page does not exist.</h1>
+      <Link className="not-found-home-link" href={homeHref}>
+        Back to the blog
+      </Link>
     </main>
   );
 }

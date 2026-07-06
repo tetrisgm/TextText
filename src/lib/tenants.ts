@@ -5,16 +5,17 @@
 // to /t/{handle}/... so the app routes stay plain.
 //
 // Local dev: modern browsers resolve {handle}.localhost without /etc/hosts,
-// so http://demo.localhost:3000 exercises the full tenant path.
+// so tenant subdomains can exercise the full tenant path.
+
+import { RESERVED_HANDLES } from "./reserved-names";
+
+export { RESERVED_HANDLES };
 
 /** Platform root, no scheme, may include a port. */
 export const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "localhost:3000";
 
-/** Subdomains that can never be tenant handles. */
-export const RESERVED_HANDLES = new Set([
-  "www", "app", "api", "admin", "editor", "auth", "mail", "static", "cdn",
-  "assets", "blog", "docs", "help", "status", "dev", "staging",
-]);
+/** The seeded demo blog: reserved from claiming, but it must still resolve. */
+const DEMO_HANDLE = "demo";
 
 export const TENANT_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
@@ -34,7 +35,7 @@ export function tenantFromHost(host: string | null): string | null {
   if (!bare.endsWith(`.${rootBare}`)) return null; // custom domains: later, via lookup
   const sub = bare.slice(0, -(rootBare.length + 1));
   if (!sub || sub.includes(".")) return null; // one level only
-  if (RESERVED_HANDLES.has(sub)) return null;
+  if (sub !== DEMO_HANDLE && RESERVED_HANDLES.has(sub)) return null;
   if (!TENANT_HANDLE_RE.test(sub)) return null;
   return sub;
 }

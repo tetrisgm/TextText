@@ -5,11 +5,8 @@
 .reader.talk-detail {
   max-width: min(1840px, calc((100vh - 260px) * 16 / 9));
   margin: 0 auto;
-  padding: 72px 32px 64px;
-}
-
-.reader.talk-detail::before {
-  display: none;
+  padding: 48px 32px 64px;
+  font: 400 17px/1.47 var(--font-newsroom-text);
 }
 
 .talk-detail-stage {
@@ -54,9 +51,10 @@
 .talk-detail-title {
   margin: 0;
   color: var(--ink);
-  font-size: clamp(1.25rem, 1rem + 1vw, 1.75rem);
+  font-family: var(--font-newsroom-display);
+  font-size: 30px;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.6px;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -64,9 +62,24 @@
 .talk-detail-date {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 0.8125rem;
-  letter-spacing: 0;
+  font-size: 14px;
+  letter-spacing: 0.1px;
+  line-height: 1.47;
   font-variant-numeric: tabular-nums;
+}
+
+.talk-detail-byline.post-byline {
+  justify-content: flex-start;
+  max-width: none;
+  margin: 12px 0 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.talk-detail-byline .post-byline-avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
 }
 
 .talk-detail-dek.reader-dek {
@@ -79,7 +92,8 @@
 .talk-detail-desc.reader-prose {
   margin: 12px 0 0;
   color: var(--ink-2);
-  font-size: 0.9375rem;
+  font-family: var(--font-newsroom-text);
+  font-size: 16px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -120,10 +134,6 @@
   letter-spacing: 0;
   line-height: 1.25;
   position: static;
-}
-
-.talk-detail-desc.reader-prose h2::before {
-  display: none;
 }
 
 .talk-detail-desc.reader-prose h3 {
@@ -178,10 +188,6 @@
   line-height: 1.25;
   position: static;
 }
-.talk-detail-desc.reader-prose .body-editor-content h2::before,
-.talk-detail-desc.reader-prose .body-editor-content > p > strong:first-child::before {
-  display: none;
-}
 .talk-detail-desc.reader-prose .body-editor-content h3 {
   margin: 22px 0 8px;
   color: var(--ink);
@@ -208,7 +214,7 @@
   color: color-mix(in srgb, var(--post-accent, var(--ink-2)) 60%, var(--ink));
   border-bottom: 1px solid
     color-mix(in srgb, var(--post-accent, var(--ink-2)) 32%, transparent);
-  font-size: 0.8125rem;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.35;
@@ -296,7 +302,7 @@
 
 @media (max-width: 720px) {
   .reader.talk-detail {
-    padding: 64px 20px 48px;
+    padding: 24px 20px 48px;
   }
 
   .reader.talk-detail.has-editor-toolbar {
@@ -308,7 +314,8 @@
   }
 
   .talk-detail-title {
-    letter-spacing: 0;
+    font-size: 28px;
+    letter-spacing: -0.3px;
   }
 
   .talk-edit-fields {

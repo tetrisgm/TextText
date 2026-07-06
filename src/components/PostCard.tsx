@@ -8,19 +8,19 @@ import {
   deleteEditablePostAction,
   toggleEditablePostPinnedAction,
 } from "@/app/editor/actions";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
-  formatArticleDate,
   isVideoFile,
   postAccent,
-  readingTimeMin,
 } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
+import { blogPostPath } from "@/lib/public-paths";
 
 const TYPE_LABELS: Record<PostType, string> = {
-  article: "ARTICLE",
-  project: "PROJECT",
-  talk: "TALK",
+  article: "Article",
+  project: "Media",
+  talk: "Video",
 };
 
 function PlayBadge() {
@@ -39,12 +39,6 @@ function postTitle(post: Post): string {
 
 function postThumbnail(post: Post): string {
   return resolveCover(post);
-}
-
-function postMeta(post: Post): string {
-  return [formatArticleDate(post.date), `${readingTimeMin(post.body)} min read`]
-    .filter(Boolean)
-    .join(" / ");
 }
 
 function oneLine(value: string): string {
@@ -81,7 +75,11 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function postDesc(post: Post): string {
-  return post.excerpt?.trim() || plainTextExcerpt(post.body) || postMeta(post);
+  return post.excerpt?.trim() || plainTextExcerpt(post.body);
+}
+
+function actionErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function videoMimeType(src: string): string {
@@ -100,11 +98,15 @@ function cardAccentStyle(blog: Blog, post: Post): CSSProperties | undefined {
 export function PostCard({
   blog,
   handle,
+  href,
+  onOpen,
   post,
   owner,
 }: {
   blog: Blog;
   handle: string;
+  href?: string;
+  onOpen?: (event: MouseEvent<HTMLAnchorElement>) => void;
   post: Post;
   owner: boolean;
 }) {
@@ -115,7 +117,9 @@ export function PostCard({
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pinning, setPinning] = useState(false);
+  const [menuError, setMenuError] = useState<string | null>(null);
 
   const title = postTitle(post);
   const desc = postDesc(post);
@@ -123,7 +127,6 @@ export function PostCard({
   const isMinimal = blog.cardStyle === "minimal";
   const isVideoCover = !isMinimal && isVideoFile(cover);
   const accent = postAccent(blog, post);
-  const date = formatArticleDate(post.date);
   const showUnlisted = owner && post.status === "draft";
   const showPinned = Boolean(post.pinned);
 
@@ -185,9 +188,10 @@ export function PostCard({
     const r = el.getBoundingClientRect();
     const px = (clientX - r.left) / r.width;
     const py = (clientY - r.top) / r.height;
+    const tiltStrength = 0.5;
     tiltTarget.current = {
-      rx: (0.5 - py) * 33,
-      ry: (px - 0.5) * 36,
+      rx: (0.5 - py) * 33 * tiltStrength,
+      ry: (px - 0.5) * 36 * tiltStrength,
       mx: px * 100,
       my: py * 100,
     };
@@ -292,6 +296,7 @@ export function PostCard({
 
   const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
     stopMenuNavigation(event);
+    setMenuError(null);
     setMenuOpen((open) => !open);
   };
 
@@ -299,31 +304,37 @@ export function PostCard({
     stopMenuNavigation(event);
     const postId = post.id;
     if (!owner || !postId || deleting) return;
-    if (!window.confirm("Delete this post?")) return;
+    setMenuError(null);
+    setMenuOpen(false);
+    setDeleteDialogOpen(true);
+  };
 
+  const confirmDelete = useCallback(() => {
+    const postId = post.id;
+    if (!owner || !postId || deleting) return;
     setDeleting(true);
     startTransition(() => {
       void deleteEditablePostAction(handle, postId)
         .then(() => {
+          setDeleteDialogOpen(false);
           setMenuOpen(false);
           router.refresh();
         })
         .catch((error) => {
           setDeleting(false);
-          window.alert(
-            error instanceof Error && error.message
-              ? error.message
-              : "Could not delete",
-          );
+          setDeleteDialogOpen(false);
+          setMenuOpen(true);
+          setMenuError(actionErrorMessage(error, "Could not delete"));
         });
     });
-  };
+  }, [deleting, handle, owner, post.id, router]);
 
   const onTogglePinned = (event: MouseEvent<HTMLButtonElement>) => {
     stopMenuNavigation(event);
     const postId = post.id;
     if (!owner || !postId || pinning) return;
 
+    setMenuError(null);
     setPinning(true);
     startTransition(() => {
       void toggleEditablePostPinnedAction(handle, postId)
@@ -334,11 +345,8 @@ export function PostCard({
         })
         .catch((error) => {
           setPinning(false);
-          window.alert(
-            error instanceof Error && error.message
-              ? error.message
-              : "Could not update pin",
-          );
+          setMenuOpen(true);
+          setMenuError(actionErrorMessage(error, "Could not update pin"));
         });
     });
   };
@@ -361,17 +369,18 @@ export function PostCard({
     >
       <Link
         ref={ref}
-        href={`/t/${handle}/${post.slug}`}
+        href={href ?? blogPostPath(blog, post)}
         prefetch={true}
         className={className}
         style={cardAccentStyle(blog, post)}
+        onClick={onOpen}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         aria-label={title}
       >
         <span className="tvcard-inner">
           <span className="tvcard-tilt">
-            {!isMinimal && (
+            {!isMinimal && cover && (
               <span className="tvcard-media">
                 {isVideoCover ? (
                   <video
@@ -418,9 +427,6 @@ export function PostCard({
               </span>
               <span className="tvcard-title">{title}</span>
               <span className="tvcard-desc">{desc}</span>
-              {isMinimal && date && (
-                <span className="tvcard-date">{date}</span>
-              )}
             </span>
           </span>
         </span>
@@ -461,9 +467,26 @@ export function PostCard({
               >
                 {deleting ? "Deleting" : "Delete"}
               </button>
+              {menuError && (
+                <span className="tvcard-menu-error" role="alert">
+                  {menuError}
+                </span>
+              )}
             </div>
           )}
         </div>
+      )}
+      {owner && (
+        <ConfirmationDialog
+          open={deleteDialogOpen}
+          title="Delete post?"
+          message="This moves the Markdown file to Trash. You can restore it later."
+          confirmLabel="Delete"
+          confirmingLabel="Deleting"
+          confirming={deleting}
+          onCancel={() => setDeleteDialogOpen(false)}
+          onConfirm={confirmDelete}
+        />
       )}
     </div>
   );

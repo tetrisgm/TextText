@@ -1,20 +1,18 @@
 import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { PostByline } from "@/components/PostByline";
 import type { Blog, Post } from "@/lib/content";
 import {
-  formatArticleDate,
   isVideoFile,
-  readingTimeMin,
   postAccent,
-  monogram,
 } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
 
-// The Broadsheet reader: top cover hero, masthead (serif title, dek, byline),
-// and prose. Server component; markdown renders on the server. The post's
-// accent rides in as --post-accent and may be absent, in which case every
-// accent use in broadsheet.css degrades to neutral ink.
+// The public reader: top cover hero, centered masthead, byline, and prose.
+// Server component; markdown renders on the server. The post's accent rides in
+// as --post-accent and may be absent, in which case every accent use in the
+// public CSS degrades to neutral ink.
 
 type ReaderSlots = {
   toolbar?: ReactNode;
@@ -23,26 +21,6 @@ type ReaderSlots = {
   cover?: ReactNode;
   body?: ReactNode;
 };
-
-function Byline({ blog, post }: { blog: Blog; post: Post }) {
-  const meta = [
-    formatArticleDate(post.date),
-    post.body ? `${readingTimeMin(post.body)} min read` : "",
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
-  return (
-    <div className="reader-byline">
-      <span className="reader-avatar" aria-hidden="true">
-        {monogram(blog.author)}
-      </span>
-      <span className="reader-byline-text">
-        <span className="reader-author">{blog.author}</span>
-        {meta && <span className="reader-byline-meta">{meta}</span>}
-      </span>
-    </div>
-  );
-}
 
 export function Reader({
   blog,
@@ -60,8 +38,12 @@ export function Reader({
   const title = post.title.trim() || "Untitled";
   const excerpt = post.excerpt?.trim();
   const resolvedCover = resolveCover(post);
-  const cover = slots?.cover ?? (
-    <figure className="reader-cover">
+  const coverCaption = post.coverCaption?.trim();
+  const coverStyle = post.coverHeight
+    ? ({ "--reader-cover-height": `${post.coverHeight}px` } as CSSProperties)
+    : undefined;
+  const defaultCover = resolvedCover ? (
+    <figure className="reader-cover" style={coverStyle}>
       {isVideoFile(resolvedCover) ? (
         <video src={resolvedCover} controls playsInline preload="metadata" />
       ) : (
@@ -72,13 +54,15 @@ export function Reader({
           <img src={resolvedCover} alt={title} />
         </>
       )}
-      {post.coverCaption && (
-        <figcaption className="reader-figcaption">
-          {post.coverCaption}
-        </figcaption>
+      {coverCaption && (
+        <figcaption className="reader-figcaption">{coverCaption}</figcaption>
       )}
     </figure>
-  );
+  ) : null;
+  const cover =
+    slots && Object.prototype.hasOwnProperty.call(slots, "cover")
+      ? slots.cover
+      : defaultCover;
   const className = `reader${slots?.toolbar ? " has-editor-toolbar" : ""}`;
 
   return (
@@ -90,7 +74,7 @@ export function Reader({
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
-        <Byline blog={blog} post={post} />
+        <PostByline blog={blog} post={post} />
       </header>
       <div className="reader-prose">
         {slots?.body ?? (

@@ -1,6 +1,6 @@
-import type { Post } from "@/lib/content";
-
-const FALLBACK_ROOT_DOMAIN = "localhost:3000";
+import type { Blog, Post } from "@/lib/content";
+import { blogHomePath } from "@/lib/public-paths";
+import { rootDomainUrl } from "@/lib/site-url";
 
 export function publishedNewestFirst(posts: Post[]): Post[] {
   return posts
@@ -15,10 +15,12 @@ export function publishedNewestFirst(posts: Post[]): Post[] {
     });
 }
 
-export function blogBaseUrl(handle: string): string {
+export function blogBaseUrl(blog: Pick<Blog, "handle" | "username">): string {
   const url = rootDomainUrl();
-  url.hostname = `${handle}.${url.hostname}`;
-  return url.origin;
+  url.pathname = blogHomePath(blog);
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
 }
 
 export function postUrl(baseUrl: string, slug: string): string {
@@ -31,6 +33,10 @@ export function postMarkdownUrl(baseUrl: string, slug: string): string {
 
 export function postsJsonUrl(baseUrl: string): string {
   return `${baseUrl}/posts.json`;
+}
+
+export function folderJsonUrl(baseUrl: string): string {
+  return `${baseUrl}/folder.json`;
 }
 
 export function llmsTxtUrl(baseUrl: string): string {
@@ -82,30 +88,6 @@ function parseDate(value: string | undefined): Date | null {
     ? new Date(`${value}T00:00:00.000Z`)
     : new Date(value);
   return Number.isNaN(candidate.getTime()) ? null : candidate;
-}
-
-function rootDomainUrl(): URL {
-  const rawDomain = (
-    process.env.NEXT_PUBLIC_ROOT_DOMAIN ||
-    process.env.ROOT_DOMAIN ||
-    FALLBACK_ROOT_DOMAIN
-  )
-    .trim()
-    .replace(/\/+$/, "");
-  const candidate = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(rawDomain)
-    ? rawDomain
-    : `${isLocalDomain(rawDomain) ? "http" : "https"}://${rawDomain}`;
-
-  try {
-    return new URL(candidate);
-  } catch {
-    return new URL(`http://${FALLBACK_ROOT_DOMAIN}`);
-  }
-}
-
-function isLocalDomain(value: string): boolean {
-  const host = value.split("/")[0]?.split(":")[0]?.toLowerCase() || "";
-  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1";
 }
 
 function stripMarkdown(value: string): string {

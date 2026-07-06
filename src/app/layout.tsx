@@ -8,8 +8,8 @@ import "../styles/talk.css";
 import "../styles/project.css";
 import "../styles/apple.css";
 
-// Body: Inter (an SF-alike, OFL) so every platform reads the same. Display:
-// Fraunces SemiBold, the Broadsheet's serif voice. Both self-hosted.
+// Body: Inter (an SF-alike, OFL) so every platform reads the same. Fraunces is
+// kept as a legacy display fallback for older content styles.
 const inter = localFont({
   src: [
     { path: "../../public/fonts/Inter-Regular.ttf", weight: "400" },
@@ -28,7 +28,7 @@ const fraunces = localFont({
 
 const title = "Write";
 const description =
-  "A calm publishing home for articles, projects, and talks with broadsheet type and clean editing.";
+  "A calm publishing home for articles, projects, and talks with a clean Newsroom-inspired reading experience.";
 
 function rootUrl(): URL {
   const root = ROOT_DOMAIN.replace(/^https?:\/\//, "");

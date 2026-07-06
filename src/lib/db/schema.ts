@@ -1,9 +1,11 @@
-// Drizzle schema for the hosted platform (Neon Postgres).
-// Not yet wired into the routes: until DATABASE_URL exists the app serves the
-// demo seed (src/lib/demo.ts). Auth.js adapter tables land with auth wiring.
+// Drizzle schema for the hosted platform (Neon Postgres). All content access
+// goes through src/lib/store.ts, which serves the demo seed when DATABASE_URL
+// is unset and reads/writes these tables when it is set.
 
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -21,10 +23,12 @@ export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** Apple `sub` claim; the primary identity (Sign in with Apple) */
   appleSub: text("apple_sub").unique(),
+  /** public route segment, served as /@{username} */
+  username: text("username"),
   email: text("email"),
   name: text("name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
 
 export const blogs = pgTable(
   "blogs",
@@ -39,11 +43,12 @@ export const blogs = pgTable(
     /** one-line standing bio for the reader end card */
     bioLine: text("bio_line"),
     cardStyle: text("card_style").notNull().default("cover"),
-    homeLayout: text("home_layout").notNull().default("cards"),
+    homeLayout: text("home_layout").notNull().default("grid"),
     ownerId: uuid("owner_id").references(() => users.id),
     /** SHA-256 hash of the anonymous editor token; null after claim */
     editTokenHash: text("edit_token_hash"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
   },
   (t) => [
     uniqueIndex("blogs_handle_idx").on(t.handle),
@@ -72,6 +77,7 @@ export const posts = pgTable(
     accent: text("accent"),
     cover: text("cover"),
     coverCaption: text("cover_caption"),
+    coverHeight: integer("cover_height"),
     gallery: jsonb("gallery").$type<GalleryItem[]>(),
     links: jsonb("links").$type<LinkRef[]>(),
     videoUrl: text("video_url"),
@@ -84,6 +90,14 @@ export const posts = pgTable(
     publishedAt: timestamp("published_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
   },
-  (t) => [uniqueIndex("posts_blog_slug_idx").on(t.blogId, t.slug)],
+  (t) => [
+    // Partial: a soft-deleted (trashed) post releases its slug, so writing a
+    // new post with the same URL never collides with, or resurrects, a
+    // trashed row.
+    uniqueIndex("posts_blog_slug_idx")
+      .on(t.blogId, t.slug)
+      .where(sql`${t.deletedAt} is null`),
+  ],
 );

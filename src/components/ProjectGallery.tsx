@@ -18,6 +18,8 @@ import { isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
 type ProjectGalleryEdit = {
   uploading: boolean;
   uploadError: string | null;
+  disabled?: boolean;
+  disabledReason?: string;
   onAddMedia: (files: File[]) => void;
   onChange: (gallery: GalleryItem[]) => void;
 };
@@ -26,6 +28,10 @@ const MEDIA_ACCEPT = "image/*,video/*";
 
 function hasDraggedFiles(event: DragEvent<HTMLElement>) {
   return Array.from(event.dataTransfer.types).includes("Files");
+}
+
+function tabIsVisible(): boolean {
+  return typeof document === "undefined" || document.visibilityState === "visible";
 }
 
 function Chevron({ direction }: { direction: "left" | "right" }) {
@@ -56,6 +62,19 @@ function CloseIcon() {
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 4.5v11M4.5 10h11"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
       />
     </svg>
   );
@@ -142,7 +161,7 @@ export function ProjectGallery({
   post: Post;
   edit?: ProjectGalleryEdit;
 }) {
-  const slides = post.gallery ?? [];
+  const slides = useMemo(() => post.gallery ?? [], [post.gallery]);
   const slideCount = slides.length;
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align: "center",
@@ -168,13 +187,21 @@ export function ProjectGallery({
       }, []),
     [slides],
   );
+  const activeLightboxIndex =
+    lightboxIndex !== null &&
+    slides[lightboxIndex] &&
+    isImageItem(slides[lightboxIndex])
+      ? lightboxIndex
+      : null;
   const lightboxPosition =
-    lightboxIndex === null ? -1 : imageSlideIndexes.indexOf(lightboxIndex);
+    activeLightboxIndex === null
+      ? -1
+      : imageSlideIndexes.indexOf(activeLightboxIndex);
   const canLightboxPrev = lightboxPosition > 0;
   const canLightboxNext =
     lightboxPosition >= 0 && lightboxPosition < imageSlideIndexes.length - 1;
   const lightboxItem =
-    lightboxIndex === null ? undefined : slides[lightboxIndex];
+    activeLightboxIndex === null ? undefined : slides[activeLightboxIndex];
   const lightboxImage =
     lightboxItem && isImageItem(lightboxItem)
       ? {
@@ -182,6 +209,7 @@ export function ProjectGallery({
           alt: lightboxItem.caption || post.title,
         }
       : null;
+  const uploadDisabled = Boolean(edit?.disabled);
 
   const clearAutoplayTimer = useCallback(() => {
     if (autoplayTimerRef.current !== null) {
@@ -195,7 +223,10 @@ export function ProjectGallery({
     clearAutoplayTimer();
   }, [clearAutoplayTimer]);
 
-  const isAutoplayStopped = useCallback(() => autoplayStoppedRef.current, []);
+  const isAutoplayStopped = useCallback(
+    () => autoplayStoppedRef.current || !tabIsVisible(),
+    [],
+  );
 
   const markLoaded = useCallback((index: number) => {
     setLoadedSlides((previous) => {
@@ -215,11 +246,12 @@ export function ProjectGallery({
 
   useEffect(() => {
     if (!emblaApi) return;
-    updateSelected();
+    const frame = window.requestAnimationFrame(updateSelected);
     emblaApi.on("select", updateSelected);
     emblaApi.on("reInit", updateSelected);
     emblaApi.on("pointerDown", stopAutoplay);
     return () => {
+      window.cancelAnimationFrame(frame);
       emblaApi.off("select", updateSelected);
       emblaApi.off("reInit", updateSelected);
       emblaApi.off("pointerDown", stopAutoplay);
@@ -236,12 +268,14 @@ export function ProjectGallery({
 
     const advance = () => {
       if (autoplayStoppedRef.current) return;
+      if (!tabIsVisible()) return;
       emblaApi.scrollNext();
     };
 
     const scheduleForSlide = () => {
       clearAutoplayTimer();
       if (autoplayStoppedRef.current) return;
+      if (!tabIsVisible()) return;
 
       const index = emblaApi.selectedScrollSnap();
       const slide = slides[index];
@@ -263,19 +297,34 @@ export function ProjectGallery({
       autoplayTimerRef.current = setTimeout(advance, 3000);
     };
 
+    const onVisibilityChange = () => {
+      if (!tabIsVisible()) {
+        clearAutoplayTimer();
+        for (const slide of emblaApi.slideNodes()) {
+          slide.querySelector("video")?.pause();
+        }
+        return;
+      }
+
+      scheduleForSlide();
+    };
+
     emblaApi.on("select", scheduleForSlide);
     emblaApi.on("reInit", scheduleForSlide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     scheduleForSlide();
 
     return () => {
       emblaApi.off("select", scheduleForSlide);
       emblaApi.off("reInit", scheduleForSlide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       clearAutoplayTimer();
     };
   }, [clearAutoplayTimer, emblaApi, slideCount, slides]);
 
   const advanceFromVideo = useCallback(() => {
     if (autoplayStoppedRef.current) return;
+    if (!tabIsVisible()) return;
     emblaApi?.scrollNext();
   }, [emblaApi]);
 
@@ -307,25 +356,19 @@ export function ProjectGallery({
 
   const moveLightbox = useCallback(
     (direction: -1 | 1) => {
-      if (lightboxIndex === null) return;
-      const currentPosition = imageSlideIndexes.indexOf(lightboxIndex);
+      if (activeLightboxIndex === null) return;
+      const currentPosition = imageSlideIndexes.indexOf(activeLightboxIndex);
       const targetIndex = imageSlideIndexes[currentPosition + direction];
       if (targetIndex === undefined) return;
       stopAutoplay();
       setLightboxIndex(targetIndex);
       emblaApi?.scrollTo(targetIndex);
     },
-    [emblaApi, imageSlideIndexes, lightboxIndex, stopAutoplay],
+    [activeLightboxIndex, emblaApi, imageSlideIndexes, stopAutoplay],
   );
 
   useEffect(() => {
-    if (lightboxIndex === null) return;
-    const item = slides[lightboxIndex];
-    if (!item || !isImageItem(item)) setLightboxIndex(null);
-  }, [lightboxIndex, slides]);
-
-  useEffect(() => {
-    if (!emblaApi || slideCount < 2 || lightboxIndex !== null) return;
+    if (!emblaApi || slideCount < 2 || activeLightboxIndex !== null) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
@@ -342,10 +385,10 @@ export function ProjectGallery({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [emblaApi, lightboxIndex, scrollNext, scrollPrev, slideCount]);
+  }, [activeLightboxIndex, emblaApi, scrollNext, scrollPrev, slideCount]);
 
   useEffect(() => {
-    if (lightboxIndex === null) return;
+    if (activeLightboxIndex === null) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -368,20 +411,21 @@ export function ProjectGallery({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [lightboxIndex, moveLightbox]);
+  }, [activeLightboxIndex, moveLightbox]);
 
   const addMedia = useCallback(
     (files: FileList | null) => {
+      if (uploadDisabled) return;
       const next = Array.from(files ?? []);
       if (next.length > 0) edit?.onAddMedia(next);
     },
-    [edit],
+    [edit, uploadDisabled],
   );
 
   const openFilePicker = useCallback(() => {
-    if (edit?.uploading) return;
+    if (edit?.uploading || uploadDisabled) return;
     addInputRef.current?.click();
-  }, [edit?.uploading]);
+  }, [edit?.uploading, uploadDisabled]);
 
   const clearMediaDrag = useCallback(() => {
     dragDepthRef.current = 0;
@@ -390,47 +434,47 @@ export function ProjectGallery({
 
   const handleMediaDragEnter = useCallback(
     (event: DragEvent<HTMLElement>) => {
-      if (!edit || !hasDraggedFiles(event)) return;
+      if (!edit || uploadDisabled || !hasDraggedFiles(event)) return;
       event.preventDefault();
       event.stopPropagation();
       dragDepthRef.current += 1;
       setIsDraggingMedia(true);
     },
-    [edit],
+    [edit, uploadDisabled],
   );
 
   const handleMediaDragOver = useCallback(
     (event: DragEvent<HTMLElement>) => {
-      if (!edit || !hasDraggedFiles(event)) return;
+      if (!edit || uploadDisabled || !hasDraggedFiles(event)) return;
       event.preventDefault();
       event.stopPropagation();
       event.dataTransfer.dropEffect = edit.uploading ? "none" : "copy";
       setIsDraggingMedia(true);
     },
-    [edit],
+    [edit, uploadDisabled],
   );
 
   const handleMediaDragLeave = useCallback(
     (event: DragEvent<HTMLElement>) => {
-      if (!edit || !hasDraggedFiles(event)) return;
+      if (!edit || uploadDisabled || !hasDraggedFiles(event)) return;
       event.preventDefault();
       event.stopPropagation();
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
       if (dragDepthRef.current === 0) setIsDraggingMedia(false);
     },
-    [edit],
+    [edit, uploadDisabled],
   );
 
   const handleMediaDrop = useCallback(
     (event: DragEvent<HTMLElement>) => {
-      if (!edit || !hasDraggedFiles(event)) return;
+      if (!edit || uploadDisabled || !hasDraggedFiles(event)) return;
       event.preventDefault();
       event.stopPropagation();
       const files = event.dataTransfer.files;
       clearMediaDrag();
       if (!edit.uploading) addMedia(files);
     },
-    [addMedia, clearMediaDrag, edit],
+    [addMedia, clearMediaDrag, edit, uploadDisabled],
   );
 
   const handleEmptyKeyDown = useCallback(
@@ -485,12 +529,13 @@ export function ProjectGallery({
         className={
           "proj-gallery-empty applecms" +
           (isDraggingMedia ? " is-dragging-media" : "") +
-          (edit.uploading ? " is-uploading" : "")
+          (edit.uploading ? " is-uploading" : "") +
+          (uploadDisabled ? " is-disabled" : "")
         }
         role="button"
-        tabIndex={edit.uploading ? -1 : 0}
-        aria-label="Add photos or video"
-        aria-disabled={edit.uploading}
+        tabIndex={edit.uploading || uploadDisabled ? -1 : 0}
+        aria-label={uploadDisabled ? "Claim to add media" : "Add photos or video"}
+        aria-disabled={edit.uploading || uploadDisabled}
         onClick={openFilePicker}
         onKeyDown={handleEmptyKeyDown}
         onDragEnter={handleMediaDragEnter}
@@ -511,11 +556,22 @@ export function ProjectGallery({
           }}
         />
         <span className="proj-gallery-empty-copy">
+          <span className="proj-gallery-empty-icon">
+            <PlusIcon />
+          </span>
           <span className="proj-gallery-empty-title">
-            {edit.uploading ? "Uploading" : "Drag photos or video here"}
+            {edit.uploading
+              ? "Uploading"
+              : uploadDisabled
+                ? "Claim to add media"
+                : "Add photos or video"}
           </span>
           <span className="proj-gallery-empty-subtitle">
-            {edit.uploading ? "Adding media" : "or click to choose"}
+            {edit.uploading
+              ? "Adding media"
+              : uploadDisabled
+                ? (edit.disabledReason ?? "Sign in to keep uploads recoverable.")
+                : "Drop files here or click to choose"}
           </span>
         </span>
         {edit.uploadError && (
@@ -559,11 +615,20 @@ export function ProjectGallery({
           <button
             type="button"
             className="proj-gallery-add ac-btn ac-btn-gray"
-            disabled={edit.uploading}
+            disabled={edit.uploading || uploadDisabled}
             onClick={openFilePicker}
           >
-            {edit.uploading ? "Uploading" : "Add media"}
+            {edit.uploading
+              ? "Uploading"
+              : uploadDisabled
+                ? "Claim to add media"
+                : "Add media"}
           </button>
+          {uploadDisabled && edit.disabledReason && (
+            <span className="proj-gallery-limit-note">
+              {edit.disabledReason}
+            </span>
+          )}
           {edit.uploadError && (
             <span className="proj-gallery-error" role="alert">
               {edit.uploadError}

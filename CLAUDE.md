@@ -20,19 +20,26 @@ portfolio this was extracted from; it stays its own thing).
 - `npx tsc --noEmit` for types, `npm run build` for the full check (this app
   is small; building is cheap, unlike ramine.net).
 - The app is plain DOM: browser preview works and screenshots are meaningful.
-- Demo content needs zero setup: `npm run dev`, then `/t/demo` or
-  `demo.localhost:3000`. If the demo breaks, the scaffold is broken.
+- Demo content needs zero setup: `npm run dev`, then the demo lives at
+  `/@demo` (`/t/demo` and `demo.localhost:3000` redirect there). If the demo
+  breaks, the scaffold is broken.
 
 ## Layout
 
-- `src/proxy.ts`: host -> `/t/{handle}` rewrite (Next 16 proxy, not middleware).
-- `src/lib/store.ts`: the ONLY content access point (demo seed today,
-  Postgres later). Routes never import demo.ts directly.
+- `src/proxy.ts`: `/@{username}` -> `/u/{username}` path rewrite, then
+  host -> `/t/{handle}` tenant rewrite (Next 16 proxy, not middleware).
+- URL model: unclaimed guest blogs live at `/t/{three-word-handle}`; claimed
+  blogs live at `/@{username}` (served by `src/app/u/[username]`). `/start`
+  is the single entry point into a workspace; signing in claims the browser's
+  guest workspace.
+- `src/lib/store.ts`: the ONLY content access point (demo seed without
+  DATABASE_URL, Neon Postgres with it). Routes never import demo.ts directly.
 - `src/styles/`: tokens.css (neutral palette), broadsheet.css (reader),
   apple.css (editor chrome, scoped .applecms).
-- `src/components/Reader.tsx`: the Broadsheet reader.
+- `src/components/Reader.tsx`: the reader.
 
 ## Deploy
 
-Not wired yet. When it is: Vercel, and production pushes need an explicit
-per-change ask from Ramine, same as ramine.net.
+Vercel (Neon Postgres + Blob wired via env). Preview deploys are fine;
+production pushes need an explicit per-change ask from Ramine, same as
+ramine.net.

@@ -23,10 +23,6 @@ export function hasOpenEditMenu(): boolean {
   return Boolean(document.querySelector('[data-post-edit-menu-open="true"]'));
 }
 
-function newDraftTarget(path: string): string {
-  return `${path}?edit=1`;
-}
-
 function useCreateArticleShortcut(owner: boolean, handle?: string) {
   const router = useRouter();
   const creatingRef = useRef(false);
@@ -37,7 +33,7 @@ function useCreateArticleShortcut(owner: boolean, handle?: string) {
     startTransition(() => {
       void createArticleDraftPathAction(handle)
         .then((path) => {
-          router.push(newDraftTarget(path));
+          router.push(path);
         })
         .catch(() => {
           creatingRef.current = false;

@@ -9,11 +9,22 @@ import { DEMO_BLOG, DEMO_POSTS } from "../demo";
 
 async function main() {
   if (!db) throw new Error("db:seed requires DATABASE_URL");
+  const demoUsername = DEMO_BLOG.username ?? DEMO_BLOG.handle;
 
   await db
     .insert(users)
-    .values({ appleSub: "demo-owner", name: DEMO_BLOG.author })
-    .onConflictDoNothing({ target: users.appleSub });
+    .values({
+      appleSub: "demo-owner",
+      name: DEMO_BLOG.author,
+      username: demoUsername,
+    })
+    .onConflictDoUpdate({
+      target: users.appleSub,
+      set: {
+        name: DEMO_BLOG.author,
+        username: demoUsername,
+      },
+    });
   const owner = (
     await db
       .select({ id: users.id })
@@ -57,6 +68,7 @@ async function main() {
         accent: p.accent ?? null,
         cover: p.cover ?? null,
         coverCaption: p.coverCaption ?? null,
+        coverHeight: p.coverHeight ?? null,
         gallery: p.gallery ?? null,
         links: p.links ?? null,
         videoUrl: p.videoUrl ?? null,

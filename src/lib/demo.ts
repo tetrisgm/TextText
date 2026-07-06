@@ -1,11 +1,12 @@
 // Zero-setup demo content: with no DATABASE_URL the app serves this seed blog,
 // so `npm run dev` shows the full product (list + reader) immediately.
-// The demo tenant lives at http://demo.localhost:3000 (or /t/demo).
+// The demo lives at /@demo, matching claimed user pages.
 
 import type { Blog, Post } from "./content";
 
 export const DEMO_BLOG: Blog = {
   handle: "demo",
+  username: "demo",
   name: "Matter & Method",
   author: "Mina Park",
   tagline: "Product, design, and craft for people who make software worth reading.",
@@ -13,7 +14,7 @@ export const DEMO_BLOG: Blog = {
   bioLine:
     "Mina Park writes about product systems, design detail, and the editorial craft of software.",
   cardStyle: "cover",
-  homeLayout: "cards",
+  homeLayout: "grid",
 };
 
 export const DEMO_POSTS: Post[] = [
@@ -94,8 +95,8 @@ The broadsheet still works because it is not nostalgic. It is a compact system f
       },
     ],
     links: [
-      { label: "Method note", href: "/t/demo/field-guide-to-durable-defaults" },
-      { label: "Launch essay", href: "/t/demo/why-a-broadsheet" },
+      { label: "Method note", href: "/@demo/field-guide-to-durable-defaults" },
+      { label: "Launch essay", href: "/@demo/why-a-broadsheet" },
     ],
     body: `Signal Desk is a prototype for teams that make product decisions in writing. It brings research excerpts, review state, launch notes, and owner decisions into a single editorial workspace so the record is useful after the meeting ends.
 

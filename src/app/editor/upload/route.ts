@@ -2,6 +2,10 @@ import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
 import { ensureOwnerBlog } from "@/lib/store";
+import {
+  ANONYMOUS_ALLOW_MEDIA_UPLOADS,
+  ANONYMOUS_MEDIA_UPLOAD_COPY,
+} from "@/lib/product-limits";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -58,6 +62,9 @@ export async function POST(request: Request) {
     if (!TENANT_HANDLE_RE.test(handle)) return jsonError("Blog not found.", 404);
     const access = await getBlogEditAccess(handle);
     if (!access.canEdit) return jsonError("You cannot upload to this blog.", 403);
+    if (access.isUnclaimed && !ANONYMOUS_ALLOW_MEDIA_UPLOADS) {
+      return jsonError(ANONYMOUS_MEDIA_UPLOAD_COPY, 403);
+    }
     uploadHandle = handle;
   } else {
     // The legacy /editor upload path resolves the claimed owner's blog from the

@@ -1,0 +1,701 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { PostActionBar } from "@/components/PostActionBar";
+import type { Blog, Post } from "@/lib/content";
+import type { AdjacentPublishedPosts } from "@/lib/store";
+import {
+  WORKSPACE_SIDEBAR_COOKIE,
+  WORKSPACE_SIDEBAR_COOKIE_MAX_AGE,
+  WORKSPACE_SIDEBAR_STORAGE_KEY,
+  parseWorkspaceSidebarCollapsed,
+} from "@/lib/workspace-sidebar-state";
+
+export type SidebarFolderId = "blog" | "bookmarks" | "notes";
+
+export type SidebarFolder = {
+  id: SidebarFolderId;
+  name: string;
+  description: string;
+};
+
+type AdjacentPosts = AdjacentPublishedPosts;
+
+let sidebarCollapsedMemory: boolean | null = null;
+const sidebarCollapsedListeners = new Set<() => void>();
+
+const SIDEBAR_FOLDERS: SidebarFolder[] = [
+  {
+    id: "blog",
+    name: "Blog",
+    description: "Articles, media posts, and videos.",
+  },
+  {
+    id: "bookmarks",
+    name: "Bookmarks",
+    description: "Links and sources for later.",
+  },
+  {
+    id: "notes",
+    name: "Notes",
+    description: "Private Markdown notes.",
+  },
+];
+
+const SIDEBAR_EXPLAINERS: Record<
+  SidebarFolderId,
+  { title: string; body: string; meta: string }
+> = {
+  blog: {
+    title: "How the Blog folder works",
+    body: "Published articles, media posts, and videos are Markdown files in this folder.",
+    meta: "Starter item",
+  },
+  bookmarks: {
+    title: "How Bookmarks work",
+    body: "Save links with notes, quotes, and context so references stay near your writing.",
+    meta: "Starter item",
+  },
+  notes: {
+    title: "How Notes work",
+    body: "Keep rough Markdown notes private, then turn the useful ones into posts later.",
+    meta: "Starter item",
+  },
+};
+
+function readDocumentCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const parts = document.cookie ? document.cookie.split("; ") : [];
+  for (const part of parts) {
+    const separatorIndex = part.indexOf("=");
+    const key =
+      separatorIndex === -1 ? part : part.slice(0, separatorIndex);
+    if (decodeURIComponent(key) !== name) continue;
+    return separatorIndex === -1
+      ? ""
+      : decodeURIComponent(part.slice(separatorIndex + 1));
+  }
+  return null;
+}
+
+function writeSidebarCollapsedCookie(next: boolean) {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${encodeURIComponent(WORKSPACE_SIDEBAR_COOKIE)}=${
+    next ? "1" : "0"
+  }; Path=/; Max-Age=${WORKSPACE_SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+}
+
+function readSidebarCollapsed(fallback = true): boolean {
+  if (sidebarCollapsedMemory !== null) return sidebarCollapsedMemory;
+  if (typeof window === "undefined") return fallback;
+  const cookieValue = readDocumentCookie(WORKSPACE_SIDEBAR_COOKIE);
+  if (cookieValue === "0" || cookieValue === "1") {
+    sidebarCollapsedMemory = parseWorkspaceSidebarCollapsed(cookieValue);
+    return sidebarCollapsedMemory;
+  }
+  const stored = window.localStorage.getItem(WORKSPACE_SIDEBAR_STORAGE_KEY);
+  if (stored === "0" || stored === "1") {
+    sidebarCollapsedMemory = parseWorkspaceSidebarCollapsed(stored);
+    return sidebarCollapsedMemory;
+  }
+  sidebarCollapsedMemory = fallback;
+  return sidebarCollapsedMemory;
+}
+
+function emitSidebarCollapsedChange() {
+  for (const listener of sidebarCollapsedListeners) listener();
+}
+
+export function setWorkspaceSidebarCollapsedPreference(next: boolean) {
+  sidebarCollapsedMemory = next;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(WORKSPACE_SIDEBAR_STORAGE_KEY, next ? "1" : "0");
+  }
+  writeSidebarCollapsedCookie(next);
+  emitSidebarCollapsedChange();
+}
+
+function subscribeSidebarCollapsed(listener: () => void): () => void {
+  sidebarCollapsedListeners.add(listener);
+
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== WORKSPACE_SIDEBAR_STORAGE_KEY) return;
+    sidebarCollapsedMemory = parseWorkspaceSidebarCollapsed(event.newValue);
+    emitSidebarCollapsedChange();
+  };
+
+  window.addEventListener("storage", onStorage);
+  return () => {
+    sidebarCollapsedListeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+// Collapse an expanded sidebar; returns whether there was one to close, so
+// Escape handlers can consume the key before falling through to exit-edit.
+export function closeExpandedWorkspaceSidebar(): boolean {
+  if (readSidebarCollapsed(true)) return false;
+  setWorkspaceSidebarCollapsedPreference(true);
+  return true;
+}
+
+export function useWorkspaceSidebarCollapsed(initialCollapsed = true) {
+  const getCollapsedSnapshot = useCallback(
+    () => readSidebarCollapsed(initialCollapsed),
+    [initialCollapsed],
+  );
+  const getServerCollapsedSnapshot = useCallback(
+    () => initialCollapsed,
+    [initialCollapsed],
+  );
+  const sidebarCollapsed = useSyncExternalStore(
+    subscribeSidebarCollapsed,
+    getCollapsedSnapshot,
+    getServerCollapsedSnapshot,
+  );
+
+  const setCollapsed = useCallback((next: boolean) => {
+    setWorkspaceSidebarCollapsedPreference(next);
+  }, []);
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setCollapsed(!readSidebarCollapsed(initialCollapsed));
+  }, [initialCollapsed, setCollapsed]);
+
+  return { sidebarCollapsed, setSidebarCollapsed: setCollapsed, toggleSidebarCollapsed };
+}
+
+export function sidebarFolderFor(id: SidebarFolderId): SidebarFolder {
+  return SIDEBAR_FOLDERS.find((folder) => folder.id === id) ?? SIDEBAR_FOLDERS[0]!;
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 18 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.25 4.25c0-.83.67-1.5 1.5-1.5h3.28c.45 0 .88.2 1.16.55l.74.9h5.32c.83 0 1.5.67 1.5 1.5v6.55c0 .83-.67 1.5-1.5 1.5H3.75c-.83 0-1.5-.67-1.5-1.5v-8Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+    </svg>
+  );
+}
+
+function BookmarkIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M5.25 3.25h7.5v11.5L9 12.35l-3.75 2.4V3.25Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+    </svg>
+  );
+}
+
+function NoteIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M4.25 2.75h7.1l2.4 2.45v10.05h-9.5V2.75Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+      <path
+        d="M11.25 2.9v2.45h2.35M6.5 8h5M6.5 10.75h4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+    </svg>
+  );
+}
+
+function SidebarFolderIcon({ folder }: { folder: SidebarFolderId }) {
+  if (folder === "bookmarks") return <BookmarkIcon />;
+  if (folder === "notes") return <NoteIcon />;
+  return <FolderIcon />;
+}
+
+function SidebarRevealIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M3.25 4.25h11.5v9.5H3.25v-9.5ZM7.25 4.5v9"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function SidebarCollapseIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M3.25 4.25h11.5v9.5H3.25v-9.5ZM7.25 4.5v9M11.75 6.75 9.5 9l2.25 2.25"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function SidebarPinIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M6.5 2.75h5l-.65 4.15L13 9.05v1.2H9.75v4.5L9 15.5l-.75-.75v-4.5H5v-1.2L7.15 6.9 6.5 2.75Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </svg>
+  );
+}
+
+function focusSidebarRow(
+  nav: HTMLElement,
+  direction: "first" | "last" | "next" | "previous",
+) {
+  const rows = Array.from(
+    nav.querySelectorAll<HTMLButtonElement>(".post-editor-folder-row"),
+  );
+  if (rows.length === 0) return;
+
+  const currentIndex = rows.findIndex((row) => row === document.activeElement);
+  const lastIndex = rows.length - 1;
+  const nextIndex =
+    direction === "first"
+      ? 0
+      : direction === "last"
+        ? lastIndex
+        : direction === "next"
+          ? currentIndex >= lastIndex
+            ? 0
+            : currentIndex + 1
+          : currentIndex <= 0
+            ? lastIndex
+            : currentIndex - 1;
+
+  rows[nextIndex]?.focus();
+}
+
+function onSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    focusSidebarRow(event.currentTarget, "next");
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    focusSidebarRow(event.currentTarget, "previous");
+    return;
+  }
+
+  if (event.key === "Home") {
+    event.preventDefault();
+    focusSidebarRow(event.currentTarget, "first");
+    return;
+  }
+
+  if (event.key === "End") {
+    event.preventDefault();
+    focusSidebarRow(event.currentTarget, "last");
+  }
+}
+
+export function PostFolderSidebar({
+  blog,
+  activeFolder,
+  collapsed,
+  homePath,
+  onSelectFolder,
+  onToggleCollapsed,
+  posts,
+  showGuestSignIn = false,
+}: {
+  blog: Blog;
+  activeFolder: SidebarFolderId;
+  collapsed: boolean;
+  homePath?: string;
+  onSelectFolder: (folder: SidebarFolderId) => void;
+  onToggleCollapsed: () => void;
+  posts: Post[];
+  showGuestSignIn?: boolean;
+}) {
+  const homeContent = (
+    <>
+      <span className="post-editor-home-icon" aria-hidden="true">
+        <FolderIcon />
+      </span>
+      <span className="post-editor-home-copy">
+        <span className="post-editor-home-name">{blog.name}</span>
+        <span className="post-editor-home-meta">Workspace</span>
+      </span>
+    </>
+  );
+
+  return (
+    <aside
+      className={`ac-sidebar ac-chrome post-editor-sidebar${
+        collapsed ? " is-collapsed" : ""
+      }`}
+      aria-label="Folder navigation"
+    >
+      <div className="post-editor-sidebar-top">
+        {homePath ? (
+          <a className="post-editor-home-link" href={homePath}>
+            {homeContent}
+          </a>
+        ) : (
+          <div className="post-editor-home-link is-static">{homeContent}</div>
+        )}
+        <button
+          type="button"
+          className="post-editor-sidebar-toggle"
+          aria-label={collapsed ? "Pin sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <SidebarPinIcon /> : <SidebarCollapseIcon />}
+        </button>
+      </div>
+
+      <nav
+        className="post-editor-folder-nav"
+        aria-label="Folders"
+        onKeyDown={onSidebarNavKeyDown}
+      >
+        {SIDEBAR_FOLDERS.map((folder) => {
+          const selected = folder.id === activeFolder;
+          const count = folder.id === "blog" ? posts.length : null;
+          return (
+            <button
+              key={folder.id}
+              type="button"
+              className={`post-editor-folder-row${selected ? " is-active" : ""}`}
+              aria-current={selected ? "true" : undefined}
+              title={collapsed ? folder.name : undefined}
+              onClick={() => {
+                onSelectFolder(folder.id);
+              }}
+            >
+              <span className="post-editor-folder-icon" aria-hidden="true">
+                <SidebarFolderIcon folder={folder.id} />
+              </span>
+              <span className="post-editor-folder-copy">
+                <span className="post-editor-folder-name">{folder.name}</span>
+                <span className="post-editor-folder-meta">{folder.description}</span>
+              </span>
+              {count !== null && (
+                <span className="post-editor-folder-count" aria-hidden="true">
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {showGuestSignIn && (
+        <div className="post-editor-sidebar-footer">
+          <p className="post-editor-guest-note">Saved in this browser.</p>
+          <a className="post-editor-guest-keep ac-btn ac-btn-gray" href="/start?to=home">
+            Sign in to keep it
+          </a>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+export function WorkspaceSidebarChrome({
+  activeFolder,
+  blog,
+  collapsed,
+  homePath,
+  onSelectFolder,
+  onToggleCollapsed,
+  posts,
+  showGuestSignIn = false,
+}: {
+  activeFolder: SidebarFolderId;
+  blog: Blog;
+  collapsed: boolean;
+  homePath?: string;
+  onSelectFolder: (folder: SidebarFolderId) => void;
+  onToggleCollapsed: () => void;
+  posts: Post[];
+  showGuestSignIn?: boolean;
+}) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const showPreview = useCallback(() => {
+    if (collapsed) setPreviewOpen(true);
+  }, [collapsed]);
+  const hidePreview = useCallback(() => {
+    setPreviewOpen(false);
+  }, []);
+  const selectFolder = useCallback(
+    (folder: SidebarFolderId) => {
+      // Selecting from the hover preview should also dismiss the overlay.
+      setPreviewOpen(false);
+      onSelectFolder(folder);
+    },
+    [onSelectFolder],
+  );
+  const closeSidebar = useCallback(() => {
+    setPreviewOpen(false);
+    if (!collapsed) onToggleCollapsed();
+  }, [collapsed, onToggleCollapsed]);
+  const openSidebar = useCallback(() => {
+    setPreviewOpen(false);
+    if (collapsed) onToggleCollapsed();
+  }, [collapsed, onToggleCollapsed]);
+  const toggleSidebar = useCallback(() => {
+    setPreviewOpen(false);
+    onToggleCollapsed();
+  }, [onToggleCollapsed]);
+
+  useEffect(() => {
+    if (collapsed) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeSidebar();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeSidebar, collapsed]);
+
+  return (
+    <>
+      <div
+        className={`post-workspace-sidebar-region${
+          collapsed ? " is-collapsed" : ""
+        }${previewOpen ? " is-preview-open" : ""}`}
+        onMouseEnter={showPreview}
+        onMouseLeave={hidePreview}
+      >
+        {collapsed && (
+          <button
+            type="button"
+            className="post-sidebar-reveal-button"
+            aria-label="Show sidebar"
+            aria-expanded={previewOpen}
+            onClick={openSidebar}
+          >
+            <SidebarRevealIcon />
+          </button>
+        )}
+        <PostFolderSidebar
+          blog={blog}
+          activeFolder={activeFolder}
+          collapsed={collapsed}
+          homePath={homePath}
+          onSelectFolder={selectFolder}
+          onToggleCollapsed={toggleSidebar}
+          posts={posts}
+          showGuestSignIn={showGuestSignIn}
+        />
+      </div>
+      <button
+        type="button"
+        className="post-sidebar-backdrop"
+        aria-label="Hide sidebar"
+        tabIndex={collapsed ? -1 : 0}
+        onClick={closeSidebar}
+      />
+    </>
+  );
+}
+
+export function FolderContentsPage({
+  folder,
+}: {
+  folder: SidebarFolder;
+}) {
+  const explainer = SIDEBAR_EXPLAINERS[folder.id];
+
+  return (
+    <main className="post-folder-page" aria-labelledby="post-folder-page-title">
+      <header className="post-folder-page-header">
+        <span>Folder</span>
+        <h1 id="post-folder-page-title">{folder.name}</h1>
+        <p>{folder.description}</p>
+      </header>
+      <section className="post-folder-page-items" aria-label={`${folder.name} items`}>
+        <article className="post-folder-page-card">
+          <span>{explainer.meta}</span>
+          <h2>{explainer.title}</h2>
+          <p>{explainer.body}</p>
+        </article>
+      </section>
+    </main>
+  );
+}
+
+function isSidebarFolderId(value: unknown): value is SidebarFolderId {
+  return value === "blog" || value === "bookmarks" || value === "notes";
+}
+
+function replaceFolderQueryParam(folder: SidebarFolderId) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (folder === "blog") {
+    url.searchParams.delete("folder");
+  } else {
+    url.searchParams.set("folder", folder);
+  }
+  window.history.replaceState(window.history.state, "", url);
+}
+
+export function BlogHomeWorkspaceShell({
+  blog,
+  children,
+  initialFolder = "blog",
+  initialSidebarCollapsed = true,
+  posts,
+  showGuestSignIn = false,
+}: {
+  blog: Blog;
+  children: ReactNode;
+  initialFolder?: string;
+  initialSidebarCollapsed?: boolean;
+  posts: Post[];
+  showGuestSignIn?: boolean;
+}) {
+  const [workspaceView, setWorkspaceView] = useState<SidebarFolderId>(
+    isSidebarFolderId(initialFolder) ? initialFolder : "blog",
+  );
+  const { sidebarCollapsed, toggleSidebarCollapsed } =
+    useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
+  const activeSidebarConfig = sidebarFolderFor(workspaceView);
+
+  const selectFolder = useCallback((folder: SidebarFolderId) => {
+    setWorkspaceView(folder);
+    // Keep the URL addressable (?folder=notes) without a server round-trip.
+    replaceFolderQueryParam(folder);
+  }, []);
+
+  return (
+    <div
+      className={`post-editor-shell applecms has-sidebar is-home-workspace-shell${
+        sidebarCollapsed ? " is-sidebar-collapsed" : ""
+      }`}
+    >
+      <WorkspaceSidebarChrome
+        blog={blog}
+        activeFolder={workspaceView}
+        collapsed={sidebarCollapsed}
+        onSelectFolder={selectFolder}
+        onToggleCollapsed={toggleSidebarCollapsed}
+        posts={posts}
+        showGuestSignIn={showGuestSignIn}
+      />
+      <div
+        className={`post-editor-content${
+          workspaceView === "blog" ? " is-blog-folder-view" : ""
+        }`}
+      >
+        {workspaceView === "blog" ? (
+          children
+        ) : (
+          <FolderContentsPage folder={activeSidebarConfig} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function PostReadWorkspaceShell({
+  adjacent,
+  blog,
+  children,
+  homePath,
+  initialSidebarCollapsed = true,
+  post,
+  postPath,
+  posts,
+  showGuestSignIn = false,
+}: {
+  adjacent: AdjacentPosts;
+  blog: Blog;
+  children: ReactNode;
+  homePath: string;
+  initialSidebarCollapsed?: boolean;
+  post: Post;
+  postPath: string;
+  posts: Post[];
+  showGuestSignIn?: boolean;
+}) {
+  const router = useRouter();
+  const { sidebarCollapsed, toggleSidebarCollapsed } =
+    useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
+
+  // Folder rows always navigate to the workspace home (with the folder open),
+  // so every shell shares one sidebar behavior and the reader never gets
+  // stranded in a folder view without its post.
+  const selectSidebarFolder = useCallback(
+    (folder: SidebarFolderId) => {
+      router.push(
+        folder === "blog" ? homePath : `${homePath}?folder=${folder}`,
+      );
+    },
+    [homePath, router],
+  );
+
+  return (
+    <div
+      className={`post-editor-shell applecms has-sidebar is-read-workspace-shell${
+        sidebarCollapsed ? " is-sidebar-collapsed" : ""
+      }`}
+    >
+      <WorkspaceSidebarChrome
+        blog={blog}
+        activeFolder="blog"
+        collapsed={sidebarCollapsed}
+        homePath={homePath}
+        onSelectFolder={selectSidebarFolder}
+        onToggleCollapsed={toggleSidebarCollapsed}
+        posts={posts}
+        showGuestSignIn={showGuestSignIn}
+      />
+      <div className="post-editor-content">
+        <PostActionBar
+          mode="read"
+          owner
+          blog={blog}
+          post={post}
+          adjacent={adjacent}
+          homePath={homePath}
+          postPath={postPath}
+        />
+        {children}
+      </div>
+    </div>
+  );
+}

@@ -1,19 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import type {
+  CSSProperties,
+  ReactNode,
+  RefObject,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
-  claimBlog,
-  createPostAndRedirectAction,
+  createDraftAction,
+  trashEditableBlogAction,
   updateBlogAction,
   updateBlogNameAction,
 } from "@/app/editor/actions";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
+import { setWorkspaceSidebarCollapsedPreference } from "@/components/PostWorkspaceShell";
 import type { BlogCardStyle, BlogHomeLayout, PostType } from "@/lib/content";
 
 type ActionError = string | null;
-type BlogSettingKey = "cardStyle" | "homeLayout";
 type NamingFlightStyle = Pick<
   CSSProperties,
   "left" | "position" | "top" | "transform" | "width"
@@ -24,11 +35,9 @@ type BlogHomeShellProps = {
   initialName: string;
   tagline?: string;
   canEdit: boolean;
-  showClaim: boolean;
-  publicPath: string;
-  signedIn: boolean;
+  isGuestWorkspace: boolean;
   authConfigured: boolean;
-  autoClaim: boolean;
+  publicPath: string;
   initialCardStyle: BlogCardStyle;
   initialHomeLayout: BlogHomeLayout;
   initialNamingCeremony: boolean;
@@ -38,22 +47,39 @@ type BlogHomeShellProps = {
 
 const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
   { type: "article", label: "Article" },
-  { type: "project", label: "Project" },
-  { type: "talk", label: "Talk" },
+  { type: "project", label: "Media post" },
+  { type: "talk", label: "Video post" },
 ];
 const CARD_STYLE_OPTIONS: Array<{ value: BlogCardStyle; label: string }> = [
   { value: "cover", label: "Cover" },
   { value: "minimal", label: "Minimal" },
 ];
 const HOME_LAYOUT_OPTIONS: Array<{ value: BlogHomeLayout; label: string }> = [
-  { value: "cards", label: "Cards" },
+  { value: "single", label: "Single" },
   { value: "timeline", label: "Timeline" },
+  { value: "grid", label: "Grid" },
+  { value: "index", label: "Index" },
 ];
+const KEEP_WORKSPACE_PATH = "/start?to=home";
 const NAME_FLIGHT_MS = 520;
 
-function signInUrl(handle: string): string {
-  const callbackUrl = `/t/${encodeURIComponent(handle)}?claim=1`;
-  return `/api/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+function EllipsisIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
+    </svg>
+  );
+}
+
+function postEditPath(
+  publicPath: string,
+  post: { id?: string; slug: string },
+): string {
+  const params = new URLSearchParams({ edit: "1" });
+  if (post.id) params.set("id", post.id);
+  return `${publicPath}/${encodeURIComponent(post.slug)}?${params.toString()}`;
 }
 
 function cleanDraftName(value: string): string {
@@ -100,71 +126,72 @@ export function BlogHomeShell({
   initialName,
   tagline,
   canEdit,
-  showClaim,
-  publicPath,
-  signedIn,
+  isGuestWorkspace,
   authConfigured,
-  autoClaim,
+  publicPath,
   initialCardStyle,
   initialHomeLayout,
   initialNamingCeremony,
   style,
   children,
 }: BlogHomeShellProps) {
-  const [namingCeremonyActive, setNamingCeremonyActive] = useState(
-    initialNamingCeremony,
-  );
+  const namingKey = `${handle}:${initialNamingCeremony}:${initialName}:${blogName}`;
+  const [namingState, setNamingState] = useState(() => ({
+    key: namingKey,
+    active: initialNamingCeremony,
+    savedName: null as string | null,
+  }));
+  let namingCeremonyActive = namingState.active;
+  let displayBlogName = namingState.savedName ?? (initialName || blogName);
+  if (namingState.key !== namingKey) {
+    const nextNamingState = {
+      key: namingKey,
+      active: initialNamingCeremony,
+      savedName: null,
+    };
+    setNamingState(nextNamingState);
+    namingCeremonyActive = nextNamingState.active;
+    displayBlogName = initialName || blogName;
+  }
 
-  useEffect(() => {
-    setNamingCeremonyActive(initialNamingCeremony);
-  }, [handle, initialNamingCeremony]);
-
-  const showEditorChrome = canEdit && !namingCeremonyActive;
+  const showFolderActions = canEdit && !namingCeremonyActive;
+  const shortcutsActive = canEdit && !namingCeremonyActive;
   const rootClassName = `blog-home${
-    showEditorChrome ? " has-editor-actions" : ""
-  }${showEditorChrome && showClaim ? " has-claim-actions" : ""}${
     namingCeremonyActive ? " is-naming-ceremony" : ""
-  }`;
+  }${showFolderActions ? " has-editor-actions" : ""}`;
 
   return (
     <main className={rootClassName} style={style}>
-      {showEditorChrome && <BlogHomeShortcuts owner={canEdit} handle={handle} />}
-      {showEditorChrome && (
-        <div
-          className="blog-home-action-bar applecms"
-          aria-label="Blog controls"
-        >
-          <div className="blog-home-action-toolbar ac-chrome">
-            {showClaim && (
-              <ClaimBlogButton
-                handle={handle}
-                publicPath={publicPath}
-                signedIn={signedIn}
-                authConfigured={authConfigured}
-                autoClaim={autoClaim}
-              />
-            )}
-            <BlogDisplaySettings
-              handle={handle}
-              initialCardStyle={initialCardStyle}
-              initialHomeLayout={initialHomeLayout}
-            />
-            <CreatePostTypePicker handle={handle} />
-          </div>
-        </div>
+      {shortcutsActive && <BlogHomeShortcuts owner={canEdit} handle={handle} />}
+      {showFolderActions && (
+        <BlogFolderActionBar
+          handle={handle}
+          publicPath={publicPath}
+          isGuestWorkspace={isGuestWorkspace}
+          authConfigured={authConfigured}
+          initialCardStyle={initialCardStyle}
+          initialHomeLayout={initialHomeLayout}
+        />
       )}
       <header className="blog-home-header">
         <div className="blog-home-heading">
           <div className="blog-home-copy">
-            {canEdit ? (
+            {canEdit && namingCeremonyActive ? (
               <BlogNameForm
+                key={`${handle}:${initialName}`}
                 handle={handle}
                 initialName={initialName}
                 ceremonyActive={namingCeremonyActive}
-                onCeremonyComplete={() => setNamingCeremonyActive(false)}
+                onCeremonyComplete={(savedName) => {
+                  setNamingState({
+                    key: namingKey,
+                    active: false,
+                    savedName,
+                  });
+                }}
               />
             ) : (
-              <h1 className="blog-home-name">{blogName}</h1>
+              <h1 className="blog-home-name">{displayBlogName}</h1>
             )}
             {!namingCeremonyActive && (
               <div className="blog-home-meta">
@@ -179,11 +206,304 @@ export function BlogHomeShell({
   );
 }
 
-export function CreatePostTypePicker({ handle }: { handle: string }) {
+function BlogFolderActionBar({
+  handle,
+  publicPath,
+  isGuestWorkspace,
+  authConfigured,
+  initialCardStyle,
+  initialHomeLayout,
+}: {
+  handle: string;
+  publicPath: string;
+  isGuestWorkspace: boolean;
+  authConfigured: boolean;
+  initialCardStyle: BlogCardStyle;
+  initialHomeLayout: BlogHomeLayout;
+}) {
+  return (
+    <div className="blog-home-action-bar applecms" aria-label="Folder controls">
+      <div className="blog-home-action-toolbar ac-chrome">
+        {isGuestWorkspace && authConfigured && (
+          <a
+            className="blog-keep-button ac-btn ac-btn-gray"
+            href={KEEP_WORKSPACE_PATH}
+            title="Saved in this browser only. Sign in to keep it and edit from any device."
+          >
+            Sign in to keep it
+          </a>
+        )}
+        <BlogDisplaySettings
+          handle={handle}
+          initialCardStyle={initialCardStyle}
+          initialHomeLayout={initialHomeLayout}
+        />
+        <CreatePostTypePicker handle={handle} publicPath={publicPath} />
+        {isGuestWorkspace && <BlogFolderMenu handle={handle} />}
+      </div>
+    </div>
+  );
+}
+
+function BlogDisplaySettings({
+  handle,
+  initialCardStyle,
+  initialHomeLayout,
+}: {
+  handle: string;
+  initialCardStyle: BlogCardStyle;
+  initialHomeLayout: BlogHomeLayout;
+}) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [cardStyle, setCardStyle] = useState(initialCardStyle);
+  const [homeLayout, setHomeLayout] = useState(initialHomeLayout);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<ActionError>(null);
+  const [, startTransition] = useTransition();
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const closeSettings = useCallback(() => setOpen(false), []);
+  useDismissPopover(open, settingsRef, closeSettings);
+
+  const commit = useCallback(
+    (patch: { cardStyle?: BlogCardStyle; homeLayout?: BlogHomeLayout }) => {
+      const previous = { cardStyle, homeLayout };
+      if (patch.cardStyle) setCardStyle(patch.cardStyle);
+      if (patch.homeLayout) setHomeLayout(patch.homeLayout);
+      setError(null);
+      setPending(true);
+      startTransition(() => {
+        void updateBlogAction(patch, handle)
+          .then((saved) => {
+            setCardStyle(saved.cardStyle);
+            setHomeLayout(saved.homeLayout);
+            router.refresh();
+          })
+          .catch(() => {
+            setCardStyle(previous.cardStyle);
+            setHomeLayout(previous.homeLayout);
+            setError("Could not save");
+          })
+          .finally(() => setPending(false));
+      });
+    },
+    [cardStyle, handle, homeLayout, router],
+  );
+
+  return (
+    <div className="blog-settings-picker" ref={settingsRef}>
+      <button
+        className="blog-settings-button ac-btn ac-btn-gray"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        Layout
+      </button>
+      {open && (
+        <div
+          className="blog-settings-popover post-edit-menu"
+          data-post-edit-menu-open="true"
+          role="dialog"
+          aria-label="Folder layout"
+        >
+          <div className="blog-settings-section">
+            <span className="blog-settings-label">Home layout</span>
+            <div
+              className="ac-segmented blog-settings-segmented"
+              role="group"
+              aria-label="Home layout"
+            >
+              {HOME_LAYOUT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`ac-segmented-button${
+                    homeLayout === option.value ? " ac-active" : ""
+                  }`}
+                  aria-pressed={homeLayout === option.value}
+                  disabled={pending}
+                  onClick={() => commit({ homeLayout: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="blog-settings-section">
+            <span className="blog-settings-label">Cards</span>
+            <div
+              className="ac-segmented blog-settings-segmented"
+              role="group"
+              aria-label="Card style"
+            >
+              {CARD_STYLE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`ac-segmented-button${
+                    cardStyle === option.value ? " ac-active" : ""
+                  }`}
+                  aria-pressed={cardStyle === option.value}
+                  disabled={pending}
+                  onClick={() => commit({ cardStyle: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && (
+            <span className="blog-home-control-error" role="alert">
+              {error}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlogFolderMenu({ handle }: { handle: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<"trash" | null>(null);
+  const [trashDialogOpen, setTrashDialogOpen] = useState(false);
+  const [error, setError] = useState<ActionError>(null);
+  const [, startTransition] = useTransition();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeMenu = useCallback(() => setOpen(false), []);
+  useDismissPopover(open, menuRef, closeMenu);
+
+  const navigateAfterAction = useCallback(
+    (path: string, options?: { openSidebar?: boolean }) => {
+      if (options?.openSidebar) setWorkspaceSidebarCollapsedPreference(false);
+      router.push(path);
+      router.refresh();
+    },
+    [router],
+  );
+
+  const requestTrashFolder = useCallback(() => {
+    if (pending) return;
+    setOpen(false);
+    setError(null);
+    setTrashDialogOpen(true);
+  }, [pending]);
+
+  const trashFolder = useCallback(() => {
+    if (pending) return;
+    setPending("trash");
+    startTransition(() => {
+      void trashEditableBlogAction(handle)
+        .then((result) => {
+          if (!result.ok) {
+            setTrashDialogOpen(false);
+            setOpen(true);
+            setError(result.error);
+            return;
+          }
+          setOpen(false);
+          setTrashDialogOpen(false);
+          navigateAfterAction(result.path, { openSidebar: result.openSidebar });
+        })
+        .catch(() => {
+          setTrashDialogOpen(false);
+          setOpen(true);
+          setError("Could not move folder to Trash");
+        })
+        .finally(() => setPending(null));
+    });
+  }, [handle, navigateAfterAction, pending, startTransition]);
+
+  return (
+    <div className="blog-folder-menu-wrap" ref={menuRef}>
+      <button
+        type="button"
+        className="post-edit-menu-button blog-folder-menu-button ac-icon-btn"
+        aria-label="Folder actions"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <EllipsisIcon />
+      </button>
+      {open && (
+        <div
+          className="blog-folder-menu post-edit-menu"
+          data-post-edit-menu-open="true"
+          role="menu"
+          aria-label="Folder actions"
+        >
+          <button
+            className="post-edit-delete"
+            type="button"
+            role="menuitem"
+            disabled={Boolean(pending)}
+            onClick={requestTrashFolder}
+          >
+            {pending === "trash" ? "Moving to Trash" : "Move folder to Trash"}
+          </button>
+          {error && (
+            <span className="blog-home-control-error" role="alert">
+              {error}
+            </span>
+          )}
+        </div>
+      )}
+      <ConfirmationDialog
+        open={trashDialogOpen}
+        title="Move folder to Trash?"
+        message="This moves every post in this folder to Trash."
+        confirmLabel="Move to Trash"
+        confirmingLabel="Moving"
+        confirming={pending === "trash"}
+        onCancel={() => setTrashDialogOpen(false)}
+        onConfirm={trashFolder}
+      />
+    </div>
+  );
+}
+
+export function CreatePostTypePicker({
+  handle,
+  publicPath,
+}: {
+  handle: string;
+  publicPath: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<ActionError>(null);
+  const [pendingType, setPendingType] = useState<PostType | null>(null);
+  const [, startTransition] = useTransition();
   const pickerRef = useRef<HTMLDivElement>(null);
   const closePicker = useCallback(() => setOpen(false), []);
   useDismissPopover(open, pickerRef, closePicker);
+
+  const createPost = useCallback(
+    (type: PostType) => {
+      setError(null);
+      setPendingType(type);
+      startTransition(() => {
+        void createDraftAction(type, handle)
+          .then((post) => {
+            setOpen(false);
+            router.push(postEditPath(publicPath, post));
+          })
+          .catch((createError) => {
+            setError(
+              createError instanceof Error
+                ? createError.message
+                : "Could not create post",
+            );
+          })
+          .finally(() => setPendingType(null));
+      });
+    },
+    [handle, publicPath, router],
+  );
 
   return (
     <div className="blog-create-picker" ref={pickerRef}>
@@ -204,166 +524,17 @@ export function CreatePostTypePicker({ handle }: { handle: string }) {
           aria-label="Choose post type"
         >
           {POST_TYPE_OPTIONS.map((option) => (
-            <form
+            <button
               key={option.type}
-              className="blog-create-option-form"
-              action={createPostAndRedirectAction}
+              className="blog-create-option"
+              type="button"
+              role="menuitem"
+              disabled={pendingType !== null}
+              onClick={() => createPost(option.type)}
             >
-              <input type="hidden" name="handle" value={handle} />
-              <input type="hidden" name="type" value={option.type} />
-              <button
-                className="blog-create-option"
-                type="submit"
-                role="menuitem"
-              >
-                {option.label}
-              </button>
-            </form>
+              {pendingType === option.type ? "Creating" : option.label}
+            </button>
           ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function BlogDisplaySettings({
-  handle,
-  initialCardStyle,
-  initialHomeLayout,
-}: {
-  handle: string;
-  initialCardStyle: BlogCardStyle;
-  initialHomeLayout: BlogHomeLayout;
-}) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [cardStyle, setCardStyle] = useState(initialCardStyle);
-  const [homeLayout, setHomeLayout] = useState(initialHomeLayout);
-  const [pending, setPending] = useState<BlogSettingKey | null>(null);
-  const [error, setError] = useState<ActionError>(null);
-  const [, startTransition] = useTransition();
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const closeSettings = useCallback(() => setOpen(false), []);
-  useDismissPopover(open, settingsRef, closeSettings);
-
-  useEffect(() => {
-    setCardStyle(initialCardStyle);
-    setHomeLayout(initialHomeLayout);
-    setError(null);
-  }, [initialCardStyle, initialHomeLayout]);
-
-  const commit = useCallback(
-    (key: BlogSettingKey, value: BlogCardStyle | BlogHomeLayout) => {
-      const previous = { cardStyle, homeLayout };
-      const next =
-        key === "cardStyle"
-          ? { cardStyle: value as BlogCardStyle, homeLayout }
-          : { cardStyle, homeLayout: value as BlogHomeLayout };
-
-      if (
-        next.cardStyle === previous.cardStyle &&
-        next.homeLayout === previous.homeLayout
-      ) {
-        return;
-      }
-
-      setCardStyle(next.cardStyle);
-      setHomeLayout(next.homeLayout);
-      setError(null);
-      setPending(key);
-
-      startTransition(() => {
-        void updateBlogAction(
-          key === "cardStyle"
-            ? { cardStyle: next.cardStyle }
-            : { homeLayout: next.homeLayout },
-          handle,
-        )
-          .then((saved) => {
-            setCardStyle(saved.cardStyle);
-            setHomeLayout(saved.homeLayout);
-            router.refresh();
-          })
-          .catch(() => {
-            setCardStyle(previous.cardStyle);
-            setHomeLayout(previous.homeLayout);
-            setError("Could not save");
-          })
-          .finally(() => {
-            setPending((current) => (current === key ? null : current));
-          });
-      });
-    },
-    [cardStyle, handle, homeLayout, router],
-  );
-
-  return (
-    <div className="blog-settings-picker" ref={settingsRef}>
-      <button
-        className="blog-settings-button ac-btn ac-btn-gray"
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        Settings
-      </button>
-      {open && (
-        <div
-          className="blog-settings-popover"
-          data-post-edit-menu-open="true"
-          role="dialog"
-          aria-label="Blog settings"
-        >
-          <div className="blog-settings-section">
-            <span className="blog-settings-label">Card style</span>
-            <div
-              className="ac-segmented blog-settings-segmented"
-              role="group"
-              aria-label="Card style"
-            >
-              {CARD_STYLE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`ac-segmented-button${
-                    cardStyle === option.value ? " ac-active" : ""
-                  }`}
-                  aria-pressed={cardStyle === option.value}
-                  disabled={Boolean(pending)}
-                  onClick={() => commit("cardStyle", option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="blog-settings-section">
-            <span className="blog-settings-label">Home layout</span>
-            <div
-              className="ac-segmented blog-settings-segmented"
-              role="group"
-              aria-label="Home layout"
-            >
-              {HOME_LAYOUT_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`ac-segmented-button${
-                    homeLayout === option.value ? " ac-active" : ""
-                  }`}
-                  aria-pressed={homeLayout === option.value}
-                  disabled={Boolean(pending)}
-                  onClick={() => commit("homeLayout", option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <span className="ac-sr-only" role="status">
-            {pending ? "Saving" : ""}
-          </span>
           {error && (
             <span className="blog-home-control-error" role="alert">
               {error}
@@ -384,7 +555,7 @@ export function BlogNameForm({
   handle: string;
   initialName: string;
   ceremonyActive?: boolean;
-  onCeremonyComplete?: () => void;
+  onCeremonyComplete?: (savedName: string) => void;
 }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
@@ -397,17 +568,12 @@ export function BlogNameForm({
   const targetRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const committedName = useRef(initialName);
+  const savedNameRef = useRef(initialName);
   const requestId = useRef(0);
   const skipNextBlur = useRef(false);
   const flightComplete = useRef(false);
   const flightTimer = useRef<number | null>(null);
   const flightFrames = useRef<number[]>([]);
-
-  useEffect(() => {
-    committedName.current = initialName;
-    setName(initialName);
-    setError(null);
-  }, [initialName]);
 
   useEffect(() => {
     if (!ceremonyActive || flying) return;
@@ -423,8 +589,11 @@ export function BlogNameForm({
       return;
     }
 
-    setFlying(false);
-    setFlightStyle(undefined);
+    const frame = window.requestAnimationFrame(() => {
+      setFlying(false);
+      setFlightStyle(undefined);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [ceremonyActive, handle]);
 
   useEffect(() => {
@@ -450,9 +619,8 @@ export function BlogNameForm({
 
     setFlying(false);
     setFlightStyle(undefined);
-    onCeremonyComplete?.();
-    router.refresh();
-  }, [onCeremonyComplete, router]);
+    onCeremonyComplete?.(savedNameRef.current);
+  }, [onCeremonyComplete]);
 
   const startCeremonyFlight = useCallback(() => {
     if (!ceremonyActive) {
@@ -526,6 +694,7 @@ export function BlogNameForm({
 
             const savedName = result.name;
             committedName.current = savedName;
+            savedNameRef.current = savedName;
             setName((currentName) =>
               cleanDraftName(currentName) === nextName ? savedName : currentName,
             );
@@ -572,7 +741,7 @@ export function BlogNameForm({
           aria-hidden="true"
         >
           <div className="blog-name-input blog-name-target-input">
-            {cleanedName || "Name your blog"}
+            {cleanedName || "Name your page"}
           </div>
         </div>
       )}
@@ -592,50 +761,47 @@ export function BlogNameForm({
           finishCeremony();
         }}
       >
-        <input
-          ref={inputRef}
-          className="blog-name-input"
-          value={name}
-          placeholder="Name your blog"
-          aria-label="Blog name"
-          aria-describedby={
-            ceremonyActive ? "blog-name-ceremony-note" : undefined
-          }
-          autoFocus={ceremonyActive}
-          disabled={flying}
-          onBlur={(event) => {
-            if (skipNextBlur.current) {
-              skipNextBlur.current = false;
-              return;
+        <div className="blog-name-field-row">
+          <input
+            ref={inputRef}
+            className="blog-name-input"
+            value={name}
+            placeholder="Name your page"
+            aria-label="Page name"
+            aria-describedby={
+              ceremonyActive ? "blog-name-ceremony-note" : undefined
             }
-            commitName(event.currentTarget.value);
-          }}
-          onChange={(event) => {
-            setName(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitName(event.currentTarget.value);
-              return;
-            }
-
-            if (event.key === "Escape") {
-              event.preventDefault();
-              skipNextBlur.current = true;
-              setName(committedName.current);
-              setError(null);
-              if (!ceremonyActive) {
-                event.currentTarget.blur();
+            autoFocus={ceremonyActive}
+            disabled={flying}
+            onBlur={(event) => {
+              if (skipNextBlur.current) {
+                skipNextBlur.current = false;
+                return;
               }
-            }
-          }}
-        />
-        {ceremonyActive && (
-          <>
-            <p className="blog-name-ceremony-note" id="blog-name-ceremony-note">
-              You can change it later
-            </p>
+              commitName(event.currentTarget.value);
+            }}
+            onChange={(event) => {
+              setName(event.currentTarget.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitName(event.currentTarget.value);
+                return;
+              }
+
+              if (event.key === "Escape") {
+                event.preventDefault();
+                skipNextBlur.current = true;
+                setName(committedName.current);
+                setError(null);
+                if (!ceremonyActive) {
+                  event.currentTarget.blur();
+                }
+              }
+            }}
+          />
+          {ceremonyActive && (
             <button
               className="blog-name-confirm ac-btn ac-btn-filled"
               type="button"
@@ -645,7 +811,12 @@ export function BlogNameForm({
             >
               {saving ? "Confirming" : "Confirm"}
             </button>
-          </>
+          )}
+        </div>
+        {ceremonyActive && (
+          <p className="blog-name-ceremony-note" id="blog-name-ceremony-note">
+            You can change it later
+          </p>
         )}
         {error && (
           <span className="blog-home-control-error" role="alert">
@@ -654,132 +825,5 @@ export function BlogNameForm({
         )}
       </div>
     </>
-  );
-}
-
-export function ClaimBlogButton({
-  handle,
-  publicPath,
-  signedIn,
-  authConfigured,
-  autoClaim = false,
-}: {
-  handle: string;
-  publicPath: string;
-  signedIn: boolean;
-  authConfigured: boolean;
-  autoClaim?: boolean;
-}) {
-  const router = useRouter();
-  const [error, setError] = useState<ActionError>(null);
-  const [origin, setOrigin] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [claiming, setClaiming] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const autoStarted = useRef(false);
-  const copiedTimer = useRef<number | null>(null);
-  const disabled = claiming || pending;
-  const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
-
-  const runClaim = useCallback(() => {
-    setError(null);
-    if (!signedIn) {
-      if (!authConfigured) {
-        setError("Sign-in is not configured.");
-        return;
-      }
-      window.location.assign(signInUrl(handle));
-      return;
-    }
-
-    setClaiming(true);
-    startTransition(() => {
-      void claimBlog(handle)
-        .then((result) => {
-          if (!result.ok) {
-            if (result.signInRequired && authConfigured) {
-              window.location.assign(signInUrl(handle));
-              return;
-            }
-            setError(result.error);
-            return;
-          }
-          router.replace(`/t/${encodeURIComponent(result.handle)}`);
-          router.refresh();
-        })
-        .catch(() => setError("Could not claim"))
-        .finally(() => setClaiming(false));
-    });
-  }, [authConfigured, handle, router, signedIn]);
-
-  const copyPublicLink = useCallback(
-    (input: HTMLInputElement) => {
-      input.select();
-      if (!navigator.clipboard) return;
-      void navigator.clipboard
-        .writeText(publicUrl)
-        .then(() => {
-          setCopied(true);
-          if (copiedTimer.current !== null) {
-            window.clearTimeout(copiedTimer.current);
-          }
-          copiedTimer.current = window.setTimeout(() => {
-            setCopied(false);
-            copiedTimer.current = null;
-          }, 1400);
-        })
-        .catch(() => {});
-    },
-    [publicUrl],
-  );
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
-
-  useEffect(() => {
-    if (!autoClaim || !signedIn || autoStarted.current) return;
-    autoStarted.current = true;
-    runClaim();
-  }, [autoClaim, runClaim, signedIn]);
-
-  useEffect(() => {
-    return () => {
-      if (copiedTimer.current !== null) {
-        window.clearTimeout(copiedTimer.current);
-      }
-    };
-  }, []);
-
-  return (
-    <div className="blog-claim-row applecms">
-      <label className="blog-public-link">
-        <span className="blog-public-link-label">Link to this page:</span>
-        <input
-          className="blog-public-link-field"
-          value={publicUrl}
-          readOnly
-          aria-label="Link to this page:"
-          onClick={(event) => copyPublicLink(event.currentTarget)}
-          onFocus={(event) => event.currentTarget.select()}
-        />
-      </label>
-      <button
-        className="blog-claim-button ac-btn ac-btn-gray"
-        type="button"
-        disabled={disabled}
-        onClick={runClaim}
-      >
-        {disabled ? "Claiming" : "Claim to keep it forever"}
-      </button>
-      <span className="ac-sr-only" role="status">
-        {copied ? "Copied" : ""}
-      </span>
-      {error && (
-        <span className="blog-home-control-error" role="alert">
-          {error}
-        </span>
-      )}
-    </div>
   );
 }

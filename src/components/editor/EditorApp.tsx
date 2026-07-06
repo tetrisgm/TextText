@@ -12,6 +12,7 @@ import {
   updateBlogAction,
 } from "@/app/editor/actions";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
+import { blogPostPath } from "@/lib/public-paths";
 
 type FolderId = "all" | "drafts" | "published";
 type EditorItem = { id: string; post: Post };
@@ -21,6 +22,7 @@ type SaveIntent = "save" | "publish" | "unpublish";
 type BlogSettingsFields = {
   name: string;
   handle: string;
+  username: string;
   tagline: string;
   bioLine: string;
 };
@@ -37,8 +39,8 @@ const FOLDERS: Array<{ id: FolderId; name: string }> = [
 
 const POST_TYPES: Array<{ type: PostType; label: string }> = [
   { type: "article", label: "Article" },
-  { type: "project", label: "Project" },
-  { type: "talk", label: "Talk" },
+  { type: "project", label: "Media post" },
+  { type: "talk", label: "Video post" },
 ];
 
 function FolderGlyph() {
@@ -156,6 +158,7 @@ function blogSettingsFields(blog: Blog): BlogSettingsFields {
   return {
     name: blog.name,
     handle: blog.handle,
+    username: blog.username ?? "",
     tagline: blog.tagline ?? "",
     bioLine: blog.bioLine ?? "",
   };
@@ -233,7 +236,7 @@ function GalleryEditor({
     <section className="ac-nested-editor ac-gallery-editor" aria-labelledby="ac-gallery-title">
       <div className="ac-nested-editor-head">
         <h3 id="ac-gallery-title" className="ac-nested-editor-title">
-          Gallery
+          Media
         </h3>
         {mediaEnabled && (
           <>
@@ -526,8 +529,8 @@ export function EditorApp({
   const livePostPath = useMemo(() => {
     const slug = selectedPost?.slug.trim();
     if (!dbEnabled || selectedPost?.status !== "published" || !slug) return "";
-    return `/t/${encodeURIComponent(blog.handle)}/${encodeURIComponent(slug)}`;
-  }, [blog.handle, dbEnabled, selectedPost?.slug, selectedPost?.status]);
+    return blogPostPath(blog, { slug });
+  }, [blog, dbEnabled, selectedPost?.slug, selectedPost?.status]);
   const signedIn = Boolean(user);
   const canEditSettings = signedIn && dbEnabled;
 
@@ -545,11 +548,6 @@ export function EditorApp({
   useEffect(() => {
     draftRef.current = selectedDraft;
   }, [selectedDraft]);
-
-  useEffect(() => {
-    setBlog(initialBlog);
-    setSettingsDraft(blogSettingsFields(initialBlog));
-  }, [initialBlog]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -570,13 +568,13 @@ export function EditorApp({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [settingsOpen, settingsSaving]);
 
-  useEffect(() => {
+  const resetSelectedPostUi = useCallback(() => {
     previewWindowRef.current = null;
     bodySelectionRef.current = null;
     pendingBodyCaretRef.current = null;
     setLinkCopied(false);
     setGalleryUploadError(null);
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => {
     const position = pendingBodyCaretRef.current;
@@ -611,9 +609,9 @@ export function EditorApp({
         canAutoSlugPost(id, drafts[id], manualSlugByIdRef.current),
       );
       setPostError(null);
-      setLinkCopied(false);
+      resetSelectedPostUi();
     },
-    [drafts],
+    [drafts, resetSelectedPostUi],
   );
 
   const updateSelected = useCallback(
@@ -682,6 +680,7 @@ export function EditorApp({
         const saved = await updateBlogAction({
           name: settingsDraft.name,
           handle: settingsDraft.handle,
+          username: settingsDraft.username,
           tagline: settingsDraft.tagline,
           bioLine: settingsDraft.bioLine,
         });
@@ -812,8 +811,8 @@ export function EditorApp({
     manualSlugByIdRef.current[id] = false;
     setSlugAutoForSelected(canAutoSlugPost(id, created, manualSlugByIdRef.current));
     setPostError(null);
-    setLinkCopied(false);
-  }, [dbEnabled, newDraftType]);
+    resetSelectedPostUi();
+  }, [dbEnabled, newDraftType, resetSelectedPostUi]);
 
   const onUploadCover = useCallback(
     async (file: File) => {
@@ -1496,6 +1495,20 @@ export function EditorApp({
                   spellCheck={false}
                   onChange={(event) =>
                     updateSettingsDraft({ handle: event.currentTarget.value })
+                  }
+                />
+              </label>
+
+              <label className="ac-field-label ac-settings-wide">
+                <span className="ac-label-text">Username</span>
+                <input
+                  className="ac-field"
+                  value={settingsDraft.username}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) =>
+                    updateSettingsDraft({ username: event.currentTarget.value })
                   }
                 />
               </label>

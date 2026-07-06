@@ -1,20 +1,29 @@
 import type { Metadata } from "next";
-
-const FALLBACK_ROOT_DOMAIN = "localhost:3000";
+import type { Blog } from "@/lib/content";
+import { rootDomainUrl } from "@/lib/site-url";
 
 type AlternateTypes = NonNullable<
   NonNullable<Metadata["alternates"]>["types"]
 >;
+type BlogPathTarget = string | Pick<Blog, "handle" | "username">;
 
-export function blogFeedHref(handle: string): string {
-  return `${blogPath(handle)}/feed.xml`;
+export function blogFeedHref(target: BlogPathTarget): string {
+  return `${blogPath(target)}/feed.xml`;
+}
+
+export function blogAtomHref(target: BlogPathTarget): string {
+  return `${blogPath(target)}/atom.xml`;
+}
+
+export function blogJsonFeedHref(target: BlogPathTarget): string {
+  return `${blogPath(target)}/feed.json`;
 }
 
 export function blogFeedAlternateTypes(
-  handle: string,
+  target: BlogPathTarget,
   blogName: string,
 ): AlternateTypes {
-  const basePath = blogPath(handle);
+  const basePath = blogPath(target);
   return {
     "application/rss+xml": [
       {
@@ -37,34 +46,13 @@ export function blogFeedAlternateTypes(
   };
 }
 
-function blogPath(handle: string): string {
-  return `/t/${encodeURIComponent(handle)}`;
+function blogPath(target: BlogPathTarget): string {
+  if (typeof target === "string") return `/t/${encodeURIComponent(target)}`;
+  return target.username
+    ? `/@${encodeURIComponent(target.username)}`
+    : `/t/${encodeURIComponent(target.handle)}`;
 }
 
 function absoluteUrl(path: string): string {
   return new URL(path, rootDomainUrl()).toString();
-}
-
-function rootDomainUrl(): URL {
-  const rawDomain = (
-    process.env.NEXT_PUBLIC_ROOT_DOMAIN ||
-    process.env.ROOT_DOMAIN ||
-    FALLBACK_ROOT_DOMAIN
-  )
-    .trim()
-    .replace(/\/+$/, "");
-  const candidate = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(rawDomain)
-    ? rawDomain
-    : `${isLocalDomain(rawDomain) ? "http" : "https"}://${rawDomain}`;
-
-  try {
-    return new URL(candidate);
-  } catch {
-    return new URL(`http://${FALLBACK_ROOT_DOMAIN}`);
-  }
-}
-
-function isLocalDomain(value: string): boolean {
-  const host = value.split("/")[0]?.split(":")[0]?.toLowerCase() || "";
-  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1";
 }

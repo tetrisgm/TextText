@@ -1,12 +1,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { PostByline } from "@/components/PostByline";
 import type { Blog, LinkRef, Post } from "@/lib/content";
 import {
   formatArticleDate,
   isVideoFile,
   isYouTube,
   postAccent,
+  readingTimeMin,
   youtubeEmbedUrl,
 } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
@@ -60,19 +62,18 @@ export function TalkReader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
-  const excerpt = post.excerpt?.trim();
   const cover = resolveCover(post);
   const videoUrl = post.videoUrl?.trim();
   const embedSrc = videoUrl && isYouTube(videoUrl) ? youtubeEmbedUrl(videoUrl) : undefined;
   const fileVideoSrc =
     videoUrl && !embedSrc && isVideoFile(videoUrl) ? videoUrl : undefined;
-  const dateLine = [
+  const bylineMetaItems = [
+    post.body ? `${readingTimeMin(post.body)} min read` : "",
     post.venue,
-    formatArticleDate(post.date),
+    formatArticleDate(post.date, { style: "short" }),
     post.duration,
   ]
-    .filter(Boolean)
-    .join(" · ");
+    .filter(Boolean);
   const links = [
     ...(videoUrl && embedSrc
       ? [{ label: "Watch on YouTube", href: videoUrl }]
@@ -122,11 +123,14 @@ export function TalkReader({
 
       <div className="talk-detail-meta">
         {slots?.title ?? <h1 className="talk-detail-title">{title}</h1>}
-        {slots?.excerpt ?? (
-          excerpt && <p className="reader-dek talk-detail-dek">{excerpt}</p>
-        )}
+        {slots?.excerpt}
         {slots?.talkMeta ?? (
-          dateLine && <div className="talk-detail-date">{dateLine}</div>
+          <PostByline
+            blog={blog}
+            post={post}
+            className="talk-detail-byline"
+            metaItems={bylineMetaItems}
+          />
         )}
         {(slots?.body || post.body) && (
           <div className="talk-detail-desc reader-prose">

@@ -1,3 +1,4 @@
+import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
 import type { Post } from "@/lib/content";
 import { getBlog, getPosts } from "@/lib/store";
 
@@ -5,7 +6,6 @@ interface Props {
   params: Promise<{ handle: string }>;
 }
 
-const FALLBACK_ROOT_DOMAIN = "localhost:3000";
 const FALLBACK_DATE = new Date("1970-01-01T00:00:00.000Z");
 
 export async function GET(_request: Request, { params }: Props) {
@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: Props) {
   if (!blog) return notFound();
 
   const posts = newestFirst(await getPosts(handle));
-  const baseUrl = blogBaseUrl(handle);
+  const baseUrl = blogBaseUrl(blog);
 
   return new Response(renderSitemap(posts, baseUrl), {
     headers: {
@@ -79,40 +79,6 @@ function parseDate(value: string | undefined): Date | null {
   return Number.isNaN(candidate.getTime()) ? null : candidate;
 }
 
-function blogBaseUrl(handle: string): string {
-  const url = rootDomainUrl();
-  url.hostname = `${handle}.${url.hostname}`;
-  return url.origin;
-}
-
-function postUrl(baseUrl: string, slug: string): string {
-  return `${baseUrl}/${encodeURIComponent(slug)}`;
-}
-
-function rootDomainUrl(): URL {
-  const rawDomain = (
-    process.env.NEXT_PUBLIC_ROOT_DOMAIN ||
-    process.env.ROOT_DOMAIN ||
-    FALLBACK_ROOT_DOMAIN
-  )
-    .trim()
-    .replace(/\/+$/, "");
-  const candidate = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(rawDomain)
-    ? rawDomain
-    : `${isLocalDomain(rawDomain) ? "http" : "https"}://${rawDomain}`;
-
-  try {
-    return new URL(candidate);
-  } catch {
-    return new URL(`http://${FALLBACK_ROOT_DOMAIN}`);
-  }
-}
-
-function isLocalDomain(value: string): boolean {
-  const host = value.split("/")[0]?.split(":")[0]?.toLowerCase() || "";
-  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1";
-}
-
 function escapeXml(value: string): string {
   return value
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
@@ -121,8 +87,4 @@ function escapeXml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-function notFound(): Response {
-  return new Response("Not found", { status: 404 });
 }

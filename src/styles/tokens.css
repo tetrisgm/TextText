@@ -13,6 +13,10 @@
   --bg-soft-2: #fafafc;
   --accent: #0066cc;
 
+  --font-newsroom-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    var(--font-body, "Inter"), "Helvetica Neue", Arial, sans-serif;
+  --font-newsroom-text: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    var(--font-body, "Inter"), "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     monospace;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);

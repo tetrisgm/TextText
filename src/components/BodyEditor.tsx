@@ -7,17 +7,14 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { SelectionBookmark } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
-import TextAlign from "@tiptap/extension-text-align";
-import TextStyle from "@tiptap/extension-text-style";
-import Color from "@tiptap/extension-color";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -32,16 +29,17 @@ type BodyEditorProps = {
   value: string;
   onChange: (value: string) => void;
   toolbarHost?: HTMLElement | null;
+  mediaEnabled?: boolean;
   uploadEndpoint?: string;
 };
 
+// Markdown is the source of truth for post bodies, so the toolbar only offers
+// what markdown can round-trip: bold/italic/strike, headings, and images.
 type ActiveState = {
   bold: boolean;
   italic: boolean;
-  underline: boolean;
   strike: boolean;
   block: "body" | "title" | "subheading";
-  align: "left" | "center";
 };
 
 type MarkdownStorage = {
@@ -53,37 +51,21 @@ type MarkdownStorage = {
 const initialActiveState: ActiveState = {
   bold: false,
   italic: false,
-  underline: false,
   strike: false,
   block: "body",
-  align: "left",
 };
 
-const textColors = [
-  { label: "Ink", token: "--ink", value: null },
-  { label: "Blue", value: "#0066cc" },
-  { label: "Red", value: "#af1e2d" },
-] as const;
+function subscribeClientSnapshot() {
+  return () => {};
+}
 
-const MarkdownUnderline = Underline.extend({
-  addStorage() {
-    return {
-      markdown: {
-        serialize: { open: "", close: "" },
-      },
-    };
-  },
-});
+function getClientMounted() {
+  return true;
+}
 
-const MarkdownTextStyle = TextStyle.extend({
-  addStorage() {
-    return {
-      markdown: {
-        serialize: { open: "", close: "" },
-      },
-    };
-  },
-});
+function getServerMounted() {
+  return false;
+}
 
 const editorExtensions = [
   StarterKit.configure({
@@ -91,13 +73,6 @@ const editorExtensions = [
       levels: [2, 3],
     },
   }),
-  MarkdownUnderline,
-  TextAlign.configure({
-    types: ["heading", "paragraph"],
-    alignments: ["left", "center"],
-  }),
-  MarkdownTextStyle,
-  Color,
   Image,
   Link.configure({
     autolink: true,
@@ -124,27 +99,13 @@ function activeState(editor: Editor | null): ActiveState {
   return {
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
-    underline: editor.isActive("underline"),
     strike: editor.isActive("strike"),
     block: editor.isActive("heading", { level: 2 })
       ? "title"
       : editor.isActive("heading", { level: 3 })
         ? "subheading"
         : "body",
-    align: editor.isActive({ textAlign: "center" }) ? "center" : "left",
   };
-}
-
-function colorIsActive(
-  editor: Editor | null,
-  color: (typeof textColors)[number],
-): boolean {
-  if (!editor) return false;
-  if (color.value) return editor.isActive("textStyle", { color: color.value });
-
-  return !textColors.some(
-    (item) => item.value && editor.isActive("textStyle", { color: item.value }),
-  );
 }
 
 function uploadErrorMessage(error: unknown): string {
@@ -208,18 +169,6 @@ function ItalicIcon() {
   );
 }
 
-function UnderlineIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <path
-        d="M5.1 3.15h1.95v5.7c0 1.68.72 2.58 1.96 2.58 1.22 0 1.94-.9 1.94-2.58v-5.7h1.95v5.76c0 2.72-1.48 4.28-3.9 4.28-2.43 0-3.9-1.56-3.9-4.28V3.15Z"
-        fill="currentColor"
-      />
-      <path d="M4.3 15h9.4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" />
-    </svg>
-  );
-}
-
 function StrikeIcon() {
   return (
     <svg viewBox="0 0 18 18" aria-hidden="true">
@@ -228,22 +177,6 @@ function StrikeIcon() {
         fill="currentColor"
       />
       <path d="M3.3 8.65h11.4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" />
-    </svg>
-  );
-}
-
-function AlignLeftIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <path d="M3.5 4.5h11M3.5 7.6h7.5M3.5 10.7h11M3.5 13.8h7.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-function AlignCenterIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <path d="M3.5 4.5h11M5.25 7.6h7.5M3.5 10.7h11M5.25 13.8h7.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -268,22 +201,25 @@ function ImageIcon() {
 }
 
 export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
-  function BodyEditor({ value, onChange, toolbarHost, uploadEndpoint }, ref) {
+  function BodyEditor(
+    { value, onChange, toolbarHost, mediaEnabled = true, uploadEndpoint },
+    ref,
+  ) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const lastEmittedRef = useRef(value);
     const onChangeRef = useRef(onChange);
     const selectionBookmarkRef = useRef<SelectionBookmark | null>(null);
-    const [mounted, setMounted] = useState(false);
+    const mounted = useSyncExternalStore(
+      subscribeClientSnapshot,
+      getClientMounted,
+      getServerMounted,
+    );
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
 
     useEffect(() => {
       onChangeRef.current = onChange;
     }, [onChange]);
-
-    useEffect(() => {
-      setMounted(true);
-    }, []);
 
     const saveSelectionBookmark = useCallback((editor: Editor) => {
       selectionBookmarkRef.current = editor.state.selection.getBookmark();
@@ -351,25 +287,11 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       [editor],
     );
 
-    const applyColor = useCallback(
-      (color: (typeof textColors)[number]) => {
-        if (!editor) return;
-        const chain = editor.chain().focus();
-
-        if (color.value) {
-          chain.setColor(color.value).run();
-        } else {
-          chain.unsetColor().run();
-        }
-      },
-      [editor],
-    );
-
     const chooseImage = useCallback(() => {
-      if (!editor) return;
+      if (!editor || !mediaEnabled) return;
       saveSelectionBookmark(editor);
       fileInputRef.current?.click();
-    }, [editor, saveSelectionBookmark]);
+    }, [editor, mediaEnabled, saveSelectionBookmark]);
 
     const insertImage = useCallback(
       async (file: File) => {
@@ -425,14 +347,6 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
               <ItalicIcon />
             </ToolbarButton>
             <ToolbarButton
-              label="Underline"
-              active={active.underline}
-              disabled={editorDisabled}
-              onPress={() => editor?.chain().focus().toggleUnderline().run()}
-            >
-              <UnderlineIcon />
-            </ToolbarButton>
-            <ToolbarButton
               label="Strikethrough"
               active={active.strike}
               disabled={editorDisabled}
@@ -462,61 +376,17 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
               </button>
             ))}
           </div>
-          <div className="body-editor-toolgroup is-color" aria-label="Text color">
-            <span className="body-editor-label">Color</span>
-            {textColors.map((color) => {
-              const isActive = colorIsActive(editor, color);
-
-              return (
-                <button
-                  key={color.label}
-                  type="button"
-                  className={`body-editor-color-tool${isActive ? " is-active" : ""}`}
-                  aria-label={color.label}
-                  aria-pressed={isActive}
-                  title={color.label}
-                  disabled={editorDisabled}
-                  style={{
-                    "--body-editor-swatch":
-                      "token" in color
-                        ? `var(${color.token}, var(--ink))`
-                        : color.value,
-                  } as CSSProperties}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    if (!editorDisabled) applyColor(color);
-                  }}
-                />
-              );
-            })}
-          </div>
-          <div className="body-editor-toolgroup" aria-label="Alignment">
-            <ToolbarButton
-              label="Align left"
-              active={active.align === "left"}
-              disabled={editorDisabled}
-              onPress={() => editor?.chain().focus().setTextAlign("left").run()}
-            >
-              <AlignLeftIcon />
-            </ToolbarButton>
-            <ToolbarButton
-              label="Align center"
-              active={active.align === "center"}
-              disabled={editorDisabled}
-              onPress={() => editor?.chain().focus().setTextAlign("center").run()}
-            >
-              <AlignCenterIcon />
-            </ToolbarButton>
-          </div>
-          <div className="body-editor-toolgroup" aria-label="Media">
-            <ToolbarButton
-              label="Insert image"
-              disabled={editorDisabled || uploading}
-              onPress={chooseImage}
-            >
-              {uploading ? <span className="body-editor-spinner" /> : <ImageIcon />}
-            </ToolbarButton>
-          </div>
+          {mediaEnabled && (
+            <div className="body-editor-toolgroup" aria-label="Media">
+              <ToolbarButton
+                label="Insert image"
+                disabled={editorDisabled || uploading}
+                onPress={chooseImage}
+              >
+                {uploading ? <span className="body-editor-spinner" /> : <ImageIcon />}
+              </ToolbarButton>
+            </div>
+          )}
         </div>
         {uploadError && (
           <div className="body-editor-upload-error" role="alert">

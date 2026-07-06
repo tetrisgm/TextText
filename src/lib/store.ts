@@ -3,7 +3,7 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type {
   Blog,
   BlogCardStyle,
@@ -14,11 +14,18 @@ import type {
 import { db } from "./db/client";
 import { blogs, posts, users } from "./db/schema";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
+import {
+  RESERVED_USERNAMES,
+  USERNAME_RE,
+  cleanUsername,
+  slugifyUsername,
+} from "./public-paths";
 import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
 
 type PostRow = typeof posts.$inferSelect;
 type BlogRow = {
   handle: string;
+  username: string | null;
   name: string;
   tagline: string | null;
   accent: string | null;
@@ -35,6 +42,7 @@ export type BlogPatch = {
   bioLine?: string | null;
   cardStyle?: BlogCardStyle;
   homeLayout?: BlogHomeLayout;
+  username?: string;
 };
 export type AdjacentPostLink = Pick<Post, "slug" | "title">;
 export type AdjacentPublishedPosts = {
@@ -60,7 +68,7 @@ export type StoreUser = {
 
 export const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
 const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
-const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "cards";
+const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "grid";
 
 function toISODate(value: Date | string | null): string | undefined {
   if (!value) return undefined;
@@ -80,6 +88,7 @@ function mapPost(row: PostRow): Post {
     accent: row.accent ?? undefined,
     cover: row.cover ?? undefined,
     coverCaption: row.coverCaption ?? undefined,
+    coverHeight: row.coverHeight ?? undefined,
     gallery: row.gallery ?? undefined,
     links: row.links ?? undefined,
     videoUrl: row.videoUrl ?? undefined,
@@ -95,6 +104,7 @@ function mapPost(row: PostRow): Post {
 function mapBlog(row: BlogRow): Blog {
   return {
     handle: row.handle,
+    username: row.username ?? undefined,
     name: row.name,
     author: row.author?.trim() || row.name.trim() || "Anonymous",
     tagline: row.tagline ?? undefined,
@@ -112,6 +122,7 @@ export async function getBlog(handle: string): Promise<Blog | null> {
   const rows = await db
     .select({
       handle: blogs.handle,
+      username: users.username,
       name: blogs.name,
       tagline: blogs.tagline,
       accent: blogs.accent,
@@ -122,7 +133,36 @@ export async function getBlog(handle: string): Promise<Blog | null> {
     })
     .from(blogs)
     .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(eq(blogs.handle, handle))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return mapBlog(row);
+}
+
+export async function getBlogByUsername(usernameInput: string): Promise<Blog | null> {
+  // Lookups normalize but never validate: reserved-ness only matters when a
+  // username is SET, and the seeded demo username is reserved yet resolvable.
+  const username = usernameInput.trim().toLowerCase();
+  if (!username || !/^[a-z0-9-]{1,30}$/.test(username)) return null;
+  if (!db) {
+    return username === DEMO_BLOG.username ? DEMO_BLOG : null;
+  }
+  const rows = await db
+    .select({
+      handle: blogs.handle,
+      username: users.username,
+      name: blogs.name,
+      tagline: blogs.tagline,
+      accent: blogs.accent,
+      bioLine: blogs.bioLine,
+      cardStyle: blogs.cardStyle,
+      homeLayout: blogs.homeLayout,
+      author: users.name,
+    })
+    .from(blogs)
+    .innerJoin(users, eq(blogs.ownerId, users.id))
+    .where(and(eq(users.username, username), isNull(blogs.deletedAt)))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
@@ -136,8 +176,17 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
     .where(
       publishedOnly
-        ? and(eq(blogs.handle, handle), eq(posts.status, "published"))
-        : eq(blogs.handle, handle),
+        ? and(
+            eq(blogs.handle, handle),
+            eq(posts.status, "published"),
+            isNull(blogs.deletedAt),
+            isNull(posts.deletedAt),
+          )
+        : and(
+            eq(blogs.handle, handle),
+            isNull(blogs.deletedAt),
+            isNull(posts.deletedAt),
+          ),
     )
     .orderBy(
       desc(posts.pinned),
@@ -174,6 +223,22 @@ export async function getAllPosts(handle: string): Promise<Post[]> {
   return selectPosts(handle, false);
 }
 
+export async function countAllPosts(handle: string): Promise<number> {
+  if (!db) return handle === DEMO_BLOG.handle ? DEMO_POSTS.length : 0;
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    );
+  return Number(rows[0]?.count ?? 0);
+}
+
 export async function getAdjacentPublishedPosts(
   handle: string,
   slug: string,
@@ -204,7 +269,14 @@ export async function getPost(
     .select()
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(and(eq(blogs.handle, handle), eq(posts.slug, slug)))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        eq(posts.slug, slug),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    )
     .limit(1);
   return rows[0] ? mapPost(rows[0].posts) : null;
 }
@@ -213,7 +285,7 @@ async function blogIdFor(handle: string): Promise<string> {
   const rows = await db!
     .select({ id: blogs.id })
     .from(blogs)
-    .where(eq(blogs.handle, handle))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
     .limit(1);
   const id = rows[0]?.id;
   if (!id) throw new Error(`unknown blog "${handle}"`);
@@ -233,9 +305,32 @@ export async function getBlogEditRecord(
       editTokenHash: blogs.editTokenHash,
     })
     .from(blogs)
-    .where(eq(blogs.handle, handle))
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+export async function getUnclaimedBlogEditRecordsByIds(
+  ids: string[],
+): Promise<BlogEditRecord[]> {
+  if (!db || ids.length === 0) return [];
+  return db
+    .select({
+      id: blogs.id,
+      handle: blogs.handle,
+      name: blogs.name,
+      ownerId: blogs.ownerId,
+      editTokenHash: blogs.editTokenHash,
+    })
+    .from(blogs)
+    .where(
+      and(
+        inArray(blogs.id, ids),
+        isNull(blogs.ownerId),
+        isNull(blogs.deletedAt),
+      ),
+    )
+    .orderBy(desc(blogs.createdAt));
 }
 
 export async function isBlogOwner(
@@ -247,7 +342,13 @@ export async function isBlogOwner(
     .select({ id: blogs.id })
     .from(blogs)
     .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(and(eq(blogs.handle, handle), eq(users.appleSub, sub)))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        eq(users.appleSub, sub),
+        isNull(blogs.deletedAt),
+      ),
+    )
     .limit(1);
   return Boolean(rows[0]);
 }
@@ -261,7 +362,14 @@ export async function getPostById(
     .select()
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(and(eq(blogs.handle, handle), eq(posts.id, id)))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        eq(posts.id, id),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    )
     .limit(1);
   return rows[0] ? mapPost(rows[0].posts) : null;
 }
@@ -269,7 +377,25 @@ export async function getPostById(
 export async function deletePost(handle: string, id: string): Promise<void> {
   if (!db) throw new Error("deletePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  await db.delete(posts).where(and(eq(posts.id, id), eq(posts.blogId, blogId)));
+  await db
+    .update(posts)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
+    );
+}
+
+export async function trashBlogPosts(handle: string): Promise<void> {
+  if (!db) throw new Error("trashBlogPosts requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  await db
+    .update(posts)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt)));
 }
 
 export async function setPostPinned(
@@ -282,7 +408,13 @@ export async function setPostPinned(
   const updated = await db
     .update(posts)
     .set({ pinned })
-    .where(and(eq(posts.id, id), eq(posts.blogId, blogId)))
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
+    )
     .returning();
   if (!updated[0]) throw new Error("Post not found");
   return mapPost(updated[0]);
@@ -323,6 +455,7 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     accent: post.accent ?? null,
     cover: post.cover ?? null,
     coverCaption: post.coverCaption ?? null,
+    coverHeight: post.coverHeight ?? null,
     gallery: post.gallery ?? null,
     links: post.links ?? null,
     videoUrl: post.videoUrl ?? null,
@@ -347,7 +480,13 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
       const updated = await db
         .update(posts)
         .set({ ...set, slug: post.slug })
-        .where(and(eq(posts.id, post.id), eq(posts.blogId, blogId)))
+        .where(
+          and(
+            eq(posts.id, post.id),
+            eq(posts.blogId, blogId),
+            isNull(posts.deletedAt),
+          ),
+        )
         .returning();
       if (updated[0]) return mapPost(updated[0]);
     }
@@ -365,7 +504,13 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
               : new Date()
             : null,
       })
-      .onConflictDoUpdate({ target: [posts.blogId, posts.slug], set })
+      // The unique index is partial (deleted_at is null), so the conflict
+      // target must match it; trashed rows never absorb a new post's save.
+      .onConflictDoUpdate({
+        target: [posts.blogId, posts.slug],
+        targetWhere: sql`${posts.deletedAt} is null`,
+        set,
+      })
       .returning();
     return mapPost(inserted[0]);
   } catch (error) {
@@ -433,6 +578,7 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
   const rows = await db
     .select({
       handle: blogs.handle,
+      username: users.username,
       name: blogs.name,
       tagline: blogs.tagline,
       accent: blogs.accent,
@@ -443,7 +589,7 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
     })
     .from(blogs)
     .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(eq(users.appleSub, sub))
+    .where(and(eq(users.appleSub, sub), isNull(blogs.deletedAt)))
     .orderBy(asc(blogs.createdAt))
     .limit(1);
   const row = rows[0];
@@ -451,7 +597,9 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
   return mapBlog(row);
 }
 
-async function upsertUser(user: StoreUser): Promise<{ id: string; name: string | null }> {
+async function upsertUser(
+  user: StoreUser,
+): Promise<{ id: string; name: string | null; username: string | null }> {
   await db!
     .insert(users)
     .values({
@@ -469,13 +617,57 @@ async function upsertUser(user: StoreUser): Promise<{ id: string; name: string |
 
   const row = (
     await db!
-      .select({ id: users.id, name: users.name })
+      .select({ id: users.id, name: users.name, username: users.username })
       .from(users)
       .where(eq(users.appleSub, user.sub))
       .limit(1)
   )[0];
   if (!row) throw new Error("failed to resolve user");
   return row;
+}
+
+function usernameSeedForUser(user: StoreUser, fallback: string): string {
+  return user.email?.split("@")[0] || user.name || fallback;
+}
+
+function usernameBase(seed: string): string {
+  let base = slugifyUsername(seed, "writer");
+  if (base.length < 3) base = `${base}-writer`;
+  if (RESERVED_USERNAMES.has(base)) base = `${base}-writer`;
+  return cleanUsername(base);
+}
+
+async function uniqueUsername(seed: string, ownerId: string): Promise<string> {
+  const base = usernameBase(seed);
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
+    if (!USERNAME_RE.test(candidate) || RESERVED_USERNAMES.has(candidate)) {
+      continue;
+    }
+    const taken = await db!
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.username, candidate), ne(users.id, ownerId)))
+      .limit(1);
+    if (!taken[0]) return candidate;
+  }
+
+  const suffix = Date.now().toString(36);
+  return cleanUsername(`writer-${suffix}`);
+}
+
+async function ensureUserUsername(
+  owner: { id: string; username: string | null },
+  seed: string,
+): Promise<string> {
+  if (owner.username) return owner.username;
+  const username = await uniqueUsername(seed, owner.id);
+  await db!
+    .update(users)
+    .set({ username })
+    .where(eq(users.id, owner.id));
+  owner.username = username;
+  return username;
 }
 
 function hasPatchKey(
@@ -527,7 +719,11 @@ function cleanStoredCardStyle(value: unknown): BlogCardStyle {
 }
 
 function cleanStoredHomeLayout(value: unknown): BlogHomeLayout {
-  return value === "timeline" ? "timeline" : DEFAULT_HOME_LAYOUT;
+  if (value === "single" || value === "timeline" || value === "grid" || value === "index") {
+    return value;
+  }
+  if (value === "cards") return "grid";
+  return DEFAULT_HOME_LAYOUT;
 }
 
 function cleanBlogCardStyle(value: unknown): BlogCardStyle {
@@ -536,8 +732,11 @@ function cleanBlogCardStyle(value: unknown): BlogCardStyle {
 }
 
 function cleanBlogHomeLayout(value: unknown): BlogHomeLayout {
-  if (value === "cards" || value === "timeline") return value;
-  throw new Error("Home layout must be Cards or Timeline");
+  if (value === "single" || value === "timeline" || value === "grid" || value === "index") {
+    return value;
+  }
+  if (value === "cards") return "grid";
+  throw new Error("Home layout must be Single, Timeline, Grid, or Index");
 }
 
 function isBlogsHandleConflict(error: unknown): boolean {
@@ -592,6 +791,8 @@ export async function updateBlogByHandle(
       .select({
         id: blogs.id,
         handle: blogs.handle,
+        ownerId: blogs.ownerId,
+        username: users.username,
         name: blogs.name,
         tagline: blogs.tagline,
         accent: blogs.accent,
@@ -602,13 +803,14 @@ export async function updateBlogByHandle(
       })
       .from(blogs)
       .leftJoin(users, eq(blogs.ownerId, users.id))
-      .where(eq(blogs.handle, handle))
+      .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
       .orderBy(asc(blogs.createdAt))
       .limit(1)
   )[0];
   if (!existing) throw new Error("Blog not found");
 
   const set: Partial<typeof blogs.$inferInsert> = {};
+  let nextUsername: string | undefined;
 
   if (hasPatchKey(input, "name")) {
     set.name = cleanRequiredLine(input.name, "Blog name");
@@ -628,6 +830,24 @@ export async function updateBlogByHandle(
   if (hasPatchKey(input, "homeLayout")) {
     set.homeLayout = cleanBlogHomeLayout(input.homeLayout);
   }
+  if (hasPatchKey(input, "username")) {
+    if (!existing.ownerId) {
+      throw new Error("Claim the blog before changing its username");
+    }
+    const username = cleanUsername(input.username);
+    if (username !== existing.username) {
+      const taken = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.username, username), ne(users.id, existing.ownerId)))
+        .limit(1);
+      if (taken[0]) throw new Error("That username is taken");
+      // Validated here, written only after the blogs update succeeds, so a
+      // failed blog patch never leaves a half-applied rename (no transactions
+      // on the Neon HTTP driver).
+      nextUsername = username;
+    }
+  }
   if (hasPatchKey(input, "handle")) {
     if (!options.allowHandleChange) {
       throw new Error("Claim the blog before changing its URL");
@@ -644,7 +864,18 @@ export async function updateBlogByHandle(
     }
   }
 
-  if (Object.keys(set).length === 0) return mapBlog(existing);
+  const applyUsername = async (): Promise<void> => {
+    if (nextUsername === undefined || !existing.ownerId) return;
+    await db!
+      .update(users)
+      .set({ username: nextUsername })
+      .where(eq(users.id, existing.ownerId));
+  };
+
+  if (Object.keys(set).length === 0) {
+    await applyUsername();
+    return mapBlog({ ...existing, username: nextUsername ?? existing.username });
+  }
 
   try {
     const updated = await db
@@ -654,7 +885,12 @@ export async function updateBlogByHandle(
       .returning();
     const row = updated[0];
     if (!row) throw new Error("Blog not found");
-    return mapBlog({ ...row, author: existing.author });
+    await applyUsername();
+    return mapBlog({
+      ...row,
+      author: existing.author,
+      username: nextUsername ?? existing.username,
+    });
   } catch (error) {
     if (isBlogsHandleConflict(error)) throw new Error("That handle is taken");
     throw error;
@@ -668,7 +904,7 @@ export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
       .select({ handle: blogs.handle })
       .from(blogs)
       .leftJoin(users, eq(blogs.ownerId, users.id))
-      .where(eq(users.appleSub, sub))
+      .where(and(eq(users.appleSub, sub), isNull(blogs.deletedAt)))
       .orderBy(asc(blogs.createdAt))
       .limit(1)
   )[0];
@@ -679,6 +915,7 @@ export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
 export async function createAnonymousBlogRecord(
   editTokenHash: string,
   seed: string,
+  homeLayout: BlogHomeLayout = DEFAULT_HOME_LAYOUT,
 ): Promise<AnonymousBlogRecord> {
   if (!db) throw new Error("createAnonymousBlog requires DATABASE_URL");
   if (!editTokenHash) throw new Error("edit token hash is required");
@@ -690,6 +927,7 @@ export async function createAnonymousBlogRecord(
       .values({
         handle,
         name: DEFAULT_ANONYMOUS_BLOG_NAME,
+        homeLayout: cleanBlogHomeLayout(homeLayout),
         ownerId: null,
         editTokenHash,
       })
@@ -714,16 +952,23 @@ export async function claimBlogForUser(
   const target = await getBlogEditRecord(handle);
   if (!target) throw new Error("Blog not found");
   if (target.ownerId) throw new Error("This blog is already claimed");
+  const username = await ensureUserUsername(owner, usernameSeedForUser(user, handle));
 
   try {
     const updated = await db
       .update(blogs)
       .set({ ownerId: owner.id, editTokenHash: null })
-      .where(and(eq(blogs.id, target.id), isNull(blogs.ownerId)))
+      .where(
+        and(
+          eq(blogs.id, target.id),
+          isNull(blogs.ownerId),
+          isNull(blogs.deletedAt),
+        ),
+      )
       .returning();
     const row = updated[0];
     if (!row) throw new Error("This blog is already claimed");
-    return mapBlog({ ...row, author: owner.name });
+    return mapBlog({ ...row, author: owner.name, username });
   } catch (error) {
     if (isBlogsOwnerConflict(error)) throw new Error("You already have a blog");
     throw error;
@@ -738,9 +983,17 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
   const owner = await upsertUser(user);
 
   const existing = await getOwnedBlog(user.sub);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.username) return existing;
+    const username = await ensureUserUsername(
+      owner,
+      usernameSeedForUser(user, existing.handle),
+    );
+    return { ...existing, username };
+  }
   const name = user.name ? `${user.name}'s blog` : "My blog";
   const seed = user.email?.split("@")[0] || user.name || "blog";
+  const username = await ensureUserUsername(owner, usernameSeedForUser(user, seed));
 
   // Provision the blog. ON CONFLICT DO NOTHING lets the DB settle the races: a
   // concurrent first sign-in that already made this owner's blog (owner unique
@@ -761,5 +1014,5 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
 
   const created = await getOwnedBlog(user.sub);
   if (!created) throw new Error("failed to provision a blog");
-  return created;
+  return { ...created, username: created.username ?? username };
 }

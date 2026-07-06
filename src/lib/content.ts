@@ -4,6 +4,7 @@
 
 export interface Blog {
   handle: string;
+  username?: string;
   name: string;
   author: string;
   tagline?: string;
@@ -16,8 +17,20 @@ export interface Blog {
 }
 
 export type BlogCardStyle = "cover" | "minimal";
-export type BlogHomeLayout = "cards" | "timeline";
+export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
 export type PostType = "article" | "project" | "talk";
+
+// Product surfaces share the same lower-level content/media/permission
+// primitives, but remain distinct user-facing jobs.
+export type Surface = "blog" | "notes" | "bookmarks" | "feeds" | "group";
+export type ItemKind =
+  | "article"
+  | "media_post"
+  | "video_post"
+  | "note"
+  | "bookmark"
+  | "feed_item"
+  | "group_post";
 
 export interface GalleryItem {
   /** image or video URL */
@@ -44,6 +57,8 @@ export interface Post {
   accent?: string;
   cover?: string;
   coverCaption?: string;
+  /** user-selected article header height in pixels */
+  coverHeight?: number;
   /** markdown body */
   body: string;
   /** ISO date, e.g. "2026-07-01" */
@@ -131,14 +146,22 @@ export function isVideoFile(url: string | undefined): boolean {
   return !!url && VIDEO_FILE_RE.test(url);
 }
 
-/** "2026-06-25" -> "June 25, 2026"; bare years and unparseable values pass through. */
-export function formatArticleDate(date: string | undefined): string {
+/**
+ * "2026-06-25" -> "June 25, 2026" (long, the default) or "Jun 25, 2026"
+ * (short); bare years and unparseable values pass through.
+ */
+export function formatArticleDate(
+  date: string | undefined,
+  options?: { style?: "long" | "short" },
+): string {
   if (!date) return "";
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
   if (!m) return date;
   const mi = Number(m[2]) - 1;
   if (mi < 0 || mi > 11) return date;
-  return `${MONTHS[mi]} ${Number(m[3])}, ${m[1]}`;
+  const month =
+    options?.style === "short" ? MONTHS[mi].slice(0, 3) : MONTHS[mi];
+  return `${month} ${Number(m[3])}, ${m[1]}`;
 }
 
 /** Reading time in whole minutes at ~200 wpm, floored at 1. */
