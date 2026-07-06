@@ -1,0 +1,282 @@
+/* ============================================================
+   /connect + /docs/ai: the agent surface pages.
+   Scope: .connect-shell inside .applecms, so every color rides the
+   ac tokens and flips with them in dark mode. Quiet by design: one
+   column, hairline separators, no cards fighting for attention.
+   ============================================================ */
+
+.connect-shell {
+  min-height: 100dvh;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+}
+
+.connect-main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 20px 96px;
+}
+
+.connect-topbar {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connect-title {
+  font: 600 28px/1.2 var(--ac-font-text);
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.connect-lede {
+  font: 400 var(--ac-fs-callout)/1.5 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-callout);
+  color: var(--ac-label-2);
+  margin: 0 0 12px;
+}
+
+.connect-shell a:not(.ac-btn) {
+  color: var(--ac-accent);
+  text-decoration: none;
+}
+.connect-shell a:not(.ac-btn):hover { text-decoration: underline; }
+
+.connect-section {
+  border-top: 1px solid var(--ac-separator);
+  margin-top: 36px;
+  padding-top: 28px;
+}
+
+.connect-section-title {
+  font: 600 var(--ac-fs-title3)/var(--ac-lh-title3) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-title3);
+  margin: 0 0 6px;
+}
+
+.connect-sub {
+  font: 400 var(--ac-fs-subheadline)/1.5 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+  color: var(--ac-label-2);
+  margin: 0 0 16px;
+}
+
+.connect-body {
+  font: 400 var(--ac-fs-callout)/1.55 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-callout);
+  color: var(--ac-label);
+  margin: 0 0 12px;
+}
+
+/* --- token create form --- */
+
+.connect-form {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.connect-form .ac-field { flex: 1; }
+
+/* --- the one-time raw token reveal --- */
+
+.connect-fresh {
+  border: 1px solid var(--ac-accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+  background: var(--ac-tinted-fill);
+}
+
+.connect-fresh-name {
+  font: 600 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+  margin: 0 0 8px;
+}
+
+.connect-fresh-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connect-fresh-token {
+  flex: 1;
+  min-width: 0;
+  font: 500 13px/1.4 ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.connect-warn {
+  font: 400 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-footnote);
+  color: var(--ac-label-2);
+  margin: 8px 0 0;
+}
+
+/* --- token rows --- */
+
+.connect-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.connect-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--ac-hairline);
+}
+.connect-row:first-child { border-top: none; }
+
+.connect-row-main { flex: 1; min-width: 0; }
+
+.connect-row-name {
+  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-row-meta {
+  font: 400 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-footnote);
+  color: var(--ac-label-2);
+}
+
+.connect-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.connect-confirm-label {
+  font: 400 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+  color: var(--ac-label-2);
+}
+
+.connect-empty {
+  font: 400 var(--ac-fs-subheadline)/1.5 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+  color: var(--ac-label-2);
+  margin: 0;
+}
+
+.connect-error {
+  font: 400 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+  color: var(--ac-red);
+  margin: 8px 0 0;
+}
+
+/* --- code blocks --- */
+
+.connect-code-wrap {
+  position: relative;
+  margin: 0 0 12px;
+}
+
+.connect-code {
+  display: block;
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--ac-bg-2);
+  border: 1px solid var(--ac-hairline);
+  border-radius: 10px;
+  font: 400 12.5px/1.55 ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ac-label);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.connect-code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.connect-inline-code {
+  font: 500 0.9em ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--ac-fill-4);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+
+/* --- example prompts --- */
+
+.connect-prompts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.connect-prompts li {
+  font: 400 var(--ac-fs-subheadline)/1.5 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+  color: var(--ac-label);
+  padding: 8px 0 8px 14px;
+  border-left: 2px solid var(--ac-fill-1);
+  margin: 8px 0;
+  font-style: italic;
+}
+
+/* --- /docs/ai prose --- */
+
+.connect-doc .connect-body + .connect-body { margin-top: 0; }
+
+.connect-doc h3 {
+  font: 600 var(--ac-fs-headline)/var(--ac-lh-headline) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-headline);
+  margin: 20px 0 6px;
+}
+
+.connect-doc ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.connect-doc li {
+  font: 400 var(--ac-fs-callout)/1.55 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-callout);
+  margin: 4px 0;
+}
+
+.connect-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 12px;
+}
+
+.connect-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 var(--ac-fs-subheadline)/1.45 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+}
+
+.connect-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--ac-separator);
+  white-space: nowrap;
+}
+
+.connect-table td {
+  vertical-align: top;
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--ac-hairline);
+}
+
+.connect-table td:first-child { white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .connect-main { padding-top: 36px; }
+  .connect-form { flex-direction: column; }
+}
