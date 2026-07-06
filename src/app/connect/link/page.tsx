@@ -43,6 +43,7 @@ export default async function DeviceLinkPage({ searchParams }: Props) {
   const approved = first(query.approved) === "1";
   const errorMessage = first(query.error)?.slice(0, 200);
 
+
   if (approved) {
     return (
       <Shell>
