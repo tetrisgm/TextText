@@ -29,9 +29,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!blog) return {};
   const post = await getPost(blog.handle, slug);
   if (!post) return {};
-  // Never describe an unlisted note or bookmark in page metadata; the page
-  // itself 404s for anyone who cannot edit (same rule as the /t mirror).
-  if (post.type === "note" || post.type === "bookmark") return {};
+  // Never describe a private post (an unlisted note or bookmark, or any
+  // unpublished draft) in page metadata; the page itself 404s for anyone who
+  // is not the owner or an invited collaborator (same rule as the /t mirror).
+  if (
+    post.type === "note" ||
+    post.type === "bookmark" ||
+    post.status !== "published"
+  ) {
+    return {};
+  }
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
@@ -41,9 +48,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
-  if (post.status !== "published") {
-    metadata.robots = { index: false, follow: false };
-  }
   return metadata;
 }
 

@@ -19,6 +19,9 @@ final class CaptureAgent {
     private var pendingDrain = false
 
     private let maxArtifactBytes = 25 * 1024 * 1024
+    // Hard ceiling on a downloaded PDF before it is handed to PDFKit, so a
+    // multi-gigabyte (or streaming) PDF cannot exhaust the agent's memory.
+    private let maxPDFBytes = 64 * 1024 * 1024
     private let maxReadableBytes = 2 * 1024 * 1024
     private let uploadRetryDelays: [TimeInterval] = [2, 6, 18]
 
@@ -207,9 +210,16 @@ final class CaptureAgent {
     private func fetchPDF(url: URL) -> Result<PDFDownload, PageCaptureFailure> {
         if url.isFileURL {
             do {
-                let data = try Data(contentsOf: url)
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                if size > maxPDFBytes {
+                    return .failure(PageCaptureFailure(url: url, reason: "PDF is too large"))
+                }
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
                 guard !data.isEmpty else {
                     return .failure(PageCaptureFailure(url: url, reason: "PDF download was empty"))
+                }
+                guard data.count <= maxPDFBytes else {
+                    return .failure(PageCaptureFailure(url: url, reason: "PDF is too large"))
                 }
                 return .success(PDFDownload(data: data, finalURL: url))
             } catch {
@@ -222,7 +232,11 @@ final class CaptureAgent {
         request.timeoutInterval = 60
         request.setValue("application/pdf,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
-        switch send(request) {
+        // Bounded download: a hostile or runaway PDF must not buffer gigabytes
+        // into RAM. BoundedDownloader cancels the transfer the moment the body
+        // exceeds the cap (and rejects a Content-Length that already exceeds
+        // it), so memory stays bounded regardless of the server.
+        switch BoundedDownloader.fetch(request, maxBytes: maxPDFBytes) {
         case .failure(let reason):
             return .failure(PageCaptureFailure(url: url, reason: reason.message))
         case .success(let reply):
@@ -1038,4 +1052,93 @@ private func pngData(from image: CGImage) -> Data? {
     CGImageDestinationAddImage(destination, image, nil)
     guard CGImageDestinationFinalize(destination) else { return nil }
     return output as Data
+}
+
+/// A URLSession download that cancels the transfer as soon as the response
+/// body exceeds `maxBytes` (and rejects a Content-Length that already does),
+/// so a hostile or runaway resource cannot buffer unbounded data into memory.
+/// Used for PDF fetches, where the body is opaque and could be arbitrarily
+/// large.
+struct BoundedDownloadError: Error { let message: String }
+
+final class BoundedDownloader: NSObject, URLSessionDataDelegate {
+    struct Reply {
+        let status: Int
+        let data: Data
+        let finalURL: URL?
+        let contentType: String?
+    }
+
+    private let maxBytes: Int
+    private var buffer = Data()
+    private var response: HTTPURLResponse?
+    private var overflow = false
+
+    private init(maxBytes: Int) {
+        self.maxBytes = maxBytes
+    }
+
+    static func fetch(_ request: URLRequest, maxBytes: Int) -> Result<Reply, BoundedDownloadError> {
+        let delegate = BoundedDownloader(maxBytes: maxBytes)
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 120
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var taskError: Error?
+        let task = session.dataTask(with: request) { _, _, error in
+            taskError = error
+            semaphore.signal()
+        }
+        task.resume()
+        semaphore.wait()
+
+        if delegate.overflow {
+            return .failure(BoundedDownloadError(message: "resource exceeds \(maxBytes / (1024 * 1024)) MB"))
+        }
+        if let taskError {
+            return .failure(BoundedDownloadError(message: taskError.localizedDescription))
+        }
+        guard let http = delegate.response else {
+            return .failure(BoundedDownloadError(message: "not an HTTP response"))
+        }
+        return .success(Reply(
+            status: http.statusCode,
+            data: delegate.buffer,
+            finalURL: http.url,
+            contentType: http.value(forHTTPHeaderField: "Content-Type") ?? http.mimeType
+        ))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        self.response = response as? HTTPURLResponse
+        // Reject early when the server advertises a body over the cap.
+        if response.expectedContentLength > Int64(maxBytes) {
+            overflow = true
+            completionHandler(.cancel)
+            return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        if overflow { return }
+        if buffer.count + data.count > maxBytes {
+            overflow = true
+            dataTask.cancel()
+            return
+        }
+        buffer.append(data)
+    }
 }

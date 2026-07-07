@@ -111,15 +111,25 @@ export class CollabProvider {
     }
   }
 
+  // Apply a remote row, but ALWAYS advance past it even if the update fails
+  // to decode. Otherwise a single bad row (which the server now rejects, but
+  // defense in depth) would be re-fetched every poll forever, permanently
+  // stalling convergence.
+  private applyRow(row: { seq: number; update: string }) {
+    try {
+      Y.applyUpdate(this.doc, base64ToU8(row.update), REMOTE_ORIGIN);
+    } catch {
+      // skip a corrupt update rather than replay it forever
+    }
+    this.lastSeq = Math.max(this.lastSeq, row.seq);
+  }
+
   private async catchUp() {
     try {
       const res = await fetch(`${this.base}?since=0&wait=0`);
       if (!res.ok) return;
       const data = (await res.json()) as { updates: Array<{ seq: number; update: string }>; seq: number };
-      for (const row of data.updates) {
-        Y.applyUpdate(this.doc, base64ToU8(row.update), REMOTE_ORIGIN);
-        this.lastSeq = Math.max(this.lastSeq, row.seq);
-      }
+      for (const row of data.updates) this.applyRow(row);
     } catch {
       // Offline start: the editor still works locally; the poll loop retries.
     }

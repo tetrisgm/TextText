@@ -15,9 +15,16 @@ export default async function Image({ params }: Props) {
     getBlog(handle),
     getPost(handle, slug),
   ]);
-  // Notes and bookmarks are unlisted forever: their pages 404 for anyone who
-  // cannot edit, so their titles must not leak through a rendered OG image.
-  if (!blog || !post || post.type === "note" || post.type === "bookmark") {
+  // Private posts (unpublished drafts, and notes/bookmarks which are unlisted
+  // forever) 404 for anyone who cannot edit, so their title, excerpt, and
+  // cover must not leak through a publicly rendered OG image either.
+  if (
+    !blog ||
+    !post ||
+    post.status !== "published" ||
+    post.type === "note" ||
+    post.type === "bookmark"
+  ) {
     return new Response("Not found", { status: 404 });
   }
 

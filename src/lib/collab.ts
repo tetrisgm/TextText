@@ -37,11 +37,17 @@ export const PRESENCE_STALE_MS = 15_000;
  * The caller's collab role on a post, or null. Owners and editor
  * collaborators get "editor"; viewer collaborators get "viewer".
  */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function collabAccess(
   user: ShareUser | null,
   postId: string,
 ): Promise<CollabRole | null> {
   if (!db || !user) return null;
+  // A non-UUID postId would make the Postgres uuid cast throw; reject it as
+  // "no access" (403) rather than letting it surface as a 500.
+  if (!UUID_RE.test(postId)) return null;
   const rows = await db
     .select({ ownerId: blogs.ownerId })
     .from(posts)
