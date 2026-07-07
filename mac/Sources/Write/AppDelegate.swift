@@ -430,17 +430,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Main window (the web app)
 
     /// The full Write web experience in a native window. The app is
-    /// account-gated: a linked Mac opens straight on the workspace; an
-    /// unlinked one opens on the connect flow (which itself requires sign-in),
-    /// so the public landing is never the first thing shown.
+    /// account-gated: it always opens on the workspace home (`/start?to=home`),
+    /// which bounces through sign-in when needed and then lands on the blog with
+    /// the sidebar open. The public landing is never the first thing shown, and
+    /// an unlinked Mac mints its sync token silently in the web view (no visible
+    /// link step) via the `needsToken` path.
     private func showMainWindow() {
         if webWindow == nil {
             let credentials = store.loadCredentials()
             let origin = resolveServerOrigin(credentials: credentials)
-            let startPath = credentials == nil ? "/connect/app" : "/start"
             webWindow = WebAppWindowController(
                 origin: origin,
-                startPath: startPath,
+                startPath: "/start?to=home",
+                needsToken: credentials == nil,
                 onLinked: { [weak self] token, linkedOrigin in
                     self?.handleAppLinked(token: token, origin: linkedOrigin)
                 })
@@ -448,9 +450,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         webWindow?.present()
     }
 
-    /// The web view signed in and handed back a sync token: store it, kick a
-    /// sync, and drop the user into their workspace.
+    /// The web view minted a sync token in the background: store it and start
+    /// syncing. No navigation here; the user is already on their workspace (the
+    /// mint happens on that page), so reloading would only flicker.
     private func handleAppLinked(token: String, origin: URL) {
+        guard store.loadCredentials() == nil else { return } // mint at most once
         let device = Host.current().localizedName ?? "this Mac"
         store.saveCredentials(Credentials(
             token: token,
@@ -461,7 +465,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine.syncNow()
         captureAgent.poke()
         refreshUI()
-        webWindow?.load(path: "/start")
     }
 
     // MARK: Status / settings window

@@ -327,9 +327,16 @@ export async function BlogHomeForHandle({
     cookies(),
   ]);
   if (!blog) notFound();
-  const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(
-    cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value,
-  );
+  // The desktop app tags its web view with this cookie (set natively before
+  // the first request). It drops you straight into the workspace, so the
+  // folder sidebar starts OPEN there unless you've explicitly collapsed it,
+  // and the feeds footer is chrome the app doesn't need.
+  const inWriteApp = cookieStore.get("wr_app")?.value === "1";
+  const sidebarCookie = cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value;
+  const initialSidebarCollapsed =
+    sidebarCookie != null
+      ? parseWorkspaceSidebarCollapsed(sidebarCookie)
+      : !inWriteApp;
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
     for (const key of ["card", "folder", "layout"] as const) {
@@ -450,7 +457,7 @@ export async function BlogHomeForHandle({
         <BlogIndex blog={displayBlog} posts={posts} owner={canEdit} />
       )}
 
-      {posts.length > 0 && (
+      {posts.length > 0 && !inWriteApp && (
         <footer className="blog-home-footer" aria-label="Feeds">
           <span className="blog-home-footer-label">Feeds</span>
           {feedLinks.map((feed) => (

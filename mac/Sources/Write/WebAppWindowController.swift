@@ -16,10 +16,11 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 }
 
 /// The main window: the full Write web experience in a native window. The app
-/// is account-gated, so it opens on the sign-in flow (never the public
-/// landing) until the Mac is linked. One in-app sign-in both authenticates the
-/// web view and, on a fresh Mac, mints a sync token which the web page hands
-/// back over the `writeApp` bridge (see AppLinkBridge on the web side).
+/// is account-gated, so it opens on the sign-in flow (never the public landing)
+/// until the account signs in. That one sign-in both authenticates the web view
+/// and, on an unlinked Mac, mints a sync token: an injected script POSTs
+/// /api/app/token from the first signed-in page and hands the token back over
+/// the `writeApp` bridge, so linking is invisible (no code, no approval page).
 final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     WKUIDelegate, WKScriptMessageHandler {
     private let origin: URL
@@ -38,7 +39,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
-    init(origin: URL, startPath: String, onLinked: @escaping (String, URL) -> Void) {
+    /// - needsToken: true on an unlinked Mac. The web view then mints a sync
+    ///   token in the background as soon as it lands on a signed-in page and
+    ///   hands it back over `writeApp` (see the mint script below); a linked
+    ///   Mac skips minting entirely and just opens the workspace.
+    init(
+        origin: URL,
+        startPath: String,
+        needsToken: Bool,
+        onLinked: @escaping (String, URL) -> Void
+    ) {
         self.origin = origin
         self.onLinked = onLinked
 
@@ -49,9 +59,22 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let device = Host.current().localizedName ?? "this Mac"
         let escapedDevice = device.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+        // The server reads none of this; it is the client contract with the web
+        // app (AppLinkBridge / mint script). __WRITE_NEEDS_TOKEN__ gates minting
+        // so a linked Mac never spends a token on every launch.
         ucc.addUserScript(WKUserScript(
-            source: "window.__WRITE_APP__ = true; window.__WRITE_DEVICE__ = \"\(escapedDevice)\";",
+            source: """
+            window.__WRITE_APP__ = true;
+            window.__WRITE_DEVICE__ = "\(escapedDevice)";
+            window.__WRITE_NEEDS_TOKEN__ = \(needsToken ? "true" : "false");
+            """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // Silent link: on an unlinked Mac, the first signed-in page mints a
+        // token and posts it back. On /signin (401) it no-ops and retries on
+        // the next navigation; the sessionStorage guard mints at most once.
+        ucc.addUserScript(WKUserScript(
+            source: Self.mintScript,
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController = ucc
 
         let webView = WKWebView(
@@ -76,7 +99,64 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         ucc.add(WeakScriptHandler(self), name: "writeApp")
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        webView.load(URLRequest(url: url(for: startPath)))
+        // Tag every request as coming from the app BEFORE the first load, so
+        // even the very first workspace render opens the sidebar and drops the
+        // feeds footer (the server keys this off the wr_app cookie). Setting a
+        // cookie is async, so the initial navigation waits on it.
+        setAppCookie(on: webView.configuration.websiteDataStore.httpCookieStore) {
+            [weak self] in
+            guard let self else { return }
+            self.webView.load(URLRequest(url: self.url(for: startPath)))
+        }
+    }
+
+    // Minting runs entirely client-side; the token is bound to the signed-in
+    // session cookie and the x-write-app header keeps the route from being
+    // driven cross-site.
+    private static let mintScript = """
+    (function () {
+      if (!window.__WRITE_APP__ || !window.__WRITE_NEEDS_TOKEN__) return;
+      try { if (sessionStorage.getItem("__write_linked")) return; } catch (e) {}
+      var mh = window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.writeApp;
+      if (!mh) return;
+      fetch("/api/app/token", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "x-write-app": "1",
+          "x-write-device": window.__WRITE_DEVICE__ || "this Mac"
+        }
+      })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (d && d.token) {
+            try { sessionStorage.setItem("__write_linked", "1"); } catch (e) {}
+            mh.postMessage({ action: "linked", token: d.token, origin: d.origin });
+          }
+        })
+        .catch(function () {});
+    })();
+    """
+
+    private func setAppCookie(
+        on store: WKHTTPCookieStore, completion: @escaping () -> Void
+    ) {
+        var props: [HTTPCookiePropertyKey: Any] = [
+            .domain: origin.host ?? "",
+            .path: "/",
+            .name: "wr_app",
+            .value: "1",
+            .expires: Date(timeIntervalSinceNow: 60 * 60 * 24 * 365 * 5),
+        ]
+        if origin.scheme == "https" { props[.secure] = "TRUE" }
+        guard let cookie = HTTPCookie(properties: props) else {
+            completion() // never block the window on a cookie we couldn't build
+            return
+        }
+        store.setCookie(cookie) {
+            DispatchQueue.main.async(execute: completion)
+        }
     }
 
     @available(*, unavailable)
