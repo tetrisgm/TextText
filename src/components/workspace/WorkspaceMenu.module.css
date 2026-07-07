@@ -1,0 +1,152 @@
+.root {
+  position: relative;
+  display: inline-block;
+  color: var(--ac-label);
+  font-family: var(--ac-font-text);
+}
+
+.trigger {
+  max-width: 260px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 9px 0 10px;
+  background: transparent;
+  color: var(--ac-label);
+  cursor: pointer;
+}
+
+.trigger:hover,
+.trigger:focus-visible,
+.trigger[aria-expanded="true"] {
+  background: var(--ac-fill-3);
+}
+
+.trigger:focus-visible,
+.menuItem:focus-visible,
+.signOutButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.workspaceName {
+  min-width: 0;
+  overflow: hidden;
+  font: 600 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--ac-label-2);
+}
+
+.chevron svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 70;
+  width: 268px;
+  overflow: hidden;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-mat-bg);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--ac-bg-2) 28%, transparent);
+}
+
+.menuHeader {
+  display: grid;
+  gap: 2px;
+  padding: var(--ac-sp-3) var(--ac-sp-3) var(--ac-sp-2);
+}
+
+.headerName,
+.headerEmail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerName {
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-subheadline) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.headerEmail {
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-caption1) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.menuItem,
+.signOutButton {
+  width: calc(100% - 8px);
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  margin: 0 4px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 var(--ac-sp-2);
+  background: transparent;
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.signOutButton:hover {
+  background: var(--ac-fill-3);
+}
+
+.menuItem:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.menuItem:disabled:hover {
+  background: transparent;
+}
+
+.divider {
+  height: 1px;
+  margin: 6px var(--ac-sp-3);
+  background: var(--ac-separator);
+}
+
+.signOutButton {
+  margin-bottom: 4px;
+  color: transparent;
+  font-size: 0;
+}
+
+.signOutButton::after {
+  content: "Log out";
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
