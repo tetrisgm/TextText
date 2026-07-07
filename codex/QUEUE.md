@@ -29,7 +29,8 @@ Tasks whose briefs declare DISJOINT file ownership may run in parallel
 | 2 | T2-bookmarks-web | running | FolderPage + bookmark components |
 | 3 | T3-mac-capture-openwith | running | CaptureAgent + OpenFileHandler |
 | 4 | T4-sharing-workspace-ui | running | 4 island components |
-| 5 | T5-public-category-pages | ready | brief written: codex/tasks/T5-public-category-pages.md |
+| 5 | T5-public-category-pages | merged (partial) | category listing PAGES landed + verified live; the on-card chip was REJECTED and reverted because Codex restructured the shared PostCard root from a Link to an article (a whole-app hover/tilt/a11y change), against the brief. Chip still shows in the category page's own timeline/index layouts. |
+| 6 | category-chip-on-cards | queued | add the category chip to PostCard WITHOUT changing its single-link structure (render as a non-link label, or an overlay sibling); needs real-browser hover verification. Do NOT convert the card root away from Link. |
 | - | folder-tree-sidebar-polish | queued | wire Codex's FolderTree component into PostWorkspaceShell (styling reconciliation); today the sidebar shows subfolders as depth-indented flat rows |
 | 6 | openapi-sync-actions | queued | OpenAPI file + ChatGPT Actions guide |
 | 7 | oauth-connect | queued | needs Claude security review before merge |

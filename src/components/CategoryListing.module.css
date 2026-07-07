@@ -1,0 +1,146 @@
+.root {
+  padding-bottom: 0;
+}
+
+.header {
+  margin-bottom: 44px;
+}
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 auto 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.breadcrumbLink {
+  color: color-mix(in srgb, var(--post-accent, var(--accent)) 60%, var(--ink));
+  text-decoration: none;
+}
+
+.breadcrumbLink:hover {
+  color: var(--ink);
+}
+
+.breadcrumbLink:focus-visible,
+.rowLink:focus-visible,
+.categoryChip:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--accent)) 55%, transparent);
+  outline-offset: 3px;
+}
+
+.separator {
+  color: color-mix(in srgb, var(--muted) 56%, transparent);
+}
+
+.current {
+  color: color-mix(in srgb, var(--muted) 86%, var(--ink));
+}
+
+.title {
+  margin-bottom: 0;
+}
+
+.empty {
+  padding-top: 2px;
+}
+
+.rowLink {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 8px;
+}
+
+.rowLink:focus {
+  outline: none;
+}
+
+.hiddenLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.timelineRow,
+.indexRow {
+  position: relative;
+}
+
+.timelineCopy,
+.timelineThumb,
+.indexTitle,
+.indexMeta {
+  position: relative;
+}
+
+.categoryChip {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 20px;
+  padding: 4px 9px;
+  border: 1px solid
+    color-mix(in srgb, var(--post-accent, var(--accent)) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 7%,
+    transparent
+  );
+  color: color-mix(in srgb, var(--post-accent, var(--accent)) 60%, var(--ink));
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+
+.categoryChip:hover {
+  background: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 11%,
+    transparent
+  );
+  color: var(--ink);
+}
+
+.indexMeta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .indexMeta {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .header {
+    margin-bottom: 34px;
+  }
+
+  .breadcrumbs {
+    margin-bottom: 14px;
+  }
+}
