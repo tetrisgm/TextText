@@ -1,0 +1,923 @@
+openapi: 3.1.0
+info:
+  title: Write sync API
+  version: 1.0.0
+  summary: File-level markdown sync for a Write workspace.
+  description: |
+    The Write sync API exposes one authenticated workspace as folders of
+    markdown files. It is intended for sync clients and third-party agents,
+    including ChatGPT Actions, that need to create, read, update, and delete
+    markdown files without MCP.
+
+    Authenticate every sync operation with a bearer token minted at /connect.
+    Tokens have the form wsk_... and must include the sync scope.
+
+    File and folder manifest currency is carried with strong ETag values.
+    For file replacement, send If-Match with the ETag returned by the last
+    GET /files/{postId} response or the manifest item's hash.
+servers:
+  - url: https://{host}/api/sync/v1
+    variables:
+      host:
+        default: example.com
+        description: The Write host for the workspace owner.
+security:
+  - bearerAuth: []
+tags:
+  - name: Workspace
+    description: Workspace and folder discovery.
+  - name: Folders
+    description: Folder creation and folder manifests.
+  - name: Files
+    description: Markdown file create, read, replace, and delete operations.
+  - name: Changes
+    description: Long-poll change detection.
+  - name: Captures
+    description: Bookmark capture queue and upload operations.
+paths:
+  /workspace:
+    get:
+      tags:
+        - Workspace
+      operationId: getWorkspace
+      summary: Get the authenticated workspace
+      description: Returns the token owner's blog metadata and all folders in the workspace.
+      responses:
+        "200":
+          description: Workspace metadata and folders.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkspaceNotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /folders:
+    post:
+      tags:
+        - Folders
+      operationId: createFolder
+      summary: Create a subfolder
+      description: |
+        Creates a subfolder under an existing folder path. The new folder
+        inherits the parent folder mode. Folder nesting is capped by the
+        server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFolderRequest"
+            examples:
+              blogIdeas:
+                summary: Create a blog ideas folder
+                value:
+                  parent_path: blog
+                  name: Ideas
+      responses:
+        "201":
+          description: Folder created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateFolderResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkspaceNotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /folders/{folderId}/manifest:
+    get:
+      tags:
+        - Folders
+      operationId: getFolderManifest
+      summary: Get a folder manifest
+      description: |
+        Returns every live item in one folder, including drafts, with the
+        sha256 hash of each rendered markdown file. Send If-None-Match to
+        revalidate a cached manifest.
+      parameters:
+        - $ref: "#/components/parameters/FolderId"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: Folder manifest.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderManifest"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /files:
+    post:
+      tags:
+        - Files
+      operationId: createFile
+      summary: Create a markdown file
+      description: |
+        Creates an item from a whole markdown file and returns its manifest
+        entry. Agents should create public writing as drafts by sending
+        status: draft in the markdown frontmatter unless the owner explicitly
+        asks to publish. Notes and bookmarks are always kept unlisted by the
+        server.
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema:
+              $ref: "#/components/schemas/MarkdownFile"
+            examples:
+              draftArticle:
+                $ref: "#/components/examples/DraftMarkdownFile"
+      responses:
+        "201":
+          description: File created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkspaceNotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /files/{postId}:
+    get:
+      tags:
+        - Files
+      operationId: getFile
+      summary: Get a markdown file
+      description: |
+        Returns one rendered markdown file. The response ETag is the strong
+        sha256 hash used for later If-Match writes. Send If-None-Match to
+        revalidate a cached file.
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: Markdown file.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Last-Modified:
+              $ref: "#/components/headers/LastModified"
+          content:
+            text/markdown:
+              schema:
+                $ref: "#/components/schemas/MarkdownFile"
+              examples:
+                renderedFile:
+                  $ref: "#/components/examples/RenderedMarkdownFile"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+    put:
+      tags:
+        - Files
+      operationId: replaceFile
+      summary: Replace a markdown file
+      description: |
+        Replaces the entire markdown file. If-Match is required and must match
+        the current strong ETag, a bare current hash, or *. On conflict,
+        re-read the file, merge, and retry.
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema:
+              $ref: "#/components/schemas/MarkdownFile"
+            examples:
+              draftArticle:
+                $ref: "#/components/examples/DraftMarkdownFile"
+      responses:
+        "200":
+          description: File replaced. The returned item contains the new hash.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+    delete:
+      tags:
+        - Files
+      operationId: deleteFile
+      summary: Delete a markdown file
+      description: |
+        Deletes one item from the workspace. Destructive changes should be
+        confirmed by the owner before an agent calls this operation.
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "204":
+          description: File deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /changes:
+    get:
+      tags:
+        - Changes
+      operationId: getChanges
+      summary: Long-poll for workspace changes
+      description: |
+        Returns the current opaque workspace change cursor. With cursor and
+        wait, the request is held until the cursor changes or the wait period
+        expires. The wait value is capped at 25 seconds by the server.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor returned by an earlier changes response.
+          schema:
+            type: string
+        - name: wait
+          in: query
+          required: false
+          description: Maximum seconds to hold the request, capped at 25.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 25
+            default: 0
+      responses:
+        "200":
+          description: Current change cursor and changed flag.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkspaceNotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /captures:
+    get:
+      tags:
+        - Captures
+      operationId: listCaptures
+      summary: List pending bookmark captures
+      description: Returns bookmarks waiting for an external capture agent.
+      responses:
+        "200":
+          description: Pending capture queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapturesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkspaceNotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /captures/{postId}:
+    put:
+      tags:
+        - Captures
+      operationId: uploadCaptureResult
+      summary: Upload a bookmark capture result
+      description: |
+        Uploads capture metadata and optional artifacts for a bookmark.
+        The meta field is a JSON string. A non-empty meta.error marks the
+        capture failed and artifacts are ignored. Successful captures may
+        include readable markdown, a PNG screenshot, and the original HTML.
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CaptureUploadRequest"
+            encoding:
+              meta:
+                contentType: text/plain
+              readable:
+                contentType: text/markdown
+              screenshot:
+                contentType: image/png
+              html:
+                contentType: text/html
+      responses:
+        "200":
+          description: Capture saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureUploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: wsk
+      description: API token minted at /connect. The raw token begins with wsk_.
+
+  parameters:
+    FolderId:
+      name: folderId
+      in: path
+      required: true
+      description: Workspace-scoped folder id.
+      schema:
+        type: string
+      example: 0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60
+    PostId:
+      name: postId
+      in: path
+      required: true
+      description: Workspace-scoped post id.
+      schema:
+        type: string
+        format: uuid
+      example: 0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: Revalidate a cached manifest or file with its ETag.
+      schema:
+        type: string
+      example: '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        Required for file replacement. Use the ETag returned by GET
+        /files/{postId}, the corresponding bare manifest hash, or *.
+      schema:
+        type: string
+      example: '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+
+  headers:
+    ETag:
+      description: Strong ETag containing the sha256 hash in quotes.
+      schema:
+        type: string
+      example: '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+    LastModified:
+      description: Last modification time for the post, when available.
+      schema:
+        type: string
+        format: http-date
+      example: Tue, 07 Jul 2026 16:20:00 GMT
+    WWWAuthenticate:
+      description: Bearer challenge for missing, invalid, or revoked tokens.
+      schema:
+        type: string
+      example: Bearer
+
+  responses:
+    BadRequest:
+      description: The request body, markdown file, or form data is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: A valid API token is required.
+      headers:
+        WWW-Authenticate:
+          $ref: "#/components/headers/WWWAuthenticate"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: A valid API token is required
+    Forbidden:
+      description: The token does not have the sync scope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: This token does not have the sync scope
+    WorkspaceNotFound:
+      description: No workspace blog exists for the token's user.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: No blog exists for this token's user
+    NotFound:
+      description: The workspace or requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotModified:
+      description: The cached representation is current.
+      headers:
+        ETag:
+          $ref: "#/components/headers/ETag"
+    PreconditionFailed:
+      description: The file changed since the client fetched it.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: The post changed since this file was fetched
+    PreconditionRequired:
+      description: If-Match is required for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: If-Match header is required
+    PayloadTooLarge:
+      description: The uploaded capture artifact or readable extraction is too large.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnexpectedError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+    WorkspaceResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - blog
+        - folders
+      properties:
+        schema:
+          type: string
+          enum:
+            - write.workspace.v1
+        blog:
+          $ref: "#/components/schemas/Blog"
+        folders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Folder"
+
+    Blog:
+      type: object
+      additionalProperties: false
+      required:
+        - handle
+        - username
+        - name
+        - homeLayout
+        - cardStyle
+      properties:
+        handle:
+          type: string
+          description: Internal tenant handle for the blog.
+          example: alice
+        username:
+          description: Public username, when set.
+          anyOf:
+            - type: string
+            - type: "null"
+          example: alice
+        name:
+          type: string
+          example: Alice Writes
+        homeLayout:
+          $ref: "#/components/schemas/BlogHomeLayout"
+        cardStyle:
+          $ref: "#/components/schemas/BlogCardStyle"
+
+    BlogHomeLayout:
+      type: string
+      enum:
+        - single
+        - timeline
+        - grid
+        - index
+
+    BlogCardStyle:
+      type: string
+      enum:
+        - cover
+        - minimal
+
+    Folder:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - path
+        - mode
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+          description: Full slash-delimited workspace path, such as blog or notes/ideas.
+        mode:
+          $ref: "#/components/schemas/FolderMode"
+        parentId:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Parent folder id. System root folders use null or omit it.
+
+    FolderMode:
+      type: string
+      enum:
+        - blog
+        - notes
+        - bookmarks
+
+    CreateFolderRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - parent_path
+        - name
+      properties:
+        parent_path:
+          type: string
+          description: Existing parent folder path.
+          example: blog
+        name:
+          type: string
+          description: Display name for the new folder.
+          example: Ideas
+
+    CreateFolderResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - folder
+      properties:
+        folder:
+          $ref: "#/components/schemas/Folder"
+
+    FolderManifest:
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - folder
+        - items
+      properties:
+        schema:
+          type: string
+          enum:
+            - write.folder.v1
+        folder:
+          $ref: "#/components/schemas/ManifestFolder"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManifestItem"
+
+    ManifestFolder:
+      type: object
+      additionalProperties: false
+      required:
+        - handle
+        - name
+        - mode
+        - views
+        - itemKinds
+        - activeView
+      properties:
+        handle:
+          type: string
+        name:
+          type: string
+        mode:
+          $ref: "#/components/schemas/FolderMode"
+        views:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlogHomeLayout"
+          example:
+            - timeline
+            - index
+            - grid
+            - single
+        itemKinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarkdownItemKind"
+        activeView:
+          $ref: "#/components/schemas/BlogHomeLayout"
+        id:
+          type: string
+        path:
+          type: string
+
+    ManifestItem:
+      type: object
+      additionalProperties: false
+      required:
+        - file
+        - kind
+        - slug
+        - title
+        - status
+        - hash
+      properties:
+        file:
+          type: string
+          description: Local markdown file path used by sync clients.
+          example: posts/hello-world.md
+        kind:
+          $ref: "#/components/schemas/MarkdownItemKind"
+        slug:
+          type: string
+          example: hello-world
+        title:
+          type: string
+          example: Hello world
+        status:
+          $ref: "#/components/schemas/PostStatus"
+        id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        url:
+          type: string
+          description: Sync API URL for this file.
+          example: /api/sync/v1/files/0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60
+        hash:
+          $ref: "#/components/schemas/Sha256Hash"
+
+    MarkdownItemKind:
+      type: string
+      description: |
+        Markdown vocabulary for an item. media_post maps to project storage
+        and video_post maps to talk storage.
+      enum:
+        - article
+        - media_post
+        - video_post
+        - note
+        - bookmark
+
+    PostStatus:
+      type: string
+      enum:
+        - draft
+        - published
+
+    Sha256Hash:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+      example: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+    MarkdownFile:
+      type: string
+      description: |
+        A whole markdown file. Optional frontmatter starts with a line
+        containing --- and ends with another line containing ---. Frontmatter
+        is single-line key: value pairs. Values may be JSON scalars, arrays,
+        or objects on one line, or bare text. The body is the markdown content
+        after the closing delimiter.
+
+    FileMutationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+      properties:
+        item:
+          $ref: "#/components/schemas/ManifestItem"
+
+    ChangesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - cursor
+        - changed
+      properties:
+        cursor:
+          type: string
+          description: Opaque workspace change cursor.
+        changed:
+          type: boolean
+          description: Whether the current cursor differs from the supplied cursor.
+
+    CapturesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - captures
+      properties:
+        captures:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureCandidate"
+
+    CaptureCandidate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - title
+        - url
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+
+    CaptureUploadRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - meta
+      properties:
+        meta:
+          type: string
+          description: |
+            JSON string with url and optional title, siteName, description,
+            capturedBy, and error fields. A non-empty error marks failure.
+          example: '{"url":"https://example.com/article","title":"Example article","capturedBy":"chatgpt-action"}'
+        readable:
+          type: string
+          description: Optional readable extraction as markdown, maximum 2 MB.
+        screenshot:
+          type: string
+          format: binary
+          description: Optional PNG screenshot, maximum 25 MB.
+        html:
+          type: string
+          format: binary
+          description: Optional original HTML document, maximum 25 MB.
+
+    CaptureUploadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+      properties:
+        item:
+          $ref: "#/components/schemas/CaptureUploadItem"
+
+    CaptureUploadItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - captureStatus
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        captureStatus:
+          $ref: "#/components/schemas/CaptureStatus"
+
+    CaptureStatus:
+      type: string
+      enum:
+        - pending
+        - captured
+        - failed
+
+  examples:
+    DraftMarkdownFile:
+      summary: Draft article markdown
+      value: |
+        ---
+        schema: write.markdown-file.v1
+        kind: article
+        title: Draft from ChatGPT
+        status: draft
+        ---
+
+        Write the body here.
+    RenderedMarkdownFile:
+      summary: Rendered markdown file
+      value: |
+        ---
+        schema: write.markdown-file.v1
+        folder: alice
+        folderName: Alice Writes
+        mode: blog
+        kind: article
+        type: article
+        slug: hello-world
+        title: Hello world
+        status: draft
+        canonical: https://example.com/@alice/hello-world
+        ---
+
+        Hello from the sync API.
