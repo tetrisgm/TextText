@@ -41,6 +41,7 @@ Tokens are created at ${origin}/connect and sent as
   GET /workspace, GET /folders/{folderId}/manifest,
   GET|PUT|DELETE /files/{postId}, POST /files.
   PUT requires If-Match with the file's ETag; a stale hash answers 412.
+  OpenAPI schema for ChatGPT Actions: ${origin}/api/sync/v1/openapi.json
 
 Human setup guide: ${origin}/docs/ai
 `;
