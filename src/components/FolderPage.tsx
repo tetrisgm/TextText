@@ -9,6 +9,7 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createFolderItemAction } from "@/app/editor/actions";
+import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { blogPostEditPath } from "@/lib/public-paths";
@@ -16,17 +17,6 @@ import { blogPostEditPath } from "@/lib/public-paths";
 const FOLDER_TAGLINES: Record<string, string> = {
   notes: "Private Markdown notes.",
   bookmarks: "Links and sources for later.",
-};
-
-const FOLDER_EXPLAINERS: Record<string, { title: string; body: string }> = {
-  notes: {
-    title: "How Notes work",
-    body: "Keep rough Markdown notes private, then turn the useful ones into posts later.",
-  },
-  bookmarks: {
-    title: "How Bookmarks work",
-    body: "Save links with notes, quotes, and context so references stay near your writing.",
-  },
 };
 
 function itemKey(post: Post): string {
@@ -48,22 +38,21 @@ function sortedByTimestampDesc(
   return [...items].sort((a, b) => timestamp(b).localeCompare(timestamp(a)));
 }
 
-function bookmarkHref(post: Post): string | undefined {
-  return post.links?.[0]?.href;
+function firstBodyLine(body: string): string {
+  return (
+    body
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? ""
+  );
 }
 
-function bookmarkHost(post: Post): string {
-  const link = post.links?.[0];
-  if (!link) return "";
-  try {
-    return new URL(link.href).hostname.replace(/^www\./, "");
-  } catch {
-    return link.label;
-  }
+function stripLeadingMarkdown(line: string): string {
+  return line.replace(/^[\s#*>`-]+/, "").trim();
 }
 
-function commentaryLine(body: string): string {
-  const line = body.replace(/\s+/g, " ").trim();
+function previewLine(body: string): string {
+  const line = stripLeadingMarkdown(firstBodyLine(body));
   if (line.length <= 150) return line;
   const sliced = line.slice(0, 147).trimEnd();
   const wordBreak = sliced.lastIndexOf(" ");
@@ -71,13 +60,16 @@ function commentaryLine(body: string): string {
 }
 
 function FolderEmptyCard({ mode }: { mode: string }) {
-  const explainer = FOLDER_EXPLAINERS[mode];
-  if (!explainer) return null;
+  const copy =
+    mode === "bookmarks"
+      ? "Save your first link"
+      : mode === "notes"
+        ? "Write your first note"
+        : null;
+  if (!copy) return null;
   return (
     <article className="post-folder-page-card">
-      <span>Empty folder</span>
-      <h2>{explainer.title}</h2>
-      <p>{explainer.body}</p>
+      <p>{copy}</p>
     </article>
   );
 }
@@ -139,20 +131,28 @@ function NotesFolderContents({
           <FolderEmptyCard mode="notes" />
         ) : (
           <div className="post-folder-list">
-            {notes.map((note) => (
-              <Link
-                key={itemKey(note)}
-                className="post-folder-row"
-                href={blogPostEditPath(blog, note)}
-              >
-                <span className="post-folder-row-title">{itemTitle(note)}</span>
-                <span className="post-folder-row-meta">
-                  {formatArticleDate(note.updatedAt ?? note.date, {
-                    style: "short",
-                  })}
-                </span>
-              </Link>
-            ))}
+            {notes.map((note) => {
+              const preview = previewLine(note.body);
+              return (
+                <Link
+                  key={itemKey(note)}
+                  className="post-folder-row"
+                  href={blogPostEditPath(blog, note)}
+                >
+                  <span className="post-folder-row-title">
+                    {itemTitle(note)}
+                  </span>
+                  <span className="post-folder-row-meta">
+                    {formatArticleDate(note.updatedAt ?? note.date, {
+                      style: "short",
+                    })}
+                  </span>
+                  {preview && (
+                    <span className="post-folder-row-excerpt">{preview}</span>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         )}
       </section>
@@ -292,56 +292,13 @@ function BookmarksFolderContents({
           <FolderEmptyCard mode="bookmarks" />
         ) : (
           <div className="post-folder-list">
-            {bookmarks.map((bookmark) => {
-              const href = bookmarkHref(bookmark);
-              const host = bookmarkHost(bookmark);
-              const commentary = commentaryLine(bookmark.body);
-              const editPath = blogPostEditPath(blog, bookmark);
-              const copy = (
-                <>
-                  <span className="post-folder-row-title">
-                    {itemTitle(bookmark)}
-                  </span>
-                  {host && (
-                    <span className="post-folder-row-meta">{host}</span>
-                  )}
-                  {commentary && (
-                    <span className="post-folder-row-excerpt">
-                      {commentary}
-                    </span>
-                  )}
-                </>
-              );
-              return (
-                <article
-                  key={itemKey(bookmark)}
-                  className="post-folder-row is-bookmark"
-                >
-                  {href ? (
-                    <a
-                      className="post-folder-row-link"
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {copy}
-                    </a>
-                  ) : (
-                    // A bookmark without a saved link can only be edited.
-                    <Link className="post-folder-row-link" href={editPath}>
-                      {copy}
-                    </Link>
-                  )}
-                  <Link
-                    className="post-folder-row-edit"
-                    href={editPath}
-                    aria-label={`Edit ${itemTitle(bookmark)}`}
-                  >
-                    Edit
-                  </Link>
-                </article>
-              );
-            })}
+            {bookmarks.map((bookmark) => (
+              <BookmarkCard
+                key={itemKey(bookmark)}
+                post={bookmark}
+                editPath={blogPostEditPath(blog, bookmark)}
+              />
+            ))}
           </div>
         )}
       </section>
