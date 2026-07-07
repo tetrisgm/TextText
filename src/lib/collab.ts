@@ -8,7 +8,8 @@
 // (follow along) but not push. Everyone else is refused. Guests (cookie-only
 // edit of an unclaimed blog) are solo and never enter collab.
 
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lt, lte, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import { db } from "@/lib/db/client";
 import { blogs, collabPresence, collabUpdates, posts } from "@/lib/db/schema";
 import { getUserIdBySub } from "@/lib/store";
@@ -103,6 +104,56 @@ export async function latestCollabSeq(postId: string): Promise<number> {
   return rows[0]?.seq ?? 0;
 }
 
+// Compact the append log once it grows past this many rows. Compaction
+// collapses the whole history into a single equivalent snapshot, so a new
+// joiner fetches one row instead of thousands and storage stays bounded.
+const COMPACT_THRESHOLD = 200;
+
+function base64ToUpdate(b64: string): Uint8Array {
+  return new Uint8Array(Buffer.from(b64, "base64"));
+}
+
+/**
+ * Collapse a post's update log into one snapshot when it has grown large.
+ *
+ * Correctness under concurrent edits: we merge only the rows we READ (seq
+ * <= maxSeq at read time) into the snapshot, insert it as a NEW row (whose
+ * seq is therefore greater than maxSeq), and delete ONLY rows with seq <=
+ * maxSeq. Any update that arrives during compaction gets a seq greater than
+ * maxSeq, so it is never deleted and never lost; it simply stays a separate
+ * row alongside the snapshot. Applying the snapshot is idempotent for a
+ * client that already had some of that history (Yjs updates are
+ * commutative), so existing and new clients both still converge.
+ */
+export async function maybeCompactCollab(postId: string): Promise<void> {
+  if (!db) return;
+  const rows = await db
+    .select({ seq: collabUpdates.seq, update: collabUpdates.update })
+    .from(collabUpdates)
+    .where(eq(collabUpdates.postId, postId))
+    .orderBy(asc(collabUpdates.seq));
+  if (rows.length < COMPACT_THRESHOLD) return;
+
+  const maxSeq = rows[rows.length - 1].seq;
+  let snapshot: string;
+  try {
+    const merged = Y.mergeUpdates(rows.map((r) => base64ToUpdate(r.update)));
+    snapshot = Buffer.from(merged).toString("base64");
+  } catch {
+    // A merge failure must never drop history; leave the log as-is.
+    return;
+  }
+  await db.insert(collabUpdates).values({ postId, update: snapshot });
+  // Delete ONLY what we merged. Safety depends on every append being a single
+  // atomic statement (INSERT ... RETURNING via neon-http): that guarantees no
+  // row exists with seq <= maxSeq that was not in the read set. If appends are
+  // ever wrapped in a multi-statement transaction, seq allocation could run
+  // ahead of commit and this delete could remove an un-merged row.
+  await db
+    .delete(collabUpdates)
+    .where(and(eq(collabUpdates.postId, postId), lte(collabUpdates.seq, maxSeq)));
+}
+
 export type PresenceEntry = { clientId: string; userName: string; color: string };
 
 /** Heartbeat this client's presence and return everyone currently active. */
@@ -124,6 +175,17 @@ export async function upsertPresence(
       target: [collabPresence.postId, collabPresence.clientId],
       set: { userName: entry.userName, color: entry.color, updatedAt: new Date() },
     });
+  // Opportunistic cleanup: a tab that closed without a clean leave leaves a
+  // stale row. Drop rows for this post well past the active window so the
+  // table never accumulates ghosts.
+  await db
+    .delete(collabPresence)
+    .where(
+      and(
+        eq(collabPresence.postId, postId),
+        lt(collabPresence.updatedAt, new Date(Date.now() - PRESENCE_STALE_MS * 4)),
+      ),
+    );
   return activePresence(postId);
 }
 

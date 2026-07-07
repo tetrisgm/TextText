@@ -16,6 +16,7 @@ import {
   collabAccess,
   collabUpdatesSince,
   latestCollabSeq,
+  maybeCompactCollab,
 } from "@/lib/collab";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +82,9 @@ export async function POST(
   for (const update of clean) {
     seq = await appendCollabUpdate(postId, update);
   }
+  // Keep the append log from growing without bound: once it is large, collapse
+  // it to a single equivalent snapshot. Safe to run inline and best-effort.
+  await maybeCompactCollab(postId).catch(() => {});
   return Response.json({ seq });
 }
 

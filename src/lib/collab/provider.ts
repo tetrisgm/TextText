@@ -144,10 +144,10 @@ export class CollabProvider {
           continue;
         }
         const data = (await res.json()) as { updates: Array<{ seq: number; update: string }>; seq: number };
-        for (const row of data.updates) {
-          Y.applyUpdate(this.doc, base64ToU8(row.update), REMOTE_ORIGIN);
-          this.lastSeq = Math.max(this.lastSeq, row.seq);
-        }
+        // Same corruption-tolerant path as catchUp: applyRow advances past a
+        // row even if applying it throws, so one bad update can never stall
+        // the loop by making it re-fetch the same seq forever.
+        for (const row of data.updates) this.applyRow(row);
       } catch {
         await new Promise((r) => setTimeout(r, 2000));
       }
