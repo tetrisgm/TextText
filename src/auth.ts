@@ -6,8 +6,13 @@ import Google from "next-auth/providers/google";
 import Resend from "next-auth/providers/resend";
 import { createAuthAdapter } from "@/lib/auth-email";
 
+import { resolveAppleClientSecret } from "@/lib/apple-secret";
+
 const appleClientId = process.env.AUTH_APPLE_ID;
-const appleClientSecret = process.env.AUTH_APPLE_SECRET;
+// Static AUTH_APPLE_SECRET wins; otherwise signed at boot from the .p8 key
+// material (AUTH_APPLE_TEAM_ID / AUTH_APPLE_KEY_ID / AUTH_APPLE_PRIVATE_KEY),
+// so the six-month Apple cap can never strand a running deployment.
+const appleClientSecret = resolveAppleClientSecret();
 const googleClientId = process.env.AUTH_GOOGLE_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
 const resendKey = process.env.AUTH_RESEND_KEY;
