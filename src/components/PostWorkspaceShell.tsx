@@ -10,6 +10,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { PostActionBar } from "@/components/PostActionBar";
+import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
@@ -348,13 +349,19 @@ export function PostFolderSidebar({
       aria-label="Folder navigation"
     >
       <div className="post-editor-sidebar-top">
-        {homePath ? (
-          <a className="post-editor-home-link" href={homePath}>
-            {homeContent}
-          </a>
-        ) : (
-          <div className="post-editor-home-link is-static">{homeContent}</div>
-        )}
+        <WorkspaceMenuMount
+          blogName={blog.name}
+          settingsHref={homePath ?? "/"}
+          fallback={
+            homePath ? (
+              <a className="post-editor-home-link" href={homePath}>
+                {homeContent}
+              </a>
+            ) : (
+              <div className="post-editor-home-link is-static">{homeContent}</div>
+            )
+          }
+        />
         <button
           type="button"
           className="post-editor-sidebar-toggle"
@@ -373,13 +380,23 @@ export function PostFolderSidebar({
       >
         {navFolders.map((folder) => {
           const selected = folder.path === activeFolder;
+          // Nested paths indent by depth; the three system roots (no slash)
+          // stay flush, so existing workspaces render byte-for-byte as before.
+          const depth = folder.path.split("/").length - 1;
           // Real counts only: an empty folder shows nothing, never a fake 1.
           const count = counts[folder.path] ?? 0;
           return (
             <button
               key={folder.id}
               type="button"
-              className={`post-editor-folder-row${selected ? " is-active" : ""}`}
+              className={`post-editor-folder-row${selected ? " is-active" : ""}${
+                depth > 0 ? " is-nested" : ""
+              }`}
+              style={
+                depth > 0
+                  ? { paddingLeft: `${12 + depth * 16}px` }
+                  : undefined
+              }
               aria-current={selected ? "true" : undefined}
               title={collapsed ? folder.name : undefined}
               onClick={() => {
@@ -391,9 +408,11 @@ export function PostFolderSidebar({
               </span>
               <span className="post-editor-folder-copy">
                 <span className="post-editor-folder-name">{folder.name}</span>
-                <span className="post-editor-folder-meta">
-                  {MODE_DESCRIPTIONS[folder.mode]}
-                </span>
+                {depth === 0 && (
+                  <span className="post-editor-folder-meta">
+                    {MODE_DESCRIPTIONS[folder.mode]}
+                  </span>
+                )}
               </span>
               {count > 0 && (
                 <span className="post-editor-folder-count" aria-hidden="true">

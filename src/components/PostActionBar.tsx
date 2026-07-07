@@ -12,6 +12,7 @@ import type { ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { saveEditablePostAction } from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
+import { ShareDialog } from "@/components/workspace/ShareDialog";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
   initialDraft,
@@ -271,6 +272,7 @@ export function PostActionBar(props: Props) {
   const settingsWrapRef = useRef<HTMLDivElement>(null);
   const copiedTimerRef = useRef<number | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [collaboratorsOpen, setCollaboratorsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const origin = useSyncExternalStore(
     subscribeClientSnapshot,
@@ -592,12 +594,20 @@ export function PostActionBar(props: Props) {
           <section className="post-share-section post-share-future">
             <div>
               <div className="post-share-section-label">Who can edit</div>
-              <p>Collaborators and invites will appear here.</p>
+              <p>
+                {props.post.id
+                  ? "Invite people by email to view or edit this page."
+                  : "Save this page first to invite collaborators."}
+              </p>
             </div>
             <button
               type="button"
               className="post-share-invite ac-btn ac-btn-gray"
-              disabled
+              disabled={!props.post.id}
+              onClick={() => {
+                setShareOpen(false);
+                setCollaboratorsOpen(true);
+              }}
             >
               Invite people
             </button>
@@ -723,6 +733,15 @@ export function PostActionBar(props: Props) {
                 )}
                 {doneControl}
               </div>
+            )}
+            {props.owner && props.post.id && (
+              <ShareDialog
+                handle={props.blog.handle}
+                postId={props.post.id}
+                postTitle={postTitle(activeDraft.title)}
+                open={collaboratorsOpen}
+                onClose={() => setCollaboratorsOpen(false)}
+              />
             )}
             {showPostNav && (
               <nav className="post-detail-controls" aria-label="Post navigation">
