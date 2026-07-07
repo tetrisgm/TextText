@@ -324,3 +324,30 @@ export const collabPresence = pgTable(
     index("collab_presence_post_idx").on(t.postId, t.updatedAt),
   ],
 );
+
+// OAuth 2.1 authorization-code + PKCE grants for public connector clients.
+// The raw authorization code is shown only in the redirect response; only its
+// SHA-256 hash is stored here. Rows are single-use and short-lived.
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    clientId: text("client_id").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull().default("sync"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+  },
+  (t) => [uniqueIndex("oauth_authorization_codes_hash_idx").on(t.codeHash)],
+);
+
+export type OAuthAuthorizationCode =
+  typeof oauthAuthorizationCodes.$inferSelect;
+export type NewOAuthAuthorizationCode =
+  typeof oauthAuthorizationCodes.$inferInsert;
