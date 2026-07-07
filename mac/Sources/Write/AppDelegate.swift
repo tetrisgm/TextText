@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                            // never download into a translocated/Downloads copy
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
+    private var webWindow: WebAppWindowController?
     private var activityLog: [String] = []
     private var wasBusy = false
 
@@ -55,11 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.engine.syncNow()
             self.refreshUI()
-            // Success must be SEEN: the user is in the browser at this
-            // moment, and the window flipping to "Linked as ..." is the
-            // confirmation both sides promised.
+            // Linking configures folder sync; bring the workspace forward.
             NSApp.activate(ignoringOtherApps: true)
-            self.showStatusWindow()
+            self.showMainWindow()
         }
 
         setupStatusItem()
@@ -78,7 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         changeListener.start()
         captureAgent.start()
 
-        showStatusWindow() // open the window on launch (regular-app behavior)
+        showMainWindow() // open the workspace window on launch
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -91,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { showStatusWindow() }
+        if !flag { showMainWindow() }
         return true
     }
 
@@ -333,14 +332,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(last)
         menu.addItem(.separator())
 
+        // The primary action: the full workspace in a native window.
+        let openWrite = item("Open Write", #selector(showMainWindowAction))
+        menu.addItem(openWrite)
+        menu.addItem(.separator())
+
         let sync = item("Sync Now", #selector(syncNowAction))
         sync.isEnabled = store.loadCredentials() != nil && !engine.isSyncing
         menu.addItem(sync)
         menu.addItem(item("Open Folder", #selector(openFolderAction)))
         if let blog = store.cachedWorkspace()?.blog {
-            menu.addItem(item("Open \(blog.name.isEmpty ? "Blog" : blog.name)", #selector(openBlogAction)))
+            menu.addItem(item("Open \(blog.name.isEmpty ? "Blog" : blog.name) in browser", #selector(openBlogAction)))
         }
-        menu.addItem(item("Open \(appName)", #selector(showStatusWindowAction)))
+        menu.addItem(item("Sync & settings…", #selector(showStatusWindowAction)))
         menu.addItem(.separator())
 
         let login = item("Start \(appName) at Login", #selector(toggleLoginItem))
@@ -401,6 +405,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc private func showMainWindowAction() { showMainWindow() }
+
     @objc private func showStatusWindowAction() { showStatusWindow() }
 
     @objc private func signInAction() { signIn() }
@@ -421,7 +427,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func quit() { NSApp.terminate(nil) }
 
-    // MARK: Status window
+    // MARK: Main window (the web app)
+
+    /// The full Write web experience in a native window. This is what "Open
+    /// Write" and a Dock click show; the sync status lives in the menu bar and
+    /// a separate settings window.
+    private func showMainWindow() {
+        if webWindow == nil {
+            let origin = resolveServerOrigin(credentials: store.loadCredentials())
+            webWindow = WebAppWindowController(origin: origin)
+        }
+        webWindow?.present()
+    }
+
+    // MARK: Status / settings window
 
     private func showStatusWindow() {
         if statusWindow == nil {
