@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
+import { LandingHeader } from "@/components/LandingHeader";
 
 // The classic service shape: signing in IS getting started. Trying without
 // an account is the demo, deliberately on the side.
@@ -33,27 +34,7 @@ export default async function Home() {
 
   return (
     <main className="write-landing applecms">
-      <nav className="write-landing-nav" aria-label="Write">
-        <Link className="write-landing-mark" href="/">
-          Write
-        </Link>
-        <div className="write-landing-nav-actions">
-          {user ? (
-            <Link className="write-landing-button" href="/start?to=home">
-              Open your workspace
-            </Link>
-          ) : (
-            <>
-              <Link className="write-landing-link" href="/try">
-                Try the demo
-              </Link>
-              <a className="write-landing-button" href={signInHref}>
-                Sign in
-              </a>
-            </>
-          )}
-        </div>
-      </nav>
+      <LandingHeader signedIn={Boolean(user)} />
 
       <section className="write-landing-hero">
         <div className="write-landing-copy">
@@ -120,6 +101,29 @@ export default async function Home() {
             <p>{folder.body}</p>
           </article>
         ))}
+      </section>
+
+      <section className="write-landing-download" aria-label="Download Write">
+        <div className="write-landing-download-copy">
+          <p className="write-landing-kicker">The desktop app</p>
+          <h2>Write on your Mac</h2>
+          <p>
+            The same workspace as the web, in a native window you open from the
+            Dock or the menu bar, with a folder of real Markdown files that
+            sync both ways.
+          </p>
+        </div>
+        <div className="write-landing-download-actions">
+          <a className="write-landing-primary" href="/download/Write.zip">
+            Download for Mac
+          </a>
+          <Link className="write-landing-secondary" href="/download">
+            All downloads
+          </Link>
+          <p className="write-landing-download-note">
+            Windows and Linux are on the way.
+          </p>
+        </div>
       </section>
     </main>
   );
