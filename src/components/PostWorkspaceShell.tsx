@@ -30,11 +30,6 @@ let sidebarCollapsedMemory: boolean | null = null;
 const sidebarCollapsedListeners = new Set<() => void>();
 
 // One quiet line per folder mode; folder rows show it under the name.
-const MODE_DESCRIPTIONS: Record<FolderMode, string> = {
-  blog: "Articles, media posts, and videos.",
-  notes: "Private Markdown notes.",
-  bookmarks: "Links and sources for later.",
-};
 
 // Rendered only if a caller cannot provide real folders, so the sidebar never
 // collapses to nothing; real pages thread getFolders results through.
@@ -310,28 +305,132 @@ function onSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
 
 // A compact inline "new folder" control: names a subfolder under a parent
 // path and calls the server action, then refreshes so the new row appears.
-function NewFolderControl({
-  handle,
-  parentPath,
+function DisclosureIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className={`post-editor-disclosure-icon${open ? " is-open" : ""}`}
+    >
+      <path
+        d="M6 4l4 4-4 4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+type FolderTreeNode = { folder: Folder; children: FolderTreeNode[] };
+
+function buildFolderTree(folders: Folder[]): FolderTreeNode[] {
+  const byParent = new Map<string | null, Folder[]>();
+  for (const folder of folders) {
+    const key = folder.parentId ?? null;
+    const list = byParent.get(key) ?? [];
+    list.push(folder);
+    byParent.set(key, list);
+  }
+  const materialize = (folder: Folder): FolderTreeNode => ({
+    folder,
+    children: (byParent.get(folder.id) ?? [])
+      .slice()
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, {
+          sensitivity: "base",
+          numeric: true,
+        }),
+      )
+      .map(materialize),
+  });
+  // Roots (the three system folders) keep the order getFolders returned them
+  // in (position, then createdAt): Blog, Notes, Bookmarks.
+  return (byParent.get(null) ?? []).map(materialize);
+}
+
+const FOLDER_EXPANDED_KEY = "write.folders.expanded";
+const MAX_FOLDER_DEPTH = 4;
+
+// The Apple Notes-style nested folder tree: disclosure triangles, indentation
+// by depth, per-folder "new subfolder", and expand state that persists and
+// auto-opens the branch containing the active folder.
+function FolderTreeNav({
+  blog,
+  folders,
+  activeFolder,
+  counts,
+  collapsed,
+  onSelectFolder,
 }: {
-  handle: string;
-  parentPath: string;
+  blog: Blog;
+  folders: Folder[];
+  activeFolder: SidebarFolderId;
+  counts: Record<string, number>;
+  collapsed: boolean;
+  onSelectFolder: (folder: SidebarFolderId) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
+  const tree = buildFolderTree(folders);
+  const foldersById = new Map(folders.map((f) => [f.id, f]));
+  const foldersByPath = new Map(folders.map((f) => [f.path, f]));
+
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [creatingUnder, setCreatingUnder] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async () => {
-    const clean = name.trim();
+  // Load persisted expand state, then force-open the ancestors of the active
+  // folder so the current selection is always visible.
+  useEffect(() => {
+    const next = new Set<string>();
+    try {
+      const raw = window.localStorage.getItem(FOLDER_EXPANDED_KEY);
+      if (raw) for (const id of JSON.parse(raw) as string[]) next.add(id);
+    } catch {
+      // ignore malformed storage
+    }
+    let node = foldersByPath.get(activeFolder);
+    while (node?.parentId) {
+      next.add(node.parentId);
+      node = foldersById.get(node.parentId);
+    }
+    setExpanded(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFolder]);
+
+  const toggle = (id: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(
+          FOLDER_EXPANDED_KEY,
+          JSON.stringify([...next]),
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const submitNewFolder = async (parentPath: string) => {
+    const clean = newName.trim();
     if (!clean || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await createSubfolderAction(handle, parentPath, clean);
-      setName("");
-      setOpen(false);
+      await createSubfolderAction(blog.handle, parentPath, clean);
+      setNewName("");
+      setCreatingUnder(null);
+      // Make sure the parent is open so the new child is visible.
+      const parent = foldersByPath.get(parentPath);
+      if (parent) setExpanded((c) => new Set(c).add(parent.id));
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the folder");
@@ -340,44 +439,109 @@ function NewFolderControl({
     }
   };
 
-  if (!open) {
+  const renderNode = (node: FolderTreeNode, depth: number): ReactNode => {
+    const { folder, children } = node;
+    const hasChildren = children.length > 0;
+    const isExpanded = expanded.has(folder.id);
+    const selected = folder.path === activeFolder;
+    const count = counts[folder.path] ?? 0;
+    const canNest = folder.path.split("/").length < MAX_FOLDER_DEPTH;
+    const indent = 8 + depth * 15;
     return (
-      <button
-        type="button"
-        className="post-editor-new-folder"
-        onClick={() => setOpen(true)}
-      >
-        <span aria-hidden="true">+</span> New folder
-      </button>
+      <div className="post-editor-folder-branch" key={folder.id}>
+        <div
+          className={`post-editor-folder-row${selected ? " is-active" : ""}`}
+          style={{ paddingLeft: indent }}
+        >
+          {hasChildren ? (
+            <button
+              type="button"
+              className="post-editor-folder-disclosure"
+              aria-label={isExpanded ? "Collapse" : "Expand"}
+              aria-expanded={isExpanded}
+              onClick={() => toggle(folder.id)}
+            >
+              <DisclosureIcon open={isExpanded} />
+            </button>
+          ) : (
+            <span className="post-editor-folder-disclosure is-empty" aria-hidden="true" />
+          )}
+          <button
+            type="button"
+            className="post-editor-folder-main"
+            aria-current={selected ? "true" : undefined}
+            title={collapsed ? folder.name : undefined}
+            onClick={() => onSelectFolder(folder.path)}
+          >
+            <span className="post-editor-folder-icon" aria-hidden="true">
+              <SidebarFolderIcon mode={folder.mode} />
+            </span>
+            <span className="post-editor-folder-name">{folder.name}</span>
+          </button>
+          {canNest && (
+            <button
+              type="button"
+              className="post-editor-folder-add"
+              aria-label={`New folder in ${folder.name}`}
+              title="New folder"
+              onClick={() => {
+                setCreatingUnder(folder.path);
+                setNewName("");
+                setError(null);
+                setExpanded((c) => new Set(c).add(folder.id));
+              }}
+            >
+              +
+            </button>
+          )}
+          {count > 0 && (
+            <span className="post-editor-folder-count" aria-hidden="true">
+              {count}
+            </span>
+          )}
+        </div>
+        {creatingUnder === folder.path && (
+          <div
+            className="post-editor-new-folder-form"
+            style={{ paddingLeft: indent + 15 }}
+          >
+            <input
+              className="post-editor-new-folder-input"
+              value={newName}
+              autoFocus
+              placeholder="Folder name"
+              maxLength={80}
+              disabled={busy}
+              onChange={(event) => setNewName(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitNewFolder(folder.path);
+                } else if (event.key === "Escape") {
+                  setCreatingUnder(null);
+                  setNewName("");
+                }
+              }}
+              onBlur={() => {
+                if (!newName.trim()) setCreatingUnder(null);
+              }}
+              aria-label={`New folder name in ${folder.name}`}
+            />
+            {error && (
+              <span className="post-editor-new-folder-error">{error}</span>
+            )}
+          </div>
+        )}
+        {hasChildren && isExpanded && (
+          <div className="post-editor-folder-children">
+            {children.map((child) => renderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
     );
-  }
-  return (
-    <div className="post-editor-new-folder-form">
-      <input
-        className="post-editor-new-folder-input"
-        value={name}
-        autoFocus
-        placeholder="Folder name"
-        maxLength={80}
-        disabled={busy}
-        onChange={(event) => setName(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            void submit();
-          } else if (event.key === "Escape") {
-            setOpen(false);
-            setName("");
-          }
-        }}
-        onBlur={() => {
-          if (!name.trim()) setOpen(false);
-        }}
-        aria-label="New folder name"
-      />
-      {error && <span className="post-editor-new-folder-error">{error}</span>}
-    </div>
-  );
+  };
+
+  return <>{tree.map((node) => renderNode(node, 0))}</>;
 }
 
 export function PostFolderSidebar({
@@ -451,53 +615,14 @@ export function PostFolderSidebar({
         aria-label="Folders"
         onKeyDown={onSidebarNavKeyDown}
       >
-        {navFolders.map((folder) => {
-          const selected = folder.path === activeFolder;
-          // Nested paths indent by depth; the three system roots (no slash)
-          // stay flush, so existing workspaces render byte-for-byte as before.
-          const depth = folder.path.split("/").length - 1;
-          // Real counts only: an empty folder shows nothing, never a fake 1.
-          const count = counts[folder.path] ?? 0;
-          return (
-            <button
-              key={folder.id}
-              type="button"
-              className={`post-editor-folder-row${selected ? " is-active" : ""}${
-                depth > 0 ? " is-nested" : ""
-              }`}
-              style={
-                depth > 0
-                  ? { paddingLeft: `${12 + depth * 16}px` }
-                  : undefined
-              }
-              aria-current={selected ? "true" : undefined}
-              title={collapsed ? folder.name : undefined}
-              onClick={() => {
-                onSelectFolder(folder.path);
-              }}
-            >
-              <span className="post-editor-folder-icon" aria-hidden="true">
-                <SidebarFolderIcon mode={folder.mode} />
-              </span>
-              <span className="post-editor-folder-copy">
-                <span className="post-editor-folder-name">{folder.name}</span>
-                {depth === 0 && (
-                  <span className="post-editor-folder-meta">
-                    {MODE_DESCRIPTIONS[folder.mode]}
-                  </span>
-                )}
-              </span>
-              {count > 0 && (
-                <span className="post-editor-folder-count" aria-hidden="true">
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-        {!collapsed && (
-          <NewFolderControl handle={blog.handle} parentPath="blog" />
-        )}
+        <FolderTreeNav
+          blog={blog}
+          folders={navFolders}
+          activeFolder={activeFolder}
+          counts={counts}
+          collapsed={collapsed}
+          onSelectFolder={onSelectFolder}
+        />
       </nav>
 
       {showGuestSignIn && (
