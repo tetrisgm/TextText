@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -12,17 +13,33 @@ import {
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
+import type { AnyExtension } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { SelectionBookmark } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
+import Collaboration from "@tiptap/extension-collaboration";
+import * as Y from "yjs";
 import { Markdown } from "tiptap-markdown";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
+import { CollabProvider } from "@/lib/collab/provider";
+import type { PresencePeer } from "@/lib/collab/provider";
 
 export type BodyEditorHandle = {
   focus: () => void;
+};
+
+export type BodyEditorCollab = {
+  /** the post being co-edited; the relay is keyed by it */
+  postId: string;
+  /** display name shown to other editors */
+  userName: string;
+  /** cursor/presence color, "#rrggbb" */
+  color: string;
+  /** editors push changes; viewers follow along read-only */
+  canEdit: boolean;
 };
 
 type BodyEditorProps = {
@@ -31,6 +48,8 @@ type BodyEditorProps = {
   toolbarHost?: HTMLElement | null;
   mediaEnabled?: boolean;
   uploadEndpoint?: string;
+  /** when present, the body is a shared Yjs document (realtime co-editing) */
+  collab?: BodyEditorCollab | null;
 };
 
 // Markdown is the source of truth for post bodies, so the toolbar only offers
@@ -67,26 +86,34 @@ function getServerMounted() {
   return false;
 }
 
-const editorExtensions = [
-  StarterKit.configure({
-    heading: {
-      levels: [2, 3],
-    },
-  }),
-  Image,
-  Link.configure({
-    autolink: true,
-    linkOnPaste: true,
-    openOnClick: false,
-  }),
-  Placeholder.configure({
-    placeholder: "Start writing",
-  }),
-  Markdown.configure({
-    html: false,
-    bulletListMarker: "-",
-  }),
-];
+// Collaboration replaces the editor's undo history with Yjs's, so StarterKit's
+// own history MUST be disabled when a shared document is present, and enabled
+// otherwise (solo editing keeps normal undo/redo).
+function buildEditorExtensions(ydoc: Y.Doc | null): AnyExtension[] {
+  const extensions: AnyExtension[] = [
+    StarterKit.configure({
+      heading: { levels: [2, 3] },
+      ...(ydoc ? { history: false } : {}),
+    }),
+    Image,
+    Link.configure({
+      autolink: true,
+      linkOnPaste: true,
+      openOnClick: false,
+    }),
+    Placeholder.configure({
+      placeholder: "Start writing",
+    }),
+    Markdown.configure({
+      html: false,
+      bulletListMarker: "-",
+    }),
+  ];
+  if (ydoc) {
+    extensions.push(Collaboration.configure({ document: ydoc }));
+  }
+  return extensions;
+}
 
 function editorMarkdown(editor: Editor): string {
   const storage = editor.storage as Editor["storage"] & MarkdownStorage;
@@ -202,12 +229,13 @@ function ImageIcon() {
 
 export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
   function BodyEditor(
-    { value, onChange, toolbarHost, mediaEnabled = true, uploadEndpoint },
+    { value, onChange, toolbarHost, mediaEnabled = true, uploadEndpoint, collab },
     ref,
   ) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const lastEmittedRef = useRef(value);
     const onChangeRef = useRef(onChange);
+    const initialValueRef = useRef(value);
     const selectionBookmarkRef = useRef<SelectionBookmark | null>(null);
     const mounted = useSyncExternalStore(
       subscribeClientSnapshot,
@@ -216,6 +244,17 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const [peers, setPeers] = useState<PresencePeer[]>([]);
+
+    // One Y.Doc per co-edited post, created before the editor so the
+    // Collaboration extension can bind to it. Null (and no collab) for solo
+    // editing, which keeps the exact previous behavior.
+    const ydoc = useMemo(
+      () => (collab ? new Y.Doc() : null),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [collab?.postId],
+    );
+    const extensions = useMemo(() => buildEditorExtensions(ydoc), [ydoc]);
 
     useEffect(() => {
       onChangeRef.current = onChange;
@@ -225,38 +264,73 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       selectionBookmarkRef.current = editor.state.selection.getBookmark();
     }, []);
 
-    const editor = useEditor({
-      extensions: editorExtensions,
-      content: value,
-      immediatelyRender: false,
-      editorProps: {
-        attributes: {
-          class: "body-editor-content",
-          role: "textbox",
-          "aria-label": "Body",
-          "aria-multiline": "true",
+    const editor = useEditor(
+      {
+        extensions,
+        // With collab, Yjs owns the content; seeding happens after sync.
+        content: ydoc ? undefined : value,
+        immediatelyRender: false,
+        editorProps: {
+          attributes: {
+            class: "body-editor-content",
+            role: "textbox",
+            "aria-label": "Body",
+            "aria-multiline": "true",
+          },
         },
-      },
-      onSelectionUpdate: ({ editor }) => {
-        saveSelectionBookmark(editor);
-      },
-      onFocus: ({ editor }) => {
-        saveSelectionBookmark(editor);
-      },
-      onUpdate: ({ editor }) => {
-        const next = editorMarkdown(editor);
-        lastEmittedRef.current = next;
+        onSelectionUpdate: ({ editor }) => {
+          saveSelectionBookmark(editor);
+        },
+        onFocus: ({ editor }) => {
+          saveSelectionBookmark(editor);
+        },
+        onUpdate: ({ editor }) => {
+          const next = editorMarkdown(editor);
+          lastEmittedRef.current = next;
         onChangeRef.current(next);
       },
     });
 
     useEffect(() => {
+      // In collab mode Yjs is the source of truth; never push `value` into the
+      // editor or it would fight the shared document.
+      if (ydoc) return;
       if (!editor) return;
       if (value === lastEmittedRef.current) return;
 
       lastEmittedRef.current = value;
       editor.commands.setContent(value, false);
-    }, [editor, value]);
+    }, [editor, value, ydoc]);
+
+    // Realtime provider lifecycle: connect the shared doc, seed it from the
+    // saved markdown the first time (empty history), and track presence.
+    useEffect(() => {
+      if (!editor || !ydoc || !collab) return;
+      let cancelled = false;
+      const provider = new CollabProvider(ydoc, {
+        postId: collab.postId,
+        userName: collab.userName,
+        color: collab.color,
+        canPush: collab.canEdit,
+        onPresence: (list) => {
+          if (!cancelled) setPeers(list);
+        },
+      });
+      void provider.start().then(() => {
+        if (cancelled) return;
+        // Seed only when this client caught up to an EMPTY document and is
+        // allowed to write. Owner-edits-first-then-shares means history is
+        // normally already present by the time a second editor joins.
+        const fragmentEmpty = ydoc.getXmlFragment("default").length === 0;
+        if (collab.canEdit && fragmentEmpty && initialValueRef.current.trim()) {
+          editor.commands.setContent(initialValueRef.current, false);
+        }
+      });
+      return () => {
+        cancelled = true;
+        provider.destroy();
+      };
+    }, [editor, ydoc, collab]);
 
     const restoreSelectionBookmark = useCallback((editor: Editor) => {
       const bookmark = selectionBookmarkRef.current;
@@ -411,6 +485,9 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
           }}
         />
         <div className="body-editor">
+          {collab && peers.length > 1 && (
+            <PresenceBar peers={peers} selfClientId={collab.postId} />
+          )}
           {mounted && editor ? (
             <EditorContent editor={editor} />
           ) : (
@@ -425,3 +502,35 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
   },
 );
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// A quiet row of avatars for everyone currently in the document. Presence is
+// best-effort, so this simply reflects the last heartbeat set.
+function PresenceBar({
+  peers,
+}: {
+  peers: PresencePeer[];
+  selfClientId: string;
+}) {
+  return (
+    <div className="body-editor-presence" aria-label="People editing">
+      {peers.map((peer) => (
+        <span
+          key={peer.clientId}
+          className="body-editor-presence-avatar"
+          style={{ backgroundColor: peer.color }}
+          title={peer.userName}
+          aria-label={peer.userName}
+        >
+          {initials(peer.userName)}
+        </span>
+      ))}
+    </div>
+  );
+}

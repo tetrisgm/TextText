@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
-import { postShareRoleFor } from "@/lib/shares";
+import { listPostShares, postShareRoleFor } from "@/lib/shares";
+import { colorForSub } from "@/lib/collab";
 import {
   getAdjacentPublishedPosts,
   getAllPosts,
@@ -69,9 +70,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     getPost(handle, slug),
   ]);
   if (!blog || !post) return {};
-  // Never describe an unlisted note or bookmark in page metadata; the page
-  // itself 404s for anyone who cannot edit.
-  if (isUnlistedItem(post)) return {};
+  // Never describe a private post (an unlisted note or bookmark, or any
+  // unpublished draft) in page metadata; the page itself 404s for anyone who
+  // is not the owner or an invited collaborator.
+  if (isUnlistedItem(post) || post.status !== "published") return {};
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
@@ -80,9 +82,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
-  if (post.status !== "published") {
-    metadata.robots = { index: false, follow: false };
-  }
   return metadata;
 }
 
@@ -129,7 +128,12 @@ export async function PostPageForHandle({
     const viewer = await getCurrentUser();
     if (viewer) shareRole = await postShareRoleFor(viewer, post.id);
   }
-  if (isUnlistedItem(post) && !canEdit && !shareRole) notFound();
+  // Private posts (any unpublished draft, plus notes and bookmarks which are
+  // unlisted forever) are visible only to the owner, an item editor, or an
+  // item viewer. Published blog posts stay public. A draft is no longer
+  // readable by anyone who merely has the URL.
+  const isPrivatePost = isUnlistedItem(post) || post.status !== "published";
+  if (isPrivatePost && !canEdit && !shareRole) notFound();
   const canEditPost = canEdit || shareRole === "editor";
   const editMode = canEditPost && editRequested;
   if (redirectClaimed && blog.username) {
@@ -177,6 +181,33 @@ export async function PostPageForHandle({
         ? ProjectReader
         : Reader;
 
+  // Realtime co-editing turns on only for a SHARED post (otherwise a solo
+  // owner would poll for peers who can never exist). Any editor of a shared
+  // post joins the same Yjs document.
+  let collab: {
+    postId: string;
+    userName: string;
+    color: string;
+    canEdit: boolean;
+  } | null = null;
+  if (editMode && post.id) {
+    const editorUser = await getCurrentUser();
+    if (editorUser) {
+      const shares = await listPostShares(post.id);
+      if (shares.length > 0) {
+        collab = {
+          postId: post.id,
+          userName:
+            editorUser.name?.trim() ||
+            editorUser.email?.split("@")[0] ||
+            "You",
+          color: colorForSub(editorUser.sub),
+          canEdit: canEditPost,
+        };
+      }
+    }
+  }
+
   if (editMode) {
     return (
       <>
@@ -204,6 +235,7 @@ export async function PostPageForHandle({
           folders={folders}
           initialSidebarCollapsed={initialSidebarCollapsed}
           usedSlugs={usedSlugs}
+          collab={collab}
         />
       </>
     );

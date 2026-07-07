@@ -4,7 +4,9 @@
 
 import { sql } from "drizzle-orm";
 import {
+  bigserial,
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -277,5 +279,48 @@ export const posts = pgTable(
     uniqueIndex("posts_blog_slug_idx")
       .on(t.blogId, t.slug)
       .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
+// Realtime co-editing: the append log of Yjs document updates for a post.
+// Clients POST their local CRDT updates here and long-poll for others' by
+// sequence, so two people editing the same post converge without a websocket
+// server (the same serverless long-poll shape as the sync change cursor). The
+// `seq` is a global monotonic cursor; a reader asks for everything after the
+// last seq it applied. Updates are stored base64-encoded (they are small
+// binary diffs). Compaction into a snapshot is a later optimization.
+export const collabUpdates = pgTable(
+  "collab_updates",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id),
+    /** base64 of a Yjs update (Y.encodeStateAsUpdate / update event) */
+    update: text("update").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("collab_updates_post_seq_idx").on(t.postId, t.seq)],
+);
+
+// Ephemeral presence for co-editing: who is in a post right now and where
+// their cursor is. Rows are upserted on a heartbeat and treated as stale
+// after a short window; nothing here is durable state.
+export const collabPresence = pgTable(
+  "collab_presence",
+  {
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id),
+    /** the editor client's random per-tab id */
+    clientId: text("client_id").notNull(),
+    userName: text("user_name").notNull(),
+    /** display color for the cursor caret */
+    color: text("color").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.postId, t.clientId] }),
+    index("collab_presence_post_idx").on(t.postId, t.updatedAt),
   ],
 );

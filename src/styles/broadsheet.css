@@ -2563,6 +2563,25 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   display: block;
   width: 100%;
 }
+.body-editor-presence {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.body-editor-presence-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 0 2px var(--bg, #fff);
+}
 .body-editor-content {
   min-width: 0;
   min-height: 300px;

@@ -52,7 +52,7 @@ import {
 import type { DraftState, SaveState } from "@/lib/post-edit-draft";
 import { PostActionBar } from "@/components/PostActionBar";
 import { BodyEditor } from "@/components/BodyEditor";
-import type { BodyEditorHandle } from "@/components/BodyEditor";
+import type { BodyEditorHandle, BodyEditorCollab } from "@/components/BodyEditor";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { hasOpenEditMenu } from "@/components/PostShortcuts";
 import { ProjectReader } from "@/components/ProjectReader";
@@ -671,6 +671,7 @@ export function PostEditLayer({
   initialSidebarCollapsed = true,
   mediaEnabled = true,
   usedSlugs = [],
+  collab = null,
 }: {
   blog: Blog;
   post: Post;
@@ -681,6 +682,7 @@ export function PostEditLayer({
   initialSidebarCollapsed?: boolean;
   mediaEnabled?: boolean;
   usedSlugs?: string[];
+  collab?: BodyEditorCollab | null;
 }) {
   const router = useRouter();
   const initialSession = getEditSession(post);
@@ -1223,6 +1225,7 @@ export function PostEditLayer({
           mediaEnabled={mediaEnabled}
           toolbarHost={bodyToolbarHost}
           uploadEndpoint={uploadEndpoint}
+          collab={collab}
         />
       </div>
     ),
