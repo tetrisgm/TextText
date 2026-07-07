@@ -15,7 +15,7 @@ import {
   uniqueIndex,
   pgEnum,
 } from "drizzle-orm/pg-core";
-import type { GalleryItem, LinkRef } from "../content";
+import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
 // article/project/talk live in the Blog folder; note and bookmark are the
@@ -51,9 +51,15 @@ export const collaborators = pgTable(
     /** "workspace" | "folder" | "item" */
     scopeType: text("scope_type").notNull(),
     scopeId: uuid("scope_id").notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id),
+    /**
+     * Bound on first access: invites are created by email before the person
+     * has ever signed in, so userId starts null and is filled the first time
+     * a signed-in session whose (provider-verified) email matches opens the
+     * share. After binding, userId wins over the email match.
+     */
+    userId: uuid("user_id").references(() => users.id),
+    /** normalized (lowercased, trimmed) invite address */
+    invitedEmail: text("invited_email"),
     /** "editor" | "reviewer" | "viewer" (the owner is blogs.owner_id) */
     role: text("role").notNull().default("viewer"),
     invitedById: uuid("invited_by_id").references(() => users.id),
@@ -63,7 +69,10 @@ export const collaborators = pgTable(
   (t) => [
     uniqueIndex("collaborators_scope_user_idx")
       .on(t.scopeType, t.scopeId, t.userId)
-      .where(sql`${t.revokedAt} is null`),
+      .where(sql`${t.revokedAt} is null and ${t.userId} is not null`),
+    uniqueIndex("collaborators_scope_email_idx")
+      .on(t.scopeType, t.scopeId, t.invitedEmail)
+      .where(sql`${t.revokedAt} is null and ${t.invitedEmail} is not null`),
   ],
 );
 
@@ -173,8 +182,15 @@ export const folders = pgTable(
       .notNull()
       .references(() => blogs.id),
     name: text("name").notNull(),
-    /** URL-safe segment inside the workspace, e.g. "blog", "notes" */
+    /**
+     * Full URL-safe relative path inside the workspace, e.g. "blog",
+     * "blog/ideas". Subfolders carry their whole ancestry here so the sync
+     * tree, manifests, and the unique index all keep working unchanged;
+     * parentId is the structural link (renames rewrite descendant paths).
+     */
     path: text("path").notNull(),
+    /** null for the three system roots; a folders.id for subfolders */
+    parentId: uuid("parent_id"),
     mode: text("mode").notNull().default("blog"),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -238,6 +254,15 @@ export const posts = pgTable(
     duration: text("duration"),
     /** markdown */
     body: text("body").notNull().default(""),
+    /**
+     * Bookmark capture pipeline: null (not a capturable item or nothing
+     * requested) | "pending" (waiting for a capture agent, normally the Mac
+     * app) | "captured" | "failed". The web sets pending at bookmark
+     * creation; the agent claims it via the sync captures API.
+     */
+    captureStatus: text("capture_status"),
+    /** artifacts of a completed capture; see BookmarkCapture in this file */
+    capture: jsonb("capture").$type<BookmarkCapture>(),
     status: postStatus("status").notNull().default("draft"),
     pinned: boolean("pinned").notNull().default(false),
     publishedAt: timestamp("published_at"),

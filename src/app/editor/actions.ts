@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import type {
   Blog,
   BlogHomeLayout,
+  Folder,
   GalleryItem,
   LinkRef,
   Post,
@@ -19,16 +20,28 @@ import {
   countAllPosts,
   createAnonymousBlogRecord,
   createDraft,
+  createSubfolder,
   deletePost,
   getAllPosts,
   getBlog,
   getOwnerPlan,
   getPostById,
+  getUserIdBySub,
+  markCapturePending,
   savePost,
   setPostPinned,
   trashBlogPosts,
   updateBlogByHandle,
 } from "@/lib/store";
+import {
+  invitePostShare,
+  listPostShares,
+  postShareRoleFor,
+  revokePostShare,
+} from "@/lib/shares";
+import type { PostShare, ShareRole } from "@/lib/shares";
+import { sendShareInviteEmail } from "@/lib/share-email";
+import { lightCaptureBookmark } from "@/lib/bookmark-fetch";
 import {
   deleteAnonymousEditCookie,
   friendlyAnonymousSeed,
@@ -562,6 +575,15 @@ export async function createFolderItemAction(
     links: [{ label: host || title, href: url.toString() }],
     body: "",
   });
+  // Enter the capture pipeline: pending until a capture agent (the Mac app)
+  // grabs the readable text, original HTML, and screenshot. The server's own
+  // light fetch fills title/description meanwhile without settling the state.
+  if (saved.id) {
+    await markCapturePending(handle, saved.id, url.toString());
+    void lightCaptureBookmark(handle, saved.id, url.toString()).catch(
+      (error) => console.warn("bookmark light capture failed", error),
+    );
+  }
   await auditEdit(access, "create_bookmark", "item", saved.id, url.toString());
   await revalidateBlog(handle, [saved.slug]);
   return saved;
@@ -623,19 +645,53 @@ export async function saveEditablePostAction(
   handleOrInput: unknown,
   maybeInput?: unknown,
 ): Promise<Post> {
-  const { handle, access } = await editableHandleFor(
-    maybeInput === undefined ? undefined : handleOrInput,
-  );
+  const handle =
+    maybeInput === undefined
+      ? await editorHandle().catch(() => null)
+      : cleanHandle(handleOrInput);
   const input = maybeInput === undefined ? handleOrInput : maybeInput;
   const id = cleanPostId(
     input && typeof input === "object" && !Array.isArray(input)
       ? (input as Record<string, unknown>).id
       : undefined,
   );
+  if (!handle) throw new Error("You cannot edit this blog");
+  const access = await getBlogEditAccess(handle);
   const existing = await getPostById(handle, id);
   if (!existing) throw new Error("Post not found");
 
-  const patch = editableInput(input, existing, existing.slug);
+  let patch = editableInput(input, existing, existing.slug);
+  if (!access.canEdit) {
+    // Item collaborators: an invited editor may change CONTENT on exactly
+    // this post. Publish state, the URL, the type, and the date stay the
+    // owner's: whatever the client sent, they are pinned to the stored row.
+    const user = await getCurrentUser();
+    const role = await postShareRoleFor(user, existing.id ?? id);
+    if (role !== "editor") throw new Error("You cannot edit this post");
+    patch = {
+      ...patch,
+      type: existing.type,
+      status: existing.status,
+      slug: existing.slug,
+      date: existing.date,
+    };
+    const saved = await savePost(handle, {
+      ...existing,
+      ...patch,
+      pinned: existing.pinned,
+    });
+    await recordAction({
+      actorUserId: user ? await getUserIdBySub(user.sub) : null,
+      actorType: "human",
+      actionName: "share.save_post",
+      targetType: "item",
+      targetId: saved.id,
+      inputSummary: saved.title,
+    });
+    await revalidateBlog(handle, [existing.slug]);
+    return saved;
+  }
+
   const saved = await savePost(handle, {
     ...existing,
     ...patch,
@@ -644,6 +700,87 @@ export async function saveEditablePostAction(
   await auditEdit(access, "save_post", "item", saved.id, saved.title);
   await revalidateBlog(handle, [existing.slug, saved.slug]);
   return saved;
+}
+
+// MARK: Sharing (the Notion model, one post at a time)
+
+async function ownedPostForSharing(handleInput: unknown, postIdInput: unknown) {
+  const handle = cleanHandle(handleInput);
+  const access = await getBlogEditAccess(handle);
+  // Owners only: guests (cookie editors) have no account for invitees to
+  // rendezvous with, and collaborators cannot re-share.
+  if (!access.isOwner) throw new Error("Only the owner can share");
+  const postId = cleanPostId(postIdInput);
+  const existing = await getPostById(handle, postId);
+  if (!existing?.id) throw new Error("Post not found");
+  return { handle, access, post: existing };
+}
+
+export async function sharePostAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  emailInput: unknown,
+  roleInput: unknown,
+): Promise<PostShare[]> {
+  const { handle, post } = await ownedPostForSharing(handleInput, postIdInput);
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sign in to share");
+  const email = typeof emailInput === "string" ? emailInput : "";
+  const role: ShareRole = roleInput === "editor" ? "editor" : "viewer";
+  const share = await invitePostShare({
+    postId: post.id!,
+    email,
+    role,
+    invitedBySub: user.sub,
+  });
+  // Fire-and-forget: a slow SMTP round trip must not hold the dialog, and
+  // the share row already exists either way.
+  void sendShareInviteEmail({
+    to: share.email,
+    role,
+    post,
+    handle,
+    inviterName: user.name ?? user.email ?? "Someone",
+  }).catch((error) => console.warn("share invite email failed", error));
+  return listPostShares(post.id!);
+}
+
+export async function revokePostShareAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  shareIdInput: unknown,
+): Promise<PostShare[]> {
+  const { post } = await ownedPostForSharing(handleInput, postIdInput);
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sign in to share");
+  const shareId = cleanPostId(shareIdInput);
+  await revokePostShare(post.id!, shareId, user.sub);
+  return listPostShares(post.id!);
+}
+
+export async function listPostSharesAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<PostShare[]> {
+  const { post } = await ownedPostForSharing(handleInput, postIdInput);
+  return listPostShares(post.id!);
+}
+
+// MARK: Folders
+
+export async function createSubfolderAction(
+  handleInput: unknown,
+  parentPathInput: unknown,
+  nameInput: unknown,
+): Promise<Folder> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const parentPath =
+    typeof parentPathInput === "string" ? parentPathInput.trim() : "";
+  const name = typeof nameInput === "string" ? nameInput : "";
+  const folder = await createSubfolder(handle, parentPath, name);
+  await auditEdit(access, "create_folder", "workspace", folder.id, folder.path);
+  await revalidateBlog(handle);
+  return folder;
 }
 
 export async function toggleEditablePostPinnedAction(

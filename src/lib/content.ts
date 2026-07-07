@@ -35,10 +35,16 @@ export type FolderMode = "blog" | "notes" | "bookmarks";
 export interface Folder {
   id: string;
   name: string;
-  /** URL-safe segment inside the workspace, e.g. "blog", "notes" */
+  /**
+   * Full URL-safe relative path inside the workspace, e.g. "blog" or
+   * "blog/ideas". Subfolders carry their whole ancestry in the path; the
+   * sync tree and manifests mirror it directly as directories.
+   */
   path: string;
   mode: FolderMode;
   position: number;
+  /** null/absent for the three system roots; the parent folder id below them */
+  parentId?: string | null;
 }
 export type ItemKind =
   | "article"
@@ -48,6 +54,32 @@ export type ItemKind =
   | "bookmark"
   | "feed_item"
   | "group_post";
+
+/**
+ * Everything a completed bookmark capture produced. Binary artifacts live in
+ * Blob storage (URLs here); the readable extraction lives in the post body
+ * itself so the markdown file round-trips it. The Mac app additionally
+ * materializes artifacts as local sidecar files under <slug>.assets/.
+ */
+export type BookmarkCapture = {
+  /** the captured page URL (may differ from the requested URL via redirects) */
+  url: string;
+  title?: string;
+  siteName?: string;
+  description?: string;
+  /** Blob URL of the full-page screenshot (PNG) */
+  screenshotUrl?: string;
+  /** Blob URL of the original page HTML */
+  htmlUrl?: string;
+  /** ISO timestamp of the capture */
+  capturedAt?: string;
+  /** "server" (light fetch) | "mac" (full capture agent) */
+  capturedBy?: string;
+  /** why captureStatus is "failed", when it is */
+  error?: string;
+};
+
+export type CaptureStatus = "pending" | "captured" | "failed";
 
 export interface GalleryItem {
   /** image or video URL */
@@ -66,6 +98,9 @@ export interface Post {
   /** opaque database id; absent for demo/seed content and unsaved drafts */
   id?: string;
   type: PostType;
+  /** bookmark capture pipeline state; only bookmarks ever set these */
+  captureStatus?: CaptureStatus;
+  capture?: BookmarkCapture;
   slug: string;
   title: string;
   /** short dek/standfirst shown under the title */

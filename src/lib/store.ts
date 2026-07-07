@@ -8,6 +8,8 @@ import type {
   Blog,
   BlogCardStyle,
   BlogHomeLayout,
+  BookmarkCapture,
+  CaptureStatus,
   Folder,
   FolderMode,
   Post,
@@ -97,6 +99,8 @@ function mapPost(row: PostRow): Post {
     venue: row.venue ?? undefined,
     duration: row.duration ?? undefined,
     body: row.body,
+    captureStatus: cleanCaptureStatus(row.captureStatus),
+    capture: row.capture ?? undefined,
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
     pinned: row.pinned,
@@ -104,6 +108,13 @@ function mapPost(row: PostRow): Post {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function cleanCaptureStatus(value: string | null): CaptureStatus | undefined {
+  if (value === "pending" || value === "captured" || value === "failed") {
+    return value;
+  }
+  return undefined;
 }
 
 function mapBlog(row: BlogRow): Blog {
@@ -327,7 +338,203 @@ function mapFolder(row: typeof folders.$inferSelect): Folder {
     path: row.path,
     mode: cleanFolderMode(row.mode),
     position: row.position,
+    parentId: row.parentId ?? null,
   };
+}
+
+/** Subfolder nesting cap, counted in path segments ("blog/a/b" = 3). */
+const MAX_FOLDER_DEPTH = 4;
+
+function folderPathSegment(name: string): string {
+  const segment = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return segment || "folder";
+}
+
+/**
+ * Create a subfolder under an existing folder (system root or another
+ * subfolder). Mode is inherited from the parent, so everything under Notes
+ * stays notes-mode (and its items stay unlisted) no matter how deep. The
+ * full path carries the ancestry; collisions get a numeric suffix.
+ */
+export async function createSubfolder(
+  handle: string,
+  parentPath: string,
+  name: string,
+): Promise<Folder> {
+  if (!db) throw new Error("Subfolders need a database.");
+  const blogId = await blogIdFor(handle);
+  const parentRows = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        eq(folders.path, parentPath),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const parent = parentRows[0];
+  if (!parent) throw new Error(`unknown folder "${parentPath}"`);
+  if (parent.path.split("/").length >= MAX_FOLDER_DEPTH) {
+    throw new Error("Folders can only nest four levels deep.");
+  }
+  const cleanName = name.trim().slice(0, 80);
+  if (!cleanName) throw new Error("A folder needs a name.");
+  const base = folderPathSegment(cleanName);
+  // Try base, then -2 .. -9: insert with onConflictDoNothing settles races
+  // on the (blog, path) partial unique index without a transaction.
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const segment = attempt === 0 ? base : `${base}-${attempt + 1}`;
+    const path = `${parent.path}/${segment}`;
+    const inserted = await db
+      .insert(folders)
+      .values({
+        blogId,
+        name: cleanName,
+        path,
+        mode: parent.mode,
+        parentId: parent.id,
+        position: parent.position,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted[0]) return mapFolder(inserted[0]);
+  }
+  throw new Error("A folder with that name already exists here.");
+}
+
+/**
+ * Bookmarks waiting for a capture agent (normally the Mac app). Each entry
+ * carries the URL to capture: the first link's href, set at creation.
+ */
+export async function listPendingCaptures(
+  handle: string,
+): Promise<Array<{ id: string; slug: string; title: string; url: string }>> {
+  if (!db) return [];
+  const blogId = await blogIdFor(handle);
+  const rows = await db
+    .select()
+    .from(posts)
+    .where(
+      and(
+        eq(posts.blogId, blogId),
+        eq(posts.captureStatus, "pending"),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .orderBy(asc(posts.createdAt))
+    .limit(20);
+  return rows
+    .map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      url: row.links?.[0]?.href ?? row.capture?.url ?? "",
+    }))
+    .filter((entry) => entry.url);
+}
+
+/**
+ * Record a capture result. Owned by the capture pipeline, NEVER by the
+ * markdown round-trip: a synced file can not wipe or forge capture state.
+ * The readable extraction lands in the body only when the body is empty, so
+ * a bookmark the owner annotated keeps their words.
+ */
+export async function saveBookmarkCapture(
+  handle: string,
+  postId: string,
+  capture: BookmarkCapture,
+  opts: {
+    readableMarkdown?: string;
+    failed?: boolean;
+    /**
+     * The server's cheap title/description fetch sets this: it fills capture
+     * metadata but leaves the status pending so the full capture agent (the
+     * Mac app, with screenshot and original HTML) still claims the bookmark.
+     */
+    keepPending?: boolean;
+  } = {},
+): Promise<Post | null> {
+  if (!db) return null;
+  const blogId = await blogIdFor(handle);
+  const existing = await db
+    .select()
+    .from(posts)
+    .where(
+      and(eq(posts.id, postId), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+    )
+    .limit(1);
+  const row = existing[0];
+  if (!row || row.type !== "bookmark") return null;
+  const readable = opts.readableMarkdown?.trim();
+  const body = row.body.trim() === "" && readable ? readable : row.body;
+  const merged: BookmarkCapture = { ...(row.capture ?? {}), ...capture };
+  const updated = await db
+    .update(posts)
+    .set({
+      capture: merged,
+      captureStatus: opts.keepPending
+        ? "pending"
+        : opts.failed
+          ? "failed"
+          : "captured",
+      body,
+      updatedAt: new Date(),
+    })
+    .where(eq(posts.id, row.id))
+    .returning();
+  return updated[0] ? mapPost(updated[0]) : null;
+}
+
+/** Enter a fresh bookmark into the capture pipeline. */
+export async function markCapturePending(
+  handle: string,
+  postId: string,
+  url: string,
+): Promise<void> {
+  if (!db) return;
+  const blogId = await blogIdFor(handle);
+  await db
+    .update(posts)
+    .set({ captureStatus: "pending", capture: { url }, updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, postId),
+        eq(posts.blogId, blogId),
+        eq(posts.type, "bookmark"),
+        isNull(posts.deletedAt),
+      ),
+    );
+}
+
+/** One folder by its full path, or null. */
+export async function getFolderByPath(
+  handle: string,
+  path: string,
+): Promise<Folder | null> {
+  if (!db) {
+    return DEMO_FOLDERS.find((folder) => folder.path === path) ?? null;
+  }
+  const blogId = await blogIdFor(handle);
+  const rows = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        eq(folders.path, path),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  return rows[0] ? mapFolder(rows[0]) : null;
 }
 
 function cleanFolderMode(value: string | null): FolderMode {

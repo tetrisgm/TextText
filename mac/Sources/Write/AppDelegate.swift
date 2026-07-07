@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let store = StateStore()
     private var engine: SyncEngine!
+    private var changeListener: ChangeListener!
+    private var captureAgent: CaptureAgent!
     private var linkController: LinkController!
     private var updater: Updater?          // created AFTER the move check; Sparkle must
                                            // never download into a translocated/Downloads copy
@@ -62,7 +64,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         setupStatusItem()
         engine.start()
+
+        // Near-instant remote sync: a change on the web (edit, delete, new
+        // bookmark) triggers a pass within seconds; the engine's 60s timer
+        // stays as the fallback. The capture agent rides the same signal.
+        captureAgent = CaptureAgent(store: store)
+        captureAgent.onActivity = { [weak self] message in self?.appendActivity(message) }
+        changeListener = ChangeListener(store: store)
+        changeListener.onRemoteChange = { [weak self] in
+            self?.engine.syncNow()
+            self?.captureAgent.poke()
+        }
+        changeListener.start()
+        captureAgent.start()
+
         showStatusWindow() // open the window on launch (regular-app behavior)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let unhandled = OpenFileHandler.open(urls: urls, store: store, syncRoot: syncRoot())
+        if !unhandled.isEmpty {
+            appendActivity("Could not open \(unhandled.count) file(s): not in the Write folder")
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }

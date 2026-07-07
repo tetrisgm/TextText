@@ -17,6 +17,7 @@ import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   createDraft,
+  createSubfolder,
   deletePost,
   getAllPosts,
   getFolderPosts,
@@ -161,8 +162,42 @@ export function registerWriteTools(server: McpServer): void {
           name: folder.name,
           path: folder.path,
           mode: folder.mode,
+          parentId: folder.parentId ?? null,
         })),
       });
+    },
+  );
+
+  server.registerTool(
+    "create_folder",
+    {
+      title: "Create folder",
+      description:
+        "Create a subfolder under an existing folder (categories). " +
+        "parent_path is a full folder path from list_folders, e.g. \"blog\" " +
+        "or \"blog/ideas\". The subfolder inherits the parent's mode, so " +
+        "anything under notes or bookmarks stays private. Nesting caps at " +
+        "four levels.",
+      inputSchema: {
+        parent_path: z
+          .string()
+          .describe("Full path of the parent folder, e.g. \"blog\""),
+        name: z.string().describe("Display name for the new folder"),
+      },
+    },
+    async ({ parent_path, name }, extra) => {
+      const blog = await requireBlog(extra);
+      if (isToolResult(blog)) return blog;
+      try {
+        const folder = await createSubfolder(blog.handle, parent_path, name);
+        await auditMcp(extra, "mcp.create_folder", folder.id, folder.path);
+        revalidateBlogPaths(blog);
+        return jsonResult({ folder });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : "Could not create folder",
+        );
+      }
     },
   );
 

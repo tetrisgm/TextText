@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
+import { getCurrentUser } from "@/lib/session";
+import { postShareRoleFor } from "@/lib/shares";
 import {
   getAdjacentPublishedPosts,
   getAllPosts,
@@ -119,8 +121,17 @@ export async function PostPageForHandle({
   }
 
   if (!post) notFound();
-  if (isUnlistedItem(post) && !canEdit) notFound();
-  const editMode = canEdit && editRequested;
+  // Item shares (the Notion model): an invited person reaches exactly this
+  // post. "editor" unlocks the edit layer for it; "viewer" only unhides an
+  // unlisted item. Both leave the rest of the workspace invisible.
+  let shareRole: Awaited<ReturnType<typeof postShareRoleFor>> = null;
+  if (!canEdit && post.id) {
+    const viewer = await getCurrentUser();
+    if (viewer) shareRole = await postShareRoleFor(viewer, post.id);
+  }
+  if (isUnlistedItem(post) && !canEdit && !shareRole) notFound();
+  const canEditPost = canEdit || shareRole === "editor";
+  const editMode = canEditPost && editRequested;
   if (redirectClaimed && blog.username) {
     const path = blogPostPath(blog, post);
     redirect(
