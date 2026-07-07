@@ -9,6 +9,7 @@ import {
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { createSubfolderAction } from "@/app/editor/actions";
 import { PostActionBar } from "@/components/PostActionBar";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
@@ -307,6 +308,78 @@ function onSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
   }
 }
 
+// A compact inline "new folder" control: names a subfolder under a parent
+// path and calls the server action, then refreshes so the new row appears.
+function NewFolderControl({
+  handle,
+  parentPath,
+}: {
+  handle: string;
+  parentPath: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const clean = name.trim();
+    if (!clean || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createSubfolderAction(handle, parentPath, clean);
+      setName("");
+      setOpen(false);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the folder");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="post-editor-new-folder"
+        onClick={() => setOpen(true)}
+      >
+        <span aria-hidden="true">+</span> New folder
+      </button>
+    );
+  }
+  return (
+    <div className="post-editor-new-folder-form">
+      <input
+        className="post-editor-new-folder-input"
+        value={name}
+        autoFocus
+        placeholder="Folder name"
+        maxLength={80}
+        disabled={busy}
+        onChange={(event) => setName(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void submit();
+          } else if (event.key === "Escape") {
+            setOpen(false);
+            setName("");
+          }
+        }}
+        onBlur={() => {
+          if (!name.trim()) setOpen(false);
+        }}
+        aria-label="New folder name"
+      />
+      {error && <span className="post-editor-new-folder-error">{error}</span>}
+    </div>
+  );
+}
+
 export function PostFolderSidebar({
   blog,
   activeFolder,
@@ -422,6 +495,9 @@ export function PostFolderSidebar({
             </button>
           );
         })}
+        {!collapsed && (
+          <NewFolderControl handle={blog.handle} parentPath="blog" />
+        )}
       </nav>
 
       {showGuestSignIn && (

@@ -17,6 +17,7 @@ import type {
 } from "./content";
 import { db } from "./db/client";
 import { blogs, folders, posts, users } from "./db/schema";
+import { folderModeForPostType } from "./markdown-files";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import {
   RESERVED_USERNAMES,
@@ -512,6 +513,55 @@ export async function markCapturePending(
         isNull(posts.deletedAt),
       ),
     );
+}
+
+/**
+ * Move a post into a folder by path. The target folder's mode must match the
+ * post's kind family (a blog post cannot move into a notes folder and vice
+ * versa), so an article can be filed under any blog subfolder but never
+ * becomes an unlisted note. Returns the updated post.
+ */
+export async function setPostFolder(
+  handle: string,
+  postId: string,
+  folderPath: string,
+): Promise<Post | null> {
+  if (!db) return null;
+  const blogId = await blogIdFor(handle);
+  const target = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        eq(folders.path, folderPath),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const folder = target[0];
+  if (!folder) throw new Error(`unknown folder "${folderPath}"`);
+  const existing = await db
+    .select()
+    .from(posts)
+    .where(
+      and(eq(posts.id, postId), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+    )
+    .limit(1);
+  const row = existing[0];
+  if (!row) throw new Error("Post not found");
+  const postMode = folderModeForPostType(row.type);
+  if (cleanFolderMode(folder.mode) !== postMode) {
+    throw new Error(
+      `A ${row.type} cannot move into the ${folder.mode} folder.`,
+    );
+  }
+  const updated = await db
+    .update(posts)
+    .set({ folderId: folder.id, updatedAt: new Date() })
+    .where(eq(posts.id, row.id))
+    .returning();
+  return updated[0] ? mapPost(updated[0]) : null;
 }
 
 /** One folder by its full path, or null. */

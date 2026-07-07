@@ -361,6 +361,16 @@ export async function BlogHomeForHandle({
     canEdit ? getFolders(handle) : Promise.resolve([]),
     canEdit ? getFolderCounts(handle) : Promise.resolve({}),
   ]);
+  // Category chip source: a blog SUBFOLDER (has a slash in its path) a post
+  // is filed under. The root "blog" folder is not a category, so it is
+  // omitted. Only populated for the owner (folders loads only then).
+  const categoryNameByFolderId = new Map(
+    folders
+      .filter((folder) => folder.mode === "blog" && folder.path.includes("/"))
+      .map((folder) => [folder.id, folder.name]),
+  );
+  const categoryLabelFor = (post: (typeof posts)[number]): string | null =>
+    post.folderId ? categoryNameByFolderId.get(post.folderId) ?? null : null;
   // A non-blog ?folder= opens that folder's workspace view (owner only); the
   // server fetches its items so the folder page always renders real content.
   const requestedFolder = queryValue(query.folder);
@@ -430,6 +440,7 @@ export async function BlogHomeForHandle({
               handle={handle}
               post={post}
               owner={canEdit}
+              categoryLabel={categoryLabelFor(post)}
             />
           ))}
         </div>

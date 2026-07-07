@@ -18,6 +18,7 @@ import type {
 import { useRouter } from "next/navigation";
 import {
   deleteEditablePostAction,
+  movePostToFolderAction,
   saveEditablePostAction,
 } from "@/app/editor/actions";
 import { ProjectGallery } from "@/components/ProjectGallery";
@@ -1284,6 +1285,22 @@ export function PostEditLayer({
     setDeleteDialogOpen(true);
   }, [deleting, postId]);
 
+  const moveToFolder = useCallback(
+    (folderPath: string) => {
+      if (!postId) return;
+      void movePostToFolderAction(blog.handle, postId, folderPath)
+        .then(() => router.refresh())
+        .catch((moveError) => {
+          setError(
+            moveError instanceof Error && moveError.message
+              ? moveError.message
+              : "Could not move the post",
+          );
+        });
+    },
+    [blog.handle, postId, router],
+  );
+
   const deletePost = useCallback(() => {
     if (!postId || deleting) return;
     if (saveTimerRef.current !== null) {
@@ -1350,9 +1367,11 @@ export function PostEditLayer({
           draft={draft}
           deleting={deleting}
           hasHeaderImage={hasArticleHeaderImage}
+          folders={folders}
           onDelete={requestDeletePost}
           onDone={() => saveDraftNow({}, { exitEdit: true })}
           onAddHeaderImage={shufflePileCover}
+          onMoveToFolder={moveToFolder}
           onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
           onSlugBlur={() => {
             autoSlugAllowedRef.current = false;

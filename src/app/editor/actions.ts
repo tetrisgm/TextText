@@ -29,6 +29,7 @@ import {
   getUserIdBySub,
   markCapturePending,
   savePost,
+  setPostFolder,
   setPostPinned,
   trashBlogPosts,
   updateBlogByHandle,
@@ -781,6 +782,23 @@ export async function createSubfolderAction(
   await auditEdit(access, "create_folder", "workspace", folder.id, folder.path);
   await revalidateBlog(handle);
   return folder;
+}
+
+export async function movePostToFolderAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  folderPathInput: unknown,
+): Promise<Post> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const folderPath =
+    typeof folderPathInput === "string" ? folderPathInput.trim() : "";
+  if (!postId) throw new Error("Post not found");
+  const moved = await setPostFolder(handle, postId, folderPath);
+  if (!moved) throw new Error("Post not found");
+  await auditEdit(access, "move_post", "item", moved.id, folderPath);
+  await revalidateBlog(handle, [moved.slug]);
+  return moved;
 }
 
 export async function toggleEditablePostPinnedAction(

@@ -104,6 +104,7 @@ export function PostCard({
   onOpen,
   post,
   owner,
+  categoryLabel,
 }: {
   blog: Blog;
   handle: string;
@@ -111,6 +112,8 @@ export function PostCard({
   onOpen?: (event: MouseEvent<HTMLAnchorElement>) => void;
   post: Post;
   owner: boolean;
+  /** name of the subfolder this post lives in, shown as a quiet chip */
+  categoryLabel?: string | null;
 }) {
   const router = useRouter();
   const ref = useRef<HTMLAnchorElement>(null);
@@ -422,6 +425,9 @@ export function PostCard({
                 >
                   {TYPE_LABELS[post.type]}
                 </span>
+                {categoryLabel && (
+                  <span className="tvcard-category">{categoryLabel}</span>
+                )}
                 {showPinned && <span className="tvcard-pinned">Pinned</span>}
                 {showUnlisted && (
                   <span className="tvcard-unlisted">Unlisted</span>

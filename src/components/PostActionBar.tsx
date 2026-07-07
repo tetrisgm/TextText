@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import { saveEditablePostAction } from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
-import type { Blog, Post, PostType } from "@/lib/content";
+import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import {
   initialDraft,
   payloadFor,
@@ -43,9 +43,11 @@ type EditProps = CommonProps & {
   draft: DraftState;
   deleting: boolean;
   hasHeaderImage: boolean;
+  folders?: Folder[];
   onDelete: () => void;
   onDone: () => Promise<void>;
   onAddHeaderImage: () => void;
+  onMoveToFolder?: (folderPath: string) => void;
   onNavigate: (path: string) => Promise<void>;
   onSlugBlur: () => void;
   onSlugInput: (value: string) => void;
@@ -327,6 +329,11 @@ export function PostActionBar(props: Props) {
 
   const activeDraft = props.mode === "edit" ? props.draft : readDraft;
   const unlistedItem = isUnlistedPostType(activeDraft.type);
+  // Blog-mode folders a blog post can be filed into (root Blog + subfolders).
+  const moveTargets =
+    props.mode === "edit" && props.folders
+      ? props.folders.filter((folder) => folder.mode === "blog")
+      : [];
   const activeSlug = slugify(activeDraft.slug, props.post.slug);
   const publicPath = postPathFor(props.blog.handle, activeSlug);
   const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
@@ -715,6 +722,47 @@ export function PostActionBar(props: Props) {
                             Add header image
                           </button>
                         )}
+                        {!unlistedItem &&
+                          props.onMoveToFolder &&
+                          moveTargets.length > 0 && (
+                            <div
+                              className="post-edit-menu-section"
+                              role="group"
+                              aria-label="Move to folder"
+                            >
+                              <div
+                                className="post-edit-menu-section-title"
+                                role="presentation"
+                              >
+                                Move to
+                              </div>
+                              {moveTargets.map((folder) => {
+                                const active = folder.id === props.post.folderId;
+                                return (
+                                  <button
+                                    key={folder.id}
+                                    className={`post-edit-menu-item post-turn-into-item${
+                                      active ? " is-active" : ""
+                                    }`}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={active}
+                                    onClick={() => {
+                                      setSettingsOpen(false);
+                                      if (!active) props.onMoveToFolder?.(folder.path);
+                                    }}
+                                  >
+                                    <span>{folder.name}</span>
+                                    {active && (
+                                      <span className="post-turn-into-check">
+                                        <MenuCheckIcon />
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         <button
                           className="post-edit-delete"
                           type="button"
