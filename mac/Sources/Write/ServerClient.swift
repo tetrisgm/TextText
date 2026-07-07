@@ -13,6 +13,7 @@ struct WorkspaceFolder: Codable {
     let name: String
     let path: String
     let mode: String
+    let parentId: String?
 }
 
 /// GET /api/sync/v1/workspace
@@ -42,6 +43,10 @@ private struct ManifestEnvelope: Codable {
 
 private struct ItemEnvelope: Codable {
     let item: ManifestItem
+}
+
+private struct FolderEnvelope: Codable {
+    let folder: WorkspaceFolder
 }
 
 /// POST /api/link/start
@@ -145,6 +150,23 @@ final class ServerClient {
                 return .failure(.badResponse("manifest JSON did not decode"))
             }
             return .success(.manifest(envelope.items, etag: reply.etag))
+        }
+    }
+
+    func createFolder(parentPath: String, name: String) -> Result<WorkspaceFolder, ClientFailure> {
+        let json: [String: Any] = ["parent_path": parentPath, "name": name]
+        guard let body = try? JSONSerialization.data(withJSONObject: json) else {
+            return .failure(.badResponse("could not encode request body"))
+        }
+        switch send("POST", "/api/sync/v1/folders",
+                    headers: ["Content-Type": "application/json"], body: body) {
+        case .failure(let e): return .failure(e)
+        case .success(let reply):
+            guard reply.status == 201 else { return .failure(httpFailure(reply)) }
+            guard let envelope = try? JSONDecoder().decode(FolderEnvelope.self, from: reply.data) else {
+                return .failure(.badResponse("create folder reply did not decode"))
+            }
+            return .success(envelope.folder)
         }
     }
 

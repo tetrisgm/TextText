@@ -246,15 +246,20 @@ final class SyncEngine {
             try? Data(breadcrumbBody.utf8).write(to: breadcrumb, options: .atomic)
         }
 
+        materializeFolders(workspace.folders, root: root, summary: &summary)
+
         if kind == .full {
             for folder in workspace.folders {
                 pullFolder(folder, allFolders: workspace.folders, client: client,
                            root: root, index: &index, summary: &summary)
             }
         }
-        pushPass(workspace, client: client, root: root, index: &index, summary: &summary)
+        let createdFolders = pushPass(workspace, client: client, root: root,
+                                      index: &index, summary: &summary)
 
         store.saveIndex(index)
+
+        if createdFolders { enqueue(.full) }
 
         if kind == .full, let advertised = client.advertisedAppVersion() {
             deliver { self.onServerAppVersion?(advertised) }
@@ -401,7 +406,7 @@ final class SyncEngine {
     private func pushPass(
         _ workspace: Workspace, client: ServerClient, root: URL,
         index: inout SyncIndex, summary: inout SyncSummary
-    ) {
+    ) -> Bool {
         let fm = FileManager.default
 
         // 1. Local deletions: an index row whose file is gone. The pull phase
@@ -494,12 +499,35 @@ final class SyncEngine {
             }
         }
 
-        // 3. New local files: .md files in a folder dir with no index row.
+        // 3. New local directories: each immediate child becomes a server
+        // folder unless it is already in the flat workspace list.
+        var createdFolders = false
+        var knownFolderPaths = Set(workspace.folders.map { $0.path })
+        for folder in workspace.folders {
+            let dir = root.appendingPathComponent(folder.path, isDirectory: true)
+            let contents = directoryContents(dir)
+            for child in contents {
+                let name = child.lastPathComponent
+                guard isDirectory(child) else { continue }
+                guard shouldScanDirectory(named: name) else { continue }
+                let childPath = childFolderPath(parentPath: folder.path, name: name)
+                guard !knownFolderPaths.contains(childPath) else { continue }
+                if let created = createFolderForLocalDirectory(
+                    child, parent: folder, client: client, root: root, summary: &summary
+                ) {
+                    knownFolderPaths.insert(created.path)
+                    createdFolders = true
+                }
+            }
+        }
+
+        // 4. New local files: .md files in a folder dir with no index row.
         let indexedPaths = Set(index.entries.values.map { $0.relativePath })
         for folder in workspace.folders {
             let dir = root.appendingPathComponent(folder.path, isDirectory: true)
-            let contents = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-            for fileURL in contents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let contents = directoryContents(dir)
+            for fileURL in contents {
+                guard !isDirectory(fileURL) else { continue }
                 guard fileURL.pathExtension.lowercased() == "md" else { continue }
                 let name = fileURL.lastPathComponent
                 guard !name.hasPrefix(".") else { continue }
@@ -509,6 +537,35 @@ final class SyncEngine {
                 pushNewFile(fileURL, rel: rel, folder: folder, client: client,
                             root: root, index: &index, summary: &summary)
             }
+        }
+        return createdFolders
+    }
+
+    private func createFolderForLocalDirectory(
+        _ dir: URL, parent: WorkspaceFolder, client: ServerClient, root: URL,
+        summary: inout SyncSummary
+    ) -> WorkspaceFolder? {
+        let localName = dir.lastPathComponent
+        let localPath = childFolderPath(parentPath: parent.path, name: localName)
+        switch client.createFolder(parentPath: parent.path, name: localName) {
+        case .failure(let error):
+            summary.errors += 1
+            activity("Could not create folder \(localPath): \(error)")
+            return nil
+        case .success(let created):
+            let serverSegment = lastSegment(of: created.path)
+            if serverSegment != localName {
+                let target = root.appendingPathComponent(created.path, isDirectory: true)
+                if let message = renameDirectory(dir, to: target) {
+                    summary.errors += 1
+                    activity("Created folder \(created.path) but could not rename \(localPath): \(message)")
+                } else {
+                    activity("Created folder \(created.path)/ and renamed \(localPath)/")
+                }
+            } else {
+                activity("Created folder \(created.path)/")
+            }
+            return created
         }
     }
 
@@ -571,6 +628,21 @@ final class SyncEngine {
     }
 
     // MARK: Helpers
+
+    private func materializeFolders(
+        _ folders: [WorkspaceFolder], root: URL, summary: inout SyncSummary
+    ) {
+        let fm = FileManager.default
+        for folder in folders {
+            let dir = root.appendingPathComponent(folder.path, isDirectory: true)
+            do {
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            } catch {
+                summary.errors += 1
+                activity("Could not create local folder \(folder.path): \(error.localizedDescription)")
+            }
+        }
+    }
 
     /// Insert `kind: <folder's kind>` when the frontmatter names neither kind
     /// nor type. Applied to the POST body only; the local file is later
@@ -660,6 +732,56 @@ final class SyncEngine {
             if best == nil || folder.path.count > (best?.path.count ?? 0) { best = folder }
         }
         return best
+    }
+
+    private func directoryContents(_ dir: URL) -> [URL] {
+        ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+    }
+
+    private func isDirectory(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    private func shouldScanDirectory(named name: String) -> Bool {
+        !name.hasPrefix(".") && !name.lowercased().hasSuffix(".assets")
+    }
+
+    private func childFolderPath(parentPath: String, name: String) -> String {
+        parentPath.isEmpty ? name : "\(parentPath)/\(name)"
+    }
+
+    private func lastSegment(of path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? path
+    }
+
+    private func renameDirectory(_ source: URL, to target: URL) -> String? {
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: target.deletingLastPathComponent(),
+                                   withIntermediateDirectories: true)
+            if source.path == target.path { return nil }
+            if fm.fileExists(atPath: target.path) {
+                if source.path.compare(target.path, options: [.caseInsensitive, .literal]) == .orderedSame {
+                    let tmp = source.deletingLastPathComponent()
+                        .appendingPathComponent(".write-rename-\(UUID().uuidString)", isDirectory: true)
+                    try fm.moveItem(at: source, to: tmp)
+                    do {
+                        try fm.moveItem(at: tmp, to: target)
+                    } catch {
+                        try? fm.moveItem(at: tmp, to: source)
+                        throw error
+                    }
+                    return nil
+                }
+                return "\(target.lastPathComponent) already exists"
+            }
+            try fm.moveItem(at: source, to: target)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     private func sha256Hex(_ data: Data) -> String {
