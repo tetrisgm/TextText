@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+import ImageIO
+import PDFKit
+import UniformTypeIdentifiers
 import WebKit
 
 /// Bookmark capture agent: drains GET /api/sync/v1/captures on this Mac,
@@ -16,6 +19,8 @@ final class CaptureAgent {
     private var pendingDrain = false
 
     private let maxArtifactBytes = 25 * 1024 * 1024
+    private let maxReadableBytes = 2 * 1024 * 1024
+    private let uploadRetryDelays: [TimeInterval] = [2, 6, 18]
 
     var onActivity: ((String) -> Void)?
 
@@ -100,35 +105,317 @@ final class CaptureAgent {
     private func process(_ capture: PendingCapture, origin: URL, token: String) {
         guard let sourceURL = URL(string: capture.url), sourceURL.scheme != nil else {
             let reason = "bad URL"
-            _ = uploadFailure(capture: capture, origin: origin, token: token,
-                              url: capture.url, reason: reason)
-            activity("capture failed \(capture.slug): \(reason)")
+            let result = uploadFailure(capture: capture, origin: origin, token: token,
+                                       url: capture.url, reason: reason)
+            switch result {
+            case .success:
+                activity("capture failed \(capture.slug): \(reason)")
+            case .transient(let uploadReason):
+                activity("capture pending \(capture.slug): \(uploadReason)")
+            case .terminal(let uploadReason):
+                activity("capture failed \(capture.slug): \(reason); upload rejected: \(uploadReason)")
+            }
             return
         }
 
-        switch capturePage(url: sourceURL, fallbackTitle: capture.title) {
+        switch self.capture(url: sourceURL, fallbackTitle: capture.title) {
         case .failure(let failure):
-            _ = uploadFailure(capture: capture, origin: origin, token: token,
-                              url: failure.url.absoluteString, reason: failure.reason)
-            activity("capture failed \(host(for: failure.url)): \(failure.reason)")
+            let result = uploadFailure(capture: capture, origin: origin, token: token,
+                                       url: failure.url.absoluteString, reason: failure.reason)
+            reportFailureUpload(result, url: failure.url, reason: failure.reason)
         case .success(let page):
-            guard Data(page.readable.utf8).count <= maxArtifactBytes,
-                  page.screenshot.count <= maxArtifactBytes,
-                  page.html.count <= maxArtifactBytes else {
-                let reason = "artifact too large"
-                _ = uploadFailure(capture: capture, origin: origin, token: token,
-                                  url: page.finalURL.absoluteString, reason: reason)
-                activity("capture failed \(host(for: page.finalURL)): \(reason)")
+            let prepared: PreparedPageCapture
+            switch prepare(page: page) {
+            case .failure(let reason):
+                let result = uploadFailure(capture: capture, origin: origin, token: token,
+                                           url: page.finalURL.absoluteString, reason: reason.message)
+                reportFailureUpload(result, url: page.finalURL, reason: reason.message)
                 return
+            case .success(let preparedPage):
+                prepared = preparedPage
             }
 
-            switch uploadSuccess(capture: capture, origin: origin, token: token, page: page) {
-            case .failure(let reason):
-                activity("capture failed \(host(for: page.finalURL)): \(reason)")
+            switch uploadSuccess(capture: capture, origin: origin, token: token, page: page, prepared: prepared) {
             case .success:
                 activity("captured \(host(for: page.finalURL))")
+            case .transient(let reason):
+                activity("capture pending \(host(for: page.finalURL)): \(reason)")
+            case .terminal(let reason):
+                let failureReason = "upload rejected: \(reason.message)"
+                let result = uploadFailure(capture: capture, origin: origin, token: token,
+                                           url: page.finalURL.absoluteString, reason: failureReason)
+                reportFailureUpload(result, url: page.finalURL, reason: failureReason)
             }
         }
+    }
+
+    private func reportFailureUpload(_ result: CaptureUploadResult, url: URL, reason: String) {
+        switch result {
+        case .success:
+            activity("capture failed \(host(for: url)): \(reason)")
+        case .transient(let uploadReason):
+            activity("capture pending \(host(for: url)): \(uploadReason)")
+        case .terminal(let uploadReason):
+            activity("capture failed \(host(for: url)): \(reason); upload rejected: \(uploadReason)")
+        }
+    }
+
+    private func capture(url: URL, fallbackTitle: String?) -> Result<PageCapture, PageCaptureFailure> {
+        if isPDFURL(url) {
+            return capturePDF(url: url, fallbackTitle: fallbackTitle)
+        }
+        if let pdfURL = pdfURLFromContentTypeProbe(url: url) {
+            return capturePDF(url: pdfURL, fallbackTitle: fallbackTitle)
+        }
+
+        let result = capturePage(url: url, fallbackTitle: fallbackTitle)
+        if case .failure(let failure) = result, failure.reason == pdfContentFailureReason {
+            return capturePDF(url: failure.url, fallbackTitle: fallbackTitle)
+        }
+        return result
+    }
+
+    private func pdfURLFromContentTypeProbe(url: URL) -> URL? {
+        guard isWebURL(url) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 15
+        request.setValue("application/pdf,*/*;q=0.8", forHTTPHeaderField: "Accept")
+
+        switch send(request) {
+        case .failure:
+            return nil
+        case .success(let reply):
+            guard (200..<400).contains(reply.status),
+                  isPDFContentType(reply.contentType) else {
+                return nil
+            }
+            return reply.finalURL ?? url
+        }
+    }
+
+    private func capturePDF(url: URL, fallbackTitle: String?) -> Result<PageCapture, PageCaptureFailure> {
+        switch fetchPDF(url: url) {
+        case .failure(let failure):
+            return .failure(failure)
+        case .success(let pdf):
+            return renderPDF(data: pdf.data, finalURL: pdf.finalURL, fallbackTitle: fallbackTitle)
+        }
+    }
+
+    private func fetchPDF(url: URL) -> Result<PDFDownload, PageCaptureFailure> {
+        if url.isFileURL {
+            do {
+                let data = try Data(contentsOf: url)
+                guard !data.isEmpty else {
+                    return .failure(PageCaptureFailure(url: url, reason: "PDF download was empty"))
+                }
+                return .success(PDFDownload(data: data, finalURL: url))
+            } catch {
+                return .failure(PageCaptureFailure(url: url, reason: error.localizedDescription))
+            }
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 60
+        request.setValue("application/pdf,*/*;q=0.8", forHTTPHeaderField: "Accept")
+
+        switch send(request) {
+        case .failure(let reason):
+            return .failure(PageCaptureFailure(url: url, reason: reason.message))
+        case .success(let reply):
+            let finalURL = reply.finalURL ?? url
+            guard (200..<300).contains(reply.status) else {
+                return .failure(PageCaptureFailure(
+                    url: finalURL,
+                    reason: httpErrorMessage(status: reply.status, data: reply.data)
+                ))
+            }
+            guard isPDFContentType(reply.contentType) || isPDFURL(finalURL) || isPDFURL(url) else {
+                return .failure(PageCaptureFailure(url: finalURL, reason: "non-PDF content"))
+            }
+            guard !reply.data.isEmpty else {
+                return .failure(PageCaptureFailure(url: finalURL, reason: "PDF download was empty"))
+            }
+            return .success(PDFDownload(data: reply.data, finalURL: finalURL))
+        }
+    }
+
+    private func renderPDF(
+        data: Data, finalURL: URL, fallbackTitle: String?
+    ) -> Result<PageCapture, PageCaptureFailure> {
+        var result: Result<PageCapture, PageCaptureFailure>?
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async {
+            result = self.renderPDFOnMain(data: data, finalURL: finalURL, fallbackTitle: fallbackTitle)
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return result ?? .failure(PageCaptureFailure(url: finalURL, reason: "PDF capture cancelled"))
+    }
+
+    private func renderPDFOnMain(
+        data: Data, finalURL: URL, fallbackTitle: String?
+    ) -> Result<PageCapture, PageCaptureFailure> {
+        guard Thread.isMainThread else {
+            return .failure(PageCaptureFailure(url: finalURL, reason: "PDF capture off main thread"))
+        }
+        guard let document = PDFDocument(data: data) else {
+            return .failure(PageCaptureFailure(url: finalURL, reason: "PDF document failed to load"))
+        }
+        guard let text = cleaned(document.string) else {
+            return .failure(PageCaptureFailure(url: finalURL, reason: "PDF text extraction failed"))
+        }
+        guard let screenshot = renderFirstPDFPage(document: document) else {
+            return .failure(PageCaptureFailure(url: finalURL, reason: "PDF screenshot failed"))
+        }
+
+        let title = pdfTitle(document: document, fallbackTitle: fallbackTitle, url: finalURL)
+        let page = PageCapture(
+            finalURL: finalURL,
+            title: title,
+            siteName: nil,
+            description: nil,
+            readable: pdfMarkdown(text: text, url: finalURL, title: title),
+            screenshot: screenshot,
+            html: nil
+        )
+        return .success(page)
+    }
+
+    private func renderFirstPDFPage(document: PDFDocument) -> Data? {
+        guard let page = document.page(at: 0) else { return nil }
+        var box: PDFDisplayBox = .cropBox
+        var bounds = page.bounds(for: .cropBox)
+        if bounds.width <= 0 || bounds.height <= 0 {
+            box = .mediaBox
+            bounds = page.bounds(for: .mediaBox)
+        }
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+
+        let targetWidth: CGFloat = 1280
+        let targetHeight = max(1, bounds.height * (targetWidth / bounds.width))
+        let targetSize = NSSize(width: targetWidth, height: targetHeight)
+        let image = page.thumbnail(of: targetSize, for: box)
+        return pngData(from: image, size: targetSize)
+    }
+
+    private func pdfTitle(document: PDFDocument, fallbackTitle: String?, url: URL) -> String? {
+        if let title = document.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String,
+           let cleaned = cleaned(title) {
+            return cleaned
+        }
+        if let fallback = cleaned(fallbackTitle) {
+            return fallback
+        }
+        return cleaned(url.deletingPathExtension().lastPathComponent.removingPercentEncoding)
+    }
+
+    private func pdfMarkdown(text: String, url: URL, title: String?) -> String {
+        let host = url.host ?? url.absoluteString
+        var parts = ["[\(host)](\(url.absoluteString))"]
+        if let title { parts.append("# \(title)") }
+        parts.append(text)
+        return parts.joined(separator: "\n\n")
+    }
+
+    private func prepare(page: PageCapture) -> Result<PreparedPageCapture, CaptureAgentError> {
+        let readable = truncateReadable(page.readable)
+        guard let screenshot = fitScreenshot(page.screenshot) else {
+            return .failure(CaptureAgentError("screenshot too large"))
+        }
+        let html = page.html.flatMap { data -> Data? in
+            guard data.count <= maxArtifactBytes else { return nil }
+            return data
+        }
+        return .success(PreparedPageCapture(readable: readable, screenshot: screenshot, html: html))
+    }
+
+    private func truncateReadable(_ readable: String) -> String {
+        guard Data(readable.utf8).count > maxReadableBytes else { return readable }
+
+        let note = "\n\n[Captured text truncated by Write because it exceeded the 2 MB upload limit.]\n"
+        let noteBytes = Data(note.utf8).count
+        let limit = max(0, maxReadableBytes - noteBytes)
+        var used = 0
+        var end = readable.startIndex
+        var boundary = readable.startIndex
+        var foundBoundary = false
+
+        var index = readable.startIndex
+        while index < readable.endIndex {
+            let next = readable.index(after: index)
+            let character = readable[index]
+            let count = String(character).utf8.count
+            guard used + count <= limit else { break }
+            used += count
+            end = next
+            if character.isWhitespace {
+                boundary = next
+                foundBoundary = true
+            }
+            index = next
+        }
+
+        let cut = foundBoundary ? boundary : end
+        let prefix = readable[..<cut].trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(prefix) + note
+    }
+
+    private func fitScreenshot(_ screenshot: Data) -> Data? {
+        guard screenshot.count > maxArtifactBytes else { return screenshot }
+        guard let source = CGImageSourceCreateWithData(screenshot as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+
+        var scale = min(0.92, sqrt(Double(maxArtifactBytes) / Double(screenshot.count)) * 0.92)
+        for _ in 0..<10 {
+            guard let resized = resizedPNG(image: image, scale: scale) else { return nil }
+            if resized.count <= maxArtifactBytes {
+                return resized
+            }
+            let next = sqrt(Double(maxArtifactBytes) / Double(resized.count)) * 0.9
+            scale *= min(0.85, next)
+        }
+        return nil
+    }
+
+    private func resizedPNG(image: CGImage, scale: Double) -> Data? {
+        let width = max(1, Int((Double(image.width) * scale).rounded()))
+        let height = max(1, Int((Double(image.height) * scale).rounded()))
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .medium
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let resized = context.makeImage() else { return nil }
+        return pngData(from: resized)
+    }
+
+    private func isWebURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+
+    private func cleaned(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     private func capturePage(url: URL, fallbackTitle: String?) -> Result<PageCapture, PageCaptureFailure> {
@@ -147,15 +434,17 @@ final class CaptureAgent {
 
     private func uploadFailure(
         capture: PendingCapture, origin: URL, token: String, url: String, reason: String
-    ) -> Bool {
+    ) -> CaptureUploadResult {
         let meta = CaptureMeta(url: url, capturedBy: "mac", error: reason)
-        guard let body = multipartBody(meta: meta) else { return false }
-        return upload(capture: capture, origin: origin, token: token, body: body).isSuccess
+        guard let body = multipartBody(meta: meta) else {
+            return .terminal(CaptureAgentError("could not encode upload"))
+        }
+        return uploadWithRetry(capture: capture, origin: origin, token: token, body: body)
     }
 
     private func uploadSuccess(
-        capture: PendingCapture, origin: URL, token: String, page: PageCapture
-    ) -> Result<Void, CaptureAgentError> {
+        capture: PendingCapture, origin: URL, token: String, page: PageCapture, prepared: PreparedPageCapture
+    ) -> CaptureUploadResult {
         let meta = CaptureMeta(
             url: page.finalURL.absoluteString,
             title: page.title,
@@ -166,20 +455,39 @@ final class CaptureAgent {
         )
         guard let body = multipartBody(
             meta: meta,
-            readable: page.readable,
-            screenshot: page.screenshot,
-            html: page.html
+            readable: prepared.readable,
+            screenshot: prepared.screenshot,
+            html: prepared.html
         ) else {
-            return .failure(CaptureAgentError("could not encode upload"))
+            return .terminal(CaptureAgentError("could not encode upload"))
         }
-        return upload(capture: capture, origin: origin, token: token, body: body)
+        return uploadWithRetry(capture: capture, origin: origin, token: token, body: body)
+    }
+
+    private func uploadWithRetry(
+        capture: PendingCapture, origin: URL, token: String, body: MultipartBody
+    ) -> CaptureUploadResult {
+        var lastTransient = CaptureAgentError("upload failed")
+        for attempt in 0...uploadRetryDelays.count {
+            switch upload(capture: capture, origin: origin, token: token, body: body) {
+            case .success:
+                return .success
+            case .terminal(let reason):
+                return .terminal(reason)
+            case .transient(let reason):
+                lastTransient = reason
+                guard attempt < uploadRetryDelays.count else { return .transient(reason) }
+                Thread.sleep(forTimeInterval: uploadRetryDelays[attempt])
+            }
+        }
+        return .transient(lastTransient)
     }
 
     private func upload(
         capture: PendingCapture, origin: URL, token: String, body: MultipartBody
-    ) -> Result<Void, CaptureAgentError> {
+    ) -> CaptureUploadResult {
         guard let url = endpoint(origin: origin, path: "/api/sync/v1/captures/\(capture.id)") else {
-            return .failure(CaptureAgentError("bad upload URL"))
+            return .terminal(CaptureAgentError("bad upload URL"))
         }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
@@ -190,12 +498,19 @@ final class CaptureAgent {
 
         switch send(request) {
         case .failure(let reason):
-            return .failure(reason)
+            return .transient(reason)
         case .success(let reply):
-            guard reply.status == 200 else {
-                return .failure(CaptureAgentError(httpErrorMessage(status: reply.status, data: reply.data)))
+            if reply.status == 200 {
+                return .success
             }
-            return .success(())
+            let reason = CaptureAgentError(httpErrorMessage(status: reply.status, data: reply.data))
+            if reply.status == 429 || (500...599).contains(reply.status) {
+                return .transient(reason)
+            }
+            if (400...499).contains(reply.status) {
+                return .terminal(reason)
+            }
+            return .terminal(reason)
         }
     }
 
@@ -261,7 +576,12 @@ final class CaptureAgent {
                 result = .failure(CaptureAgentError("not an HTTP response"))
                 return
             }
-            result = .success(NetworkReply(status: http.statusCode, data: data ?? Data()))
+            result = .success(NetworkReply(
+                status: http.statusCode,
+                data: data ?? Data(),
+                finalURL: http.url,
+                contentType: http.value(forHTTPHeaderField: "Content-Type") ?? http.mimeType
+            ))
         }.resume()
         semaphore.wait()
         return result
@@ -416,7 +736,11 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             }
             guard let contentType = extracted.contentType?.lowercased(),
                   contentType.contains("html") else {
-                self.fail(url: self.currentURL, reason: "non-HTML content")
+                if isPDFContentType(extracted.contentType) {
+                    self.fail(url: self.currentURL, reason: pdfContentFailureReason)
+                } else {
+                    self.fail(url: self.currentURL, reason: "non-HTML content")
+                }
                 return
             }
             self.extractHTML(readable: extracted)
@@ -599,7 +923,7 @@ private struct PageCapture {
     let description: String?
     let readable: String
     let screenshot: Data
-    let html: Data
+    let html: Data?
 }
 
 private struct PageCaptureFailure: Error {
@@ -630,6 +954,8 @@ private struct ReadableExtraction: Decodable {
 private struct NetworkReply {
     let status: Int
     let data: Data
+    let finalURL: URL?
+    let contentType: String?
 }
 
 private struct MultipartBody {
@@ -637,15 +963,79 @@ private struct MultipartBody {
     let boundary: String
 }
 
-private extension Result where Success == Void, Failure == CaptureAgentError {
-    var isSuccess: Bool {
-        guard case .success = self else { return false }
-        return true
-    }
+private struct PDFDownload {
+    let data: Data
+    let finalURL: URL
+}
+
+private struct PreparedPageCapture {
+    let readable: String
+    let screenshot: Data
+    let html: Data?
+}
+
+private enum CaptureUploadResult {
+    case success
+    case transient(CaptureAgentError)
+    case terminal(CaptureAgentError)
 }
 
 private extension Data {
     mutating func appendUTF8(_ string: String) {
         append(Data(string.utf8))
     }
+}
+
+private let pdfContentFailureReason = "PDF content"
+
+private func isPDFURL(_ url: URL) -> Bool {
+    url.pathExtension.lowercased() == "pdf"
+}
+
+private func isPDFContentType(_ contentType: String?) -> Bool {
+    guard let type = contentType?.lowercased().split(separator: ";").first else { return false }
+    let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed == "application/pdf" || trimmed == "application/x-pdf"
+}
+
+private func pngData(from image: NSImage, size: NSSize) -> Data? {
+    let width = max(1, Int(size.width.rounded()))
+    let height = max(1, Int(size.height.rounded()))
+    guard let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ) else {
+        return nil
+    }
+    rep.size = size
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSColor.white.setFill()
+    NSRect(origin: .zero, size: size).fill()
+    image.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+    NSGraphicsContext.restoreGraphicsState()
+    return rep.representation(using: .png, properties: [:])
+}
+
+private func pngData(from image: CGImage) -> Data? {
+    let output = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(
+        output,
+        UTType.png.identifier as CFString,
+        1,
+        nil
+    ) else {
+        return nil
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { return nil }
+    return output as Data
 }
