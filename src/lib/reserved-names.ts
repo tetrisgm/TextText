@@ -41,6 +41,7 @@ const BASE_RESERVED_NAMES = [
   "status",
   "t",
   "terms",
+  "try",
   "u",
   "www",
 ] as const;

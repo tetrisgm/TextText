@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
 
-const signInHref = `/api/auth/signin?callbackUrl=${encodeURIComponent("/start")}`;
+// The classic service shape: signing in IS getting started. Trying without
+// an account is the demo, deliberately on the side.
+const signInHref = `/signin?callbackUrl=${encodeURIComponent("/start")}`;
 
 const starterFolders = [
   {
@@ -42,12 +44,12 @@ export default async function Home() {
             </Link>
           ) : (
             <>
-              <a className="write-landing-link" href={signInHref}>
+              <Link className="write-landing-link" href="/try">
+                Try the demo
+              </Link>
+              <a className="write-landing-button" href={signInHref}>
                 Sign in
               </a>
-              <Link className="write-landing-button" href="/start">
-                Get started
-              </Link>
             </>
           )}
         </div>
@@ -58,9 +60,10 @@ export default async function Home() {
           <p className="write-landing-kicker">Folders. Markdown. Publishing.</p>
           <h1>A writing space that starts as files.</h1>
           <p>
-            Open Write and you get a folder called Blog, plus Bookmarks and
-            Notes. Start as a guest, then sign in when you want the same
-            folders and content across devices.
+            Sign in and you get a folder called Blog, plus Bookmarks and
+            Notes: the same folders and content on the web and on your Mac.
+            Curious first? Try the demo; anything you write there comes with
+            you when you sign in.
           </p>
           <div className="write-landing-actions">
             {user ? (
@@ -69,12 +72,12 @@ export default async function Home() {
               </Link>
             ) : (
               <>
-                <Link className="write-landing-primary" href="/start">
-                  Get started
-                </Link>
-                <a className="write-landing-secondary" href={signInHref}>
+                <a className="write-landing-primary" href={signInHref}>
                   Sign in
                 </a>
+                <Link className="write-landing-secondary" href="/try">
+                  Try the demo
+                </Link>
               </>
             )}
           </div>

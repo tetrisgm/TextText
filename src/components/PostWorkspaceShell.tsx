@@ -407,7 +407,9 @@ export function PostFolderSidebar({
 
       {showGuestSignIn && (
         <div className="post-editor-sidebar-footer">
-          <p className="post-editor-guest-note">Saved in this browser.</p>
+          <p className="post-editor-guest-note">
+            Demo workspace, saved in this browser.
+          </p>
           <a className="post-editor-guest-keep ac-btn ac-btn-gray" href="/start?to=home">
             Sign in to keep it
           </a>
