@@ -429,15 +429,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Main window (the web app)
 
-    /// The full Write web experience in a native window. This is what "Open
-    /// Write" and a Dock click show; the sync status lives in the menu bar and
-    /// a separate settings window.
+    /// The full Write web experience in a native window. The app is
+    /// account-gated: a linked Mac opens straight on the workspace; an
+    /// unlinked one opens on the connect flow (which itself requires sign-in),
+    /// so the public landing is never the first thing shown.
     private func showMainWindow() {
         if webWindow == nil {
-            let origin = resolveServerOrigin(credentials: store.loadCredentials())
-            webWindow = WebAppWindowController(origin: origin)
+            let credentials = store.loadCredentials()
+            let origin = resolveServerOrigin(credentials: credentials)
+            let startPath = credentials == nil ? "/connect/app" : "/start"
+            webWindow = WebAppWindowController(
+                origin: origin,
+                startPath: startPath,
+                onLinked: { [weak self] token, linkedOrigin in
+                    self?.handleAppLinked(token: token, origin: linkedOrigin)
+                })
         }
         webWindow?.present()
+    }
+
+    /// The web view signed in and handed back a sync token: store it, kick a
+    /// sync, and drop the user into their workspace.
+    private func handleAppLinked(token: String, origin: URL) {
+        let device = Host.current().localizedName ?? "this Mac"
+        store.saveCredentials(Credentials(
+            token: token,
+            serverOrigin: origin.absoluteString,
+            tokenName: "Write.app on \(device)",
+            linkedAt: Date()))
+        appendActivity("Linked this Mac")
+        engine.syncNow()
+        captureAgent.poke()
+        refreshUI()
+        webWindow?.load(path: "/start")
     }
 
     // MARK: Status / settings window

@@ -1,41 +1,61 @@
 import AppKit
 import WebKit
 
-/// The main window: the full Write web experience in a native window, so the
-/// app is the workspace (write, edit, publish, share) and not only a sync
-/// status pane. It loads the product origin in a WKWebView with a persistent
-/// session, so signing in inside the app sticks across launches.
-///
-/// Link policy:
-/// - Same-origin navigation and OAuth redirects (Google, Apple, the callback
-///   back to us) stay in the web view, so sign-in completes in the app.
-/// - A user clicking a third-party link, or any target=_blank / window.open,
-///   opens in the default browser instead of a stray in-app window.
+// WKUserContentController retains its message handler STRONGLY; adding the
+// controller directly would cycle (controller -> webView -> config -> ucc ->
+// controller) and the window could never deallocate. This weak proxy breaks
+// the cycle (the partyparty pattern).
+private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
+    private weak var target: WKScriptMessageHandler?
+    init(_ target: WKScriptMessageHandler) { self.target = target }
+    func userContentController(
+        _ ucc: WKUserContentController, didReceive message: WKScriptMessage
+    ) {
+        target?.userContentController(ucc, didReceive: message)
+    }
+}
+
+/// The main window: the full Write web experience in a native window. The app
+/// is account-gated, so it opens on the sign-in flow (never the public
+/// landing) until the Mac is linked. One in-app sign-in both authenticates the
+/// web view and, on a fresh Mac, mints a sync token which the web page hands
+/// back over the `writeApp` bridge (see AppLinkBridge on the web side).
 final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
-    WKUIDelegate {
+    WKUIDelegate, WKScriptMessageHandler {
     private let origin: URL
     private var webView: WKWebView!
+    /// Called with (token, origin) when the web view links this Mac.
+    private let onLinked: (String, URL) -> Void
 
-    // Hosts that must stay inside the web view for sign-in to work.
     private static let authHosts: Set<String> = [
         "accounts.google.com",
         "appleid.apple.com",
     ]
 
-    // A normal macOS Safari user agent: some identity providers refuse to run
-    // their OAuth flow inside an obviously-embedded web view, and this keeps
-    // the site treating the app like a real browser.
+    // A normal macOS Safari user agent so identity providers run their OAuth
+    // flow inside the app instead of refusing an embedded web view.
     private static let userAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
-    init(origin: URL) {
+    init(origin: URL, startPath: String, onLinked: @escaping (String, URL) -> Void) {
         self.origin = origin
+        self.onLinked = onLinked
 
         let config = WKWebViewConfiguration()
-        // Default (persistent) store so the login cookie survives relaunch.
-        config.websiteDataStore = .default()
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
+        config.websiteDataStore = .default() // login sticks across launches
+
+        let ucc = WKUserContentController()
+        let device = Host.current().localizedName ?? "this Mac"
+        let escapedDevice = device.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        ucc.addUserScript(WKUserScript(
+            source: "window.__WRITE_APP__ = true; window.__WRITE_DEVICE__ = \"\(escapedDevice)\";",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController = ucc
+
+        let webView = WKWebView(
+            frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
         webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         self.webView = webView
@@ -43,9 +63,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let window = NSWindow(
             contentRect: webView.frame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+            backing: .buffered, defer: false)
         window.title = "Write"
         window.minSize = NSSize(width: 720, height: 480)
         window.contentView = webView
@@ -53,26 +71,30 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         window.tabbingMode = .disallowed
 
         super.init(window: window)
+        // Registered AFTER super.init so self is available; the weak proxy
+        // keeps the retain cycle from pinning the window open.
+        ucc.add(WeakScriptHandler(self), name: "writeApp")
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        webView.load(URLRequest(url: url(for: startPath)))
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
 
-    /// Show the window, loading the site the first time.
+    private func url(for path: String) -> URL {
+        URL(string: path, relativeTo: origin)?.absoluteURL ?? origin
+    }
+
     func present() {
-        if webView.url == nil {
-            webView.load(URLRequest(url: origin))
-        }
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// Reload from the origin (used after a relink or a sign-in change).
-    func reloadFromOrigin() {
-        webView.load(URLRequest(url: origin))
+    /// Navigate the web view to a path on the origin (used after linking).
+    func load(path: String) {
+        webView.load(URLRequest(url: url(for: path)))
     }
 
     private func isInApp(_ url: URL) -> Bool {
@@ -87,6 +109,21 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         NSWorkspace.shared.open(url)
     }
 
+    // MARK: WKScriptMessageHandler (JS -> Swift)
+
+    func userContentController(
+        _ ucc: WKUserContentController, didReceive message: WKScriptMessage
+    ) {
+        guard message.name == "writeApp",
+              let body = message.body as? [String: Any],
+              body["action"] as? String == "linked",
+              let token = body["token"] as? String,
+              let originString = body["origin"] as? String,
+              let linkedOrigin = URL(string: originString)
+        else { return }
+        onLinked(token, linkedOrigin)
+    }
+
     // MARK: WKNavigationDelegate
 
     func webView(
@@ -97,7 +134,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if let url = navigationAction.request.url,
            navigationAction.navigationType == .linkActivated,
            !isInApp(url) {
-            // A user-clicked third-party link goes to the default browser.
             openExternally(url)
             decisionHandler(.cancel)
             return
@@ -117,8 +153,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        // target=_blank / window.open: open in the default browser, never a
-        // stray in-app window.
         if let url = navigationAction.request.url { openExternally(url) }
         return nil
     }
