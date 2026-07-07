@@ -1,0 +1,252 @@
+.root {
+  color: var(--ac-label);
+  font-family: var(--ac-font-text);
+}
+
+.list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  min-width: 0;
+}
+
+.row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 2px 6px 2px calc(6px + var(--folder-indent, 0px));
+  border-radius: var(--ac-radius-control);
+  color: var(--ac-label);
+}
+
+.row:hover {
+  background: var(--ac-fill-4);
+}
+
+.activeRow {
+  background: var(--ac-sel);
+  color: var(--ac-on-accent);
+}
+
+.activeRow:hover {
+  background: var(--ac-sel);
+}
+
+.disclosureButton,
+.disclosureSpacer,
+.addButton {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.disclosureButton,
+.addButton {
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  background: transparent;
+  color: var(--ac-label-2);
+  cursor: pointer;
+}
+
+.activeRow .disclosureButton,
+.activeRow .addButton {
+  color: var(--ac-on-accent);
+}
+
+.disclosureButton:hover,
+.addButton:hover {
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+}
+
+.activeRow .disclosureButton:hover,
+.activeRow .addButton:hover {
+  background: color-mix(in srgb, var(--ac-on-accent) 18%, transparent);
+  color: var(--ac-on-accent);
+}
+
+.disclosureButton:focus-visible,
+.addButton:focus-visible,
+.folderButton:focus-visible,
+.createInput:focus-visible,
+.createButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.disclosureIcon {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 160ms ease;
+}
+
+.disclosureIconOpen {
+  transform: rotate(90deg);
+}
+
+.disclosureIcon svg,
+.folderIcon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.folderButton {
+  min-width: 0;
+  min-height: 28px;
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.folderIcon {
+  width: 18px;
+  height: 16px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ac-accent);
+}
+
+.activeRow .folderIcon {
+  color: var(--ac-on-accent);
+}
+
+.folderName {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font: 500 var(--ac-fs-subheadline) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  min-width: 18px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border-radius: var(--ac-radius-pill);
+  background: var(--ac-fill-3);
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.activeRow .count {
+  background: color-mix(in srgb, var(--ac-on-accent) 22%, transparent);
+  color: var(--ac-on-accent);
+}
+
+.addButton {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.row:hover .addButton,
+.row:focus-within .addButton {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.createRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: var(--ac-sp-2);
+  align-items: center;
+  box-sizing: border-box;
+  padding: 3px 6px 5px calc(6px + var(--folder-indent, 0px));
+}
+
+.createSpacer {
+  width: 24px;
+}
+
+.createInput {
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-field);
+  padding: 0 9px;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.createInput::placeholder {
+  color: var(--ac-placeholder);
+}
+
+.createButton {
+  height: 28px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 10px;
+  background: var(--ac-fill-1);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-footnote) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.createButton:hover {
+  background: var(--ac-fill-2);
+}
+
+.createButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.createError {
+  grid-column: 2 / -1;
+  color: var(--ac-red);
+  font: 400 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.emptyState {
+  padding: var(--ac-sp-3) var(--ac-sp-2);
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-subheadline) / 1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+@media (hover: none) {
+  .addButton {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disclosureIcon {
+    transition: none;
+  }
+}

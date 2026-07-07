@@ -1,0 +1,363 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 56px var(--ac-sp-4) var(--ac-sp-4);
+  background: color-mix(in srgb, var(--ac-bg-2) 24%, transparent);
+  color: var(--ac-label);
+  font-family: var(--ac-font-text);
+}
+
+.dialog {
+  width: min(520px, 100%);
+  max-height: min(720px, calc(100dvh - 72px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-mat-bg);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--ac-bg-2) 34%, transparent);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ac-sp-3);
+  padding: var(--ac-sp-4) var(--ac-sp-4) var(--ac-sp-3);
+  border-bottom: 1px solid var(--ac-separator);
+}
+
+.titleGroup {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.title {
+  margin: 0;
+  color: var(--ac-label);
+  font: 700 var(--ac-fs-title3) / 1.15 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iconButton {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  background: transparent;
+  color: var(--ac-label-2);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+}
+
+.iconButton:focus-visible,
+.button:focus-visible,
+.inlineButton:focus-visible,
+.emailInput:focus-visible,
+.roleSelect:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.iconButton svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.inviteForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px auto;
+  gap: var(--ac-sp-2);
+  align-items: end;
+  padding: var(--ac-sp-4);
+  background: var(--ac-bg);
+}
+
+.emailLabel {
+  grid-column: 1 / -1;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.emailInput,
+.roleSelect {
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-field);
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.emailInput {
+  padding: 0 10px;
+}
+
+.emailInput::placeholder {
+  color: var(--ac-placeholder);
+}
+
+.roleSelect {
+  padding: 0 28px 0 10px;
+  cursor: pointer;
+}
+
+.button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 14px;
+  font: 600 var(--ac-fs-footnote) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.primaryButton {
+  background: var(--ac-accent);
+  color: var(--ac-on-accent);
+}
+
+.primaryButton:not(:disabled):hover {
+  filter: brightness(1.04);
+}
+
+.secondaryButton {
+  background: var(--ac-fill-1);
+  color: var(--ac-label);
+}
+
+.secondaryButton:not(:disabled):hover {
+  background: var(--ac-fill-2);
+}
+
+.error {
+  margin: 0;
+  padding: 0 var(--ac-sp-4) var(--ac-sp-3);
+  background: var(--ac-bg);
+  color: var(--ac-red);
+  font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.peopleSection {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ac-sp-3) var(--ac-sp-4) var(--ac-sp-4);
+  background: var(--ac-bg);
+}
+
+.sectionLabel {
+  margin-bottom: var(--ac-sp-2);
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.emptyState {
+  padding: var(--ac-sp-4) 0;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-subheadline) / 1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.shareList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shareRow {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ac-sp-2);
+  padding: var(--ac-sp-2);
+  border-radius: var(--ac-radius-control);
+  color: var(--ac-label);
+}
+
+.shareRow:hover {
+  background: var(--ac-fill-4);
+}
+
+.shareRow[data-pending="true"] {
+  opacity: 0.68;
+}
+
+.personAvatar {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-tinted-fill);
+  color: var(--ac-accent);
+  font: 700 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.personMain {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.personEmail {
+  overflow: hidden;
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-subheadline) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personState {
+  margin-top: 1px;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.roleChip {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: var(--ac-radius-pill);
+  background: var(--ac-fill-3);
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.inlineButton {
+  min-height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 7px;
+  background: transparent;
+  color: var(--ac-accent);
+  font: 500 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.inlineButton:hover {
+  background: var(--ac-fill-4);
+}
+
+.inlineButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.dangerButton {
+  color: var(--ac-red);
+}
+
+.confirmActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.confirmText {
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.generalAccess {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ac-sp-3);
+  padding: var(--ac-sp-3) var(--ac-sp-4) var(--ac-sp-4);
+  border-top: 1px solid var(--ac-separator);
+  background: var(--ac-bg);
+}
+
+.generalTitle {
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-subheadline) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.generalCopy {
+  margin-top: 2px;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+@media (max-width: 560px) {
+  .backdrop {
+    align-items: flex-end;
+    padding: var(--ac-sp-3);
+  }
+
+  .dialog {
+    max-height: calc(100dvh - 24px);
+  }
+
+  .inviteForm {
+    grid-template-columns: 1fr;
+  }
+
+  .roleSelect,
+  .button {
+    width: 100%;
+  }
+
+  .shareRow {
+    flex-wrap: wrap;
+  }
+
+  .confirmActions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
