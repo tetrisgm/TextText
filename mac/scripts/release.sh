@@ -57,37 +57,35 @@ if [ ! -x "$SPK/generate_appcast" ]; then
   echo "Sparkle tools missing; run: swift build --package-path mac" >&2
   exit 1
 fi
+if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
+  echo "BLOB_READ_WRITE_TOKEN must be set to publish (pull it from Vercel)." >&2
+  exit 1
+fi
+# The appcast enclosure must be the IMMUTABLE Blob URL of the zip, not an
+# /download/ route (that route only serves the stable Write.zip alias, which
+# resolves through the release pointer). Derive the public Blob base from the
+# token exactly as src/lib/app-release.ts does.
+STORE_ID="$(printf '%s' "$BLOB_READ_WRITE_TOKEN" | sed -n 's/^vercel_blob_rw_\([A-Za-z0-9]*\)_.*$/\1/p' | tr 'A-Z' 'a-z')"
+if [ -z "$STORE_ID" ]; then
+  echo "Could not derive the Blob base from BLOB_READ_WRITE_TOKEN." >&2
+  exit 1
+fi
+BLOB_BASE="https://$STORE_ID.public.blob.vercel-storage.com"
 # Key source: SPARKLE_ED_KEY_FILE if set, else the login keychain (prompts
 # once; click "Always Allow"). generate_appcast aborts if dist holds two
 # archives of one version, which is why dist was recreated above.
 if [ -n "${SPARKLE_ED_KEY_FILE:-}" ]; then
   "$SPK/generate_appcast" --ed-key-file "$SPARKLE_ED_KEY_FILE" \
-    --download-url-prefix "$ORIGIN/download/" "$MAC/dist"
+    --download-url-prefix "$BLOB_BASE/downloads/" "$MAC/dist"
 else
-  "$SPK/generate_appcast" --download-url-prefix "$ORIGIN/download/" "$MAC/dist"
+  "$SPK/generate_appcast" --download-url-prefix "$BLOB_BASE/downloads/" "$MAC/dist"
 fi
 
-echo ">> [5/5] upload"
-# Placeholder Vercel Blob upload (verify the CLI syntax on the first real
-# release, then delete this notice). Versioned URLs must stay immutable
-# forever so old appcasts keep working.
-if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
-  echo "TODO: BLOB_READ_WRITE_TOKEN is not set; upload manually, in this order:"
-  echo "  1. $MAC/dist/Write-$VERSION.zip   -> blob downloads/Write-$VERSION.zip (immutable)"
-  echo "  2. $MAC/dist/appcast.xml          -> served at $ORIGIN/appcast.xml"
-  echo "  3. point the stable alias $ORIGIN/download/Write.zip at Write-$VERSION.zip"
-  echo "  4. flip the advertised app version ($ORIGIN/api/app/version) to $VERSION LAST"
-else
-  echo ">> uploading via vercel blob (placeholder step; verify on first release)"
-  npx --yes vercel blob put "$MAC/dist/Write-$VERSION.zip" \
-    --pathname "downloads/Write-$VERSION.zip" \
-    || echo "TODO: vercel blob upload failed; upload dist/ by hand (order above)"
-  npx --yes vercel blob put "$MAC/dist/appcast.xml" \
-    --pathname "downloads/appcast.xml" \
-    || echo "TODO: vercel blob upload failed; upload appcast.xml by hand"
-  echo "TODO: point $ORIGIN/appcast.xml and $ORIGIN/download/* route handlers at the new blobs,"
-  echo "TODO: then flip the advertised app version ($ORIGIN/api/app/version) to $VERSION LAST."
-fi
+echo ">> [5/5] upload artifacts + flip the release pointer"
+# Uploads Write-$VERSION.zip (immutable) then appcast.xml, then writes
+# releases/mac/current.json LAST. /appcast.xml, /download/*, and
+# /api/app/version all resolve through that pointer.
+( cd "$MAC/.." && node scripts/publish-mac-release.mjs "$VERSION" "$BUILD" )
 
 echo
 echo "Released v$VERSION (build $BUILD)"
