@@ -1,15 +1,11 @@
-// Stable stub-installer URL. The installer zip is rebuilt rarely (it always
-// downloads the latest payload at run time), so the pointer's installer URL
-// is optional and this route 404s until one has been published.
+// The stub installer zip, published only once an installer build exists.
 
-import { getCurrentAppRelease } from "@/lib/app-release";
+import { releaseInstallerUrl } from "@/lib/app-release";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const release = await getCurrentAppRelease();
-  if (!release?.installerZipUrl) {
-    return new Response("No installer published", { status: 404 });
-  }
-  return Response.redirect(release.installerZipUrl, 302);
+  const url = releaseInstallerUrl();
+  if (!url) return new Response("Not found", { status: 404 });
+  return Response.redirect(url, 302);
 }

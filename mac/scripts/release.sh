@@ -81,11 +81,11 @@ else
   "$SPK/generate_appcast" --download-url-prefix "$BLOB_BASE/downloads/" "$MAC/dist"
 fi
 
-echo ">> [5/5] upload artifacts + flip the release pointer"
-# Uploads Write-$VERSION.zip (immutable) then appcast.xml, then writes
-# releases/mac/current.json LAST. /appcast.xml, /download/*, and
-# /api/app/version all resolve through that pointer.
-( cd "$MAC/.." && node scripts/publish-mac-release.mjs "$VERSION" "$BUILD" )
+echo ">> [5/5] upload artifacts"
+# Uploads Write-$VERSION.zip (immutable, referenced by the appcast) + the
+# stable Write.zip alias + appcast.xml, all at fixed Blob paths. No pointer:
+# /appcast.xml, /download/*, and /api/app/version resolve the fixed URLs.
+( cd "$MAC/.." && node scripts/publish-mac-release.mjs "$VERSION" )
 
 echo
 echo "Released v$VERSION (build $BUILD)"

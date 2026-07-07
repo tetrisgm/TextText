@@ -1,12 +1,12 @@
-// Stable app-zip URL: the appcast and the docs may link here forever while
-// the pointer decides which immutable versioned Blob URL is current.
+// Stable app-zip URL: redirects to the current "latest" Blob zip. The appcast
+// references the immutable per-version zip directly; this is the human link.
 
-import { getCurrentAppRelease } from "@/lib/app-release";
+import { releaseZipUrl } from "@/lib/app-release";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const release = await getCurrentAppRelease();
-  if (!release) return new Response("No app release published", { status: 404 });
-  return Response.redirect(release.zipUrl, 302);
+  const url = releaseZipUrl();
+  if (!url) return new Response("No app release published", { status: 404 });
+  return Response.redirect(url, 302);
 }

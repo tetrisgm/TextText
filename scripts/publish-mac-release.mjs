@@ -1,15 +1,17 @@
-// Publish a built+notarized Mac release to Vercel Blob and flip the release
-// pointer, in the load-bearing order (immutable artifacts first, pointer
-// last). Called by mac/scripts/release.sh after the appcast is signed.
+// Publish a built+notarized Mac release to Vercel Blob at fixed paths. Called
+// by mac/scripts/release.sh after the appcast is signed. There is no release
+// pointer: the fixed appcast.xml is the source of truth (see app-release.ts).
 //
-//   node scripts/publish-mac-release.mjs <version> <buildNumber>
+//   node scripts/publish-mac-release.mjs <version>
 //
-// Reads BLOB_READ_WRITE_TOKEN from the environment (or .env.local), derives
-// the public Blob base the same way src/lib/app-release.ts does, uploads
-// mac/dist/Write-<version>.zip and mac/dist/appcast.xml, then writes
-// releases/mac/current.json. The appcast enclosure must already point at
-// <blobBase>/downloads/Write-<version>.zip (generate_appcast is run with
-// --download-url-prefix "<blobBase>/downloads/").
+// Uploads (immutable first, so nothing ever references a missing artifact):
+//   downloads/Write-<version>.zip  immutable, referenced by the appcast
+//   downloads/Write.zip            stable "latest" alias for /download/Write.zip
+//   downloads/appcast.xml          the signed appcast (SUFeedURL resolves here)
+//
+// The appcast enclosure must already be the immutable Blob URL
+// <blobBase>/downloads/Write-<version>.zip (release.sh runs generate_appcast
+// with --download-url-prefix "<blobBase>/downloads/").
 
 import pkg from "@next/env";
 const { loadEnvConfig } = pkg;
@@ -17,20 +19,17 @@ loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 import { put } from "@vercel/blob";
 import { readFile } from "node:fs/promises";
 
-const [version, buildRaw] = process.argv.slice(2);
-const buildNumber = Number(buildRaw);
-if (!version || !Number.isInteger(buildNumber) || buildNumber <= 0) {
-  console.error("usage: node scripts/publish-mac-release.mjs <version> <buildNumber>");
+const version = process.argv[2];
+if (!version || !/^[0-9]+(\.[0-9]+)+$/.test(version)) {
+  console.error("usage: node scripts/publish-mac-release.mjs <version>");
   process.exit(64);
 }
 
 const token = process.env.BLOB_READ_WRITE_TOKEN;
-const match = (token ?? "").match(/^vercel_blob_rw_([A-Za-z0-9]+)_/);
-if (!match) {
+if (!/^vercel_blob_rw_[A-Za-z0-9]+_/.test(token ?? "")) {
   console.error("BLOB_READ_WRITE_TOKEN is missing or malformed");
   process.exit(1);
 }
-const blobBase = `https://${match[1].toLowerCase()}.public.blob.vercel-storage.com`;
 
 async function upload(pathname, body, contentType) {
   const res = await put(pathname, body, {
@@ -42,32 +41,16 @@ async function upload(pathname, body, contentType) {
     token,
   });
   console.log("uploaded", pathname, "->", res.url);
-  return res.url;
 }
 
-// 1. immutable zip, 2. appcast, 3. pointer LAST (never references a missing
-// artifact).
-const zipUrl = await upload(
-  `downloads/Write-${version}.zip`,
-  await readFile(`mac/dist/Write-${version}.zip`),
-  "application/zip",
-);
-const appcastUrl = await upload(
+const zip = await readFile(`mac/dist/Write-${version}.zip`);
+// Immutable per-version zip first (the appcast points here), then the stable
+// alias, then the appcast last.
+await upload(`downloads/Write-${version}.zip`, zip, "application/zip");
+await upload("downloads/Write.zip", zip, "application/zip");
+await upload(
   "downloads/appcast.xml",
   await readFile("mac/dist/appcast.xml"),
   "application/xml; charset=utf-8",
 );
-const pointer = {
-  version,
-  buildNumber,
-  zipUrl,
-  appcastUrl,
-  publishedAt: new Date().toISOString(),
-};
-await upload(
-  "releases/mac/current.json",
-  JSON.stringify(pointer, null, 2),
-  "application/json",
-);
-console.log("published", JSON.stringify(pointer));
-console.log(`\nenclosure must be ${blobBase}/downloads/Write-${version}.zip`);
+console.log(`published v${version}`);
