@@ -68,7 +68,7 @@ export async function signInWithEmail(formData: FormData): Promise<void> {
   }
   try {
     // Lands on /signin/check (pages.verifyRequest) once the link is sent.
-    await signIn("resend", { email, redirectTo: callbackUrl });
+    await signIn("nodemailer", { email, redirectTo: callbackUrl });
   } catch (error) {
     if (error instanceof AuthError) backToSignIn(callbackUrl, error.type);
     throw error;
