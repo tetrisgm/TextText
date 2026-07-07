@@ -3,7 +3,7 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
 import type {
   Blog,
   BlogCardStyle,
@@ -676,9 +676,17 @@ export async function getFolderPosts(
     );
   }
 
+  // The blog home ("blog") is the additive view of everything blog-mode: the
+  // root plus every subfolder, so filing a post into a category keeps it on
+  // the home (with a chip) rather than hiding it. A category page asks for an
+  // exact subfolder path instead. Notes and bookmarks stay path-exact.
   const inFolder =
     folderPath === DEFAULT_FOLDER_PATH
-      ? or(isNull(posts.folderId), eq(folders.path, folderPath))
+      ? or(
+          isNull(posts.folderId),
+          eq(folders.path, folderPath),
+          like(folders.path, `${folderPath}/%`),
+        )
       : eq(folders.path, folderPath);
   const rows = await db
     .select()
