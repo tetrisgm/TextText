@@ -3,7 +3,7 @@ import type { NextAuthConfig, Profile } from "next-auth";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
-import Resend from "next-auth/providers/resend";
+import Nodemailer from "next-auth/providers/nodemailer";
 import { createAuthAdapter } from "@/lib/auth-email";
 
 import { resolveAppleClientSecret } from "@/lib/apple-secret";
@@ -15,7 +15,9 @@ const appleClientId = process.env.AUTH_APPLE_ID;
 const appleClientSecret = resolveAppleClientSecret();
 const googleClientId = process.env.AUTH_GOOGLE_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
-const resendKey = process.env.AUTH_RESEND_KEY;
+// Email magic links send over plain SMTP (MXroute): a full submission URL
+// like smtps://user:pass@host:465 or smtp://user:pass@host:587 (STARTTLS).
+const emailServer = process.env.AUTH_EMAIL_SERVER;
 const emailFrom = process.env.AUTH_EMAIL_FROM;
 const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
 
@@ -23,12 +25,12 @@ export const hasAppleProvider = Boolean(appleClientId && appleClientSecret);
 export const hasGoogleProvider = Boolean(googleClientId && googleClientSecret);
 
 // Email magic links need verification-token storage, so the adapter (and
-// with it the Resend provider) only exists when the database is wired too.
+// with it the email provider) only exists when the sender is configured too.
 // The adapter is otherwise absent on purpose: attaching one reroutes the
 // OAuth callback through it (see src/lib/auth-email.ts), and the plain
 // Apple-only setup should stay byte-for-byte on the adapterless path.
 const adapter =
-  resendKey && emailFrom ? createAuthAdapter() : undefined;
+  emailServer && emailFrom ? createAuthAdapter() : undefined;
 export const hasEmailProvider = Boolean(adapter);
 
 // A dev-only email login for exercising the authenticated flow without the
@@ -72,7 +74,7 @@ const providers = [
     ? [Google({ clientId: googleClientId, clientSecret: googleClientSecret })]
     : []),
   ...(hasEmailProvider
-    ? [Resend({ apiKey: resendKey, from: emailFrom })]
+    ? [Nodemailer({ server: emailServer, from: emailFrom })]
     : []),
   ...(devLoginEnabled ? [devProvider] : []),
 ];

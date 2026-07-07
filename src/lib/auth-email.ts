@@ -73,7 +73,7 @@ async function userRowBySub(sub: string): Promise<UserRow | null> {
 
 /**
  * Returns the adapter, or undefined when there is no database (email
- * sign-in needs token storage, so src/auth.ts only enables the Resend
+ * sign-in needs token storage, so src/auth.ts only enables the email
  * provider when this returns a real adapter).
  */
 export function createAuthAdapter(): Adapter | undefined {
