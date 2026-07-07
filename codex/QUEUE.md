@@ -29,7 +29,8 @@ Tasks whose briefs declare DISJOINT file ownership may run in parallel
 | 2 | T2-bookmarks-web | running | FolderPage + bookmark components |
 | 3 | T3-mac-capture-openwith | running | CaptureAgent + OpenFileHandler |
 | 4 | T4-sharing-workspace-ui | running | 4 island components |
-| 5 | public-category-pages | queued | brief not yet written; see docs/PLAN-2026-07-07.md |
+| 5 | T5-public-category-pages | ready | brief written: codex/tasks/T5-public-category-pages.md |
+| - | folder-tree-sidebar-polish | queued | wire Codex's FolderTree component into PostWorkspaceShell (styling reconciliation); today the sidebar shows subfolders as depth-indented flat rows |
 | 6 | openapi-sync-actions | queued | OpenAPI file + ChatGPT Actions guide |
 | 7 | oauth-connect | queued | needs Claude security review before merge |
 | 8 | capture-hardening | queued | PDFs, paywalls, retries |

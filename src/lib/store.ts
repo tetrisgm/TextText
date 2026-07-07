@@ -821,7 +821,9 @@ export async function setPostPinned(
   const blogId = await blogIdFor(handle);
   const updated = await db
     .update(posts)
-    .set({ pinned })
+    // Bump updatedAt so a pin/unpin advances the workspace change cursor and
+    // reaches sync clients instantly, not only on the 60s fallback pass.
+    .set({ pinned, updatedAt: new Date() })
     .where(
       and(
         eq(posts.id, id),

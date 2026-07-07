@@ -9,30 +9,91 @@
 // the first kilobytes of well-formed head sections, and a malformed page
 // just yields fewer fields, never an error the user sees.
 
+import dns from "node:dns/promises";
+import net from "node:net";
 import { saveBookmarkCapture } from "@/lib/store";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_HTML_BYTES = 512 * 1024;
+const MAX_REDIRECT_HOPS = 5;
 
 /**
- * SSRF floor for the server-side fetch: refuse loopback, link-local, RFC1918
- * literals, and bare hostnames. (The Mac capture agent runs on the owner's
- * own machine and has no such restriction.)
+ * True if an IPv4 literal is in any private, loopback, link-local, CGNAT, or
+ * reserved range. A malformed literal returns true (reject) rather than
+ * risk letting something odd through.
+ */
+export function isPrivateIPv4(ip: string): boolean {
+  const parts = ip.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+    return true;
+  }
+  const [a, b] = parts;
+  if (a === 0 || a === 127 || a === 10) return true; // this-host, loopback, RFC1918
+  if (a === 169 && b === 254) return true; // link-local (incl. cloud metadata)
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+  if (a === 192 && b === 168) return true; // RFC1918
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+/** True if an IPv6 literal is loopback, unique-local, link-local, or maps a
+ * private IPv4. Unknown shapes reject. */
+export function isPrivateIPv6(ip: string): boolean {
+  const norm = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  if (norm === "::1" || norm === "::") return true;
+  if (/^f[cd]/.test(norm)) return true; // fc00::/7 unique-local
+  if (/^fe[89ab]/.test(norm)) return true; // fe80::/10 link-local
+  const mapped = norm.match(/(?:::ffff:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPrivateIPv4(mapped[1]);
+  return false;
+}
+
+function isPrivateIP(ip: string): boolean {
+  if (net.isIPv4(ip)) return isPrivateIPv4(ip);
+  if (net.isIPv6(ip)) return isPrivateIPv6(ip);
+  return true;
+}
+
+/**
+ * Cheap synchronous pre-filter: scheme, obvious loopback/local names, and
+ * private IP literals. This is NOT the security boundary on its own (a name
+ * like foo.localhost or 10.0.0.1.nip.io slips past a string check); the DNS
+ * resolution in hostResolvesToPublicOnly is the real gate. Kept because it
+ * rejects the common cases without a lookup and is unit-testable.
  */
 export function isFetchableBookmarkUrl(url: URL): boolean {
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
   const host = url.hostname.toLowerCase();
   if (!host.includes(".") && host !== "localhost") return false;
-  if (host === "localhost" || host.endsWith(".local")) return false;
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
-    const [a, b] = host.split(".").map(Number);
-    if (a === 127 || a === 10 || a === 0) return false;
-    if (a === 172 && b >= 16 && b <= 31) return false;
-    if (a === 192 && b === 168) return false;
-    if (a === 169 && b === 254) return false;
+  if (host === "localhost" || host.endsWith(".localhost")) return false;
+  if (host.endsWith(".local")) return false;
+  if (net.isIP(host) && isPrivateIP(host)) return false;
+  if (host.startsWith("[")) {
+    const inner = host.slice(1, -1);
+    if (net.isIPv6(inner) && isPrivateIPv6(inner)) return false;
   }
-  if (host === "::1" || host.startsWith("[")) return false;
   return true;
+}
+
+/**
+ * The real SSRF gate: resolve the host and require EVERY resolved address to
+ * be public. This closes hostname tricks (*.localhost, nip.io, sslip.io) and
+ * names that resolve to internal IPs, because they all ultimately resolve to
+ * a private address. Re-run on every redirect hop. A resolution failure or
+ * any private address rejects. (A determined DNS-rebinding TOCTOU between
+ * this lookup and the socket connect is a known residual; acceptable for a
+ * low-value note-taking fetch on serverless with no interesting loopback.)
+ */
+export async function hostResolvesToPublicOnly(host: string): Promise<boolean> {
+  if (net.isIP(host)) return !isPrivateIP(host);
+  try {
+    const results = await dns.lookup(host, { all: true });
+    if (results.length === 0) return false;
+    return results.every((r) => !isPrivateIP(r.address));
+  } catch {
+    return false;
+  }
 }
 
 function decodeEntities(value: string): string {
@@ -91,18 +152,37 @@ export async function lightCaptureBookmark(
 ): Promise<void> {
   let meta: { title?: string; description?: string; siteName?: string } = {};
   try {
-    if (!isFetchableBookmarkUrl(new URL(url))) return;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: { accept: "text/html,*/*", "user-agent": "write-bookmark/1" },
-    });
-    clearTimeout(timer);
-    const type = response.headers.get("content-type") ?? "";
-    if (response.ok && type.includes("html")) {
-      meta = extractPageMeta(await response.text());
+    try {
+      // Follow redirects by hand so every hop is re-validated: redirect:
+      // "follow" would chase a 302 to an internal address unchecked.
+      let current = new URL(url);
+      let response: Response | null = null;
+      for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+        if (!isFetchableBookmarkUrl(current)) return;
+        if (!(await hostResolvesToPublicOnly(current.hostname))) return;
+        const hopResponse = await fetch(current, {
+          signal: controller.signal,
+          redirect: "manual",
+          headers: { accept: "text/html,*/*", "user-agent": "write-bookmark/1" },
+        });
+        if (hopResponse.status >= 300 && hopResponse.status < 400) {
+          const location = hopResponse.headers.get("location");
+          if (!location) return;
+          current = new URL(location, current);
+          continue;
+        }
+        response = hopResponse;
+        break;
+      }
+      if (!response) return; // too many redirects
+      const type = response.headers.get("content-type") ?? "";
+      if (response.ok && type.includes("html")) {
+        meta = extractPageMeta(await response.text());
+      }
+    } finally {
+      clearTimeout(timer);
     }
   } catch {
     // A dead or slow page is not an error state: the bookmark simply keeps

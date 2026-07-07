@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractPageMeta, isFetchableBookmarkUrl } from "@/lib/bookmark-fetch";
+import {
+  extractPageMeta,
+  isFetchableBookmarkUrl,
+  isPrivateIPv4,
+  isPrivateIPv6,
+} from "@/lib/bookmark-fetch";
 
 describe("isFetchableBookmarkUrl (SSRF floor)", () => {
   const ok = (u: string) => expect(isFetchableBookmarkUrl(new URL(u))).toBe(true);
@@ -16,6 +21,8 @@ describe("isFetchableBookmarkUrl (SSRF floor)", () => {
     no("http://localhost:3000/");
     no("https://printer.local/");
     no("http://intranet/"); // bare hostname
+    no("http://app.localhost/admin"); // *.localhost resolves to loopback
+    no("http://foo.bar.localhost:3000/");
   });
 
   it("refuses private and link-local IP literals", () => {
@@ -36,6 +43,48 @@ describe("isFetchableBookmarkUrl (SSRF floor)", () => {
   it("refuses IPv6 literals and non-http schemes", () => {
     no("http://[::1]/");
     no("ftp://example.com/");
+  });
+});
+
+describe("isPrivateIPv4 (the DNS-resolution gate's classifier)", () => {
+  it("flags every private, loopback, link-local, CGNAT, and reserved range", () => {
+    for (const ip of [
+      "0.0.0.0",
+      "127.0.0.1",
+      "10.1.2.3",
+      "169.254.169.254", // cloud metadata
+      "172.16.0.1",
+      "172.31.255.255",
+      "192.168.1.1",
+      "100.64.0.1", // CGNAT
+      "224.0.0.1", // multicast
+    ]) {
+      expect(isPrivateIPv4(ip), ip).toBe(true);
+    }
+  });
+
+  it("passes real public addresses", () => {
+    for (const ip of ["8.8.8.8", "93.184.216.34", "172.15.0.1", "172.32.0.1"]) {
+      expect(isPrivateIPv4(ip), ip).toBe(false);
+    }
+  });
+
+  it("rejects malformed literals defensively", () => {
+    expect(isPrivateIPv4("999.1.1.1")).toBe(true);
+    expect(isPrivateIPv4("1.2.3")).toBe(true);
+  });
+});
+
+describe("isPrivateIPv6", () => {
+  it("flags loopback, ULA, link-local, and mapped-private-IPv4", () => {
+    for (const ip of ["::1", "::", "fc00::1", "fd12:3456::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1"]) {
+      expect(isPrivateIPv6(ip), ip).toBe(true);
+    }
+  });
+
+  it("passes public v6 and mapped-public-IPv4", () => {
+    expect(isPrivateIPv6("2606:4700:4700::1111")).toBe(false);
+    expect(isPrivateIPv6("::ffff:8.8.8.8")).toBe(false);
   });
 });
 

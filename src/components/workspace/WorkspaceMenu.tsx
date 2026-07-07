@@ -77,19 +77,28 @@ export function WorkspaceMenu({
             Settings
           </Link>
 
-          <button
+          <Link
             className={styles.menuItem}
-            type="button"
+            href="/shared"
             role="menuitem"
-            disabled={!onInvite}
-            onClick={() => {
-              if (!onInvite) return;
-              onInvite();
-              close();
-            }}
+            onClick={close}
           >
-            Invite members
-          </button>
+            Shared with me
+          </Link>
+
+          {onInvite && (
+            <button
+              className={styles.menuItem}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onInvite();
+                close();
+              }}
+            >
+              Invite members
+            </button>
+          )}
 
           <div className={styles.divider} role="separator" />
 

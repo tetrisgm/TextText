@@ -22,6 +22,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
+// The readable extraction becomes the post body; a real article is well
+// under this. Cap it so an oversized text field cannot bloat the row or the
+// markdown round-trip.
+const MAX_READABLE_BYTES = 2 * 1024 * 1024;
 
 function formFile(form: FormData, name: string): File | null {
   const value = form.get(name);
@@ -118,6 +122,9 @@ export async function PUT(
   const readableValue = form.get("readable");
   const readableMarkdown =
     typeof readableValue === "string" ? readableValue : undefined;
+  if (readableMarkdown && Buffer.byteLength(readableMarkdown) > MAX_READABLE_BYTES) {
+    return syncError(413, "Readable extraction must be 2 MB or smaller");
+  }
 
   const saved = await saveBookmarkCapture(blog.handle, postId, capture, {
     readableMarkdown,
