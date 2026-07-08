@@ -539,6 +539,33 @@ export async function saveBookmarkCapture(
   const readable = opts.readableMarkdown?.trim();
   const body = row.body.trim() === "" && readable ? readable : row.body;
   const merged: BookmarkCapture = { ...(row.capture ?? {}), ...capture };
+  let excerpt = row.excerpt;
+  if (!row.excerpt?.trim()) {
+    const clean = (value: string | undefined) =>
+      (value ?? "").replace(/\s+/g, " ").trim();
+    const truncate = (value: string) => {
+      if (value.length <= 200) return value;
+      const sliced = value.slice(0, 197).trimEnd();
+      const wordBreak = sliced.lastIndexOf(" ");
+      return `${wordBreak > 120 ? sliced.slice(0, wordBreak) : sliced}...`;
+    };
+    let urlHost = "";
+    const sourceUrl = clean(merged.url) || clean(row.links?.[0]?.href);
+    if (sourceUrl) {
+      try {
+        const url = new URL(sourceUrl);
+        if (url.protocol === "http:" || url.protocol === "https:") {
+          urlHost = url.hostname.replace(/^www\./, "");
+        }
+      } catch {
+        urlHost = "";
+      }
+    }
+    const autoExcerpt = truncate(
+      clean(merged.description) || clean(merged.siteName) || urlHost,
+    );
+    if (autoExcerpt) excerpt = autoExcerpt;
+  }
   const updated = await db
     .update(posts)
     .set({
@@ -548,6 +575,7 @@ export async function saveBookmarkCapture(
         : opts.failed
           ? "failed"
           : "captured",
+      excerpt,
       body,
       updatedAt: new Date(),
     })

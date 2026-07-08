@@ -168,6 +168,30 @@
   object-position: top;
 }
 
+.tvcard-media.is-favicon-cover {
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-soft) 88%, var(--bg));
+}
+
+.tvcard-media.is-favicon-cover .tvcard-cover {
+  position: relative;
+  inset: auto;
+  width: clamp(44px, 22%, 72px);
+  height: clamp(44px, 22%, 72px);
+  object-fit: contain;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--bg) 82%, transparent) inset,
+    0 12px 28px -24px color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.tvcard-media.is-favicon-cover::after {
+  background: none;
+}
+
 video.tvcard-cover {
   opacity: 0;
   transition: opacity 0.4s var(--ease);

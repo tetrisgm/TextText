@@ -14,7 +14,7 @@ import {
   isVideoFile,
   postAccent,
 } from "@/lib/content";
-import { resolveCover, usesBookmarkCaptureCover } from "@/lib/cover";
+import { resolveCoverSource } from "@/lib/cover";
 import { blogPostPath } from "@/lib/public-paths";
 
 const TYPE_LABELS: Record<PostType, string> = {
@@ -37,10 +37,6 @@ function PlayBadge() {
 
 function postTitle(post: Post): string {
   return post.title.trim() || "Untitled";
-}
-
-function postThumbnail(post: Post): string {
-  return resolveCover(post);
 }
 
 function oneLine(value: string): string {
@@ -128,10 +124,12 @@ export function PostCard({
 
   const title = postTitle(post);
   const desc = postDesc(post);
-  const cover = postThumbnail(post);
+  const coverSource = resolveCoverSource(post);
+  const cover = coverSource.src;
   const isMinimal = blog.cardStyle === "minimal";
   const isVideoCover = !isMinimal && isVideoFile(cover);
-  const isCaptureCover = usesBookmarkCaptureCover(post);
+  const isCaptureCover = coverSource.kind === "bookmark-screenshot";
+  const isFaviconCover = coverSource.kind === "bookmark-favicon";
   const accent = postAccent(blog, post);
   const showUnlisted = owner && post.status === "draft";
   const showPinned = Boolean(post.pinned);
@@ -390,7 +388,7 @@ export function PostCard({
               <span
                 className={`tvcard-media${
                   isCaptureCover ? " is-capture-cover" : ""
-                }`}
+                }${isFaviconCover ? " is-favicon-cover" : ""}`}
               >
                 {isVideoCover ? (
                   <video
