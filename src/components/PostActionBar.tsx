@@ -14,6 +14,7 @@ import { saveEditablePostAction } from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
+import type { PresencePeer } from "@/lib/collab/provider";
 import {
   initialDraft,
   payloadFor,
@@ -34,6 +35,7 @@ type CommonProps = {
   owner: boolean;
   canEditPost?: boolean;
   canManagePost?: boolean;
+  presencePeers?: PresencePeer[];
 };
 
 type ReadProps = CommonProps & {
@@ -101,6 +103,68 @@ function postEditPath(postPath: string, postId?: string): string {
   const params = new URLSearchParams({ edit: "1" });
   if (postId) params.set("id", postId);
   return `${postPath}?${params.toString()}`;
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function presencePersonKey(peer: PresencePeer): string {
+  return peer.userName.trim().toLocaleLowerCase() || peer.clientId;
+}
+
+function uniquePresencePeers(peers: PresencePeer[]): PresencePeer[] {
+  const people = new Map<string, PresencePeer>();
+  for (const peer of peers) {
+    const key = presencePersonKey(peer);
+    if (!people.has(key)) {
+      people.set(key, {
+        ...peer,
+        userName: peer.userName.trim() || "Someone",
+      });
+    }
+  }
+  return Array.from(people.values()).sort((a, b) =>
+    a.userName.localeCompare(b.userName),
+  );
+}
+
+function PresenceStack({ peers }: { peers: PresencePeer[] }) {
+  const people = uniquePresencePeers(peers);
+  if (people.length === 0) return null;
+
+  const visible = people.slice(0, 5);
+  const overflow = people.slice(5);
+  const names = people.map((peer) => peer.userName).join(", ");
+  const label = `People editing: ${names}`;
+
+  return (
+    <div className="post-presence-stack" aria-label={label} title={names}>
+      {visible.map((peer) => (
+        <span
+          key={presencePersonKey(peer)}
+          className="post-presence-avatar"
+          style={{ backgroundColor: peer.color }}
+          title={peer.userName}
+          aria-label={peer.userName}
+        >
+          {initials(peer.userName)}
+        </span>
+      ))}
+      {overflow.length > 0 && (
+        <span
+          className="post-presence-avatar post-presence-overflow"
+          title={overflow.map((peer) => peer.userName).join(", ")}
+          aria-label={`${overflow.length} more people editing`}
+        >
+          +{overflow.length}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function BackIcon() {
@@ -516,6 +580,7 @@ export function PostActionBar(props: Props) {
     props.mode === "edit" &&
     activeDraft.type === "article" &&
     !props.hasHeaderImage;
+  const presenceControl = <PresenceStack peers={props.presencePeers ?? []} />;
   const shareControl = (
     <div className="post-action-popover-wrap" ref={shareWrapRef}>
       <button
@@ -652,6 +717,7 @@ export function PostActionBar(props: Props) {
             {canEditPost && (
               <div className="post-action-owner-group">
                 {canManagePost && shareControl}
+                {presenceControl}
                 {canManagePost && props.mode === "edit" && (
                   <div className="post-action-popover-wrap" ref={settingsWrapRef}>
                     <button

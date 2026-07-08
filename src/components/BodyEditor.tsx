@@ -53,6 +53,7 @@ type BodyEditorProps = {
   uploadEndpoint?: string;
   /** when present, the body is a shared Yjs document (realtime co-editing) */
   collab?: BodyEditorCollab | null;
+  onPresence?: (peers: PresencePeer[]) => void;
 };
 
 // Markdown is the source of truth for post bodies, so the toolbar only offers
@@ -124,7 +125,16 @@ function uploadErrorMessage(error: unknown): string {
 
 export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
   function BodyEditor(
-    { value, onChange, toolbarHost, postType, mediaEnabled = true, uploadEndpoint, collab },
+    {
+      value,
+      onChange,
+      toolbarHost,
+      postType,
+      mediaEnabled = true,
+      uploadEndpoint,
+      collab,
+      onPresence,
+    },
     ref,
   ) {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,7 +149,6 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
-    const [peers, setPeers] = useState<PresencePeer[]>([]);
 
     // One Y.Doc per co-edited post, created before the editor so the
     // Collaboration extension can bind to it. Null (and no collab) for solo
@@ -201,15 +210,19 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     // Realtime provider lifecycle: connect the shared doc, seed it from the
     // saved markdown the first time (empty history), and track presence.
     useEffect(() => {
-      if (!editor || !ydoc || !collab) return;
+      if (!editor || !ydoc || !collab) {
+        onPresence?.([]);
+        return;
+      }
       let cancelled = false;
+      onPresence?.([]);
       const provider = new CollabProvider(ydoc, {
         postId: collab.postId,
         userName: collab.userName,
         color: collab.color,
         canPush: collab.canEdit,
         onPresence: (list) => {
-          if (!cancelled) setPeers(list);
+          if (!cancelled) onPresence?.(list);
         },
       });
       void provider.start().then(() => {
@@ -224,9 +237,10 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       });
       return () => {
         cancelled = true;
+        onPresence?.([]);
         provider.destroy();
       };
-    }, [editor, ydoc, collab]);
+    }, [editor, ydoc, collab, onPresence]);
 
     const restoreSelectionBookmark = useCallback((editor: Editor) => {
       const bookmark = selectionBookmarkRef.current;
@@ -302,9 +316,6 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
           }}
         />
         <div className="body-editor">
-          {collab && peers.length > 1 && (
-            <PresenceBar peers={peers} selfClientId={collab.postId} />
-          )}
           {mounted && editor ? (
             <EditorContent editor={editor} />
           ) : (
@@ -319,35 +330,3 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
   },
 );
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-// A quiet row of avatars for everyone currently in the document. Presence is
-// best-effort, so this simply reflects the last heartbeat set.
-function PresenceBar({
-  peers,
-}: {
-  peers: PresencePeer[];
-  selfClientId: string;
-}) {
-  return (
-    <div className="body-editor-presence" aria-label="People editing">
-      {peers.map((peer) => (
-        <span
-          key={peer.clientId}
-          className="body-editor-presence-avatar"
-          style={{ backgroundColor: peer.color }}
-          title={peer.userName}
-          aria-label={peer.userName}
-        >
-          {initials(peer.userName)}
-        </span>
-      ))}
-    </div>
-  );
-}

@@ -152,6 +152,26 @@ export async function maybeCompactCollab(postId: string): Promise<void> {
 
 export type PresenceEntry = { clientId: string; userName: string; color: string };
 
+function presencePersonKey(entry: Pick<PresenceEntry, "clientId" | "userName">): string {
+  return entry.userName.trim().toLocaleLowerCase() || entry.clientId;
+}
+
+function dedupePresenceRows(
+  rows: Array<PresenceEntry & { updatedAt: Date }>,
+): PresenceEntry[] {
+  const people = new Map<string, PresenceEntry & { updatedAt: Date }>();
+  for (const row of rows) {
+    const key = presencePersonKey(row);
+    const existing = people.get(key);
+    if (!existing || row.updatedAt.getTime() > existing.updatedAt.getTime()) {
+      people.set(key, row);
+    }
+  }
+  return Array.from(people.values())
+    .sort((a, b) => a.userName.localeCompare(b.userName))
+    .map(({ clientId, userName, color }) => ({ clientId, userName, color }));
+}
+
 /** Heartbeat this client's presence and return everyone currently active. */
 export async function upsertPresence(
   postId: string,
@@ -193,6 +213,7 @@ export async function activePresence(postId: string): Promise<PresenceEntry[]> {
       clientId: collabPresence.clientId,
       userName: collabPresence.userName,
       color: collabPresence.color,
+      updatedAt: collabPresence.updatedAt,
     })
     .from(collabPresence)
     .where(
@@ -201,7 +222,7 @@ export async function activePresence(postId: string): Promise<PresenceEntry[]> {
         gt(collabPresence.updatedAt, cutoff),
       ),
     );
-  return rows;
+  return dedupePresenceRows(rows);
 }
 
 export async function removePresence(
