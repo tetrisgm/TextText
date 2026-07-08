@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/session";
 import { getAdvertisedVersion } from "@/lib/app-release";
 import { LandingHeader } from "@/components/LandingHeader";
+import { LandingFooter } from "@/components/LandingFooter";
 
 export const metadata: Metadata = {
   title: "Download Write",
@@ -11,14 +12,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const platforms = [
-  {
-    key: "mac",
-    name: "Mac",
-    detail: "macOS 14 Sonoma or later. Apple silicon and Intel.",
-    href: "/download/Write.zip",
-    cta: "Download for Mac",
-    available: true,
-  },
   {
     key: "windows",
     name: "Windows",
@@ -42,18 +35,19 @@ export default async function DownloadPage() {
     getCurrentUser(),
     getAdvertisedVersion(),
   ]);
+  const macAvailable = Boolean(advertised);
 
   return (
-    <main className="write-landing applecms">
+    <main className="write-landing">
       <LandingHeader signedIn={Boolean(user)} />
 
       <section className="write-download-hero">
         <p className="write-landing-kicker">The desktop app</p>
         <h1>Download Write</h1>
         <p>
-          Open Write from the Dock or the menu bar and get the full workspace,
-          the same editor and folders as the web, backed by a folder of real
-          Markdown files that sync both ways.
+          Download the Mac app, open Write, and sign in when it launches. You
+          get the same editor and folders as the web, backed by Markdown files
+          that sync both ways.
         </p>
         {advertised && (
           <p className="write-download-version">
@@ -62,7 +56,48 @@ export default async function DownloadPage() {
         )}
       </section>
 
+      <section
+        className="write-download-steps"
+        aria-label="Download, open Write, sign in"
+      >
+        <ol>
+          <li>
+            <span>1</span>
+            <strong>Download</strong>
+          </li>
+          <li>
+            <span>2</span>
+            <strong>Open Write</strong>
+          </li>
+          <li>
+            <span>3</span>
+            <strong>Sign in</strong>
+          </li>
+        </ol>
+        <p>You sign in when you open it.</p>
+      </section>
+
       <section className="write-download-grid" aria-label="Platforms">
+        <article className="write-download-card">
+          <h2>Mac</h2>
+          <p>macOS 14 Sonoma or later. Apple silicon and Intel.</p>
+          {macAvailable ? (
+            <a className="write-landing-primary" href="/download/Write.zip">
+              Download for Mac
+            </a>
+          ) : (
+            <button
+              className="write-landing-primary write-download-disabled"
+              type="button"
+              disabled
+            >
+              Download for Mac
+            </button>
+          )}
+          <p className="write-download-card-note">
+            Signed and notarized by Apple; macOS asks once.
+          </p>
+        </article>
         {platforms.map((platform) => (
           <article
             key={platform.key}
@@ -85,11 +120,12 @@ export default async function DownloadPage() {
 
       <section className="write-download-note-block">
         <p>
-          The app auto-updates itself once installed. Signing in inside the app
-          links it to your workspace; your Markdown files land in a Write
-          folder in your home directory.
+          Open the zip, launch Write, and keep it in Applications if you want
+          it there. The app auto-updates itself once installed; your Markdown
+          files land in a Write folder in your home directory.
         </p>
       </section>
+      <LandingFooter />
     </main>
   );
 }
