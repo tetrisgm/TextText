@@ -140,6 +140,8 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
     const lastEmittedRef = useRef(value);
     const onChangeRef = useRef(onChange);
+    const collabRef = useRef(collab);
+    const onPresenceRef = useRef(onPresence);
     const initialValueRef = useRef(value);
     const selectionBookmarkRef = useRef<SelectionBookmark | null>(null);
     const mounted = useSyncExternalStore(
@@ -149,14 +151,17 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const collabPostId = collab?.postId ?? null;
+
+    collabRef.current = collab;
+    onPresenceRef.current = onPresence;
 
     // One Y.Doc per co-edited post, created before the editor so the
     // Collaboration extension can bind to it. Null (and no collab) for solo
     // editing, which keeps the exact previous behavior.
     const ydoc = useMemo(
-      () => (collab ? new Y.Doc() : null),
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [collab?.postId],
+      () => (collabPostId === null ? null : new Y.Doc()),
+      [collabPostId],
     );
     const extensions = useMemo(() => buildEditorExtensions(ydoc), [ydoc]);
 
@@ -210,19 +215,36 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     // Realtime provider lifecycle: connect the shared doc, seed it from the
     // saved markdown the first time (empty history), and track presence.
     useEffect(() => {
-      if (!editor || !ydoc || !collab) {
-        onPresence?.([]);
+      const initialCollab = collabRef.current;
+      if (
+        !editor ||
+        !ydoc ||
+        collabPostId === null ||
+        !initialCollab ||
+        initialCollab.postId !== collabPostId
+      ) {
+        onPresenceRef.current?.([]);
         return;
       }
       let cancelled = false;
-      onPresence?.([]);
+      onPresenceRef.current?.([]);
+      const currentCollab = () => {
+        const next = collabRef.current;
+        return next?.postId === collabPostId ? next : initialCollab;
+      };
       const provider = new CollabProvider(ydoc, {
-        postId: collab.postId,
-        userName: collab.userName,
-        color: collab.color,
-        canPush: collab.canEdit,
+        postId: collabPostId,
+        get userName() {
+          return currentCollab().userName;
+        },
+        get color() {
+          return currentCollab().color;
+        },
+        get canPush() {
+          return currentCollab().canEdit;
+        },
         onPresence: (list) => {
-          if (!cancelled) onPresence?.(list);
+          if (!cancelled) onPresenceRef.current?.(list);
         },
       });
       void provider.start().then(() => {
@@ -231,16 +253,20 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         // allowed to write. Owner-edits-first-then-shares means history is
         // normally already present by the time a second editor joins.
         const fragmentEmpty = ydoc.getXmlFragment("default").length === 0;
-        if (collab.canEdit && fragmentEmpty && initialValueRef.current.trim()) {
+        if (
+          currentCollab().canEdit &&
+          fragmentEmpty &&
+          initialValueRef.current.trim()
+        ) {
           editor.commands.setContent(initialValueRef.current, false);
         }
       });
       return () => {
         cancelled = true;
-        onPresence?.([]);
+        onPresenceRef.current?.([]);
         provider.destroy();
       };
-    }, [editor, ydoc, collab, onPresence]);
+    }, [editor, ydoc, collabPostId]);
 
     const restoreSelectionBookmark = useCallback((editor: Editor) => {
       const bookmark = selectionBookmarkRef.current;
