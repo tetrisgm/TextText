@@ -9,6 +9,7 @@ import {
   issueOAuthAuthorizationCode,
   validateOAuthAuthorizationParams,
 } from "@/lib/oauth";
+import { loadOAuthClients } from "../../clients";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +110,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const clients = await loadOAuthClients();
   const validation = validateOAuthAuthorizationParams(params, {
+    clients,
     allowInsecureLocalhost: allowInsecureLocalhostOAuthRedirects(),
   });
   if (!validation.ok) {

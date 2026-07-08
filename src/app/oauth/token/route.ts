@@ -3,6 +3,7 @@ import {
   allowInsecureLocalhostOAuthRedirects,
   exchangeOAuthAuthorizationCode,
 } from "@/lib/oauth";
+import { loadOAuthClients } from "../clients";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +146,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const clients = await loadOAuthClients();
     const token = await exchangeOAuthAuthorizationCode(
       {
         code: requiredSingle(params, "code"),
@@ -153,6 +155,7 @@ export async function POST(request: Request) {
         codeVerifier: requiredSingle(params, "code_verifier"),
       },
       {
+        clients,
         allowInsecureLocalhost: allowInsecureLocalhostOAuthRedirects(),
       },
     );
