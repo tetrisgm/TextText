@@ -7,9 +7,9 @@ import WebKit
 
 /// Bookmark capture agent: drains GET /api/sync/v1/captures on this Mac,
 /// loading each pending URL in an offscreen WKWebView to produce the
-/// readable extraction, the original page HTML, and a full screenshot, then
+/// readable extraction, the original page artifact, and a bounded screenshot, then
 /// PUTs the result to /api/sync/v1/captures/{id} as multipart/form-data
-/// (fields: meta JSON, readable text, screenshot PNG, html file).
+/// (fields: meta JSON, readable text, screenshot PNG, html/original file).
 final class CaptureAgent {
     private let store: StateStore
     private let queue = DispatchQueue(label: "write.capture-agent", qos: .utility)
@@ -18,11 +18,16 @@ final class CaptureAgent {
     private var draining = false
     private var pendingDrain = false
 
-    private let maxArtifactBytes = 25 * 1024 * 1024
+    private let maxScreenshotBytes = 20 * 1024 * 1024
+    private let maxOriginalArtifactBytes = 40 * 1024 * 1024
     // Hard ceiling on a downloaded PDF before it is handed to PDFKit, so a
     // multi-gigabyte (or streaming) PDF cannot exhaust the agent's memory.
-    private let maxPDFBytes = 64 * 1024 * 1024
+    private let maxPDFBytes = 40 * 1024 * 1024
     private let maxReadableBytes = 2 * 1024 * 1024
+    private let snapshotWidth: CGFloat = 1280
+    private let minimumSnapshotHeight: CGFloat = 2000
+    private let maxSnapshotHeight: CGFloat = 14_000
+    private let maxSnapshotPixels: CGFloat = 18_000_000
     private let uploadRetryDelays: [TimeInterval] = [2, 6, 18]
 
     var onActivity: ((String) -> Void)?
@@ -168,14 +173,39 @@ final class CaptureAgent {
             return capturePDF(url: url, fallbackTitle: fallbackTitle)
         }
         if let pdfURL = pdfURLFromContentTypeProbe(url: url) {
-            return capturePDF(url: pdfURL, fallbackTitle: fallbackTitle)
+            let pdfResult = capturePDF(url: pdfURL, fallbackTitle: fallbackTitle)
+            if case .success = pdfResult {
+                return pdfResult
+            }
+            if case .failure(let failure) = pdfResult,
+               failure.reason != "non-PDF content",
+               failure.reason != "PDF document failed to load" {
+                return pdfResult
+            }
         }
 
         let result = capturePage(url: url, fallbackTitle: fallbackTitle)
-        if case .failure(let failure) = result, failure.reason == pdfContentFailureReason {
-            return capturePDF(url: failure.url, fallbackTitle: fallbackTitle)
+        if case .failure(let failure) = result, shouldRetryAsPDF(failure: failure) {
+            let pdfResult = capturePDF(url: failure.url, fallbackTitle: fallbackTitle)
+            if case .success = pdfResult {
+                return pdfResult
+            }
+            if failure.reason == pdfContentFailureReason {
+                return pdfResult
+            }
         }
         return result
+    }
+
+    private func shouldRetryAsPDF(failure: PageCaptureFailure) -> Bool {
+        guard isWebURL(failure.url) else { return false }
+        if failure.reason == pdfContentFailureReason { return true }
+        let reason = failure.reason.lowercased()
+        return reason.contains("not an http response") ||
+            reason.contains("unsupported") ||
+            reason.contains("frame load interrupted") ||
+            reason.contains("plugin handled load") ||
+            reason.contains("webkiterrordomain error 102")
     }
 
     private func pdfURLFromContentTypeProbe(url: URL) -> URL? {
@@ -221,6 +251,9 @@ final class CaptureAgent {
                 guard data.count <= maxPDFBytes else {
                     return .failure(PageCaptureFailure(url: url, reason: "PDF is too large"))
                 }
+                guard looksLikePDF(data) || isPDFURL(url) else {
+                    return .failure(PageCaptureFailure(url: url, reason: "non-PDF content"))
+                }
                 return .success(PDFDownload(data: data, finalURL: url))
             } catch {
                 return .failure(PageCaptureFailure(url: url, reason: error.localizedDescription))
@@ -247,7 +280,7 @@ final class CaptureAgent {
                     reason: httpErrorMessage(status: reply.status, data: reply.data)
                 ))
             }
-            guard isPDFContentType(reply.contentType) || isPDFURL(finalURL) || isPDFURL(url) else {
+            guard isPDFContentType(reply.contentType) || isPDFURL(finalURL) || isPDFURL(url) || looksLikePDF(reply.data) else {
                 return .failure(PageCaptureFailure(url: finalURL, reason: "non-PDF content"))
             }
             guard !reply.data.isEmpty else {
@@ -279,10 +312,7 @@ final class CaptureAgent {
         guard let document = PDFDocument(data: data) else {
             return .failure(PageCaptureFailure(url: finalURL, reason: "PDF document failed to load"))
         }
-        guard let text = cleaned(document.string) else {
-            return .failure(PageCaptureFailure(url: finalURL, reason: "PDF text extraction failed"))
-        }
-        guard let screenshot = renderFirstPDFPage(document: document) else {
+        guard let screenshot = renderPDFPages(document: document) else {
             return .failure(PageCaptureFailure(url: finalURL, reason: "PDF screenshot failed"))
         }
 
@@ -292,15 +322,102 @@ final class CaptureAgent {
             title: title,
             siteName: nil,
             description: nil,
-            readable: pdfMarkdown(text: text, url: finalURL, title: title),
+            readable: pdfMarkdown(text: cleaned(document.string), url: finalURL, title: title),
             screenshot: screenshot,
-            html: nil
+            original: CaptureArtifact(
+                data: data,
+                filename: pdfFilename(url: finalURL),
+                contentType: "application/pdf"
+            )
         )
         return .success(page)
     }
 
-    private func renderFirstPDFPage(document: PDFDocument) -> Data? {
-        guard let page = document.page(at: 0) else { return nil }
+    private func renderPDFPages(document: PDFDocument) -> Data? {
+        guard document.pageCount > 0 else { return nil }
+
+        let maxHeight = maxScreenshotHeightForWidth(snapshotWidth)
+        let pageGap: CGFloat = document.pageCount > 1 ? 16 : 0
+        var renderPlan: [PDFPageRenderPlan] = []
+        var usedHeight: CGFloat = 0
+
+        for pageIndex in 0..<document.pageCount {
+            guard let page = document.page(at: pageIndex),
+                  let geometry = pdfPageGeometry(page: page) else {
+                continue
+            }
+
+            let gap = renderPlan.isEmpty ? 0 : pageGap
+            let remainingHeight = maxHeight - usedHeight - gap
+            guard remainingHeight > 1 else { break }
+
+            let fullWidthHeight = geometry.bounds.height * (snapshotWidth / geometry.bounds.width)
+            var targetSize = NSSize(width: snapshotWidth, height: fullWidthHeight)
+            if targetSize.height > remainingHeight {
+                guard renderPlan.isEmpty else { break }
+                let scale = remainingHeight / geometry.bounds.height
+                targetSize = NSSize(
+                    width: max(1, geometry.bounds.width * scale),
+                    height: max(1, remainingHeight)
+                )
+            }
+
+            usedHeight += gap + targetSize.height
+            renderPlan.append(PDFPageRenderPlan(
+                page: page,
+                box: geometry.box,
+                size: targetSize,
+                gapBefore: gap
+            ))
+        }
+
+        guard !renderPlan.isEmpty else { return nil }
+        let canvasSize = NSSize(width: snapshotWidth, height: max(1, usedHeight.rounded(.up)))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: max(1, Int(canvasSize.width.rounded(.up))),
+            pixelsHigh: max(1, Int(canvasSize.height.rounded(.up))),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+        rep.size = canvasSize
+
+        NSGraphicsContext.saveGraphicsState()
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else {
+            NSGraphicsContext.restoreGraphicsState()
+            return nil
+        }
+        context.imageInterpolation = .high
+        NSGraphicsContext.current = context
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: canvasSize).fill()
+
+        var y = canvasSize.height
+        for item in renderPlan {
+            y -= item.gapBefore
+            y -= item.size.height
+            let x = max(0, (canvasSize.width - item.size.width) / 2)
+            let thumbnail = item.page.thumbnail(of: item.size, for: item.box)
+            thumbnail.draw(
+                in: NSRect(x: x, y: y, width: item.size.width, height: item.size.height),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1
+            )
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    private func pdfPageGeometry(page: PDFPage) -> PDFPageGeometry? {
         var box: PDFDisplayBox = .cropBox
         var bounds = page.bounds(for: .cropBox)
         if bounds.width <= 0 || bounds.height <= 0 {
@@ -308,12 +425,7 @@ final class CaptureAgent {
             bounds = page.bounds(for: .mediaBox)
         }
         guard bounds.width > 0, bounds.height > 0 else { return nil }
-
-        let targetWidth: CGFloat = 1280
-        let targetHeight = max(1, bounds.height * (targetWidth / bounds.width))
-        let targetSize = NSSize(width: targetWidth, height: targetHeight)
-        let image = page.thumbnail(of: targetSize, for: box)
-        return pngData(from: image, size: targetSize)
+        return PDFPageGeometry(box: box, bounds: bounds)
     }
 
     private func pdfTitle(document: PDFDocument, fallbackTitle: String?, url: URL) -> String? {
@@ -327,11 +439,24 @@ final class CaptureAgent {
         return cleaned(url.deletingPathExtension().lastPathComponent.removingPercentEncoding)
     }
 
-    private func pdfMarkdown(text: String, url: URL, title: String?) -> String {
+    private func pdfFilename(url: URL) -> String {
+        let candidate = url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
+        let cleanedName = cleaned(candidate) ?? "document.pdf"
+        if cleanedName.lowercased().hasSuffix(".pdf") {
+            return cleanedName
+        }
+        return cleanedName + ".pdf"
+    }
+
+    private func pdfMarkdown(text: String?, url: URL, title: String?) -> String {
         let host = url.host ?? url.absoluteString
         var parts = ["[\(host)](\(url.absoluteString))"]
         if let title { parts.append("# \(title)") }
-        parts.append(text)
+        if let text {
+            parts.append(text)
+        } else {
+            parts.append("[No extractable PDF text found.]")
+        }
         return parts.joined(separator: "\n\n")
     }
 
@@ -340,11 +465,11 @@ final class CaptureAgent {
         guard let screenshot = fitScreenshot(page.screenshot) else {
             return .failure(CaptureAgentError("screenshot too large"))
         }
-        let html = page.html.flatMap { data -> Data? in
-            guard data.count <= maxArtifactBytes else { return nil }
-            return data
+        let original = page.original.flatMap { artifact -> CaptureArtifact? in
+            guard artifact.data.count <= maxOriginalArtifactBytes else { return nil }
+            return artifact
         }
-        return .success(PreparedPageCapture(readable: readable, screenshot: screenshot, html: html))
+        return .success(PreparedPageCapture(readable: readable, screenshot: screenshot, original: original))
     }
 
     private func truncateReadable(_ readable: String) -> String {
@@ -379,22 +504,26 @@ final class CaptureAgent {
     }
 
     private func fitScreenshot(_ screenshot: Data) -> Data? {
-        guard screenshot.count > maxArtifactBytes else { return screenshot }
+        guard screenshot.count > maxScreenshotBytes else { return screenshot }
         guard let source = CGImageSourceCreateWithData(screenshot as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return nil
         }
 
-        var scale = min(0.92, sqrt(Double(maxArtifactBytes) / Double(screenshot.count)) * 0.92)
+        var scale = min(0.92, sqrt(Double(maxScreenshotBytes) / Double(screenshot.count)) * 0.92)
         for _ in 0..<10 {
             guard let resized = resizedPNG(image: image, scale: scale) else { return nil }
-            if resized.count <= maxArtifactBytes {
+            if resized.count <= maxScreenshotBytes {
                 return resized
             }
-            let next = sqrt(Double(maxArtifactBytes) / Double(resized.count)) * 0.9
+            let next = sqrt(Double(maxScreenshotBytes) / Double(resized.count)) * 0.9
             scale *= min(0.85, next)
         }
         return nil
+    }
+
+    private func maxScreenshotHeightForWidth(_ width: CGFloat) -> CGFloat {
+        min(maxSnapshotHeight, floor(maxSnapshotPixels / max(1, width)))
     }
 
     private func resizedPNG(image: CGImage, scale: Double) -> Data? {
@@ -471,7 +600,7 @@ final class CaptureAgent {
             meta: meta,
             readable: prepared.readable,
             screenshot: prepared.screenshot,
-            html: prepared.html
+            original: prepared.original
         ) else {
             return .terminal(CaptureAgentError("could not encode upload"))
         }
@@ -529,7 +658,8 @@ final class CaptureAgent {
     }
 
     private func multipartBody(
-        meta: CaptureMeta, readable: String? = nil, screenshot: Data? = nil, html: Data? = nil
+        meta: CaptureMeta, readable: String? = nil, screenshot: Data? = nil,
+        original: CaptureArtifact? = nil
     ) -> MultipartBody? {
         guard let metaData = try? JSONEncoder().encode(meta),
               let metaJSON = String(data: metaData, encoding: .utf8) else {
@@ -548,9 +678,9 @@ final class CaptureAgent {
             appendFile(name: "screenshot", filename: "screenshot.png", contentType: "image/png",
                        fileData: screenshot, to: &data, boundary: boundary)
         }
-        if let html {
-            appendFile(name: "html", filename: "page.html", contentType: "text/html; charset=utf-8",
-                       fileData: html, to: &data, boundary: boundary)
+        if let original {
+            appendFile(name: "html", filename: original.filename, contentType: original.contentType,
+                       fileData: original.data, to: &data, boundary: boundary)
         }
         data.appendUTF8("--\(boundary)--\r\n")
         return MultipartBody(data: data, boundary: boundary)
@@ -636,6 +766,10 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     private var loadTimeout: DispatchWorkItem?
     private var settleDelay: DispatchWorkItem?
     private var completed = false
+    private let snapshotWidth: CGFloat = 1280
+    private let minimumSnapshotHeight: CGFloat = 2000
+    private let maxSnapshotHeight: CGFloat = 14_000
+    private let maxSnapshotPixels: CGFloat = 18_000_000
 
     init(
         url: URL, fallbackTitle: String?,
@@ -657,7 +791,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
 
         let view = WKWebView(
-            frame: NSRect(x: 0, y: 0, width: 1280, height: 2000),
+            frame: NSRect(x: 0, y: 0, width: snapshotWidth, height: minimumSnapshotHeight),
             configuration: configuration
         )
         view.navigationDelegate = self
@@ -779,11 +913,23 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
 
     private func takeScreenshot(readable: ReadableExtraction, html: Data) {
         guard let webView, !completed else { return }
-        webView.frame = NSRect(x: 0, y: 0, width: 1280, height: 2000)
+        webView.evaluateJavaScript(snapshotSizeScript) { value, error in
+            if let error {
+                self.fail(url: self.currentURL, reason: error.localizedDescription)
+                return
+            }
+            let size = self.snapshotSize(from: value)
+            self.takeBoundedScreenshot(readable: readable, html: html, size: size)
+        }
+    }
+
+    private func takeBoundedScreenshot(readable: ReadableExtraction, html: Data, size: NSSize) {
+        guard let webView, !completed else { return }
+        webView.frame = NSRect(origin: .zero, size: size)
         webView.layoutSubtreeIfNeeded()
 
         let config = WKSnapshotConfiguration()
-        config.rect = NSRect(x: 0, y: 0, width: 1280, height: 2000)
+        config.rect = NSRect(origin: .zero, size: size)
         webView.takeSnapshot(with: config) { image, error in
             if let error {
                 self.fail(url: self.currentURL, reason: error.localizedDescription)
@@ -805,10 +951,31 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                 description: self.cleaned(readable.description),
                 readable: self.markdown(from: readable, title: title),
                 screenshot: png,
-                html: html
+                original: CaptureArtifact(
+                    data: html,
+                    filename: "page.html",
+                    contentType: "text/html; charset=utf-8"
+                )
             )
             self.finish(.success(page))
         }
+    }
+
+    private func snapshotSize(from value: Any?) -> NSSize {
+        var measuredHeight = minimumSnapshotHeight
+        if let json = value as? String,
+           let data = json.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(PageSnapshotSize.self, from: data),
+           decoded.height.isFinite {
+            measuredHeight = max(minimumSnapshotHeight, CGFloat(decoded.height.rounded(.up)))
+        }
+
+        let boundedHeight = min(measuredHeight, maxSnapshotHeightForWidth(snapshotWidth))
+        return NSSize(width: snapshotWidth, height: max(1, boundedHeight))
+    }
+
+    private func maxSnapshotHeightForWidth(_ width: CGFloat) -> CGFloat {
+        min(maxSnapshotHeight, floor(maxSnapshotPixels / max(1, width)))
     }
 
     private func markdown(from readable: ReadableExtraction, title: String?) -> String {
@@ -910,6 +1077,28 @@ private let readableExtractionScript = #"""
 })();
 """#
 
+private let snapshotSizeScript = #"""
+(function() {
+  var body = document.body || {};
+  var root = document.documentElement || {};
+  var height = Math.max(
+    body.scrollHeight || 0,
+    body.offsetHeight || 0,
+    root.clientHeight || 0,
+    root.scrollHeight || 0,
+    root.offsetHeight || 0
+  );
+  var width = Math.max(
+    body.scrollWidth || 0,
+    body.offsetWidth || 0,
+    root.clientWidth || 0,
+    root.scrollWidth || 0,
+    root.offsetWidth || 0
+  );
+  return JSON.stringify({ width: width, height: height });
+})();
+"""#
+
 private struct CapturesResponse: Decodable {
     let captures: [PendingCapture]
 }
@@ -937,7 +1126,7 @@ private struct PageCapture {
     let description: String?
     let readable: String
     let screenshot: Data
-    let html: Data?
+    let original: CaptureArtifact?
 }
 
 private struct PageCaptureFailure: Error {
@@ -965,6 +1154,11 @@ private struct ReadableExtraction: Decodable {
     let paragraphs: [String]?
 }
 
+private struct PageSnapshotSize: Decodable {
+    let width: Double
+    let height: Double
+}
+
 private struct NetworkReply {
     let status: Int
     let data: Data
@@ -982,10 +1176,28 @@ private struct PDFDownload {
     let finalURL: URL
 }
 
+private struct CaptureArtifact {
+    let data: Data
+    let filename: String
+    let contentType: String
+}
+
 private struct PreparedPageCapture {
     let readable: String
     let screenshot: Data
-    let html: Data?
+    let original: CaptureArtifact?
+}
+
+private struct PDFPageGeometry {
+    let box: PDFDisplayBox
+    let bounds: CGRect
+}
+
+private struct PDFPageRenderPlan {
+    let page: PDFPage
+    let box: PDFDisplayBox
+    let size: NSSize
+    let gapBefore: CGFloat
 }
 
 private enum CaptureUploadResult {
@@ -1010,6 +1222,12 @@ private func isPDFContentType(_ contentType: String?) -> Bool {
     guard let type = contentType?.lowercased().split(separator: ";").first else { return false }
     let trimmed = type.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed == "application/pdf" || trimmed == "application/x-pdf"
+}
+
+private func looksLikePDF(_ data: Data) -> Bool {
+    let marker = Data("%PDF-".utf8)
+    let prefix = Data(data.prefix(1024))
+    return prefix.range(of: marker) != nil
 }
 
 private func pngData(from image: NSImage, size: NSSize) -> Data? {

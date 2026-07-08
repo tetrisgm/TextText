@@ -5,8 +5,8 @@
 //                capturedBy?, error?} (error marks the capture failed)
 //     readable   optional text field: readable extraction as markdown; lands
 //                in the post body only when the body is empty
-//     screenshot optional PNG file -> Blob
-//     html       optional original page HTML file -> Blob
+//     screenshot optional image file -> Blob
+//     html       optional original page HTML or PDF file -> Blob
 //
 // -> {item: {id, slug, captureStatus}}. Artifacts go to Blob storage under
 // captures/{handle}/{postId}/; their URLs land in posts.capture.
@@ -22,7 +22,7 @@ import { syncError } from "../../sync";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
+const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
 // The readable extraction becomes the post body; a real article is well
 // under this. Cap it so an oversized text field cannot bloat the row or the
 // markdown round-trip.
@@ -39,6 +39,38 @@ function formFile(form: FormData, name: string): File | null {
     return value as File;
   }
   return null;
+}
+
+function formatBytes(bytes: number): string {
+  return `${Math.ceil(bytes / (1024 * 1024))} MB`;
+}
+
+function oversizedFileError(file: File | null, label: string): string | null {
+  if (!file || file.size <= MAX_ARTIFACT_BYTES) return null;
+  return `${label} artifact is ${formatBytes(file.size)}; limit is ${formatBytes(MAX_ARTIFACT_BYTES)}`;
+}
+
+function oversizedReadableError(readable: string | undefined): string | null {
+  if (!readable) return null;
+  const size = Buffer.byteLength(readable);
+  if (size <= MAX_READABLE_BYTES) return null;
+  return `Readable extraction is ${formatBytes(size)}; limit is ${formatBytes(MAX_READABLE_BYTES)}`;
+}
+
+function fileType(file: File, fallback: string): string {
+  return typeof file.type === "string" && file.type.trim()
+    ? file.type
+    : fallback;
+}
+
+function isPDFFile(file: File): boolean {
+  return fileType(file, "").toLowerCase().split(";")[0] === "application/pdf" ||
+    file.name.toLowerCase().endsWith(".pdf");
+}
+
+function screenshotContentType(file: File): string {
+  const type = fileType(file, "image/png").toLowerCase().split(";")[0];
+  return type === "image/jpeg" ? "image/jpeg" : "image/png";
 }
 
 export async function PUT(
@@ -69,7 +101,18 @@ export async function PUT(
   }
   const url = typeof meta.url === "string" ? meta.url : "";
   if (!url) return syncError(400, "meta.url is required");
-  const error = typeof meta.error === "string" && meta.error ? meta.error : null;
+  const metaError = typeof meta.error === "string" && meta.error ? meta.error : null;
+
+  const screenshot = formFile(form, "screenshot");
+  const original = formFile(form, "html");
+  const readableValue = form.get("readable");
+  const readableMarkdown =
+    typeof readableValue === "string" ? readableValue : undefined;
+  const error =
+    metaError ??
+    oversizedFileError(screenshot, "Screenshot") ??
+    oversizedFileError(original, "Original capture") ??
+    oversizedReadableError(readableMarkdown);
 
   const capture: BookmarkCapture = {
     url,
@@ -85,37 +128,36 @@ export async function PUT(
   // Artifacts only for successful captures; a failure report is metadata-only.
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   if (!error && blobToken) {
-    const screenshot = formFile(form, "screenshot");
-    const html = formFile(form, "html");
-    if (
-      (screenshot && screenshot.size > MAX_ARTIFACT_BYTES) ||
-      (html && html.size > MAX_ARTIFACT_BYTES)
-    ) {
-      return syncError(413, "Capture artifacts must be 25 MB or smaller");
-    }
-    if (screenshot || html) {
+    if (screenshot || original) {
       const { put } = await import("@vercel/blob");
       if (screenshot) {
+        const contentType = screenshotContentType(screenshot);
+        const screenshotName =
+          contentType === "image/jpeg" ? "screenshot.jpg" : "screenshot.png";
         const blob = await put(
-          `captures/${blog.handle}/${postId}/screenshot.png`,
+          `captures/${blog.handle}/${postId}/${screenshotName}`,
           screenshot,
           {
             access: "public",
             addRandomSuffix: true,
-            contentType: "image/png",
+            contentType,
             token: blobToken,
           },
         );
         capture.screenshotUrl = blob.url;
       }
-      if (html) {
+      if (original) {
+        const isPDF = isPDFFile(original);
+        const contentType = isPDF
+          ? "application/pdf"
+          : fileType(original, "text/html; charset=utf-8");
         const blob = await put(
-          `captures/${blog.handle}/${postId}/page.html`,
-          html,
+          `captures/${blog.handle}/${postId}/${isPDF ? "original.pdf" : "page.html"}`,
+          original,
           {
             access: "public",
             addRandomSuffix: true,
-            contentType: "text/html; charset=utf-8",
+            contentType,
             token: blobToken,
           },
         );
@@ -124,15 +166,8 @@ export async function PUT(
     }
   }
 
-  const readableValue = form.get("readable");
-  const readableMarkdown =
-    typeof readableValue === "string" ? readableValue : undefined;
-  if (readableMarkdown && Buffer.byteLength(readableMarkdown) > MAX_READABLE_BYTES) {
-    return syncError(413, "Readable extraction must be 2 MB or smaller");
-  }
-
   const saved = await saveBookmarkCapture(blog.handle, postId, capture, {
-    readableMarkdown,
+    readableMarkdown: error ? undefined : readableMarkdown,
     failed: Boolean(error),
   });
   if (!saved) return syncError(404, "No such bookmark");
