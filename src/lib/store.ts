@@ -34,6 +34,7 @@ import type {
   Post,
   PostType,
 } from "./content";
+import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
 import { blogs, folders, posts, users } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
@@ -157,58 +158,42 @@ function mapBlog(row: BlogRow): Blog {
   };
 }
 
-export async function getBlog(handle: string): Promise<Blog | null> {
+async function getBlogUncached(handle: string): Promise<Blog | null> {
   if (!db) {
     return handle === DEMO_BLOG.handle ? DEMO_BLOG : null;
   }
-  const rows = await db
-    .select({
-      handle: blogs.handle,
-      username: users.username,
-      name: blogs.name,
-      tagline: blogs.tagline,
-      accent: blogs.accent,
-      bioLine: blogs.bioLine,
-      cardStyle: blogs.cardStyle,
-      homeLayout: blogs.homeLayout,
-      author: users.name,
-    })
-    .from(blogs)
-    .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
-    .limit(1);
-  const row = rows[0];
+  const row = await getBlogCore(handle);
   if (!row) return null;
   return mapBlog(row);
 }
 
-export async function getBlogByUsername(usernameInput: string): Promise<Blog | null> {
+const getBlogCached = cache(getBlogUncached);
+
+export async function getBlog(handle: string): Promise<Blog | null> {
+  return getBlogCached(handle);
+}
+
+async function getBlogByUsernameNormalized(
+  username: string,
+): Promise<Blog | null> {
+  if (!db) {
+    return username === DEMO_BLOG.username ? DEMO_BLOG : null;
+  }
+  const row = await getBlogCoreByUsername(username);
+  if (!row) return null;
+  return mapBlog(row);
+}
+
+const getBlogByUsernameCached = cache(getBlogByUsernameNormalized);
+
+export async function getBlogByUsername(
+  usernameInput: string,
+): Promise<Blog | null> {
   // Lookups normalize but never validate: reserved-ness only matters when a
   // username is SET, and the seeded demo username is reserved yet resolvable.
   const username = usernameInput.trim().toLowerCase();
   if (!username || !/^[a-z0-9-]{1,30}$/.test(username)) return null;
-  if (!db) {
-    return username === DEMO_BLOG.username ? DEMO_BLOG : null;
-  }
-  const rows = await db
-    .select({
-      handle: blogs.handle,
-      username: users.username,
-      name: blogs.name,
-      tagline: blogs.tagline,
-      accent: blogs.accent,
-      bioLine: blogs.bioLine,
-      cardStyle: blogs.cardStyle,
-      homeLayout: blogs.homeLayout,
-      author: users.name,
-    })
-    .from(blogs)
-    .innerJoin(users, eq(blogs.ownerId, users.id))
-    .where(and(eq(users.username, username), isNull(blogs.deletedAt)))
-    .limit(1);
-  const row = rows[0];
-  if (!row) return null;
-  return mapBlog(row);
+  return getBlogByUsernameCached(username);
 }
 
 async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post[]> {
@@ -251,7 +236,7 @@ function pinnedFirst(items: Post[]): Post[] {
     .map(({ post }) => post);
 }
 
-export async function getPosts(handle: string): Promise<Post[]> {
+async function getPostsUncached(handle: string): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
     return pinnedFirst(
@@ -263,11 +248,23 @@ export async function getPosts(handle: string): Promise<Post[]> {
   return selectPosts(handle, true);
 }
 
-export async function getAllPosts(handle: string): Promise<Post[]> {
+const getPostsCached = cache(getPostsUncached);
+
+export async function getPosts(handle: string): Promise<Post[]> {
+  return getPostsCached(handle);
+}
+
+async function getAllPostsUncached(handle: string): Promise<Post[]> {
   if (!db) {
     return handle === DEMO_BLOG.handle ? pinnedFirst(DEMO_POSTS) : [];
   }
   return selectPosts(handle, false);
+}
+
+const getAllPostsCached = cache(getAllPostsUncached);
+
+export async function getAllPosts(handle: string): Promise<Post[]> {
+  return getAllPostsCached(handle);
 }
 
 export async function countAllPosts(handle: string): Promise<number> {
@@ -304,7 +301,7 @@ export async function getAdjacentPublishedPosts(
   };
 }
 
-export async function getPost(
+async function getPostUncached(
   handle: string,
   slug: string,
 ): Promise<Post | null> {
@@ -328,13 +325,17 @@ export async function getPost(
   return rows[0] ? mapPost(rows[0].posts) : null;
 }
 
+const getPostCached = cache(getPostUncached);
+
+export async function getPost(
+  handle: string,
+  slug: string,
+): Promise<Post | null> {
+  return getPostCached(handle, slug);
+}
+
 async function blogIdFor(handle: string): Promise<string> {
-  const rows = await db!
-    .select({ id: blogs.id })
-    .from(blogs)
-    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
-    .limit(1);
-  const id = rows[0]?.id;
+  const id = (await getBlogCore(handle))?.id;
   if (!id) throw new Error(`unknown blog "${handle}"`);
   return id;
 }
@@ -1001,31 +1002,30 @@ export async function getAccessibleFolderCounts(
 /** The owner's pricing plan for a blog, or null (unclaimed / demo mode). */
 export async function getOwnerPlan(handle: string): Promise<string | null> {
   if (!db) return null;
-  const rows = await db
-    .select({ plan: users.plan })
-    .from(blogs)
-    .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
-    .limit(1);
-  return rows[0]?.plan ?? null;
+  return (await getBlogCore(handle))?.ownerPlan ?? null;
 }
+
+async function getBlogEditRecordUncached(
+  handle: string,
+): Promise<BlogEditRecord | null> {
+  if (!db) return null;
+  const row = await getBlogCore(handle);
+  if (!row) return null;
+  return {
+    id: row.id,
+    handle: row.handle,
+    name: row.name,
+    ownerId: row.ownerId,
+    editTokenHash: row.editTokenHash,
+  };
+}
+
+const getBlogEditRecordCached = cache(getBlogEditRecordUncached);
 
 export async function getBlogEditRecord(
   handle: string,
 ): Promise<BlogEditRecord | null> {
-  if (!db) return null;
-  const rows = await db
-    .select({
-      id: blogs.id,
-      handle: blogs.handle,
-      name: blogs.name,
-      ownerId: blogs.ownerId,
-      editTokenHash: blogs.editTokenHash,
-    })
-    .from(blogs)
-    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
-    .limit(1);
-  return rows[0] ?? null;
+  return getBlogEditRecordCached(handle);
 }
 
 export async function getUnclaimedBlogEditRecordsByIds(
@@ -1056,22 +1056,11 @@ export async function isBlogOwner(
   sub: string,
 ): Promise<boolean> {
   if (!db) return false;
-  const rows = await db
-    .select({ id: blogs.id })
-    .from(blogs)
-    .leftJoin(users, eq(blogs.ownerId, users.id))
-    .where(
-      and(
-        eq(blogs.handle, handle),
-        eq(users.appleSub, sub),
-        isNull(blogs.deletedAt),
-      ),
-    )
-    .limit(1);
-  return Boolean(rows[0]);
+  const row = await getBlogCore(handle);
+  return Boolean(row?.ownerSub && row.ownerSub === sub);
 }
 
-export async function getPostById(
+async function getPostByIdUncached(
   handle: string,
   id: string,
 ): Promise<Post | null> {
@@ -1090,6 +1079,15 @@ export async function getPostById(
     )
     .limit(1);
   return rows[0] ? mapPost(rows[0].posts) : null;
+}
+
+const getPostByIdCached = cache(getPostByIdUncached);
+
+export async function getPostById(
+  handle: string,
+  id: string,
+): Promise<Post | null> {
+  return getPostByIdCached(handle, id);
 }
 
 export async function deletePost(handle: string, id: string): Promise<void> {

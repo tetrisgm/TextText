@@ -6,6 +6,7 @@ import { cache } from "react";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { isPrivateFolderMode, isPrivatePostType } from "./content";
+import { getBlogCore } from "./blog-core";
 import { db } from "./db/client";
 import { blogs, collaborators, folders, posts, users } from "./db/schema";
 
@@ -421,12 +422,7 @@ async function blogAccessBaseUncached(
   owner: boolean;
 } | null> {
   if (!db) return null;
-  const rows = await db
-    .select({ id: blogs.id, ownerId: blogs.ownerId })
-    .from(blogs)
-    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
-    .limit(1);
-  const row = rows[0];
+  const row = await getBlogCore(handle);
   if (!row) return null;
   const userId = await existingUserIdForAccess(user);
   return {
