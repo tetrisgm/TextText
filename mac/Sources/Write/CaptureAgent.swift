@@ -8,8 +8,8 @@ import WebKit
 /// Bookmark capture agent: drains GET /api/sync/v1/captures on this Mac,
 /// loading each pending URL in an offscreen WKWebView to produce the
 /// readable extraction, the original page artifact, and a bounded screenshot, then
-/// PUTs the result to /api/sync/v1/captures/{id} as multipart/form-data
-/// (fields: meta JSON, readable text, screenshot PNG, html/original file).
+/// PUTs partial results to /api/sync/v1/captures/{id} as multipart/form-data
+/// (fields: meta JSON, readable text, screenshot image, html/original file).
 final class CaptureAgent {
     private let store: StateStore
     private let queue = DispatchQueue(label: "write.capture-agent", qos: .utility)
@@ -18,16 +18,18 @@ final class CaptureAgent {
     private var draining = false
     private var pendingDrain = false
 
-    private let maxScreenshotBytes = 20 * 1024 * 1024
-    private let maxOriginalArtifactBytes = 40 * 1024 * 1024
+    private let maxUploadBodyBytes = 4 * 1024 * 1024
+    private let maxScreenshotBytes = 3 * 1024 * 1024
+    private let maxOriginalArtifactBytes = 1_536 * 1024
     // Hard ceiling on a downloaded PDF before it is handed to PDFKit, so a
     // multi-gigabyte (or streaming) PDF cannot exhaust the agent's memory.
     private let maxPDFBytes = 40 * 1024 * 1024
-    private let maxReadableBytes = 2 * 1024 * 1024
+    private let maxReadableBytes = 1_792 * 1024
     private let snapshotWidth: CGFloat = 1280
     private let minimumSnapshotHeight: CGFloat = 2000
     private let maxSnapshotHeight: CGFloat = 14_000
     private let maxSnapshotPixels: CGFloat = 18_000_000
+    private let captureRetryDelays: [TimeInterval] = [2, 6]
     private let uploadRetryDelays: [TimeInterval] = [2, 6, 18]
 
     var onActivity: ((String) -> Void)?
@@ -126,7 +128,7 @@ final class CaptureAgent {
             return
         }
 
-        switch self.capture(url: sourceURL, fallbackTitle: capture.title) {
+        switch self.captureWithRetry(url: sourceURL, fallbackTitle: capture.title) {
         case .failure(let failure):
             let result = uploadFailure(capture: capture, origin: origin, token: token,
                                        url: failure.url.absoluteString, reason: failure.reason)
@@ -166,6 +168,43 @@ final class CaptureAgent {
         case .terminal(let uploadReason):
             activity("capture failed \(host(for: url)): \(reason); upload rejected: \(uploadReason)")
         }
+    }
+
+    private func captureWithRetry(url: URL, fallbackTitle: String?) -> Result<PageCapture, PageCaptureFailure> {
+        var lastFailure = PageCaptureFailure(url: url, reason: "capture failed")
+        for attempt in 0...captureRetryDelays.count {
+            switch capture(url: url, fallbackTitle: fallbackTitle) {
+            case .success(let page):
+                return .success(page)
+            case .failure(let failure):
+                lastFailure = failure
+                guard attempt < captureRetryDelays.count, shouldRetryCapture(failure: failure) else {
+                    return .failure(failure)
+                }
+                activity("capture retry \(host(for: failure.url)): \(failure.reason)")
+                Thread.sleep(forTimeInterval: captureRetryDelays[attempt])
+            }
+        }
+        return .failure(lastFailure)
+    }
+
+    private func shouldRetryCapture(failure: PageCaptureFailure) -> Bool {
+        let reason = failure.reason.lowercased()
+        if reason == "bad url" ||
+            reason == "non-html content" ||
+            reason == "non-pdf content" ||
+            reason == pdfContentFailureReason.lowercased() ||
+            reason.contains("too large") {
+            return false
+        }
+        if reason.contains("http 4") &&
+            !reason.contains("http 408") &&
+            !reason.contains("http 409") &&
+            !reason.contains("http 425") &&
+            !reason.contains("http 429") {
+            return false
+        }
+        return true
     }
 
     private func capture(url: URL, fallbackTitle: String?) -> Result<PageCapture, PageCaptureFailure> {
@@ -312,9 +351,7 @@ final class CaptureAgent {
         guard let document = PDFDocument(data: data) else {
             return .failure(PageCaptureFailure(url: finalURL, reason: "PDF document failed to load"))
         }
-        guard let screenshot = renderPDFPages(document: document) else {
-            return .failure(PageCaptureFailure(url: finalURL, reason: "PDF screenshot failed"))
-        }
+        let screenshot = renderPDFPages(document: document)
 
         let title = pdfTitle(document: document, fallbackTitle: fallbackTitle, url: finalURL)
         let page = PageCapture(
@@ -461,21 +498,18 @@ final class CaptureAgent {
     }
 
     private func prepare(page: PageCapture) -> Result<PreparedPageCapture, CaptureAgentError> {
-        let readable = truncateReadable(page.readable)
-        guard let screenshot = fitScreenshot(page.screenshot) else {
-            return .failure(CaptureAgentError("screenshot too large"))
+        let readable = page.readable.flatMap { cleaned(truncateReadable($0)) }
+        let original = page.original.flatMap { fitOriginalArtifact($0) }
+        guard readable != nil || page.screenshot != nil else {
+            return .failure(CaptureAgentError("no readable text or screenshot captured"))
         }
-        let original = page.original.flatMap { artifact -> CaptureArtifact? in
-            guard artifact.data.count <= maxOriginalArtifactBytes else { return nil }
-            return artifact
-        }
-        return .success(PreparedPageCapture(readable: readable, screenshot: screenshot, original: original))
+        return .success(PreparedPageCapture(readable: readable, screenshot: page.screenshot, original: original))
     }
 
     private func truncateReadable(_ readable: String) -> String {
         guard Data(readable.utf8).count > maxReadableBytes else { return readable }
 
-        let note = "\n\n[Captured text truncated by Write because it exceeded the 2 MB upload limit.]\n"
+        let note = "\n\n[Captured text truncated by Write because it exceeded the 1.75 MB upload limit.]\n"
         let noteBytes = Data(note.utf8).count
         let limit = max(0, maxReadableBytes - noteBytes)
         var used = 0
@@ -503,30 +537,129 @@ final class CaptureAgent {
         return String(prefix) + note
     }
 
-    private func fitScreenshot(_ screenshot: Data) -> Data? {
-        guard screenshot.count > maxScreenshotBytes else { return screenshot }
-        guard let source = CGImageSourceCreateWithData(screenshot as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            return nil
-        }
-
-        var scale = min(0.92, sqrt(Double(maxScreenshotBytes) / Double(screenshot.count)) * 0.92)
-        for _ in 0..<10 {
-            guard let resized = resizedPNG(image: image, scale: scale) else { return nil }
-            if resized.count <= maxScreenshotBytes {
-                return resized
-            }
-            let next = sqrt(Double(maxScreenshotBytes) / Double(resized.count)) * 0.9
-            scale *= min(0.85, next)
-        }
-        return nil
-    }
-
     private func maxScreenshotHeightForWidth(_ width: CGFloat) -> CGFloat {
         min(maxSnapshotHeight, floor(maxSnapshotPixels / max(1, width)))
     }
 
-    private func resizedPNG(image: CGImage, scale: Double) -> Data? {
+    private func fitOriginalArtifact(_ artifact: CaptureArtifact) -> CaptureArtifact? {
+        guard artifact.data.count > maxOriginalArtifactBytes else { return artifact }
+        guard artifact.contentType.lowercased().contains("text/html"),
+              let html = String(data: artifact.data, encoding: .utf8) else {
+            return nil
+        }
+
+        let note = "\n<!-- Captured HTML truncated by Write because it exceeded the 1.5 MB upload limit. -->\n"
+        let truncated = truncateUTF8(html, maxBytes: maxOriginalArtifactBytes, note: note)
+        guard let data = truncated.data(using: .utf8), data.count <= maxOriginalArtifactBytes else {
+            return nil
+        }
+        return CaptureArtifact(data: data, filename: artifact.filename, contentType: artifact.contentType)
+    }
+
+    private func truncateUTF8(_ value: String, maxBytes: Int, note: String) -> String {
+        guard Data(value.utf8).count > maxBytes else { return value }
+        let noteBytes = Data(note.utf8).count
+        let limit = max(0, maxBytes - noteBytes)
+        var used = 0
+        var end = value.startIndex
+
+        var index = value.startIndex
+        while index < value.endIndex {
+            let next = value.index(after: index)
+            let count = String(value[index]).utf8.count
+            guard used + count <= limit else { break }
+            used += count
+            end = next
+            index = next
+        }
+
+        return String(value[..<end]) + note
+    }
+
+    private func screenshotArtifacts(from screenshot: Data) -> [CaptureArtifact] {
+        guard let source = CGImageSourceCreateWithData(screenshot as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let codec = screenshotCodec(for: image) else {
+            return []
+        }
+
+        let plans: [(scale: Double, quality: Double)] = [
+            (1.0, 0.78),
+            (1.0, 0.62),
+            (1.0, 0.48),
+            (0.85, 0.62),
+            (0.72, 0.56),
+            (0.60, 0.50),
+            (0.48, 0.45),
+        ]
+        var artifacts: [CaptureArtifact] = []
+        var seenSizes = Set<Int>()
+
+        for plan in plans {
+            guard let artifact = screenshotArtifact(
+                image: image,
+                codec: codec,
+                scale: plan.scale,
+                quality: plan.quality
+            ) else {
+                continue
+            }
+            guard artifact.data.count <= maxScreenshotBytes,
+                  seenSizes.insert(artifact.data.count).inserted else {
+                continue
+            }
+            artifacts.append(artifact)
+        }
+
+        if artifacts.isEmpty {
+            var scale = 0.40
+            for _ in 0..<4 {
+                guard let artifact = screenshotArtifact(
+                    image: image,
+                    codec: codec,
+                    scale: scale,
+                    quality: 0.42
+                ) else {
+                    break
+                }
+                if artifact.data.count <= maxScreenshotBytes,
+                   seenSizes.insert(artifact.data.count).inserted {
+                    artifacts.append(artifact)
+                    break
+                }
+                scale *= 0.75
+            }
+        }
+
+        return artifacts
+    }
+
+    private func screenshotCodec(for image: CGImage) -> ScreenshotCodec? {
+        guard let rendered = renderedImage(image: image, scale: 1.0) else { return nil }
+        if encodedImageData(image: rendered, type: .webP, quality: 0.78) != nil {
+            return .webP
+        }
+        if encodedImageData(image: rendered, type: .jpeg, quality: 0.78) != nil {
+            return .jpeg
+        }
+        return nil
+    }
+
+    private func screenshotArtifact(
+        image: CGImage, codec: ScreenshotCodec, scale: Double, quality: Double
+    ) -> CaptureArtifact? {
+        guard let rendered = renderedImage(image: image, scale: scale),
+              let data = encodedImageData(image: rendered, type: codec.utType, quality: quality) else {
+            return nil
+        }
+        return CaptureArtifact(
+            data: data,
+            filename: "screenshot.\(codec.fileExtension)",
+            contentType: codec.contentType
+        )
+    }
+
+    private func renderedImage(image: CGImage, scale: Double) -> CGImage? {
         let width = max(1, Int((Double(image.width) * scale).rounded()))
         let height = max(1, Int((Double(image.height) * scale).rounded()))
         guard let context = CGContext(
@@ -544,9 +677,25 @@ final class CaptureAgent {
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
 
-        guard let resized = context.makeImage() else { return nil }
-        return pngData(from: resized)
+    private func encodedImageData(image: CGImage, type: UTType, quality: Double) -> Data? {
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            type.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+        let options = [
+            kCGImageDestinationLossyCompressionQuality as String: max(0.1, min(1.0, quality))
+        ] as CFDictionary
+        CGImageDestinationAddImage(destination, image, options)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
     }
 
     private func isWebURL(_ url: URL) -> Bool {
@@ -596,15 +745,121 @@ final class CaptureAgent {
             capturedBy: "mac",
             error: nil
         )
+
+        var storedContent = false
+        var lastTransient: CaptureAgentError?
+        var lastTerminal: CaptureAgentError?
+
+        if let readable = prepared.readable {
+            switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, readable: readable) {
+            case .success:
+                storedContent = true
+            case .transient(let reason):
+                lastTransient = reason
+                activity("capture text pending \(host(for: page.finalURL)): \(reason)")
+            case .terminal(let reason):
+                lastTerminal = reason
+                activity("capture text rejected \(host(for: page.finalURL)): \(reason)")
+            }
+        }
+
+        if let screenshot = prepared.screenshot {
+            switch uploadScreenshotBestEffort(
+                capture: capture,
+                origin: origin,
+                token: token,
+                meta: meta,
+                screenshot: screenshot,
+                url: page.finalURL
+            ) {
+            case .success:
+                storedContent = true
+            case .transient(let reason):
+                lastTransient = reason
+                if storedContent {
+                    activity("capture screenshot skipped \(host(for: page.finalURL)): \(reason)")
+                }
+            case .terminal(let reason):
+                lastTerminal = reason
+                if storedContent {
+                    activity("capture screenshot skipped \(host(for: page.finalURL)): \(reason)")
+                }
+            }
+        }
+
+        if storedContent, let original = prepared.original {
+            switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, original: original) {
+            case .success:
+                break
+            case .transient(let reason):
+                activity("capture original skipped \(host(for: page.finalURL)): \(reason)")
+            case .terminal(let reason):
+                activity("capture original skipped \(host(for: page.finalURL)): \(reason)")
+            }
+        }
+
+        if storedContent {
+            return .success
+        }
+        if let lastTransient { return .transient(lastTransient) }
+        if let lastTerminal { return .terminal(lastTerminal) }
+        return .terminal(CaptureAgentError("no uploadable readable text or screenshot"))
+    }
+
+    private func uploadPartial(
+        capture: PendingCapture, origin: URL, token: String, meta: CaptureMeta,
+        readable: String? = nil, screenshot: CaptureArtifact? = nil, original: CaptureArtifact? = nil
+    ) -> CaptureUploadResult {
         guard let body = multipartBody(
             meta: meta,
-            readable: prepared.readable,
-            screenshot: prepared.screenshot,
-            original: prepared.original
+            readable: readable,
+            screenshot: screenshot,
+            original: original
         ) else {
             return .terminal(CaptureAgentError("could not encode upload"))
         }
         return uploadWithRetry(capture: capture, origin: origin, token: token, body: body)
+    }
+
+    private func uploadScreenshotBestEffort(
+        capture: PendingCapture, origin: URL, token: String, meta: CaptureMeta, screenshot: Data, url: URL
+    ) -> CaptureUploadResult {
+        let artifacts = screenshotArtifacts(from: screenshot)
+        guard !artifacts.isEmpty else {
+            return .terminal(CaptureAgentError("could not encode screenshot"))
+        }
+
+        var lastTransient: CaptureAgentError?
+        var lastTerminal: CaptureAgentError?
+        for (index, artifact) in artifacts.enumerated() {
+            switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, screenshot: artifact) {
+            case .success:
+                return .success
+            case .transient(let reason):
+                lastTransient = reason
+                if index + 1 < artifacts.count {
+                    activity("capture screenshot retry \(host(for: url)): \(reason)")
+                }
+            case .terminal(let reason):
+                lastTerminal = reason
+                guard shouldDegradeScreenshotUpload(reason) && index + 1 < artifacts.count else {
+                    return .terminal(reason)
+                }
+                activity("capture screenshot retry \(host(for: url)): \(reason)")
+            }
+        }
+
+        if let lastTransient { return .transient(lastTransient) }
+        return .terminal(lastTerminal ?? CaptureAgentError("screenshot upload failed"))
+    }
+
+    private func shouldDegradeScreenshotUpload(_ reason: CaptureAgentError) -> Bool {
+        let message = reason.message.lowercased()
+        return message.contains("413") ||
+            message.contains("too large") ||
+            message.contains("payload") ||
+            message.contains("request entity") ||
+            message.contains("body")
     }
 
     private func uploadWithRetry(
@@ -629,6 +884,11 @@ final class CaptureAgent {
     private func upload(
         capture: PendingCapture, origin: URL, token: String, body: MultipartBody
     ) -> CaptureUploadResult {
+        guard body.data.count <= maxUploadBodyBytes else {
+            return .terminal(CaptureAgentError(
+                "upload body is \(formatBytes(body.data.count)); limit is \(formatBytes(maxUploadBodyBytes))"
+            ))
+        }
         guard let url = endpoint(origin: origin, path: "/api/sync/v1/captures/\(capture.id)") else {
             return .terminal(CaptureAgentError("bad upload URL"))
         }
@@ -658,7 +918,7 @@ final class CaptureAgent {
     }
 
     private func multipartBody(
-        meta: CaptureMeta, readable: String? = nil, screenshot: Data? = nil,
+        meta: CaptureMeta, readable: String? = nil, screenshot: CaptureArtifact? = nil,
         original: CaptureArtifact? = nil
     ) -> MultipartBody? {
         guard let metaData = try? JSONEncoder().encode(meta),
@@ -675,8 +935,8 @@ final class CaptureAgent {
                         to: &data, boundary: boundary)
         }
         if let screenshot {
-            appendFile(name: "screenshot", filename: "screenshot.png", contentType: "image/png",
-                       fileData: screenshot, to: &data, boundary: boundary)
+            appendFile(name: "screenshot", filename: screenshot.filename, contentType: screenshot.contentType,
+                       fileData: screenshot.data, to: &data, boundary: boundary)
         }
         if let original {
             appendFile(name: "html", filename: original.filename, contentType: original.contentType,
@@ -747,6 +1007,11 @@ final class CaptureAgent {
             return "HTTP \(status): \(message)"
         }
         return "HTTP \(status)"
+    }
+
+    private func formatBytes(_ bytes: Int) -> String {
+        let mb = Double(bytes) / (1024 * 1024)
+        return String(format: "%.2f MB", mb)
     }
 
     private func activity(_ message: String) {
@@ -896,17 +1161,21 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         guard let webView, !completed else { return }
         webView.evaluateJavaScript(readableExtractionScript) { value, error in
             if let error {
-                self.fail(url: self.currentURL, reason: error.localizedDescription)
+                self.takeScreenshot(readable: nil, html: nil, fallbackReason: error.localizedDescription)
                 return
             }
             guard let json = value as? String,
                   let data = json.data(using: .utf8),
                   let extracted = try? JSONDecoder().decode(ReadableExtraction.self, from: data) else {
-                self.fail(url: self.currentURL, reason: "readable extraction failed")
+                self.takeScreenshot(readable: nil, html: nil, fallbackReason: "readable extraction failed")
                 return
             }
             if let ok = extracted.ok, !ok {
-                self.fail(url: self.currentURL, reason: extracted.error ?? "readable extraction failed")
+                self.takeScreenshot(
+                    readable: nil,
+                    html: nil,
+                    fallbackReason: extracted.error ?? "readable extraction failed"
+                )
                 return
             }
             guard let contentType = extracted.contentType?.lowercased(),
@@ -926,31 +1195,43 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         guard let webView, !completed else { return }
         webView.evaluateJavaScript("document.documentElement ? document.documentElement.outerHTML : ''") { value, error in
             if let error {
-                self.fail(url: self.currentURL, reason: error.localizedDescription)
+                self.takeScreenshot(readable: readable, html: nil, fallbackReason: error.localizedDescription)
                 return
             }
             guard let html = value as? String, !html.isEmpty,
                   let htmlData = html.data(using: .utf8) else {
-                self.fail(url: self.currentURL, reason: "HTML extraction failed")
+                self.takeScreenshot(readable: readable, html: nil, fallbackReason: "HTML extraction failed")
                 return
             }
-            self.takeScreenshot(readable: readable, html: htmlData)
+            self.takeScreenshot(readable: readable, html: htmlData, fallbackReason: "screenshot failed")
         }
     }
 
-    private func takeScreenshot(readable: ReadableExtraction, html: Data) {
+    private func takeScreenshot(readable: ReadableExtraction?, html: Data?, fallbackReason: String) {
         guard let webView, !completed else { return }
         webView.evaluateJavaScript(snapshotSizeScript) { value, error in
             if let error {
-                self.fail(url: self.currentURL, reason: error.localizedDescription)
+                self.finishPage(
+                    readable: readable,
+                    html: html,
+                    screenshot: nil,
+                    fallbackReason: error.localizedDescription
+                )
                 return
             }
             let size = self.snapshotSize(from: value)
-            self.takeBoundedScreenshot(readable: readable, html: html, size: size)
+            self.takeBoundedScreenshot(
+                readable: readable,
+                html: html,
+                size: size,
+                fallbackReason: fallbackReason
+            )
         }
     }
 
-    private func takeBoundedScreenshot(readable: ReadableExtraction, html: Data, size: NSSize) {
+    private func takeBoundedScreenshot(
+        readable: ReadableExtraction?, html: Data?, size: NSSize, fallbackReason: String
+    ) {
         guard let webView, !completed else { return }
         webView.frame = NSRect(origin: .zero, size: size)
         webView.layoutSubtreeIfNeeded()
@@ -959,33 +1240,57 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         config.rect = NSRect(origin: .zero, size: size)
         webView.takeSnapshot(with: config) { image, error in
             if let error {
-                self.fail(url: self.currentURL, reason: error.localizedDescription)
+                self.finishPage(
+                    readable: readable,
+                    html: html,
+                    screenshot: nil,
+                    fallbackReason: error.localizedDescription
+                )
                 return
             }
             guard let image,
                   let tiff = image.tiffRepresentation,
                   let rep = NSBitmapImageRep(data: tiff),
                   let png = rep.representation(using: .png, properties: [:]) else {
-                self.fail(url: self.currentURL, reason: "screenshot failed")
+                self.finishPage(
+                    readable: readable,
+                    html: html,
+                    screenshot: nil,
+                    fallbackReason: fallbackReason
+                )
                 return
             }
 
-            let title = self.cleaned(readable.title) ?? self.cleaned(self.fallbackTitle)
-            let page = PageCapture(
-                finalURL: self.currentURL,
-                title: title,
-                siteName: self.cleaned(readable.siteName),
-                description: self.cleaned(readable.description),
-                readable: self.markdown(from: readable, title: title),
-                screenshot: png,
-                original: CaptureArtifact(
-                    data: html,
-                    filename: "page.html",
-                    contentType: "text/html; charset=utf-8"
-                )
-            )
-            self.finish(.success(page))
+            self.finishPage(readable: readable, html: html, screenshot: png, fallbackReason: fallbackReason)
         }
+    }
+
+    private func finishPage(
+        readable: ReadableExtraction?, html: Data?, screenshot: Data?, fallbackReason: String
+    ) {
+        let title = self.cleaned(readable?.title) ?? self.cleaned(self.fallbackTitle)
+        let readableMarkdown = readable.map { self.markdown(from: $0, title: title) }
+        guard readableMarkdown != nil || screenshot != nil else {
+            self.fail(url: self.currentURL, reason: fallbackReason)
+            return
+        }
+        let original = html.map {
+            CaptureArtifact(
+                data: $0,
+                filename: "page.html",
+                contentType: "text/html; charset=utf-8"
+            )
+        }
+        let page = PageCapture(
+            finalURL: self.currentURL,
+            title: title,
+            siteName: self.cleaned(readable?.siteName),
+            description: self.cleaned(readable?.description),
+            readable: readableMarkdown,
+            screenshot: screenshot,
+            original: original
+        )
+        self.finish(.success(page))
     }
 
     private func snapshotSize(from value: Any?) -> NSSize {
@@ -1661,8 +1966,8 @@ private struct PageCapture {
     let title: String?
     let siteName: String?
     let description: String?
-    let readable: String
-    let screenshot: Data
+    let readable: String?
+    let screenshot: Data?
     let original: CaptureArtifact?
 }
 
@@ -1729,9 +2034,35 @@ private struct CaptureArtifact {
 }
 
 private struct PreparedPageCapture {
-    let readable: String
-    let screenshot: Data
+    let readable: String?
+    let screenshot: Data?
     let original: CaptureArtifact?
+}
+
+private enum ScreenshotCodec {
+    case webP
+    case jpeg
+
+    var utType: UTType {
+        switch self {
+        case .webP: return .webP
+        case .jpeg: return .jpeg
+        }
+    }
+
+    var contentType: String {
+        switch self {
+        case .webP: return "image/webp"
+        case .jpeg: return "image/jpeg"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .webP: return "webp"
+        case .jpeg: return "jpg"
+        }
+    }
 }
 
 private struct PDFPageGeometry {
