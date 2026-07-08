@@ -8,6 +8,9 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let syncRootKey = "WriteSyncRootPath"
     private static let loginItemAppliedKey = "WriteLoginItemDefaultApplied"
+    private static let productionBundleIdentifier = "net.writeapp.write.mac"
+    private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
+    private static let duplicateInstanceRecheckDelay: TimeInterval = 0.5
 
     private let store = StateStore()
     private var engine: SyncEngine!
@@ -29,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // ~/Downloads breaks Sparkle updates and triggers Gatekeeper
         // app-translocation; one click here fixes both (the LetsMove pattern).
         if moveToApplicationsIfNeeded() { return } // relaunching from the new home
+
+        if terminateIfAnotherInstanceIsAlreadyRunning() { return }
 
         WebAppWindowController.configureURLCacheForStartup()
 
@@ -94,6 +99,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { showMainWindow() }
         return true
+    }
+
+    @discardableResult
+    private func terminateIfAnotherInstanceIsAlreadyRunning() -> Bool {
+        if ProcessInfo.processInfo.arguments.contains(Self.moveToApplicationsRelaunchArgument) {
+            return false
+        }
+        guard let runningInstance = runningInstanceForSingleInstanceGuard() else { return false }
+        activateRunningInstance(runningInstance)
+
+        Thread.sleep(forTimeInterval: Self.duplicateInstanceRecheckDelay)
+        guard let confirmedInstance = runningInstanceForSingleInstanceGuard() else { return false }
+        activateRunningInstance(confirmedInstance)
+        NSApp.terminate(nil)
+        return true
+    }
+
+    private func runningInstanceForSingleInstanceGuard() -> NSRunningApplication? {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier
+                ?? (Bundle.main.bundleURL.path.hasSuffix(".app") ? Self.productionBundleIdentifier : nil) else {
+            return nil
+        }
+        let current = NSRunningApplication.current
+        let currentProcessIdentifier = current.processIdentifier
+        let currentLaunchDate = current.launchDate
+
+        return NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleIdentifier)
+            .filter { app in
+                app.processIdentifier != currentProcessIdentifier
+                    && !app.isTerminated
+                    && wasLaunchedBeforeCurrent(app,
+                                                currentLaunchDate: currentLaunchDate,
+                                                currentProcessIdentifier: currentProcessIdentifier)
+            }
+            .sorted(by: launchedEarlier)
+            .first
+    }
+
+    private func activateRunningInstance(_ app: NSRunningApplication) {
+        app.activate(options: [.activateAllWindows])
+    }
+
+    private func wasLaunchedBeforeCurrent(_ app: NSRunningApplication,
+                                          currentLaunchDate: Date?,
+                                          currentProcessIdentifier: pid_t) -> Bool {
+        if let appLaunchDate = app.launchDate, let currentLaunchDate, appLaunchDate != currentLaunchDate {
+            return appLaunchDate < currentLaunchDate
+        }
+        return app.processIdentifier < currentProcessIdentifier
+    }
+
+    private func launchedEarlier(_ lhs: NSRunningApplication, _ rhs: NSRunningApplication) -> Bool {
+        if let lhsLaunchDate = lhs.launchDate,
+           let rhsLaunchDate = rhs.launchDate,
+           lhsLaunchDate != rhsLaunchDate {
+            return lhsLaunchDate < rhsLaunchDate
+        }
+        return lhs.processIdentifier < rhs.processIdentifier
     }
 
     // Foreground check, throttled to one per 5 minutes (the partyparty rule).
@@ -240,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             let cfg = NSWorkspace.OpenConfiguration()
             cfg.createsNewApplicationInstance = true
+            cfg.arguments = [Self.moveToApplicationsRelaunchArgument]
             NSWorkspace.shared.openApplication(at: dest, configuration: cfg) { app, err in
                 DispatchQueue.main.async {
                     // Only hand over if the new copy actually launched;
