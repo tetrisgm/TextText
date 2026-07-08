@@ -4,7 +4,7 @@ import { type SyntheticEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Post } from "@/lib/content";
-import { isSafeLinkHref, isVideoFile } from "@/lib/content";
+import { isSafeLinkHref, isVideoFile, postBodyPreview } from "@/lib/content";
 import {
   bookmarkFaviconUrl,
   resolveCoverSource,
@@ -127,7 +127,7 @@ export function BookmarkCard({
   const description =
     previewLine(post.excerpt) ||
     previewLine(post.capture?.description) ||
-    previewLine(post.body);
+    previewLine(postBodyPreview(post));
   const screenshotUrl = post.capture?.screenshotUrl?.trim();
   const htmlUrl = post.capture?.htmlUrl?.trim();
   const isPending = captureStatus === "pending";

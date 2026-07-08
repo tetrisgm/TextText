@@ -54,10 +54,9 @@ export const collaborators = pgTable(
     scopeType: text("scope_type").notNull(),
     scopeId: uuid("scope_id").notNull(),
     /**
-     * Bound on first access: invites are created by email before the person
-     * has ever signed in, so userId starts null and is filled the first time
-     * a signed-in session whose (provider-verified) email matches opens the
-     * share. After binding, userId wins over the email match.
+     * Invites are created by email before the person has ever signed in, so
+     * userId can start null and later be bound by an explicit accept/auth
+     * action. Permission reads must still honor the email match.
      */
     userId: uuid("user_id").references(() => users.id),
     /** normalized (lowercased, trimmed) invite address */
@@ -75,6 +74,14 @@ export const collaborators = pgTable(
     uniqueIndex("collaborators_scope_email_idx")
       .on(t.scopeType, t.scopeId, t.invitedEmail)
       .where(sql`${t.revokedAt} is null and ${t.invitedEmail} is not null`),
+    index("collaborators_user_id_active_idx")
+      .on(t.userId)
+      .where(sql`${t.revokedAt} is null and ${t.userId} is not null`),
+    index("collaborators_invited_email_active_idx")
+      .on(t.invitedEmail)
+      .where(
+        sql`${t.revokedAt} is null and ${t.invitedEmail} is not null and ${t.userId} is null`,
+      ),
   ],
 );
 
@@ -256,6 +263,8 @@ export const posts = pgTable(
     duration: text("duration"),
     /** markdown */
     body: text("body").notNull().default(""),
+    /** cached count of body tokens for list reading-time metadata */
+    wordCount: integer("word_count"),
     /**
      * Bookmark capture pipeline: null (not a capturable item or nothing
      * requested) | "pending" (waiting for a capture agent, normally the Mac
@@ -278,6 +287,15 @@ export const posts = pgTable(
     // trashed row.
     uniqueIndex("posts_blog_slug_idx")
       .on(t.blogId, t.slug)
+      .where(sql`${t.deletedAt} is null`),
+    index("posts_folder_id_idx")
+      .on(t.folderId)
+      .where(sql`${t.deletedAt} is null`),
+    index("posts_blog_public_order_idx")
+      .on(t.blogId, t.status, t.pinned.desc(), t.publishedAt.desc(), t.createdAt.desc())
+      .where(sql`${t.deletedAt} is null`),
+    index("posts_blog_workspace_order_idx")
+      .on(t.blogId, t.pinned.desc(), t.updatedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
   ],
 );

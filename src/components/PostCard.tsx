@@ -12,6 +12,7 @@ import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
   isVideoFile,
+  postBodyPreview,
   postAccent,
 } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
@@ -73,7 +74,7 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function postDesc(post: Post): string {
-  return post.excerpt?.trim() || plainTextExcerpt(post.body);
+  return post.excerpt?.trim() || plainTextExcerpt(postBodyPreview(post));
 }
 
 function actionErrorMessage(error: unknown, fallback: string): string {

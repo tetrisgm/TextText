@@ -19,8 +19,8 @@ import {
   createDraft,
   createSubfolder,
   deletePost,
-  getAccessibleAllPosts,
-  getAccessibleFolderPosts,
+  getAccessibleAllPostFiles,
+  getAccessibleFolderPostFiles,
   getAccessibleFolders,
   getPostById,
   savePost,
@@ -158,7 +158,7 @@ async function postsInFolder(
   user: AccessUser,
 ): Promise<Post[]> {
   // The database does the folder scoping (NULL folder_id counts as blog).
-  const posts = await getAccessibleFolderPosts(handle, folder.path, user);
+  const posts = await getAccessibleFolderPostFiles(handle, folder.path, user);
   return posts.filter((post) => post.id);
 }
 
@@ -549,7 +549,10 @@ export function registerWriteTools(server: McpServer): void {
     async ({ query }, extra) => {
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const posts = await getAccessibleAllPosts(blog.handle, accessUser(extra));
+      const posts = await getAccessibleAllPostFiles(
+        blog.handle,
+        accessUser(extra),
+      );
       const results = posts
         .filter((post) => post.id && postMatchesQuery(post, query))
         .slice(0, SEARCH_RESULT_LIMIT)

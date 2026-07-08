@@ -10,7 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createFolderItemAction } from "@/app/editor/actions";
 import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
-import { formatArticleDate } from "@/lib/content";
+import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 
@@ -142,7 +142,7 @@ function NotesFolderContents({
         ) : (
           <div className="post-folder-list">
             {notes.map((note) => {
-              const preview = previewLine(note.body);
+              const preview = previewLine(postBodyPreview(note));
               return (
                 <Link
                   key={itemKey(note)}
@@ -358,7 +358,7 @@ function BlogFolderContents({
       ) : (
         <div className="post-folder-list">
           {sorted.map((post) => {
-            const preview = previewLine(post.body);
+            const preview = previewLine(postBodyPreview(post));
             return (
               <Link
                 key={itemKey(post)}

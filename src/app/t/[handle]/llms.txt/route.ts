@@ -1,4 +1,5 @@
 import type { Blog, Post } from "@/lib/content";
+import { postBodyPreview } from "@/lib/content";
 import {
   blogBaseUrl,
   folderJsonUrl,
@@ -64,7 +65,7 @@ function renderLlmsTxt(blog: Blog, posts: Post[], baseUrl: string): string {
       if (date) fields.push(`Date: ${date}`);
       fields.push(
         `Canonical: ${postUrl(baseUrl, post.slug)}`,
-        `Summary: ${pipeDelimitedValue(plainTextSummary(post.body))}`,
+        `Summary: ${pipeDelimitedValue(plainTextSummary(postBodyPreview(post)))}`,
       );
       lines.push(fields.join(" | "));
     }

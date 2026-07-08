@@ -1,5 +1,6 @@
 import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
 import type { Blog, Post } from "@/lib/content";
+import { postBodyPreview } from "@/lib/content";
 import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
 
@@ -37,7 +38,8 @@ function renderRss(
     .map((post) => {
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toUTCString();
-      const summary = post.excerpt?.trim() || plainTextSummary(post.body);
+      const summary =
+        post.excerpt?.trim() || plainTextSummary(postBodyPreview(post));
       const imageUrl = resolveCoverUrl(post, baseUrl);
       const mediaContent = imageUrl
         ? `      <media:content url="${escapeXml(imageUrl)}" medium="image" type="${escapeXml(coverMimeType(imageUrl))}" />`

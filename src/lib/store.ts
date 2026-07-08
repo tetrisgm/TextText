@@ -22,6 +22,8 @@ import {
   PRIVATE_POST_TYPES,
   isBlogBucketPath,
   isPrivatePostType,
+  readingTimeMinForWordCount,
+  wordCountForMarkdown,
 } from "./content";
 import type {
   Blog,
@@ -31,6 +33,7 @@ import type {
   CaptureStatus,
   Folder,
   FolderMode,
+  LinkRef,
   Post,
   PostType,
 } from "./content";
@@ -54,6 +57,39 @@ import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
 
 type PostRow = typeof posts.$inferSelect;
 type PostFolderRow = Pick<PostRow, "id" | "folderId" | "type">;
+type PostListRow = Pick<
+  PostRow,
+  | "id"
+  | "blogId"
+  | "folderId"
+  | "type"
+  | "slug"
+  | "title"
+  | "excerpt"
+  | "accent"
+  | "cover"
+  | "coverCaption"
+  | "coverHeight"
+  | "videoUrl"
+  | "venue"
+  | "duration"
+  | "captureStatus"
+  | "status"
+  | "pinned"
+  | "publishedAt"
+  | "createdAt"
+  | "updatedAt"
+  | "wordCount"
+> & {
+  bodyPreview: string | null;
+  captureUrl: string | null;
+  captureTitle: string | null;
+  captureDescription: string | null;
+  captureScreenshotUrl: string | null;
+  captureHtmlUrl: string | null;
+  linkLabel: string | null;
+  linkHref: string | null;
+};
 type BlogRow = {
   handle: string;
   username: string | null;
@@ -107,7 +143,12 @@ function toISODate(value: Date | string | null): string | undefined {
   return iso.slice(0, 10);
 }
 
+function readingTimeForWordCount(wordCount: number | null): number | undefined {
+  return wordCount == null ? undefined : readingTimeMinForWordCount(wordCount);
+}
+
 function mapPost(row: PostRow): Post {
+  const wordCount = row.wordCount ?? wordCountForMarkdown(row.body);
   return {
     id: row.id,
     type: row.type,
@@ -126,6 +167,8 @@ function mapPost(row: PostRow): Post {
     venue: row.venue ?? undefined,
     duration: row.duration ?? undefined,
     body: row.body,
+    wordCount,
+    readingTime: readingTimeMinForWordCount(wordCount),
     captureStatus: cleanCaptureStatus(row.captureStatus),
     capture: row.capture ?? undefined,
     date: toISODate(row.publishedAt ?? row.createdAt),
@@ -134,6 +177,104 @@ function mapPost(row: PostRow): Post {
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function compactCapture(row: PostListRow): BookmarkCapture | undefined {
+  const capture: Partial<BookmarkCapture> = {
+    url: row.captureUrl ?? undefined,
+    title: row.captureTitle ?? undefined,
+    description: row.captureDescription ?? undefined,
+    screenshotUrl: row.captureScreenshotUrl ?? undefined,
+    htmlUrl: row.captureHtmlUrl ?? undefined,
+  };
+  return Object.values(capture).some(Boolean)
+    ? (capture as BookmarkCapture)
+    : undefined;
+}
+
+function compactLinks(row: PostListRow): LinkRef[] | undefined {
+  if (!row.linkHref) return undefined;
+  return [{ label: row.linkLabel ?? row.linkHref, href: row.linkHref }];
+}
+
+function mapPostList(row: PostListRow): Post {
+  return {
+    id: row.id,
+    type: row.type,
+    slug: row.slug,
+    title: row.title,
+    excerpt: row.excerpt ?? undefined,
+    accent: row.accent ?? undefined,
+    cover: row.cover ?? undefined,
+    coverCaption: row.coverCaption ?? undefined,
+    coverHeight: row.coverHeight ?? undefined,
+    links: compactLinks(row),
+    videoUrl: row.videoUrl ?? undefined,
+    venue: row.venue ?? undefined,
+    duration: row.duration ?? undefined,
+    body: row.bodyPreview ?? "",
+    bodyPreview: row.bodyPreview ?? undefined,
+    wordCount: row.wordCount ?? undefined,
+    readingTime: readingTimeForWordCount(row.wordCount),
+    captureStatus: cleanCaptureStatus(row.captureStatus),
+    capture: compactCapture(row),
+    date: toISODate(row.publishedAt ?? row.createdAt),
+    status: row.status,
+    pinned: row.pinned,
+    folderId: row.folderId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const BODY_PREVIEW_LENGTH = 2048;
+
+function bodyPreviewSql(): SQL<string | null> {
+  return sql<string | null>`nullif(left(${posts.body}, ${BODY_PREVIEW_LENGTH}), '')`;
+}
+
+function wordCountSql(): SQL<number | null> {
+  return sql<number | null>`coalesce(
+    ${posts.wordCount},
+    case
+      when btrim(${posts.body}) = '' then 0
+      else cardinality(regexp_split_to_array(btrim(${posts.body}), '[[:space:]]+'))
+    end
+  )`;
+}
+
+function postListSelection() {
+  return {
+    id: posts.id,
+    blogId: posts.blogId,
+    folderId: posts.folderId,
+    type: posts.type,
+    slug: posts.slug,
+    title: posts.title,
+    excerpt: posts.excerpt,
+    accent: posts.accent,
+    cover: posts.cover,
+    coverCaption: posts.coverCaption,
+    coverHeight: posts.coverHeight,
+    videoUrl: posts.videoUrl,
+    venue: posts.venue,
+    duration: posts.duration,
+    captureStatus: posts.captureStatus,
+    status: posts.status,
+    pinned: posts.pinned,
+    publishedAt: posts.publishedAt,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    wordCount: wordCountSql(),
+    bodyPreview: bodyPreviewSql(),
+    captureUrl: sql<string | null>`${posts.capture}->>'url'`,
+    captureTitle: sql<string | null>`${posts.capture}->>'title'`,
+    captureDescription: sql<string | null>`${posts.capture}->>'description'`,
+    captureScreenshotUrl: sql<string | null>`${posts.capture}->>'screenshotUrl'`,
+    captureHtmlUrl: sql<string | null>`${posts.capture}->>'htmlUrl'`,
+    linkLabel: sql<string | null>`${posts.links}->0->>'label'`,
+    linkHref: sql<string | null>`${posts.links}->0->>'href'`,
   };
 }
 
@@ -198,7 +339,7 @@ export async function getBlogByUsername(
 
 async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post[]> {
   const rows = await db!
-    .select()
+    .select(postListSelection())
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
     .where(
@@ -221,7 +362,7 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return rows.map((r) => mapPost(r.posts));
+  return rows.map(mapPostList);
 }
 
 function pinnedFirst(items: Post[]): Post[] {
@@ -340,9 +481,8 @@ async function blogIdFor(handle: string): Promise<string> {
   return id;
 }
 
-// Every workspace has these three system folders. ensureWorkspaceFolders
-// creates any that are missing, so workspaces from before Notes and Bookmarks
-// landed gain them lazily on first read.
+// Every workspace has these three system folders. Provisioning creates them,
+// and the migration backfills older workspaces so reads never write.
 const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
   { name: "Blog", path: "blog", mode: "blog", position: 0 },
   { name: "Notes", path: "notes", mode: "notes", position: 1 },
@@ -486,7 +626,13 @@ export async function listPendingCaptures(
   if (!db) return [];
   const blogId = await blogIdFor(handle);
   const rows = await db
-    .select()
+    .select({
+      id: posts.id,
+      slug: posts.slug,
+      title: posts.title,
+      linkHref: sql<string | null>`${posts.links}->0->>'href'`,
+      captureUrl: sql<string | null>`${posts.capture}->>'url'`,
+    })
     .from(posts)
     .where(
       and(
@@ -502,7 +648,7 @@ export async function listPendingCaptures(
       id: row.id,
       slug: row.slug,
       title: row.title,
-      url: row.links?.[0]?.href ?? row.capture?.url ?? "",
+      url: row.linkHref ?? row.captureUrl ?? "",
     }))
     .filter((entry) => entry.url);
 }
@@ -580,6 +726,7 @@ export async function saveBookmarkCapture(
           : "captured",
       excerpt,
       body,
+      wordCount: wordCountForMarkdown(body),
       updatedAt: new Date(),
     })
     .where(eq(posts.id, row.id))
@@ -685,15 +832,8 @@ function cleanFolderMode(value: string | null): FolderMode {
   return "blog";
 }
 
-// Get-or-create ALL the system folders: one multi-row INSERT with ON CONFLICT
-// DO NOTHING settles races on the (blog, path) partial unique index, same
-// pattern as blogs, then one SELECT reads the settled rows back in order.
-export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> {
+async function workspaceFoldersByBlogId(blogId: string): Promise<Folder[]> {
   if (!db) return DEMO_FOLDERS;
-  await db
-    .insert(folders)
-    .values(WORKSPACE_FOLDERS.map((folder) => ({ blogId, ...folder })))
-    .onConflictDoNothing();
   const rows = await db
     .select()
     .from(folders)
@@ -708,10 +848,23 @@ export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> 
       ),
     )
     .orderBy(asc(folders.position), asc(folders.createdAt));
+  return rows.map(mapFolder);
+}
+
+// Provision ALL system folders: one multi-row INSERT with ON CONFLICT DO
+// NOTHING settles races on the (blog, path) partial unique index, same pattern
+// as blogs, then one SELECT reads the settled rows back in order.
+export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> {
+  if (!db) return DEMO_FOLDERS;
+  await db
+    .insert(folders)
+    .values(WORKSPACE_FOLDERS.map((folder) => ({ blogId, ...folder })))
+    .onConflictDoNothing();
+  const rows = await workspaceFoldersByBlogId(blogId);
   if (rows.length < WORKSPACE_FOLDERS.length) {
     throw new Error("failed to ensure the workspace folders");
   }
-  return rows.map(mapFolder);
+  return rows;
 }
 
 async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
@@ -735,6 +888,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         slug: STARTER_NOTE.slug,
         title: STARTER_NOTE.title,
         body: STARTER_NOTE.body,
+        wordCount: wordCountForMarkdown(STARTER_NOTE.body),
         status: "draft",
       },
       {
@@ -747,6 +901,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         captureStatus: "pending",
         capture: { url: STARTER_BOOKMARK_URL },
         body: "",
+        wordCount: 0,
         status: "draft",
       },
     ])
@@ -756,38 +911,61 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
     });
 }
 
-// Get-or-create the default "blog" folder (the whole system set is ensured on
-// the way, so any caller of the default folder also heals older workspaces).
+// Resolve the default "blog" folder. Creation is handled during workspace
+// provisioning, and older workspaces are handled by the migration backfill.
 export async function ensureDefaultFolder(blogId: string): Promise<Folder> {
   return folderForPostType(blogId, "article");
 }
 
-// The system folder a post of this type belongs in, ensured to exist.
+// The system folder a post of this type belongs in. New blogs are provisioned
+// at creation, and older blogs are covered by the backfill migration.
 async function folderForPostType(
   blogId: string,
   type: PostType,
 ): Promise<Folder> {
-  const ensured = await ensureWorkspaceFolders(blogId);
   const path = folderPathForPostType(type);
-  const folder = ensured.find((entry) => entry.path === path);
-  if (!folder) throw new Error(`failed to ensure the "${path}" folder`);
-  return folder;
+  const rows = await db!
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        eq(folders.path, path),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!rows[0]) throw new Error(`missing the "${path}" workspace folder`);
+  return mapFolder(rows[0]);
 }
 
 async function getFoldersUncached(handle: string): Promise<Folder[]> {
   if (!db) {
     return handle === DEMO_BLOG.handle ? DEMO_FOLDERS : [];
   }
-  const blogId = await blogIdFor(handle);
-  // Ensure the system folders exist first: workspaces created before Notes
-  // and Bookmarks landed gain them here on read.
-  const ensured = await ensureWorkspaceFolders(blogId);
   const rows = await db
-    .select()
+    .select({
+      id: folders.id,
+      blogId: folders.blogId,
+      name: folders.name,
+      path: folders.path,
+      parentId: folders.parentId,
+      mode: folders.mode,
+      position: folders.position,
+      createdAt: folders.createdAt,
+      updatedAt: folders.updatedAt,
+      deletedAt: folders.deletedAt,
+    })
     .from(folders)
-    .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt)))
+    .innerJoin(blogs, eq(folders.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(folders.deletedAt),
+      ),
+    )
     .orderBy(asc(folders.position), asc(folders.createdAt));
-  if (rows.length === 0) return ensured;
   return rows.map(mapFolder);
 }
 
@@ -830,6 +1008,132 @@ async function getFolderPostsUncached(
         )
       : eq(folders.path, folderPath);
   const rows = await db
+    .select(postListSelection())
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .leftJoin(
+      folders,
+      and(eq(posts.folderId, folders.id), isNull(folders.deletedAt)),
+    )
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        publishedOnly ? eq(posts.status, "published") : undefined,
+        blogBucketTypePredicate(folderPath),
+        inFolder,
+      ),
+    )
+    .orderBy(
+      desc(posts.pinned),
+      publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
+      desc(posts.createdAt),
+    );
+  return excludePrivateTypesFromBlogBucket(
+    folderPath,
+    rows.map(mapPostList),
+  );
+}
+
+const getFolderPostsCached = cache(getFolderPostsUncached);
+
+export async function getFolderPosts(
+  handle: string,
+  folderPath: string,
+  opts: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  return getFolderPostsCached(handle, folderPath, opts.publishedOnly ?? false);
+}
+
+async function selectFullPosts(
+  handle: string,
+  publishedOnly: boolean,
+): Promise<Post[]> {
+  const rows = await db!
+    .select()
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      publishedOnly
+        ? and(
+            eq(blogs.handle, handle),
+            eq(posts.status, "published"),
+            publicPostTypePredicate(),
+            isNull(blogs.deletedAt),
+            isNull(posts.deletedAt),
+          )
+        : and(
+            eq(blogs.handle, handle),
+            isNull(blogs.deletedAt),
+            isNull(posts.deletedAt),
+          ),
+    )
+    .orderBy(
+      desc(posts.pinned),
+      publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
+      desc(posts.createdAt),
+    );
+  return rows.map((r) => mapPost(r.posts));
+}
+
+async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle) return [];
+    return pinnedFirst(
+      DEMO_POSTS.filter(
+        (p) => p.status === "published" && !isPrivatePostType(p.type),
+      ),
+    );
+  }
+  return selectFullPosts(handle, true);
+}
+
+const getPublishedPostFilesCached = cache(getPublishedPostFilesUncached);
+
+export async function getPublishedPostFiles(handle: string): Promise<Post[]> {
+  return getPublishedPostFilesCached(handle);
+}
+
+async function getAllPostFilesUncached(handle: string): Promise<Post[]> {
+  if (!db) {
+    return handle === DEMO_BLOG.handle ? pinnedFirst(DEMO_POSTS) : [];
+  }
+  return selectFullPosts(handle, false);
+}
+
+const getAllPostFilesCached = cache(getAllPostFilesUncached);
+
+export async function getAllPostFiles(handle: string): Promise<Post[]> {
+  return getAllPostFilesCached(handle);
+}
+
+async function getFolderPostFilesUncached(
+  handle: string,
+  folderPath: string,
+  publishedOnly: boolean,
+): Promise<Post[]> {
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle) return [];
+    const folderPosts = DEMO_POSTS.filter(
+      (post) =>
+        folderPathForPostType(post.type) === folderPath &&
+        (!publishedOnly || post.status === "published"),
+    );
+    return pinnedFirst(
+      excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
+    );
+  }
+
+  const inFolder =
+    folderPath === DEFAULT_FOLDER_PATH
+      ? or(
+          isNull(posts.folderId),
+          eq(folders.path, folderPath),
+          like(folders.path, `${folderPath}/%`),
+        )
+      : eq(folders.path, folderPath);
+  const rows = await db
     .select()
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
@@ -858,14 +1162,18 @@ async function getFolderPostsUncached(
   );
 }
 
-const getFolderPostsCached = cache(getFolderPostsUncached);
+const getFolderPostFilesCached = cache(getFolderPostFilesUncached);
 
-export async function getFolderPosts(
+export async function getFolderPostFiles(
   handle: string,
   folderPath: string,
   opts: { publishedOnly?: boolean } = {},
 ): Promise<Post[]> {
-  return getFolderPostsCached(handle, folderPath, opts.publishedOnly ?? false);
+  return getFolderPostFilesCached(
+    handle,
+    folderPath,
+    opts.publishedOnly ?? false,
+  );
 }
 
 // Live (not trashed) item counts per folder path, drafts included, in one
@@ -958,12 +1266,39 @@ export async function getAccessibleFolderPosts(
   return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
 }
 
+export async function getAccessibleFolderPostFiles(
+  handle: string,
+  folderPath: string,
+  user: AccessUser | null,
+  opts: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  if (!db || !user) return [];
+  const folderPosts = excludePrivateTypesFromBlogBucket(
+    folderPath,
+    await getFolderPostFiles(handle, folderPath, opts),
+  );
+  const ids = await accessiblePostIdsForUser(handle, user);
+  if (ids === "all") return folderPosts;
+  return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
+}
+
 export async function getAccessibleAllPosts(
   handle: string,
   user: AccessUser | null,
 ): Promise<Post[]> {
   if (!db || !user) return [];
   const allPosts = await getAllPosts(handle);
+  const ids = await accessiblePostIdsForUser(handle, user);
+  if (ids === "all") return allPosts;
+  return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
+}
+
+export async function getAccessibleAllPostFiles(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Post[]> {
+  if (!db || !user) return [];
+  const allPosts = await getAllPostFiles(handle);
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return allPosts;
   return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
@@ -1195,6 +1530,7 @@ export async function savePost(
   // Notes and bookmarks are always unlisted: no save path may publish them.
   const status =
     post.type === "note" || post.type === "bookmark" ? "draft" : post.status;
+  const wordCount = wordCountForMarkdown(post.body);
   const base = {
     type: post.type,
     title: post.title,
@@ -1209,6 +1545,7 @@ export async function savePost(
     venue: post.venue ?? null,
     duration: post.duration ?? null,
     body: post.body,
+    wordCount,
     status,
     pinned: post.pinned ?? false,
     updatedAt: new Date(),
@@ -1323,6 +1660,7 @@ export async function createDraft(
       title: "",
       excerpt: "",
       body: "",
+      wordCount: 0,
       status: "draft",
     })
     .returning();
