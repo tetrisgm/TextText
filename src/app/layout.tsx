@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
-import { ROOT_DOMAIN } from "@/lib/tenants";
+import { rootDomainUrl } from "@/lib/site-url";
 import "../styles/tokens.css";
 import "../styles/broadsheet.css";
 import "../styles/cards.css";
@@ -28,21 +28,26 @@ const fraunces = localFont({
 
 const title = "Write";
 const description =
-  "A calm publishing home for articles, projects, and talks with a clean Newsroom-inspired reading experience.";
+  "Folders of Markdown for publishing, notes, and agent workflows.";
 
-function rootUrl(): URL {
-  const root = ROOT_DOMAIN.replace(/^https?:\/\//, "");
-  const protocol = root.startsWith("localhost") || root.startsWith("127.")
-    ? "http"
-    : "https";
-  return new URL(`${protocol}://${root}`);
-}
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#1d1d1f" },
+  ],
+};
 
 export const metadata: Metadata = {
-  metadataBase: rootUrl(),
+  metadataBase: rootDomainUrl(),
   applicationName: title,
-  title,
+  title: {
+    default: title,
+    template: "%s · Write",
+  },
   description,
+  manifest: "/manifest.webmanifest",
   openGraph: {
     title,
     description,
@@ -51,7 +56,7 @@ export const metadata: Metadata = {
     url: "/",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title,
     description,
   },
