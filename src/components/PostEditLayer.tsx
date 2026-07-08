@@ -1226,6 +1226,7 @@ export function PostEditLayer({
           value={draft.body}
           onChange={(body) => updateDraft({ body })}
           mediaEnabled={mediaEnabled}
+          postType={displayPost.type}
           toolbarHost={bodyToolbarHost}
           uploadEndpoint={uploadEndpoint}
           collab={collab}
