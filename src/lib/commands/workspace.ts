@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  createFolderItemAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
   movePostToFolderAction,
@@ -12,8 +11,10 @@ import { BLOG_FOLDER_PATH, isPrivatePostType } from "@/lib/content";
 import type { Folder, Post } from "@/lib/content";
 import {
   addPost,
+  getWorkspacePost,
   movePost,
   removePost,
+  replacePost,
   updatePost,
 } from "@/lib/pool/store";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
@@ -46,6 +47,22 @@ function currentCreateKind(ctx: CommandContext): CreatePostKind {
   return "article";
 }
 
+function folderForCreateKind(
+  ctx: CommandContext,
+  kind: CreatePostKind,
+): Folder | null {
+  const activeFolder = folderForPath(ctx, ctx.workspace?.activeFolderPath ?? null);
+  if (kind === "article") {
+    return activeFolder?.mode === "blog"
+      ? activeFolder
+      : folderForPath(ctx, BLOG_FOLDER_PATH);
+  }
+  const mode = kind === "note" ? "notes" : "bookmarks";
+  return activeFolder?.mode === mode
+    ? activeFolder
+    : (ctx.pool?.folders.find((folder) => folder.mode === mode) ?? null);
+}
+
 function optimisticPost(
   ctx: CommandContext,
   kind: CreatePostKind,
@@ -54,15 +71,12 @@ function optimisticPost(
   const pool = ctx.pool;
   if (!workspace || !pool) return null;
   const now = new Date().toISOString();
-  const folder = folderForPath(ctx, workspace.activeFolderPath);
+  const folder = folderForCreateKind(ctx, kind);
   const slug = `untitled-${Date.now().toString(36)}`;
   return {
     id: `optimistic-${kind}-${Date.now().toString(36)}`,
     blogId: pool.blogId,
-    folderId:
-      folder && (kind !== "article" || folder.mode === "blog")
-        ? folder.id
-        : undefined,
+    folderId: folder?.id,
     type: kind,
     slug,
     title: "",
@@ -71,6 +85,24 @@ function optimisticPost(
     pinned: false,
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+function createFolderPath(ctx: CommandContext, kind: CreatePostKind): string {
+  if (kind !== "article") return kind === "note" ? "notes" : "bookmarks";
+  return folderForCreateKind(ctx, kind)?.path ?? BLOG_FOLDER_PATH;
+}
+
+function mergeSavedPostWithLocalDraft(
+  saved: WorkspacePoolPost,
+  localDraft: WorkspacePoolPost | null,
+): WorkspacePoolPost {
+  if (!localDraft) return saved;
+  return {
+    ...saved,
+    title: localDraft.title,
+    excerpt: localDraft.excerpt,
+    updatedAt: localDraft.updatedAt ?? saved.updatedAt,
   };
 }
 
@@ -117,39 +149,54 @@ function createCommand(kind: CreatePostKind): AppCommand {
     id: `create.${kind}`,
     label: labels[kind],
     group: "Create",
+    shortcut: { key: "c", label: "C" },
     when: (ctx) => Boolean(ctx.workspace?.canCreate),
     run: async (ctx) => {
       const workspace = ctx.workspace;
       const pool = ctx.pool;
       if (!workspace || !pool || !workspace.canCreate) return;
 
-      if (kind === "bookmark" && workspace.startBookmarkCreate) {
-        workspace.startBookmarkCreate();
-        return;
-      }
-
       const temp = optimisticPost(ctx, kind);
       if (temp) {
         addPost(temp);
-        workspace.selectPost(temp.id);
+        if (workspace.openCreatedPost) {
+          workspace.openCreatedPost(temp);
+        } else {
+          workspace.selectPost(temp.id);
+        }
       }
 
       try {
-        const activeFolder = workspace.activeFolderPath ?? BLOG_FOLDER_PATH;
-        const saved =
-          kind === "article"
-            ? await createWorkspacePostAction(
-                workspace.handle,
-                "article",
-                activeFolder,
-              )
-            : await createFolderItemAction(workspace.handle, "notes");
-        if (temp) removePost(temp.id);
+        const activeFolder = createFolderPath(ctx, kind);
+        const saved = await createWorkspacePostAction(
+          workspace.handle,
+          kind,
+          activeFolder,
+        );
         const poolPost = poolPostFromPost(saved, pool.blogId);
-        if (poolPost) addPost(poolPost);
-        ctx.navigate(blogPostEditPath(pool.blog, saved));
+        if (poolPost) {
+          const reconciled = mergeSavedPostWithLocalDraft(
+            poolPost,
+            temp ? getWorkspacePost(temp.id) : null,
+          );
+          if (temp) {
+            replacePost(temp.id, reconciled);
+            workspace.reconcileCreatedPost?.(temp.id, reconciled);
+          } else {
+            addPost(reconciled);
+          }
+        } else if (temp) {
+          removePost(temp.id);
+        }
+
+        if (!workspace.openCreatedPost) {
+          ctx.navigate(blogPostEditPath(pool.blog, saved));
+        }
       } catch (error) {
-        if (temp) removePost(temp.id);
+        if (temp) {
+          removePost(temp.id);
+          workspace.afterDelete(temp.id);
+        }
         ctx.toast(error instanceof Error ? error.message : "Could not create");
       }
     },
@@ -359,7 +406,19 @@ export function shortcutList(command: AppCommand): CommandShortcut[] {
 }
 
 export function commandShortcutLabel(command: AppCommand): string | undefined {
-  const shortcuts = shortcutList(command).map((shortcut) => shortcut.label);
+  const shortcuts = shortcutList(command).map((shortcut) => {
+    if (shortcut.label) return shortcut.label;
+    const modifiers = [
+      shortcut.meta ? "⌘" : "",
+      shortcut.ctrl ? "Ctrl " : "",
+      shortcut.alt ? "Alt " : "",
+      shortcut.shift ? "Shift " : "",
+    ].join("");
+    const key = shortcut.key.length === 1
+      ? shortcut.key.toUpperCase()
+      : shortcut.key;
+    return `${modifiers}${key}`;
+  });
   return shortcuts.length > 0 ? shortcuts.join(", ") : undefined;
 }
 

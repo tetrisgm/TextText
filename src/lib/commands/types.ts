@@ -31,6 +31,11 @@ export type CommandWorkspaceSurface = {
   selectNext: () => void;
   selectPrevious: () => void;
   openPost: (postId: string) => void;
+  openCreatedPost?: (post: WorkspacePoolPost) => void;
+  reconcileCreatedPost?: (
+    temporaryPostId: string,
+    savedPost: WorkspacePoolPost,
+  ) => void;
   openFolder: (folderPath: string) => void;
   navigateRoot: () => void;
   navigateUp: () => boolean;

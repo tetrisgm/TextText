@@ -192,12 +192,33 @@ export function useWorkspacePostBody(blogId: string, postId: string) {
   return { entry, load };
 }
 
+export function getWorkspacePost(postId: string): WorkspacePoolPost | null {
+  return state.pool?.posts.find((post) => post.id === postId) ?? null;
+}
+
 export function addPost(post: WorkspacePoolPost) {
   if (!state.pool || state.pool.blogId !== post.blogId) return;
   setState({
     pool: {
       ...state.pool,
       posts: [post, ...state.pool.posts.filter((entry) => entry.id !== post.id)],
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+}
+
+export function replacePost(previousId: string, post: WorkspacePoolPost) {
+  if (!state.pool || state.pool.blogId !== post.blogId) return;
+  setState({
+    pool: {
+      ...state.pool,
+      posts: [
+        post,
+        ...state.pool.posts.filter(
+          (entry) => entry.id !== previousId && entry.id !== post.id,
+        ),
+      ],
       fetchedAt: new Date().toISOString(),
     },
   });

@@ -128,9 +128,19 @@ async function createAnonymousBlogHandle(
 // createFolderItemAction and never through the blog picker.
 const POST_TYPES: PostType[] = ["article", "project", "talk"];
 const ALL_POST_TYPES: PostType[] = [...POST_TYPES, "note", "bookmark"];
+const WORKSPACE_CREATE_TYPES: PostType[] = ["article", "note", "bookmark"];
 
 function cleanPostType(value: unknown): PostType {
   return POST_TYPES.includes(value as PostType) ? (value as PostType) : "article";
+}
+
+function cleanWorkspaceCreateType(value: unknown): Extract<
+  PostType,
+  "article" | "note" | "bookmark"
+> {
+  return WORKSPACE_CREATE_TYPES.includes(value as PostType)
+    ? (value as Extract<PostType, "article" | "note" | "bookmark">)
+    : "article";
 }
 
 // Notes and bookmarks live in their own folders and are always unlisted.
@@ -558,16 +568,26 @@ export async function createWorkspacePostAction(
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
   await enforceAnonymousPostLimit(handle, access);
-  const type = cleanPostType(typeInput);
+  const type = cleanWorkspaceCreateType(typeInput);
   const created = await createDraft(handle, type);
   const folderPath =
     typeof folderPathInput === "string" ? folderPathInput.trim() : "";
   const saved =
-    folderPath && folderPath !== "blog" && created.id
+    type === "article" && folderPath && folderPath !== "blog" && created.id
       ? await setPostFolder(handle, created.id, folderPath)
       : created;
   if (!saved) throw new Error("Post not found");
-  await auditEdit(access, "create_post", "item", saved.id, type);
+  await auditEdit(
+    access,
+    type === "note"
+      ? "create_note"
+      : type === "bookmark"
+        ? "create_bookmark"
+        : "create_post",
+    "item",
+    saved.id,
+    type,
+  );
   await revalidateBlog(handle, [saved.slug]);
   return saved;
 }
