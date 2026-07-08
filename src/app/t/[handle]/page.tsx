@@ -325,14 +325,14 @@ export async function BlogHomeForHandle({
 }) {
   const queryPromise: Promise<BlogHomeQuery> =
     searchParams ?? Promise.resolve({});
-  const [blog, access, query, cookieStore] = await Promise.all([
+  const [blog, access, query, cookieStore, viewer] = await Promise.all([
     getBlog(handle),
     getBlogEditAccess(handle),
     queryPromise,
     cookies(),
+    getCurrentUser(),
   ]);
   if (!blog) notFound();
-  const viewer = await getCurrentUser();
   const workspaceAccess = viewer
     ? await resolveWorkspaceAccess({ handle, user: viewer })
     : null;
@@ -404,19 +404,23 @@ export async function BlogHomeForHandle({
     requestedFolder && requestedFolder !== "blog"
       ? folders.find((folder) => folder.path === requestedFolder) ?? null
       : null;
-  const folderItems = activeFolder
+  const folderItemsPromise = activeFolder
     ? canEdit
-      ? await getFolderPosts(handle, activeFolder.path)
-      : await getAccessibleFolderPosts(handle, activeFolder.path, viewer)
-    : [];
-  const activeFolderAccess =
+      ? getFolderPosts(handle, activeFolder.path)
+      : getAccessibleFolderPosts(handle, activeFolder.path, viewer)
+    : Promise.resolve<Post[]>([]);
+  const activeFolderAccessPromise =
     activeFolder && !canEdit
-      ? await resolveFolderAccess({
+      ? resolveFolderAccess({
           handle,
           folderId: activeFolder.id,
           user: viewer,
         })
-      : null;
+      : Promise.resolve(null);
+  const [folderItems, activeFolderAccess] = await Promise.all([
+    folderItemsPromise,
+    activeFolderAccessPromise,
+  ]);
   // The single layout leads with the newest published post; an owner's
   // unpublished drafts never displace what visitors see.
   const singlePost =

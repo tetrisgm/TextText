@@ -121,7 +121,14 @@ export function Reader({
           {/* Covers can be remote uploads or local curated fallbacks. Plain img
               avoids next/image remote-domain config. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={resolvedCover} alt={title} />
+          <img
+            src={resolvedCover}
+            alt={title}
+            decoding="async"
+            loading={
+              coverSource.kind === "bookmark-screenshot" ? "lazy" : undefined
+            }
+          />
         </>
       )}
       {coverCaption && (
@@ -168,6 +175,7 @@ export function Reader({
                   <img
                     src={typeof src === "string" ? src : ""}
                     alt={alt ?? ""}
+                    decoding="async"
                     loading="lazy"
                   />
                   {alt && (

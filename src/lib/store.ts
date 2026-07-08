@@ -16,6 +16,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { cache } from "react";
 import {
   BLOG_FOLDER_PATH,
   PRIVATE_POST_TYPES,
@@ -51,6 +52,7 @@ import {
 import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
 
 type PostRow = typeof posts.$inferSelect;
+type PostFolderRow = Pick<PostRow, "id" | "folderId" | "type">;
 type BlogRow = {
   handle: string;
   username: string | null;
@@ -771,7 +773,7 @@ async function folderForPostType(
   return folder;
 }
 
-export async function getFolders(handle: string): Promise<Folder[]> {
+async function getFoldersUncached(handle: string): Promise<Folder[]> {
   if (!db) {
     return handle === DEMO_BLOG.handle ? DEMO_FOLDERS : [];
   }
@@ -788,15 +790,20 @@ export async function getFolders(handle: string): Promise<Folder[]> {
   return rows.map(mapFolder);
 }
 
+const getFoldersCached = cache(getFoldersUncached);
+
+export async function getFolders(handle: string): Promise<Folder[]> {
+  return getFoldersCached(handle);
+}
+
 // Posts scoped to one folder of the workspace, identified by its path. Posts
 // with a NULL folder_id (created before the folders backfill) count as living
 // in the default "blog" folder.
-export async function getFolderPosts(
+async function getFolderPostsUncached(
   handle: string,
   folderPath: string,
-  opts: { publishedOnly?: boolean } = {},
+  publishedOnly: boolean,
 ): Promise<Post[]> {
-  const publishedOnly = opts.publishedOnly ?? false;
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
     const folderPosts = DEMO_POSTS.filter(
@@ -850,11 +857,19 @@ export async function getFolderPosts(
   );
 }
 
+const getFolderPostsCached = cache(getFolderPostsUncached);
+
+export async function getFolderPosts(
+  handle: string,
+  folderPath: string,
+  opts: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  return getFolderPostsCached(handle, folderPath, opts.publishedOnly ?? false);
+}
+
 // Live (not trashed) item counts per folder path, drafts included, in one
 // grouped query. A NULL folder_id counts toward the default "blog" folder.
-export async function getFolderCounts(
-  handle: string,
-): Promise<Record<string, number>> {
+async function getFolderCountsUncached(handle: string): Promise<Record<string, number>> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return {};
     const counts: Record<string, number> = {};
@@ -889,12 +904,38 @@ export async function getFolderCounts(
   return counts;
 }
 
+const getFolderCountsCached = cache(getFolderCountsUncached);
+
+export async function getFolderCounts(
+  handle: string,
+): Promise<Record<string, number>> {
+  return getFolderCountsCached(handle);
+}
+
+async function getPostFolderRowsUncached(handle: string): Promise<PostFolderRow[]> {
+  if (!db) return [];
+  const rows = await db
+    .select({ id: posts.id, folderId: posts.folderId, type: posts.type })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    );
+  return rows;
+}
+
+const getPostFolderRows = cache(getPostFolderRowsUncached);
+
 export async function getAccessibleFolders(
   handle: string,
   user: AccessUser | null,
 ): Promise<Folder[]> {
+  if (!db || !user) return [];
   const allFolders = await getFolders(handle);
-  if (!db) return [];
   const ids = await accessibleFolderIdsForUser(handle, user);
   if (ids === "all") return allFolders;
   return allFolders.filter((folder) => ids.has(folder.id));
@@ -906,11 +947,11 @@ export async function getAccessibleFolderPosts(
   user: AccessUser | null,
   opts: { publishedOnly?: boolean } = {},
 ): Promise<Post[]> {
+  if (!db || !user) return [];
   const folderPosts = excludePrivateTypesFromBlogBucket(
     folderPath,
     await getFolderPosts(handle, folderPath, opts),
   );
-  if (!db) return [];
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return folderPosts;
   return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
@@ -920,8 +961,8 @@ export async function getAccessibleAllPosts(
   handle: string,
   user: AccessUser | null,
 ): Promise<Post[]> {
+  if (!db || !user) return [];
   const allPosts = await getAllPosts(handle);
-  if (!db) return [];
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return allPosts;
   return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
@@ -931,10 +972,11 @@ export async function getAccessibleFolderCounts(
   handle: string,
   user: AccessUser | null,
 ): Promise<Record<string, number>> {
-  if (!db) return {};
-  const allFolders = await getFolders(handle);
-  const [visiblePosts, visibleFolderIds] = await Promise.all([
-    getAccessibleAllPosts(handle, user),
+  if (!db || !user) return {};
+  const [allFolders, postRows, visiblePostIds, visibleFolderIds] = await Promise.all([
+    getFolders(handle),
+    getPostFolderRows(handle),
+    accessiblePostIdsForUser(handle, user),
     accessibleFolderIdsForUser(handle, user),
   ]);
   const pathById = new Map(allFolders.map((folder) => [folder.id, folder.path]));
@@ -947,7 +989,8 @@ export async function getAccessibleFolderCounts(
             .map((folder) => folder.path),
         );
   const counts: Record<string, number> = {};
-  for (const post of visiblePosts) {
+  for (const post of postRows) {
+    if (visiblePostIds !== "all" && !visiblePostIds.has(post.id)) continue;
     const path = post.folderId ? pathById.get(post.folderId) : DEFAULT_FOLDER_PATH;
     if (!path || !visiblePaths.has(path)) continue;
     counts[path] = (counts[path] ?? 0) + 1;
