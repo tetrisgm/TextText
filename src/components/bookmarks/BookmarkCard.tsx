@@ -126,10 +126,12 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  selected = false,
 }: {
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  selected?: boolean;
 }) {
   const router = useRouter();
   const captureStatus = useCaptureStatus(post.id, post.captureStatus, {
@@ -226,7 +228,7 @@ export function BookmarkCard({
   );
 
   return (
-    <article className={styles.card}>
+    <article className={classNames(styles.card, selected && styles.selected)}>
       <div className={styles.body}>
         {isPending ? (
           <div

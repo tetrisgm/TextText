@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -12,15 +13,19 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createSubfolderAction } from "@/app/editor/actions";
+import {
+  useEscapeLayer,
+  useWorkspaceCommandSurface,
+} from "@/components/keyboard/CommandLayer";
 import { FolderPage } from "@/components/FolderPage";
 import { PostActionBar } from "@/components/PostActionBar";
-import { hasOpenEditMenu, isTypingTarget } from "@/components/PostShortcuts";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
+import { BLOG_FOLDER_PATH } from "@/lib/content";
 import {
   adjacentPublishedPostsForPool,
   findPoolPostById,
@@ -828,18 +833,7 @@ export function WorkspaceSidebarChrome({
     onToggleCollapsed();
   }, [onToggleCollapsed]);
 
-  useEffect(() => {
-    if (collapsed) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeSidebar();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeSidebar, collapsed]);
+  useEscapeLayer(!collapsed, "Sidebar", closeSidebar);
 
   return (
     <>
@@ -1067,22 +1061,26 @@ function LocalWorkspaceContent({
   canCreateItems,
   canEditItems,
   canManagePost,
+  createBookmarkRequestKey,
   handle,
   homePath,
   onNavigate,
   onOpenPost,
   pool,
+  selectedPostId,
   view,
 }: {
   blog: Blog;
   canCreateItems: boolean;
   canEditItems: boolean;
   canManagePost: boolean;
+  createBookmarkRequestKey: number;
   handle: string;
   homePath: string;
   onNavigate: (path: string) => Promise<void> | void;
   onOpenPost: (post: Post) => void;
   pool: WorkspacePoolPayload;
+  selectedPostId: string | null;
   view: LocalWorkspaceView;
 }) {
   if (view.level === "root") return <WorkspaceRootLanding blog={blog} />;
@@ -1102,6 +1100,8 @@ function LocalWorkspaceContent({
         canCreateItems={canCreateItems}
         canEditItems={canEditItems}
         onOpenPost={onOpenPost}
+        createBookmarkRequestKey={createBookmarkRequestKey}
+        selectedPostId={selectedPostId}
       />
     );
   }
@@ -1147,6 +1147,10 @@ function LocalWorkspaceShell({
   const displayPool = pool?.blogId === initialPool.blogId ? pool : initialPool;
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(
+    initialView.level === "post" ? initialView.postId : null,
+  );
+  const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
 
@@ -1162,6 +1166,7 @@ function LocalWorkspaceShell({
     (nextView: LocalWorkspaceView, href: string) => {
       window.history.pushState(null, "", href);
       setView(nextView);
+      setSelectedPostId(nextView.level === "post" ? nextView.postId : null);
     },
     [],
   );
@@ -1204,6 +1209,61 @@ function LocalWorkspaceShell({
     [displayPool, openPoolPost, view],
   );
 
+  const visiblePosts = useMemo(() => {
+    if (view.level === "section") {
+      return poolPostsForFolder(displayPool, view.folderPath);
+    }
+    if (view.level === "post") {
+      return poolPostsForFolder(displayPool, view.folderPath);
+    }
+    return poolPostsForFolder(displayPool, BLOG_FOLDER_PATH);
+  }, [displayPool, view]);
+
+  useEffect(() => {
+    if (!selectedPostId) return;
+    if (!visiblePosts.some((post) => post.id === selectedPostId)) {
+      setSelectedPostId(null);
+    }
+  }, [selectedPostId, visiblePosts]);
+
+  const openPostId = useCallback(
+    (postId: string) => {
+      const post = findPoolPostById(displayPool, postId);
+      if (!post) return;
+      openPoolPost(
+        post,
+        view.level === "section" || view.level === "post"
+          ? view.folderPath
+          : undefined,
+      );
+    },
+    [displayPool, openPoolPost, view],
+  );
+
+  const selectRelativePost = useCallback(
+    (direction: 1 | -1) => {
+      const ids = visiblePosts.map((post) => post.id);
+      if (ids.length === 0) return;
+      const currentId =
+        selectedPostId ?? (view.level === "post" ? view.postId : null);
+      const currentIndex = currentId ? ids.indexOf(currentId) : -1;
+      const nextIndex =
+        currentIndex === -1
+          ? direction > 0
+            ? 0
+            : ids.length - 1
+          : (currentIndex + direction + ids.length) % ids.length;
+      const nextId = ids[nextIndex] ?? null;
+      if (!nextId) return;
+      if (view.level === "post") {
+        openPostId(nextId);
+        return;
+      }
+      setSelectedPostId(nextId);
+    },
+    [openPostId, selectedPostId, view, visiblePosts],
+  );
+
   const navigatePath = useCallback(
     (path: string) => {
       const url = new URL(path, window.location.origin);
@@ -1227,9 +1287,13 @@ function LocalWorkspaceShell({
   const navigateUp = useCallback(() => {
     if (view.level === "post") {
       navigateSection(view.folderPath);
-      return;
+      return true;
     }
-    if (view.level === "section") navigateRoot();
+    if (view.level === "section") {
+      navigateRoot();
+      return true;
+    }
+    return false;
   }, [navigateRoot, navigateSection, view]);
 
   useEffect(() => {
@@ -1240,24 +1304,53 @@ function LocalWorkspaceShell({
     return () => window.removeEventListener("popstate", onPopState);
   }, [displayPool, homePath]);
 
-  useEffect(() => {
-    if (!mounted) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.key !== "Escape") return;
-      if (hasOpenEditMenu()) return;
-      if (view.level === "root") {
-        if (isTypingTarget(event.target)) {
-          (event.target as HTMLElement).blur();
+  const commandSurface = useMemo(
+    () => ({
+      blog: displayPool.blog,
+      handle: displayPool.blog.handle,
+      homePath,
+      canCreate: canManageFolders,
+      canEdit: canManageFolders,
+      canManagePost: canManageFolders,
+      activeFolderPath: localViewActiveFolder(view),
+      activePostId: view.level === "post" ? view.postId : null,
+      selectedPostId,
+      getVisiblePostIds: () => visiblePosts.map((post) => post.id),
+      getPost: (postId: string) => findPoolPostById(displayPool, postId),
+      selectPost: (postId: string | null) => setSelectedPostId(postId),
+      selectNext: () => selectRelativePost(1),
+      selectPrevious: () => selectRelativePost(-1),
+      openPost: openPostId,
+      openFolder: navigateSection,
+      navigateRoot,
+      navigateUp,
+      afterDelete: (postId: string) => {
+        if (selectedPostId === postId) setSelectedPostId(null);
+        if (view.level === "post" && view.postId === postId) navigateUp();
+      },
+      startBookmarkCreate: () => {
+        if (localViewActiveFolder(view) !== "bookmarks") {
+          navigateSection("bookmarks");
         }
-        return;
-      }
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      navigateUp();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [mounted, navigateUp, view.level]);
+        setCreateBookmarkRequestKey((current) => current + 1);
+      },
+    }),
+    [
+      canManageFolders,
+      displayPool,
+      homePath,
+      navigateRoot,
+      navigateSection,
+      navigateUp,
+      openPostId,
+      selectRelativePost,
+      selectedPostId,
+      view,
+      visiblePosts,
+    ],
+  );
+
+  useWorkspaceCommandSurface(mounted ? commandSurface : null);
 
   const content = mounted ? (
     <LocalWorkspaceContent
@@ -1265,11 +1358,13 @@ function LocalWorkspaceShell({
       canCreateItems={canManageFolders}
       canEditItems={canManageFolders}
       canManagePost={canManageFolders}
+      createBookmarkRequestKey={createBookmarkRequestKey}
       handle={displayPool.blog.handle}
       homePath={homePath}
       onNavigate={navigatePath}
       onOpenPost={openPost}
       pool={displayPool}
+      selectedPostId={selectedPostId}
       view={view}
     />
   ) : (

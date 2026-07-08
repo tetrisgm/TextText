@@ -1,23 +1,12 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useRef } from "react";
+import { startTransition, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createArticleDraftPathAction } from "@/app/editor/actions";
+import { useKey } from "@/components/keyboard/CommandLayer";
+import { isTypingTarget } from "@/components/keyboard/typing-target";
 
 const CLOSE_EDIT_MENU_EVENT = "post-edit-menu-close";
-
-export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  if (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement
-  ) {
-    return true;
-  }
-  const element = target as HTMLElement;
-  return element.isContentEditable;
-}
 
 export function hasOpenEditMenu(): boolean {
   return Boolean(document.querySelector('[data-post-edit-menu-open="true"]'));
@@ -61,51 +50,49 @@ export function PostShortcuts({
   const router = useRouter();
   const createArticle = useCreateArticleShortcut(owner, handle);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-
-      if (event.key === "Escape") {
-        if (hasOpenEditMenu()) {
-          event.preventDefault();
-          window.dispatchEvent(new CustomEvent(CLOSE_EDIT_MENU_EVENT));
-          return;
-        }
-
-        event.preventDefault();
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
-        router.push(homePath);
+  useKey({
+    key: "Escape",
+    label: "Go up",
+    group: "Navigate",
+    run: () => {
+      if (hasOpenEditMenu()) {
+        window.dispatchEvent(new CustomEvent(CLOSE_EDIT_MENU_EVENT));
         return;
       }
-
-      if (isTypingTarget(event.target)) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const key = event.key.toLowerCase();
-      const targetPath =
-        key === "j"
-          ? nextPath
-          : key === "k"
-            ? previousPath
-            : undefined;
-
-      if (targetPath) {
-        event.preventDefault();
-        router.push(targetPath);
-        return;
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
       }
+      router.push(homePath);
+    },
+  });
 
-      if (key === "c" && owner) {
-        event.preventDefault();
-        createArticle();
-      }
-    };
+  useKey({
+    key: "j",
+    label: "Next post",
+    group: "Navigate",
+    when: () => Boolean(nextPath),
+    run: () => {
+      if (nextPath) router.push(nextPath);
+    },
+  });
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createArticle, homePath, nextPath, owner, previousPath, router]);
+  useKey({
+    key: "k",
+    label: "Previous post",
+    group: "Navigate",
+    when: () => Boolean(previousPath),
+    run: () => {
+      if (previousPath) router.push(previousPath);
+    },
+  });
+
+  useKey({
+    key: "c",
+    label: "New article",
+    group: "Create",
+    when: () => owner,
+    run: createArticle,
+  });
 
   return null;
 }
@@ -118,24 +105,16 @@ export function BlogHomeShortcuts({
   handle?: string;
 }) {
   const createArticle = useCreateArticleShortcut(owner, handle);
-
-  useEffect(() => {
-    if (!owner) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "c") return;
-
-      event.preventDefault();
-      createArticle();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createArticle, owner]);
+  useKey({
+    key: "c",
+    label: "New article",
+    group: "Create",
+    when: () => owner,
+    run: createArticle,
+  });
 
   return null;
 }
 
 export { CLOSE_EDIT_MENU_EVENT };
+export { isTypingTarget };

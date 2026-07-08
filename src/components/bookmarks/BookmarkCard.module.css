@@ -9,6 +9,14 @@
   color: var(--ink);
 }
 
+.selected {
+  margin-inline: -10px;
+  padding-inline: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 22%, transparent);
+}
+
 .body {
   min-width: 0;
   display: grid;

@@ -4,7 +4,14 @@
 // the home workspace shell. Notes and bookmarks stay unlisted; sharing only
 // grants named collaborators access.
 
-import { useCallback, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import type { FormEvent, MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -91,6 +98,7 @@ function NotesFolderContents({
   canCreateItems,
   canEditItems,
   onOpenPost,
+  selectedPostId,
 }: {
   blog: Blog;
   handle: string;
@@ -98,6 +106,7 @@ function NotesFolderContents({
   canCreateItems: boolean;
   canEditItems: boolean;
   onOpenPost?: (post: Post) => void;
+  selectedPostId?: string | null;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -158,7 +167,9 @@ function NotesFolderContents({
               return (
                 <Link
                   key={itemKey(note)}
-                  className="post-folder-row"
+                  className={`post-folder-row${
+                    note.id === selectedPostId ? " is-command-selected" : ""
+                  }`}
                   href={
                     onOpenPost
                       ? blogPostPath(blog, note)
@@ -201,6 +212,8 @@ function BookmarksFolderContents({
   canCreateItems,
   canEditItems,
   onOpenPost,
+  createRequestKey,
+  selectedPostId,
 }: {
   blog: Blog;
   handle: string;
@@ -208,6 +221,8 @@ function BookmarksFolderContents({
   canCreateItems: boolean;
   canEditItems: boolean;
   onOpenPost?: (post: Post) => void;
+  createRequestKey?: number;
+  selectedPostId?: string | null;
 }) {
   const router = useRouter();
   const urlRef = useRef<HTMLInputElement>(null);
@@ -223,6 +238,11 @@ function BookmarksFolderContents({
       urlRef.current?.focus();
     });
   }, []);
+
+  useEffect(() => {
+    if (!createRequestKey) return;
+    openForm();
+  }, [createRequestKey, openForm]);
 
   const closeForm = useCallback(() => {
     setFormOpen(false);
@@ -342,6 +362,7 @@ function BookmarksFolderContents({
               <BookmarkCard
                 key={itemKey(bookmark)}
                 post={bookmark}
+                selected={bookmark.id === selectedPostId}
                 editPath={
                   onOpenPost
                     ? blogPostPath(blog, bookmark)
@@ -364,11 +385,13 @@ function BlogFolderContents({
   items,
   canEditItems,
   onOpenPost,
+  selectedPostId,
 }: {
   blog: Blog;
   items: Post[];
   canEditItems: boolean;
   onOpenPost?: (post: Post) => void;
+  selectedPostId?: string | null;
 }) {
   const sorted = useMemo(
     () =>
@@ -389,7 +412,9 @@ function BlogFolderContents({
             return (
               <Link
                 key={itemKey(post)}
-                className="post-folder-row"
+                className={`post-folder-row${
+                  post.id === selectedPostId ? " is-command-selected" : ""
+                }`}
                 href={
                   onOpenPost
                     ? blogPostPath(blog, post)
@@ -430,6 +455,8 @@ export function FolderPage({
   canCreateItems = true,
   canEditItems = true,
   onOpenPost,
+  createBookmarkRequestKey,
+  selectedPostId,
 }: {
   blog: Blog;
   folder: Folder;
@@ -438,6 +465,8 @@ export function FolderPage({
   canCreateItems?: boolean;
   canEditItems?: boolean;
   onOpenPost?: (post: Post) => void;
+  createBookmarkRequestKey?: number;
+  selectedPostId?: string | null;
 }) {
   return (
     <main className="post-folder-page" aria-labelledby="post-folder-page-title">
@@ -452,6 +481,7 @@ export function FolderPage({
           items={items}
           canEditItems={canEditItems}
           onOpenPost={onOpenPost}
+          selectedPostId={selectedPostId}
         />
       ) : folder.mode === "bookmarks" ? (
         <BookmarksFolderContents
@@ -461,6 +491,8 @@ export function FolderPage({
           canCreateItems={canCreateItems}
           canEditItems={canEditItems}
           onOpenPost={onOpenPost}
+          createRequestKey={createBookmarkRequestKey}
+          selectedPostId={selectedPostId}
         />
       ) : (
         <NotesFolderContents
@@ -470,6 +502,7 @@ export function FolderPage({
           canCreateItems={canCreateItems}
           canEditItems={canEditItems}
           onOpenPost={onOpenPost}
+          selectedPostId={selectedPostId}
         />
       )}
     </main>

@@ -12,6 +12,7 @@ import type { ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { saveEditablePostAction } from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -259,6 +260,8 @@ function useDismissPopover<T extends HTMLElement>(
   ref: RefObject<T | null>,
   onClose: () => void,
 ) {
+  useEscapeLayer(open, "Popover", onClose);
+
   useEffect(() => {
     if (!open) return;
 
@@ -268,18 +271,9 @@ function useDismissPopover<T extends HTMLElement>(
       if (!node.contains(event.target)) onClose();
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [onClose, open, ref]);
 }
