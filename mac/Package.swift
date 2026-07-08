@@ -10,14 +10,26 @@ import PackageDescription
 let package = Package(
     name: "Write",
     platforms: [.macOS(.v14)],
+    products: [
+        .library(name: "WriteFileProviderCore", targets: ["WriteFileProviderCore"])
+    ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
     ],
     targets: [
+        .target(
+            name: "WriteFileProviderCore",
+            path: "Sources/WriteFileProviderCore"
+        ),
         .executableTarget(
             name: "Write",
             dependencies: [.product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/Write"
+        ),
+        .testTarget(
+            name: "WriteFileProviderCoreTests",
+            dependencies: ["WriteFileProviderCore"],
+            path: "Tests/WriteFileProviderCoreTests"
         )
     ]
 )
