@@ -14,7 +14,7 @@ import {
   isVideoFile,
   postAccent,
 } from "@/lib/content";
-import { resolveCover } from "@/lib/cover";
+import { resolveCover, usesBookmarkCaptureCover } from "@/lib/cover";
 import { blogPostPath } from "@/lib/public-paths";
 
 const TYPE_LABELS: Record<PostType, string> = {
@@ -131,6 +131,7 @@ export function PostCard({
   const cover = postThumbnail(post);
   const isMinimal = blog.cardStyle === "minimal";
   const isVideoCover = !isMinimal && isVideoFile(cover);
+  const isCaptureCover = usesBookmarkCaptureCover(post);
   const accent = postAccent(blog, post);
   const showUnlisted = owner && post.status === "draft";
   const showPinned = Boolean(post.pinned);
@@ -386,7 +387,11 @@ export function PostCard({
         <span className="tvcard-inner">
           <span className="tvcard-tilt">
             {!isMinimal && cover && (
-              <span className="tvcard-media">
+              <span
+                className={`tvcard-media${
+                  isCaptureCover ? " is-capture-cover" : ""
+                }`}
+              >
                 {isVideoCover ? (
                   <video
                     ref={attachVideo}

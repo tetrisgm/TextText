@@ -1,5 +1,11 @@
 import Link from "next/link";
 import type { Post } from "@/lib/content";
+import { isVideoFile } from "@/lib/content";
+import {
+  isNoCoverValue,
+  resolveCover,
+  usesBookmarkCaptureCover,
+} from "@/lib/cover";
 import styles from "./BookmarkCard.module.css";
 
 function classNames(...names: Array<string | false | undefined>): string {
@@ -48,6 +54,13 @@ function faviconUrl(host: string): string {
   return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`;
 }
 
+function bookmarkThumbnail(post: Post): string {
+  const cover = post.cover?.trim();
+  if (cover && !isNoCoverValue(cover)) return resolveCover(post);
+  if (usesBookmarkCaptureCover(post)) return resolveCover(post);
+  return "";
+}
+
 function StatusChip({ status }: { status: Post["captureStatus"] }) {
   if (status === "pending") {
     return (
@@ -78,9 +91,33 @@ export function BookmarkCard({
   const host = bookmarkHost(post);
   const description =
     previewLine(post.capture?.description) || previewLine(post.body);
-  const screenshotUrl = post.capture?.screenshotUrl;
-  const htmlUrl = post.capture?.htmlUrl;
+  const screenshotUrl = post.capture?.screenshotUrl?.trim();
+  const htmlUrl = post.capture?.htmlUrl?.trim();
   const hasActions = Boolean(href || htmlUrl || screenshotUrl);
+  const thumbnailUrl = bookmarkThumbnail(post);
+  const thumbnailIsCapture = usesBookmarkCaptureCover(post);
+  const thumbnailMedia = isVideoFile(thumbnailUrl) ? (
+    <video
+      className={styles.thumbnail}
+      src={thumbnailUrl}
+      muted
+      playsInline
+      preload="metadata"
+    />
+  ) : (
+    // User media can be remote, so plain img avoids next/image config.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className={classNames(
+        styles.thumbnail,
+        thumbnailIsCapture && styles.captureThumbnail,
+      )}
+      src={thumbnailUrl}
+      alt=""
+      decoding="async"
+      loading="lazy"
+    />
+  );
 
   return (
     <article className={styles.card}>
@@ -118,7 +155,7 @@ export function BookmarkCard({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                open original
+                Open original
               </a>
             )}
             {htmlUrl && (
@@ -128,7 +165,7 @@ export function BookmarkCard({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                archived copy
+                View saved original
               </a>
             )}
             {screenshotUrl && (
@@ -138,13 +175,13 @@ export function BookmarkCard({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                screenshot
+                View full capture
               </a>
             )}
           </div>
         )}
       </div>
-      {screenshotUrl && (
+      {thumbnailUrl && thumbnailIsCapture && screenshotUrl && (
         <a
           className={styles.thumbnailLink}
           href={screenshotUrl}
@@ -152,8 +189,17 @@ export function BookmarkCard({
           rel="noopener noreferrer"
           aria-label={`Open screenshot for ${title}`}
         >
-          <img className={styles.thumbnail} src={screenshotUrl} alt="" />
+          {thumbnailMedia}
         </a>
+      )}
+      {thumbnailUrl && !thumbnailIsCapture && (
+        <Link
+          className={styles.thumbnailLink}
+          href={editPath}
+          aria-label={`Open ${title}`}
+        >
+          {thumbnailMedia}
+        </Link>
       )}
     </article>
   );
