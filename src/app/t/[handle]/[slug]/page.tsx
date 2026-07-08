@@ -29,6 +29,7 @@ import { PostReadWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { PostShortcuts } from "@/components/PostShortcuts";
 import { isNoCoverValue } from "@/lib/cover";
 import { blogHomePath, blogPostEditPath, blogPostPath } from "@/lib/public-paths";
+import { workspacePoolFromParts } from "@/lib/pool/selectors";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
@@ -183,6 +184,16 @@ export async function PostPageForHandle({
         : {};
   }
   const adjacent = await adjacentPromise;
+  const initialPool =
+    canEdit && access.isOwner && access.blogId
+      ? workspacePoolFromParts({
+          blog,
+          blogId: access.blogId,
+          counts,
+          folders,
+          posts: allPosts,
+        })
+      : null;
   const usedSlugs = editMode
     ? allPosts
         .filter((candidate) =>
@@ -269,6 +280,12 @@ export async function PostPageForHandle({
           folders={folders}
           homePath={homePath}
           initialSidebarCollapsed={initialSidebarCollapsed}
+          initialPool={initialPool}
+          initialPostBody={
+            post.id
+              ? { postId: post.id, body: post.body, updatedAt: post.updatedAt }
+              : null
+          }
           post={post}
           postPath={currentPostPath}
           showGuestSignIn={showGuestSignIn}
@@ -291,19 +308,21 @@ export async function PostPageForHandle({
           {reader}
         </>
       )}
-      <PostShortcuts
-        homePath={homePath}
-        previousPath={
-          adjacent.previous
-            ? blogPostPath(blog, { slug: adjacent.previous.slug })
-            : undefined
-        }
-        nextPath={
-          adjacent.next ? blogPostPath(blog, { slug: adjacent.next.slug }) : undefined
-        }
-        owner={canEdit}
-        handle={handle}
-      />
+      {!initialPool && (
+        <PostShortcuts
+          homePath={homePath}
+          previousPath={
+            adjacent.previous
+              ? blogPostPath(blog, { slug: adjacent.previous.slug })
+              : undefined
+          }
+          nextPath={
+            adjacent.next ? blogPostPath(blog, { slug: adjacent.next.slug }) : undefined
+          }
+          owner={canEdit}
+          handle={handle}
+        />
+      )}
     </>
   );
 }

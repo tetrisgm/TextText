@@ -16,6 +16,11 @@ import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
 import { resolveFolderAccess, resolveWorkspaceAccess } from "@/lib/permissions";
+import { getWorkspacePoolForOwner } from "@/lib/pool/server";
+import {
+  poolPostsForFolder,
+  postFromPoolPost,
+} from "@/lib/pool/selectors";
 import {
   blogAtomHref,
   blogFeedAlternateTypes,
@@ -303,6 +308,18 @@ function BlogEmptyState({ layout }: { layout: Blog["homeLayout"] }) {
   return <p className="blog-home-empty">{copy}</p>;
 }
 
+function WorkspaceRootLanding({ blog }: { blog: Blog }) {
+  return (
+    <main className="workspace-root-page" aria-labelledby="workspace-root-title">
+      <div className="workspace-root-inner">
+        <span className="workspace-root-eyebrow">Workspace</span>
+        <h1 id="workspace-root-title">{blog.name}</h1>
+        <p>Choose a section from the sidebar.</p>
+      </div>
+    </main>
+  );
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
   const blog = await getBlog(handle);
@@ -360,6 +377,10 @@ export async function BlogHomeForHandle({
     redirect(`${blogHomePath(blog)}${suffix}`);
   }
   const canEdit = access.canEdit;
+  const initialPool =
+    access.isOwner && viewer
+      ? await getWorkspacePoolForOwner(handle, viewer)
+      : null;
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
   const hasBlogWorkspaceContent =
     canEdit || Boolean(workspaceAccess?.canEditContent);
@@ -377,17 +398,25 @@ export async function BlogHomeForHandle({
       : blog;
   // The blog home lists ONLY the Blog folder: notes and bookmarks live in
   // their own folder views and never mix into the cards, even for the owner.
-  const [posts, folders, counts] = await Promise.all([
-    getFolderPosts(handle, "blog", {
-      publishedOnly: !hasBlogWorkspaceContent,
-    }),
-    canEdit
-      ? getFolders(handle)
-      : getAccessibleFolders(handle, viewer),
-    canEdit
-      ? getFolderCounts(handle)
-      : getAccessibleFolderCounts(handle, viewer),
-  ]);
+  const [posts, folders, counts] = initialPool
+    ? [
+        poolPostsForFolder(initialPool, "blog").map((post) =>
+          postFromPoolPost(post),
+        ),
+        initialPool.folders,
+        initialPool.counts,
+      ] as const
+    : await Promise.all([
+        getFolderPosts(handle, "blog", {
+          publishedOnly: !hasBlogWorkspaceContent,
+        }),
+        canEdit
+          ? getFolders(handle)
+          : getAccessibleFolders(handle, viewer),
+        canEdit
+          ? getFolderCounts(handle)
+          : getAccessibleFolderCounts(handle, viewer),
+      ]);
   // Category chip source: a blog SUBFOLDER (has a slash in its path) a post
   // is filed under. The root "blog" folder is not a category, so it is
   // omitted. Only populated for the owner (folders loads only then).
@@ -403,13 +432,19 @@ export async function BlogHomeForHandle({
   // leaks through this route.
   const requestedFolder = queryValue(query.folder);
   const activeFolder =
-    requestedFolder && requestedFolder !== "blog"
+    requestedFolder
       ? folders.find((folder) => folder.path === requestedFolder) ?? null
       : null;
   const folderItemsPromise = activeFolder
-    ? canEdit
-      ? getFolderPosts(handle, activeFolder.path)
-      : getAccessibleFolderPosts(handle, activeFolder.path, viewer)
+    ? initialPool
+      ? Promise.resolve(
+          poolPostsForFolder(initialPool, activeFolder.path).map((post) =>
+            postFromPoolPost(post),
+          ),
+        )
+      : canEdit
+        ? getFolderPosts(handle, activeFolder.path)
+        : getAccessibleFolderPosts(handle, activeFolder.path, viewer)
     : Promise.resolve<Post[]>([]);
   const activeFolderAccessPromise =
     activeFolder && !canEdit
@@ -425,8 +460,9 @@ export async function BlogHomeForHandle({
   ]);
   // The single layout leads with the newest published post; an owner's
   // unpublished drafts never displace what visitors see.
-  const singlePost =
-    posts.find((post) => post.status === "published") ?? posts[0];
+  const singlePost = initialPool
+    ? undefined
+    : posts.find((post) => post.status === "published") ?? posts[0];
   const singleReaderPost =
     singlePost && displayBlog.homeLayout === "single"
       ? (await getPost(handle, singlePost.slug)) ?? singlePost
@@ -517,13 +553,14 @@ export async function BlogHomeForHandle({
   return showWorkspaceShell ? (
     <BlogHomeWorkspaceShell
       blog={blog}
-      activeFolder={activeFolder ? activeFolder.path : "blog"}
+      activeFolder={activeFolder ? activeFolder.path : null}
       canManageFolders={canEdit}
       canManageSharing={canManageSharing}
       counts={counts}
       folders={folders}
       homePath={blogHomePath(blog)}
       initialSidebarCollapsed={initialSidebarCollapsed}
+      initialPool={initialPool}
       showGuestSignIn={isGuestWorkspace && isAuthConfigured}
     >
       {activeFolder ? (
@@ -533,8 +570,12 @@ export async function BlogHomeForHandle({
           handle={handle}
           items={folderItems}
           canCreateItems={canEdit}
-          canEditItems={canEdit || Boolean(activeFolderAccess?.canEditContent)}
+          canEditItems={
+            !initialPool && (canEdit || Boolean(activeFolderAccess?.canEditContent))
+          }
         />
+      ) : initialPool ? (
+        <WorkspaceRootLanding blog={blog} />
       ) : (
         home
       )}

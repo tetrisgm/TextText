@@ -2221,6 +2221,47 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: var(--ink);
   font-family: var(--font-body);
 }
+.workspace-root-page {
+  min-height: 100dvh;
+  display: grid;
+  align-content: start;
+  padding: 132px 48px 72px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+.workspace-root-inner {
+  width: min(100%, 680px);
+  display: grid;
+  gap: 12px;
+  margin: 0 auto;
+}
+.workspace-root-eyebrow {
+  color: color-mix(in srgb, var(--post-accent, var(--accent)) 55%, var(--ink));
+  font: 800 12px/1 var(--font-body);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.workspace-root-inner h1,
+.workspace-root-inner p,
+.workspace-post-body-status {
+  margin: 0;
+}
+.workspace-root-inner h1 {
+  color: var(--ink);
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.workspace-root-inner p,
+.workspace-post-body-status {
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.42;
+}
 .post-folder-page-header {
   width: min(100%, 760px);
   display: grid;
@@ -3968,8 +4009,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .write-landing-folders {
     grid-template-columns: 1fr;
   }
-.post-folder-page {
+  .post-folder-page {
     padding: 84px 24px 56px;
+  }
+  .workspace-root-page {
+    padding: 94px 24px 56px;
+  }
+  .workspace-root-inner h1 {
+    font-size: 34px;
   }
   .post-folder-page-header h1 {
     font-size: 44px;

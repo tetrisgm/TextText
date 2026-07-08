@@ -1,6 +1,11 @@
 "use client";
 
-import { type SyntheticEvent, useEffect, useState } from "react";
+import {
+  type MouseEvent,
+  type SyntheticEvent,
+  useEffect,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Post } from "@/lib/content";
@@ -29,6 +34,16 @@ function originalHref(post: Post): string | undefined {
 function safeHref(value: string | undefined): string | undefined {
   const href = value?.trim() ?? "";
   return href && isSafeLinkHref(href) ? href : undefined;
+}
+
+function shouldOpenLocally(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  );
 }
 
 function bookmarkHost(post: Post): string {
@@ -110,9 +125,11 @@ function StatusChip({ status }: { status: Post["captureStatus"] }) {
 export function BookmarkCard({
   post,
   editPath,
+  onOpenPost,
 }: {
   post: Post;
   editPath: string;
+  onOpenPost?: (post: Post) => void;
 }) {
   const router = useRouter();
   const captureStatus = useCaptureStatus(post.id, post.captureStatus, {
@@ -219,7 +236,16 @@ export function BookmarkCard({
             {mainContent}
           </div>
         ) : (
-          <Link className={styles.main} href={editPath}>
+          <Link
+            className={styles.main}
+            href={editPath}
+            prefetch={onOpenPost ? false : undefined}
+            onClick={(event) => {
+              if (!onOpenPost || !shouldOpenLocally(event)) return;
+              event.preventDefault();
+              onOpenPost(post);
+            }}
+          >
             {mainContent}
           </Link>
         )}
@@ -298,6 +324,12 @@ export function BookmarkCard({
           <Link
             className={thumbnailLinkClass}
             href={editPath}
+            prefetch={onOpenPost ? false : undefined}
+            onClick={(event) => {
+              if (!onOpenPost || !shouldOpenLocally(event)) return;
+              event.preventDefault();
+              onOpenPost(post);
+            }}
             aria-label={`Open ${title}`}
           >
             {thumbnailMedia}

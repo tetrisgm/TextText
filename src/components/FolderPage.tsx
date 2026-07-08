@@ -5,7 +5,7 @@
 // grants named collaborators access.
 
 import { useCallback, useMemo, useRef, useState, useTransition } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createFolderItemAction } from "@/app/editor/actions";
@@ -29,6 +29,16 @@ function itemTitle(post: Post): string {
 
 function actionErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function shouldOpenLocally(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  );
 }
 
 function sortedByTimestampDesc(
@@ -80,12 +90,14 @@ function NotesFolderContents({
   items,
   canCreateItems,
   canEditItems,
+  onOpenPost,
 }: {
   blog: Blog;
   handle: string;
   items: Post[];
   canCreateItems: boolean;
   canEditItems: boolean;
+  onOpenPost?: (post: Post) => void;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -148,10 +160,18 @@ function NotesFolderContents({
                   key={itemKey(note)}
                   className="post-folder-row"
                   href={
-                    canEditItems
-                      ? blogPostEditPath(blog, note)
-                      : blogPostPath(blog, note)
+                    onOpenPost
+                      ? blogPostPath(blog, note)
+                      : canEditItems
+                        ? blogPostEditPath(blog, note)
+                        : blogPostPath(blog, note)
                   }
+                  prefetch={onOpenPost ? false : undefined}
+                  onClick={(event) => {
+                    if (!onOpenPost || !shouldOpenLocally(event)) return;
+                    event.preventDefault();
+                    onOpenPost(note);
+                  }}
                 >
                   <span className="post-folder-row-title">
                     {itemTitle(note)}
@@ -180,12 +200,14 @@ function BookmarksFolderContents({
   items,
   canCreateItems,
   canEditItems,
+  onOpenPost,
 }: {
   blog: Blog;
   handle: string;
   items: Post[];
   canCreateItems: boolean;
   canEditItems: boolean;
+  onOpenPost?: (post: Post) => void;
 }) {
   const router = useRouter();
   const urlRef = useRef<HTMLInputElement>(null);
@@ -321,10 +343,13 @@ function BookmarksFolderContents({
                 key={itemKey(bookmark)}
                 post={bookmark}
                 editPath={
-                  canEditItems
-                    ? blogPostEditPath(blog, bookmark)
-                    : blogPostPath(blog, bookmark)
+                  onOpenPost
+                    ? blogPostPath(blog, bookmark)
+                    : canEditItems
+                      ? blogPostEditPath(blog, bookmark)
+                      : blogPostPath(blog, bookmark)
                 }
+                onOpenPost={onOpenPost}
               />
             ))}
           </div>
@@ -338,10 +363,12 @@ function BlogFolderContents({
   blog,
   items,
   canEditItems,
+  onOpenPost,
 }: {
   blog: Blog;
   items: Post[];
   canEditItems: boolean;
+  onOpenPost?: (post: Post) => void;
 }) {
   const sorted = useMemo(
     () =>
@@ -364,10 +391,18 @@ function BlogFolderContents({
                 key={itemKey(post)}
                 className="post-folder-row"
                 href={
-                  canEditItems
-                    ? blogPostEditPath(blog, post)
-                    : blogPostPath(blog, post)
+                  onOpenPost
+                    ? blogPostPath(blog, post)
+                    : canEditItems
+                      ? blogPostEditPath(blog, post)
+                      : blogPostPath(blog, post)
                 }
+                prefetch={onOpenPost ? false : undefined}
+                onClick={(event) => {
+                  if (!onOpenPost || !shouldOpenLocally(event)) return;
+                  event.preventDefault();
+                  onOpenPost(post);
+                }}
               >
                 <span className="post-folder-row-title">{itemTitle(post)}</span>
                 <span className="post-folder-row-meta">
@@ -394,6 +429,7 @@ export function FolderPage({
   items,
   canCreateItems = true,
   canEditItems = true,
+  onOpenPost,
 }: {
   blog: Blog;
   folder: Folder;
@@ -401,6 +437,7 @@ export function FolderPage({
   items: Post[];
   canCreateItems?: boolean;
   canEditItems?: boolean;
+  onOpenPost?: (post: Post) => void;
 }) {
   return (
     <main className="post-folder-page" aria-labelledby="post-folder-page-title">
@@ -414,6 +451,7 @@ export function FolderPage({
           blog={blog}
           items={items}
           canEditItems={canEditItems}
+          onOpenPost={onOpenPost}
         />
       ) : folder.mode === "bookmarks" ? (
         <BookmarksFolderContents
@@ -422,6 +460,7 @@ export function FolderPage({
           items={items}
           canCreateItems={canCreateItems}
           canEditItems={canEditItems}
+          onOpenPost={onOpenPost}
         />
       ) : (
         <NotesFolderContents
@@ -430,6 +469,7 @@ export function FolderPage({
           items={items}
           canCreateItems={canCreateItems}
           canEditItems={canEditItems}
+          onOpenPost={onOpenPost}
         />
       )}
     </main>
