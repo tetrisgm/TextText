@@ -770,6 +770,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     private let minimumSnapshotHeight: CGFloat = 2000
     private let maxSnapshotHeight: CGFloat = 14_000
     private let maxSnapshotPixels: CGFloat = 18_000_000
+    private let lazyImageSettleDelay: TimeInterval = 1.5
 
     init(
         url: URL, fallbackTitle: String?,
@@ -813,7 +814,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         loadTimeout?.cancel()
         loadTimeout = nil
 
-        let delay = DispatchWorkItem { self.extract() }
+        let delay = DispatchWorkItem { self.prepareForExtraction() }
         settleDelay = delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: delay)
     }
@@ -863,6 +864,32 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         completionHandler: @escaping (String?) -> Void
     ) {
         completionHandler(nil)
+    }
+
+    private func prepareForExtraction() {
+        guard let webView, !completed else { return }
+        webView.evaluateJavaScript(snapshotSizeScript) { value, _ in
+            guard let webView = self.webView, !self.completed else { return }
+            let size = self.snapshotSize(from: value)
+            webView.frame = NSRect(origin: .zero, size: size)
+            webView.layoutSubtreeIfNeeded()
+            webView.evaluateJavaScript(lazyImageHydrationScript) { _, _ in
+                self.settleAfterLazyImageHydration()
+            }
+        }
+    }
+
+    private func settleAfterLazyImageHydration() {
+        let delay = DispatchWorkItem {
+            guard let webView = self.webView, !self.completed else { return }
+            webView.evaluateJavaScript(lazyImageResetScrollScript) { _, _ in
+                let finalDelay = DispatchWorkItem { self.extract() }
+                self.settleDelay = finalDelay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: finalDelay)
+            }
+        }
+        settleDelay = delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + lazyImageSettleDelay, execute: delay)
     }
 
     private func extract() {
@@ -1064,6 +1091,107 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     }
 }
 
+private let lazyImageHydrationScript = #"""
+(function() {
+  try {
+    function clean(value) {
+      return (value || "").replace(/\s+/g, " ").trim();
+    }
+    function isPlaceholder(value) {
+      var lower = clean(value).toLowerCase();
+      if (!lower) return true;
+      return /(^|[\/?&_.#=-])(default-cubic|placeholder|placehold|transparent|blank|spacer|pixel|1x1|lazy-placeholder|default[-_]?image)([\/?&_.#=-]|$)/.test(lower);
+    }
+    function firstDataValue(img, names) {
+      for (var i = 0; i < names.length; i++) {
+        var value = clean(img.getAttribute(names[i]));
+        if (value && !/^data:/i.test(value)) return value;
+      }
+      return "";
+    }
+    function dispatchViewportEvents() {
+      try { window.dispatchEvent(new Event("scroll")); } catch (_) {}
+      try { document.dispatchEvent(new Event("scroll")); } catch (_) {}
+      try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+    }
+
+    var imgs = document.images || [];
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      try { img.loading = "eager"; } catch (_) {}
+      try { img.decoding = "async"; } catch (_) {}
+
+      var src = clean(img.getAttribute("src"));
+      var dataSrc = firstDataValue(img, [
+        "data-src",
+        "data-original",
+        "data-lazy-src",
+        "data-hi-res-src",
+        "data-image"
+      ]);
+      if (dataSrc && (!src || isPlaceholder(src))) {
+        try { img.setAttribute("src", dataSrc); } catch (_) {}
+      }
+
+      var srcset = clean(img.getAttribute("srcset"));
+      var dataSrcset = firstDataValue(img, [
+        "data-srcset",
+        "data-lazy-srcset",
+        "data-responsive-srcset"
+      ]);
+      if (dataSrcset && (!srcset || isPlaceholder(srcset))) {
+        try { img.setAttribute("srcset", dataSrcset); } catch (_) {}
+      }
+    }
+
+    var root = document.scrollingElement || document.documentElement || document.body;
+    var viewport = Math.max(
+      window.innerHeight || 0,
+      (document.documentElement && document.documentElement.clientHeight) || 0,
+      800
+    );
+    var height = Math.max(
+      (root && root.scrollHeight) || 0,
+      (document.body && document.body.scrollHeight) || 0,
+      (document.documentElement && document.documentElement.scrollHeight) || 0,
+      viewport
+    );
+    var step = Math.max(600, Math.floor(viewport * 0.75));
+    var y = 0;
+    var count = 0;
+    window.scrollTo(0, 0);
+    dispatchViewportEvents();
+    while (y < height && count < 80) {
+      window.scrollTo(0, y);
+      dispatchViewportEvents();
+      y += step;
+      count += 1;
+    }
+    window.scrollTo(0, Math.max(0, height - viewport));
+    dispatchViewportEvents();
+    window.scrollTo(0, 0);
+    dispatchViewportEvents();
+
+    return JSON.stringify({ ok: true, images: imgs.length, height: height });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: String((e && e.message) || e || "lazy image hydration failed") });
+  }
+})();
+"""#
+
+private let lazyImageResetScrollScript = #"""
+(function() {
+  try {
+    window.scrollTo(0, 0);
+    window.dispatchEvent(new Event("scroll"));
+    document.dispatchEvent(new Event("scroll"));
+    return true;
+  } catch (_) {
+    return false;
+  }
+})();
+"""#
+
 private let readableExtractionScript = #"""
 (function() {
   try {
@@ -1099,86 +1227,106 @@ private let readableExtractionScript = #"""
       }
       return entries;
     }
-    function srcsetCandidate(srcset) {
-      var entries = parseSrcset(srcset);
-      if (!entries.length) return "";
-
-      var widths = entries.filter(function(entry) { return entry.width > 0; });
-      if (widths.length) {
-        widths.sort(function(a, b) { return a.width - b.width; });
-        var bestUnder = null;
-        var smallestOver = null;
-        for (var i = 0; i < widths.length; i++) {
-          if (widths[i].width <= 1600) {
-            bestUnder = widths[i];
-          } else if (!smallestOver) {
-            smallestOver = widths[i];
-          }
-        }
-        return (bestUnder || smallestOver || widths[widths.length - 1]).url;
-      }
-
-      var densities = entries.filter(function(entry) { return entry.density > 0; });
-      if (densities.length) {
-        densities.sort(function(a, b) { return a.density - b.density; });
-        var bestDensity = null;
-        var smallestHighDensity = null;
-        for (var j = 0; j < densities.length; j++) {
-          if (densities[j].density <= 2) {
-            bestDensity = densities[j];
-          } else if (!smallestHighDensity) {
-            smallestHighDensity = densities[j];
-          }
-        }
-        return (bestDensity || smallestHighDensity || densities[densities.length - 1]).url;
-      }
-
-      return entries[0].url;
-    }
     function absoluteURL(value) {
       var candidate = clean(value);
       if (!candidate || /^data:/i.test(candidate)) return "";
       try {
-        if (candidate.indexOf("//") === 0) return "https:" + candidate;
-        var url = new URL(candidate, window.location.href);
+        if (candidate.indexOf("//") === 0) candidate = window.location.protocol + candidate;
+        var url = new URL(candidate, document.baseURI || window.location.href);
         if (url.protocol !== "http:" && url.protocol !== "https:") return "";
         return url.href;
       } catch (_) {
         return "";
       }
     }
+    function knownPlaceholderPattern(value) {
+      var lower = (value || "").toLowerCase();
+      if (!lower) return false;
+      return /(^|[\/?&_.#=-])(default-cubic|placeholder|placehold|transparent|blank|spacer|pixel|1x1|lazy-placeholder|default[-_]?image)([\/?&_.#=-]|$)/.test(lower);
+    }
+    function badImagePattern(value) {
+      var lower = (value || "").toLowerCase();
+      if (!lower) return false;
+      if (knownPlaceholderPattern(lower)) return true;
+      if (/(doubleclick|googlesyndication|google-analytics|scorecardresearch|quantserve|facebook\.com\/tr|pixel\.wp\.com|adservice|taboola|outbrain)/.test(lower)) {
+        return true;
+      }
+      if (/(^|[\s\/?&_.#=-])(ad|ads|advert|advertisement|beacon|tracker|tracking|analytics|clear|favicon)([\s\/?&_.#=-]|$)/.test(lower)) {
+        return true;
+      }
+      return /(^|[\s\/?&_.#=-])(logo|site-logo|brand-logo|sprite|icon|avatar|author-avatar|profile-photo)([\s\/?&_.#=-]|$)/.test(lower);
+    }
+    function nonPlaceholderURL(value) {
+      var url = absoluteURL(value);
+      if (!url || knownPlaceholderPattern(url)) return "";
+      return url;
+    }
+    function realContentURL(value) {
+      var url = nonPlaceholderURL(value);
+      if (!url || badImagePattern(url)) return "";
+      return url;
+    }
+    function largestSrcsetCandidate(srcset) {
+      var entries = parseSrcset(srcset);
+      if (!entries.length) return "";
+      entries.sort(function(a, b) {
+        var aRank = a.width || (a.density ? a.density * 1000 : 0);
+        var bRank = b.width || (b.density ? b.density * 1000 : 0);
+        if (aRank !== bRank) return bRank - aRank;
+        return b.index - a.index;
+      });
+      for (var i = 0; i < entries.length; i++) {
+        var candidate = nonPlaceholderURL(entries[i].url);
+        if (candidate) return candidate;
+      }
+      return "";
+    }
     function pictureSource(img) {
       var parent = img.parentElement;
       if (!parent || parent.tagName !== "PICTURE") return "";
       var sources = parent.querySelectorAll("source[srcset]");
+      var fallback = "";
       for (var i = 0; i < sources.length; i++) {
+        var candidate = largestSrcsetCandidate(sources[i].getAttribute("srcset"));
+        if (!candidate) continue;
+        if (!fallback) fallback = candidate;
         var media = sources[i].getAttribute("media");
-        if (media && window.matchMedia && !window.matchMedia(media).matches) continue;
-        var candidate = srcsetCandidate(sources[i].getAttribute("srcset"));
-        if (absoluteURL(candidate)) return candidate;
+        if (!media || !window.matchMedia || window.matchMedia(media).matches) {
+          return candidate;
+        }
       }
-      return "";
+      return fallback;
     }
-    function firstAbsoluteURL(candidates) {
+    function firstURL(candidates, resolver) {
       for (var i = 0; i < candidates.length; i++) {
-        var url = absoluteURL(candidates[i]);
+        var url = resolver(candidates[i]);
         if (url) return url;
       }
       return "";
     }
     function imageSource(img) {
-      return firstAbsoluteURL([
+      var current = realContentURL(img.currentSrc);
+      if (current) return current;
+
+      var srcset = firstURL([
         pictureSource(img),
-        srcsetCandidate(img.getAttribute("srcset")),
-        srcsetCandidate(img.getAttribute("data-srcset")),
-        img.currentSrc,
-        img.getAttribute("src"),
+        largestSrcsetCandidate(img.getAttribute("srcset"))
+      ], realContentURL);
+      if (srcset) return srcset;
+
+      var src = realContentURL(img.getAttribute("src"));
+      if (src) return src;
+
+      return firstURL([
         img.getAttribute("data-src"),
         img.getAttribute("data-original"),
         img.getAttribute("data-lazy-src"),
         img.getAttribute("data-hi-res-src"),
-        img.getAttribute("data-image")
-      ]);
+        img.getAttribute("data-image"),
+        largestSrcsetCandidate(img.getAttribute("data-srcset")),
+        largestSrcsetCandidate(img.getAttribute("data-lazy-srcset")),
+        largestSrcsetCandidate(img.getAttribute("data-responsive-srcset"))
+      ], realContentURL);
     }
     function dimensionValue(value) {
       if (value == null) return 0;
@@ -1186,39 +1334,59 @@ private let readableExtractionScript = #"""
       return isFinite(parsed) ? parsed : 0;
     }
     function imageDimensions(img) {
+      var rect = img.getBoundingClientRect ? img.getBoundingClientRect() : {};
       return {
-        width: dimensionValue(img.getAttribute("width")) ||
-          dimensionValue(img.getAttribute("data-width")) ||
-          dimensionValue(img.naturalWidth) ||
+        renderedWidth: dimensionValue(rect && rect.width) ||
           dimensionValue(img.clientWidth) ||
           dimensionValue(img.offsetWidth),
-        height: dimensionValue(img.getAttribute("height")) ||
-          dimensionValue(img.getAttribute("data-height")) ||
-          dimensionValue(img.naturalHeight) ||
+        renderedHeight: dimensionValue(rect && rect.height) ||
           dimensionValue(img.clientHeight) ||
-          dimensionValue(img.offsetHeight)
+          dimensionValue(img.offsetHeight),
+        naturalWidth: dimensionValue(img.naturalWidth) ||
+          dimensionValue(img.getAttribute("width")) ||
+          dimensionValue(img.getAttribute("data-width")),
+        naturalHeight: dimensionValue(img.naturalHeight) ||
+          dimensionValue(img.getAttribute("height")) ||
+          dimensionValue(img.getAttribute("data-height"))
       };
     }
-    function badImagePattern(value) {
-      var lower = (value || "").toLowerCase();
-      if (!lower) return false;
-      if (/(doubleclick|googlesyndication|google-analytics|scorecardresearch|quantserve|facebook\.com\/tr|pixel\.wp\.com|adservice|taboola|outbrain)/.test(lower)) {
-        return true;
+    function ancestorLabels(img) {
+      var labels = [];
+      var current = img.parentElement;
+      var depth = 0;
+      while (current && depth < 5) {
+        labels.push(current.id || "");
+        labels.push(current.className || "");
+        labels.push(current.getAttribute("role") || "");
+        current = current.parentElement;
+        depth += 1;
       }
-      return /(^|[\s\/?&_.#=-])(ad|ads|advert|advertisement|beacon|pixel|tracker|tracking|analytics|spacer|sprite|clear|blank|1x1)([\s\/?&_.#=-]|$)/.test(lower);
+      return labels.join(" ");
     }
     function shouldSkipImage(img, src) {
       if (!src || src.length > 4096 || /^data:/i.test(src)) return true;
       var dimensions = imageDimensions(img);
-      if ((dimensions.width > 0 && dimensions.width < 32) ||
-          (dimensions.height > 0 && dimensions.height < 32)) {
+      if (dimensions.renderedWidth > 0 && dimensions.renderedHeight > 0 &&
+          (dimensions.renderedWidth < 64 || dimensions.renderedHeight < 64)) {
+        return true;
+      }
+      if (dimensions.renderedWidth <= 0 && dimensions.renderedHeight <= 0 &&
+          dimensions.naturalWidth > 0 && dimensions.naturalHeight > 0 &&
+          (dimensions.naturalWidth < 64 || dimensions.naturalHeight < 64)) {
+        return true;
+      }
+      if (img.closest && img.closest('nav, footer, aside, form, button, [role="navigation"], [role="contentinfo"], [role="complementary"]')) {
         return true;
       }
       var labels = [
         src,
         img.id || "",
         img.className || "",
-        img.getAttribute("role") || ""
+        img.getAttribute("role") || "",
+        img.getAttribute("alt") || "",
+        img.getAttribute("title") || "",
+        img.getAttribute("aria-label") || "",
+        ancestorLabels(img)
       ].join(" ");
       return badImagePattern(labels);
     }
