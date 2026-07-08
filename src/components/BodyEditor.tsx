@@ -102,7 +102,8 @@ function buildEditorExtensions(
       openOnClick: false,
     }),
     Placeholder.configure({
-      placeholder: "Start writing",
+      placeholder: ({ editor }) =>
+        editor.isEmpty ? "Write, or press / for commands" : "Start writing",
     }),
     TaskList,
     TaskItem.configure({
@@ -166,6 +167,9 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const collabPostId = collab?.postId ?? null;
+    const mountingPlaceholder = value.trim()
+      ? "Start writing"
+      : "Write, or press / for commands";
 
     collabRef.current = collab;
     onPresenceRef.current = onPresence;
@@ -369,7 +373,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
           ) : (
             <div
               className="body-editor-content is-mounting"
-              data-placeholder="Start writing"
+              data-placeholder={mountingPlaceholder}
               aria-hidden="true"
             />
           )}

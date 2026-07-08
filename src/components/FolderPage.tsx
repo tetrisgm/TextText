@@ -15,7 +15,10 @@ import {
 import type { FormEvent, MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createFolderItemAction } from "@/app/editor/actions";
+import {
+  createFolderItemAction,
+  createWorkspacePostAction,
+} from "@/app/editor/actions";
 import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
@@ -76,17 +79,30 @@ function previewLine(body: string): string {
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
 
-function FolderEmptyCard({ mode }: { mode: string }) {
-  const copy =
-    mode === "bookmarks"
-      ? "Save your first link"
-      : mode === "notes"
-        ? "Write your first note"
-        : null;
-  if (!copy) return null;
+function FolderEmptyCard({
+  actionLabel,
+  busy = false,
+  children,
+  onAction,
+}: {
+  actionLabel?: string;
+  busy?: boolean;
+  children: string;
+  onAction?: () => void;
+}) {
   return (
     <article className="post-folder-page-card">
-      <p>{copy}</p>
+      <p>{children}</p>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          className="post-folder-create ac-btn ac-btn-filled"
+          disabled={busy}
+          onClick={onAction}
+        >
+          {busy ? "Creating" : actionLabel}
+        </button>
+      )}
     </article>
   );
 }
@@ -159,7 +175,13 @@ function NotesFolderContents({
       )}
       <section className="post-folder-page-items" aria-label="Notes">
         {notes.length === 0 ? (
-          <FolderEmptyCard mode="notes" />
+          <FolderEmptyCard
+            actionLabel={canCreateItems ? "New note" : undefined}
+            busy={creating}
+            onAction={canCreateItems ? createNote : undefined}
+          >
+            Write your first private note.
+          </FolderEmptyCard>
         ) : (
           <div className="post-folder-list">
             {notes.map((note) => {
@@ -355,7 +377,12 @@ function BookmarksFolderContents({
       )}
       <section className="post-folder-page-items" aria-label="Bookmarks">
         {bookmarks.length === 0 ? (
-          <FolderEmptyCard mode="bookmarks" />
+          <FolderEmptyCard
+            actionLabel={canCreateItems ? "Add bookmark" : undefined}
+            onAction={canCreateItems ? openForm : undefined}
+          >
+            Save your first link.
+          </FolderEmptyCard>
         ) : (
           <div className="post-folder-list">
             {bookmarks.map((bookmark) => (
@@ -382,17 +409,25 @@ function BookmarksFolderContents({
 
 function BlogFolderContents({
   blog,
+  handle,
   items,
+  canCreateItems,
   canEditItems,
   onOpenPost,
   selectedPostId,
 }: {
   blog: Blog;
+  handle: string;
   items: Post[];
+  canCreateItems: boolean;
   canEditItems: boolean;
   onOpenPost?: (post: Post) => void;
   selectedPostId?: string | null;
 }) {
+  const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
   const sorted = useMemo(
     () =>
       sortedByTimestampDesc(
@@ -401,49 +436,100 @@ function BlogFolderContents({
       ),
     [items],
   );
+
+  const createArticle = useCallback(() => {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
+    startTransition(() => {
+      void createWorkspacePostAction(handle, "article", "blog")
+        .then((post) => {
+          router.push(blogPostEditPath(blog, post));
+        })
+        .catch((createError) => {
+          setCreating(false);
+          setError(
+            actionErrorMessage(createError, "Could not create the article"),
+          );
+        });
+    });
+  }, [blog, creating, handle, router]);
+
   return (
-    <section className="post-folder-page-items" aria-label="Folder items">
-      {sorted.length === 0 ? (
-        <FolderEmptyCard mode="blog" />
-      ) : (
-        <div className="post-folder-list">
-          {sorted.map((post) => {
-            const preview = previewLine(postBodyPreview(post));
-            return (
-              <Link
-                key={itemKey(post)}
-                className={`post-folder-row${
-                  post.id === selectedPostId ? " is-command-selected" : ""
-                }`}
-                href={
-                  onOpenPost
-                    ? blogPostPath(blog, post)
-                    : canEditItems
-                      ? blogPostEditPath(blog, post)
-                      : blogPostPath(blog, post)
-                }
-                prefetch={onOpenPost ? false : undefined}
-                onClick={(event) => {
-                  if (!onOpenPost || !shouldOpenLocally(event)) return;
-                  event.preventDefault();
-                  onOpenPost(post);
-                }}
-              >
-                <span className="post-folder-row-title">{itemTitle(post)}</span>
-                <span className="post-folder-row-meta">
-                  {formatArticleDate(post.updatedAt ?? post.date, {
-                    style: "short",
-                  })}
-                </span>
-                {preview && (
-                  <span className="post-folder-row-excerpt">{preview}</span>
-                )}
-              </Link>
-            );
-          })}
+    <>
+      {canCreateItems && sorted.length > 0 && (
+        <div className="post-folder-toolbar">
+          {error && (
+            <span className="post-folder-error" role="alert">
+              {error}
+            </span>
+          )}
+          <button
+            type="button"
+            className="post-folder-create ac-btn ac-btn-filled"
+            disabled={creating}
+            onClick={createArticle}
+          >
+            {creating ? "Creating" : "New article"}
+          </button>
         </div>
       )}
-    </section>
+      <section className="post-folder-page-items" aria-label="Folder items">
+        {sorted.length === 0 ? (
+          <>
+            {error && (
+              <span className="post-folder-error" role="alert">
+                {error}
+              </span>
+            )}
+            <FolderEmptyCard
+              actionLabel={canCreateItems ? "New article" : undefined}
+              busy={creating}
+              onAction={canCreateItems ? createArticle : undefined}
+            >
+              Start the first article in this folder.
+            </FolderEmptyCard>
+          </>
+        ) : (
+          <div className="post-folder-list">
+            {sorted.map((post) => {
+              const preview = previewLine(postBodyPreview(post));
+              return (
+                <Link
+                  key={itemKey(post)}
+                  className={`post-folder-row${
+                    post.id === selectedPostId ? " is-command-selected" : ""
+                  }`}
+                  href={
+                    onOpenPost
+                      ? blogPostPath(blog, post)
+                      : canEditItems
+                        ? blogPostEditPath(blog, post)
+                        : blogPostPath(blog, post)
+                  }
+                  prefetch={onOpenPost ? false : undefined}
+                  onClick={(event) => {
+                    if (!onOpenPost || !shouldOpenLocally(event)) return;
+                    event.preventDefault();
+                    onOpenPost(post);
+                  }}
+                >
+                  <span className="post-folder-row-title">{itemTitle(post)}</span>
+                  <span className="post-folder-row-meta">
+                    {formatArticleDate(post.updatedAt ?? post.date, {
+                      style: "short",
+                    })}
+                  </span>
+                  {preview && (
+                    <span className="post-folder-row-excerpt">{preview}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -478,7 +564,9 @@ export function FolderPage({
       {folder.mode === "blog" ? (
         <BlogFolderContents
           blog={blog}
+          handle={handle}
           items={items}
+          canCreateItems={canCreateItems}
           canEditItems={canEditItems}
           onOpenPost={onOpenPost}
           selectedPostId={selectedPostId}

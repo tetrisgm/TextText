@@ -314,7 +314,7 @@ function WorkspaceRootLanding({ blog }: { blog: Blog }) {
       <div className="workspace-root-inner">
         <span className="workspace-root-eyebrow">Workspace</span>
         <h1 id="workspace-root-title">{blog.name}</h1>
-        <p>Choose a section from the sidebar.</p>
+        <p>Open Blog to start writing.</p>
       </div>
     </main>
   );
@@ -361,10 +361,7 @@ export async function BlogHomeForHandle({
   // and the feeds footer is chrome the app doesn't need.
   const inWriteApp = cookieStore.get("wr_app")?.value === "1";
   const sidebarCookie = cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value;
-  const initialSidebarCollapsed =
-    sidebarCookie != null
-      ? parseWorkspaceSidebarCollapsed(sidebarCookie)
-      : !inWriteApp;
+  const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(sidebarCookie);
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
     for (const key of ["card", "folder", "layout"] as const) {
@@ -431,9 +428,13 @@ export async function BlogHomeForHandle({
   // folders returned by getAccessibleFolders, so no other workspace content
   // leaks through this route.
   const requestedFolder = queryValue(query.folder);
+  const defaultFolderPath =
+    sidebarCookie == null && hasBlogWorkspaceContent ? "blog" : null;
   const activeFolder =
-    requestedFolder
-      ? folders.find((folder) => folder.path === requestedFolder) ?? null
+    requestedFolder || defaultFolderPath
+      ? folders.find(
+          (folder) => folder.path === (requestedFolder ?? defaultFolderPath),
+        ) ?? null
       : null;
   const folderItemsPromise = activeFolder
     ? initialPool

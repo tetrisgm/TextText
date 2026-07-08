@@ -42,6 +42,7 @@ import { db } from "./db/client";
 import { blogs, folders, posts, users } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
+import { rootDomainUrl } from "./site-url";
 import {
   accessibleFolderIdsForUser,
   accessiblePostIdsForUser,
@@ -496,23 +497,46 @@ const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
   ...folder,
 }));
 
-const STARTER_NOTE = {
-  slug: "welcome-to-notes",
-  title: "Welcome to Notes",
-  body: `This is a private place for rough ideas, reminders, and drafts.
+const STARTER_BLOG_POST = {
+  slug: "welcome-to-your-blog",
+  title: "Welcome to your blog",
+  body: `This is a real draft in the Blog folder. Edit it, delete it, or publish it when you are ready.
 
-Try keeping:
-- one idea you want to revisit
-- a question for your next post
-- a small checklist before you publish`,
+## Create
+
+Press C anywhere in the workspace to create a new article in the current folder.
+
+## Commands
+
+Type / in the editor for blocks and formatting. Press Command K to search commands and move around your workspace.
+
+## Publish
+
+When a draft is ready, choose Publish in the top bar or run "Publish or unpublish" from Command K. Published articles appear on your public blog. Notes and bookmarks stay private.`,
 };
 
-const STARTER_BOOKMARK_URL = "https://write.ramine.net/docs/ai";
+const STARTER_NOTE = {
+  slug: "scratch-note",
+  title: "Scratch note",
+  body: "Use this private note for rough ideas. Notes never publish to your blog.",
+};
+
 const STARTER_BOOKMARK = {
   slug: "write-ai-setup-guide",
   title: "Write AI setup guide",
-  links: [{ label: "write.ramine.net", href: STARTER_BOOKMARK_URL }],
 };
+
+function starterBookmarkUrl(): string {
+  return new URL("/docs/ai", rootDomainUrl()).toString();
+}
+
+function starterBookmarkLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return rootDomainUrl().hostname.replace(/^www\./, "");
+  }
+}
 
 /** The system folder path a post of this type lives in. */
 export function folderPathForPostType(type: PostType): string {
@@ -872,15 +896,28 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   const folderIdByPath = new Map(
     workspaceFolders.map((folder) => [folder.path, folder.id]),
   );
+  const blogFolderId = folderIdByPath.get(folderPathForPostType("article"));
   const notesFolderId = folderIdByPath.get(folderPathForPostType("note"));
   const bookmarksFolderId = folderIdByPath.get(folderPathForPostType("bookmark"));
-  if (!notesFolderId || !bookmarksFolderId) {
-    throw new Error("failed to resolve the private workspace folders");
+  if (!blogFolderId || !notesFolderId || !bookmarksFolderId) {
+    throw new Error("failed to resolve the workspace folders");
   }
+  const bookmarkUrl = starterBookmarkUrl();
+  const bookmarkLabel = starterBookmarkLabel(bookmarkUrl);
 
   await db!
     .insert(posts)
     .values([
+      {
+        blogId,
+        folderId: blogFolderId,
+        type: "article",
+        slug: STARTER_BLOG_POST.slug,
+        title: STARTER_BLOG_POST.title,
+        body: STARTER_BLOG_POST.body,
+        wordCount: wordCountForMarkdown(STARTER_BLOG_POST.body),
+        status: "draft",
+      },
       {
         blogId,
         folderId: notesFolderId,
@@ -897,9 +934,9 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         type: "bookmark",
         slug: STARTER_BOOKMARK.slug,
         title: STARTER_BOOKMARK.title,
-        links: STARTER_BOOKMARK.links,
+        links: [{ label: bookmarkLabel, href: bookmarkUrl }],
         captureStatus: "pending",
-        capture: { url: STARTER_BOOKMARK_URL },
+        capture: { url: bookmarkUrl },
         body: "",
         wordCount: 0,
         status: "draft",
