@@ -103,7 +103,13 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
     );
 
     const updatePosition = () => {
-      setPosition(positionedFromRect(clientRect(), menuRef.current));
+      setPosition((prev) => {
+        const next = positionedFromRect(clientRect(), menuRef.current);
+        // Bail when unchanged: positionedFromRect returns a fresh object each
+        // call, so without this equality check the no-dep layout effect below
+        // re-renders forever (React error #185).
+        return prev.left === next.left && prev.top === next.top ? prev : next;
+      });
     };
 
     useLayoutEffect(() => {
@@ -111,7 +117,8 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
       const frame = window.requestAnimationFrame(updatePosition);
 
       return () => window.cancelAnimationFrame(frame);
-    });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [itemKey]);
 
     useEffect(() => {
       setSelectedIndex(0);
