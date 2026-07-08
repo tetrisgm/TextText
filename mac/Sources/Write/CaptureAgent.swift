@@ -4,6 +4,7 @@ import ImageIO
 import PDFKit
 import UniformTypeIdentifiers
 import WebKit
+import libwebp
 
 /// Bookmark capture agent: drains GET /api/sync/v1/captures on this Mac,
 /// loading each pending URL in an offscreen WKWebView to produce the
@@ -681,6 +682,10 @@ final class CaptureAgent {
     }
 
     private func encodedImageData(image: CGImage, type: UTType, quality: Double) -> Data? {
+        if type == .webP {
+            return encodedWebPImageData(image: image, quality: quality)
+        }
+
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             output,
@@ -696,6 +701,46 @@ final class CaptureAgent {
         CGImageDestinationAddImage(destination, image, options)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return output as Data
+    }
+
+    private func encodedWebPImageData(image: CGImage, quality: Double) -> Data? {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0,
+              width <= Int(Int32.max), height <= Int(Int32.max),
+              let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ),
+              let data = context.data else {
+            return nil
+        }
+
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var output: UnsafeMutablePointer<UInt8>?
+        let encodedSize = WebPEncodeRGBA(
+            data.assumingMemoryBound(to: UInt8.self),
+            Int32(width),
+            Int32(height),
+            Int32(context.bytesPerRow),
+            Float(max(0, min(1, quality)) * 100),
+            &output
+        )
+        defer {
+            if let output {
+                WebPFree(output)
+            }
+        }
+        guard encodedSize > 0, let output else { return nil }
+        return Data(bytes: output, count: encodedSize)
     }
 
     private func isWebURL(_ url: URL) -> Bool {
