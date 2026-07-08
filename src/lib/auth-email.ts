@@ -25,8 +25,10 @@
 //   enter the adapter's create/link path and behave exactly as they did
 //   before the adapter existed.
 
+import { createTransport } from "nodemailer";
 import { and, eq, lt } from "drizzle-orm";
 import type { Adapter, AdapterUser } from "next-auth/adapters";
+import type { NodemailerConfig } from "next-auth/providers/nodemailer";
 import { db } from "@/lib/db/client";
 import { users, verificationTokens } from "@/lib/db/schema";
 
@@ -35,6 +37,99 @@ const EMAIL_SUB_PREFIX = "email:";
 /** The stable synthetic sub for a magic-link user. */
 export function emailSub(email: string): string {
   return `${EMAIL_SUB_PREFIX}${email.trim().toLowerCase()}`;
+}
+
+function htmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function verificationText(url: string): string {
+  return [
+    "Sign in to Write",
+    "",
+    "Use this secure link to finish signing in:",
+    url,
+    "",
+    "This link works once and expires after 24 hours.",
+    "If you did not request this email, you can ignore it.",
+  ].join("\n");
+}
+
+export function verificationHtml(url: string): string {
+  const safeUrl = htmlEscape(url);
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <title>Sign in to Write</title>
+    <style>
+      :root { color-scheme: light dark; supported-color-schemes: light dark; }
+      body { margin: 0; padding: 0; background: #f5f5f7; color: #1d1d1f; }
+      a { color: #0057d9; }
+      .wrap { width: 100%; background: #f5f5f7; padding: 40px 16px; }
+      .panel { max-width: 520px; margin: 0 auto; background: #ffffff; border: 1px solid #d2d2d7; border-radius: 14px; padding: 32px; }
+      .wordmark { margin: 0 0 28px; font: 700 24px/1.1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; color: #1d1d1f; }
+      h1 { margin: 0 0 12px; font: 650 22px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; color: #1d1d1f; }
+      p { margin: 0 0 18px; font: 400 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #424245; }
+      .button { display: inline-block; background: #1d1d1f; color: #ffffff !important; border-radius: 8px; padding: 12px 18px; font: 600 15px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-decoration: none; }
+      .link { overflow-wrap: anywhere; word-break: break-word; }
+      .foot { margin-top: 24px; margin-bottom: 0; font-size: 13px; line-height: 1.5; color: #6e6e73; }
+      @media (prefers-color-scheme: dark) {
+        body, .wrap { background: #000000; color: #f5f5f7; }
+        .panel { background: #1c1c1e; border-color: #38383a; }
+        .wordmark, h1 { color: #f5f5f7; }
+        p { color: #d1d1d6; }
+        a { color: #8ab4ff; }
+        .button { background: #f5f5f7; color: #1d1d1f !important; }
+        .foot { color: #a1a1a6; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <main class="panel">
+        <p class="wordmark">Write</p>
+        <h1>Sign in to Write</h1>
+        <p>Use this secure link to finish signing in. It works once and expires after 24 hours.</p>
+        <p><a class="button" href="${safeUrl}">Sign in</a></p>
+        <p class="link"><a href="${safeUrl}">${safeUrl}</a></p>
+        <p class="foot">If you did not request this email, you can ignore it.</p>
+      </main>
+    </div>
+  </body>
+</html>`;
+}
+
+export async function sendWriteVerificationRequest({
+  identifier,
+  url,
+  provider,
+}: {
+  identifier: string;
+  url: string;
+  provider: NodemailerConfig;
+}): Promise<void> {
+  const transport = createTransport(provider.server);
+  const result = await transport.sendMail({
+    to: identifier,
+    from: provider.from,
+    subject: "Sign in to Write",
+    text: verificationText(url),
+    html: verificationHtml(url),
+  });
+  const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(
+    Boolean,
+  );
+  if (failed.length) {
+    throw new Error(`Email (${failed.join(", ")}) could not be sent`);
+  }
 }
 
 // providerAccountId is the provider profile's subject (Auth.js sets it from
