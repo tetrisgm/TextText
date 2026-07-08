@@ -6,6 +6,7 @@ import {
   authorizationErrorRedirect,
   validateOAuthAuthorizationParams,
 } from "@/lib/oauth";
+import { loadOAuthClients } from "../clients";
 import "@/styles/connect.css";
 
 export const metadata: Metadata = {
@@ -65,7 +66,9 @@ export default async function OAuthAuthorizePage({ searchParams }: Props) {
     );
   }
 
+  const clients = await loadOAuthClients();
   const validation = validateOAuthAuthorizationParams(params, {
+    clients,
     allowInsecureLocalhost: allowInsecureLocalhostOAuthRedirects(),
   });
 

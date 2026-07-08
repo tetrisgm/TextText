@@ -351,3 +351,24 @@ export type OAuthAuthorizationCode =
   typeof oauthAuthorizationCodes.$inferSelect;
 export type NewOAuthAuthorizationCode =
   typeof oauthAuthorizationCodes.$inferInsert;
+
+// OAuth Dynamic Client Registration records for public connector clients.
+// Each row is a client_id plus the exact redirect_uri allowlist registered by
+// that client. The token endpoint still issues bearer tokens through api_tokens.
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: text("client_id").notNull(),
+    clientName: text("client_name").notNull().default("OAuth client"),
+    redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+    scope: text("scope").notNull().default("sync"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [uniqueIndex("oauth_clients_client_id_idx").on(t.clientId)],
+);
+
+export type OAuthClientRecord = typeof oauthClients.$inferSelect;
+export type NewOAuthClientRecord = typeof oauthClients.$inferInsert;
