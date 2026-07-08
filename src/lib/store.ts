@@ -353,6 +353,24 @@ const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
   ...folder,
 }));
 
+const STARTER_NOTE = {
+  slug: "welcome-to-notes",
+  title: "Welcome to Notes",
+  body: `This is a private place for rough ideas, reminders, and drafts.
+
+Try keeping:
+- one idea you want to revisit
+- a question for your next post
+- a small checklist before you publish`,
+};
+
+const STARTER_BOOKMARK_URL = "https://write.ramine.net/docs/ai";
+const STARTER_BOOKMARK = {
+  slug: "write-ai-setup-guide",
+  title: "Write AI setup guide",
+  links: [{ label: "write.ramine.net", href: STARTER_BOOKMARK_URL }],
+};
+
 /** The system folder path a post of this type lives in. */
 export function folderPathForPostType(type: PostType): string {
   if (type === "note") return "notes";
@@ -663,6 +681,48 @@ export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> 
     throw new Error("failed to ensure the workspace folders");
   }
   return rows.map(mapFolder);
+}
+
+async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
+  const workspaceFolders = await ensureWorkspaceFolders(blogId);
+  const folderIdByPath = new Map(
+    workspaceFolders.map((folder) => [folder.path, folder.id]),
+  );
+  const notesFolderId = folderIdByPath.get(folderPathForPostType("note"));
+  const bookmarksFolderId = folderIdByPath.get(folderPathForPostType("bookmark"));
+  if (!notesFolderId || !bookmarksFolderId) {
+    throw new Error("failed to resolve the private workspace folders");
+  }
+
+  await db!
+    .insert(posts)
+    .values([
+      {
+        blogId,
+        folderId: notesFolderId,
+        type: "note",
+        slug: STARTER_NOTE.slug,
+        title: STARTER_NOTE.title,
+        body: STARTER_NOTE.body,
+        status: "draft",
+      },
+      {
+        blogId,
+        folderId: bookmarksFolderId,
+        type: "bookmark",
+        slug: STARTER_BOOKMARK.slug,
+        title: STARTER_BOOKMARK.title,
+        links: STARTER_BOOKMARK.links,
+        captureStatus: "pending",
+        capture: { url: STARTER_BOOKMARK_URL },
+        body: "",
+        status: "draft",
+      },
+    ])
+    .onConflictDoNothing({
+      target: [posts.blogId, posts.slug],
+      where: sql`${posts.deletedAt} is null`,
+    });
 }
 
 // Get-or-create the default "blog" folder (the whole system set is ensured on
@@ -1601,7 +1661,10 @@ export async function createAnonymousBlogRecord(
       })
       .onConflictDoNothing()
       .returning({ id: blogs.id, handle: blogs.handle });
-    if (inserted[0]) return inserted[0];
+    if (inserted[0]) {
+      await provisionNewWorkspaceDefaults(inserted[0].id);
+      return inserted[0];
+    }
   }
 
   throw new Error("failed to create a blog");
@@ -1674,7 +1737,10 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
       .values({ handle, name, ownerId: owner.id })
       .onConflictDoNothing()
       .returning();
-    if (inserted[0]) break;
+    if (inserted[0]) {
+      await provisionNewWorkspaceDefaults(inserted[0].id);
+      break;
+    }
     const settled = await getOwnedBlog(user.sub);
     if (settled) return settled; // another request created this owner's blog
     // otherwise the handle collided with a different owner; try another handle
