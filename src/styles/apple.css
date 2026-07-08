@@ -171,6 +171,41 @@
 .ac-btn-plain.ac-danger { color: var(--ac-red); }
 .applecms a.ac-btn { text-decoration: none; }
 
+/* ---- presence ---- */
+.applecms .post-presence-stack {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 30px;
+  padding: 0 2px;
+  isolation: isolate;
+}
+.applecms .post-presence-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -7px;
+  border: 2px solid var(--ac-mat-fallback);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--ac-hairline);
+  color: #fff;
+  font: 650 10px/1 var(--ac-font-text);
+  letter-spacing: 0;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.28);
+}
+.applecms .post-presence-avatar:first-child {
+  margin-left: 0;
+}
+.applecms .post-presence-overflow {
+  background: var(--ac-fill-2);
+  color: var(--ac-label);
+  text-shadow: none;
+}
+
 /* ---- Notes body formatting toolbar ---- */
 .applecms {
   --ac-editor-accent-text: color-mix(in srgb, var(--ac-accent) 60%, var(--ac-label));

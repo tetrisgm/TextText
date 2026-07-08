@@ -7,6 +7,7 @@
 import * as Y from "yjs";
 
 const REMOTE_ORIGIN = "collab-remote";
+const CLIENT_ID_STORAGE_PREFIX = "write:collab:client:";
 
 function u8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -32,8 +33,28 @@ export type CollabProviderOptions = {
   onError?: (message: string) => void;
 };
 
+function createClientId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `c-${crypto.randomUUID()}`;
+  }
+  return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function stableSessionClientId(postId: string): string {
+  const key = `${CLIENT_ID_STORAGE_PREFIX}${postId}`;
+  try {
+    const existing = window.sessionStorage.getItem(key);
+    if (existing) return existing;
+    const next = createClientId();
+    window.sessionStorage.setItem(key, next);
+    return next;
+  } catch {
+    return createClientId();
+  }
+}
+
 export class CollabProvider {
-  readonly clientId = `c-${Math.floor(performance.now())}-${Math.round(performance.timeOrigin)}`;
+  readonly clientId: string;
   private lastSeq = 0;
   private stopped = false;
   private flushing = false;
@@ -46,6 +67,7 @@ export class CollabProvider {
     private readonly doc: Y.Doc,
     private readonly opts: CollabProviderOptions,
   ) {
+    this.clientId = stableSessionClientId(opts.postId);
     this.base = `/api/collab/${encodeURIComponent(opts.postId)}`;
     this.onDocUpdate = this.onDocUpdate.bind(this);
   }

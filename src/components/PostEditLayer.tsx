@@ -54,6 +54,7 @@ import type { DraftState, SaveState } from "@/lib/post-edit-draft";
 import { PostActionBar } from "@/components/PostActionBar";
 import { BodyEditor } from "@/components/BodyEditor";
 import type { BodyEditorHandle, BodyEditorCollab } from "@/components/BodyEditor";
+import type { PresencePeer } from "@/lib/collab/provider";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { hasOpenEditMenu } from "@/components/PostShortcuts";
 import { ProjectReader } from "@/components/ProjectReader";
@@ -707,6 +708,7 @@ export function PostEditLayer({
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
   const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -732,6 +734,14 @@ export function PostEditLayer({
   const focusBody = useCallback(() => {
     bodyRef.current?.focus();
   }, []);
+
+  const updatePresencePeers = useCallback((peers: PresencePeer[]) => {
+    setPresencePeers(peers);
+  }, []);
+
+  useEffect(() => {
+    if (!collab) setPresencePeers([]);
+  }, [collab]);
 
   useEffect(() => {
     autoGrow(titleRef.current);
@@ -1228,6 +1238,7 @@ export function PostEditLayer({
           toolbarHost={bodyToolbarHost}
           uploadEndpoint={uploadEndpoint}
           collab={collab}
+          onPresence={updatePresencePeers}
         />
       </div>
     ),
@@ -1369,6 +1380,7 @@ export function PostEditLayer({
           adjacent={adjacent}
           homePath={homePath}
           postPath={renderedPostPath}
+          presencePeers={presencePeers}
           draft={draft}
           deleting={deleting}
           hasHeaderImage={hasArticleHeaderImage}
