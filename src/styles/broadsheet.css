@@ -215,6 +215,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .reader-cover[style*="--reader-cover-height"] video {
   max-height: none;
 }
+.reader-cover.is-capture-cover img {
+  object-position: top;
+}
 .reader-figcaption {
   display: block;
   max-width: 760px;
@@ -224,6 +227,70 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   line-height: 1.5;
   color: var(--muted);
   text-align: center;
+}
+
+/* Bookmark captures: full-page screenshots are tall, so the hero crops to the
+   top while this frame lets the reader inspect the saved page itself. */
+.reader-bookmark-capture {
+  display: grid;
+  gap: 14px;
+  width: min(1000px, 100%);
+  margin: 0 auto 44px;
+  padding: 0 24px;
+}
+.reader-bookmark-capture-frame {
+  max-height: min(780px, 72svh);
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--bg) 72%, transparent) inset,
+    0 18px 58px -50px color-mix(in srgb, var(--ink) 44%, transparent);
+  scrollbar-gutter: stable;
+}
+.reader-bookmark-capture-frame:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
+  outline-offset: 4px;
+}
+.reader-bookmark-capture-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  object-position: top;
+  background: var(--bg-soft);
+}
+.reader-bookmark-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  max-width: 680px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+.reader-bookmark-links a {
+  color: color-mix(in srgb, var(--post-accent, var(--ink-2)) 60%, var(--ink));
+  text-decoration: none;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--post-accent, var(--ink-2)) 32%, transparent);
+}
+.reader-bookmark-links a:hover {
+  color: var(--ink);
+  border-color: var(--post-accent, var(--ink-2));
+}
+.reader-bookmark-links a:focus-visible {
+  border-radius: 3px;
+  color: var(--ink);
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
+  outline-offset: 3px;
 }
 
 /* ---------- prose (narrow column; media steps out wider) ---------- */
@@ -3643,6 +3710,17 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     min-height: 220px;
     max-height: min(320px, 48svh);
     border-radius: 0;
+  }
+  .reader-bookmark-capture {
+    margin-bottom: 34px;
+    padding-inline: 16px;
+  }
+  .reader-bookmark-capture-frame {
+    max-height: 68svh;
+  }
+  .reader-bookmark-links {
+    justify-content: flex-start;
+    font-size: 13.5px;
   }
   .edit-cover-toolbar {
     bottom: max(10px, env(safe-area-inset-bottom));

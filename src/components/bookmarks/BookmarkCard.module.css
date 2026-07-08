@@ -173,6 +173,10 @@
   object-fit: cover;
 }
 
+.captureThumbnail {
+  object-position: top;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .pending {
     animation: bookmarkCapturePulse 2.4s ease-in-out infinite;

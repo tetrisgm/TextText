@@ -1,7 +1,10 @@
 import type { Post } from "@/lib/content";
 import { COVER_PILE } from "@/lib/cover-pile";
 
-type CoverPost = Pick<Post, "cover" | "id" | "slug" | "title">;
+type CoverPost = Pick<
+  Post,
+  "capture" | "cover" | "id" | "slug" | "title" | "type"
+>;
 
 export const NO_COVER_VALUE = "__write_no_cover__";
 
@@ -14,8 +17,18 @@ export function resolveCover(post: CoverPost): string {
   if (isNoCoverValue(cover)) return "";
   if (cover) return cover;
 
-  const fallback = COVER_PILE[stableHash(coverHashBasis(post)) % COVER_PILE.length];
+  const captureCover = bookmarkCaptureCover(post);
+  if (captureCover) return captureCover;
+
+  const fallback =
+    COVER_PILE[stableHash(coverHashBasis(post)) % COVER_PILE.length];
   return fallback ?? COVER_PILE[0] ?? "";
+}
+
+export function usesBookmarkCaptureCover(post: CoverPost): boolean {
+  const cover = post.cover?.trim();
+  if (isNoCoverValue(cover) || cover) return false;
+  return Boolean(bookmarkCaptureCover(post));
 }
 
 export function resolveCoverUrl(post: CoverPost, baseUrl: string): string {
@@ -33,6 +46,11 @@ export function coverMimeType(src: string): string {
 
 function coverHashBasis(post: CoverPost): string {
   return post.id?.trim() || post.slug.trim() || post.title.trim() || "untitled";
+}
+
+function bookmarkCaptureCover(post: CoverPost): string {
+  if (post.type !== "bookmark") return "";
+  return post.capture?.screenshotUrl?.trim() || "";
 }
 
 function stableHash(value: string): number {

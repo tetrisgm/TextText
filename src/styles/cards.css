@@ -164,6 +164,10 @@
   display: block;
 }
 
+.tvcard-media.is-capture-cover .tvcard-cover {
+  object-position: top;
+}
+
 video.tvcard-cover {
   opacity: 0;
   transition: opacity 0.4s var(--ease);
