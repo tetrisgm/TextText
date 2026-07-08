@@ -1,7 +1,7 @@
 import { markdownFileHash } from "@/lib/content-hash";
 import { renderFolderManifest } from "@/lib/markdown-files";
 import {
-  getAccessibleFolderPosts,
+  getAccessibleFolderPostFiles,
   getAccessibleFolders,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../../auth";
@@ -32,9 +32,9 @@ export async function GET(request: Request, { params }: Props) {
   // folder, unlike the public folder.json. getFolderPosts scopes to THIS
   // folder; a post without a folderId (not yet backfilled) counts as living
   // in the default "blog" folder.
-  const posts = (await getAccessibleFolderPosts(blog.handle, folder.path, workspace)).filter(
-    (post) => Boolean(post.id),
-  );
+  const posts = (
+    await getAccessibleFolderPostFiles(blog.handle, folder.path, workspace)
+  ).filter((post) => Boolean(post.id));
   const manifest = renderFolderManifest(
     blog,
     posts,

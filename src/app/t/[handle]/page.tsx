@@ -31,13 +31,15 @@ import {
   getFolderCounts,
   getFolderPosts,
   getFolders,
+  getPost,
 } from "@/lib/store";
 import {
   formatArticleDate,
   isVideoFile,
   isYouTube,
+  postBodyPreview,
   postAccent,
-  readingTimeMin,
+  postReadingTimeMin,
   youtubeThumb,
 } from "@/lib/content";
 import type { Blog, BlogCardStyle, BlogHomeLayout, Post, PostType } from "@/lib/content";
@@ -139,11 +141,11 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function timelineExcerpt(post: Post): string {
-  return post.excerpt?.trim() || plainTextExcerpt(post.body);
+  return post.excerpt?.trim() || plainTextExcerpt(postBodyPreview(post));
 }
 
 function timelineMeta(post: Post): string {
-  return [formatArticleDate(post.date), `${readingTimeMin(post.body)} min read`]
+  return [formatArticleDate(post.date), `${postReadingTimeMin(post)} min read`]
     .filter(Boolean)
     .join(" / ");
 }
@@ -425,6 +427,10 @@ export async function BlogHomeForHandle({
   // unpublished drafts never displace what visitors see.
   const singlePost =
     posts.find((post) => post.status === "published") ?? posts[0];
+  const singleReaderPost =
+    singlePost && displayBlog.homeLayout === "single"
+      ? (await getPost(handle, singlePost.slug)) ?? singlePost
+      : singlePost;
   const feedHref = blogFeedHref(blog);
   const isUnnamedBlog = isDefaultBlogName(blog.name);
   const editableBlogName = isUnnamedBlog ? "" : blog.name;
@@ -456,8 +462,8 @@ export async function BlogHomeForHandle({
         <BlogEmptyState layout={displayBlog.homeLayout} />
       )}
 
-      {singlePost && displayBlog.homeLayout === "single" && (
-        <BlogSingleHome blog={displayBlog} post={singlePost} />
+      {singleReaderPost && displayBlog.homeLayout === "single" && (
+        <BlogSingleHome blog={displayBlog} post={singleReaderPost} />
       )}
 
       {posts.length > 0 && displayBlog.homeLayout === "timeline" && (

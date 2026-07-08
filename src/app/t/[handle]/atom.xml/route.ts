@@ -1,5 +1,6 @@
 import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
 import type { Blog, Post } from "@/lib/content";
+import { postBodyPreview } from "@/lib/content";
 import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
 
@@ -38,7 +39,8 @@ function renderAtom(
     .map((post) => {
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toISOString();
-      const summary = post.excerpt?.trim() || plainTextSummary(post.body);
+      const summary =
+        post.excerpt?.trim() || plainTextSummary(postBodyPreview(post));
       const imageUrl = resolveCoverUrl(post, baseUrl);
       const enclosure = imageUrl
         ? `    <link rel="enclosure" type="${escapeXml(coverMimeType(imageUrl))}" href="${escapeXml(imageUrl)}" />`

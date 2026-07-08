@@ -132,6 +132,12 @@ export interface Post {
   coverHeight?: number;
   /** markdown body */
   body: string;
+  /** short body-derived preview for list reads that do not load full markdown */
+  bodyPreview?: string;
+  /** cached count of body tokens; used when list reads omit full markdown */
+  wordCount?: number;
+  /** cached or derived whole-minute reading time */
+  readingTime?: number;
   /** ISO date, e.g. "2026-07-01" */
   date?: string;
   status: "draft" | "published";
@@ -254,10 +260,33 @@ export function formatArticleDate(
   return `${month} ${Number(m[3])}, ${m[1]}`;
 }
 
+export function wordCountForMarkdown(body: string | undefined): number {
+  return body ? (body.trim().match(/\S+/g) || []).length : 0;
+}
+
+export function readingTimeMinForWordCount(wordCount: number | undefined): number {
+  return Math.max(1, Math.round((wordCount ?? 0) / 200));
+}
+
 /** Reading time in whole minutes at ~200 wpm, floored at 1. */
 export function readingTimeMin(body: string | undefined): number {
-  const words = body ? (body.trim().match(/\S+/g) || []).length : 0;
-  return Math.max(1, Math.round(words / 200));
+  return readingTimeMinForWordCount(wordCountForMarkdown(body));
+}
+
+export function postReadingTimeMin(
+  post: Pick<Post, "body" | "readingTime" | "wordCount">,
+): number {
+  if (typeof post.readingTime === "number") return Math.max(1, post.readingTime);
+  if (typeof post.wordCount === "number") {
+    return readingTimeMinForWordCount(post.wordCount);
+  }
+  return readingTimeMin(post.body);
+}
+
+export function postBodyPreview(
+  post: Pick<Post, "body" | "bodyPreview">,
+): string {
+  return post.bodyPreview ?? post.body;
 }
 
 /** The accent a post renders with: its own, else the blog's, else none. */

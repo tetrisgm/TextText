@@ -1,8 +1,9 @@
 // Scoped sharing for workspace, folder, and item collaboration. Invites are
-// keyed by normalized email and bind to the signed-in user row on first
-// matching access in src/lib/permissions.ts.
+// keyed by normalized email; permission reads honor unbound email matches
+// without binding them as a side effect.
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { recordAction } from "@/lib/audit";
 import { db } from "@/lib/db/client";
 import { blogs, collaborators, folders, posts, users } from "@/lib/db/schema";
@@ -67,27 +68,6 @@ function auditTargetType(scopeType: CollaboratorScopeType): "workspace" | "folde
 
 async function emailSubUserId(email: string): Promise<string | null> {
   return getUserIdBySub(`email:${email}`);
-}
-
-async function ensureShareUserId(user: ShareUser): Promise<string | null> {
-  if (!db) return null;
-  if (user.userId) return user.userId;
-  const email = user.email ? normalizeShareEmail(user.email) : null;
-  await db
-    .insert(users)
-    .values({
-      appleSub: user.sub,
-      email,
-      name: user.name ?? null,
-    })
-    .onConflictDoUpdate({
-      target: users.appleSub,
-      set: {
-        email: email ?? sql`${users.email}`,
-        name: user.name ?? sql`${users.name}`,
-      },
-    });
-  return getUserIdBySub(user.sub);
 }
 
 export async function listScopeShares(
@@ -297,33 +277,26 @@ export async function listSharedWithMe(
   user: ShareUser | null,
 ): Promise<Array<{ postId: string; role: ShareRole }>> {
   if (!db || !user) return [];
-  let userId = user.userId ?? await getUserIdBySub(user.sub);
+  const userId = user.userId ?? await getUserIdBySub(user.sub);
   const email = user.email ? normalizeShareEmail(user.email) : "";
+  const minePredicates: SQL[] = [];
+  if (userId) minePredicates.push(eq(collaborators.userId, userId));
+  if (email) {
+    const emailPredicate = and(
+      isNull(collaborators.userId),
+      eq(collaborators.invitedEmail, email),
+    );
+    if (emailPredicate) minePredicates.push(emailPredicate);
+  }
+  if (minePredicates.length === 0) return [];
+  const minePredicate =
+    minePredicates.length === 1 ? minePredicates[0] : or(...minePredicates);
+  if (!minePredicate) return [];
   const rows = await db
     .select()
     .from(collaborators)
-    .where(isNull(collaborators.revokedAt));
-  const hasUnboundEmailMatch = rows.some(
-    (row) => !row.userId && email && row.invitedEmail === email,
-  );
-  if (!userId && hasUnboundEmailMatch) userId = await ensureShareUserId(user);
-  if (userId && hasUnboundEmailMatch) {
-    await db
-      .update(collaborators)
-      .set({ userId })
-      .where(
-        and(
-          eq(collaborators.invitedEmail, email),
-          isNull(collaborators.userId),
-          isNull(collaborators.revokedAt),
-        ),
-      );
-  }
-  const mine = rows.filter((row) => {
-    if (userId && row.userId === userId) return true;
-    if (!row.userId && email && row.invitedEmail === email) return true;
-    return false;
-  });
+    .where(and(minePredicate, isNull(collaborators.revokedAt)));
+  const mine = rows;
   const itemIds = new Set<string>();
   const directRoles = new Map<string, ShareRole>();
 

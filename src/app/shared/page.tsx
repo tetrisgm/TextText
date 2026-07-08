@@ -1,7 +1,7 @@
 // /shared: the receive half of item sharing. A signed-in person sees every
 // post other people invited them to (as editor or viewer), so a share is
-// reachable without hunting for the invite email. The invite still binds on
-// first access here exactly as it does when opening the post directly.
+// reachable without hunting for the invite email. Permission reads honor
+// unbound email invites without binding them as a side effect.
 
 import type { Metadata } from "next";
 import Link from "next/link";

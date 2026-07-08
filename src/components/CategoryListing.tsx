@@ -8,8 +8,9 @@ import {
   formatArticleDate,
   isVideoFile,
   isYouTube,
+  postBodyPreview,
   postAccent,
-  readingTimeMin,
+  postReadingTimeMin,
   youtubeThumb,
 } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
@@ -80,11 +81,11 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function timelineExcerpt(post: Post): string {
-  return post.excerpt?.trim() || plainTextExcerpt(post.body);
+  return post.excerpt?.trim() || plainTextExcerpt(postBodyPreview(post));
 }
 
 function timelineMeta(post: Post): string {
-  return [formatArticleDate(post.date), `${readingTimeMin(post.body)} min read`]
+  return [formatArticleDate(post.date), `${postReadingTimeMin(post)} min read`]
     .filter(Boolean)
     .join(" / ");
 }

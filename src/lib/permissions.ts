@@ -3,7 +3,7 @@
 // item. Callers ask for capabilities and never infer them from route shape.
 
 import { cache } from "react";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { isPrivateFolderMode, isPrivatePostType } from "./content";
 import { getBlogCore } from "./blog-core";
@@ -249,29 +249,6 @@ async function existingUserIdForAccess(user: AccessUser | null): Promise<string 
   return rows[0]?.id ?? null;
 }
 
-async function ensureUserIdForAccess(user: AccessUser): Promise<string | null> {
-  if (!db) return null;
-  if (user.userId) return user.userId;
-  const sub = user.sub?.trim();
-  if (!sub) return null;
-  const email = user.email ? normalizeAccessEmail(user.email) : null;
-  await db
-    .insert(users)
-    .values({
-      appleSub: sub,
-      email,
-      name: user.name ?? null,
-    })
-    .onConflictDoUpdate({
-      target: users.appleSub,
-      set: {
-        email: email ?? sql`${users.email}`,
-        name: user.name ?? sql`${users.name}`,
-      },
-    });
-  return existingUserIdForAccess(user);
-}
-
 async function collaboratorRowsForUserUncached(
   user: AccessUser | null,
 ): Promise<{ rows: CollaboratorRow[]; userId: string | null; email: string }> {
@@ -319,7 +296,6 @@ async function matchingCollaboratorRows(
   scopes: ScopeKey[],
 ): Promise<{ rows: CollaboratorRow[]; userId: string | null }> {
   if (!db || !user || scopes.length === 0) return { rows: [], userId: null };
-  const database = db;
   const userParts = accessUserParts(user);
   const candidateRows = await cachedCollaboratorRowsForUser(
     userParts.userId,
@@ -333,33 +309,14 @@ async function matchingCollaboratorRows(
   const matched = candidateRows.rows.filter((row) =>
     scopeKeys.has(scopeCacheKey(row.scopeType, row.scopeId)),
   );
-  let userId = candidateRows.userId;
+  const userId = candidateRows.userId;
   const email = candidateRows.email;
-
-  const hasUnboundEmailMatch = matched.some(
-    (row) => !row.userId && email && row.invitedEmail === email,
-  );
-  if (hasUnboundEmailMatch && !userId) {
-    userId = await ensureUserIdForAccess(user);
-  }
-
-  if (userId) {
-    await Promise.all(
-      matched
-        .filter((row) => !row.userId && email && row.invitedEmail === email)
-        .map((row) =>
-          database
-            .update(collaborators)
-            .set({ userId })
-            .where(and(eq(collaborators.id, row.id), isNull(collaborators.userId))),
-        ),
-    );
-  }
 
   return {
     rows: matched.filter((row) => {
       if (row.userId && userId && row.userId !== userId) return false;
-      return Boolean(row.userId || userId || (email && row.invitedEmail === email));
+      if (row.userId) return Boolean(userId && row.userId === userId);
+      return Boolean(email && row.invitedEmail === email);
     }),
     userId,
   };

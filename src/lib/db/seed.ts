@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { blogs, posts, users } from "./schema";
 import { DEMO_BLOG, DEMO_POSTS } from "../demo";
+import { wordCountForMarkdown } from "../content";
 import { ensureWorkspaceFolders, folderPathForPostType } from "../store";
 
 async function main() {
@@ -86,6 +87,7 @@ async function main() {
         venue: p.venue ?? null,
         duration: p.duration ?? null,
         body: p.body,
+        wordCount: wordCountForMarkdown(p.body),
         status: p.status,
         pinned: p.pinned ?? false,
         publishedAt:

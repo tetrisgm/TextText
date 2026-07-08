@@ -1,5 +1,5 @@
 import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
-import type { Post } from "@/lib/content";
+import { postBodyPreview, type Post } from "@/lib/content";
 import { resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
 
@@ -26,7 +26,8 @@ export async function GET(_request: Request, { params }: Props) {
     language: "en",
     items: posts.map((post) => {
       const url = postUrl(baseUrl, post.slug);
-      const summary = post.excerpt?.trim() || plainTextSummary(post.body);
+      const summary =
+        post.excerpt?.trim() || plainTextSummary(postBodyPreview(post));
       const image = resolveCoverUrl(post, baseUrl);
 
       return {
@@ -96,4 +97,3 @@ function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 3).trimEnd()}...`;
 }
-

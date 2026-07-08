@@ -7,7 +7,7 @@ import {
 } from "@/lib/agent-surface";
 import { markdownFileHash } from "@/lib/content-hash";
 import { renderFolderManifest } from "@/lib/markdown-files";
-import { getBlog, getFolders, getPosts } from "@/lib/store";
+import { getBlog, getFolders, getPublishedPostFiles } from "@/lib/store";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -17,7 +17,10 @@ const CACHE_CONTROL = "public, max-age=0, must-revalidate";
 
 export async function GET(request: Request, { params }: Props) {
   const { handle } = await params;
-  const [blog, posts] = await Promise.all([getBlog(handle), getPosts(handle)]);
+  const [blog, posts] = await Promise.all([
+    getBlog(handle),
+    getPublishedPostFiles(handle),
+  ]);
   if (!blog) return notFound();
 
   const folders = await getFolders(handle);
