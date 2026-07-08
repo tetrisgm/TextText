@@ -25,6 +25,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import * as Y from "yjs";
 import { Markdown } from "tiptap-markdown";
 import { BodyEditorToolbar } from "@/components/BodyEditorToolbar";
+import { SlashCommand } from "@/components/editor/SlashCommand";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
 import { CollabProvider } from "@/lib/collab/provider";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -65,6 +66,11 @@ type MarkdownStorage = {
   };
 };
 
+type SlashCommandConfig = {
+  mediaEnabled: boolean;
+  onChooseImage: () => void;
+};
+
 function subscribeClientSnapshot() {
   return () => {};
 }
@@ -80,7 +86,10 @@ function getServerMounted() {
 // Collaboration replaces the editor's undo history with Yjs's, so StarterKit's
 // own history MUST be disabled when a shared document is present, and enabled
 // otherwise (solo editing keeps normal undo/redo).
-function buildEditorExtensions(ydoc: Y.Doc | null): AnyExtension[] {
+function buildEditorExtensions(
+  ydoc: Y.Doc | null,
+  slashCommand: SlashCommandConfig,
+): AnyExtension[] {
   const extensions: AnyExtension[] = [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
@@ -98,6 +107,10 @@ function buildEditorExtensions(ydoc: Y.Doc | null): AnyExtension[] {
     TaskList,
     TaskItem.configure({
       nested: true,
+    }),
+    SlashCommand.configure({
+      mediaEnabled: slashCommand.mediaEnabled,
+      onChooseImage: slashCommand.onChooseImage,
     }),
     Markdown.configure({
       html: false,
@@ -138,6 +151,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     ref,
   ) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const slashChooseImageRef = useRef<() => void>(() => {});
     const lastEmittedRef = useRef(value);
     const onChangeRef = useRef(onChange);
     const collabRef = useRef(collab);
@@ -163,7 +177,14 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       () => (collabPostId === null ? null : new Y.Doc()),
       [collabPostId],
     );
-    const extensions = useMemo(() => buildEditorExtensions(ydoc), [ydoc]);
+    const extensions = useMemo(
+      () =>
+        buildEditorExtensions(ydoc, {
+          mediaEnabled,
+          onChooseImage: () => slashChooseImageRef.current(),
+        }),
+      [mediaEnabled, ydoc],
+    );
 
     useEffect(() => {
       onChangeRef.current = onChange;
@@ -285,6 +306,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       saveSelectionBookmark(editor);
       fileInputRef.current?.click();
     }, [editor, mediaEnabled, saveSelectionBookmark]);
+    slashChooseImageRef.current = chooseImage;
 
     const insertImage = useCallback(
       async (file: File) => {

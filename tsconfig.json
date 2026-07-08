@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@tiptap/suggestion": ["./src/components/editor/tiptap-suggestion"]
     }
   },
   "include": [
