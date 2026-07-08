@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Post } from "@/lib/content";
 import { isSafeLinkHref, isVideoFile } from "@/lib/content";
 import {
   bookmarkFaviconUrl,
   resolveCoverSource,
 } from "@/lib/cover";
+import { useCaptureStatus } from "./useCaptureStatus";
 import styles from "./BookmarkCard.module.css";
 
 function classNames(...names: Array<string | false | undefined>): string {
@@ -59,7 +63,12 @@ function previewLine(value: string | undefined): string {
 function StatusChip({ status }: { status: Post["captureStatus"] }) {
   if (status === "pending") {
     return (
-      <span className={classNames(styles.status, styles.pending)}>
+      <span
+        className={classNames(styles.status, styles.pending)}
+        role="status"
+        aria-live="polite"
+      >
+        <span className={styles.spinner} aria-hidden="true" />
         capturing
       </span>
     );
@@ -81,6 +90,12 @@ export function BookmarkCard({
   post: Post;
   editPath: string;
 }) {
+  const router = useRouter();
+  const captureStatus = useCaptureStatus(post.id, post.captureStatus, {
+    onResolved: () => {
+      router.refresh();
+    },
+  });
   const title = itemTitle(post);
   const href = originalHref(post);
   const host = bookmarkHost(post);
@@ -91,7 +106,8 @@ export function BookmarkCard({
     previewLine(post.body);
   const screenshotUrl = post.capture?.screenshotUrl?.trim();
   const htmlUrl = post.capture?.htmlUrl?.trim();
-  const hasActions = Boolean(href || htmlUrl || screenshotUrl);
+  const isPending = captureStatus === "pending";
+  const hasActions = !isPending && Boolean(href || htmlUrl || screenshotUrl);
   const thumbnailSource = resolveCoverSource(post);
   const thumbnailUrl = thumbnailSource.src;
   const thumbnailIsCapture = thumbnailSource.kind === "bookmark-screenshot";
@@ -123,34 +139,48 @@ export function BookmarkCard({
       loading="lazy"
     />
   );
+  const mainContent = (
+    <>
+      <span className={styles.favicon} aria-hidden="true">
+        {faviconSrc && (
+          <img
+            className={styles.faviconImage}
+            src={faviconSrc}
+            alt=""
+            onError={(event) => {
+              event.currentTarget.hidden = true;
+            }}
+          />
+        )}
+      </span>
+      <span className={styles.content}>
+        <span className={styles.titleRow}>
+          <span className={styles.title}>{title}</span>
+          <StatusChip status={captureStatus} />
+        </span>
+        {host && <span className={styles.host}>{host}</span>}
+        {description && (
+          <span className={styles.description}>{description}</span>
+        )}
+      </span>
+    </>
+  );
 
   return (
     <article className={styles.card}>
       <div className={styles.body}>
-        <Link className={styles.main} href={editPath}>
-          <span className={styles.favicon} aria-hidden="true">
-            {faviconSrc && (
-              <img
-                className={styles.faviconImage}
-                src={faviconSrc}
-                alt=""
-                onError={(event) => {
-                  event.currentTarget.hidden = true;
-                }}
-              />
-            )}
-          </span>
-          <span className={styles.content}>
-            <span className={styles.titleRow}>
-              <span className={styles.title}>{title}</span>
-              <StatusChip status={post.captureStatus} />
-            </span>
-            {host && <span className={styles.host}>{host}</span>}
-            {description && (
-              <span className={styles.description}>{description}</span>
-            )}
-          </span>
-        </Link>
+        {isPending ? (
+          <div
+            className={classNames(styles.main, styles.mainDisabled)}
+            aria-disabled="true"
+          >
+            {mainContent}
+          </div>
+        ) : (
+          <Link className={styles.main} href={editPath}>
+            {mainContent}
+          </Link>
+        )}
         {hasActions && (
           <div className={styles.actions}>
             {href && (
@@ -187,24 +217,42 @@ export function BookmarkCard({
         )}
       </div>
       {thumbnailUrl && thumbnailIsCapture && screenshotUrl && (
-        <a
-          className={thumbnailLinkClass}
-          href={screenshotUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Open screenshot for ${title}`}
-        >
-          {thumbnailMedia}
-        </a>
+        isPending ? (
+          <div
+            className={classNames(thumbnailLinkClass, styles.thumbnailDisabled)}
+            aria-hidden="true"
+          >
+            {thumbnailMedia}
+          </div>
+        ) : (
+          <a
+            className={thumbnailLinkClass}
+            href={screenshotUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open screenshot for ${title}`}
+          >
+            {thumbnailMedia}
+          </a>
+        )
       )}
       {thumbnailUrl && !thumbnailIsCapture && (
-        <Link
-          className={thumbnailLinkClass}
-          href={editPath}
-          aria-label={`Open ${title}`}
-        >
-          {thumbnailMedia}
-        </Link>
+        isPending ? (
+          <div
+            className={classNames(thumbnailLinkClass, styles.thumbnailDisabled)}
+            aria-hidden="true"
+          >
+            {thumbnailMedia}
+          </div>
+        ) : (
+          <Link
+            className={thumbnailLinkClass}
+            href={editPath}
+            aria-label={`Open ${title}`}
+          >
+            {thumbnailMedia}
+          </Link>
+        )
       )}
     </article>
   );
