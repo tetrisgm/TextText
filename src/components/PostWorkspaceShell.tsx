@@ -822,6 +822,7 @@ export function WorkspaceSidebarChrome({
   onSelectRoot,
   prefetchFolders = true,
   onToggleCollapsed,
+  escapeToCollapse = true,
   showGuestSignIn = false,
 }: {
   activeFolder: SidebarFolderId | null;
@@ -836,6 +837,9 @@ export function WorkspaceSidebarChrome({
   onSelectRoot?: () => void;
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
+  // At the workspace root the sidebar IS the view, so Escape must not collapse
+  // it there (root is the top of the route). Callers pass false at root.
+  escapeToCollapse?: boolean;
   showGuestSignIn?: boolean;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -870,7 +874,7 @@ export function WorkspaceSidebarChrome({
     onToggleCollapsed();
   }, [onToggleCollapsed]);
 
-  useEscapeLayer(!collapsed, "Sidebar", closeSidebar);
+  useEscapeLayer(escapeToCollapse && !collapsed, "Sidebar", closeSidebar);
 
   return (
     <>
@@ -1715,10 +1719,15 @@ function LocalWorkspaceShell({
     children
   );
 
+  // The root is the top of the route and the sidebar is its content: always
+  // show the sidebar open there, whatever the persisted collapse preference.
+  const atRoot = view.level === "root";
+  const effectiveSidebarCollapsed = atRoot ? false : sidebarCollapsed;
+
   return (
     <div
       className={`post-editor-shell applecms has-sidebar ${className}${
-        sidebarCollapsed ? " is-sidebar-collapsed" : ""
+        effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
       }`}
     >
       <WorkspaceSidebarChrome
@@ -1726,13 +1735,14 @@ function LocalWorkspaceShell({
         activeFolder={localViewActiveFolder(view)}
         canManageFolders={canManageFolders}
         canManageSharing={canManageSharing}
-        collapsed={sidebarCollapsed}
+        collapsed={effectiveSidebarCollapsed}
         counts={displayPool.counts}
         folders={displayPool.folders}
         homePath={homePath}
         onSelectFolder={navigateSection}
         onSelectRoot={navigateRoot}
         onToggleCollapsed={toggleSidebarCollapsed}
+        escapeToCollapse={!atRoot}
         prefetchFolders={false}
         showGuestSignIn={showGuestSignIn}
       />
