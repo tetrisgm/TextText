@@ -983,11 +983,50 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         let host = finalURL.host ?? finalURL.absoluteString
         var parts = ["[\(host)](\(finalURL.absoluteString))"]
         if let title { parts.append("# \(title)") }
-        for paragraph in readable.paragraphs ?? [] {
-            guard let cleaned = cleaned(paragraph) else { continue }
-            parts.append(cleaned)
+        if let blocks = readable.blocks, !blocks.isEmpty {
+            for block in blocks {
+                switch block.type {
+                case "image":
+                    guard let src = cleaned(block.src),
+                          isHTTPImageURL(src) else { continue }
+                    parts.append("![\(markdownImageAlt(block.alt))](\(markdownImageURL(src)))")
+                default:
+                    guard let cleaned = cleaned(block.text) else { continue }
+                    parts.append(cleaned)
+                }
+            }
+        } else {
+            for paragraph in readable.paragraphs ?? [] {
+                guard let cleaned = cleaned(paragraph) else { continue }
+                parts.append(cleaned)
+            }
         }
         return parts.joined(separator: "\n\n")
+    }
+
+    private func markdownImageAlt(_ value: String?) -> String {
+        guard let cleaned = cleaned(value) else { return "" }
+        let escaped = cleaned
+            .replacingOccurrences(of: "[", with: "(")
+            .replacingOccurrences(of: "]", with: ")")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        guard escaped.count > 180 else { return escaped }
+        return String(escaped.prefix(180)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func markdownImageURL(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "(", with: "%28")
+            .replacingOccurrences(of: ")", with: "%29")
+    }
+
+    private func isHTTPImageURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
     }
 
     private func fail(url: URL, reason: String) {
@@ -1039,7 +1078,158 @@ private let readableExtractionScript = #"""
       return (el.textContent || "").trim();
     }
     function clean(value) {
-      return (value || "").replace(/[ \t]+/g, " ").trim();
+      return (value || "").replace(/\s+/g, " ").trim();
+    }
+    function parseSrcset(srcset) {
+      var entries = [];
+      var values = (srcset || "").split(",");
+      for (var i = 0; i < values.length; i++) {
+        var pieces = clean(values[i]).split(/\s+/);
+        var url = pieces.shift() || "";
+        if (!url || /^data:/i.test(url)) continue;
+        var descriptor = pieces[0] || "";
+        var width = 0;
+        var density = 0;
+        if (/^\d+w$/.test(descriptor)) {
+          width = parseInt(descriptor.slice(0, -1), 10) || 0;
+        } else if (/^\d*\.?\d+x$/.test(descriptor)) {
+          density = parseFloat(descriptor.slice(0, -1)) || 0;
+        }
+        entries.push({ url: url, width: width, density: density, index: entries.length });
+      }
+      return entries;
+    }
+    function srcsetCandidate(srcset) {
+      var entries = parseSrcset(srcset);
+      if (!entries.length) return "";
+
+      var widths = entries.filter(function(entry) { return entry.width > 0; });
+      if (widths.length) {
+        widths.sort(function(a, b) { return a.width - b.width; });
+        var bestUnder = null;
+        var smallestOver = null;
+        for (var i = 0; i < widths.length; i++) {
+          if (widths[i].width <= 1600) {
+            bestUnder = widths[i];
+          } else if (!smallestOver) {
+            smallestOver = widths[i];
+          }
+        }
+        return (bestUnder || smallestOver || widths[widths.length - 1]).url;
+      }
+
+      var densities = entries.filter(function(entry) { return entry.density > 0; });
+      if (densities.length) {
+        densities.sort(function(a, b) { return a.density - b.density; });
+        var bestDensity = null;
+        var smallestHighDensity = null;
+        for (var j = 0; j < densities.length; j++) {
+          if (densities[j].density <= 2) {
+            bestDensity = densities[j];
+          } else if (!smallestHighDensity) {
+            smallestHighDensity = densities[j];
+          }
+        }
+        return (bestDensity || smallestHighDensity || densities[densities.length - 1]).url;
+      }
+
+      return entries[0].url;
+    }
+    function absoluteURL(value) {
+      var candidate = clean(value);
+      if (!candidate || /^data:/i.test(candidate)) return "";
+      try {
+        if (candidate.indexOf("//") === 0) return "https:" + candidate;
+        var url = new URL(candidate, window.location.href);
+        if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+        return url.href;
+      } catch (_) {
+        return "";
+      }
+    }
+    function pictureSource(img) {
+      var parent = img.parentElement;
+      if (!parent || parent.tagName !== "PICTURE") return "";
+      var sources = parent.querySelectorAll("source[srcset]");
+      for (var i = 0; i < sources.length; i++) {
+        var media = sources[i].getAttribute("media");
+        if (media && window.matchMedia && !window.matchMedia(media).matches) continue;
+        var candidate = srcsetCandidate(sources[i].getAttribute("srcset"));
+        if (absoluteURL(candidate)) return candidate;
+      }
+      return "";
+    }
+    function firstAbsoluteURL(candidates) {
+      for (var i = 0; i < candidates.length; i++) {
+        var url = absoluteURL(candidates[i]);
+        if (url) return url;
+      }
+      return "";
+    }
+    function imageSource(img) {
+      return firstAbsoluteURL([
+        pictureSource(img),
+        srcsetCandidate(img.getAttribute("srcset")),
+        srcsetCandidate(img.getAttribute("data-srcset")),
+        img.currentSrc,
+        img.getAttribute("src"),
+        img.getAttribute("data-src"),
+        img.getAttribute("data-original"),
+        img.getAttribute("data-lazy-src"),
+        img.getAttribute("data-hi-res-src"),
+        img.getAttribute("data-image")
+      ]);
+    }
+    function dimensionValue(value) {
+      if (value == null) return 0;
+      var parsed = parseFloat(String(value).replace(/[^\d.]/g, ""));
+      return isFinite(parsed) ? parsed : 0;
+    }
+    function imageDimensions(img) {
+      return {
+        width: dimensionValue(img.getAttribute("width")) ||
+          dimensionValue(img.getAttribute("data-width")) ||
+          dimensionValue(img.naturalWidth) ||
+          dimensionValue(img.clientWidth) ||
+          dimensionValue(img.offsetWidth),
+        height: dimensionValue(img.getAttribute("height")) ||
+          dimensionValue(img.getAttribute("data-height")) ||
+          dimensionValue(img.naturalHeight) ||
+          dimensionValue(img.clientHeight) ||
+          dimensionValue(img.offsetHeight)
+      };
+    }
+    function badImagePattern(value) {
+      var lower = (value || "").toLowerCase();
+      if (!lower) return false;
+      if (/(doubleclick|googlesyndication|google-analytics|scorecardresearch|quantserve|facebook\.com\/tr|pixel\.wp\.com|adservice|taboola|outbrain)/.test(lower)) {
+        return true;
+      }
+      return /(^|[\s\/?&_.#=-])(ad|ads|advert|advertisement|beacon|pixel|tracker|tracking|analytics|spacer|sprite|clear|blank|1x1)([\s\/?&_.#=-]|$)/.test(lower);
+    }
+    function shouldSkipImage(img, src) {
+      if (!src || src.length > 4096 || /^data:/i.test(src)) return true;
+      var dimensions = imageDimensions(img);
+      if ((dimensions.width > 0 && dimensions.width < 32) ||
+          (dimensions.height > 0 && dimensions.height < 32)) {
+        return true;
+      }
+      var labels = [
+        src,
+        img.id || "",
+        img.className || "",
+        img.getAttribute("role") || ""
+      ].join(" ");
+      return badImagePattern(labels);
+    }
+    function imageBlock(img) {
+      var src = imageSource(img);
+      if (shouldSkipImage(img, src)) return null;
+      return {
+        type: "image",
+        src: src,
+        alt: clean(img.getAttribute("alt") || img.getAttribute("title") || "")
+      };
     }
 
     var title = clean(attr('meta[property="og:title"]', "content")) ||
@@ -1050,14 +1240,78 @@ private let readableExtractionScript = #"""
       clean(attr('meta[name="description"]', "content"));
     var root = document.querySelector("article") ||
       document.querySelector("main") ||
+      document.querySelector('[role="main"]') ||
       document.body;
-    var raw = root ? (root.innerText || root.textContent || "") : "";
-    var blocks = raw.replace(/\r/g, "\n").split(/\n{2,}/);
+    var contentBlocks = [];
+    var textBuffer = "";
+    var seenImages = {};
+    var blockTags = {
+      ADDRESS: true, ARTICLE: true, ASIDE: true, BLOCKQUOTE: true, DD: true,
+      DETAILS: true, DIV: true, DL: true, DT: true, FIELDSET: true,
+      FIGCAPTION: true, FIGURE: true, H1: true, H2: true, H3: true, H4: true,
+      H5: true, H6: true, LI: true, MAIN: true, OL: true, P: true, PRE: true,
+      SECTION: true, TABLE: true, TBODY: true, TD: true, TFOOT: true, TH: true,
+      THEAD: true, TR: true, UL: true
+    };
+    var skippedTags = {
+      SCRIPT: true, STYLE: true, NOSCRIPT: true, SVG: true, CANVAS: true,
+      IFRAME: true, FORM: true, BUTTON: true, INPUT: true, SELECT: true,
+      TEXTAREA: true, NAV: true, FOOTER: true, ASIDE: true
+    };
+    function appendText(value) {
+      var cleaned = clean(value);
+      if (!cleaned) return;
+      if (textBuffer) textBuffer += " ";
+      textBuffer += cleaned;
+    }
+    function flushText() {
+      var paragraph = clean(textBuffer);
+      if (paragraph) contentBlocks.push({ type: "text", text: paragraph });
+      textBuffer = "";
+    }
+    function isHidden(el) {
+      if (el.hidden || el.getAttribute("aria-hidden") === "true") return true;
+      if (!window.getComputedStyle) return false;
+      var style = window.getComputedStyle(el);
+      return style && (style.display === "none" || style.visibility === "hidden");
+    }
+    function walk(node) {
+      if (!node) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        appendText(node.nodeValue || "");
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+      var el = node;
+      var tag = el.tagName;
+      if (skippedTags[tag] || isHidden(el)) return;
+      if (tag === "IMG") {
+        flushText();
+        var image = imageBlock(el);
+        if (image && !seenImages[image.src]) {
+          seenImages[image.src] = true;
+          contentBlocks.push(image);
+        }
+        return;
+      }
+      if (tag === "BR") {
+        flushText();
+        return;
+      }
+
+      var isBlock = !!blockTags[tag];
+      if (isBlock) flushText();
+      var children = el.childNodes || [];
+      for (var i = 0; i < children.length; i++) walk(children[i]);
+      if (isBlock) flushText();
+    }
+    walk(root);
+    flushText();
+
     var paragraphs = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var lines = blocks[i].split(/\n+/).map(clean).filter(Boolean);
-      var paragraph = lines.join(" ");
-      if (paragraph) paragraphs.push(paragraph);
+    for (var i = 0; i < contentBlocks.length; i++) {
+      if (contentBlocks[i].type === "text") paragraphs.push(contentBlocks[i].text);
     }
 
     return JSON.stringify({
@@ -1066,6 +1320,7 @@ private let readableExtractionScript = #"""
       title: title,
       siteName: siteName,
       description: description,
+      blocks: contentBlocks,
       paragraphs: paragraphs
     });
   } catch (e) {
@@ -1151,7 +1406,15 @@ private struct ReadableExtraction: Decodable {
     let title: String?
     let siteName: String?
     let description: String?
+    let blocks: [ReadableBlock]?
     let paragraphs: [String]?
+}
+
+private struct ReadableBlock: Decodable {
+    let type: String
+    let text: String?
+    let src: String?
+    let alt: String?
 }
 
 private struct PageSnapshotSize: Decodable {
