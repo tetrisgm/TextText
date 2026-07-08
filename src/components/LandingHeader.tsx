@@ -1,11 +1,6 @@
 import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 
-const signInHref = `/signin?callbackUrl=${encodeURIComponent("/start")}`;
-
-// The public header, Notion-shaped: the wordmark top-left, a couple of nav
-// links, and the actions on the right that switch on whether you are signed
-// in (Open Write / Sign out) or not (Try the demo / Sign in).
 export function LandingHeader({
   signedIn,
 }: {
@@ -35,11 +30,11 @@ export function LandingHeader({
         ) : (
           <>
             <Link className="write-landing-link" href="/try">
-              Try the demo
+              Start writing
             </Link>
-            <a className="write-landing-button" href={signInHref}>
-              Sign in
-            </a>
+            <Link className="write-landing-button" href="/start">
+              Get started
+            </Link>
           </>
         )}
       </div>

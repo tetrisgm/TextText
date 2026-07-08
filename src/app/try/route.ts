@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-// Try Write without an account: a demo workspace bound to this browser.
+// Start writing without an account: a demo workspace bound to this browser.
 // It is a real workspace (same editor, same folders); signing in later
 // claims it, so nothing written here is lost by creating an account.
 // Signed-in users have no use for the sandbox and go to their workspace.
