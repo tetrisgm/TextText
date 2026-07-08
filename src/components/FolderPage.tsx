@@ -4,7 +4,7 @@
 // the home workspace shell. Notes and bookmarks stay unlisted; sharing only
 // grants named collaborators access.
 
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -108,9 +108,13 @@ function NotesFolderContents({
     });
   }, [blog, creating, handle, router]);
 
-  const notes = sortedByTimestampDesc(
-    items,
-    (post) => post.updatedAt ?? post.date ?? "",
+  const notes = useMemo(
+    () =>
+      sortedByTimestampDesc(
+        items,
+        (post) => post.updatedAt ?? post.date ?? "",
+      ),
+    [items],
   );
 
   return (
@@ -240,9 +244,13 @@ function BookmarksFolderContents({
     [handle, router, saving],
   );
 
-  const bookmarks = sortedByTimestampDesc(
-    items,
-    (post) => post.createdAt ?? post.date ?? "",
+  const bookmarks = useMemo(
+    () =>
+      sortedByTimestampDesc(
+        items,
+        (post) => post.createdAt ?? post.date ?? "",
+      ),
+    [items],
   );
 
   return (
@@ -335,9 +343,13 @@ function BlogFolderContents({
   items: Post[];
   canEditItems: boolean;
 }) {
-  const sorted = sortedByTimestampDesc(
-    items,
-    (post) => post.updatedAt ?? post.date ?? "",
+  const sorted = useMemo(
+    () =>
+      sortedByTimestampDesc(
+        items,
+        (post) => post.updatedAt ?? post.date ?? "",
+      ),
+    [items],
   );
   return (
     <section className="post-folder-page-items" aria-label="Folder items">

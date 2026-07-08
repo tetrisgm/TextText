@@ -2,6 +2,7 @@
 // named access lives in collaborators rows scoped to a workspace, folder, or
 // item. Callers ask for capabilities and never infer them from route shape.
 
+import { cache } from "react";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { isPrivateFolderMode, isPrivatePostType } from "./content";
@@ -45,6 +46,12 @@ type ScopeKey = {
 
 type CollaboratorRow = typeof collaborators.$inferSelect;
 type FolderRow = typeof folders.$inferSelect;
+type AccessUserParts = {
+  userId: string | null;
+  sub: string | null;
+  email: string | null;
+  name: string | null;
+};
 
 const ROLE_RANK: Record<EffectiveRole, number> = {
   viewer: 1,
@@ -154,6 +161,25 @@ function storedRole(value: string): StoredCollaboratorRole | null {
   return isStoredCollaboratorRole(value) ? value : null;
 }
 
+function accessUserParts(user: AccessUser | null): AccessUserParts {
+  return {
+    userId: user?.userId?.trim() || null,
+    sub: user?.sub?.trim() || null,
+    email: user?.email ? normalizeAccessEmail(user.email) : null,
+    name: user?.name ?? null,
+  };
+}
+
+function accessUserFromParts(
+  userId: string | null,
+  sub: string | null,
+  email: string | null,
+  name: string | null,
+): AccessUser | null {
+  if (!userId && !sub && !email && !name) return null;
+  return { userId, sub, email, name };
+}
+
 function workspaceGrantAppliesToFolder(folder: FolderRow): boolean {
   return !isPrivateFolderMode(folder.mode);
 }
@@ -205,16 +231,8 @@ function roleForTarget(
   return null;
 }
 
-function scopeWhere(scopes: ScopeKey[]): SQL | undefined {
-  const predicates = scopes.map((scope) =>
-    and(
-      eq(collaborators.scopeType, scope.scopeType),
-      eq(collaborators.scopeId, scope.scopeId),
-    ),
-  );
-  if (predicates.length === 0) return undefined;
-  if (predicates.length === 1) return predicates[0];
-  return or(...predicates);
+function scopeCacheKey(scopeType: string, scopeId: string): string {
+  return `${scopeType}:${scopeId}`;
 }
 
 async function existingUserIdForAccess(user: AccessUser | null): Promise<string | null> {
@@ -253,27 +271,69 @@ async function ensureUserIdForAccess(user: AccessUser): Promise<string | null> {
   return existingUserIdForAccess(user);
 }
 
+async function collaboratorRowsForUserUncached(
+  user: AccessUser | null,
+): Promise<{ rows: CollaboratorRow[]; userId: string | null; email: string }> {
+  if (!db || !user) return { rows: [], userId: null, email: "" };
+  const database = db;
+
+  let userId = await existingUserIdForAccess(user);
+  const email = user.email ? normalizeAccessEmail(user.email) : "";
+  const userPredicates: SQL[] = [];
+  if (userId) userPredicates.push(eq(collaborators.userId, userId));
+  if (email) {
+    const emailPredicate = and(
+      isNull(collaborators.userId),
+      eq(collaborators.invitedEmail, email),
+    );
+    if (emailPredicate) userPredicates.push(emailPredicate);
+  }
+  if (userPredicates.length === 0) return { rows: [], userId, email };
+  const userPredicate =
+    userPredicates.length === 1 ? userPredicates[0] : or(...userPredicates);
+  if (!userPredicate) return { rows: [], userId, email };
+
+  const rows = await database
+    .select()
+    .from(collaborators)
+    .where(and(userPredicate, isNull(collaborators.revokedAt)));
+
+  return { rows, userId, email };
+}
+
+const cachedCollaboratorRowsForUser = cache(
+  async (
+    userId: string | null,
+    sub: string | null,
+    email: string | null,
+    name: string | null,
+  ) =>
+    collaboratorRowsForUserUncached(
+      accessUserFromParts(userId, sub, email, name),
+    ),
+);
+
 async function matchingCollaboratorRows(
   user: AccessUser | null,
   scopes: ScopeKey[],
 ): Promise<{ rows: CollaboratorRow[]; userId: string | null }> {
   if (!db || !user || scopes.length === 0) return { rows: [], userId: null };
   const database = db;
-  const predicate = scopeWhere(scopes);
-  if (!predicate) return { rows: [], userId: null };
-
-  let userId = await existingUserIdForAccess(user);
-  const email = user.email ? normalizeAccessEmail(user.email) : "";
-  const rows = await database
-    .select()
-    .from(collaborators)
-    .where(and(predicate, isNull(collaborators.revokedAt)));
-
-  const matched = rows.filter((row) => {
-    if (userId && row.userId === userId) return true;
-    if (!row.userId && email && row.invitedEmail === email) return true;
-    return false;
-  });
+  const userParts = accessUserParts(user);
+  const candidateRows = await cachedCollaboratorRowsForUser(
+    userParts.userId,
+    userParts.sub,
+    userParts.email,
+    userParts.name,
+  );
+  const scopeKeys = new Set(
+    scopes.map((scope) => scopeCacheKey(scope.scopeType, scope.scopeId)),
+  );
+  const matched = candidateRows.rows.filter((row) =>
+    scopeKeys.has(scopeCacheKey(row.scopeType, row.scopeId)),
+  );
+  let userId = candidateRows.userId;
+  const email = candidateRows.email;
 
   const hasUnboundEmailMatch = matched.some(
     (row) => !row.userId && email && row.invitedEmail === email,
@@ -337,7 +397,7 @@ function descendantFolderIds(
   return result;
 }
 
-async function folderRowsForBlog(blogId: string): Promise<FolderRow[]> {
+async function folderRowsForBlogUncached(blogId: string): Promise<FolderRow[]> {
   if (!db) return [];
   return db
     .select()
@@ -345,7 +405,13 @@ async function folderRowsForBlog(blogId: string): Promise<FolderRow[]> {
     .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt)));
 }
 
-async function blogAccessBase(
+const cachedFolderRowsForBlog = cache(folderRowsForBlogUncached);
+
+async function folderRowsForBlog(blogId: string): Promise<FolderRow[]> {
+  return cachedFolderRowsForBlog(blogId);
+}
+
+async function blogAccessBaseUncached(
   handle: string,
   user: AccessUser | null,
 ): Promise<{
@@ -369,6 +435,35 @@ async function blogAccessBase(
     userId,
     owner: Boolean(userId && row.ownerId && userId === row.ownerId),
   };
+}
+
+const cachedBlogAccessBase = cache(
+  async (
+    handle: string,
+    userId: string | null,
+    sub: string | null,
+    email: string | null,
+    name: string | null,
+  ) => blogAccessBaseUncached(handle, accessUserFromParts(userId, sub, email, name)),
+);
+
+async function blogAccessBase(
+  handle: string,
+  user: AccessUser | null,
+): Promise<{
+  blogId: string;
+  ownerId: string | null;
+  userId: string | null;
+  owner: boolean;
+} | null> {
+  const userParts = accessUserParts(user);
+  return cachedBlogAccessBase(
+    handle,
+    userParts.userId,
+    userParts.sub,
+    userParts.email,
+    userParts.name,
+  );
 }
 
 export async function resolveWorkspaceAccess(opts: {
@@ -546,7 +641,7 @@ function folderGrantContainsPost(
   return folderGrantAppliesToItem(post, grantedFolder);
 }
 
-export async function accessibleFolderIdsForUser(
+async function accessibleFolderIdsForUserUncached(
   handle: string,
   user: AccessUser | null,
 ): Promise<Set<string> | "all"> {
@@ -584,7 +679,36 @@ export async function accessibleFolderIdsForUser(
   return visible;
 }
 
-export async function accessiblePostIdsForUser(
+const cachedAccessibleFolderIdsForUser = cache(
+  async (
+    handle: string,
+    userId: string | null,
+    sub: string | null,
+    email: string | null,
+    name: string | null,
+  ) =>
+    accessibleFolderIdsForUserUncached(
+      handle,
+      accessUserFromParts(userId, sub, email, name),
+    ),
+);
+
+export async function accessibleFolderIdsForUser(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Set<string> | "all"> {
+  const userParts = accessUserParts(user);
+  const ids = await cachedAccessibleFolderIdsForUser(
+    handle,
+    userParts.userId,
+    userParts.sub,
+    userParts.email,
+    userParts.name,
+  );
+  return ids === "all" ? "all" : new Set(ids);
+}
+
+async function accessiblePostIdsForUserUncached(
   handle: string,
   user: AccessUser | null,
 ): Promise<Set<string> | "all"> {
@@ -635,4 +759,33 @@ export async function accessiblePostIdsForUser(
     }
   }
   return visible;
+}
+
+const cachedAccessiblePostIdsForUser = cache(
+  async (
+    handle: string,
+    userId: string | null,
+    sub: string | null,
+    email: string | null,
+    name: string | null,
+  ) =>
+    accessiblePostIdsForUserUncached(
+      handle,
+      accessUserFromParts(userId, sub, email, name),
+    ),
+);
+
+export async function accessiblePostIdsForUser(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Set<string> | "all"> {
+  const userParts = accessUserParts(user);
+  const ids = await cachedAccessiblePostIdsForUser(
+    handle,
+    userParts.userId,
+    userParts.sub,
+    userParts.email,
+    userParts.name,
+  );
+  return ids === "all" ? "all" : new Set(ids);
 }

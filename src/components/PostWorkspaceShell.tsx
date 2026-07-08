@@ -53,6 +53,12 @@ export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
   return "blog";
 }
 
+function folderWorkspaceHref(homePath: string, folder: SidebarFolderId): string {
+  return folder === "blog"
+    ? homePath
+    : `${homePath}?folder=${encodeURIComponent(folder)}`;
+}
+
 function readDocumentCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const parts = document.cookie ? document.cookie.split("; ") : [];
@@ -389,6 +395,7 @@ function FolderTreeNav({
   canManageFolders,
   onSelectFolder,
   onShareFolder,
+  homePath,
 }: {
   blog: Blog;
   folders: Folder[];
@@ -399,6 +406,7 @@ function FolderTreeNav({
   canManageFolders: boolean;
   onSelectFolder: (folder: SidebarFolderId) => void;
   onShareFolder: (folder: Folder) => void;
+  homePath?: string;
 }) {
   const router = useRouter();
   const tree = buildFolderTree(folders);
@@ -410,6 +418,13 @@ function FolderTreeNav({
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const prefetchFolder = useCallback(
+    (folder: SidebarFolderId) => {
+      if (!homePath) return;
+      router.prefetch(folderWorkspaceHref(homePath, folder));
+    },
+    [homePath, router],
+  );
 
   // Load persisted expand state, then force-open the ancestors of the active
   // folder so the current selection is always visible.
@@ -499,6 +514,8 @@ function FolderTreeNav({
             className="post-editor-folder-main"
             aria-current={selected ? "true" : undefined}
             title={collapsed ? folder.name : undefined}
+            onFocus={() => prefetchFolder(folder.path)}
+            onMouseEnter={() => prefetchFolder(folder.path)}
             onClick={() => onSelectFolder(folder.path)}
           >
             <span className="post-editor-folder-icon" aria-hidden="true">
@@ -670,6 +687,7 @@ export function PostFolderSidebar({
           collapsed={collapsed}
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
+          homePath={homePath}
           onSelectFolder={onSelectFolder}
           onShareFolder={setSharingFolder}
         />
@@ -842,11 +860,7 @@ export function BlogHomeWorkspaceShell({
   // navigation (the server fetches that folder's items), not a history swap.
   const selectFolder = useCallback(
     (folder: SidebarFolderId) => {
-      router.push(
-        folder === "blog"
-          ? homePath
-          : `${homePath}?folder=${encodeURIComponent(folder)}`,
-      );
+      router.push(folderWorkspaceHref(homePath, folder));
     },
     [homePath, router],
   );
@@ -865,6 +879,7 @@ export function BlogHomeWorkspaceShell({
         collapsed={sidebarCollapsed}
         counts={counts}
         folders={folders}
+        homePath={homePath}
         onSelectFolder={selectFolder}
         onToggleCollapsed={toggleSidebarCollapsed}
         showGuestSignIn={showGuestSignIn}
@@ -916,9 +931,7 @@ export function PostReadWorkspaceShell({
   // stranded in a folder view without its post.
   const selectSidebarFolder = useCallback(
     (folder: SidebarFolderId) => {
-      router.push(
-        folder === "blog" ? homePath : `${homePath}?folder=${folder}`,
-      );
+      router.push(folderWorkspaceHref(homePath, folder));
     },
     [homePath, router],
   );
