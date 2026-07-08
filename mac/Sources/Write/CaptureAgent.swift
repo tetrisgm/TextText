@@ -1016,7 +1016,12 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                 case "image":
                     guard let src = cleaned(block.src),
                           isHTTPImageURL(src) else { continue }
-                    parts.append("![\(markdownImageAlt(block.alt))](\(markdownImageURL(src)))")
+                    let image = "![\(markdownImageAlt(block.alt))](\(markdownURL(src)))"
+                    if let href = cleaned(block.href), isHTTPURL(href) {
+                        parts.append("[\(image)](\(markdownURL(href)))")
+                    } else {
+                        parts.append(image)
+                    }
                 default:
                     guard let cleaned = cleaned(block.text) else { continue }
                     parts.append(cleaned)
@@ -1042,13 +1047,17 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         return String(escaped.prefix(180)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func markdownImageURL(_ value: String) -> String {
+    private func markdownURL(_ value: String) -> String {
         value
             .replacingOccurrences(of: "(", with: "%28")
             .replacingOccurrences(of: ")", with: "%29")
     }
 
     private func isHTTPImageURL(_ value: String) -> Bool {
+        isHTTPURL(value)
+    }
+
+    private func isHTTPURL(_ value: String) -> Bool {
         guard let components = URLComponents(string: value),
               let scheme = components.scheme?.lowercased() else {
             return false
@@ -1239,6 +1248,43 @@ private let readableExtractionScript = #"""
         return "";
       }
     }
+    function absoluteLinkURL(value) {
+      var candidate = clean(value);
+      if (!candidate || candidate.length > 4096 || candidate.charAt(0) === "#") return "";
+      if (/^(javascript|mailto):/i.test(candidate)) return "";
+      try {
+        if (candidate.indexOf("//") === 0) candidate = "https:" + candidate;
+        var url = new URL(candidate, window.location.href);
+        if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+        if (isSamePageAnchor(url)) return "";
+        return url.href;
+      } catch (_) {
+        return "";
+      }
+    }
+    function isSamePageAnchor(url) {
+      if (!url.hash) return false;
+      try {
+        var page = new URL(window.location.href);
+        return url.protocol === page.protocol &&
+          url.host === page.host &&
+          url.pathname === page.pathname &&
+          url.search === page.search;
+      } catch (_) {
+        return false;
+      }
+    }
+    function markdownLinkText(value) {
+      return clean(value)
+        .replace(/\\/g, "\\\\")
+        .replace(/\[/g, "\\[")
+        .replace(/\]/g, "\\]");
+    }
+    function markdownURL(value) {
+      return (value || "")
+        .replace(/\(/g, "%28")
+        .replace(/\)/g, "%29");
+    }
     function knownPlaceholderPattern(value) {
       var lower = (value || "").toLowerCase();
       if (!lower) return false;
@@ -1390,14 +1436,16 @@ private let readableExtractionScript = #"""
       ].join(" ");
       return badImagePattern(labels);
     }
-    function imageBlock(img) {
+    function imageBlock(img, href) {
       var src = imageSource(img);
       if (shouldSkipImage(img, src)) return null;
-      return {
+      var block = {
         type: "image",
         src: src,
         alt: clean(img.getAttribute("alt") || img.getAttribute("title") || "")
       };
+      if (href) block.href = href;
+      return block;
     }
 
     var title = clean(attr('meta[property="og:title"]', "content")) ||
@@ -1437,11 +1485,74 @@ private let readableExtractionScript = #"""
       if (paragraph) contentBlocks.push({ type: "text", text: paragraph });
       textBuffer = "";
     }
+    function appendMarkdownLink(value, href) {
+      var text = markdownLinkText(value);
+      if (!text) return;
+      appendText("[" + text + "](" + markdownURL(href) + ")");
+    }
+    function appendImage(img, href) {
+      var image = imageBlock(img, href);
+      if (image && !seenImages[image.src]) {
+        seenImages[image.src] = true;
+        contentBlocks.push(image);
+      }
+    }
     function isHidden(el) {
       if (el.hidden || el.getAttribute("aria-hidden") === "true") return true;
       if (!window.getComputedStyle) return false;
       var style = window.getComputedStyle(el);
       return style && (style.display === "none" || style.visibility === "hidden");
+    }
+    function walkLinkedAnchor(anchor, href) {
+      var linkedTextBuffer = "";
+      function appendLinkedText(value) {
+        var cleaned = clean(value);
+        if (!cleaned) return;
+        if (linkedTextBuffer) linkedTextBuffer += " ";
+        linkedTextBuffer += cleaned;
+      }
+      function flushLinkedText() {
+        if (linkedTextBuffer) appendMarkdownLink(linkedTextBuffer, href);
+        linkedTextBuffer = "";
+      }
+      function visit(node) {
+        if (!node) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          appendLinkedText(node.nodeValue || "");
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+        var el = node;
+        var tag = el.tagName;
+        if (skippedTags[tag] || isHidden(el)) return;
+        if (tag === "IMG") {
+          flushLinkedText();
+          flushText();
+          appendImage(el, href);
+          return;
+        }
+        if (tag === "BR") {
+          flushLinkedText();
+          flushText();
+          return;
+        }
+
+        var isBlock = !!blockTags[tag];
+        if (isBlock) {
+          flushLinkedText();
+          flushText();
+        }
+        var children = el.childNodes || [];
+        for (var i = 0; i < children.length; i++) visit(children[i]);
+        if (isBlock) {
+          flushLinkedText();
+          flushText();
+        }
+      }
+      var children = anchor.childNodes || [];
+      for (var i = 0; i < children.length; i++) visit(children[i]);
+      flushLinkedText();
     }
     function walk(node) {
       if (!node) return;
@@ -1454,13 +1565,16 @@ private let readableExtractionScript = #"""
       var el = node;
       var tag = el.tagName;
       if (skippedTags[tag] || isHidden(el)) return;
+      if (tag === "A") {
+        var href = absoluteLinkURL(el.getAttribute("href"));
+        if (href) {
+          walkLinkedAnchor(el, href);
+          return;
+        }
+      }
       if (tag === "IMG") {
         flushText();
-        var image = imageBlock(el);
-        if (image && !seenImages[image.src]) {
-          seenImages[image.src] = true;
-          contentBlocks.push(image);
-        }
+        appendImage(el, "");
         return;
       }
       if (tag === "BR") {
@@ -1583,6 +1697,7 @@ private struct ReadableBlock: Decodable {
     let text: String?
     let src: String?
     let alt: String?
+    let href: String?
 }
 
 private struct PageSnapshotSize: Decodable {
