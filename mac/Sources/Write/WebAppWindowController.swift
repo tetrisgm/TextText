@@ -28,6 +28,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
 
+    static let cacheWebView = false // false = always fresh (dev); flip to true for production caching
+
     private static let authHosts: Set<String> = [
         "accounts.google.com",
         "appleid.apple.com",
@@ -51,6 +53,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     ) {
         self.origin = origin
         self.onLinked = onLinked
+
+        Self.configureURLCacheForStartup()
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default() // login sticks across launches
@@ -116,7 +120,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         setAppCookie(on: webView.configuration.websiteDataStore.httpCookieStore) {
             [weak self] in
             guard let self else { return }
-            self.webView.load(URLRequest(url: self.url(for: startPath)))
+            self.webView.load(self.request(for: startPath))
         }
     }
 
@@ -176,6 +180,19 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         URL(string: path, relativeTo: origin)?.absoluteURL ?? origin
     }
 
+    static func configureURLCacheForStartup() {
+        guard !cacheWebView else { return }
+        URLCache.shared = URLCache(memoryCapacity: 0, diskCapacity: 0, diskPath: nil)
+    }
+
+    private func request(for path: String) -> URLRequest {
+        var request = URLRequest(url: url(for: path))
+        if !Self.cacheWebView {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
+        return request
+    }
+
     func present() {
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
@@ -184,7 +201,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     /// Navigate the web view to a path on the origin (used after linking).
     func load(path: String) {
-        webView.load(URLRequest(url: url(for: path)))
+        webView.load(request(for: path))
+    }
+
+    func reloadFromOrigin() {
+        webView.reloadFromOrigin()
     }
 
     private func isInApp(_ url: URL) -> Bool {

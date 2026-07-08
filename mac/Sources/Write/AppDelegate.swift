@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // app-translocation; one click here fixes both (the LetsMove pattern).
         if moveToApplicationsIfNeeded() { return } // relaunching from the new home
 
+        WebAppWindowController.configureURLCacheForStartup()
+
         // Only when the build carries a real feed + key; otherwise the
         // updater stays dormant and invisible (no Sparkle, no launch alert).
         if Updater.isConfigured {
@@ -96,7 +98,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // Foreground check, throttled to one per 5 minutes (the partyparty rule).
     private var lastForegroundCheck = Date.distantPast
+    private var lastForegroundWebReload = Date.distantPast
     func applicationDidBecomeActive(_ notification: Notification) {
+        if !WebAppWindowController.cacheWebView,
+           let webWindow,
+           Date().timeIntervalSince(lastForegroundWebReload) > 5 {
+            lastForegroundWebReload = Date()
+            webWindow.reloadFromOrigin()
+        }
+
         guard Date().timeIntervalSince(lastForegroundCheck) > 300 else { return }
         lastForegroundCheck = Date()
         updater?.checkNow()
@@ -413,6 +423,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func reopenApprovalAction() { linkController.reopenApproval() }
 
+    @objc private func reloadWebWindowAction() { webWindow?.reloadFromOrigin() }
+
     @objc private func checkUpdates() {
         guard let updater else { return } // dev build: the menu item is hidden anyway
         NSApp.activate(ignoringOtherApps: true) // Sparkle's alert needs a frontmost app
@@ -574,6 +586,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = edit.addItem(withTitle: "Copy", action: Selector(("copy:")), keyEquivalent: "c")
         _ = edit.addItem(withTitle: "Paste", action: Selector(("paste:")), keyEquivalent: "v")
         _ = edit.addItem(withTitle: "Select All", action: Selector(("selectAll:")), keyEquivalent: "a")
+
+        let viewItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
+        main.addItem(viewItem)
+        let view = NSMenu(title: "View")
+        viewItem.submenu = view
+        let reload = view.addItem(withTitle: "Reload", action: #selector(reloadWebWindowAction), keyEquivalent: "r")
+        reload.target = self
 
         let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         main.addItem(windowItem)
