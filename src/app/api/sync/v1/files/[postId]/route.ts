@@ -6,6 +6,7 @@ import {
   deletePost,
   folderPathForPostType,
   getPostById,
+  markCapturePending,
   savePost,
   savePostContentPatch,
 } from "@/lib/store";
@@ -134,6 +135,7 @@ export async function PUT(request: Request, { params }: Props) {
           coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
           body: parsed.body,
         });
+    await enqueueBookmarkCaptureIfNeeded(blog.handle, saved, post);
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",
@@ -176,4 +178,61 @@ export async function DELETE(request: Request, { params }: Props) {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function enqueueBookmarkCaptureIfNeeded(
+  handle: string,
+  post: Post,
+  previousPost: Post,
+): Promise<void> {
+  if (!post.id) return;
+  const url = bookmarkCaptureUrl(post);
+  if (!url || !shouldEnqueueBookmarkCapture(post, url, previousPost)) return;
+  await markCapturePending(handle, post.id, url);
+}
+
+function bookmarkCaptureUrl(post: Post): string | undefined {
+  if (post.type !== "bookmark") return undefined;
+  const href = post.links?.[0]?.href?.trim();
+  if (!href || !isHttpUrl(href)) return undefined;
+  return href;
+}
+
+function shouldEnqueueBookmarkCapture(
+  post: Post,
+  url: string,
+  previousPost: Post,
+): boolean {
+  const captureUrl = post.capture?.url;
+  if (post.captureStatus === "captured") {
+    const previousUrl = bookmarkCaptureUrl(previousPost);
+    return Boolean(
+      (!previousUrl || !sameUrl(previousUrl, url)) &&
+        (!captureUrl || !sameUrl(captureUrl, url)),
+    );
+  }
+  if (captureUrl && sameUrl(captureUrl, url)) return false;
+  return true;
+}
+
+function sameUrl(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false;
+  const normalizedLeft = normalizeHttpUrl(left);
+  const normalizedRight = normalizeHttpUrl(right);
+  if (normalizedLeft && normalizedRight) return normalizedLeft === normalizedRight;
+  return left.trim() === right.trim();
+}
+
+function isHttpUrl(value: string): boolean {
+  return Boolean(normalizeHttpUrl(value));
+}
+
+function normalizeHttpUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
