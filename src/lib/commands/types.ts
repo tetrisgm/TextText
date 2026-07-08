@@ -11,26 +11,36 @@ export type CommandShortcut = {
   alt?: boolean;
   shift?: boolean;
   label: string;
+  allowTypingTarget?: boolean;
+  requiresWorkspace?: boolean;
 };
 
 export type CommandRunResult = void | Promise<void>;
+
+export type CommandWorkspaceLevel = "root" | "section" | "post" | "edit";
 
 export type CommandWorkspaceSurface = {
   blog: Blog;
   handle: string;
   homePath: string;
+  viewLevel: CommandWorkspaceLevel;
   canCreate: boolean;
   canEdit: boolean;
   canManagePost: boolean;
   activeFolderPath: string | null;
   activePostId: string | null;
+  selectedSectionPath: string | null;
   selectedPostId: string | null;
+  getRootSectionPaths: () => string[];
   getVisiblePostIds: () => string[];
   getPost: (postId: string) => WorkspacePoolPost | null;
   selectPost: (postId: string | null) => void;
+  selectSection: (folderPath: string | null) => void;
   selectNext: () => void;
   selectPrevious: () => void;
-  openPost: (postId: string) => void;
+  openSelected: () => void;
+  openSectionByIndex: (index: number) => void;
+  openPost: (postId: string, mode?: "read" | "edit") => void;
   openCreatedPost?: (post: WorkspacePoolPost) => void;
   reconcileCreatedPost?: (
     temporaryPostId: string,
@@ -49,6 +59,7 @@ export type CommandContext = {
   navigate: (path: string) => void;
   refresh: () => void;
   openPalette: (query?: string) => void;
+  openShortcuts: () => void;
   closePalette: () => void;
   toast: (
     message: string,
@@ -61,6 +72,7 @@ export type AppCommand = {
   label: string;
   group: string;
   shortcut?: CommandShortcut | CommandShortcut[];
+  showInShortcutSheet?: boolean;
   when: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext) => CommandRunResult;
 };
