@@ -1,5 +1,6 @@
 "use client";
 
+import { type SyntheticEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Post } from "@/lib/content";
@@ -60,6 +61,29 @@ function previewLine(value: string | undefined): string {
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
 
+function thumbnailInitial(host: string, title: string): string {
+  const match = `${host} ${title}`.match(/[a-z0-9]/i);
+  return match ? match[0].toUpperCase() : "W";
+}
+
+function ThumbnailFallback({
+  host,
+  title,
+}: {
+  host: string;
+  title: string;
+}) {
+  const label = host || title;
+  return (
+    <span className={styles.thumbnailFallback} aria-hidden="true">
+      <span className={styles.thumbnailInitial}>
+        {thumbnailInitial(host, title)}
+      </span>
+      {label && <span className={styles.thumbnailHost}>{label}</span>}
+    </span>
+  );
+}
+
 function StatusChip({ status }: { status: Post["captureStatus"] }) {
   if (status === "pending") {
     return (
@@ -107,27 +131,44 @@ export function BookmarkCard({
   const screenshotUrl = post.capture?.screenshotUrl?.trim();
   const htmlUrl = post.capture?.htmlUrl?.trim();
   const isPending = captureStatus === "pending";
+  const isFailed = captureStatus === "failed";
   const hasActions = !isPending && Boolean(href || htmlUrl || screenshotUrl);
   const thumbnailSource = resolveCoverSource(post);
   const thumbnailUrl = thumbnailSource.src;
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  useEffect(() => {
+    setThumbnailFailed(false);
+  }, [thumbnailUrl]);
   const thumbnailIsCapture = thumbnailSource.kind === "bookmark-screenshot";
   const thumbnailIsFavicon = thumbnailSource.kind === "bookmark-favicon";
   const thumbnailLinkClass = classNames(
     styles.thumbnailLink,
     thumbnailIsFavicon && styles.faviconThumbnailLink,
   );
-  const thumbnailMedia = isVideoFile(thumbnailUrl) ? (
+  const thumbnailFallback = <ThumbnailFallback host={host} title={title} />;
+  const handleThumbnailError = (
+    event: SyntheticEvent<HTMLImageElement | HTMLVideoElement>,
+  ) => {
+    event.currentTarget.hidden = true;
+    setThumbnailFailed(true);
+  };
+  const thumbnailMedia = thumbnailFailed ? (
+    thumbnailFallback
+  ) : isVideoFile(thumbnailUrl) ? (
     <video
+      key={thumbnailUrl}
       className={styles.thumbnail}
       src={thumbnailUrl}
       muted
       playsInline
       preload="metadata"
+      onError={handleThumbnailError}
     />
   ) : (
     // User media can be remote, so plain img avoids next/image config.
     // eslint-disable-next-line @next/next/no-img-element
     <img
+      key={thumbnailUrl}
       className={classNames(
         styles.thumbnail,
         thumbnailIsCapture && styles.captureThumbnail,
@@ -137,6 +178,7 @@ export function BookmarkCard({
       alt=""
       decoding="async"
       loading="lazy"
+      onError={handleThumbnailError}
     />
   );
   const mainContent = (
@@ -216,7 +258,15 @@ export function BookmarkCard({
           </div>
         )}
       </div>
-      {thumbnailUrl && thumbnailIsCapture && screenshotUrl && (
+      {isFailed && (
+        <div
+          className={classNames(styles.thumbnailLink, styles.failedThumbnailTile)}
+          aria-hidden="true"
+        >
+          {thumbnailFallback}
+        </div>
+      )}
+      {!isFailed && thumbnailUrl && thumbnailIsCapture && screenshotUrl && (
         isPending ? (
           <div
             className={classNames(thumbnailLinkClass, styles.thumbnailDisabled)}
@@ -236,7 +286,7 @@ export function BookmarkCard({
           </a>
         )
       )}
-      {thumbnailUrl && !thumbnailIsCapture && (
+      {!isFailed && thumbnailUrl && !thumbnailIsCapture && (
         isPending ? (
           <div
             className={classNames(thumbnailLinkClass, styles.thumbnailDisabled)}
