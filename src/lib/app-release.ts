@@ -50,12 +50,6 @@ export function releaseZipUrl(): string | null {
   return base ? `${base}/${DOWNLOADS_PREFIX}/Write.zip` : null;
 }
 
-/** Fixed Blob URL of the stub installer zip (published only when built). */
-export function releaseInstallerUrl(): string | null {
-  const base = blobBaseUrl();
-  return base ? `${base}/${DOWNLOADS_PREFIX}/install-write.zip` : null;
-}
-
 export interface AdvertisedVersion {
   /** marketing version (CFBundleShortVersionString), e.g. "0.2" */
   version: string;
