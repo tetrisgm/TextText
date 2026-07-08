@@ -1,83 +1,68 @@
 # Membership Review
 
-Scope: read-only adversarial review of `main..HEAD`, focused on the workspace membership and folder multiplayer permission model. I did not run a dev server or modify code outside this file.
+Scope: read-only adversarial review of `main..HEAD`, focused on workspace membership and folder multiplayer authorization. I did not modify code outside this file, did not run a dev server, and did not push.
 
 ## 1. NOTE/BOOKMARK UNLISTED FOREVER - FAIL
 
-### FAIL: public feed/agent listings trust `status = published` without excluding private item types.
+### FAIL: `getFolderPosts()` can list private item types when they are in the legacy Blog bucket.
 
-Root cause:
+The resolver has the right top-level type guard for workspace grants: `workspaceGrantAppliesToItem()` rejects `note` and `bookmark` at `src/lib/permissions.ts:164`-`172`, and public `getPosts()` now excludes them at `src/lib/store.ts:194`-`208`. Direct public item, markdown, and OG surfaces also reject private types at `src/app/t/[handle]/[slug]/page.tsx:51`-`55`, `src/app/t/[handle]/[slug]/page.tsx:135`-`136`, `src/app/t/[handle]/[slug]/index.md/route.ts:15`-`22`, and `src/app/t/[handle]/[slug]/opengraph-image.tsx:21`-`28`.
 
-- `src/lib/store.ts:194`-`218` implements `selectPosts(handle, true)` as "all non-deleted rows with `posts.status = "published"`"; `getPosts` exposes that at `src/lib/store.ts:233`-`238`.
-- Public listing routes call `getPosts()` directly:
-  - `src/app/t/[handle]/feed.json/route.ts:17` then emits title/summary/content text at `src/app/t/[handle]/feed.json/route.ts:27`-`40`.
-  - `src/app/t/[handle]/feed.xml/route.ts:17` then emits title/link/summary at `src/app/t/[handle]/feed.xml/route.ts:36`-`54`.
-  - `src/app/t/[handle]/atom.xml/route.ts:17` then emits title/link/summary at `src/app/t/[handle]/atom.xml/route.ts:37`-`58`.
-  - `src/app/t/[handle]/sitemap.xml/route.ts:16` then emits post URLs at `src/app/t/[handle]/sitemap.xml/route.ts:28`-`36`.
-  - `src/app/t/[handle]/folder.json/route.ts:20` and `src/app/t/[handle]/folder.json/route.ts:26` render manifest entries from those posts.
-  - `src/app/t/[handle]/posts.json/route.ts:23` and `src/app/t/[handle]/posts.json/route.ts:37`-`48` expose kind/title/excerpt/URLs.
-  - `src/app/t/[handle]/llms.txt/route.ts:25` and `src/app/t/[handle]/llms.txt/route.ts:59`-`68` expose markdown links and body summaries.
+The leak is the folder listing path. `getFolderPosts()` treats `folder_id IS NULL` and any `blog` / `blog/...` folder as Blog-folder content at `src/lib/store.ts:690`-`697`, but it never excludes `posts.type = 'note'` or `posts.type = 'bookmark'` in the database predicate at `src/lib/store.ts:706`-`713`.
 
 Concrete exploit scenario:
 
-1. A legacy/import/admin path leaves a correct private row as `type = "note"` or `type = "bookmark"` but `status = "published"`. I did not find a normal app mutation that creates this state: `savePost` forces note/bookmark saves to draft at `src/lib/store.ts:997`-`999`, and the editor input does the same at `src/app/editor/actions.ts:314`-`319`.
-2. An unauthenticated visitor requests `/t/acme/feed.json`, `/t/acme/llms.txt`, `/t/acme/posts.json`, `/t/acme/folder.json`, or `/t/acme/sitemap.xml`.
-3. The note/bookmark appears in the public listing. `feed.json` and `llms.txt` leak a body-derived summary, not just the slug.
+1. A pre-backfill, imported, or otherwise malformed private row exists: `posts.type = 'note'` or `'bookmark'`, `posts.folder_id = NULL` or a blog-mode folder id. This is plausible because the store explicitly treats null `folder_id` as legacy Blog content at `src/lib/store.ts:666`-`668`.
+2. The owner invites Mallory as a workspace `member`.
+3. Mallory opens `/t/acme`. `hasBlogWorkspaceContent` becomes true from `workspaceAccess.canEditContent` at `src/app/t/[handle]/page.tsx:360`-`363`, so the route calls `getFolderPosts(handle, "blog", { publishedOnly: false })` at `src/app/t/[handle]/page.tsx:376`-`381`.
+4. The private note/bookmark is rendered in the Blog home list/card/single layout at `src/app/t/[handle]/page.tsx:455`-`483`, leaking title and body-derived preview to a workspace member who was never explicitly granted that private item.
 
-Direct item surfaces are better guarded: the page treats notes/bookmarks as private at `src/app/t/[handle]/[slug]/page.tsx:51`-`55` and `src/app/t/[handle]/[slug]/page.tsx:135`-`136`; `index.md` rejects them at `src/app/t/[handle]/[slug]/index.md/route.ts:15`-`22`; OpenGraph rejects them at `src/app/t/[handle]/[slug]/opengraph-image.tsx:21`-`28`. The resolver also prevents workspace grants from projecting onto private types/folders at `src/lib/permissions.ts:164`-`172` and `src/lib/permissions.ts:588`-`595`.
+Public unauthenticated variant: if the same malformed note/bookmark row is `status = 'published'`, `/t/acme` leaks it through the same `getFolderPosts(..., publishedOnly: true)` call. A public category page can also leak a malformed published private row in a blog subfolder because `resolveCategory()` calls `getFolderPosts(handle, folder.path, { publishedOnly: true })` at `src/lib/categories.ts:103`-`111`.
 
-## 2. GUEST ISOLATION - PASS
+Feeds, sitemap, `posts.json`, `folder.json`, `llms.txt`, and normal public post markdown use `getPosts()`, so they pass for current database rows because `selectPosts()` excludes private types.
 
-No concrete over-broad guest listing found.
+## 2. GUEST ISOLATION - FAIL
 
-- Item-only grants produce no folder set: `accessibleFolderIdsForUser` only considers workspace/folder scopes at `src/lib/permissions.ts:525`-`560`.
-- The post route passes `counts = {}` when a collaborator has no accessible folders at `src/app/t/[handle]/[slug]/page.tsx:174`-`183`.
-- The sidebar no longer synthesizes Blog/Notes/Bookmarks for restricted users; fallback roots are used only when `canManageFolders` is true at `src/components/PostWorkspaceShell.tsx:611`-`612`.
-- Folder grants expand by structural descendants, not siblings, through `descendantFolderIds` at `src/lib/permissions.ts:317`-`332`; item listings are then filtered by `accessiblePostIdsForUser` in `src/lib/store.ts:771`-`781`.
-- The workspace home chooses an active folder only from `getAccessibleFolders` for non-owners at `src/app/t/[handle]/page.tsx:382`-`410`.
+### FAIL: a Blog-folder grant can inherit to null-folder private rows.
 
-## 3. COLLABORATOR CONTENT-ONLY - FAIL
-
-### FAIL: non-owner content edits can rewrite a published post's `published_at` timestamp.
-
-Root cause:
-
-- `mapPost` truncates database timestamps into a date-only string at `src/lib/store.ts:83`-`86` and assigns it to `post.date` at `src/lib/store.ts:110`.
-- `savePost` treats any `post.date` on a published post as an authored date and writes `publishedAt: new Date(post.date)` at `src/lib/store.ts:1018`-`1025`.
-- Non-owner update paths spread the existing mapped `Post` back into `savePost`, preserving that date-only string:
-  - Server action: `src/app/editor/actions.ts:696`-`709`.
-  - Sync PUT: `src/app/api/sync/v1/files/[postId]/route.ts:124`-`141`.
-  - MCP `update_item`: `src/lib/mcp/tools.ts:466`-`485`.
-- Public published ordering uses `posts.publishedAt` at `src/lib/store.ts:213`-`216`.
+The same legacy Blog-bucket assumption also breaks folder-grant isolation. `resolveItemAccess()` maps a post with no `folderId` to the Blog folder at `src/lib/permissions.ts:492`-`500`. Folder grants are then applied as normal item grants at `src/lib/permissions.ts:511`-`516`; the note/bookmark type guard only disables workspace grants, not folder grants.
 
 Concrete exploit scenario:
 
-1. Owner publishes article A at `2026-07-08T17:30:00Z`.
-2. Bob has only `editor` on article A.
-3. Bob sends a body-only edit via the app, sync PUT, or MCP `update_item`.
-4. The non-owner branch ignores Bob's submitted `date`, but it still sends the existing `post.date = "2026-07-08"` into `savePost`.
-5. `savePost` rewrites `published_at` to `2026-07-08T00:00:00Z`. Bob changed a non-content date field and can alter same-day public ordering.
+1. A private note exists with `posts.type = 'note'`, `posts.status = 'draft'`, and `posts.folder_id = NULL`.
+2. The owner grants Mallory viewer access to the Blog folder, not to the note.
+3. Mallory opens the note URL directly. The post page asks `resolveItemAccess()` at `src/app/t/[handle]/[slug]/page.tsx:127`-`136`; because `resolveItemAccess()` treated the null folder as Blog, Mallory gets `canView` from the Blog folder grant and the private-page guard lets the note render.
 
-I did not find a non-owner path that changes status, slug, type, pinned, folder, move, or delete. Those are ignored or owner-gated in the server action, sync PUT/DELETE, and MCP tool paths.
+The accessible listing helper has the same issue: for a folder grant, `accessiblePostIdsForUser()` adds posts in descendant folders and also adds null-folder posts when the granted folder is Blog at `src/lib/permissions.ts:604`-`609`, without checking post type. A guest granted a blog subfolder can also see a malformed note/bookmark stored in that subfolder through `getAccessibleFolderPosts()` at `src/lib/store.ts:773`-`783`.
+
+Normal item-only and folder-only guests otherwise look isolated: item-only users get an empty folder tree/counts (`src/app/t/[handle]/[slug]/page.tsx:174`-`183`), restricted sidebars do not synthesize fallback roots (`src/components/PostWorkspaceShell.tsx:611`-`612`), and folder inheritance is by `parentId`, not path prefix (`src/lib/permissions.ts:317`-`332`).
+
+## 3. COLLABORATOR CONTENT-ONLY - PASS
+
+No concrete non-owner metadata mutation found.
+
+Non-owner web saves go through `resolveItemAccess()` and `savePostContentPatch()` at `src/app/editor/actions.ts:697`-`706`. The content patch helper only accepts title/body/cover fields and calls `savePost(..., { preservePublishedAt: true })` at `src/lib/store.ts:1097`-`1128`, preserving slug, status, type, date/published_at, pinned, and folder.
+
+Sync PUT follows the same split at `src/app/api/sync/v1/files/[postId]/route.ts:122`-`136`. MCP `update_item` does too at `src/lib/mcp/tools.ts:467`-`483`. MCP `append_to_item` only supplies a new body while reusing the existing post and explicitly passes `date: undefined` at `src/lib/mcp/tools.ts:519`-`526`, so I did not find a normal path to rewrite authored date or publish metadata there.
+
+Owner-only move, pin, delete, create, capture, and folder creation surfaces reject collaborators through owner/edit-credential checks, for example `src/app/editor/actions.ts:923`-`977`, `src/app/api/sync/v1/files/[postId]/route.ts:156`-`164`, and `src/lib/mcp/tools.ts:217`-`221`.
 
 ## 4. INHERITANCE / INVITE LIFECYCLE - PASS
 
-No concrete bypass found.
+No concrete leak found.
 
-- Revoked grants are excluded in the core resolver query at `src/lib/permissions.ts:262`-`265`, share listing/update/revoke at `src/lib/shares.ts:101`-`106`, `src/lib/shares.ts:201`-`207`, `src/lib/shares.ts:229`-`235`, and `/shared` at `src/lib/shares.ts:302`-`305`.
-- Anonymous callers cannot claim pending email grants because `matchingCollaboratorRows` returns no rows without a user at `src/lib/permissions.ts:251`-`255`.
-- Pending email rows require the authenticated session email to match at `src/lib/permissions.ts:267`-`270`, then bind to the current signed-in user's id at `src/lib/permissions.ts:276`-`288`. After a row is bound, a different user id is filtered out at `src/lib/permissions.ts:293`-`297`.
-- The session email comes from `auth()` via `getCurrentUser`, not a request parameter, at `src/lib/session.ts:9`-`22`.
-- Ancestor inheritance uses `parentId` traversal (`src/lib/permissions.ts:302`-`314`) and descendant traversal also uses `parentId` (`src/lib/permissions.ts:317`-`332`), so I did not find a path-prefix sibling collision.
+Revoked grants are excluded in the resolver query at `src/lib/permissions.ts:262`-`265`, share listing/update/revoke paths at `src/lib/shares.ts:101`-`106` and `src/lib/shares.ts:201`-`235`, and `/shared` aggregation at `src/lib/shares.ts:302`-`305`.
+
+Pending email grants require an authenticated session email match before binding at `src/lib/permissions.ts:267`-`288`; anonymous callers return no rows at `src/lib/permissions.ts:251`-`255`. After a row is bound, a different user id is filtered out at `src/lib/permissions.ts:293`-`297`. The email source is the server session (`src/lib/session.ts:9`-`22`), not a request parameter.
+
+Ancestor and descendant inheritance are structural, not string-prefix based: `folderAndAncestorIds()` walks `parentId` at `src/lib/permissions.ts:302`-`314`, and `descendantFolderIds()` expands by `parentId` at `src/lib/permissions.ts:317`-`332`.
 
 ## 5. MANAGE AUTHORITY - PASS
 
 No concrete member/guest escalation found.
 
-- `canManage` is owner or stored workspace `admin` only at `src/lib/permissions.ts:137`-`139`.
-- All share actions route through `manageableScopeForSharing`, which rejects callers who are neither owner nor workspace-admin at `src/app/editor/actions.ts:757`-`765`.
-- The same helper verifies workspace/folder/item scope ownership under the requested handle at `src/app/editor/actions.ts:767`-`782`.
-- Request role cleaning does not let callers assign `admin`: `src/app/editor/actions.ts:742`-`750`; lower-level share cleaning maps workspace `admin` input to `member` at `src/lib/shares.ts:45`-`53`.
-- Sync and MCP machine surfaces are not collaborator-management surfaces; folder/file creation and deletion remain owner-only in `src/app/api/sync/v1/folders/route.ts:22`-`25`, `src/app/api/sync/v1/files/route.ts:15`-`18`, `src/app/api/sync/v1/files/[postId]/route.ts:162`-`168`, and `src/lib/mcp/tools.ts:216`-`220`.
+Manage authority is owner or stored workspace `admin` only at `src/lib/permissions.ts:137`-`139`. All share list/invite/revoke/role server actions route through `manageableScopeForSharing()`, which rejects callers who are neither owner nor workspace-admin at `src/app/editor/actions.ts:749`-`762` and then verifies the requested workspace/folder/item belongs to the handle at `src/app/editor/actions.ts:764`-`779`.
 
-Additional scope note: sync and MCP bearer auth currently resolve the token holder's owned blog, not arbitrary shared workspaces (`src/app/api/sync/v1/auth.ts:17`-`32`, `src/lib/mcp/auth.ts:34`-`39`). That limits collaborator-token leakage across another person's workspace in the current code.
+Members/guests cannot assign `admin`: action-level role cleaning only accepts `member` or `guest` for workspace shares at `src/app/editor/actions.ts:739`-`747`, and lower-level share cleaning maps workspace `admin` input back to `member` at `src/lib/shares.ts:45`-`53`.
+
+Sync and MCP are not collaborator-management surfaces. Their bearer auth resolves the token holder's owned blog (`src/app/api/sync/v1/auth.ts:17`-`32`, `src/lib/mcp/auth.ts:34`-`39`), and create/delete/folder/capture operations remain owner-only.

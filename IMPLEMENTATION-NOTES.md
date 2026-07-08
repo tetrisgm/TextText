@@ -60,6 +60,15 @@
 - Public published listings now exclude `note` and `bookmark` rows in the store-level `selectPosts(handle, true)` predicate. Owner/collaborator listing helpers still use the unrestricted branch, so accessible private notes and bookmarks remain visible only to authorized users. Public blog home, feeds, sitemap, `posts.json`, `folder.json`, and `llms.txt` continue to receive published article/project/talk rows through `getPosts`.
 - Non-owner content edits now go through `savePostContentPatch`, which only applies title/body/cover fields, reasserts owner-only fields from the existing post (`date`, `pinned`, `status`, `slug`, `type`, and `folderId`), and calls `savePost` in preserve-published-at mode. In that mode `published_at` is omitted from the update, so the existing database timestamp is left unchanged instead of being rebuilt from the mapped date-only string. Owner saves keep the existing authored date behavior.
 
+## Review Fixes Round 3
+
+- Uniform principle: `note` and `bookmark` items stay unlisted forever. They are exposed only through an explicit item grant, or through a grant on a private-mode folder (`notes` or `bookmarks`) that contains them.
+- Shared guards now live in `src/lib/content.ts`: `isPrivatePostType`, `isPrivateFolderMode`, `isBlogBucketPath`, `PRIVATE_POST_TYPES`, and `BLOG_FOLDER_PATH`.
+- `getFolderPosts()` now applies `blogBucketTypePredicate(folderPath)` in the database `where` branch for `blog` and `blog/...` paths. That predicate expands to `posts.type != 'note'` and `posts.type != 'bookmark'`, covering the legacy `folder_id IS NULL` Blog bucket and normal blog-mode subfolders. The same blog-bucket helper also post-filters the mapped result and demo path.
+- `getAccessibleFolderPosts()` runs the folder result through the same blog-bucket private-type filter before applying accessible post ids, so granted blog subfolders cannot surface malformed private rows.
+- `resolveItemAccess()` now skips folder-scoped collaborator rows for private item types unless the matched grant folder is private-mode. Workspace grants still use the existing item guard, and explicit item grants still count directly.
+- `accessiblePostIdsForUser()` now expands folder grants through `folderGrantContainsPost()`, which keeps null-folder legacy rows in the Blog grant branch only for non-private item types and rejects private rows in blog-mode descendants unless the granted folder itself is private-mode.
+
 ## TODOs
 
 - Decide whether `admin` should become a first-class visible workspace role. The resolver supports it, but the UI only exposes Member and Guest.

@@ -4,6 +4,7 @@
 
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
+import { isPrivateFolderMode, isPrivatePostType } from "./content";
 import { db } from "./db/client";
 import { blogs, collaborators, folders, posts, users } from "./db/schema";
 
@@ -153,10 +154,6 @@ function storedRole(value: string): StoredCollaboratorRole | null {
   return isStoredCollaboratorRole(value) ? value : null;
 }
 
-function isPrivateFolderMode(mode: string | null | undefined): boolean {
-  return mode === "notes" || mode === "bookmarks";
-}
-
 function workspaceGrantAppliesToFolder(folder: FolderRow): boolean {
   return !isPrivateFolderMode(folder.mode);
 }
@@ -165,11 +162,19 @@ function workspaceGrantAppliesToItem(
   post: { type: string; folderId: string | null },
   allFolders: FolderRow[],
 ): boolean {
-  if (post.type === "note" || post.type === "bookmark") return false;
+  if (isPrivatePostType(post.type)) return false;
   const folder = post.folderId
     ? allFolders.find((entry) => entry.id === post.folderId)
     : null;
   return !isPrivateFolderMode(folder?.mode);
+}
+
+function folderGrantAppliesToItem(
+  post: { type: string },
+  grantedFolder: FolderRow | undefined,
+): boolean {
+  if (!isPrivatePostType(post.type)) return true;
+  return isPrivateFolderMode(grantedFolder?.mode);
 }
 
 function roleForTarget(
@@ -490,6 +495,7 @@ export async function resolveItemAccess(opts: {
   }
 
   const allFolders = await folderRowsForBlog(post.blogId);
+  const folderById = new Map(allFolders.map((folder) => [folder.id, folder]));
   const effectiveFolderId =
     post.folderId ?? allFolders.find((folder) => folder.path === "blog")?.id ?? null;
   const folderIds = folderAndAncestorIds(allFolders, effectiveFolderId);
@@ -508,6 +514,12 @@ export async function resolveItemAccess(opts: {
       const raw = storedRole(row.role);
       if (raw) workspaceRole = raw;
     }
+    if (
+      scopeType === "folder" &&
+      !folderGrantAppliesToItem(post, folderById.get(row.scopeId))
+    ) {
+      continue;
+    }
     role = maxEffectiveRole(
       role,
       roleForTarget(row.role, scopeType, "item", {
@@ -520,6 +532,18 @@ export async function resolveItemAccess(opts: {
     blogId: post.blogId,
     workspaceRole: canUseWorkspaceGrant ? workspaceRole : null,
   });
+}
+
+function folderGrantContainsPost(
+  post: { type: string; folderId: string | null },
+  folderIds: Set<string>,
+  grantedFolder: FolderRow | undefined,
+): boolean {
+  const inGrantedFolder = post.folderId
+    ? folderIds.has(post.folderId)
+    : grantedFolder?.path === "blog";
+  if (!inGrantedFolder) return false;
+  return folderGrantAppliesToItem(post, grantedFolder);
 }
 
 export async function accessibleFolderIdsForUser(
@@ -569,6 +593,7 @@ export async function accessiblePostIdsForUser(
   if (!base) return new Set();
   if (base.owner) return "all";
   const allFolders = await folderRowsForBlog(base.blogId);
+  const folderById = new Map(allFolders.map((folder) => [folder.id, folder]));
   const postRows = await db
     .select({ id: posts.id, folderId: posts.folderId, type: posts.type })
     .from(posts)
@@ -602,10 +627,11 @@ export async function accessiblePostIdsForUser(
       continue;
     }
     const folderIds = descendantFolderIds(allFolders, row.scopeId);
-    const grantedFolder = allFolders.find((folder) => folder.id === row.scopeId);
+    const grantedFolder = folderById.get(row.scopeId);
     for (const post of postRows) {
-      if (post.folderId && folderIds.has(post.folderId)) visible.add(post.id);
-      if (!post.folderId && grantedFolder?.path === "blog") visible.add(post.id);
+      if (folderGrantContainsPost(post, folderIds, grantedFolder)) {
+        visible.add(post.id);
+      }
     }
   }
   return visible;

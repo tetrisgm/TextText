@@ -3,7 +3,25 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  like,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import {
+  BLOG_FOLDER_PATH,
+  PRIVATE_POST_TYPES,
+  isBlogBucketPath,
+  isPrivatePostType,
+} from "./content";
 import type {
   Blog,
   BlogCardStyle,
@@ -201,8 +219,7 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
         ? and(
             eq(blogs.handle, handle),
             eq(posts.status, "published"),
-            ne(posts.type, "note"),
-            ne(posts.type, "bookmark"),
+            publicPostTypePredicate(),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -235,7 +252,11 @@ function pinnedFirst(items: Post[]): Post[] {
 export async function getPosts(handle: string): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
-    return pinnedFirst(DEMO_POSTS.filter((p) => p.status === "published"));
+    return pinnedFirst(
+      DEMO_POSTS.filter(
+        (p) => p.status === "published" && !isPrivatePostType(p.type),
+      ),
+    );
   }
   return selectPosts(handle, true);
 }
@@ -325,7 +346,7 @@ const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
   { name: "Bookmarks", path: "bookmarks", mode: "bookmarks", position: 2 },
 ];
 
-const DEFAULT_FOLDER_PATH = "blog";
+const DEFAULT_FOLDER_PATH = BLOG_FOLDER_PATH;
 
 const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
   id: `demo-${folder.path}-folder`,
@@ -337,6 +358,22 @@ export function folderPathForPostType(type: PostType): string {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return DEFAULT_FOLDER_PATH;
+}
+
+function publicPostTypePredicate(): SQL {
+  return and(...PRIVATE_POST_TYPES.map((type) => ne(posts.type, type)))!;
+}
+
+function blogBucketTypePredicate(folderPath: string): SQL | undefined {
+  return isBlogBucketPath(folderPath) ? publicPostTypePredicate() : undefined;
+}
+
+function excludePrivateTypesFromBlogBucket<T extends { type: PostType }>(
+  folderPath: string,
+  items: T[],
+): T[] {
+  if (!isBlogBucketPath(folderPath)) return items;
+  return items.filter((item) => !isPrivatePostType(item.type));
 }
 
 function mapFolder(row: typeof folders.$inferSelect): Folder {
@@ -674,12 +711,13 @@ export async function getFolderPosts(
   const publishedOnly = opts.publishedOnly ?? false;
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
+    const folderPosts = DEMO_POSTS.filter(
+      (post) =>
+        folderPathForPostType(post.type) === folderPath &&
+        (!publishedOnly || post.status === "published"),
+    );
     return pinnedFirst(
-      DEMO_POSTS.filter(
-        (post) =>
-          folderPathForPostType(post.type) === folderPath &&
-          (!publishedOnly || post.status === "published"),
-      ),
+      excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
     );
   }
 
@@ -709,6 +747,7 @@ export async function getFolderPosts(
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
         publishedOnly ? eq(posts.status, "published") : undefined,
+        blogBucketTypePredicate(folderPath),
         inFolder,
       ),
     )
@@ -717,7 +756,10 @@ export async function getFolderPosts(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return rows.map((r) => mapPost(r.posts));
+  return excludePrivateTypesFromBlogBucket(
+    folderPath,
+    rows.map((r) => mapPost(r.posts)),
+  );
 }
 
 // Live (not trashed) item counts per folder path, drafts included, in one
@@ -776,7 +818,10 @@ export async function getAccessibleFolderPosts(
   user: AccessUser | null,
   opts: { publishedOnly?: boolean } = {},
 ): Promise<Post[]> {
-  const folderPosts = await getFolderPosts(handle, folderPath, opts);
+  const folderPosts = excludePrivateTypesFromBlogBucket(
+    folderPath,
+    await getFolderPosts(handle, folderPath, opts),
+  );
   if (!db) return [];
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return folderPosts;

@@ -31,6 +31,25 @@ export type Surface = "blog" | "notes" | "bookmarks" | "feeds" | "group";
 
 /** How a folder renders and edits its items. */
 export type FolderMode = "blog" | "notes" | "bookmarks";
+export const BLOG_FOLDER_PATH = "blog";
+export const PRIVATE_POST_TYPES = ["note", "bookmark"] as const;
+export type PrivatePostType = (typeof PRIVATE_POST_TYPES)[number];
+
+export function isPrivatePostType(
+  type: string | null | undefined,
+): type is PrivatePostType {
+  return type === "note" || type === "bookmark";
+}
+
+export function isPrivateFolderMode(
+  mode: string | null | undefined,
+): mode is Extract<FolderMode, "notes" | "bookmarks"> {
+  return mode === "notes" || mode === "bookmarks";
+}
+
+export function isBlogBucketPath(path: string): boolean {
+  return path === BLOG_FOLDER_PATH || path.startsWith(`${BLOG_FOLDER_PATH}/`);
+}
 
 export interface Folder {
   id: string;
