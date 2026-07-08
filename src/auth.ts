@@ -1,11 +1,12 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig, Profile } from "next-auth";
+import { cookies } from "next/headers";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { eq } from "drizzle-orm";
-import { createAuthAdapter } from "@/lib/auth-email";
+import { createAuthAdapter, sendWriteVerificationRequest } from "@/lib/auth-email";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 
@@ -23,6 +24,10 @@ const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
 const emailServer = process.env.AUTH_EMAIL_SERVER;
 const emailFrom = process.env.AUTH_EMAIL_FROM;
 const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+export const LAST_USED_PROVIDER_COOKIE = "wr_last_signin_provider";
+export const SIGNIN_EMAIL_COOKIE = "wr_signin_email";
+export const SIGNIN_CALLBACK_COOKIE = "wr_signin_callback";
+const PROVIDER_HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 export const hasAppleProvider = Boolean(appleClientId && appleClientSecret);
 export const hasGoogleProvider = Boolean(googleClientId && googleClientSecret);
@@ -77,7 +82,13 @@ const providers = [
     ? [Google({ clientId: googleClientId, clientSecret: googleClientSecret })]
     : []),
   ...(hasEmailProvider
-    ? [Nodemailer({ server: emailServer, from: emailFrom })]
+    ? [
+        Nodemailer({
+          server: emailServer,
+          from: emailFrom,
+          sendVerificationRequest: sendWriteVerificationRequest,
+        }),
+      ]
     : []),
   ...(devLoginEnabled ? [devProvider] : []),
 ];
@@ -117,6 +128,39 @@ async function userIdForSessionSub(sub: string): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+export function lastUsedProviderLabel(provider: string | undefined): string | null {
+  switch (provider) {
+    case "apple":
+      return "Apple";
+    case "google":
+      return "Google";
+    case "nodemailer":
+      return "email";
+    case "dev-login":
+      return "developer login";
+    default:
+      return null;
+  }
+}
+
+async function rememberLastUsedProvider(provider: string): Promise<void> {
+  if (!lastUsedProviderLabel(provider)) return;
+  try {
+    const cookieStore = await cookies();
+    cookieStore.set({
+      name: LAST_USED_PROVIDER_COOKIE,
+      value: provider,
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: PROVIDER_HINT_MAX_AGE_SECONDS,
+    });
+  } catch (error) {
+    console.warn("provider hint cookie write failed", error);
+  }
+}
+
 export const authConfig = {
   providers,
   adapter,
@@ -144,6 +188,9 @@ export const authConfig = {
         if (profile?.sub) token.sub = `google:${profile.sub}`;
       } else if (profile?.sub) {
         token.sub = profile.sub;
+      }
+      if (account) {
+        await rememberLastUsedProvider(account.provider);
       }
       if (account && profile && account.type !== "email") {
         // With the adapter attached, OAuth tokens seed from adapter rows or

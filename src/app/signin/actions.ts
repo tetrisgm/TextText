@@ -7,16 +7,21 @@
 // /signin with a human-readable error code; NEXT_REDIRECT passes through.
 
 import { AuthError } from "next-auth";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   devLoginEnabled,
   hasAppleProvider,
   hasEmailProvider,
   hasGoogleProvider,
+  SIGNIN_CALLBACK_COOKIE,
+  SIGNIN_EMAIL_COOKIE,
   signIn,
 } from "@/auth";
 import { sanitizeCallbackUrl } from "./callback-url";
 import { authRequestHost } from "./request-host";
+
+const SIGNIN_CHECK_COOKIE_MAX_AGE_SECONDS = 15 * 60;
 
 function backToSignIn(callbackUrl: string, error?: string): never {
   const params = new URLSearchParams({ callbackUrl });
@@ -34,6 +39,23 @@ async function formCallbackUrl(formData: FormData): Promise<string> {
     formValue(formData, "callbackUrl"),
     await authRequestHost(),
   );
+}
+
+async function rememberEmailCheck(email: string, callbackUrl: string): Promise<void> {
+  const cookieStore = await cookies();
+  const options = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+    path: "/signin",
+    maxAge: SIGNIN_CHECK_COOKIE_MAX_AGE_SECONDS,
+  };
+  cookieStore.set({ name: SIGNIN_EMAIL_COOKIE, value: email, ...options });
+  cookieStore.set({
+    name: SIGNIN_CALLBACK_COOKIE,
+    value: callbackUrl,
+    ...options,
+  });
 }
 
 async function oauthSignIn(
@@ -67,6 +89,7 @@ export async function signInWithEmail(formData: FormData): Promise<void> {
     backToSignIn(callbackUrl, "EmailRequired");
   }
   try {
+    await rememberEmailCheck(email, callbackUrl);
     // Lands on /signin/check (pages.verifyRequest) once the link is sent.
     await signIn("nodemailer", { email, redirectTo: callbackUrl });
   } catch (error) {

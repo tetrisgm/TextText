@@ -4,6 +4,7 @@
 // (pages.signIn points here).
 
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   auth,
@@ -12,7 +13,10 @@ import {
   hasEmailProvider,
   hasGoogleProvider,
   isAuthConfigured,
+  LAST_USED_PROVIDER_COOKIE,
+  lastUsedProviderLabel,
 } from "@/auth";
+import { getActiveGuestBlogFromCookie } from "@/lib/blog-edit-auth";
 import {
   signInWithApple,
   signInWithDevLogin,
@@ -21,6 +25,7 @@ import {
 } from "./actions";
 import { sanitizeCallbackUrl } from "./callback-url";
 import { authRequestHost } from "./request-host";
+import { SignInSubmitButton } from "./submit-button";
 import "@/styles/connect.css";
 import "@/styles/signin.css";
 
@@ -57,11 +62,27 @@ const ERROR_COPY: Record<string, string> = {
 };
 
 const GENERIC_ERROR = "Something went wrong while signing you in. Try again.";
+const SWALLOWED_ERROR_CODES = new Set(["OAuthCallbackError"]);
+
+function errorCopy(errorCode: string | undefined): string | undefined {
+  if (!errorCode || SWALLOWED_ERROR_CODES.has(errorCode)) return undefined;
+  return ERROR_COPY[errorCode] ?? GENERIC_ERROR;
+}
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="applecms connect-shell">
-      <main className="connect-main signin-main">{children}</main>
+      <main className="connect-main signin-main">
+        <div className="signin-topline">
+          <a className="signin-wordmark" href="/">
+            Write
+          </a>
+          <a className="signin-back" href="/">
+            Back
+          </a>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
@@ -73,9 +94,7 @@ export default async function SignInPage({ searchParams }: Props) {
     await authRequestHost(),
   );
   const errorCode = first(query.error);
-  const errorMessage = errorCode
-    ? (ERROR_COPY[errorCode] ?? GENERIC_ERROR)
-    : undefined;
+  const errorMessage = errorCopy(errorCode);
 
   if (!isAuthConfigured) {
     return (
@@ -96,11 +115,30 @@ export default async function SignInPage({ searchParams }: Props) {
   }
 
   const hasOAuth = hasAppleProvider || hasGoogleProvider;
+  const cookieStore = await cookies();
+  const providerLabel = lastUsedProviderLabel(
+    cookieStore.get(LAST_USED_PROVIDER_COOKIE)?.value,
+  );
+  const guest = await getActiveGuestBlogFromCookie();
 
   return (
     <Shell>
       <h1 className="connect-title">Sign in</h1>
       <p className="connect-lede">Pick up your writing where you left it.</p>
+
+      {guest && (
+        <p className="signin-notice">
+          You have unsaved demo work here. Signing in will add it to your
+          workspace.
+        </p>
+      )}
+
+      {providerLabel && (
+        <p className="signin-hint">
+          You last used {providerLabel}. Use the same option to find your
+          existing workspace, even if another provider uses the same email.
+        </p>
+      )}
 
       {errorMessage && (
         <p className="signin-error" role="alert">
@@ -113,20 +151,23 @@ export default async function SignInPage({ searchParams }: Props) {
           {hasAppleProvider && (
             <form action={signInWithApple}>
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
-              <button className="ac-btn ac-btn-filled signin-btn" type="submit">
-                Continue with Apple
-              </button>
+              <SignInSubmitButton
+                className="ac-btn ac-btn-filled signin-btn"
+                idleLabel="Continue with Apple"
+                pendingLabel="Continuing with Apple"
+                mark="apple"
+              />
             </form>
           )}
           {hasGoogleProvider && (
             <form action={signInWithGoogle}>
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
-              <button
+              <SignInSubmitButton
                 className={`ac-btn signin-btn ${hasAppleProvider ? "ac-btn-gray" : "ac-btn-filled"}`}
-                type="submit"
-              >
-                Continue with Google
-              </button>
+                idleLabel="Continue with Google"
+                pendingLabel="Continuing with Google"
+                mark="google"
+              />
             </form>
           )}
         </div>
@@ -150,12 +191,11 @@ export default async function SignInPage({ searchParams }: Props) {
             placeholder="you@example.com"
             autoComplete="email"
           />
-          <button
+          <SignInSubmitButton
             className={`ac-btn signin-btn ${hasOAuth ? "ac-btn-gray" : "ac-btn-filled"}`}
-            type="submit"
-          >
-            Email me a sign-in link
-          </button>
+            idleLabel="Email me a sign-in link"
+            pendingLabel="Sending link"
+          />
         </form>
       )}
 
@@ -177,11 +217,17 @@ export default async function SignInPage({ searchParams }: Props) {
             placeholder="Name (optional)"
             aria-label="Name"
           />
-          <button className="ac-btn ac-btn-gray signin-btn" type="submit">
-            Sign in (dev)
-          </button>
+          <SignInSubmitButton
+            className="ac-btn ac-btn-gray signin-btn"
+            idleLabel="Sign in (dev)"
+            pendingLabel="Signing in"
+          />
         </form>
       )}
+
+      <p className="signin-terms">
+        By continuing, you agree to Write's terms and privacy policy.
+      </p>
     </Shell>
   );
 }
