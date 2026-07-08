@@ -153,15 +153,36 @@ function storedRole(value: string): StoredCollaboratorRole | null {
   return isStoredCollaboratorRole(value) ? value : null;
 }
 
+function isPrivateFolderMode(mode: string | null | undefined): boolean {
+  return mode === "notes" || mode === "bookmarks";
+}
+
+function workspaceGrantAppliesToFolder(folder: FolderRow): boolean {
+  return !isPrivateFolderMode(folder.mode);
+}
+
+function workspaceGrantAppliesToItem(
+  post: { type: string; folderId: string | null },
+  allFolders: FolderRow[],
+): boolean {
+  if (post.type === "note" || post.type === "bookmark") return false;
+  const folder = post.folderId
+    ? allFolders.find((entry) => entry.id === post.folderId)
+    : null;
+  return !isPrivateFolderMode(folder?.mode);
+}
+
 function roleForTarget(
   rawRole: string,
   scopeType: CollaboratorScopeType,
   targetType: CollaboratorScopeType,
+  opts: { workspaceGrantApplies?: boolean } = {},
 ): EffectiveRole | null {
   const role = storedRole(rawRole);
   if (!role) return null;
 
   if (targetType !== "workspace" && scopeType === "workspace") {
+    if (!opts.workspaceGrantApplies) return null;
     if (role === "guest") return null;
     if (role === "admin" || role === "member" || role === "editor") {
       return "editor";
@@ -402,6 +423,7 @@ export async function resolveFolderAccess(opts: {
   if (!folder) return emptyAccess(base.userId, base.blogId);
 
   const folderIds = folderAndAncestorIds(allFolders, folder.id);
+  const canUseWorkspaceGrant = workspaceGrantAppliesToFolder(folder);
   const scopes: ScopeKey[] = [
     { scopeType: "workspace", scopeId: base.blogId },
     ...folderIds.map((scopeId) => ({ scopeType: "folder" as const, scopeId })),
@@ -415,12 +437,17 @@ export async function resolveFolderAccess(opts: {
       const raw = storedRole(row.role);
       if (raw) workspaceRole = raw;
     }
-    role = maxEffectiveRole(role, roleForTarget(row.role, scopeType, "folder"));
+    role = maxEffectiveRole(
+      role,
+      roleForTarget(row.role, scopeType, "folder", {
+        workspaceGrantApplies: canUseWorkspaceGrant,
+      }),
+    );
   }
   return accessFromRole(role, {
     userId: userId ?? base.userId,
     blogId: base.blogId,
-    workspaceRole,
+    workspaceRole: canUseWorkspaceGrant ? workspaceRole : null,
   });
 }
 
@@ -436,6 +463,7 @@ export async function resolveItemAccess(opts: {
       blogId: blogs.id,
       ownerId: blogs.ownerId,
       folderId: posts.folderId,
+      type: posts.type,
     })
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
@@ -465,6 +493,7 @@ export async function resolveItemAccess(opts: {
   const effectiveFolderId =
     post.folderId ?? allFolders.find((folder) => folder.path === "blog")?.id ?? null;
   const folderIds = folderAndAncestorIds(allFolders, effectiveFolderId);
+  const canUseWorkspaceGrant = workspaceGrantAppliesToItem(post, allFolders);
   const scopes: ScopeKey[] = [
     { scopeType: "workspace", scopeId: post.blogId },
     ...folderIds.map((scopeId) => ({ scopeType: "folder" as const, scopeId })),
@@ -479,12 +508,17 @@ export async function resolveItemAccess(opts: {
       const raw = storedRole(row.role);
       if (raw) workspaceRole = raw;
     }
-    role = maxEffectiveRole(role, roleForTarget(row.role, scopeType, "item"));
+    role = maxEffectiveRole(
+      role,
+      roleForTarget(row.role, scopeType, "item", {
+        workspaceGrantApplies: canUseWorkspaceGrant,
+      }),
+    );
   }
   return accessFromRole(role, {
     userId: matched.userId ?? userId,
     blogId: post.blogId,
-    workspaceRole,
+    workspaceRole: canUseWorkspaceGrant ? workspaceRole : null,
   });
 }
 
@@ -507,9 +541,18 @@ export async function accessibleFolderIdsForUser(
   const visible = new Set<string>();
   for (const row of rows) {
     const scopeType = row.scopeType as CollaboratorScopeType;
+    if (scopeType === "workspace") {
+      const effective = roleForTarget(row.role, scopeType, "folder", {
+        workspaceGrantApplies: true,
+      });
+      if (!effective) continue;
+      for (const folder of allFolders) {
+        if (workspaceGrantAppliesToFolder(folder)) visible.add(folder.id);
+      }
+      continue;
+    }
     const effective = roleForTarget(row.role, scopeType, "folder");
     if (!effective) continue;
-    if (scopeType === "workspace") return "all";
     for (const id of descendantFolderIds(allFolders, row.scopeId)) {
       visible.add(id);
     }
@@ -527,7 +570,7 @@ export async function accessiblePostIdsForUser(
   if (base.owner) return "all";
   const allFolders = await folderRowsForBlog(base.blogId);
   const postRows = await db
-    .select({ id: posts.id, folderId: posts.folderId })
+    .select({ id: posts.id, folderId: posts.folderId, type: posts.type })
     .from(posts)
     .where(and(eq(posts.blogId, base.blogId), isNull(posts.deletedAt)));
   const scopes: ScopeKey[] = [
@@ -542,9 +585,18 @@ export async function accessiblePostIdsForUser(
   const visible = new Set<string>();
   for (const row of rows) {
     const scopeType = row.scopeType as CollaboratorScopeType;
+    if (scopeType === "workspace") {
+      const effective = roleForTarget(row.role, scopeType, "item", {
+        workspaceGrantApplies: true,
+      });
+      if (!effective) continue;
+      for (const post of postRows) {
+        if (workspaceGrantAppliesToItem(post, allFolders)) visible.add(post.id);
+      }
+      continue;
+    }
     const effective = roleForTarget(row.role, scopeType, "item");
     if (!effective) continue;
-    if (scopeType === "workspace") return "all";
     if (scopeType === "item") {
       visible.add(row.scopeId);
       continue;

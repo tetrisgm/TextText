@@ -49,6 +49,12 @@
 - Workspace members dialog is mounted from the workspace menu and offers `Member`, `Guest`, and remove.
 - Folder share buttons were added to the workspace sidebar for owner/admin users.
 
+## Review Fixes
+
+- Workspace grants now project only onto blog-mode folders and blog-mode items. Notes/bookmarks, and folders whose mode is `notes` or `bookmarks`, require explicit folder or item grants.
+- Accessible folder counts now count only inside folders the caller can access, and item-only collaborators pass an empty folder tree and empty counts into the editor shell.
+- The `index.md` route now explicitly returns 404 for note and bookmark items, matching the OpenGraph private-item guard.
+
 ## TODOs
 
 - Decide whether `admin` should become a first-class visible workspace role. The resolver supports it, but the UI only exposes Member and Guest.

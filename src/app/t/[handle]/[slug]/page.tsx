@@ -160,12 +160,29 @@ export async function PostPageForHandle({
     redirect(blogPostEditPath(blog, post));
   }
 
-  const [adjacent, allPosts, folders, counts] = await Promise.all([
-    getAdjacentPublishedPosts(handle, post.slug),
-    canEdit ? getAllPosts(handle) : getAccessibleAllPosts(handle, viewer),
-    canEdit ? getFolders(handle) : getAccessibleFolders(handle, viewer),
-    canEdit ? getFolderCounts(handle) : getAccessibleFolderCounts(handle, viewer),
-  ]);
+  const adjacentPromise = getAdjacentPublishedPosts(handle, post.slug);
+  let allPosts: Post[];
+  let folders: Awaited<ReturnType<typeof getFolders>>;
+  let counts: Record<string, number>;
+  if (canEdit) {
+    [allPosts, folders, counts] = await Promise.all([
+      getAllPosts(handle),
+      getFolders(handle),
+      getFolderCounts(handle),
+    ]);
+  } else {
+    const [accessiblePosts, accessibleFolders] = await Promise.all([
+      getAccessibleAllPosts(handle, viewer),
+      getAccessibleFolders(handle, viewer),
+    ]);
+    allPosts = accessiblePosts;
+    folders = accessibleFolders;
+    counts =
+      accessibleFolders.length > 0
+        ? await getAccessibleFolderCounts(handle, viewer)
+        : {};
+  }
+  const adjacent = await adjacentPromise;
   const usedSlugs = editMode
     ? allPosts
         .filter((candidate) =>

@@ -359,7 +359,7 @@ export async function BlogHomeForHandle({
   }
   const canEdit = access.canEdit;
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
-  const hasFullWorkspaceContent =
+  const hasBlogWorkspaceContent =
     canEdit || Boolean(workspaceAccess?.canEditContent);
   // ?layout= and ?card= preview a look without saving it, for everyone; the
   // editor's Layout popover is what persists a choice.
@@ -377,12 +377,12 @@ export async function BlogHomeForHandle({
   // their own folder views and never mix into the cards, even for the owner.
   const [posts, folders, counts] = await Promise.all([
     getFolderPosts(handle, "blog", {
-      publishedOnly: !hasFullWorkspaceContent,
+      publishedOnly: !hasBlogWorkspaceContent,
     }),
-    hasFullWorkspaceContent
+    canEdit
       ? getFolders(handle)
       : getAccessibleFolders(handle, viewer),
-    hasFullWorkspaceContent
+    canEdit
       ? getFolderCounts(handle)
       : getAccessibleFolderCounts(handle, viewer),
   ]);
@@ -405,12 +405,12 @@ export async function BlogHomeForHandle({
       ? folders.find((folder) => folder.path === requestedFolder) ?? null
       : null;
   const folderItems = activeFolder
-    ? hasFullWorkspaceContent
+    ? canEdit
       ? await getFolderPosts(handle, activeFolder.path)
       : await getAccessibleFolderPosts(handle, activeFolder.path, viewer)
     : [];
   const activeFolderAccess =
-    activeFolder && !hasFullWorkspaceContent
+    activeFolder && !canEdit
       ? await resolveFolderAccess({
           handle,
           folderId: activeFolder.id,
@@ -502,7 +502,7 @@ export async function BlogHomeForHandle({
   );
 
   const showWorkspaceShell =
-    canEdit || hasFullWorkspaceContent || folders.length > 0;
+    canEdit || hasBlogWorkspaceContent || folders.length > 0;
 
   return showWorkspaceShell ? (
     <BlogHomeWorkspaceShell
@@ -523,9 +523,7 @@ export async function BlogHomeForHandle({
           handle={handle}
           items={folderItems}
           canCreateItems={canEdit}
-          canEditItems={
-            hasFullWorkspaceContent || Boolean(activeFolderAccess?.canEditContent)
-          }
+          canEditItems={canEdit || Boolean(activeFolderAccess?.canEditContent)}
         />
       ) : (
         home

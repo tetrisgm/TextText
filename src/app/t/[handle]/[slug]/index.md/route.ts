@@ -12,7 +12,15 @@ export async function GET(_request: Request, { params }: Props) {
     getBlog(handle),
     getPost(handle, slug),
   ]);
-  if (!blog || !post || post.status !== "published") return notFound();
+  if (
+    !blog ||
+    !post ||
+    post.type === "note" ||
+    post.type === "bookmark" ||
+    post.status !== "published"
+  ) {
+    return notFound();
+  }
 
   const baseUrl = blogBaseUrl(blog);
   return new Response(

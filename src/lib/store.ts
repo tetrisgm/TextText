@@ -797,15 +797,24 @@ export async function getAccessibleFolderCounts(
   user: AccessUser | null,
 ): Promise<Record<string, number>> {
   if (!db) return {};
-  const [allFolders, visiblePosts] = await Promise.all([
-    getFolders(handle),
+  const allFolders = await getFolders(handle);
+  const [visiblePosts, visibleFolderIds] = await Promise.all([
     getAccessibleAllPosts(handle, user),
+    accessibleFolderIdsForUser(handle, user),
   ]);
   const pathById = new Map(allFolders.map((folder) => [folder.id, folder.path]));
+  const visiblePaths =
+    visibleFolderIds === "all"
+      ? new Set(allFolders.map((folder) => folder.path))
+      : new Set(
+          allFolders
+            .filter((folder) => visibleFolderIds.has(folder.id))
+            .map((folder) => folder.path),
+        );
   const counts: Record<string, number> = {};
   for (const post of visiblePosts) {
-    const path =
-      post.folderId ? pathById.get(post.folderId) ?? DEFAULT_FOLDER_PATH : DEFAULT_FOLDER_PATH;
+    const path = post.folderId ? pathById.get(post.folderId) : DEFAULT_FOLDER_PATH;
+    if (!path || !visiblePaths.has(path)) continue;
     counts[path] = (counts[path] ?? 0) + 1;
   }
   return counts;

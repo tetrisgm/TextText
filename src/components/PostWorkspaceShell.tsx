@@ -32,8 +32,8 @@ const sidebarCollapsedListeners = new Set<() => void>();
 
 // One quiet line per folder mode; folder rows show it under the name.
 
-// Rendered only if a caller cannot provide real folders, so the sidebar never
-// collapses to nothing; real pages thread getFolders results through.
+// Rendered only for full-access shells that cannot provide real folders, so
+// restricted collaborators never see synthesized workspace roots.
 const FALLBACK_FOLDERS: Folder[] = [
   { id: "blog", name: "Blog", path: "blog", mode: "blog", position: 0 },
   { id: "notes", name: "Notes", path: "notes", mode: "notes", position: 1 },
@@ -608,7 +608,8 @@ export function PostFolderSidebar({
   onToggleCollapsed: () => void;
   showGuestSignIn?: boolean;
 }) {
-  const navFolders = folders.length > 0 ? folders : FALLBACK_FOLDERS;
+  const navFolders =
+    folders.length > 0 || !canManageFolders ? folders : FALLBACK_FOLDERS;
   const [sharingFolder, setSharingFolder] = useState<Folder | null>(null);
   const homeContent = (
     <>
