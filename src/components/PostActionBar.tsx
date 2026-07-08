@@ -32,6 +32,8 @@ type CommonProps = {
   homePath: string;
   postPath: string;
   owner: boolean;
+  canEditPost?: boolean;
+  canManagePost?: boolean;
 };
 
 type ReadProps = CommonProps & {
@@ -288,6 +290,8 @@ export function PostActionBar(props: Props) {
     saveState: "saved",
     error: null,
   }));
+  const canEditPost = props.canEditPost ?? props.owner;
+  const canManagePost = props.canManagePost ?? props.owner;
 
   const closeShare = useCallback(() => setShareOpen(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -507,7 +511,7 @@ export function PostActionBar(props: Props) {
     ? postPathFor(props.blog.handle, props.adjacent.next.slug)
     : undefined;
   const showPostNav = props.mode === "read" && Boolean(previousPath || nextPath);
-  const showTopActionBar = props.owner || showPostNav;
+  const showTopActionBar = canEditPost || showPostNav;
   const showAddHeaderItem =
     props.mode === "edit" &&
     activeDraft.type === "article" &&
@@ -645,10 +649,10 @@ export function PostActionBar(props: Props) {
           aria-label="Post controls"
         >
           <div className="post-action-toolbar ac-chrome">
-            {props.owner && (
+            {canEditPost && (
               <div className="post-action-owner-group">
-                {shareControl}
-                {props.mode === "edit" && (
+                {canManagePost && shareControl}
+                {canManagePost && props.mode === "edit" && (
                   <div className="post-action-popover-wrap" ref={settingsWrapRef}>
                     <button
                       type="button"
@@ -782,7 +786,7 @@ export function PostActionBar(props: Props) {
                 {doneControl}
               </div>
             )}
-            {props.owner && props.post.id && (
+            {canManagePost && props.post.id && (
               <ShareDialog
                 handle={props.blog.handle}
                 postId={props.post.id}

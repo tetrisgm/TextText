@@ -12,9 +12,7 @@ import { and, asc, eq, gt, lt, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { db } from "@/lib/db/client";
 import { blogs, collabPresence, collabUpdates, posts } from "@/lib/db/schema";
-import { getUserIdBySub } from "@/lib/store";
-import { postShareRoleFor } from "@/lib/shares";
-import type { ShareUser } from "@/lib/shares";
+import { resolveItemAccess, type AccessUser } from "@/lib/permissions";
 
 export type CollabRole = "editor" | "viewer";
 
@@ -42,7 +40,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function collabAccess(
-  user: ShareUser | null,
+  user: AccessUser | null,
   postId: string,
 ): Promise<CollabRole | null> {
   if (!db || !user) return null;
@@ -50,19 +48,17 @@ export async function collabAccess(
   // "no access" (403) rather than letting it surface as a 500.
   if (!UUID_RE.test(postId)) return null;
   const rows = await db
-    .select({ ownerId: blogs.ownerId })
+    .select({ handle: blogs.handle })
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
     .where(and(eq(posts.id, postId), sql`${posts.deletedAt} is null`))
     .limit(1);
   const post = rows[0];
   if (!post) return null;
-  if (post.ownerId) {
-    const userId = await getUserIdBySub(user.sub);
-    if (userId && userId === post.ownerId) return "editor";
-  }
-  const shareRole = await postShareRoleFor(user, postId);
-  return shareRole; // "editor" | "viewer" | null
+  const access = await resolveItemAccess({ handle: post.handle, postId, user });
+  if (access.canEditContent) return "editor";
+  if (access.canView) return "viewer";
+  return null;
 }
 
 /** Append one Yjs update (base64) and return its seq. */

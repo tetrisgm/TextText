@@ -8,20 +8,26 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { ShareDialog } from "./ShareDialog";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
 type SessionUser = { email?: string | null } | null;
 
 export function WorkspaceMenuMount({
   blogName,
+  canManageSharing = false,
+  handle,
   settingsHref,
   fallback,
 }: {
   blogName: string;
+  canManageSharing?: boolean;
+  handle: string;
   settingsHref: string;
   fallback: ReactNode;
 }) {
   const [user, setUser] = useState<SessionUser>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session")
@@ -37,10 +43,22 @@ export function WorkspaceMenuMount({
 
   if (!user) return <>{fallback}</>;
   return (
-    <WorkspaceMenu
-      blogName={blogName}
-      email={user.email ?? null}
-      settingsHref={settingsHref}
-    />
+    <>
+      <WorkspaceMenu
+        blogName={blogName}
+        email={user.email ?? null}
+        settingsHref={settingsHref}
+        onInvite={canManageSharing ? () => setMembersOpen(true) : undefined}
+      />
+      <ShareDialog
+        handle={handle}
+        scopeType="workspace"
+        scopeId="workspace"
+        title="Members"
+        subtitle={blogName}
+        open={membersOpen}
+        onClose={() => setMembersOpen(false)}
+      />
+    </>
   );
 }

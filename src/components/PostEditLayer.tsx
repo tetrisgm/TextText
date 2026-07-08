@@ -673,6 +673,7 @@ export function PostEditLayer({
   mediaEnabled = true,
   usedSlugs = [],
   collab = null,
+  canManagePost = true,
 }: {
   blog: Blog;
   post: Post;
@@ -684,6 +685,7 @@ export function PostEditLayer({
   mediaEnabled?: boolean;
   usedSlugs?: string[];
   collab?: BodyEditorCollab | null;
+  canManagePost?: boolean;
 }) {
   const router = useRouter();
   const initialSession = getEditSession(post);
@@ -1348,6 +1350,8 @@ export function PostEditLayer({
       <WorkspaceSidebarChrome
         blog={blog}
         activeFolder={sidebarFolderPathForPostType(post.type)}
+        canManageFolders={canManagePost}
+        canManageSharing={canManagePost}
         collapsed={sidebarCollapsed}
         counts={counts}
         folders={folders}
@@ -1358,7 +1362,9 @@ export function PostEditLayer({
       <div className="post-editor-content">
         <PostActionBar
           mode="edit"
-          owner
+          owner={canManagePost}
+          canEditPost
+          canManagePost={canManagePost}
           blog={blog}
           post={post}
           adjacent={adjacent}

@@ -3,7 +3,25 @@
 // unset the app serves the demo seed so it runs with zero setup; with a database
 // configured the same functions read and write Postgres (Drizzle + Neon).
 
-import { and, asc, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  like,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import {
+  BLOG_FOLDER_PATH,
+  PRIVATE_POST_TYPES,
+  isBlogBucketPath,
+  isPrivatePostType,
+} from "./content";
 import type {
   Blog,
   BlogCardStyle,
@@ -19,6 +37,11 @@ import { db } from "./db/client";
 import { blogs, folders, posts, users } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
+import {
+  accessibleFolderIdsForUser,
+  accessiblePostIdsForUser,
+  type AccessUser,
+} from "./permissions";
 import {
   RESERVED_USERNAMES,
   USERNAME_RE,
@@ -196,6 +219,7 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
         ? and(
             eq(blogs.handle, handle),
             eq(posts.status, "published"),
+            publicPostTypePredicate(),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -228,7 +252,11 @@ function pinnedFirst(items: Post[]): Post[] {
 export async function getPosts(handle: string): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
-    return pinnedFirst(DEMO_POSTS.filter((p) => p.status === "published"));
+    return pinnedFirst(
+      DEMO_POSTS.filter(
+        (p) => p.status === "published" && !isPrivatePostType(p.type),
+      ),
+    );
   }
   return selectPosts(handle, true);
 }
@@ -318,7 +346,7 @@ const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
   { name: "Bookmarks", path: "bookmarks", mode: "bookmarks", position: 2 },
 ];
 
-const DEFAULT_FOLDER_PATH = "blog";
+const DEFAULT_FOLDER_PATH = BLOG_FOLDER_PATH;
 
 const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
   id: `demo-${folder.path}-folder`,
@@ -330,6 +358,22 @@ export function folderPathForPostType(type: PostType): string {
   if (type === "note") return "notes";
   if (type === "bookmark") return "bookmarks";
   return DEFAULT_FOLDER_PATH;
+}
+
+function publicPostTypePredicate(): SQL {
+  return and(...PRIVATE_POST_TYPES.map((type) => ne(posts.type, type)))!;
+}
+
+function blogBucketTypePredicate(folderPath: string): SQL | undefined {
+  return isBlogBucketPath(folderPath) ? publicPostTypePredicate() : undefined;
+}
+
+function excludePrivateTypesFromBlogBucket<T extends { type: PostType }>(
+  folderPath: string,
+  items: T[],
+): T[] {
+  if (!isBlogBucketPath(folderPath)) return items;
+  return items.filter((item) => !isPrivatePostType(item.type));
 }
 
 function mapFolder(row: typeof folders.$inferSelect): Folder {
@@ -667,12 +711,13 @@ export async function getFolderPosts(
   const publishedOnly = opts.publishedOnly ?? false;
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
+    const folderPosts = DEMO_POSTS.filter(
+      (post) =>
+        folderPathForPostType(post.type) === folderPath &&
+        (!publishedOnly || post.status === "published"),
+    );
     return pinnedFirst(
-      DEMO_POSTS.filter(
-        (post) =>
-          folderPathForPostType(post.type) === folderPath &&
-          (!publishedOnly || post.status === "published"),
-      ),
+      excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
     );
   }
 
@@ -702,6 +747,7 @@ export async function getFolderPosts(
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
         publishedOnly ? eq(posts.status, "published") : undefined,
+        blogBucketTypePredicate(folderPath),
         inFolder,
       ),
     )
@@ -710,7 +756,10 @@ export async function getFolderPosts(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return rows.map((r) => mapPost(r.posts));
+  return excludePrivateTypesFromBlogBucket(
+    folderPath,
+    rows.map((r) => mapPost(r.posts)),
+  );
 }
 
 // Live (not trashed) item counts per folder path, drafts included, in one
@@ -748,6 +797,72 @@ export async function getFolderCounts(
     // The left join leaves path NULL for unbackfilled posts; those are blog's.
     const path = row.path ?? DEFAULT_FOLDER_PATH;
     counts[path] = (counts[path] ?? 0) + Number(row.count);
+  }
+  return counts;
+}
+
+export async function getAccessibleFolders(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Folder[]> {
+  const allFolders = await getFolders(handle);
+  if (!db) return [];
+  const ids = await accessibleFolderIdsForUser(handle, user);
+  if (ids === "all") return allFolders;
+  return allFolders.filter((folder) => ids.has(folder.id));
+}
+
+export async function getAccessibleFolderPosts(
+  handle: string,
+  folderPath: string,
+  user: AccessUser | null,
+  opts: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  const folderPosts = excludePrivateTypesFromBlogBucket(
+    folderPath,
+    await getFolderPosts(handle, folderPath, opts),
+  );
+  if (!db) return [];
+  const ids = await accessiblePostIdsForUser(handle, user);
+  if (ids === "all") return folderPosts;
+  return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
+}
+
+export async function getAccessibleAllPosts(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Post[]> {
+  const allPosts = await getAllPosts(handle);
+  if (!db) return [];
+  const ids = await accessiblePostIdsForUser(handle, user);
+  if (ids === "all") return allPosts;
+  return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
+}
+
+export async function getAccessibleFolderCounts(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Record<string, number>> {
+  if (!db) return {};
+  const allFolders = await getFolders(handle);
+  const [visiblePosts, visibleFolderIds] = await Promise.all([
+    getAccessibleAllPosts(handle, user),
+    accessibleFolderIdsForUser(handle, user),
+  ]);
+  const pathById = new Map(allFolders.map((folder) => [folder.id, folder.path]));
+  const visiblePaths =
+    visibleFolderIds === "all"
+      ? new Set(allFolders.map((folder) => folder.path))
+      : new Set(
+          allFolders
+            .filter((folder) => visibleFolderIds.has(folder.id))
+            .map((folder) => folder.path),
+        );
+  const counts: Record<string, number> = {};
+  for (const post of visiblePosts) {
+    const path = post.folderId ? pathById.get(post.folderId) : DEFAULT_FOLDER_PATH;
+    if (!path || !visiblePaths.has(path)) continue;
+    counts[path] = (counts[path] ?? 0) + 1;
   }
   return counts;
 }
@@ -912,6 +1027,17 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
   return code === "23505" && (message + detail).includes("posts_blog_slug_idx");
 }
 
+export type PostContentPatch = Partial<
+  Pick<Post, "title" | "body" | "cover" | "coverCaption" | "coverHeight">
+>;
+
+function hasOwnContentKey<K extends keyof PostContentPatch>(
+  patch: PostContentPatch,
+  key: K,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
 // Persist the editor's draft. Requires a database (the demo seed is read only).
 // Updates the row by id, scoped to this blog so a stale or foreign id can never
 // touch another tenant, so a slug edit renames in place; otherwise inserts,
@@ -919,8 +1045,19 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
 // follows the editor's Date field (or is stamped now on first publish); a draft
 // leaves any existing published_at untouched, so unpublish then republish keeps
 // the original date.
-export async function savePost(handle: string, post: Post): Promise<Post> {
+type SavePostOptions = {
+  preservePublishedAt?: boolean;
+};
+
+export async function savePost(
+  handle: string,
+  post: Post,
+  options: SavePostOptions = {},
+): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
+  if (options.preservePublishedAt && !post.id) {
+    throw new Error("Cannot preserve published_at without an existing post");
+  }
   const blogId = await blogIdFor(handle);
   // Never taken from the client Post: an update keeps the stored folder and
   // an insert lands in the folder matching the post's type (moves are a
@@ -948,12 +1085,12 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     updatedAt: new Date(),
   };
   const publishedAt =
-    status === "published"
-      ? post.date
+    options.preservePublishedAt || status !== "published"
+      ? undefined
+      : post.date
         ? new Date(post.date)
-        : sql`COALESCE(${posts.publishedAt}, now())`
-      : undefined;
-  // A draft omits published_at from the update so an existing publish date lives.
+        : sql`COALESCE(${posts.publishedAt}, now())`;
+  // Draft and preserve-mode saves omit published_at from the update.
   const set = publishedAt === undefined ? base : { ...base, publishedAt };
 
   try {
@@ -970,6 +1107,7 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
         )
         .returning();
       if (updated[0]) return mapPost(updated[0]);
+      if (options.preservePublishedAt) throw new Error("Post not found");
     }
 
     const inserted = await db
@@ -999,6 +1137,40 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
   }
+}
+
+export async function savePostContentPatch(
+  handle: string,
+  existing: Post,
+  patch: PostContentPatch,
+): Promise<Post> {
+  const next: Post = {
+    ...existing,
+    type: existing.type,
+    slug: existing.slug,
+    status: existing.status,
+    pinned: existing.pinned,
+    folderId: existing.folderId,
+    date: existing.date,
+  };
+
+  if (hasOwnContentKey(patch, "title") && patch.title !== undefined) {
+    next.title = patch.title;
+  }
+  if (hasOwnContentKey(patch, "body") && patch.body !== undefined) {
+    next.body = patch.body;
+  }
+  if (hasOwnContentKey(patch, "cover")) {
+    next.cover = patch.cover;
+  }
+  if (hasOwnContentKey(patch, "coverCaption")) {
+    next.coverCaption = patch.coverCaption;
+  }
+  if (hasOwnContentKey(patch, "coverHeight")) {
+    next.coverHeight = patch.coverHeight;
+  }
+
+  return savePost(handle, next, { preservePublishedAt: true });
 }
 
 // Create an empty draft and return it (with its new id), for the editor's

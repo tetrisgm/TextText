@@ -1,65 +1,107 @@
-// Item-level sharing (the Notion model, one level deep): the owner invites a
-// person BY EMAIL to a single post with a role; the invitee sees and (as an
-// editor) edits that one item, nothing else in the workspace.
-//
-// Identity rules, read before editing:
-// - Invites are keyed by normalized email because the person usually has no
-//   account yet. userId starts null.
-// - A signed-in session matches a share when its BOUND userId matches, or,
-//   while unbound, when the session's provider-verified email equals the
-//   invited email. On the first email match with an existing users row, the
-//   share binds to that userId permanently (so a later email change on the
-//   account does not drop access, and the email can never be re-matched by a
-//   different identity provider account afterwards).
-// - Sharing never changes publish state. Notes and bookmarks stay unlisted;
-//   drafts stay drafts. A collaborator save is content-only (enforced in
-//   the actions layer, see collaboratorSafePost).
-//
-// The owner is never a collaborator row: ownership short-circuits above this.
+// Scoped sharing for workspace, folder, and item collaboration. Invites are
+// keyed by normalized email and bind to the signed-in user row on first
+// matching access in src/lib/permissions.ts.
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { recordAction } from "@/lib/audit";
 import { db } from "@/lib/db/client";
-import { blogs, collaborators, posts, users } from "@/lib/db/schema";
+import { blogs, collaborators, folders, posts, users } from "@/lib/db/schema";
+import {
+  type AccessUser,
+  type CollaboratorScopeType,
+  type ItemShareRole,
+  type WorkspaceMemberRole,
+  isItemShareRole,
+  isValidAccessEmail,
+  isWorkspaceMemberRole,
+  normalizeAccessEmail,
+  resolveItemAccess,
+} from "@/lib/permissions";
 import { getUserIdBySub } from "@/lib/store";
 
-export type ShareRole = "editor" | "viewer";
+export type ShareRole = ItemShareRole;
+export type WorkspaceShareRole = WorkspaceMemberRole;
+export type ScopeShareRole = ShareRole | WorkspaceShareRole;
+export type ShareUser = AccessUser & { sub: string; email?: string | null };
 
-export type PostShare = {
+export type ScopeShare = {
   id: string;
   email: string;
-  role: ShareRole;
-  /** true once the invitee has signed in and the share bound to their user */
+  role: ScopeShareRole;
   accepted: boolean;
   createdAt: string;
 };
 
-export type ShareUser = { sub: string; email?: string | null };
+export type PostShare = ScopeShare & { role: ShareRole };
 
-function cleanRole(value: string): ShareRole {
+export function normalizeShareEmail(email: string): string {
+  return normalizeAccessEmail(email);
+}
+
+export function isValidShareEmail(email: string): boolean {
+  return isValidAccessEmail(email);
+}
+
+function cleanScopeRole(
+  scopeType: CollaboratorScopeType,
+  value: unknown,
+): ScopeShareRole {
+  if (scopeType === "workspace") {
+    if (value === "admin") return "member";
+    return isWorkspaceMemberRole(value) ? value : "guest";
+  }
+  return isItemShareRole(value) ? value : "viewer";
+}
+
+function cleanItemRole(value: unknown): ShareRole {
   return value === "editor" ? "editor" : "viewer";
 }
 
-export function normalizeShareEmail(email: string): string {
-  return email.trim().toLowerCase();
+function maxShareRole(current: ShareRole | undefined, next: ShareRole): ShareRole {
+  return current === "editor" || next === "editor" ? "editor" : "viewer";
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export function isValidShareEmail(email: string): boolean {
-  return EMAIL_RE.test(email) && email.length <= 254;
+function auditTargetType(scopeType: CollaboratorScopeType): "workspace" | "folder" | "item" {
+  return scopeType;
 }
 
-/** Active shares for one post, newest last (owner-facing list). */
-export async function listPostShares(postId: string): Promise<PostShare[]> {
+async function emailSubUserId(email: string): Promise<string | null> {
+  return getUserIdBySub(`email:${email}`);
+}
+
+async function ensureShareUserId(user: ShareUser): Promise<string | null> {
+  if (!db) return null;
+  if (user.userId) return user.userId;
+  const email = user.email ? normalizeShareEmail(user.email) : null;
+  await db
+    .insert(users)
+    .values({
+      appleSub: user.sub,
+      email,
+      name: user.name ?? null,
+    })
+    .onConflictDoUpdate({
+      target: users.appleSub,
+      set: {
+        email: email ?? sql`${users.email}`,
+        name: user.name ?? sql`${users.name}`,
+      },
+    });
+  return getUserIdBySub(user.sub);
+}
+
+export async function listScopeShares(
+  scopeType: CollaboratorScopeType,
+  scopeId: string,
+): Promise<ScopeShare[]> {
   if (!db) return [];
   const rows = await db
     .select()
     .from(collaborators)
     .where(
       and(
-        eq(collaborators.scopeType, "item"),
-        eq(collaborators.scopeId, postId),
+        eq(collaborators.scopeType, scopeType),
+        eq(collaborators.scopeId, scopeId),
         isNull(collaborators.revokedAt),
       ),
     );
@@ -67,36 +109,33 @@ export async function listPostShares(postId: string): Promise<PostShare[]> {
     .map((row) => ({
       id: row.id,
       email: row.invitedEmail ?? "",
-      role: cleanRole(row.role),
+      role: cleanScopeRole(scopeType, row.role),
       accepted: Boolean(row.userId),
       createdAt: row.createdAt.toISOString(),
     }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/**
- * Create (or re-role) an invite. Caller must ALREADY have verified the actor
- * owns the post's blog; this function only writes.
- */
-export async function invitePostShare(opts: {
-  postId: string;
+export async function inviteScopeShare(opts: {
+  scopeType: CollaboratorScopeType;
+  scopeId: string;
   email: string;
-  role: ShareRole;
+  role: ScopeShareRole;
   invitedBySub: string;
-}): Promise<PostShare> {
+}): Promise<ScopeShare> {
   if (!db) throw new Error("Sharing needs a database.");
   const email = normalizeShareEmail(opts.email);
   if (!isValidShareEmail(email)) throw new Error("Enter a valid email address.");
+  const role = cleanScopeRole(opts.scopeType, opts.role);
   const invitedById = await getUserIdBySub(opts.invitedBySub);
 
-  // If the address already has an active share, update the role in place.
   const existing = await db
     .select()
     .from(collaborators)
     .where(
       and(
-        eq(collaborators.scopeType, "item"),
-        eq(collaborators.scopeId, opts.postId),
+        eq(collaborators.scopeType, opts.scopeType),
+        eq(collaborators.scopeId, opts.scopeId),
         eq(collaborators.invitedEmail, email),
         isNull(collaborators.revokedAt),
       ),
@@ -105,30 +144,27 @@ export async function invitePostShare(opts: {
   if (existing[0]) {
     const updated = await db
       .update(collaborators)
-      .set({ role: opts.role })
+      .set({ role })
       .where(eq(collaborators.id, existing[0].id))
       .returning();
     const row = updated[0];
     return {
       id: row.id,
       email,
-      role: cleanRole(row.role),
+      role: cleanScopeRole(opts.scopeType, row.role),
       accepted: Boolean(row.userId),
       createdAt: row.createdAt.toISOString(),
     };
   }
 
-  // Bind immediately when the address already belongs to a known email-sub
-  // user; other providers bind lazily on first access.
-  const emailSubUser = await getUserIdBySub(`email:${email}`);
   const inserted = await db
     .insert(collaborators)
     .values({
-      scopeType: "item",
-      scopeId: opts.postId,
+      scopeType: opts.scopeType,
+      scopeId: opts.scopeId,
       invitedEmail: email,
-      userId: emailSubUser,
-      role: opts.role,
+      userId: await emailSubUserId(email),
+      role,
       invitedById,
     })
     .returning();
@@ -137,22 +173,52 @@ export async function invitePostShare(opts: {
     actorUserId: invitedById,
     actorType: "human",
     actionName: "share.invite",
-    targetType: "item",
-    targetId: opts.postId,
-    inputSummary: `${email} as ${opts.role}`,
+    targetType: auditTargetType(opts.scopeType),
+    targetId: opts.scopeId,
+    inputSummary: `${email} as ${role}`,
   });
   return {
     id: row.id,
     email,
-    role: cleanRole(row.role),
+    role: cleanScopeRole(opts.scopeType, row.role),
     accepted: Boolean(row.userId),
     createdAt: row.createdAt.toISOString(),
   };
 }
 
-/** Revoke one share (soft: revokedAt marker, the audit trail keeps the row). */
-export async function revokePostShare(
-  postId: string,
+export async function updateScopeShareRole(opts: {
+  scopeType: CollaboratorScopeType;
+  scopeId: string;
+  shareId: string;
+  role: ScopeShareRole;
+  updatedBySub: string;
+}): Promise<void> {
+  if (!db) return;
+  const role = cleanScopeRole(opts.scopeType, opts.role);
+  await db
+    .update(collaborators)
+    .set({ role })
+    .where(
+      and(
+        eq(collaborators.id, opts.shareId),
+        eq(collaborators.scopeType, opts.scopeType),
+        eq(collaborators.scopeId, opts.scopeId),
+        isNull(collaborators.revokedAt),
+      ),
+    );
+  await recordAction({
+    actorUserId: await getUserIdBySub(opts.updatedBySub),
+    actorType: "human",
+    actionName: "share.role",
+    targetType: auditTargetType(opts.scopeType),
+    targetId: opts.scopeId,
+    inputSummary: role,
+  });
+}
+
+export async function revokeScopeShare(
+  scopeType: CollaboratorScopeType,
+  scopeId: string,
   shareId: string,
   revokedBySub: string,
 ): Promise<void> {
@@ -163,8 +229,8 @@ export async function revokePostShare(
     .where(
       and(
         eq(collaborators.id, shareId),
-        eq(collaborators.scopeType, "item"),
-        eq(collaborators.scopeId, postId),
+        eq(collaborators.scopeType, scopeType),
+        eq(collaborators.scopeId, scopeId),
         isNull(collaborators.revokedAt),
       ),
     );
@@ -172,91 +238,161 @@ export async function revokePostShare(
     actorUserId: await getUserIdBySub(revokedBySub),
     actorType: "human",
     actionName: "share.revoke",
-    targetType: "item",
-    targetId: postId,
+    targetType: auditTargetType(scopeType),
+    targetId: scopeId,
   });
 }
 
-/**
- * The share role this user holds on this post, or null. Binds the share to
- * the user's row on first email match (see the header comment).
- */
+export async function listPostShares(postId: string): Promise<PostShare[]> {
+  return (await listScopeShares("item", postId)).map((share) => ({
+    ...share,
+    role: cleanItemRole(share.role),
+  }));
+}
+
+export async function invitePostShare(opts: {
+  postId: string;
+  email: string;
+  role: ShareRole;
+  invitedBySub: string;
+}): Promise<PostShare> {
+  const share = await inviteScopeShare({
+    scopeType: "item",
+    scopeId: opts.postId,
+    email: opts.email,
+    role: opts.role,
+    invitedBySub: opts.invitedBySub,
+  });
+  return { ...share, role: cleanItemRole(share.role) };
+}
+
+export async function revokePostShare(
+  postId: string,
+  shareId: string,
+  revokedBySub: string,
+): Promise<void> {
+  return revokeScopeShare("item", postId, shareId, revokedBySub);
+}
+
 export async function postShareRoleFor(
   user: ShareUser | null,
   postId: string,
 ): Promise<ShareRole | null> {
   if (!db || !user) return null;
-  const userId = await getUserIdBySub(user.sub);
-
-  if (userId) {
-    const bound = await db
-      .select()
-      .from(collaborators)
-      .where(
-        and(
-          eq(collaborators.scopeType, "item"),
-          eq(collaborators.scopeId, postId),
-          eq(collaborators.userId, userId),
-          isNull(collaborators.revokedAt),
-        ),
-      )
-      .limit(1);
-    if (bound[0]) return cleanRole(bound[0].role);
-  }
-
-  const email = user.email ? normalizeShareEmail(user.email) : "";
-  if (!email) return null;
-  const byEmail = await db
-    .select()
-    .from(collaborators)
-    .where(
-      and(
-        eq(collaborators.scopeType, "item"),
-        eq(collaborators.scopeId, postId),
-        eq(collaborators.invitedEmail, email),
-        isNull(collaborators.revokedAt),
-      ),
-    )
+  const rows = await db
+    .select({ handle: blogs.handle })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(and(eq(posts.id, postId), isNull(posts.deletedAt), isNull(blogs.deletedAt)))
     .limit(1);
-  const row = byEmail[0];
-  if (!row) return null;
-  if (row.userId && row.userId !== userId) {
-    // Already bound to someone else: the email match no longer applies.
-    return null;
-  }
-  if (!row.userId && userId) {
-    await db
-      .update(collaborators)
-      .set({ userId })
-      .where(and(eq(collaborators.id, row.id), isNull(collaborators.userId)));
-  }
-  return cleanRole(row.role);
+  const handle = rows[0]?.handle;
+  if (!handle) return null;
+  const access = await resolveItemAccess({ handle, postId, user });
+  if (access.canEditContent) return "editor";
+  if (access.canView) return "viewer";
+  return null;
 }
 
-/**
- * Everything shared with this user, for the workspace's "Shared with me"
- * section: bound rows plus unbound rows matching the session email.
- */
 export async function listSharedWithMe(
   user: ShareUser | null,
 ): Promise<Array<{ postId: string; role: ShareRole }>> {
   if (!db || !user) return [];
-  const userId = await getUserIdBySub(user.sub);
+  let userId = user.userId ?? await getUserIdBySub(user.sub);
   const email = user.email ? normalizeShareEmail(user.email) : "";
   const rows = await db
     .select()
     .from(collaborators)
-    .where(
-      and(eq(collaborators.scopeType, "item"), isNull(collaborators.revokedAt)),
-    );
+    .where(isNull(collaborators.revokedAt));
+  const hasUnboundEmailMatch = rows.some(
+    (row) => !row.userId && email && row.invitedEmail === email,
+  );
+  if (!userId && hasUnboundEmailMatch) userId = await ensureShareUserId(user);
+  if (userId && hasUnboundEmailMatch) {
+    await db
+      .update(collaborators)
+      .set({ userId })
+      .where(
+        and(
+          eq(collaborators.invitedEmail, email),
+          isNull(collaborators.userId),
+          isNull(collaborators.revokedAt),
+        ),
+      );
+  }
   const mine = rows.filter((row) => {
     if (userId && row.userId === userId) return true;
     if (!row.userId && email && row.invitedEmail === email) return true;
     return false;
   });
-  return mine.map((row) => ({
-    postId: row.scopeId,
-    role: cleanRole(row.role),
+  const itemIds = new Set<string>();
+  const directRoles = new Map<string, ShareRole>();
+
+  for (const row of mine) {
+    if (row.scopeType === "item") {
+      itemIds.add(row.scopeId);
+      directRoles.set(row.scopeId, cleanItemRole(row.role));
+    }
+  }
+
+  const folderIds = mine
+    .filter((row) => row.scopeType === "folder")
+    .map((row) => row.scopeId);
+  const folderRoleById = new Map(
+    mine
+      .filter((row) => row.scopeType === "folder")
+      .map((row) => [row.scopeId, cleanItemRole(row.role)]),
+  );
+  if (folderIds.length > 0) {
+    const folderRows = await db
+      .select({ id: folders.id, blogId: folders.blogId, parentId: folders.parentId })
+      .from(folders)
+      .where(and(inArray(folders.id, folderIds), isNull(folders.deletedAt)));
+    const blogsTouched = new Set(folderRows.map((folder) => folder.blogId));
+    for (const blogId of blogsTouched) {
+      const allFolders = await db
+        .select({ id: folders.id, parentId: folders.parentId })
+        .from(folders)
+        .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt)));
+      const visibleFolderIds = new Set<string>();
+      let folderRole: ShareRole = "viewer";
+      let changed = true;
+      for (const folder of folderRows.filter((entry) => entry.blogId === blogId)) {
+        visibleFolderIds.add(folder.id);
+        folderRole = maxShareRole(folderRole, folderRoleById.get(folder.id) ?? "viewer");
+      }
+      while (changed) {
+        changed = false;
+        for (const folder of allFolders) {
+          if (
+            folder.parentId &&
+            visibleFolderIds.has(folder.parentId) &&
+            !visibleFolderIds.has(folder.id)
+          ) {
+            visibleFolderIds.add(folder.id);
+            changed = true;
+          }
+        }
+      }
+      const postRows = await db
+        .select({ id: posts.id })
+        .from(posts)
+        .where(
+          and(
+            eq(posts.blogId, blogId),
+            inArray(posts.folderId, [...visibleFolderIds]),
+            isNull(posts.deletedAt),
+          ),
+        );
+      for (const post of postRows) {
+        itemIds.add(post.id);
+        directRoles.set(post.id, maxShareRole(directRoles.get(post.id), folderRole));
+      }
+    }
+  }
+
+  return [...itemIds].map((postId) => ({
+    postId,
+    role: directRoles.get(postId) ?? "viewer",
   }));
 }
 
@@ -265,18 +401,12 @@ export type SharedWithMeEntry = {
   role: ShareRole;
   title: string;
   slug: string;
-  /** owning blog, for building the post path */
   blogHandle: string;
   blogUsername: string | null;
   blogName: string;
   updatedAt: string;
 };
 
-/**
- * The posts behind listSharedWithMe, joined with their owning blogs so the
- * workspace can render real links. Rows whose post has since been trashed
- * are dropped.
- */
 export async function getSharedPostsForUser(
   user: ShareUser | null,
 ): Promise<SharedWithMeEntry[]> {
@@ -314,7 +444,6 @@ export async function getSharedPostsForUser(
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-/** users.email for display in the workspace menu (null for guest subs). */
 export async function emailForSub(sub: string): Promise<string | null> {
   if (!db) return null;
   const rows = await db

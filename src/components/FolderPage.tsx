@@ -1,8 +1,8 @@
 "use client";
 
-// The workspace view of a non-blog folder (Notes, Bookmarks): a quiet list
-// rendered per folder mode inside the home workspace shell. Items are always
-// unlisted; everything here is owner-only surface.
+// The workspace view of a folder: a quiet list rendered per folder mode inside
+// the home workspace shell. Notes and bookmarks stay unlisted; sharing only
+// grants named collaborators access.
 
 import { useCallback, useRef, useState, useTransition } from "react";
 import type { FormEvent } from "react";
@@ -12,7 +12,7 @@ import { createFolderItemAction } from "@/app/editor/actions";
 import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
-import { blogPostEditPath } from "@/lib/public-paths";
+import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 
 const FOLDER_TAGLINES: Record<string, string> = {
   notes: "Private Markdown notes.",
@@ -78,10 +78,14 @@ function NotesFolderContents({
   blog,
   handle,
   items,
+  canCreateItems,
+  canEditItems,
 }: {
   blog: Blog;
   handle: string;
   items: Post[];
+  canCreateItems: boolean;
+  canEditItems: boolean;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -111,21 +115,23 @@ function NotesFolderContents({
 
   return (
     <>
-      <div className="post-folder-toolbar">
-        {error && (
-          <span className="post-folder-error" role="alert">
-            {error}
-          </span>
-        )}
-        <button
-          type="button"
-          className="post-folder-create ac-btn ac-btn-filled"
-          disabled={creating}
-          onClick={createNote}
-        >
-          {creating ? "Creating" : "New note"}
-        </button>
-      </div>
+      {canCreateItems && (
+        <div className="post-folder-toolbar">
+          {error && (
+            <span className="post-folder-error" role="alert">
+              {error}
+            </span>
+          )}
+          <button
+            type="button"
+            className="post-folder-create ac-btn ac-btn-filled"
+            disabled={creating}
+            onClick={createNote}
+          >
+            {creating ? "Creating" : "New note"}
+          </button>
+        </div>
+      )}
       <section className="post-folder-page-items" aria-label="Notes">
         {notes.length === 0 ? (
           <FolderEmptyCard mode="notes" />
@@ -137,7 +143,11 @@ function NotesFolderContents({
                 <Link
                   key={itemKey(note)}
                   className="post-folder-row"
-                  href={blogPostEditPath(blog, note)}
+                  href={
+                    canEditItems
+                      ? blogPostEditPath(blog, note)
+                      : blogPostPath(blog, note)
+                  }
                 >
                   <span className="post-folder-row-title">
                     {itemTitle(note)}
@@ -164,10 +174,14 @@ function BookmarksFolderContents({
   blog,
   handle,
   items,
+  canCreateItems,
+  canEditItems,
 }: {
   blog: Blog;
   handle: string;
   items: Post[];
+  canCreateItems: boolean;
+  canEditItems: boolean;
 }) {
   const router = useRouter();
   const urlRef = useRef<HTMLInputElement>(null);
@@ -233,60 +247,62 @@ function BookmarksFolderContents({
 
   return (
     <>
-      <div className="post-folder-toolbar">
-        {error && (
-          <span className="post-folder-error" role="alert">
-            {error}
-          </span>
-        )}
-        {formOpen ? (
-          <form className="post-folder-new-form" onSubmit={addBookmark}>
-            <input
-              ref={urlRef}
-              className="post-folder-field is-url"
-              name="url"
-              type="text"
-              inputMode="url"
-              placeholder="https://example.com"
-              aria-label="Bookmark link"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              required
-            />
-            <input
-              className="post-folder-field is-title"
-              name="title"
-              type="text"
-              placeholder="Title (optional)"
-              aria-label="Bookmark title"
-            />
-            <button
-              type="submit"
-              className="ac-btn ac-btn-filled"
-              disabled={saving}
-            >
-              {saving ? "Adding" : "Add"}
-            </button>
+      {canCreateItems && (
+        <div className="post-folder-toolbar">
+          {error && (
+            <span className="post-folder-error" role="alert">
+              {error}
+            </span>
+          )}
+          {formOpen ? (
+            <form className="post-folder-new-form" onSubmit={addBookmark}>
+              <input
+                ref={urlRef}
+                className="post-folder-field is-url"
+                name="url"
+                type="text"
+                inputMode="url"
+                placeholder="https://example.com"
+                aria-label="Bookmark link"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                required
+              />
+              <input
+                className="post-folder-field is-title"
+                name="title"
+                type="text"
+                placeholder="Title (optional)"
+                aria-label="Bookmark title"
+              />
+              <button
+                type="submit"
+                className="ac-btn ac-btn-filled"
+                disabled={saving}
+              >
+                {saving ? "Adding" : "Add"}
+              </button>
+              <button
+                type="button"
+                className="ac-btn ac-btn-gray"
+                disabled={saving}
+                onClick={closeForm}
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
             <button
               type="button"
-              className="ac-btn ac-btn-gray"
-              disabled={saving}
-              onClick={closeForm}
+              className="post-folder-create ac-btn ac-btn-filled"
+              onClick={openForm}
             >
-              Cancel
+              Add bookmark
             </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            className="post-folder-create ac-btn ac-btn-filled"
-            onClick={openForm}
-          >
-            Add bookmark
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       <section className="post-folder-page-items" aria-label="Bookmarks">
         {bookmarks.length === 0 ? (
           <FolderEmptyCard mode="bookmarks" />
@@ -296,7 +312,11 @@ function BookmarksFolderContents({
               <BookmarkCard
                 key={itemKey(bookmark)}
                 post={bookmark}
-                editPath={blogPostEditPath(blog, bookmark)}
+                editPath={
+                  canEditItems
+                    ? blogPostEditPath(blog, bookmark)
+                    : blogPostPath(blog, bookmark)
+                }
               />
             ))}
           </div>
@@ -306,16 +326,69 @@ function BookmarksFolderContents({
   );
 }
 
+function BlogFolderContents({
+  blog,
+  items,
+  canEditItems,
+}: {
+  blog: Blog;
+  items: Post[];
+  canEditItems: boolean;
+}) {
+  const sorted = sortedByTimestampDesc(
+    items,
+    (post) => post.updatedAt ?? post.date ?? "",
+  );
+  return (
+    <section className="post-folder-page-items" aria-label="Folder items">
+      {sorted.length === 0 ? (
+        <FolderEmptyCard mode="blog" />
+      ) : (
+        <div className="post-folder-list">
+          {sorted.map((post) => {
+            const preview = previewLine(post.body);
+            return (
+              <Link
+                key={itemKey(post)}
+                className="post-folder-row"
+                href={
+                  canEditItems
+                    ? blogPostEditPath(blog, post)
+                    : blogPostPath(blog, post)
+                }
+              >
+                <span className="post-folder-row-title">{itemTitle(post)}</span>
+                <span className="post-folder-row-meta">
+                  {formatArticleDate(post.updatedAt ?? post.date, {
+                    style: "short",
+                  })}
+                </span>
+                {preview && (
+                  <span className="post-folder-row-excerpt">{preview}</span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function FolderPage({
   blog,
   folder,
   handle,
   items,
+  canCreateItems = true,
+  canEditItems = true,
 }: {
   blog: Blog;
   folder: Folder;
   handle: string;
   items: Post[];
+  canCreateItems?: boolean;
+  canEditItems?: boolean;
 }) {
   return (
     <main className="post-folder-page" aria-labelledby="post-folder-page-title">
@@ -324,10 +397,28 @@ export function FolderPage({
         <h1 id="post-folder-page-title">{folder.name}</h1>
         <p>{FOLDER_TAGLINES[folder.mode] ?? ""}</p>
       </header>
-      {folder.mode === "bookmarks" ? (
-        <BookmarksFolderContents blog={blog} handle={handle} items={items} />
+      {folder.mode === "blog" ? (
+        <BlogFolderContents
+          blog={blog}
+          items={items}
+          canEditItems={canEditItems}
+        />
+      ) : folder.mode === "bookmarks" ? (
+        <BookmarksFolderContents
+          blog={blog}
+          handle={handle}
+          items={items}
+          canCreateItems={canCreateItems}
+          canEditItems={canEditItems}
+        />
       ) : (
-        <NotesFolderContents blog={blog} handle={handle} items={items} />
+        <NotesFolderContents
+          blog={blog}
+          handle={handle}
+          items={items}
+          canCreateItems={canCreateItems}
+          canEditItems={canEditItems}
+        />
       )}
     </main>
   );

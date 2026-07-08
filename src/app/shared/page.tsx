@@ -42,6 +42,7 @@ export default async function SharedPage() {
   const entries = await getSharedPostsForUser({
     sub: user.sub,
     email: user.email,
+    name: user.name,
   });
 
   return (

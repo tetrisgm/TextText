@@ -1,10 +1,13 @@
 import type { Blog, Post } from "@/lib/content";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import type { EffectiveAccess } from "@/lib/permissions";
+import { resolveItemAccess } from "@/lib/permissions";
 import {
   deletePost,
   folderPathForPostType,
   getPostById,
   savePost,
+  savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
 import { recordAction } from "@/lib/audit";
@@ -30,6 +33,7 @@ type WorkspacePost = {
   post: Post;
   postId: string;
   userId: string;
+  access: EffectiveAccess;
 };
 
 // Auth, then the post, scoped to the token owner's blog: a foreign id can
@@ -44,7 +48,13 @@ async function resolveWorkspacePost(
   if (!isUuid(postId)) return syncError(404, "Post not found");
   const post = await getPostById(workspace.blog.handle, postId);
   if (!post) return syncError(404, "Post not found");
-  return { blog: workspace.blog, post, postId, userId: workspace.userId };
+  const access = await resolveItemAccess({
+    handle: workspace.blog.handle,
+    postId,
+    user: workspace,
+  });
+  if (!access.canView) return syncError(404, "Post not found");
+  return { blog: workspace.blog, post, postId, userId: workspace.userId, access };
 }
 
 export async function GET(request: Request, { params }: Props) {
@@ -72,7 +82,10 @@ export async function GET(request: Request, { params }: Props) {
 export async function PUT(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post, userId } = resolved;
+  const { blog, post, userId, access } = resolved;
+  if (!access.canEditContent) {
+    return syncError(403, "You cannot edit this file");
+  }
 
   // If-Match is the sync conflict signal: the client must prove its edit is
   // based on the file the server has now. 428 asks for the header; 412 means
@@ -103,19 +116,24 @@ export async function PUT(request: Request, { params }: Props) {
 
   try {
     // Fields absent from the file keep their stored values; the body is
-    // always the file's. The slug follows the file when it sets one. The date
-    // is the exception to "absent keeps stored": post.date is derived
-    // (publishedAt, falling back to createdAt for drafts), so passing it back
-    // to savePost would turn a derived value into an authored publish date;
-    // with no date in the file, savePost keeps the stored publish date and
-    // stamps a first publish as now, same as the editor.
-    const saved = await savePost(blog.handle, {
-      ...post,
-      ...parsed.fields,
-      date: parsed.fields.date,
-      slug: parsed.fields.slug ?? post.slug,
-      body: parsed.body,
-    });
+    // always the file's. Owners may author slug/date/status metadata. A
+    // collaborator save is routed through the content-only store helper so the
+    // mapped date string cannot overwrite published_at.
+    const saved = access.isOwner
+      ? await savePost(blog.handle, {
+          ...post,
+          ...parsed.fields,
+          date: parsed.fields.date,
+          slug: parsed.fields.slug ?? post.slug,
+          body: parsed.body,
+        })
+      : await savePostContentPatch(blog.handle, post, {
+          title: parsed.fields.title ?? post.title,
+          cover: parsed.fields.cover ?? post.cover,
+          coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
+          coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+          body: parsed.body,
+        });
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",
@@ -138,7 +156,10 @@ export async function PUT(request: Request, { params }: Props) {
 export async function DELETE(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post, postId, userId } = resolved;
+  const { blog, post, postId, userId, access } = resolved;
+  if (!access.isOwner) {
+    return syncError(403, "Only the owner can delete files");
+  }
 
   await deletePost(blog.handle, postId);
   await recordAction({

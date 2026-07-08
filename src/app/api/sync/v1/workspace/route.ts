@@ -1,4 +1,4 @@
-import { getFolders } from "@/lib/store";
+import { getAccessibleFolders } from "@/lib/store";
 import { resolveSyncWorkspace } from "../auth";
 import { WORKSPACE_SCHEMA } from "../sync";
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (workspace instanceof Response) return workspace;
   const { blog } = workspace;
 
-  const folders = await getFolders(blog.handle);
+  const folders = await getAccessibleFolders(blog.handle, workspace);
   return Response.json({
     schema: WORKSPACE_SCHEMA,
     blog: {

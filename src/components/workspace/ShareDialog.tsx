@@ -9,17 +9,23 @@ import {
 } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import {
-  listPostSharesAction,
-  revokePostShareAction,
-  sharePostAction,
+  listScopeSharesAction,
+  revokeScopeShareAction,
+  shareScopeAction,
+  updateScopeShareRoleAction,
 } from "@/app/editor/actions";
-import type { PostShare, ShareRole } from "@/lib/shares";
+import type { ScopeShare, ScopeShareRole } from "@/lib/shares";
+import type { CollaboratorScopeType } from "@/lib/permissions";
 import styles from "./ShareDialog.module.css";
 
 export type ShareDialogProps = {
   handle: string;
-  postId: string;
-  postTitle: string;
+  postId?: string;
+  postTitle?: string;
+  scopeType?: CollaboratorScopeType;
+  scopeId?: string;
+  title?: string;
+  subtitle?: string;
   open: boolean;
   onClose: () => void;
 };
@@ -32,8 +38,27 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function roleLabel(role: ShareRole): string {
-  return role === "editor" ? "Editor" : "Viewer";
+function defaultRole(scopeType: CollaboratorScopeType): ScopeShareRole {
+  return scopeType === "workspace" ? "guest" : "viewer";
+}
+
+function roleLabel(role: ScopeShareRole): string {
+  if (role === "editor") return "Can edit";
+  if (role === "viewer") return "Can view";
+  if (role === "member") return "Member";
+  return "Guest";
+}
+
+function roleOptions(scopeType: CollaboratorScopeType) {
+  return scopeType === "workspace"
+    ? (["member", "guest"] as const)
+    : (["editor", "viewer"] as const);
+}
+
+function scopeCopy(scopeType: CollaboratorScopeType): string {
+  if (scopeType === "workspace") return "Workspace access";
+  if (scopeType === "folder") return "Folder access";
+  return "Page access";
 }
 
 function shareUrlFromLocation(): string {
@@ -49,18 +74,25 @@ export function ShareDialog({
   handle,
   postId,
   postTitle,
+  scopeType = "item",
+  scopeId,
+  title = "Share",
+  subtitle,
   open,
   onClose,
 }: ShareDialogProps) {
+  const resolvedScopeId = scopeId ?? postId ?? "";
+  const resolvedSubtitle = subtitle ?? postTitle ?? scopeCopy(scopeType);
   const titleId = useId();
   const emailId = useId();
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [shares, setShares] = useState<PostShare[]>([]);
+  const [shares, setShares] = useState<ScopeShare[]>([]);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<ShareRole>("viewer");
+  const [role, setRole] = useState<ScopeShareRole>(() => defaultRole(scopeType));
   const [loading, setLoading] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
@@ -73,13 +105,15 @@ export function ShareDialog({
 
   useEffect(() => {
     if (!open) return;
+    if (!resolvedScopeId) return;
 
     let active = true;
     setLoading(true);
     setError(null);
     setConfirmingId(null);
+    setRole(defaultRole(scopeType));
 
-    listPostSharesAction(handle, postId)
+    listScopeSharesAction(handle, scopeType, resolvedScopeId)
       .then((nextShares) => {
         if (active) setShares(nextShares);
       })
@@ -96,7 +130,7 @@ export function ShareDialog({
     return () => {
       active = false;
     };
-  }, [handle, open, postId]);
+  }, [handle, open, resolvedScopeId, scopeType]);
 
   useEffect(() => {
     if (!open) return;
@@ -127,7 +161,7 @@ export function ShareDialog({
       if (!nextEmail) return;
 
       const previousShares = shares;
-      const optimisticShare: PostShare = {
+      const optimisticShare: ScopeShare = {
         id: `optimistic-${nextEmail}`,
         email: nextEmail,
         role,
@@ -150,7 +184,13 @@ export function ShareDialog({
       });
 
       try {
-        const nextShares = await sharePostAction(handle, postId, nextEmail, role);
+        const nextShares = await shareScopeAction(
+          handle,
+          scopeType,
+          resolvedScopeId,
+          nextEmail,
+          role,
+        );
         setShares(nextShares);
         setEmail("");
       } catch (inviteError) {
@@ -160,11 +200,11 @@ export function ShareDialog({
         setInviting(false);
       }
     },
-    [email, handle, inviting, postId, role, shares],
+    [email, handle, inviting, resolvedScopeId, role, scopeType, shares],
   );
 
   const revoke = useCallback(
-    async (share: PostShare) => {
+    async (share: ScopeShare) => {
       if (revokingId || share.id.startsWith("optimistic-")) return;
 
       const previousShares = shares;
@@ -173,7 +213,12 @@ export function ShareDialog({
       setShares((current) => current.filter((item) => item.id !== share.id));
 
       try {
-        const nextShares = await revokePostShareAction(handle, postId, share.id);
+        const nextShares = await revokeScopeShareAction(
+          handle,
+          scopeType,
+          resolvedScopeId,
+          share.id,
+        );
         setShares(nextShares);
         setConfirmingId(null);
       } catch (revokeError) {
@@ -183,7 +228,37 @@ export function ShareDialog({
         setRevokingId(null);
       }
     },
-    [handle, postId, revokingId, shares],
+    [handle, resolvedScopeId, revokingId, scopeType, shares],
+  );
+
+  const updateRole = useCallback(
+    async (share: ScopeShare, nextRole: ScopeShareRole) => {
+      if (updatingId || share.id.startsWith("optimistic-")) return;
+      const previousShares = shares;
+      setUpdatingId(share.id);
+      setError(null);
+      setShares((current) =>
+        current.map((item) =>
+          item.id === share.id ? { ...item, role: nextRole } : item,
+        ),
+      );
+      try {
+        const nextShares = await updateScopeShareRoleAction(
+          handle,
+          scopeType,
+          resolvedScopeId,
+          share.id,
+          nextRole,
+        );
+        setShares(nextShares);
+      } catch (roleError) {
+        setShares(previousShares);
+        setError(errorMessage(roleError, "Could not change role."));
+      } finally {
+        setUpdatingId(null);
+      }
+    },
+    [handle, resolvedScopeId, scopeType, shares, updatingId],
   );
 
   const copyLink = useCallback(async () => {
@@ -203,9 +278,10 @@ export function ShareDialog({
     }
   }, []);
 
-  if (!open) return null;
+  if (!open || !resolvedScopeId) return null;
 
   const trimmedEmail = email.trim();
+  const options = roleOptions(scopeType);
 
   return (
     <div className={`applecms ${styles.backdrop}`} onMouseDown={closeFromBackdrop}>
@@ -219,9 +295,9 @@ export function ShareDialog({
         <div className={styles.header}>
           <div className={styles.titleGroup}>
             <h2 className={styles.title} id={titleId}>
-              Share
+              {title}
             </h2>
-            <p className={styles.subtitle}>{postTitle}</p>
+            <p className={styles.subtitle}>{resolvedSubtitle}</p>
           </div>
           <button
             className={styles.iconButton}
@@ -252,10 +328,15 @@ export function ShareDialog({
             value={role}
             disabled={inviting}
             aria-label="Invite role"
-            onChange={(event) => setRole(event.currentTarget.value as ShareRole)}
+            onChange={(event) =>
+              setRole(event.currentTarget.value as ScopeShareRole)
+            }
           >
-            <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {roleLabel(option)}
+              </option>
+            ))}
           </select>
           <button
             className={classNames(styles.button, styles.primaryButton)}
@@ -298,7 +379,28 @@ export function ShareDialog({
                         {share.accepted ? "accepted" : "invited"}
                       </div>
                     </div>
-                    <span className={styles.roleChip}>{roleLabel(share.role)}</span>
+                    <select
+                      className={styles.personRoleSelect}
+                      value={share.role}
+                      disabled={
+                        pending ||
+                        Boolean(revokingId) ||
+                        updatingId === share.id
+                      }
+                      aria-label={`Role for ${share.email}`}
+                      onChange={(event) => {
+                        void updateRole(
+                          share,
+                          event.currentTarget.value as ScopeShareRole,
+                        );
+                      }}
+                    >
+                      {options.map((option) => (
+                        <option key={option} value={option}>
+                          {roleLabel(option)}
+                        </option>
+                      ))}
+                    </select>
                     {confirming ? (
                       <div className={styles.confirmActions}>
                         <span className={styles.confirmText}>Remove access?</span>

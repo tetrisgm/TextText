@@ -62,7 +62,7 @@ export const collaborators = pgTable(
     userId: uuid("user_id").references(() => users.id),
     /** normalized (lowercased, trimmed) invite address */
     invitedEmail: text("invited_email"),
-    /** "editor" | "reviewer" | "viewer" (the owner is blogs.owner_id) */
+    /** workspace: "admin" | "member" | "guest"; folder/item: "editor" | "viewer" */
     role: text("role").notNull().default("viewer"),
     invitedById: uuid("invited_by_id").references(() => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
