@@ -2,9 +2,16 @@
   "name": "write",
   "version": "0.1.0",
   "private": true,
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Safari versions",
+    "last 2 Firefox versions",
+    "last 2 Edge versions",
+    "not ie <= 11"
+  ],
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
