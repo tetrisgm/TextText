@@ -62,11 +62,21 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         // The server reads none of this; it is the client contract with the web
         // app (AppLinkBridge / mint script). __WRITE_NEEDS_TOKEN__ gates minting
         // so a linked Mac never spends a token on every launch.
+        //
+        // Guarded to the app's own origin: forMainFrameOnly still injects this on
+        // EVERY navigation, including the Google/Apple OAuth pages this window
+        // visits mid-sign-in. Without the host check the device NAME would be
+        // written into those third-party page contexts (and the mint script,
+        // which keys off __WRITE_APP__, would fire there too).
         ucc.addUserScript(WKUserScript(
             source: """
-            window.__WRITE_APP__ = true;
-            window.__WRITE_DEVICE__ = "\(escapedDevice)";
-            window.__WRITE_NEEDS_TOKEN__ = \(needsToken ? "true" : "false");
+            (function () {
+              var h = location.hostname, base = "\(origin.host ?? "")";
+              if (base && h !== base && !h.endsWith("." + base)) return;
+              window.__WRITE_APP__ = true;
+              window.__WRITE_DEVICE__ = "\(escapedDevice)";
+              window.__WRITE_NEEDS_TOKEN__ = \(needsToken ? "true" : "false");
+            })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         // Silent link: on an unlinked Mac, the first signed-in page mints a
