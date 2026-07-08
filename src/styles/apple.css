@@ -350,6 +350,106 @@
   letter-spacing: 0;
 }
 
+/* ---- Notes slash command menu ---- */
+.applecms.slash-command-host {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 80;
+  pointer-events: none;
+  font-family: var(--ac-font-text);
+}
+.applecms .slash-command-decoration {
+  border-radius: 4px;
+  background: var(--ac-tinted-fill);
+  color: var(--ac-editor-accent-text);
+}
+.applecms.slash-command-menu,
+.applecms .slash-command-menu {
+  pointer-events: auto;
+  position: fixed;
+  box-sizing: border-box;
+  width: min(288px, calc(100vw - 16px));
+  max-height: min(336px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--ac-editor-toolbar-border);
+  border-radius: 8px;
+  background: var(--ac-editor-toolbar-bg);
+  color: var(--ac-label);
+  box-shadow: var(--ac-editor-toolbar-shadow);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity .10s ease, transform .10s ease;
+  scrollbar-width: none;
+}
+.applecms .slash-command-menu::-webkit-scrollbar {
+  display: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .applecms.slash-command-menu,
+  .applecms .slash-command-menu {
+    background: var(--ac-mat-fallback);
+  }
+}
+.applecms .slash-command-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  background: transparent;
+  color: var(--ac-label);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  user-select: none;
+}
+.applecms .slash-command-item.is-selected {
+  background: var(--ac-fill-3);
+}
+.applecms .slash-command-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-fill-3);
+  color: var(--ac-label-2);
+  font: 700 11px/1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.applecms .slash-command-item.is-selected .slash-command-icon {
+  background: var(--ac-tinted-fill);
+  color: var(--ac-editor-accent-text);
+}
+.applecms .slash-command-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.applecms .slash-command-label,
+.applecms .slash-command-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+.applecms .slash-command-label {
+  color: var(--ac-label);
+  font: 650 var(--ac-fs-footnote)/1.25 var(--ac-font-text);
+}
+.applecms .slash-command-hint {
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-caption1)/1.25 var(--ac-font-text);
+}
+
 /* ---- Notes body content while editing ---- */
 .applecms .body-editor-content {
   caret-color: var(--ac-accent);
@@ -416,6 +516,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .applecms.slash-command-menu,
+  .applecms .slash-command-menu,
   .applecms .body-editor-tool,
   .applecms .body-editor-text-tool {
     transition: none;
