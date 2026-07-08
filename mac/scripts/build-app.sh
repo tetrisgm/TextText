@@ -19,6 +19,18 @@ APP="$MAC/build/Write.app"
 ENT="$MAC/write.entitlements"
 PB=/usr/libexec/PlistBuddy
 
+require_release_env() {
+  local name="$1"
+  if [ -z "${!name:-}" ]; then
+    echo "Refusing: $name must be set to build Write.app." >&2
+    exit 1
+  fi
+}
+
+require_release_env WRITE_BUNDLE_ID
+require_release_env WRITE_PRODUCT_ORIGIN
+require_release_env WRITE_SPARKLE_PUBLIC_KEY
+
 # Stable signing keeps macOS trust anchored across rebuilds. Prefer an
 # explicit WRITE_SIGN_ID, else auto-detect a local Developer ID Application
 # identity, else fall back to ad-hoc.
@@ -44,15 +56,9 @@ else
 fi
 
 STAGED="$APP/Contents/Info.plist"
-if [ -n "${WRITE_BUNDLE_ID:-}" ]; then
-  "$PB" -c "Set :CFBundleIdentifier $WRITE_BUNDLE_ID" "$STAGED"
-fi
-if [ -n "${WRITE_PRODUCT_ORIGIN:-}" ]; then
-  "$PB" -c "Set :SUFeedURL ${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
-fi
-if [ -n "${WRITE_SPARKLE_PUBLIC_KEY:-}" ]; then
-  "$PB" -c "Set :SUPublicEDKey $WRITE_SPARKLE_PUBLIC_KEY" "$STAGED"
-fi
+"$PB" -c "Set :CFBundleIdentifier $WRITE_BUNDLE_ID" "$STAGED"
+"$PB" -c "Set :SUFeedURL ${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
+"$PB" -c "Set :SUPublicEDKey $WRITE_SPARKLE_PUBLIC_KEY" "$STAGED"
 
 # Sparkle framework (auto-update): embed + make it discoverable via rpath.
 if [ -d "$BIN/Sparkle.framework" ]; then

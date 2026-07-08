@@ -22,18 +22,27 @@ cd "$(dirname "$0")/.."
 MAC="$(pwd)"
 PB=/usr/libexec/PlistBuddy
 SPK="$MAC/.build/artifacts/sparkle/Sparkle/bin"
-ORIGIN="${WRITE_PRODUCT_ORIGIN:-https://write.example.com}"
-ORIGIN="${ORIGIN%/}"
 
 VERSION="${1:-}"
 if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
   echo "Usage: mac/scripts/release.sh <version, e.g. 0.2>" >&2
   exit 1
 fi
-if [ -z "${WRITE_NOTARY_PROFILE:-}" ]; then
-  echo "Refusing: WRITE_NOTARY_PROFILE must be set for a release (see notarize.sh)." >&2
-  exit 1
-fi
+
+require_release_env() {
+  local name="$1"
+  if [ -z "${!name:-}" ]; then
+    echo "Refusing: $name must be set for a release." >&2
+    exit 1
+  fi
+}
+
+require_release_env WRITE_NOTARY_PROFILE
+require_release_env WRITE_PRODUCT_ORIGIN
+require_release_env WRITE_SPARKLE_PUBLIC_KEY
+require_release_env WRITE_BUNDLE_ID
+
+ORIGIN="${WRITE_PRODUCT_ORIGIN%/}"
 
 # 1. Bump. CFBundleVersion is Sparkle's monotonic comparison key; it is
 # auto-incremented here so no human ever hand-edits it.
