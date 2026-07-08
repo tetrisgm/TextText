@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -12,7 +13,10 @@ import remarkGfm from "remark-gfm";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { createSubfolderAction } from "@/app/editor/actions";
+import {
+  createSubfolderAction,
+  saveEditablePostAction,
+} from "@/app/editor/actions";
 import {
   useEscapeLayer,
   useWorkspaceCommandSurface,
@@ -22,6 +26,7 @@ import { PostActionBar } from "@/components/PostActionBar";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { EditReaderPreview } from "@/components/editor/EditReaderPreview";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
@@ -34,14 +39,27 @@ import {
   poolPostsForFolder,
   postFromPoolPost,
 } from "@/lib/pool/selectors";
-import { useWorkspacePool, useWorkspacePostBody } from "@/lib/pool/store";
+import {
+  updatePost,
+  useWorkspacePool,
+  useWorkspacePostBody,
+} from "@/lib/pool/store";
 import { WorkspaceProvider } from "@/lib/pool/WorkspaceProvider";
 import type {
   WorkspaceInitialBody,
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
-import { blogPostPath } from "@/lib/public-paths";
+import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
+import {
+  initialDraft,
+  isPlaceholderSlug,
+  payloadFor,
+  payloadKey,
+  slugify,
+  uniqueSlug,
+} from "@/lib/post-edit-draft";
+import type { DraftState } from "@/lib/post-edit-draft";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
@@ -885,7 +903,8 @@ export function WorkspaceSidebarChrome({
 type LocalWorkspaceView =
   | { level: "root" }
   | { folderPath: string; level: "section" }
-  | { folderPath: string; level: "post"; postId: string };
+  | { folderPath: string; level: "post"; postId: string }
+  | { folderPath: string; level: "edit"; postId: string };
 
 function encodedTenantHomePath(blog: Blog): string {
   return `/t/${encodeURIComponent(blog.handle)}`;
@@ -923,10 +942,15 @@ function viewFromUrl(
   const [encodedSlug = ""] = rest.split("/");
   if (!encodedSlug || encodedSlug === "c") return { level: "root" };
   const slug = decodeURIComponent(encodedSlug);
-  const post = findPoolPostBySlug(pool, slug);
+  const editRequested = url.searchParams.get("edit") === "1";
+  const editId = url.searchParams.get("id");
+  const post =
+    editRequested && editId
+      ? findPoolPostById(pool, editId) ?? findPoolPostBySlug(pool, slug)
+      : findPoolPostBySlug(pool, slug);
   if (!post) return { level: "root" };
   return {
-    level: "post",
+    level: editRequested ? "edit" : "post",
     postId: post.id,
     folderPath: folderPathForPoolPost(pool, post),
   };
@@ -942,6 +966,16 @@ function currentLocalView(
 
 function localViewActiveFolder(view: LocalWorkspaceView): SidebarFolderId | null {
   return view.level === "root" ? null : view.folderPath;
+}
+
+function isOptimisticPostId(postId: string): boolean {
+  return postId.startsWith("optimistic-");
+}
+
+function autoGrowTextarea(node: HTMLTextAreaElement | null) {
+  if (!node) return;
+  node.style.height = "0px";
+  node.style.height = `${node.scrollHeight}px`;
 }
 
 function WorkspaceRootLanding({ blog }: { blog: Blog }) {
@@ -1056,6 +1090,183 @@ function WorkspacePostReader({
   );
 }
 
+function LocalWorkspacePostEditor({
+  blog,
+  pool,
+  poolPost,
+}: {
+  blog: Blog;
+  pool: WorkspacePoolPayload;
+  poolPost: WorkspacePoolPost;
+}) {
+  const post = useMemo(() => postFromPoolPost(poolPost), [poolPost]);
+  const [draft, setDraft] = useState<DraftState>(() => initialDraft(post));
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const previousPostIdRef = useRef(poolPost.id);
+  const saveTimerRef = useRef<number | null>(null);
+  const lastSavedKeyRef = useRef(
+    payloadKey(payloadFor(poolPost.id, initialDraft(post), post.slug)),
+  );
+  const latestKeyRef = useRef(lastSavedKeyRef.current);
+  const usedSlugs = useMemo(
+    () =>
+      pool.posts
+        .filter((candidate) => candidate.id !== poolPost.id)
+        .map((candidate) => candidate.slug),
+    [pool.posts, poolPost.id],
+  );
+
+  useEffect(() => {
+    const wasOptimistic = isOptimisticPostId(previousPostIdRef.current);
+    previousPostIdRef.current = poolPost.id;
+    const nextDraft = initialDraft(post);
+    setDraft(nextDraft);
+    lastSavedKeyRef.current = wasOptimistic
+      ? ""
+      : payloadKey(payloadFor(poolPost.id, nextDraft, post.slug));
+    latestKeyRef.current = lastSavedKeyRef.current;
+    // Re-seed only when the editor changes items. Pool updates for the same
+    // item are usually our own local keystrokes and must not mark the draft
+    // saved before the debounced server save runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poolPost.id]);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      const title = titleRef.current;
+      if (!title) return;
+      title.focus({ preventScroll: true });
+      title.setSelectionRange(title.value.length, title.value.length);
+    });
+  }, [poolPost.id]);
+
+  useEffect(() => {
+    autoGrowTextarea(titleRef.current);
+  }, [draft.title]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
+
+  const updateDraft = useCallback(
+    (patch: Partial<DraftState>) => {
+      setDraft((current) => {
+        const next = { ...current, ...patch };
+        updatePost(poolPost.id, {
+          title: next.title,
+          excerpt: next.excerpt || undefined,
+          slug: next.slug,
+          updatedAt: new Date().toISOString(),
+        });
+        return next;
+      });
+    },
+    [poolPost.id],
+  );
+
+  const deriveSlugFromTitle = useCallback(
+    (titleValue: string) => {
+      const title = titleValue.trim();
+      if (!title || !isPlaceholderSlug(draft.slug)) return;
+      updateDraft({
+        slug: uniqueSlug(slugify(title, "post"), usedSlugs),
+      });
+    },
+    [draft.slug, updateDraft, usedSlugs],
+  );
+
+  useEffect(() => {
+    if (isOptimisticPostId(poolPost.id)) return;
+
+    const payload = payloadFor(poolPost.id, draft, post.slug);
+    const key = payloadKey(payload);
+    latestKeyRef.current = key;
+    if (key === lastSavedKeyRef.current) return;
+
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      const sentKey = key;
+      void saveEditablePostAction(blog.handle, payload)
+        .then((saved) => {
+          if (latestKeyRef.current !== sentKey) return;
+          lastSavedKeyRef.current = sentKey;
+          updatePost(poolPost.id, {
+            slug: saved.slug,
+            title: saved.title,
+            excerpt: saved.excerpt,
+            updatedAt: saved.updatedAt,
+          });
+        })
+        .catch(() => {
+          // Keep the local draft in place. A later edit will retry the save.
+        });
+    }, 800);
+
+    return () => {
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [blog.handle, draft, poolPost.id, post.slug]);
+
+  const displayPost = useMemo<Post>(
+    () => ({
+      ...post,
+      title: draft.title,
+      excerpt: draft.excerpt || undefined,
+      body: draft.body,
+      status: draft.status,
+      slug: draft.slug || post.slug,
+    }),
+    [draft, post],
+  );
+
+  return (
+    <main className="local-workspace-edit" aria-label="Edit post">
+      <EditReaderPreview
+        blog={blog}
+        post={displayPost}
+        slots={{
+          title: (
+            <textarea
+              ref={titleRef}
+              className="reader-title edit-title-field"
+              aria-label="Title"
+              placeholder="Give it a title"
+              rows={1}
+              value={draft.title}
+              onChange={(event) =>
+                updateDraft({
+                  title: event.currentTarget.value.replace(/[\r\n]+/g, " "),
+                })
+              }
+              onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.metaKey || event.ctrlKey || event.altKey) return;
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  deriveSlugFromTitle(event.currentTarget.value);
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          ),
+          body: <div className="local-workspace-edit-empty-body" />,
+        }}
+      />
+    </main>
+  );
+}
+
 function LocalWorkspaceContent({
   blog,
   canCreateItems,
@@ -1108,6 +1319,15 @@ function LocalWorkspaceContent({
 
   const post = findPoolPostById(pool, view.postId);
   if (!post) return <WorkspaceRootLanding blog={blog} />;
+  if (view.level === "edit") {
+    return (
+      <LocalWorkspacePostEditor
+        blog={blog}
+        pool={pool}
+        poolPost={post}
+      />
+    );
+  }
   return (
     <WorkspacePostReader
       blog={blog}
@@ -1145,10 +1365,14 @@ function LocalWorkspaceShell({
 }) {
   const { pool } = useWorkspacePool();
   const displayPool = pool?.blogId === initialPool.blogId ? pool : initialPool;
+  const displayPoolRef = useRef(displayPool);
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
+  const viewRef = useRef(view);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(
-    initialView.level === "post" ? initialView.postId : null,
+    initialView.level === "post" || initialView.level === "edit"
+      ? initialView.postId
+      : null,
   );
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
@@ -1159,14 +1383,43 @@ function LocalWorkspaceShell({
   }, []);
 
   useEffect(() => {
-    setView(currentLocalView(displayPool, homePath));
+    displayPoolRef.current = displayPool;
+  }, [displayPool]);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  useEffect(() => {
+    const nextView = currentLocalView(displayPool, homePath);
+    viewRef.current = nextView;
+    setView(nextView);
   }, [displayPool, homePath]);
 
   const navigateToView = useCallback(
     (nextView: LocalWorkspaceView, href: string) => {
       window.history.pushState(null, "", href);
+      viewRef.current = nextView;
       setView(nextView);
-      setSelectedPostId(nextView.level === "post" ? nextView.postId : null);
+      setSelectedPostId(
+        nextView.level === "post" || nextView.level === "edit"
+          ? nextView.postId
+          : null,
+      );
+    },
+    [],
+  );
+
+  const replaceWithView = useCallback(
+    (nextView: LocalWorkspaceView, href: string) => {
+      window.history.replaceState(null, "", href);
+      viewRef.current = nextView;
+      setView(nextView);
+      setSelectedPostId(
+        nextView.level === "post" || nextView.level === "edit"
+          ? nextView.postId
+          : null,
+      );
     },
     [],
   );
@@ -1186,17 +1439,51 @@ function LocalWorkspaceShell({
   );
 
   const openPoolPost = useCallback(
-    (post: WorkspacePoolPost, folderPath?: string) => {
+    (
+      post: WorkspacePoolPost,
+      folderPath?: string,
+      mode: "read" | "edit" = "read",
+    ) => {
+      const nextFolderPath =
+        folderPath ?? folderPathForPoolPost(displayPool, post);
       navigateToView(
         {
-          level: "post",
+          level: mode === "edit" ? "edit" : "post",
           postId: post.id,
-          folderPath: folderPath ?? folderPathForPoolPost(displayPool, post),
+          folderPath: nextFolderPath,
         },
-        blogPostPath(displayPool.blog, post),
+        mode === "edit"
+          ? blogPostEditPath(displayPool.blog, post)
+          : blogPostPath(displayPool.blog, post),
       );
     },
     [displayPool, navigateToView],
+  );
+
+  const openCreatedPost = useCallback(
+    (post: WorkspacePoolPost) => {
+      openPoolPost(post, folderPathForPoolPost(displayPoolRef.current, post), "edit");
+    },
+    [openPoolPost],
+  );
+
+  const reconcileCreatedPost = useCallback(
+    (temporaryPostId: string, savedPost: WorkspacePoolPost) => {
+      const current = viewRef.current;
+      if (current.level !== "edit" || current.postId !== temporaryPostId) {
+        return;
+      }
+      const nextView: LocalWorkspaceView = {
+        level: "edit",
+        postId: savedPost.id,
+        folderPath: folderPathForPoolPost(displayPoolRef.current, savedPost),
+      };
+      replaceWithView(
+        nextView,
+        blogPostEditPath(displayPoolRef.current.blog, savedPost),
+      );
+    },
+    [replaceWithView],
   );
 
   const openPost = useCallback(
@@ -1213,7 +1500,7 @@ function LocalWorkspaceShell({
     if (view.level === "section") {
       return poolPostsForFolder(displayPool, view.folderPath);
     }
-    if (view.level === "post") {
+    if (view.level === "post" || view.level === "edit") {
       return poolPostsForFolder(displayPool, view.folderPath);
     }
     return poolPostsForFolder(displayPool, BLOG_FOLDER_PATH);
@@ -1245,7 +1532,8 @@ function LocalWorkspaceShell({
       const ids = visiblePosts.map((post) => post.id);
       if (ids.length === 0) return;
       const currentId =
-        selectedPostId ?? (view.level === "post" ? view.postId : null);
+        selectedPostId ??
+        (view.level === "post" || view.level === "edit" ? view.postId : null);
       const currentIndex = currentId ? ids.indexOf(currentId) : -1;
       const nextIndex =
         currentIndex === -1
@@ -1255,7 +1543,7 @@ function LocalWorkspaceShell({
           : (currentIndex + direction + ids.length) % ids.length;
       const nextId = ids[nextIndex] ?? null;
       if (!nextId) return;
-      if (view.level === "post") {
+      if (view.level === "post" || view.level === "edit") {
         openPostId(nextId);
         return;
       }
@@ -1268,10 +1556,14 @@ function LocalWorkspaceShell({
     (path: string) => {
       const url = new URL(path, window.location.origin);
       const nextView = viewFromUrl(displayPool, homePath, url);
-      if (nextView.level === "post") {
+      if (nextView.level === "post" || nextView.level === "edit") {
         const post = findPoolPostById(displayPool, nextView.postId);
         if (post) {
-          openPoolPost(post, nextView.folderPath);
+          openPoolPost(
+            post,
+            nextView.folderPath,
+            nextView.level === "edit" ? "edit" : "read",
+          );
           return;
         }
       }
@@ -1285,7 +1577,7 @@ function LocalWorkspaceShell({
   );
 
   const navigateUp = useCallback(() => {
-    if (view.level === "post") {
+    if (view.level === "post" || view.level === "edit") {
       navigateSection(view.folderPath);
       return true;
     }
@@ -1313,20 +1605,29 @@ function LocalWorkspaceShell({
       canEdit: canManageFolders,
       canManagePost: canManageFolders,
       activeFolderPath: localViewActiveFolder(view),
-      activePostId: view.level === "post" ? view.postId : null,
+      activePostId:
+        view.level === "post" || view.level === "edit" ? view.postId : null,
       selectedPostId,
       getVisiblePostIds: () => visiblePosts.map((post) => post.id),
-      getPost: (postId: string) => findPoolPostById(displayPool, postId),
+      getPost: (postId: string) =>
+        findPoolPostById(displayPoolRef.current, postId),
       selectPost: (postId: string | null) => setSelectedPostId(postId),
       selectNext: () => selectRelativePost(1),
       selectPrevious: () => selectRelativePost(-1),
       openPost: openPostId,
+      openCreatedPost,
+      reconcileCreatedPost,
       openFolder: navigateSection,
       navigateRoot,
       navigateUp,
       afterDelete: (postId: string) => {
         if (selectedPostId === postId) setSelectedPostId(null);
-        if (view.level === "post" && view.postId === postId) navigateUp();
+        if (
+          (view.level === "post" || view.level === "edit") &&
+          view.postId === postId
+        ) {
+          navigateUp();
+        }
       },
       startBookmarkCreate: () => {
         if (localViewActiveFolder(view) !== "bookmarks") {
@@ -1342,7 +1643,9 @@ function LocalWorkspaceShell({
       navigateRoot,
       navigateSection,
       navigateUp,
+      openCreatedPost,
       openPostId,
+      reconcileCreatedPost,
       selectRelativePost,
       selectedPostId,
       view,
