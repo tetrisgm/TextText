@@ -28,6 +28,11 @@ function safeHref(value: string | undefined): string {
   return href && isSafeLinkHref(href) ? href : "";
 }
 
+function upgradeHttpImageSrc(src: string | undefined): string {
+  const value = src ?? "";
+  return value.startsWith("http://") ? `https://${value.slice(7)}` : value;
+}
+
 function bookmarkOriginalHref(post: Post): string {
   return safeHref(post.capture?.url) || safeHref(post.links?.[0]?.href);
 }
@@ -102,6 +107,7 @@ export function Reader({
   const coverSource = resolveCoverSource(post);
   const resolvedCover = coverSource.src;
   const coverCaption = post.coverCaption?.trim();
+  const coverImageSrc = upgradeHttpImageSrc(resolvedCover);
   const coverStyle = post.coverHeight
     ? ({ "--reader-cover-height": `${post.coverHeight}px` } as CSSProperties)
     : undefined;
@@ -122,7 +128,7 @@ export function Reader({
               avoids next/image remote-domain config. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={resolvedCover}
+            src={coverImageSrc}
             alt={title}
             decoding="async"
             loading={
@@ -173,7 +179,9 @@ export function Reader({
                 <span className="reader-figure">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={typeof src === "string" ? src : ""}
+                    src={upgradeHttpImageSrc(
+                      typeof src === "string" ? src : undefined,
+                    )}
                     alt={alt ?? ""}
                     decoding="async"
                     loading="lazy"
