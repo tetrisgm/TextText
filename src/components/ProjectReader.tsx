@@ -28,6 +28,7 @@ export function ProjectReader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const titleId = "project-title";
   const excerpt = post.excerpt?.trim();
   const className = `project-split${
     slots?.toolbar ? " has-editor-toolbar" : ""
@@ -36,10 +37,13 @@ export function ProjectReader({
   return (
     <article className={className} style={style}>
       {slots?.toolbar}
-      <section className="project-split-left" aria-labelledby="project-title">
+      <section
+        className="project-split-left"
+        aria-labelledby={slots?.title ? undefined : titleId}
+      >
         <div className="project-split-inner">
           {slots?.title ?? (
-            <h1 className="project-title" id="project-title">
+            <h1 className="project-title" id={titleId}>
               {title}
             </h1>
           )}
@@ -57,6 +61,7 @@ export function ProjectReader({
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
+                    h1: "h2",
                     img: ({ src, alt }) => (
                       <span className="reader-figure">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -66,7 +71,9 @@ export function ProjectReader({
                           loading="lazy"
                         />
                         {alt && (
-                          <span className="reader-figcaption">{alt}</span>
+                          <span className="reader-figcaption" aria-hidden="true">
+                            {alt}
+                          </span>
                         )}
                       </span>
                     ),

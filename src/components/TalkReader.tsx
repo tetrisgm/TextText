@@ -38,7 +38,7 @@ function LinksRow({ links }: { links: LinkRef[] }) {
             key={`${link.href}:${index}`}
             href={link.href}
             target={external ? "_blank" : undefined}
-            rel={external ? "noreferrer" : undefined}
+            rel={external ? "noopener noreferrer" : undefined}
           >
             {link.label}
           </a>
@@ -62,6 +62,7 @@ export function TalkReader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const titleId = "talk-title";
   const cover = resolveCover(post);
   const videoUrl = post.videoUrl?.trim();
   const embedSrc = videoUrl && isYouTube(videoUrl) ? youtubeEmbedUrl(videoUrl) : undefined;
@@ -86,7 +87,11 @@ export function TalkReader({
   }`;
 
   return (
-    <article className={className} style={style}>
+    <article
+      className={className}
+      style={style}
+      aria-labelledby={slots?.title ? undefined : titleId}
+    >
       {slots?.toolbar}
       {slots?.stage ??
         ((embedSrc || fileVideoSrc || cover) && (
@@ -122,7 +127,11 @@ export function TalkReader({
         ))}
 
       <div className="talk-detail-meta">
-        {slots?.title ?? <h1 className="talk-detail-title">{title}</h1>}
+        {slots?.title ?? (
+          <h1 className="talk-detail-title" id={titleId}>
+            {title}
+          </h1>
+        )}
         {slots?.excerpt}
         {slots?.talkMeta ?? (
           <PostByline
@@ -138,6 +147,7 @@ export function TalkReader({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
+                  h1: "h2",
                   img: ({ src, alt }) => (
                     <span className="reader-figure">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -146,7 +156,11 @@ export function TalkReader({
                         alt={alt ?? ""}
                         loading="lazy"
                       />
-                      {alt && <span className="reader-figcaption">{alt}</span>}
+                      {alt && (
+                        <span className="reader-figcaption" aria-hidden="true">
+                          {alt}
+                        </span>
+                      )}
                     </span>
                   ),
                 }}

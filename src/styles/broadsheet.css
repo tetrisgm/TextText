@@ -13,21 +13,22 @@
      is allowed only on non-text marks (bars, dots, fills behind aria-hidden
      glyphs, frames). */
 
-/* Public surfaces force a light body, but never when the dark editor
-   workspace (.post-editor-shell) wraps them: the workspace owns the body
-   color there, and a forced-white body flashes on overscroll in dark mode. */
+/* Landing and blog home stay light, but the public readers inherit the active
+   theme tokens. The editor workspace owns its own body color. */
 body:has(.write-landing),
-body:has(.blog-home):not(:has(.post-editor-shell)),
-body:has(.reader):not(:has(.post-editor-shell)),
-body:has(.project-split):not(:has(.post-editor-shell)) {
+body:has(.blog-home):not(:has(.post-editor-shell)) {
   background: #fff;
   color: #1d1d1f;
 }
 
+body:has(.reader):not(:has(.post-editor-shell)),
+body:has(.project-split):not(:has(.post-editor-shell)) {
+  background: var(--bg);
+  color: var(--ink);
+}
+
 .write-landing,
-.reader,
-.blog-home,
-.project-split {
+.blog-home {
   --ink: #1d1d1f;
   --ink-2: #424245;
   --muted: #6e6e73;
@@ -37,6 +38,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   --bg-soft: #f5f5f7;
   --bg-soft-2: #fafafc;
   color-scheme: light;
+}
+
+.reader,
+.project-split {
+  background: var(--bg);
+  color: var(--ink);
+  color-scheme: light dark;
 }
 
 .reader {
@@ -305,6 +313,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: var(--ink);
   border-color: var(--post-accent, var(--ink-2));
 }
+.reader-prose a:focus-visible {
+  border-radius: 3px;
+  color: var(--ink);
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
+  outline-offset: 3px;
+}
 
 /* Pull-quotes: the single visual set piece. Accent spine + faint tinted plate. */
 .reader-prose blockquote {
@@ -347,6 +362,34 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   background: none;
   border: 0;
   padding: 0;
+}
+
+.reader-prose [data-footnotes] {
+  max-width: 680px;
+  margin: 48px auto 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.reader-prose [data-footnotes] h2 {
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.2;
+}
+.reader-prose [data-footnotes] ol {
+  margin: 0;
+  padding-left: 1.35em;
+}
+.reader-prose [data-footnotes] li {
+  margin-bottom: 10px;
+}
+.reader-prose [data-footnotes] p {
+  margin: 0;
 }
 
 /* Inline figures: ![caption](src) renders as a figure; alt doubles as caption. */
@@ -1496,7 +1539,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.62);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   color: #fff;
@@ -1504,7 +1547,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-detail-nav:hover .post-detail-control-icon,
 .post-detail-nav:focus-visible .post-detail-control-icon {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.74);
 }
 .post-detail-nav.is-disabled {
   cursor: default;
@@ -1512,11 +1555,17 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-detail-nav.is-disabled .post-detail-control-icon,
 .post-detail-nav.is-disabled:hover .post-detail-control-icon,
 .post-detail-nav.is-disabled:focus-visible .post-detail-control-icon {
-  background: rgba(0, 0, 0, 0.24);
+  background: rgba(0, 0, 0, 0.45);
   color: rgba(255, 255, 255, 0.46);
 }
 .post-detail-nav:focus-visible {
   outline: none;
+}
+.post-detail-nav:focus-visible .post-detail-control-icon {
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px
+      color-mix(in srgb, var(--post-accent, var(--ink)) 55%, var(--ink));
 }
 .post-detail-control-icon svg {
   width: 18px;
@@ -3399,6 +3448,12 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .reader-cover img,
   .reader-cover video {
     animation: coverReveal 0.7s var(--ease) both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reader-prose a,
+  .post-detail-control-icon {
+    transition: none;
   }
 }
 /* ---------- responsive ---------- */

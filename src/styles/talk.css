@@ -54,7 +54,7 @@
   font-family: var(--font-newsroom-display);
   font-size: 30px;
   font-weight: 600;
-  letter-spacing: -0.6px;
+  letter-spacing: 0;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -63,7 +63,7 @@
   margin-top: 8px;
   color: var(--muted);
   font-size: 14px;
-  letter-spacing: 0.1px;
+  letter-spacing: 0;
   line-height: 1.47;
   font-variant-numeric: tabular-nums;
 }
@@ -152,6 +152,12 @@
   line-height: 1.42;
 }
 
+.talk-detail-desc.reader-prose [data-footnotes] {
+  max-width: none;
+  margin: 28px 0 0;
+  font-size: 14px;
+}
+
 .talk-detail-desc.reader-prose .body-editor-content {
   min-height: 150px;
 }
@@ -226,6 +232,13 @@
 .talk-detail-links a:hover {
   color: var(--ink);
   border-color: var(--post-accent, var(--ink-2));
+}
+.talk-detail-links a:focus-visible {
+  border-radius: 3px;
+  color: var(--ink);
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
+  outline-offset: 3px;
 }
 .talk-edit-stage.is-empty {
   display: grid;
@@ -315,10 +328,16 @@
 
   .talk-detail-title {
     font-size: 28px;
-    letter-spacing: -0.3px;
+    letter-spacing: 0;
   }
 
   .talk-edit-fields {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talk-detail-links a {
+    transition: none;
   }
 }

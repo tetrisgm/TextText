@@ -36,6 +36,7 @@ export function Reader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const titleId = "reader-title";
   const excerpt = post.excerpt?.trim();
   const resolvedCover = resolveCover(post);
   const coverCaption = post.coverCaption?.trim();
@@ -66,11 +67,19 @@ export function Reader({
   const className = `reader${slots?.toolbar ? " has-editor-toolbar" : ""}`;
 
   return (
-    <article className={className} style={style}>
+    <article
+      className={className}
+      style={style}
+      aria-labelledby={slots?.title ? undefined : titleId}
+    >
       {cover}
       {slots?.toolbar}
       <header className="reader-masthead">
-        {slots?.title ?? <h1 className="reader-title">{title}</h1>}
+        {slots?.title ?? (
+          <h1 className="reader-title" id={titleId}>
+            {title}
+          </h1>
+        )}
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
@@ -81,6 +90,7 @@ export function Reader({
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
+              h1: "h2",
               // Inline figures: ![caption](src); the alt doubles as the caption.
               img: ({ src, alt }) => (
                 <span className="reader-figure">
@@ -90,7 +100,11 @@ export function Reader({
                     alt={alt ?? ""}
                     loading="lazy"
                   />
-                  {alt && <span className="reader-figcaption">{alt}</span>}
+                  {alt && (
+                    <span className="reader-figcaption" aria-hidden="true">
+                      {alt}
+                    </span>
+                  )}
                 </span>
               ),
             }}
