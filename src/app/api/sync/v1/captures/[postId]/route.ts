@@ -22,7 +22,8 @@ import { syncError } from "../../sync";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
+const MAX_SCREENSHOT_BYTES = 3 * 1024 * 1024;
+const MAX_ORIGINAL_BYTES = 1_536 * 1024;
 // The readable extraction becomes the post body; a real article is well
 // under this. Cap it so an oversized text field cannot bloat the row or the
 // markdown round-trip.
@@ -45,9 +46,13 @@ function formatBytes(bytes: number): string {
   return `${Math.ceil(bytes / (1024 * 1024))} MB`;
 }
 
-function oversizedFileError(file: File | null, label: string): string | null {
-  if (!file || file.size <= MAX_ARTIFACT_BYTES) return null;
-  return `${label} artifact is ${formatBytes(file.size)}; limit is ${formatBytes(MAX_ARTIFACT_BYTES)}`;
+function oversizedFileError(
+  file: File | null,
+  label: string,
+  limit: number,
+): string | null {
+  if (!file || file.size <= limit) return null;
+  return `${label} artifact is ${formatBytes(file.size)}; limit is ${formatBytes(limit)}`;
 }
 
 function oversizedReadableError(readable: string | undefined): string | null {
@@ -70,7 +75,25 @@ function isPDFFile(file: File): boolean {
 
 function screenshotContentType(file: File): string {
   const type = fileType(file, "image/png").toLowerCase().split(";")[0];
-  return type === "image/jpeg" ? "image/jpeg" : "image/png";
+  if (type === "image/webp") return "image/webp";
+  if (type === "image/jpeg") return "image/jpeg";
+  return "image/png";
+}
+
+function screenshotFilename(contentType: string): string {
+  if (contentType === "image/webp") return "screenshot.webp";
+  if (contentType === "image/jpeg") return "screenshot.jpg";
+  return "screenshot.png";
+}
+
+function metaString(
+  meta: Record<string, unknown>,
+  key: "title" | "siteName" | "description" | "capturedBy",
+): string | undefined {
+  const value = meta[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 export async function PUT(
@@ -110,20 +133,22 @@ export async function PUT(
     typeof readableValue === "string" ? readableValue : undefined;
   const error =
     metaError ??
-    oversizedFileError(screenshot, "Screenshot") ??
-    oversizedFileError(original, "Original capture") ??
+    oversizedFileError(screenshot, "Screenshot", MAX_SCREENSHOT_BYTES) ??
+    oversizedFileError(original, "Original capture", MAX_ORIGINAL_BYTES) ??
     oversizedReadableError(readableMarkdown);
 
   const capture: BookmarkCapture = {
     url,
-    title: typeof meta.title === "string" ? meta.title : undefined,
-    siteName: typeof meta.siteName === "string" ? meta.siteName : undefined,
-    description:
-      typeof meta.description === "string" ? meta.description : undefined,
     capturedAt: new Date().toISOString(),
-    capturedBy: typeof meta.capturedBy === "string" ? meta.capturedBy : "agent",
-    error: error ?? undefined,
+    capturedBy: metaString(meta, "capturedBy") ?? "agent",
   };
+  const title = metaString(meta, "title");
+  const siteName = metaString(meta, "siteName");
+  const description = metaString(meta, "description");
+  if (title) capture.title = title;
+  if (siteName) capture.siteName = siteName;
+  if (description) capture.description = description;
+  if (error) capture.error = error;
 
   // Artifacts only for successful captures; a failure report is metadata-only.
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
@@ -132,10 +157,8 @@ export async function PUT(
       const { put } = await import("@vercel/blob");
       if (screenshot) {
         const contentType = screenshotContentType(screenshot);
-        const screenshotName =
-          contentType === "image/jpeg" ? "screenshot.jpg" : "screenshot.png";
         const blob = await put(
-          `captures/${blog.handle}/${postId}/${screenshotName}`,
+          `captures/${blog.handle}/${postId}/${screenshotFilename(contentType)}`,
           screenshot,
           {
             access: "public",
