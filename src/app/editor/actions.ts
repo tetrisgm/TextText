@@ -373,10 +373,14 @@ function tenantPostEditPath(handle: string, post: Pick<Post, "id" | "slug">): st
   return `${tenantPostPath(handle, post.slug)}?${params.toString()}`;
 }
 
-async function revalidateBlog(handle: string, slugs: string[] = []) {
+async function revalidateBlog(
+  handle: string,
+  slugs: string[] = [],
+  blogOverride?: Pick<Blog, "handle" | "username">,
+) {
   // A claimed blog is served from /u/{username} (the /@ alias rewrites there),
   // so its cache entries must be invalidated alongside the /t mirror.
-  const blog = await getBlog(handle).catch(() => null);
+  const blog = blogOverride ?? (await getBlog(handle).catch(() => null));
   revalidateBlogPaths(blog ?? { handle }, slugs);
 }
 
@@ -638,8 +642,14 @@ export async function updateBlogAction(
     access.blogId,
     Object.keys(patch as Record<string, unknown>).join(", "),
   );
-  await revalidateBlog(handle);
-  if (updated.handle !== handle) await revalidateBlog(updated.handle);
+  await revalidateBlog(
+    handle,
+    [],
+    updated.handle === handle ? updated : undefined,
+  );
+  if (updated.handle !== handle) {
+    await revalidateBlog(updated.handle, [], updated);
+  }
   return updated;
 }
 
@@ -1025,7 +1035,7 @@ export async function updateBlogNameAction(
       { allowHandleChange: access.isOwner },
     );
     await auditEdit(access, "rename_blog", "workspace", access.blogId, updated.name);
-    await revalidateBlog(handle);
+    await revalidateBlog(handle, [], updated);
     return { ok: true, name: updated.name };
   } catch (error) {
     return { ok: false, error: actionErrorMessage(error, "Could not save") };
@@ -1066,7 +1076,7 @@ export async function claimBlog(
       targetId: access.blogId,
       inputSummary: blog.handle,
     });
-    await revalidateBlog(handle);
+    await revalidateBlog(handle, [], blog);
     return { ok: true, handle: blog.handle };
   } catch (error) {
     return { ok: false, error: actionErrorMessage(error, "Could not claim") };

@@ -4,7 +4,10 @@ import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import Nodemailer from "next-auth/providers/nodemailer";
+import { eq } from "drizzle-orm";
 import { createAuthAdapter } from "@/lib/auth-email";
+import { db } from "@/lib/db/client";
+import { users } from "@/lib/db/schema";
 
 import { resolveAppleClientSecret } from "@/lib/apple-secret";
 
@@ -104,6 +107,16 @@ function profileDisplayName(
   return undefined;
 }
 
+async function userIdForSessionSub(sub: string): Promise<string | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.appleSub, sub))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
 export const authConfig = {
   providers,
   adapter,
@@ -142,12 +155,23 @@ export const authConfig = {
         const name = profileDisplayName(profile, account.provider);
         if (name) token.name = name;
       }
+      if (account && token.sub) {
+        const userId = await userIdForSessionSub(token.sub);
+        if (userId) {
+          token.userId = userId;
+        } else {
+          delete token.userId;
+        }
+      }
       if (token.email === "") delete token.email;
       return token;
     },
     async session({ session, token }) {
       if (session.user && token.sub) {
         session.user.sub = token.sub;
+      }
+      if (session.user && typeof token.userId === "string") {
+        session.user.userId = token.userId;
       }
       return session;
     },

@@ -1,12 +1,14 @@
+import { cache } from "react";
 import { auth, isAuthConfigured } from "@/auth";
 
 export type CurrentUser = {
   sub: string;
+  userId?: string;
   name?: string;
   email?: string;
 };
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+async function getCurrentUserUncached(): Promise<CurrentUser | null> {
   if (!isAuthConfigured) return null;
 
   const session = await auth();
@@ -17,7 +19,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   return {
     sub,
+    userId: user.userId ?? undefined,
     name: user.name ?? undefined,
     email: user.email ?? undefined,
   };
+}
+
+const getCurrentUserCached = cache(getCurrentUserUncached);
+
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  return getCurrentUserCached();
 }
