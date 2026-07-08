@@ -14,7 +14,7 @@ import { isSafeLinkHref } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { CurrentUser } from "@/lib/session";
-import type { BlogPatch } from "@/lib/store";
+import type { BlogPatch, PostContentPatch } from "@/lib/store";
 import {
   claimBlogForUser,
   countAllPosts,
@@ -30,6 +30,7 @@ import {
   getUserIdBySub,
   markCapturePending,
   savePost,
+  savePostContentPatch,
   setPostFolder,
   setPostPinned,
   trashBlogPosts,
@@ -340,7 +341,7 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
   };
 }
 
-function collaboratorContentPatch(input: unknown, existing: Post): Partial<Post> {
+function collaboratorContentPatch(input: unknown, existing: Post): PostContentPatch {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("Invalid post");
   }
@@ -702,11 +703,7 @@ export async function saveEditablePostAction(
     });
     if (!itemAccess.canEditContent) throw new Error("You cannot edit this post");
     const patch = collaboratorContentPatch(input, existing);
-    const saved = await savePost(handle, {
-      ...existing,
-      ...patch,
-      pinned: existing.pinned,
-    });
+    const saved = await savePostContentPatch(handle, existing, patch);
     await recordAction({
       actorUserId: itemAccess.userId ?? (user ? await getUserIdBySub(user.sub) : null),
       actorType: "human",

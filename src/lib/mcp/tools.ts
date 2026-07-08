@@ -24,6 +24,7 @@ import {
   getAccessibleFolders,
   getPostById,
   savePost,
+  savePostContentPatch,
 } from "@/lib/store";
 import {
   type AccessUser,
@@ -460,30 +461,26 @@ export function registerWriteTools(server: McpServer): void {
         : (parsed.fields.status ?? post.status);
 
       try {
-        // Same rule as sync PUT: the date is derived state, so only a date
-        // authored in the file is passed through; otherwise savePost keeps
-        // the stored publish date and stamps a first publish as now.
-        const saved = await savePost(
-          blog.handle,
-          access.isOwner
-            ? {
-                ...post,
-                ...parsed.fields,
-                type,
-                status,
-                date: parsed.fields.date,
-                slug: parsed.fields.slug ?? post.slug,
-                body: parsed.body,
-              }
-            : {
-                ...post,
-                title: parsed.fields.title ?? post.title,
-                cover: parsed.fields.cover ?? post.cover,
-                coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
-                coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
-                body: parsed.body,
-              },
-        );
+        // Same rule as sync PUT: owners may author metadata, while
+        // collaborators use the content-only store helper so the mapped date
+        // string cannot overwrite published_at.
+        const saved = access.isOwner
+          ? await savePost(blog.handle, {
+              ...post,
+              ...parsed.fields,
+              type,
+              status,
+              date: parsed.fields.date,
+              slug: parsed.fields.slug ?? post.slug,
+              body: parsed.body,
+            })
+          : await savePostContentPatch(blog.handle, post, {
+              title: parsed.fields.title ?? post.title,
+              cover: parsed.fields.cover ?? post.cover,
+              coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
+              coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+              body: parsed.body,
+            });
         await auditMcp(extra, "mcp.update_item", saved.id, saved.title);
         revalidateBlogPaths(blog, [post.slug, saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });

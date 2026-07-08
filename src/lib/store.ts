@@ -201,6 +201,8 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
         ? and(
             eq(blogs.handle, handle),
             eq(posts.status, "published"),
+            ne(posts.type, "note"),
+            ne(posts.type, "bookmark"),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -980,6 +982,17 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
   return code === "23505" && (message + detail).includes("posts_blog_slug_idx");
 }
 
+export type PostContentPatch = Partial<
+  Pick<Post, "title" | "body" | "cover" | "coverCaption" | "coverHeight">
+>;
+
+function hasOwnContentKey<K extends keyof PostContentPatch>(
+  patch: PostContentPatch,
+  key: K,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
 // Persist the editor's draft. Requires a database (the demo seed is read only).
 // Updates the row by id, scoped to this blog so a stale or foreign id can never
 // touch another tenant, so a slug edit renames in place; otherwise inserts,
@@ -987,8 +1000,19 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
 // follows the editor's Date field (or is stamped now on first publish); a draft
 // leaves any existing published_at untouched, so unpublish then republish keeps
 // the original date.
-export async function savePost(handle: string, post: Post): Promise<Post> {
+type SavePostOptions = {
+  preservePublishedAt?: boolean;
+};
+
+export async function savePost(
+  handle: string,
+  post: Post,
+  options: SavePostOptions = {},
+): Promise<Post> {
   if (!db) throw new Error("savePost requires DATABASE_URL");
+  if (options.preservePublishedAt && !post.id) {
+    throw new Error("Cannot preserve published_at without an existing post");
+  }
   const blogId = await blogIdFor(handle);
   // Never taken from the client Post: an update keeps the stored folder and
   // an insert lands in the folder matching the post's type (moves are a
@@ -1016,12 +1040,12 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     updatedAt: new Date(),
   };
   const publishedAt =
-    status === "published"
-      ? post.date
+    options.preservePublishedAt || status !== "published"
+      ? undefined
+      : post.date
         ? new Date(post.date)
-        : sql`COALESCE(${posts.publishedAt}, now())`
-      : undefined;
-  // A draft omits published_at from the update so an existing publish date lives.
+        : sql`COALESCE(${posts.publishedAt}, now())`;
+  // Draft and preserve-mode saves omit published_at from the update.
   const set = publishedAt === undefined ? base : { ...base, publishedAt };
 
   try {
@@ -1038,6 +1062,7 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
         )
         .returning();
       if (updated[0]) return mapPost(updated[0]);
+      if (options.preservePublishedAt) throw new Error("Post not found");
     }
 
     const inserted = await db
@@ -1067,6 +1092,40 @@ export async function savePost(handle: string, post: Post): Promise<Post> {
     if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
   }
+}
+
+export async function savePostContentPatch(
+  handle: string,
+  existing: Post,
+  patch: PostContentPatch,
+): Promise<Post> {
+  const next: Post = {
+    ...existing,
+    type: existing.type,
+    slug: existing.slug,
+    status: existing.status,
+    pinned: existing.pinned,
+    folderId: existing.folderId,
+    date: existing.date,
+  };
+
+  if (hasOwnContentKey(patch, "title") && patch.title !== undefined) {
+    next.title = patch.title;
+  }
+  if (hasOwnContentKey(patch, "body") && patch.body !== undefined) {
+    next.body = patch.body;
+  }
+  if (hasOwnContentKey(patch, "cover")) {
+    next.cover = patch.cover;
+  }
+  if (hasOwnContentKey(patch, "coverCaption")) {
+    next.coverCaption = patch.coverCaption;
+  }
+  if (hasOwnContentKey(patch, "coverHeight")) {
+    next.coverHeight = patch.coverHeight;
+  }
+
+  return savePost(handle, next, { preservePublishedAt: true });
 }
 
 // Create an empty draft and return it (with its new id), for the editor's

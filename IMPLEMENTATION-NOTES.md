@@ -55,6 +55,11 @@
 - Accessible folder counts now count only inside folders the caller can access, and item-only collaborators pass an empty folder tree and empty counts into the editor shell.
 - The `index.md` route now explicitly returns 404 for note and bookmark items, matching the OpenGraph private-item guard.
 
+## Review Fixes Round 2
+
+- Public published listings now exclude `note` and `bookmark` rows in the store-level `selectPosts(handle, true)` predicate. Owner/collaborator listing helpers still use the unrestricted branch, so accessible private notes and bookmarks remain visible only to authorized users. Public blog home, feeds, sitemap, `posts.json`, `folder.json`, and `llms.txt` continue to receive published article/project/talk rows through `getPosts`.
+- Non-owner content edits now go through `savePostContentPatch`, which only applies title/body/cover fields, reasserts owner-only fields from the existing post (`date`, `pinned`, `status`, `slug`, `type`, and `folderId`), and calls `savePost` in preserve-published-at mode. In that mode `published_at` is omitted from the update, so the existing database timestamp is left unchanged instead of being rebuilt from the mapped date-only string. Owner saves keep the existing authored date behavior.
+
 ## TODOs
 
 - Decide whether `admin` should become a first-class visible workspace role. The resolver supports it, but the UI only exposes Member and Guest.

@@ -7,6 +7,7 @@ import {
   folderPathForPostType,
   getPostById,
   savePost,
+  savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
 import { recordAction } from "@/lib/audit";
@@ -115,31 +116,24 @@ export async function PUT(request: Request, { params }: Props) {
 
   try {
     // Fields absent from the file keep their stored values; the body is
-    // always the file's. The slug follows the file when it sets one. The date
-    // is the exception to "absent keeps stored": post.date is derived
-    // (publishedAt, falling back to createdAt for drafts), so passing it back
-    // to savePost would turn a derived value into an authored publish date;
-    // with no date in the file, savePost keeps the stored publish date and
-    // stamps a first publish as now, same as the editor.
-    const saved = await savePost(
-      blog.handle,
-      access.isOwner
-        ? {
-            ...post,
-            ...parsed.fields,
-            date: parsed.fields.date,
-            slug: parsed.fields.slug ?? post.slug,
-            body: parsed.body,
-          }
-        : {
-            ...post,
-            title: parsed.fields.title ?? post.title,
-            cover: parsed.fields.cover ?? post.cover,
-            coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
-            coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
-            body: parsed.body,
-          },
-    );
+    // always the file's. Owners may author slug/date/status metadata. A
+    // collaborator save is routed through the content-only store helper so the
+    // mapped date string cannot overwrite published_at.
+    const saved = access.isOwner
+      ? await savePost(blog.handle, {
+          ...post,
+          ...parsed.fields,
+          date: parsed.fields.date,
+          slug: parsed.fields.slug ?? post.slug,
+          body: parsed.body,
+        })
+      : await savePostContentPatch(blog.handle, post, {
+          title: parsed.fields.title ?? post.title,
+          cover: parsed.fields.cover ?? post.cover,
+          coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
+          coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+          body: parsed.body,
+        });
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",
