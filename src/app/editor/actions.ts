@@ -23,6 +23,7 @@ import {
   createSubfolder,
   deletePost,
   getAllPosts,
+  getFolders,
   getBlog,
   getOwnerPlan,
   getPostById,
@@ -35,13 +36,22 @@ import {
   updateBlogByHandle,
 } from "@/lib/store";
 import {
-  invitePostShare,
+  inviteScopeShare,
   listPostShares,
-  postShareRoleFor,
+  listScopeShares,
   revokePostShare,
+  revokeScopeShare,
+  updateScopeShareRole,
 } from "@/lib/shares";
-import type { PostShare, ShareRole } from "@/lib/shares";
+import type { PostShare, ScopeShare, ScopeShareRole, ShareRole } from "@/lib/shares";
 import { sendShareInviteEmail } from "@/lib/share-email";
+import {
+  type CollaboratorScopeType,
+  isItemShareRole,
+  isWorkspaceMemberRole,
+  resolveItemAccess,
+  resolveWorkspaceAccess,
+} from "@/lib/permissions";
 import { lightCaptureBookmark } from "@/lib/bookmark-fetch";
 import {
   deleteAnonymousEditCookie,
@@ -327,6 +337,28 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
     duration: hasInputKey(values, "duration")
       ? cleanOptionalLine(values.duration, "Duration")
       : existing.duration,
+  };
+}
+
+function collaboratorContentPatch(input: unknown, existing: Post): Partial<Post> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Invalid post");
+  }
+  const values = input as Record<string, unknown>;
+  return {
+    title: hasInputKey(values, "title")
+      ? cleanLine(values.title, "Title")
+      : existing.title,
+    body: hasInputKey(values, "body") ? cleanBody(values.body) : existing.body,
+    cover: hasInputKey(values, "cover")
+      ? cleanOptionalLine(values.cover, "Cover")
+      : existing.cover,
+    coverCaption: hasInputKey(values, "coverCaption")
+      ? cleanOptionalLine(values.coverCaption, "Cover caption")
+      : existing.coverCaption,
+    coverHeight: hasInputKey(values, "coverHeight")
+      ? cleanCoverHeight(values.coverHeight)
+      : existing.coverHeight,
   };
 }
 
@@ -661,28 +693,22 @@ export async function saveEditablePostAction(
   const existing = await getPostById(handle, id);
   if (!existing) throw new Error("Post not found");
 
-  let patch = editableInput(input, existing, existing.slug);
   if (!access.canEdit) {
-    // Item collaborators: an invited editor may change CONTENT on exactly
-    // this post. Publish state, the URL, the type, and the date stay the
-    // owner's: whatever the client sent, they are pinned to the stored row.
     const user = await getCurrentUser();
-    const role = await postShareRoleFor(user, existing.id ?? id);
-    if (role !== "editor") throw new Error("You cannot edit this post");
-    patch = {
-      ...patch,
-      type: existing.type,
-      status: existing.status,
-      slug: existing.slug,
-      date: existing.date,
-    };
+    const itemAccess = await resolveItemAccess({
+      handle,
+      postId: existing.id ?? id,
+      user,
+    });
+    if (!itemAccess.canEditContent) throw new Error("You cannot edit this post");
+    const patch = collaboratorContentPatch(input, existing);
     const saved = await savePost(handle, {
       ...existing,
       ...patch,
       pinned: existing.pinned,
     });
     await recordAction({
-      actorUserId: user ? await getUserIdBySub(user.sub) : null,
+      actorUserId: itemAccess.userId ?? (user ? await getUserIdBySub(user.sub) : null),
       actorType: "human",
       actionName: "share.save_post",
       targetType: "item",
@@ -693,6 +719,7 @@ export async function saveEditablePostAction(
     return saved;
   }
 
+  const patch = editableInput(input, existing, existing.slug);
   const saved = await savePost(handle, {
     ...existing,
     ...patch,
@@ -703,18 +730,147 @@ export async function saveEditablePostAction(
   return saved;
 }
 
-// MARK: Sharing (the Notion model, one post at a time)
+// MARK: Sharing
+
+function cleanScopeType(value: unknown): CollaboratorScopeType {
+  if (value === "workspace" || value === "folder" || value === "item") {
+    return value;
+  }
+  throw new Error("Share scope not found");
+}
+
+function cleanScopeRole(
+  scopeType: CollaboratorScopeType,
+  value: unknown,
+): ScopeShareRole {
+  if (scopeType === "workspace") {
+    return isWorkspaceMemberRole(value) ? value : "guest";
+  }
+  return isItemShareRole(value) ? value : "viewer";
+}
+
+async function manageableScopeForSharing(
+  handleInput: unknown,
+  scopeTypeInput: unknown,
+  scopeIdInput: unknown,
+) {
+  const handle = cleanHandle(handleInput);
+  const scopeType = cleanScopeType(scopeTypeInput);
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sign in to share");
+  const access = await getBlogEditAccess(handle);
+  const workspaceAccess = await resolveWorkspaceAccess({ handle, user });
+  if (!access.isOwner && !workspaceAccess.canManage) {
+    throw new Error("Only the owner can share");
+  }
+
+  if (scopeType === "workspace") {
+    if (!access.blogId) throw new Error("Workspace not found");
+    return { handle, scopeType, scopeId: access.blogId, user, post: null };
+  }
+
+  if (scopeType === "folder") {
+    const scopeId = cleanPostId(scopeIdInput);
+    const folder = (await getFolders(handle)).find((entry) => entry.id === scopeId);
+    if (!folder) throw new Error("Folder not found");
+    return { handle, scopeType, scopeId: folder.id, user, post: null };
+  }
+
+  const postId = cleanPostId(scopeIdInput);
+  const post = await getPostById(handle, postId);
+  if (!post?.id) throw new Error("Post not found");
+  return { handle, scopeType, scopeId: post.id, user, post };
+}
 
 async function ownedPostForSharing(handleInput: unknown, postIdInput: unknown) {
-  const handle = cleanHandle(handleInput);
-  const access = await getBlogEditAccess(handle);
-  // Owners only: guests (cookie editors) have no account for invitees to
-  // rendezvous with, and collaborators cannot re-share.
-  if (!access.isOwner) throw new Error("Only the owner can share");
-  const postId = cleanPostId(postIdInput);
-  const existing = await getPostById(handle, postId);
-  if (!existing?.id) throw new Error("Post not found");
-  return { handle, access, post: existing };
+  const scope = await manageableScopeForSharing(handleInput, "item", postIdInput);
+  if (!scope.post) throw new Error("Post not found");
+  return { handle: scope.handle, post: scope.post };
+}
+
+export async function shareScopeAction(
+  handleInput: unknown,
+  scopeTypeInput: unknown,
+  scopeIdInput: unknown,
+  emailInput: unknown,
+  roleInput: unknown,
+): Promise<ScopeShare[]> {
+  const scope = await manageableScopeForSharing(
+    handleInput,
+    scopeTypeInput,
+    scopeIdInput,
+  );
+  const email = typeof emailInput === "string" ? emailInput : "";
+  const role = cleanScopeRole(scope.scopeType, roleInput);
+  const share = await inviteScopeShare({
+    scopeType: scope.scopeType,
+    scopeId: scope.scopeId,
+    email,
+    role,
+    invitedBySub: scope.user.sub,
+  });
+  if (scope.scopeType === "item" && scope.post) {
+    void sendShareInviteEmail({
+      to: share.email,
+      role: role === "editor" ? "editor" : "viewer",
+      post: scope.post,
+      handle: scope.handle,
+      inviterName: scope.user.name ?? scope.user.email ?? "Someone",
+    }).catch((error) => console.warn("share invite email failed", error));
+  }
+  return listScopeShares(scope.scopeType, scope.scopeId);
+}
+
+export async function updateScopeShareRoleAction(
+  handleInput: unknown,
+  scopeTypeInput: unknown,
+  scopeIdInput: unknown,
+  shareIdInput: unknown,
+  roleInput: unknown,
+): Promise<ScopeShare[]> {
+  const scope = await manageableScopeForSharing(
+    handleInput,
+    scopeTypeInput,
+    scopeIdInput,
+  );
+  const shareId = cleanPostId(shareIdInput);
+  await updateScopeShareRole({
+    scopeType: scope.scopeType,
+    scopeId: scope.scopeId,
+    shareId,
+    role: cleanScopeRole(scope.scopeType, roleInput),
+    updatedBySub: scope.user.sub,
+  });
+  return listScopeShares(scope.scopeType, scope.scopeId);
+}
+
+export async function revokeScopeShareAction(
+  handleInput: unknown,
+  scopeTypeInput: unknown,
+  scopeIdInput: unknown,
+  shareIdInput: unknown,
+): Promise<ScopeShare[]> {
+  const scope = await manageableScopeForSharing(
+    handleInput,
+    scopeTypeInput,
+    scopeIdInput,
+  );
+  const shareId = cleanPostId(shareIdInput);
+  await revokeScopeShare(scope.scopeType, scope.scopeId, shareId, scope.user.sub);
+  return listScopeShares(scope.scopeType, scope.scopeId);
+}
+
+export async function listScopeSharesAction(
+  handleInput: unknown,
+  scopeTypeInput: unknown,
+  scopeIdInput: unknown,
+): Promise<ScopeShare[]> {
+  const scope = await manageableScopeForSharing(
+    handleInput,
+    scopeTypeInput,
+    scopeIdInput,
+  );
+  return listScopeShares(scope.scopeType, scope.scopeId);
 }
 
 export async function sharePostAction(
@@ -723,26 +879,9 @@ export async function sharePostAction(
   emailInput: unknown,
   roleInput: unknown,
 ): Promise<PostShare[]> {
-  const { handle, post } = await ownedPostForSharing(handleInput, postIdInput);
-  const user = await getCurrentUser();
-  if (!user) throw new Error("Sign in to share");
-  const email = typeof emailInput === "string" ? emailInput : "";
   const role: ShareRole = roleInput === "editor" ? "editor" : "viewer";
-  const share = await invitePostShare({
-    postId: post.id!,
-    email,
-    role,
-    invitedBySub: user.sub,
-  });
-  // Fire-and-forget: a slow SMTP round trip must not hold the dialog, and
-  // the share row already exists either way.
-  void sendShareInviteEmail({
-    to: share.email,
-    role,
-    post,
-    handle,
-    inviterName: user.name ?? user.email ?? "Someone",
-  }).catch((error) => console.warn("share invite email failed", error));
+  await shareScopeAction(handleInput, "item", postIdInput, emailInput, role);
+  const { post } = await ownedPostForSharing(handleInput, postIdInput);
   return listPostShares(post.id!);
 }
 

@@ -7,6 +7,7 @@
 //   -> 201 {folder: {id, name, path, mode, parentId}}
 
 import { recordAction } from "@/lib/audit";
+import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { createSubfolder } from "@/lib/store";
 import { resolveSyncWorkspace } from "../auth";
@@ -18,6 +19,10 @@ export async function POST(request: Request) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
   const { blog, userId } = workspace;
+  const access = await resolveWorkspaceAccess({ handle: blog.handle, user: workspace });
+  if (!access.isOwner) {
+    return syncError(403, "Only the owner can create folders");
+  }
 
   let body: { parent_path?: unknown; name?: unknown };
   try {

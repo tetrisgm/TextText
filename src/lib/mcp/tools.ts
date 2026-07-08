@@ -19,12 +19,19 @@ import {
   createDraft,
   createSubfolder,
   deletePost,
-  getAllPosts,
-  getFolderPosts,
-  getFolders,
+  getAccessibleAllPosts,
+  getAccessibleFolderPosts,
+  getAccessibleFolders,
   getPostById,
   savePost,
 } from "@/lib/store";
+import {
+  type AccessUser,
+  type EffectiveAccess,
+  resolveFolderAccess,
+  resolveItemAccess,
+  resolveWorkspaceAccess,
+} from "@/lib/permissions";
 import {
   DEFAULT_TYPE_BY_MODE,
   folderModeForType,
@@ -78,6 +85,15 @@ function saveErrorResult(error: unknown): CallToolResult {
 
 type ToolContext = { authInfo?: AuthInfo };
 
+function accessUser(extra: ToolContext): AccessUser {
+  const sub = extra.authInfo?.extra?.sub;
+  const userId = extra.authInfo?.extra?.userId;
+  return {
+    sub: typeof sub === "string" ? sub : null,
+    userId: typeof userId === "string" ? userId : null,
+  };
+}
+
 // One audit row per MCP mutation; the actor is the token's user.
 async function auditMcp(
   extra: ToolContext,
@@ -117,22 +133,31 @@ function isToolResult<T extends object>(
 async function requirePost(
   extra: ToolContext,
   id: string,
-): Promise<{ blog: Blog; post: Post } | CallToolResult> {
+): Promise<{ blog: Blog; post: Post; access: EffectiveAccess } | CallToolResult> {
   const blog = await requireBlog(extra);
   if (isToolResult(blog)) return blog;
   // A foreign id can never resolve inside this workspace, so "not found"
   // covers both "not yours" and "does not exist".
   const post = UUID_RE.test(id) ? await getPostById(blog.handle, id) : null;
   if (!post) return errorResult(`No item with id "${id}" exists in this workspace.`);
-  return { blog, post };
+  const access = await resolveItemAccess({
+    handle: blog.handle,
+    postId: id,
+    user: accessUser(extra),
+  });
+  if (!access.canView) {
+    return errorResult(`No item with id "${id}" exists in this workspace.`);
+  }
+  return { blog, post, access };
 }
 
 async function postsInFolder(
   handle: string,
   folder: Parameters<typeof postInFolder>[0],
+  user: AccessUser,
 ): Promise<Post[]> {
   // The database does the folder scoping (NULL folder_id counts as blog).
-  const posts = await getFolderPosts(handle, folder.path);
+  const posts = await getAccessibleFolderPosts(handle, folder.path, user);
   return posts.filter((post) => post.id);
 }
 
@@ -150,7 +175,7 @@ export function registerWriteTools(server: McpServer): void {
     async (extra) => {
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const folders = await getFolders(blog.handle);
+      const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
       return jsonResult({
         blog: {
           handle: blog.handle,
@@ -188,6 +213,11 @@ export function registerWriteTools(server: McpServer): void {
     async ({ parent_path, name }, extra) => {
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
+      const access = await resolveWorkspaceAccess({
+        handle: blog.handle,
+        user: accessUser(extra),
+      });
+      if (!access.isOwner) return errorResult("Only the owner can create folders.");
       try {
         const folder = await createSubfolder(blog.handle, parent_path, name);
         await auditMcp(extra, "mcp.create_folder", folder.id, folder.path);
@@ -225,7 +255,7 @@ export function registerWriteTools(server: McpServer): void {
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
       const path = folder_path ?? "blog";
-      const folders = await getFolders(blog.handle);
+      const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
       const folder = folders.find((entry) => entry.path === path);
       if (!folder) {
         return errorResult(
@@ -233,7 +263,7 @@ export function registerWriteTools(server: McpServer): void {
             "available paths.",
         );
       }
-      const posts = await postsInFolder(blog.handle, folder);
+      const posts = await postsInFolder(blog.handle, folder, accessUser(extra));
       return jsonResult({
         folder: {
           id: folder.id,
@@ -290,13 +320,21 @@ export function registerWriteTools(server: McpServer): void {
     async ({ folder_path, markdown }, extra) => {
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const folders = await getFolders(blog.handle);
+      const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
       const folder = folders.find((entry) => entry.path === folder_path);
       if (!folder) {
         return errorResult(
           `No folder with path "${folder_path}" exists. Call list_folders ` +
             "for the available paths.",
         );
+      }
+      const folderAccess = await resolveFolderAccess({
+        handle: blog.handle,
+        folderId: folder.id,
+        user: accessUser(extra),
+      });
+      if (!folderAccess.isOwner) {
+        return errorResult("You cannot create items in this folder.");
       }
 
       let parsed: ReturnType<typeof parsePostMarkdownFile>;
@@ -382,7 +420,8 @@ export function registerWriteTools(server: McpServer): void {
     async ({ id, markdown, if_match_hash }, extra) => {
       const resolved = await requirePost(extra, id);
       if (isToolResult(resolved)) return resolved;
-      const { blog, post } = resolved;
+      const { blog, post, access } = resolved;
+      if (!access.canEditContent) return errorResult("You cannot edit this item.");
 
       if (if_match_hash) {
         const current = renderItemFile(blog, post);
@@ -424,15 +463,27 @@ export function registerWriteTools(server: McpServer): void {
         // Same rule as sync PUT: the date is derived state, so only a date
         // authored in the file is passed through; otherwise savePost keeps
         // the stored publish date and stamps a first publish as now.
-        const saved = await savePost(blog.handle, {
-          ...post,
-          ...parsed.fields,
-          type,
-          status,
-          date: parsed.fields.date,
-          slug: parsed.fields.slug ?? post.slug,
-          body: parsed.body,
-        });
+        const saved = await savePost(
+          blog.handle,
+          access.isOwner
+            ? {
+                ...post,
+                ...parsed.fields,
+                type,
+                status,
+                date: parsed.fields.date,
+                slug: parsed.fields.slug ?? post.slug,
+                body: parsed.body,
+              }
+            : {
+                ...post,
+                title: parsed.fields.title ?? post.title,
+                cover: parsed.fields.cover ?? post.cover,
+                coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
+                coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+                body: parsed.body,
+              },
+        );
         await auditMcp(extra, "mcp.update_item", saved.id, saved.title);
         revalidateBlogPaths(blog, [post.slug, saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
@@ -461,7 +512,8 @@ export function registerWriteTools(server: McpServer): void {
     async ({ id, markdown_fragment }, extra) => {
       const resolved = await requirePost(extra, id);
       if (isToolResult(resolved)) return resolved;
-      const { blog, post } = resolved;
+      const { blog, post, access } = resolved;
+      if (!access.canEditContent) return errorResult("You cannot edit this item.");
 
       const fragment = markdown_fragment.trim();
       const base = post.body.replace(/\s+$/, "");
@@ -500,7 +552,7 @@ export function registerWriteTools(server: McpServer): void {
     async ({ query }, extra) => {
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const posts = await getAllPosts(blog.handle);
+      const posts = await getAccessibleAllPosts(blog.handle, accessUser(extra));
       const results = posts
         .filter((post) => post.id && postMatchesQuery(post, query))
         .slice(0, SEARCH_RESULT_LIMIT)

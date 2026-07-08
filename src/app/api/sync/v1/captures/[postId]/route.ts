@@ -13,6 +13,7 @@
 
 import type { BookmarkCapture } from "@/lib/content";
 import { recordAction } from "@/lib/audit";
+import { resolveItemAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { saveBookmarkCapture } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
@@ -48,6 +49,10 @@ export async function PUT(
   if (workspace instanceof Response) return workspace;
   const { blog, userId } = workspace;
   const { postId } = await ctx.params;
+  const access = await resolveItemAccess({ handle: blog.handle, postId, user: workspace });
+  if (!access.isOwner) {
+    return syncError(403, "Only the owner can upload captures");
+  }
 
   let form: FormData;
   try {

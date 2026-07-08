@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createSubfolderAction } from "@/app/editor/actions";
 import { PostActionBar } from "@/components/PostActionBar";
+import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import type { AdjacentPublishedPosts } from "@/lib/store";
@@ -249,6 +250,27 @@ function SidebarPinIcon() {
   );
 }
 
+function FolderShareIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M6.5 6.75 9 4.25l2.5 2.5M9 4.5v6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M4.25 9.25v3.5c0 .55.45 1 1 1h7.5c.55 0 1-.45 1-1v-3.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
 function focusSidebarRow(
   nav: HTMLElement,
   direction: "first" | "last" | "next" | "previous",
@@ -363,14 +385,20 @@ function FolderTreeNav({
   activeFolder,
   counts,
   collapsed,
+  canManageSharing,
+  canManageFolders,
   onSelectFolder,
+  onShareFolder,
 }: {
   blog: Blog;
   folders: Folder[];
   activeFolder: SidebarFolderId;
   counts: Record<string, number>;
   collapsed: boolean;
+  canManageSharing: boolean;
+  canManageFolders: boolean;
   onSelectFolder: (folder: SidebarFolderId) => void;
+  onShareFolder: (folder: Folder) => void;
 }) {
   const router = useRouter();
   const tree = buildFolderTree(folders);
@@ -478,7 +506,7 @@ function FolderTreeNav({
             </span>
             <span className="post-editor-folder-name">{folder.name}</span>
           </button>
-          {canNest && (
+          {canManageFolders && canNest && (
             <button
               type="button"
               className="post-editor-folder-add"
@@ -492,6 +520,17 @@ function FolderTreeNav({
               }}
             >
               +
+            </button>
+          )}
+          {canManageSharing && (
+            <button
+              type="button"
+              className="post-editor-folder-share"
+              aria-label={`Share ${folder.name}`}
+              title="Share"
+              onClick={() => onShareFolder(folder)}
+            >
+              <FolderShareIcon />
             </button>
           )}
           {count > 0 && (
@@ -549,6 +588,8 @@ export function PostFolderSidebar({
   activeFolder,
   collapsed,
   counts,
+  canManageFolders = false,
+  canManageSharing = false,
   folders,
   homePath,
   onSelectFolder,
@@ -559,6 +600,8 @@ export function PostFolderSidebar({
   activeFolder: SidebarFolderId;
   collapsed: boolean;
   counts: Record<string, number>;
+  canManageFolders?: boolean;
+  canManageSharing?: boolean;
   folders: Folder[];
   homePath?: string;
   onSelectFolder: (folder: SidebarFolderId) => void;
@@ -566,6 +609,7 @@ export function PostFolderSidebar({
   showGuestSignIn?: boolean;
 }) {
   const navFolders = folders.length > 0 ? folders : FALLBACK_FOLDERS;
+  const [sharingFolder, setSharingFolder] = useState<Folder | null>(null);
   const homeContent = (
     <>
       <span className="post-editor-home-icon" aria-hidden="true">
@@ -588,6 +632,8 @@ export function PostFolderSidebar({
       <div className="post-editor-sidebar-top">
         <WorkspaceMenuMount
           blogName={blog.name}
+          canManageSharing={canManageSharing}
+          handle={blog.handle}
           settingsHref={homePath ?? "/"}
           fallback={
             homePath ? (
@@ -621,7 +667,10 @@ export function PostFolderSidebar({
           activeFolder={activeFolder}
           counts={counts}
           collapsed={collapsed}
+          canManageFolders={canManageFolders}
+          canManageSharing={canManageSharing}
           onSelectFolder={onSelectFolder}
+          onShareFolder={setSharingFolder}
         />
       </nav>
 
@@ -635,6 +684,17 @@ export function PostFolderSidebar({
           </a>
         </div>
       )}
+      {sharingFolder && (
+        <ShareDialog
+          handle={blog.handle}
+          scopeType="folder"
+          scopeId={sharingFolder.id}
+          title="Share folder"
+          subtitle={sharingFolder.path}
+          open={Boolean(sharingFolder)}
+          onClose={() => setSharingFolder(null)}
+        />
+      )}
     </aside>
   );
 }
@@ -643,6 +703,8 @@ export function WorkspaceSidebarChrome({
   activeFolder,
   blog,
   collapsed,
+  canManageFolders = false,
+  canManageSharing = false,
   counts,
   folders,
   homePath,
@@ -653,6 +715,8 @@ export function WorkspaceSidebarChrome({
   activeFolder: SidebarFolderId;
   blog: Blog;
   collapsed: boolean;
+  canManageFolders?: boolean;
+  canManageSharing?: boolean;
   counts: Record<string, number>;
   folders: Folder[];
   homePath?: string;
@@ -725,6 +789,8 @@ export function WorkspaceSidebarChrome({
           blog={blog}
           activeFolder={activeFolder}
           collapsed={collapsed}
+          canManageFolders={canManageFolders}
+          canManageSharing={canManageSharing}
           counts={counts}
           folders={folders}
           homePath={homePath}
@@ -749,6 +815,8 @@ export function BlogHomeWorkspaceShell({
   blog,
   children,
   counts,
+  canManageFolders = false,
+  canManageSharing = false,
   folders,
   homePath,
   initialSidebarCollapsed = true,
@@ -758,6 +826,8 @@ export function BlogHomeWorkspaceShell({
   blog: Blog;
   children: ReactNode;
   counts: Record<string, number>;
+  canManageFolders?: boolean;
+  canManageSharing?: boolean;
   folders: Folder[];
   homePath: string;
   initialSidebarCollapsed?: boolean;
@@ -789,6 +859,8 @@ export function BlogHomeWorkspaceShell({
       <WorkspaceSidebarChrome
         blog={blog}
         activeFolder={activeFolder}
+        canManageFolders={canManageFolders}
+        canManageSharing={canManageSharing}
         collapsed={sidebarCollapsed}
         counts={counts}
         folders={folders}
@@ -811,6 +883,8 @@ export function PostReadWorkspaceShell({
   adjacent,
   blog,
   children,
+  canManageFolders = false,
+  canManageSharing = false,
   counts,
   folders,
   homePath,
@@ -822,6 +896,8 @@ export function PostReadWorkspaceShell({
   adjacent: AdjacentPosts;
   blog: Blog;
   children: ReactNode;
+  canManageFolders?: boolean;
+  canManageSharing?: boolean;
   counts: Record<string, number>;
   folders: Folder[];
   homePath: string;
@@ -855,6 +931,8 @@ export function PostReadWorkspaceShell({
       <WorkspaceSidebarChrome
         blog={blog}
         activeFolder={sidebarFolderPathForPostType(post.type)}
+        canManageFolders={canManageFolders}
+        canManageSharing={canManageSharing}
         collapsed={sidebarCollapsed}
         counts={counts}
         folders={folders}

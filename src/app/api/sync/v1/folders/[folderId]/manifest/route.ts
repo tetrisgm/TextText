@@ -1,6 +1,9 @@
 import { markdownFileHash } from "@/lib/content-hash";
 import { renderFolderManifest } from "@/lib/markdown-files";
-import { getFolderPosts, getFolders } from "@/lib/store";
+import {
+  getAccessibleFolderPosts,
+  getAccessibleFolders,
+} from "@/lib/store";
 import { resolveSyncWorkspace } from "../../../auth";
 import {
   ifNoneMatchSatisfied,
@@ -21,7 +24,7 @@ export async function GET(request: Request, { params }: Props) {
 
   // The folder must belong to THIS workspace; a foreign or unknown id is 404.
   const { folderId } = await params;
-  const folders = await getFolders(blog.handle);
+  const folders = await getAccessibleFolders(blog.handle, workspace);
   const folder = folders.find((entry) => entry.id === folderId);
   if (!folder) return syncError(404, "Folder not found");
 
@@ -29,7 +32,7 @@ export async function GET(request: Request, { params }: Props) {
   // folder, unlike the public folder.json. getFolderPosts scopes to THIS
   // folder; a post without a folderId (not yet backfilled) counts as living
   // in the default "blog" folder.
-  const posts = (await getFolderPosts(blog.handle, folder.path)).filter(
+  const posts = (await getAccessibleFolderPosts(blog.handle, folder.path, workspace)).filter(
     (post) => Boolean(post.id),
   );
   const manifest = renderFolderManifest(

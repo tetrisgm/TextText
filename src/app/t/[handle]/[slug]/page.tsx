@@ -4,10 +4,13 @@ import { cookies } from "next/headers";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
-import { listPostShares, postShareRoleFor } from "@/lib/shares";
 import { colorForSub } from "@/lib/collab";
+import { resolveItemAccess } from "@/lib/permissions";
 import {
   getAdjacentPublishedPosts,
+  getAccessibleAllPosts,
+  getAccessibleFolderCounts,
+  getAccessibleFolders,
   getAllPosts,
   getBlog,
   getFolderCounts,
@@ -120,21 +123,18 @@ export async function PostPageForHandle({
   }
 
   if (!post) notFound();
-  // Item shares (the Notion model): an invited person reaches exactly this
-  // post. "editor" unlocks the edit layer for it; "viewer" only unhides an
-  // unlisted item. Both leave the rest of the workspace invisible.
-  let shareRole: Awaited<ReturnType<typeof postShareRoleFor>> = null;
-  if (!canEdit && post.id) {
-    const viewer = await getCurrentUser();
-    if (viewer) shareRole = await postShareRoleFor(viewer, post.id);
-  }
+  const viewer = await getCurrentUser();
+  const itemAccess =
+    !canEdit && post.id && viewer
+      ? await resolveItemAccess({ handle, postId: post.id, user: viewer })
+      : null;
   // Private posts (any unpublished draft, plus notes and bookmarks which are
   // unlisted forever) are visible only to the owner, an item editor, or an
   // item viewer. Published blog posts stay public. A draft is no longer
   // readable by anyone who merely has the URL.
   const isPrivatePost = isUnlistedItem(post) || post.status !== "published";
-  if (isPrivatePost && !canEdit && !shareRole) notFound();
-  const canEditPost = canEdit || shareRole === "editor";
+  if (isPrivatePost && !canEdit && !itemAccess?.canView) notFound();
+  const canEditPost = canEdit || Boolean(itemAccess?.canEditContent);
   const editMode = canEditPost && editRequested;
   if (redirectClaimed && blog.username) {
     const path = blogPostPath(blog, post);
@@ -162,9 +162,9 @@ export async function PostPageForHandle({
 
   const [adjacent, allPosts, folders, counts] = await Promise.all([
     getAdjacentPublishedPosts(handle, post.slug),
-    canEdit ? getAllPosts(handle) : Promise.resolve([]),
-    canEdit ? getFolders(handle) : Promise.resolve([]),
-    canEdit ? getFolderCounts(handle) : Promise.resolve({}),
+    canEdit ? getAllPosts(handle) : getAccessibleAllPosts(handle, viewer),
+    canEdit ? getFolders(handle) : getAccessibleFolders(handle, viewer),
+    canEdit ? getFolderCounts(handle) : getAccessibleFolderCounts(handle, viewer),
   ]);
   const usedSlugs = editMode
     ? allPosts
@@ -181,9 +181,8 @@ export async function PostPageForHandle({
         ? ProjectReader
         : Reader;
 
-  // Realtime co-editing turns on only for a SHARED post (otherwise a solo
-  // owner would poll for peers who can never exist). Any editor of a shared
-  // post joins the same Yjs document.
+  // Any signed-in editor joins the same Yjs document; collabAccess enforces
+  // the same effective item resolver on every poll and push.
   let collab: {
     postId: string;
     userName: string;
@@ -193,18 +192,15 @@ export async function PostPageForHandle({
   if (editMode && post.id) {
     const editorUser = await getCurrentUser();
     if (editorUser) {
-      const shares = await listPostShares(post.id);
-      if (shares.length > 0) {
-        collab = {
-          postId: post.id,
-          userName:
-            editorUser.name?.trim() ||
-            editorUser.email?.split("@")[0] ||
-            "You",
-          color: colorForSub(editorUser.sub),
-          canEdit: canEditPost,
-        };
-      }
+      collab = {
+        postId: post.id,
+        userName:
+          editorUser.name?.trim() ||
+          editorUser.email?.split("@")[0] ||
+          "You",
+        color: colorForSub(editorUser.sub),
+        canEdit: canEditPost,
+      };
     }
   }
 
@@ -236,6 +232,7 @@ export async function PostPageForHandle({
           initialSidebarCollapsed={initialSidebarCollapsed}
           usedSlugs={usedSlugs}
           collab={collab}
+          canManagePost={canEdit}
         />
       </>
     );
@@ -249,6 +246,8 @@ export async function PostPageForHandle({
         <PostReadWorkspaceShell
           adjacent={adjacent}
           blog={blog}
+          canManageFolders={canEdit}
+          canManageSharing={access.isOwner}
           counts={counts}
           folders={folders}
           homePath={homePath}
@@ -269,6 +268,8 @@ export async function PostPageForHandle({
             adjacent={adjacent}
             homePath={homePath}
             postPath={currentPostPath}
+            canEditPost={canEditPost}
+            canManagePost={canEdit}
           />
           {reader}
         </>

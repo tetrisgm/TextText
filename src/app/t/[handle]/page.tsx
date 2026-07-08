@@ -14,6 +14,8 @@ import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
+import { getCurrentUser } from "@/lib/session";
+import { resolveFolderAccess, resolveWorkspaceAccess } from "@/lib/permissions";
 import {
   blogAtomHref,
   blogFeedAlternateTypes,
@@ -22,6 +24,9 @@ import {
 } from "@/lib/feed-links";
 import {
   DEFAULT_ANONYMOUS_BLOG_NAME,
+  getAccessibleFolderCounts,
+  getAccessibleFolderPosts,
+  getAccessibleFolders,
   getBlog,
   getFolderCounts,
   getFolderPosts,
@@ -327,6 +332,10 @@ export async function BlogHomeForHandle({
     cookies(),
   ]);
   if (!blog) notFound();
+  const viewer = await getCurrentUser();
+  const workspaceAccess = viewer
+    ? await resolveWorkspaceAccess({ handle, user: viewer })
+    : null;
   // The desktop app tags its web view with this cookie (set natively before
   // the first request). It drops you straight into the workspace, so the
   // folder sidebar starts OPEN there unless you've explicitly collapsed it,
@@ -349,6 +358,9 @@ export async function BlogHomeForHandle({
     redirect(`${blogHomePath(blog)}${suffix}`);
   }
   const canEdit = access.canEdit;
+  const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
+  const hasFullWorkspaceContent =
+    canEdit || Boolean(workspaceAccess?.canEditContent);
   // ?layout= and ?card= preview a look without saving it, for everyone; the
   // editor's Layout popover is what persists a choice.
   const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
@@ -364,9 +376,15 @@ export async function BlogHomeForHandle({
   // The blog home lists ONLY the Blog folder: notes and bookmarks live in
   // their own folder views and never mix into the cards, even for the owner.
   const [posts, folders, counts] = await Promise.all([
-    getFolderPosts(handle, "blog", { publishedOnly: !canEdit }),
-    canEdit ? getFolders(handle) : Promise.resolve([]),
-    canEdit ? getFolderCounts(handle) : Promise.resolve({}),
+    getFolderPosts(handle, "blog", {
+      publishedOnly: !hasFullWorkspaceContent,
+    }),
+    hasFullWorkspaceContent
+      ? getFolders(handle)
+      : getAccessibleFolders(handle, viewer),
+    hasFullWorkspaceContent
+      ? getFolderCounts(handle)
+      : getAccessibleFolderCounts(handle, viewer),
   ]);
   // Category chip source: a blog SUBFOLDER (has a slash in its path) a post
   // is filed under. The root "blog" folder is not a category, so it is
@@ -378,19 +396,27 @@ export async function BlogHomeForHandle({
   );
   const categoryLabelFor = (post: (typeof posts)[number]): string | null =>
     post.folderId ? categoryNameByFolderId.get(post.folderId) ?? null : null;
-  // A non-blog ?folder= opens that folder's workspace view (owner only); the
-  // server fetches its items so the folder page always renders real content.
+  // A non-blog ?folder= opens that folder's workspace view. Guests only get
+  // folders returned by getAccessibleFolders, so no other workspace content
+  // leaks through this route.
   const requestedFolder = queryValue(query.folder);
   const activeFolder =
-    canEdit && requestedFolder && requestedFolder !== "blog"
-      ? folders.find(
-          (folder) =>
-            folder.path === requestedFolder && folder.mode !== "blog",
-        ) ?? null
+    requestedFolder && requestedFolder !== "blog"
+      ? folders.find((folder) => folder.path === requestedFolder) ?? null
       : null;
   const folderItems = activeFolder
-    ? await getFolderPosts(handle, activeFolder.path)
+    ? hasFullWorkspaceContent
+      ? await getFolderPosts(handle, activeFolder.path)
+      : await getAccessibleFolderPosts(handle, activeFolder.path, viewer)
     : [];
+  const activeFolderAccess =
+    activeFolder && !hasFullWorkspaceContent
+      ? await resolveFolderAccess({
+          handle,
+          folderId: activeFolder.id,
+          user: viewer,
+        })
+      : null;
   // The single layout leads with the newest published post; an owner's
   // unpublished drafts never displace what visitors see.
   const singlePost =
@@ -475,10 +501,15 @@ export async function BlogHomeForHandle({
     </BlogHomeShell>
   );
 
-  return canEdit ? (
+  const showWorkspaceShell =
+    canEdit || hasFullWorkspaceContent || folders.length > 0;
+
+  return showWorkspaceShell ? (
     <BlogHomeWorkspaceShell
       blog={blog}
       activeFolder={activeFolder ? activeFolder.path : "blog"}
+      canManageFolders={canEdit}
+      canManageSharing={canManageSharing}
       counts={counts}
       folders={folders}
       homePath={blogHomePath(blog)}
@@ -491,6 +522,10 @@ export async function BlogHomeForHandle({
           folder={activeFolder}
           handle={handle}
           items={folderItems}
+          canCreateItems={canEdit}
+          canEditItems={
+            hasFullWorkspaceContent || Boolean(activeFolderAccess?.canEditContent)
+          }
         />
       ) : (
         home

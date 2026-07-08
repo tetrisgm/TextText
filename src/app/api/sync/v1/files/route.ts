@@ -1,5 +1,6 @@
 import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import { createDraft, deletePost, savePost } from "@/lib/store";
+import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { resolveSyncWorkspace } from "../auth";
 import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -11,6 +12,10 @@ export async function POST(request: Request) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
   const { blog, userId } = workspace;
+  const access = await resolveWorkspaceAccess({ handle: blog.handle, user: workspace });
+  if (!access.isOwner) {
+    return syncError(403, "You cannot create files in this workspace");
+  }
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
   try {

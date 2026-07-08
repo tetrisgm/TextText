@@ -20,6 +20,11 @@ import { blogs, folders, posts, users } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import {
+  accessibleFolderIdsForUser,
+  accessiblePostIdsForUser,
+  type AccessUser,
+} from "./permissions";
+import {
   RESERVED_USERNAMES,
   USERNAME_RE,
   cleanUsername,
@@ -748,6 +753,60 @@ export async function getFolderCounts(
     // The left join leaves path NULL for unbackfilled posts; those are blog's.
     const path = row.path ?? DEFAULT_FOLDER_PATH;
     counts[path] = (counts[path] ?? 0) + Number(row.count);
+  }
+  return counts;
+}
+
+export async function getAccessibleFolders(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Folder[]> {
+  const allFolders = await getFolders(handle);
+  if (!db) return [];
+  const ids = await accessibleFolderIdsForUser(handle, user);
+  if (ids === "all") return allFolders;
+  return allFolders.filter((folder) => ids.has(folder.id));
+}
+
+export async function getAccessibleFolderPosts(
+  handle: string,
+  folderPath: string,
+  user: AccessUser | null,
+  opts: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  const folderPosts = await getFolderPosts(handle, folderPath, opts);
+  if (!db) return [];
+  const ids = await accessiblePostIdsForUser(handle, user);
+  if (ids === "all") return folderPosts;
+  return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
+}
+
+export async function getAccessibleAllPosts(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Post[]> {
+  const allPosts = await getAllPosts(handle);
+  if (!db) return [];
+  const ids = await accessiblePostIdsForUser(handle, user);
+  if (ids === "all") return allPosts;
+  return allPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
+}
+
+export async function getAccessibleFolderCounts(
+  handle: string,
+  user: AccessUser | null,
+): Promise<Record<string, number>> {
+  if (!db) return {};
+  const [allFolders, visiblePosts] = await Promise.all([
+    getFolders(handle),
+    getAccessibleAllPosts(handle, user),
+  ]);
+  const pathById = new Map(allFolders.map((folder) => [folder.id, folder.path]));
+  const counts: Record<string, number> = {};
+  for (const post of visiblePosts) {
+    const path =
+      post.folderId ? pathById.get(post.folderId) ?? DEFAULT_FOLDER_PATH : DEFAULT_FOLDER_PATH;
+    counts[path] = (counts[path] ?? 0) + 1;
   }
   return counts;
 }
