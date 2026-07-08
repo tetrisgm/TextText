@@ -35,6 +35,7 @@ type CommonProps = {
   owner: boolean;
   canEditPost?: boolean;
   canManagePost?: boolean;
+  onNavigate?: (path: string) => Promise<void> | void;
   presencePeers?: PresencePeer[];
 };
 
@@ -295,7 +296,7 @@ function NavControl({
   label: string;
   disabled?: boolean;
   mode: Props["mode"];
-  onNavigate?: (path: string) => Promise<void>;
+  onNavigate?: (path: string) => Promise<void> | void;
   children: ReactNode;
 }) {
   if (disabled || !href) {
@@ -312,7 +313,7 @@ function NavControl({
     );
   }
 
-  if (mode === "edit" && onNavigate) {
+  if (onNavigate) {
     return (
       <button
         type="button"
@@ -703,7 +704,7 @@ export function PostActionBar(props: Props) {
           href={props.homePath}
           label="Back"
           mode={props.mode}
-          onNavigate={props.mode === "edit" ? props.onNavigate : undefined}
+          onNavigate={props.onNavigate}
         >
           <BackIcon />
         </NavControl>
@@ -872,6 +873,7 @@ export function PostActionBar(props: Props) {
                   }
                   disabled={!previousPath}
                   mode={props.mode}
+                  onNavigate={props.onNavigate}
                 >
                   <ChevronIcon dir="left" />
                 </NavControl>
@@ -884,6 +886,7 @@ export function PostActionBar(props: Props) {
                   }
                   disabled={!nextPath}
                   mode={props.mode}
+                  onNavigate={props.onNavigate}
                 >
                   <ChevronIcon dir="right" />
                 </NavControl>

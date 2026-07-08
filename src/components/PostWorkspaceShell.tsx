@@ -6,14 +6,37 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createSubfolderAction } from "@/app/editor/actions";
+import { FolderPage } from "@/components/FolderPage";
 import { PostActionBar } from "@/components/PostActionBar";
+import { hasOpenEditMenu, isTypingTarget } from "@/components/PostShortcuts";
+import { ProjectReader } from "@/components/ProjectReader";
+import { Reader } from "@/components/Reader";
+import { TalkReader } from "@/components/TalkReader";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
+import {
+  adjacentPublishedPostsForPool,
+  findPoolPostById,
+  findPoolPostBySlug,
+  folderPathForPoolPost,
+  poolPostsForFolder,
+  postFromPoolPost,
+} from "@/lib/pool/selectors";
+import { useWorkspacePool, useWorkspacePostBody } from "@/lib/pool/store";
+import { WorkspaceProvider } from "@/lib/pool/WorkspaceProvider";
+import type {
+  WorkspaceInitialBody,
+  WorkspacePoolPayload,
+  WorkspacePoolPost,
+} from "@/lib/pool/types";
+import { blogPostPath } from "@/lib/public-paths";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
@@ -54,9 +77,11 @@ export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
 }
 
 function folderWorkspaceHref(homePath: string, folder: SidebarFolderId): string {
-  return folder === "blog"
-    ? homePath
-    : `${homePath}?folder=${encodeURIComponent(folder)}`;
+  return `${homePath}?folder=${encodeURIComponent(folder)}`;
+}
+
+function workspaceRootHref(homePath: string): string {
+  return homePath;
 }
 
 function readDocumentCookie(name: string): string | null {
@@ -391,6 +416,7 @@ function FolderTreeNav({
   activeFolder,
   counts,
   collapsed,
+  prefetchFolders = true,
   canManageSharing,
   canManageFolders,
   onSelectFolder,
@@ -399,9 +425,10 @@ function FolderTreeNav({
 }: {
   blog: Blog;
   folders: Folder[];
-  activeFolder: SidebarFolderId;
+  activeFolder: SidebarFolderId | null;
   counts: Record<string, number>;
   collapsed: boolean;
+  prefetchFolders?: boolean;
   canManageSharing: boolean;
   canManageFolders: boolean;
   onSelectFolder: (folder: SidebarFolderId) => void;
@@ -420,10 +447,10 @@ function FolderTreeNav({
   const [error, setError] = useState<string | null>(null);
   const prefetchFolder = useCallback(
     (folder: SidebarFolderId) => {
-      if (!homePath) return;
+      if (!homePath || !prefetchFolders) return;
       router.prefetch(folderWorkspaceHref(homePath, folder));
     },
-    [homePath, router],
+    [homePath, prefetchFolders, router],
   );
 
   // Load persisted expand state, then force-open the ancestors of the active
@@ -436,7 +463,7 @@ function FolderTreeNav({
     } catch {
       // ignore malformed storage
     }
-    let node = foldersByPath.get(activeFolder);
+    let node = activeFolder ? foldersByPath.get(activeFolder) : undefined;
     while (node?.parentId) {
       next.add(node.parentId);
       node = foldersById.get(node.parentId);
@@ -605,22 +632,26 @@ export function PostFolderSidebar({
   activeFolder,
   collapsed,
   counts,
+  prefetchFolders = true,
   canManageFolders = false,
   canManageSharing = false,
   folders,
   homePath,
+  onSelectRoot,
   onSelectFolder,
   onToggleCollapsed,
   showGuestSignIn = false,
 }: {
   blog: Blog;
-  activeFolder: SidebarFolderId;
+  activeFolder: SidebarFolderId | null;
   collapsed: boolean;
   counts: Record<string, number>;
+  prefetchFolders?: boolean;
   canManageFolders?: boolean;
   canManageSharing?: boolean;
   folders: Folder[];
   homePath?: string;
+  onSelectRoot?: () => void;
   onSelectFolder: (folder: SidebarFolderId) => void;
   onToggleCollapsed: () => void;
   showGuestSignIn?: boolean;
@@ -655,7 +686,24 @@ export function PostFolderSidebar({
           settingsHref={homePath ?? "/"}
           fallback={
             homePath ? (
-              <a className="post-editor-home-link" href={homePath}>
+              <a
+                className="post-editor-home-link"
+                href={workspaceRootHref(homePath)}
+                onClick={(event) => {
+                  if (!onSelectRoot) return;
+                  if (
+                    event.button !== 0 ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  onSelectRoot();
+                }}
+              >
                 {homeContent}
               </a>
             ) : (
@@ -685,6 +733,7 @@ export function PostFolderSidebar({
           activeFolder={activeFolder}
           counts={counts}
           collapsed={collapsed}
+          prefetchFolders={prefetchFolders}
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
           homePath={homePath}
@@ -728,10 +777,12 @@ export function WorkspaceSidebarChrome({
   folders,
   homePath,
   onSelectFolder,
+  onSelectRoot,
+  prefetchFolders = true,
   onToggleCollapsed,
   showGuestSignIn = false,
 }: {
-  activeFolder: SidebarFolderId;
+  activeFolder: SidebarFolderId | null;
   blog: Blog;
   collapsed: boolean;
   canManageFolders?: boolean;
@@ -740,6 +791,8 @@ export function WorkspaceSidebarChrome({
   folders: Folder[];
   homePath?: string;
   onSelectFolder: (folder: SidebarFolderId) => void;
+  onSelectRoot?: () => void;
+  prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
   showGuestSignIn?: boolean;
 }) {
@@ -758,6 +811,10 @@ export function WorkspaceSidebarChrome({
     },
     [onSelectFolder],
   );
+  const selectRoot = useCallback(() => {
+    setPreviewOpen(false);
+    onSelectRoot?.();
+  }, [onSelectRoot]);
   const closeSidebar = useCallback(() => {
     setPreviewOpen(false);
     if (!collapsed) onToggleCollapsed();
@@ -814,6 +871,8 @@ export function WorkspaceSidebarChrome({
           folders={folders}
           homePath={homePath}
           onSelectFolder={selectFolder}
+          onSelectRoot={selectRoot}
+          prefetchFolders={prefetchFolders}
           onToggleCollapsed={toggleSidebar}
           showGuestSignIn={showGuestSignIn}
         />
@@ -829,8 +888,428 @@ export function WorkspaceSidebarChrome({
   );
 }
 
+type LocalWorkspaceView =
+  | { level: "root" }
+  | { folderPath: string; level: "section" }
+  | { folderPath: string; level: "post"; postId: string };
+
+function encodedTenantHomePath(blog: Blog): string {
+  return `/t/${encodeURIComponent(blog.handle)}`;
+}
+
+function trimTrailingSlash(pathname: string): string {
+  if (pathname.length <= 1) return pathname;
+  return pathname.replace(/\/+$/, "");
+}
+
+function viewFromUrl(
+  pool: WorkspacePoolPayload,
+  homePath: string,
+  url: URL,
+): LocalWorkspaceView {
+  const pathname = trimTrailingSlash(url.pathname);
+  const homePaths = [
+    trimTrailingSlash(homePath),
+    trimTrailingSlash(encodedTenantHomePath(pool.blog)),
+  ];
+  const matchingHome = homePaths.find(
+    (candidate) => pathname === candidate || pathname.startsWith(`${candidate}/`),
+  );
+  if (!matchingHome) return { level: "root" };
+
+  if (pathname === matchingHome) {
+    const folderPath = url.searchParams.get("folder");
+    if (folderPath && pool.folders.some((folder) => folder.path === folderPath)) {
+      return { level: "section", folderPath };
+    }
+    return { level: "root" };
+  }
+
+  const rest = pathname.slice(matchingHome.length + 1);
+  const [encodedSlug = ""] = rest.split("/");
+  if (!encodedSlug || encodedSlug === "c") return { level: "root" };
+  const slug = decodeURIComponent(encodedSlug);
+  const post = findPoolPostBySlug(pool, slug);
+  if (!post) return { level: "root" };
+  return {
+    level: "post",
+    postId: post.id,
+    folderPath: folderPathForPoolPost(pool, post),
+  };
+}
+
+function currentLocalView(
+  pool: WorkspacePoolPayload,
+  homePath: string,
+): LocalWorkspaceView {
+  if (typeof window === "undefined") return { level: "root" };
+  return viewFromUrl(pool, homePath, new URL(window.location.href));
+}
+
+function localViewActiveFolder(view: LocalWorkspaceView): SidebarFolderId | null {
+  return view.level === "root" ? null : view.folderPath;
+}
+
+function WorkspaceRootLanding({ blog }: { blog: Blog }) {
+  return (
+    <main className="workspace-root-page" aria-labelledby="workspace-root-title">
+      <div className="workspace-root-inner">
+        <span className="workspace-root-eyebrow">Workspace</span>
+        <h1 id="workspace-root-title">{blog.name}</h1>
+        <p>Choose a section from the sidebar.</p>
+      </div>
+    </main>
+  );
+}
+
+function LoadingBody() {
+  return <p className="workspace-post-body-status">Loading body</p>;
+}
+
+function ErrorBody({ message }: { message: string }) {
+  return <p className="workspace-post-body-status">{message}</p>;
+}
+
+function MarkdownBody({ body }: { body: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        h1: "h2",
+        img: ({ src, alt }) => (
+          <span className="reader-figure">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={typeof src === "string" ? src : ""}
+              alt={alt ?? ""}
+              decoding="async"
+              loading="lazy"
+            />
+            {alt && (
+              <span className="reader-figcaption" aria-hidden="true">
+                {alt}
+              </span>
+            )}
+          </span>
+        ),
+      }}
+    >
+      {body}
+    </ReactMarkdown>
+  );
+}
+
+function WorkspacePostReader({
+  blog,
+  canManagePost,
+  homePath,
+  onNavigate,
+  pool,
+  poolPost,
+}: {
+  blog: Blog;
+  canManagePost: boolean;
+  homePath: string;
+  onNavigate: (path: string) => Promise<void> | void;
+  pool: WorkspacePoolPayload;
+  poolPost: WorkspacePoolPost;
+}) {
+  const { entry, load } = useWorkspacePostBody(pool.blogId, poolPost.id);
+
+  useEffect(() => {
+    if (entry.status === "idle") load();
+  }, [entry.status, load]);
+
+  const body =
+    entry.status === "ready" ? entry.body.body : "";
+  const post = postFromPoolPost(poolPost, body);
+  const bodySlot =
+    entry.status === "ready" ? (
+      <MarkdownBody body={entry.body.body} />
+    ) : entry.status === "error" ? (
+      <ErrorBody message={entry.error} />
+    ) : (
+      <LoadingBody />
+    );
+  const slots = { body: bodySlot };
+  const ReaderComponent =
+    post.type === "talk"
+      ? TalkReader
+      : post.type === "project"
+        ? ProjectReader
+        : Reader;
+  const sectionPath = folderWorkspaceHref(
+    homePath,
+    folderPathForPoolPost(pool, poolPost),
+  );
+
+  return (
+    <>
+      <PostActionBar
+        mode="read"
+        owner
+        blog={blog}
+        post={post}
+        adjacent={adjacentPublishedPostsForPool(pool, post.slug)}
+        homePath={sectionPath}
+        postPath={blogPostPath(blog, post)}
+        canEditPost
+        canManagePost={canManagePost}
+        onNavigate={onNavigate}
+      />
+      <ReaderComponent blog={blog} post={post} slots={slots} />
+    </>
+  );
+}
+
+function LocalWorkspaceContent({
+  blog,
+  canCreateItems,
+  canEditItems,
+  canManagePost,
+  handle,
+  homePath,
+  onNavigate,
+  onOpenPost,
+  pool,
+  view,
+}: {
+  blog: Blog;
+  canCreateItems: boolean;
+  canEditItems: boolean;
+  canManagePost: boolean;
+  handle: string;
+  homePath: string;
+  onNavigate: (path: string) => Promise<void> | void;
+  onOpenPost: (post: Post) => void;
+  pool: WorkspacePoolPayload;
+  view: LocalWorkspaceView;
+}) {
+  if (view.level === "root") return <WorkspaceRootLanding blog={blog} />;
+
+  if (view.level === "section") {
+    const folder = pool.folders.find((entry) => entry.path === view.folderPath);
+    if (!folder) return <WorkspaceRootLanding blog={blog} />;
+    const items = poolPostsForFolder(pool, folder.path).map((post) =>
+      postFromPoolPost(post),
+    );
+    return (
+      <FolderPage
+        blog={blog}
+        folder={folder}
+        handle={handle}
+        items={items}
+        canCreateItems={canCreateItems}
+        canEditItems={canEditItems}
+        onOpenPost={onOpenPost}
+      />
+    );
+  }
+
+  const post = findPoolPostById(pool, view.postId);
+  if (!post) return <WorkspaceRootLanding blog={blog} />;
+  return (
+    <WorkspacePostReader
+      blog={blog}
+      canManagePost={canManagePost}
+      homePath={homePath}
+      onNavigate={onNavigate}
+      pool={pool}
+      poolPost={post}
+    />
+  );
+}
+
+function LocalWorkspaceShell({
+  blog,
+  canManageFolders,
+  canManageSharing,
+  children,
+  className,
+  homePath,
+  initialPool,
+  initialSidebarCollapsed,
+  initialView,
+  showGuestSignIn,
+}: {
+  blog: Blog;
+  canManageFolders: boolean;
+  canManageSharing: boolean;
+  children: ReactNode;
+  className: string;
+  homePath: string;
+  initialPool: WorkspacePoolPayload;
+  initialSidebarCollapsed: boolean;
+  initialView: LocalWorkspaceView;
+  showGuestSignIn: boolean;
+}) {
+  const { pool } = useWorkspacePool();
+  const displayPool = pool?.blogId === initialPool.blogId ? pool : initialPool;
+  const [mounted, setMounted] = useState(false);
+  const [view, setView] = useState<LocalWorkspaceView>(initialView);
+  const { sidebarCollapsed, toggleSidebarCollapsed } =
+    useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    setView(currentLocalView(displayPool, homePath));
+  }, [displayPool, homePath]);
+
+  const navigateToView = useCallback(
+    (nextView: LocalWorkspaceView, href: string) => {
+      window.history.pushState(null, "", href);
+      setView(nextView);
+    },
+    [],
+  );
+
+  const navigateRoot = useCallback(() => {
+    navigateToView({ level: "root" }, workspaceRootHref(homePath));
+  }, [homePath, navigateToView]);
+
+  const navigateSection = useCallback(
+    (folderPath: SidebarFolderId) => {
+      navigateToView(
+        { level: "section", folderPath },
+        folderWorkspaceHref(homePath, folderPath),
+      );
+    },
+    [homePath, navigateToView],
+  );
+
+  const openPoolPost = useCallback(
+    (post: WorkspacePoolPost, folderPath?: string) => {
+      navigateToView(
+        {
+          level: "post",
+          postId: post.id,
+          folderPath: folderPath ?? folderPathForPoolPost(displayPool, post),
+        },
+        blogPostPath(displayPool.blog, post),
+      );
+    },
+    [displayPool, navigateToView],
+  );
+
+  const openPost = useCallback(
+    (post: Post) => {
+      if (!post.id) return;
+      const poolPost = findPoolPostById(displayPool, post.id);
+      if (!poolPost) return;
+      openPoolPost(poolPost, view.level === "section" ? view.folderPath : undefined);
+    },
+    [displayPool, openPoolPost, view],
+  );
+
+  const navigatePath = useCallback(
+    (path: string) => {
+      const url = new URL(path, window.location.origin);
+      const nextView = viewFromUrl(displayPool, homePath, url);
+      if (nextView.level === "post") {
+        const post = findPoolPostById(displayPool, nextView.postId);
+        if (post) {
+          openPoolPost(post, nextView.folderPath);
+          return;
+        }
+      }
+      const href =
+        nextView.level === "root"
+          ? workspaceRootHref(homePath)
+          : folderWorkspaceHref(homePath, nextView.folderPath);
+      navigateToView(nextView, href);
+    },
+    [displayPool, homePath, navigateToView, openPoolPost],
+  );
+
+  const navigateUp = useCallback(() => {
+    if (view.level === "post") {
+      navigateSection(view.folderPath);
+      return;
+    }
+    if (view.level === "section") navigateRoot();
+  }, [navigateRoot, navigateSection, view]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setView(currentLocalView(displayPool, homePath));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [displayPool, homePath]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      if (hasOpenEditMenu()) return;
+      if (view.level === "root") {
+        if (isTypingTarget(event.target)) {
+          (event.target as HTMLElement).blur();
+        }
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      navigateUp();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [mounted, navigateUp, view.level]);
+
+  const content = mounted ? (
+    <LocalWorkspaceContent
+      blog={displayPool.blog}
+      canCreateItems={canManageFolders}
+      canEditItems={canManageFolders}
+      canManagePost={canManageFolders}
+      handle={displayPool.blog.handle}
+      homePath={homePath}
+      onNavigate={navigatePath}
+      onOpenPost={openPost}
+      pool={displayPool}
+      view={view}
+    />
+  ) : (
+    children
+  );
+
+  return (
+    <div
+      className={`post-editor-shell applecms has-sidebar ${className}${
+        sidebarCollapsed ? " is-sidebar-collapsed" : ""
+      }`}
+    >
+      <WorkspaceSidebarChrome
+        blog={displayPool.blog ?? blog}
+        activeFolder={localViewActiveFolder(view)}
+        canManageFolders={canManageFolders}
+        canManageSharing={canManageSharing}
+        collapsed={sidebarCollapsed}
+        counts={displayPool.counts}
+        folders={displayPool.folders}
+        homePath={homePath}
+        onSelectFolder={navigateSection}
+        onSelectRoot={navigateRoot}
+        onToggleCollapsed={toggleSidebarCollapsed}
+        prefetchFolders={false}
+        showGuestSignIn={showGuestSignIn}
+      />
+      <div
+        className={`post-editor-content${
+          localViewActiveFolder(view) === "blog" ? " is-blog-folder-view" : ""
+        }`}
+      >
+        {content}
+      </div>
+    </div>
+  );
+}
+
 export function BlogHomeWorkspaceShell({
-  activeFolder = "blog",
+  activeFolder = null,
   blog,
   children,
   counts,
@@ -839,9 +1318,10 @@ export function BlogHomeWorkspaceShell({
   folders,
   homePath,
   initialSidebarCollapsed = true,
+  initialPool,
   showGuestSignIn = false,
 }: {
-  activeFolder?: SidebarFolderId;
+  activeFolder?: SidebarFolderId | null;
   blog: Blog;
   children: ReactNode;
   counts: Record<string, number>;
@@ -850,20 +1330,43 @@ export function BlogHomeWorkspaceShell({
   folders: Folder[];
   homePath: string;
   initialSidebarCollapsed?: boolean;
+  initialPool?: WorkspacePoolPayload | null;
   showGuestSignIn?: boolean;
 }) {
   const router = useRouter();
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
 
-  // Folders carry real server-rendered contents, so selecting one is a real
-  // navigation (the server fetches that folder's items), not a history swap.
   const selectFolder = useCallback(
     (folder: SidebarFolderId) => {
       router.push(folderWorkspaceHref(homePath, folder));
     },
     [homePath, router],
   );
+
+  if (initialPool) {
+    return (
+      <WorkspaceProvider initialPool={initialPool}>
+        <LocalWorkspaceShell
+          blog={blog}
+          canManageFolders={canManageFolders}
+          canManageSharing={canManageSharing}
+          className="is-home-workspace-shell"
+          homePath={homePath}
+          initialPool={initialPool}
+          initialSidebarCollapsed={initialSidebarCollapsed}
+          initialView={
+            activeFolder
+              ? { level: "section", folderPath: activeFolder }
+              : { level: "root" }
+          }
+          showGuestSignIn={showGuestSignIn}
+        >
+          {children}
+        </LocalWorkspaceShell>
+      </WorkspaceProvider>
+    );
+  }
 
   return (
     <div
@@ -905,6 +1408,8 @@ export function PostReadWorkspaceShell({
   folders,
   homePath,
   initialSidebarCollapsed = true,
+  initialPool,
+  initialPostBody,
   post,
   postPath,
   showGuestSignIn = false,
@@ -918,6 +1423,8 @@ export function PostReadWorkspaceShell({
   folders: Folder[];
   homePath: string;
   initialSidebarCollapsed?: boolean;
+  initialPool?: WorkspacePoolPayload | null;
+  initialPostBody?: WorkspaceInitialBody | null;
   post: Post;
   postPath: string;
   showGuestSignIn?: boolean;
@@ -926,15 +1433,55 @@ export function PostReadWorkspaceShell({
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
 
-  // Folder rows always navigate to the workspace home (with the folder open),
-  // so every shell shares one sidebar behavior and the reader never gets
-  // stranded in a folder view without its post.
   const selectSidebarFolder = useCallback(
     (folder: SidebarFolderId) => {
       router.push(folderWorkspaceHref(homePath, folder));
     },
     [homePath, router],
   );
+
+  if (initialPool) {
+    return (
+      <WorkspaceProvider
+        initialPool={initialPool}
+        initialBody={initialPostBody}
+      >
+        <LocalWorkspaceShell
+          blog={blog}
+          canManageFolders={canManageFolders}
+          canManageSharing={canManageSharing}
+          className="is-read-workspace-shell"
+          homePath={homePath}
+          initialPool={initialPool}
+          initialSidebarCollapsed={initialSidebarCollapsed}
+          initialView={
+            post.id
+              ? {
+                  level: "post",
+                  postId: post.id,
+                  folderPath: sidebarFolderPathForPostType(post.type),
+                }
+              : { level: "root" }
+          }
+          showGuestSignIn={showGuestSignIn}
+        >
+          <PostActionBar
+            mode="read"
+            owner
+            blog={blog}
+            post={post}
+            adjacent={adjacent}
+            homePath={folderWorkspaceHref(
+              homePath,
+              sidebarFolderPathForPostType(post.type),
+            )}
+            postPath={postPath}
+          />
+          {children}
+        </LocalWorkspaceShell>
+      </WorkspaceProvider>
+    );
+  }
 
   return (
     <div
