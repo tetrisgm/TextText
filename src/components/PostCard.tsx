@@ -9,6 +9,7 @@ import {
   toggleEditablePostPinnedAction,
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import type { Blog, Post, PostType } from "@/lib/content";
 import {
   isVideoFile,
@@ -218,19 +219,13 @@ export function PostCard({
       if (!menu.contains(event.target)) setMenuOpen(false);
     };
 
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setMenuOpen(false);
-    };
-
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [menuOpen]);
+
+  useEscapeLayer(menuOpen, "Post menu", () => setMenuOpen(false));
 
   const endHover = () => {
     setHovered(false);

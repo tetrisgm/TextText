@@ -20,6 +20,7 @@ import {
   updateBlogNameAction,
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
 import { setWorkspaceSidebarCollapsedPreference } from "@/components/PostWorkspaceShell";
 import type { BlogCardStyle, BlogHomeLayout, PostType } from "@/lib/content";
@@ -91,6 +92,8 @@ function useDismissPopover<T extends HTMLElement>(
   ref: RefObject<T | null>,
   onClose: () => void,
 ) {
+  useEscapeLayer(open, "Popover", onClose);
+
   useEffect(() => {
     if (!open) return;
 
@@ -100,18 +103,9 @@ function useDismissPopover<T extends HTMLElement>(
       if (!node.contains(event.target)) onClose();
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [onClose, open, ref]);
 }

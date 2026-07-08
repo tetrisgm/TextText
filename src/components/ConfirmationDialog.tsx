@@ -7,6 +7,7 @@ import {
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 
 type ConfirmationDialogProps = {
   open: boolean;
@@ -62,6 +63,8 @@ export function ConfirmationDialog({
   const cancel = useCallback(() => {
     if (!confirming) onCancel();
   }, [confirming, onCancel]);
+
+  useEscapeLayer(open, "Confirmation dialog", cancel);
 
   const focusButton = useCallback((direction: "next" | "previous") => {
     const active = document.activeElement;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import styles from "./WorkspaceMenu.module.css";
 
 export type WorkspaceMenuProps = {
@@ -22,6 +23,7 @@ export function WorkspaceMenu({
   const [open, setOpen] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
+  useEscapeLayer(open, "Workspace menu", close);
 
   useEffect(() => {
     if (!open) return;
@@ -32,17 +34,9 @@ export function WorkspaceMenu({
       if (!rootRef.current?.contains(target)) close();
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      close();
-    };
-
     document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
     };
   }, [close, open]);
 

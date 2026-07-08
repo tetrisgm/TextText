@@ -551,6 +551,27 @@ export async function createDraftAction(
   return post;
 }
 
+export async function createWorkspacePostAction(
+  handleInput: unknown,
+  typeInput: PostType = "article",
+  folderPathInput?: unknown,
+): Promise<Post> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  await enforceAnonymousPostLimit(handle, access);
+  const type = cleanPostType(typeInput);
+  const created = await createDraft(handle, type);
+  const folderPath =
+    typeof folderPathInput === "string" ? folderPathInput.trim() : "";
+  const saved =
+    folderPath && folderPath !== "blog" && created.id
+      ? await setPostFolder(handle, created.id, folderPath)
+      : created;
+  if (!saved) throw new Error("Post not found");
+  await auditEdit(access, "create_post", "item", saved.id, type);
+  await revalidateBlog(handle, [saved.slug]);
+  return saved;
+}
+
 function cleanItemFolder(value: unknown): "notes" | "bookmarks" {
   if (value === "notes" || value === "bookmarks") return value;
   throw new Error("Folder not found");
@@ -967,6 +988,30 @@ export async function toggleEditablePostPinnedAction(
     saved.title,
   );
   await revalidateBlog(handle, [existing.slug]);
+  return saved;
+}
+
+export async function setEditablePostStatusAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  statusInput: unknown,
+): Promise<Post> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const existing = await getPostById(handle, postId);
+  if (!existing) throw new Error("Post not found");
+  const status = isUnlistedPostType(existing.type)
+    ? ("draft" as const)
+    : cleanStatus(statusInput);
+  const saved = await savePost(handle, { ...existing, status });
+  await auditEdit(
+    access,
+    status === "published" ? "publish_post" : "unpublish_post",
+    "item",
+    saved.id,
+    saved.title,
+  );
+  await revalidateBlog(handle, [existing.slug, saved.slug]);
   return saved;
 }
 

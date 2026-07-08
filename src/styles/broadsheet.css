@@ -2395,6 +2395,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: var(--ink);
   text-decoration: none;
 }
+.post-folder-row.is-command-selected {
+  margin-inline: -10px;
+  padding-inline: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 22%, transparent);
+}
 .post-folder-row.is-bookmark {
   align-items: start;
 }

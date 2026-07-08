@@ -14,6 +14,7 @@ import {
   shareScopeAction,
   updateScopeShareRoleAction,
 } from "@/app/editor/actions";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import type { ScopeShare, ScopeShareRole } from "@/lib/shares";
 import type { CollaboratorScopeType } from "@/lib/permissions";
 import styles from "./ShareDialog.module.css";
@@ -132,18 +133,7 @@ export function ShareDialog({
     };
   }, [handle, open, resolvedScopeId, scopeType]);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onClose();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open]);
+  useEscapeLayer(open, "Share dialog", onClose);
 
   const closeFromBackdrop = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
