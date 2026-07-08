@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { OPEN_KEYBOARD_SHORTCUTS_EVENT } from "@/components/keyboard/CommandPalette";
 import styles from "./WorkspaceMenu.module.css";
 
 export type WorkspaceMenuProps = {
@@ -93,6 +94,36 @@ export function WorkspaceMenu({
               Invite members
             </button>
           )}
+
+          <button
+            className={styles.menuItem}
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              window.dispatchEvent(new Event(OPEN_KEYBOARD_SHORTCUTS_EVENT));
+              close();
+            }}
+          >
+            Keyboard shortcuts
+          </button>
+
+          <Link
+            className={styles.menuItem}
+            href="/download"
+            role="menuitem"
+            onClick={close}
+          >
+            Download the Mac app
+          </Link>
+
+          <Link
+            className={styles.menuItem}
+            href="/connect"
+            role="menuitem"
+            onClick={close}
+          >
+            Connect an agent
+          </Link>
 
           <div className={styles.divider} role="separator" />
 

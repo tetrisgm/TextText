@@ -5,7 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
   availableWorkspaceCommands,
@@ -21,6 +21,10 @@ import {
   blogHomePath,
   blogPostPath,
 } from "@/lib/public-paths";
+import { isTypingTarget } from "./typing-target";
+
+export const OPEN_COMMAND_PALETTE_EVENT = "write:open-command-palette";
+export const OPEN_KEYBOARD_SHORTCUTS_EVENT = "write:open-keyboard-shortcuts";
 
 type PaletteResult = {
   id: string;
@@ -97,6 +101,13 @@ function commandResult(command: AppCommand, ctx: CommandContext): PaletteResult 
   };
 }
 
+type ShortcutSheetRow = {
+  id: string;
+  label: string;
+  group: string;
+  shortcut: string;
+};
+
 function postResult(
   post: WorkspacePoolPost,
   pool: WorkspacePoolPayload,
@@ -149,23 +160,78 @@ export function CommandPalette({
   open: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const wasOpenRef = useRef(open);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [fallbackPool, setFallbackPool] =
     useState<WorkspacePoolPayload | null>(null);
   const [fallbackHandle, setFallbackHandle] = useState<string | null>(null);
   const ctx = commandContext();
   const pool = ctx.pool ?? fallbackPool;
+  const paletteOpen = open && !shortcutsOpen;
+  const dialogOpen = open || shortcutsOpen;
+
+  const closeDialog = () => {
+    setShortcutsOpen(false);
+    onClose();
+  };
 
   useEffect(() => {
-    if (!open) return;
+    if (!paletteOpen) return;
     setQuery(initialQuery);
     setSelected(0);
     window.requestAnimationFrame(() => inputRef.current?.focus());
-  }, [initialQuery, open]);
+  }, [initialQuery, paletteOpen]);
 
   useEffect(() => {
-    if (!open || ctx.pool || fallbackPool) return;
+    if (wasOpenRef.current && !open) setShortcutsOpen(false);
+    wasOpenRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    const openCommandPalette = () => {
+      setShortcutsOpen(false);
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "k",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    const openShortcuts = () => {
+      setShortcutsOpen(true);
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "k",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key !== "?") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      openShortcuts();
+    };
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, openCommandPalette);
+    window.addEventListener(OPEN_KEYBOARD_SHORTCUTS_EVENT, openShortcuts);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, openCommandPalette);
+      window.removeEventListener(OPEN_KEYBOARD_SHORTCUTS_EVENT, openShortcuts);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!dialogOpen || ctx.pool || fallbackPool) return;
     const handle = handleFromPathname(window.location.pathname);
     if (!handle || fallbackHandle === handle) return;
     setFallbackHandle(handle);
@@ -182,7 +248,7 @@ export function CommandPalette({
         // The fallback is best effort. Guests and collaborators may not have
         // an owner pool, so an empty local palette is a valid result.
       });
-  }, [ctx.pool, fallbackHandle, fallbackPool, open]);
+  }, [ctx.pool, dialogOpen, fallbackHandle, fallbackPool]);
 
   const results = useMemo(() => {
     const slashMode = query.trimStart().startsWith("/");
@@ -229,22 +295,62 @@ export function CommandPalette({
       .map((entry) => entry.result);
   }, [ctx, pool, query]);
 
+  const shortcutRows = useMemo<ShortcutSheetRow[]>(() => {
+    const rows: ShortcutSheetRow[] = [
+      {
+        id: "system.palette",
+        label: "Open command palette",
+        group: "Workspace",
+        shortcut: "⌘K",
+      },
+      {
+        id: "system.shortcuts",
+        label: "Keyboard shortcuts",
+        group: "Workspace",
+        shortcut: "?",
+      },
+      {
+        id: "system.slash",
+        label: "Editor commands",
+        group: "Editor",
+        shortcut: "/",
+      },
+    ];
+    for (const command of availableWorkspaceCommands(ctx)) {
+      const shortcut = commandShortcutLabel(command);
+      if (!shortcut) continue;
+      rows.push({
+        id: command.id,
+        label: command.label,
+        group: command.group,
+        shortcut,
+      });
+    }
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      const key = `${row.label}:${row.shortcut}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [ctx]);
+
   useEffect(() => {
     setSelected((current) =>
       results.length === 0 ? 0 : Math.min(current, results.length - 1),
     );
   }, [results.length]);
 
-  if (!open) return null;
+  if (!dialogOpen) return null;
 
   const runSelected = () => {
     const result = results[selected];
     if (!result) return;
-    onClose();
+    closeDialog();
     void Promise.resolve(result.run());
   };
 
-  const onInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const onInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setSelected((current) =>
@@ -274,65 +380,108 @@ export function CommandPalette({
       className="command-palette-backdrop applecms"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) closeDialog();
       }}
     >
       <div
         className="command-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={shortcutsOpen ? "Keyboard shortcuts" : "Command palette"}
       >
-        <input
-          ref={inputRef}
-          className="command-palette-input"
-          value={query}
-          placeholder="Search or type / for commands"
-          autoCapitalize="none"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value);
-            setSelected(0);
-          }}
-          onKeyDown={onInputKeyDown}
-        />
-        <div className="command-palette-results" role="listbox">
-          {results.length === 0 ? (
-            <div className="command-palette-empty">No results</div>
-          ) : (
-            results.map((result, index) => (
+        {shortcutsOpen ? (
+          <>
+            <div
+              className="command-palette-input"
+              style={{
+                alignItems: "center",
+                display: "flex",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>Keyboard shortcuts</span>
               <button
-                key={result.id}
                 type="button"
-                className={`command-palette-row${
-                  index === selected ? " is-selected" : ""
-                }`}
-                role="option"
-                aria-selected={index === selected}
-                onMouseEnter={() => setSelected(index)}
-                onClick={() => {
-                  onClose();
-                  void Promise.resolve(result.run());
-                }}
+                className="command-palette-shortcut"
+                style={{ cursor: "pointer" }}
+                onClick={closeDialog}
               >
-                <span className="command-palette-copy">
-                  <span className="command-palette-label">{result.label}</span>
-                  <span className="command-palette-detail">
-                    {result.group}
-                    {result.detail ? ` / ${result.detail}` : ""}
-                  </span>
-                </span>
-                {result.shortcut && (
-                  <span className="command-palette-shortcut">
-                    {result.shortcut}
-                  </span>
-                )}
+                Done
               </button>
-            ))
-          )}
-        </div>
+            </div>
+            <div className="command-palette-results" role="list">
+              {shortcutRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="command-palette-row"
+                  role="listitem"
+                  style={{ cursor: "default" }}
+                >
+                  <span className="command-palette-copy">
+                    <span className="command-palette-label">{row.label}</span>
+                    <span className="command-palette-detail">{row.group}</span>
+                  </span>
+                  <span className="command-palette-shortcut">
+                    {row.shortcut}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <input
+              ref={inputRef}
+              className="command-palette-input"
+              value={query}
+              placeholder="Search or type / for commands"
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setSelected(0);
+              }}
+              onKeyDown={onInputKeyDown}
+            />
+            <div className="command-palette-results" role="listbox">
+              {results.length === 0 ? (
+                <div className="command-palette-empty">No results</div>
+              ) : (
+                results.map((result, index) => (
+                  <button
+                    key={result.id}
+                    type="button"
+                    className={`command-palette-row${
+                      index === selected ? " is-selected" : ""
+                    }`}
+                    role="option"
+                    aria-selected={index === selected}
+                    onMouseEnter={() => setSelected(index)}
+                    onClick={() => {
+                      closeDialog();
+                      void Promise.resolve(result.run());
+                    }}
+                  >
+                    <span className="command-palette-copy">
+                      <span className="command-palette-label">{result.label}</span>
+                      <span className="command-palette-detail">
+                        {result.group}
+                        {result.detail ? ` / ${result.detail}` : ""}
+                      </span>
+                    </span>
+                    {result.shortcut && (
+                      <span className="command-palette-shortcut">
+                        {result.shortcut}
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

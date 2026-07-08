@@ -8,5 +8,5 @@ export function parseWorkspaceSidebarCollapsed(
 ): boolean {
   if (value === "0") return false;
   if (value === "1") return true;
-  return true;
+  return false;
 }

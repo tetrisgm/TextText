@@ -21,6 +21,7 @@ import {
   useEscapeLayer,
   useWorkspaceCommandSurface,
 } from "@/components/keyboard/CommandLayer";
+import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/keyboard/CommandPalette";
 import { FolderPage } from "@/components/FolderPage";
 import { PostActionBar } from "@/components/PostActionBar";
 import { ProjectReader } from "@/components/ProjectReader";
@@ -130,7 +131,11 @@ function writeSidebarCollapsedCookie(next: boolean) {
   }; Path=/; Max-Age=${WORKSPACE_SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
 }
 
-function readSidebarCollapsed(fallback = true): boolean {
+function openCommandPalette() {
+  window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
+}
+
+function readSidebarCollapsed(fallback = false): boolean {
   if (sidebarCollapsedMemory !== null) return sidebarCollapsedMemory;
   if (typeof window === "undefined") return fallback;
   const cookieValue = readDocumentCookie(WORKSPACE_SIDEBAR_COOKIE);
@@ -179,12 +184,12 @@ function subscribeSidebarCollapsed(listener: () => void): () => void {
 // Collapse an expanded sidebar; returns whether there was one to close, so
 // Escape handlers can consume the key before falling through to exit-edit.
 export function closeExpandedWorkspaceSidebar(): boolean {
-  if (readSidebarCollapsed(true)) return false;
+  if (readSidebarCollapsed(false)) return false;
   setWorkspaceSidebarCollapsedPreference(true);
   return true;
 }
 
-export function useWorkspaceSidebarCollapsed(initialCollapsed = true) {
+export function useWorkspaceSidebarCollapsed(initialCollapsed = false) {
   const getCollapsedSnapshot = useCallback(
     () => readSidebarCollapsed(initialCollapsed),
     [initialCollapsed],
@@ -737,6 +742,20 @@ export function PostFolderSidebar({
         <button
           type="button"
           className="post-editor-sidebar-toggle"
+          aria-label="Open command palette"
+          title="Command palette"
+          style={{
+            color: "var(--ink)",
+            font: "700 12px/1 var(--font-body)",
+            letterSpacing: "0",
+          }}
+          onClick={openCommandPalette}
+        >
+          <span aria-hidden="true">⌘K</span>
+        </button>
+        <button
+          type="button"
+          className="post-editor-sidebar-toggle"
           aria-label={collapsed ? "Pin sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
           onClick={onToggleCollapsed}
@@ -984,14 +1003,36 @@ function WorkspaceRootLanding({ blog }: { blog: Blog }) {
       <div className="workspace-root-inner">
         <span className="workspace-root-eyebrow">Workspace</span>
         <h1 id="workspace-root-title">{blog.name}</h1>
-        <p>Choose a section from the sidebar.</p>
+        <p>Open Blog to start writing.</p>
       </div>
     </main>
   );
 }
 
 function LoadingBody() {
-  return <p className="workspace-post-body-status">Loading body</p>;
+  return (
+    <div
+      className="workspace-post-body-status"
+      aria-label="Loading body"
+      role="status"
+      style={{ display: "grid", gap: 12, width: "min(100%, 520px)" }}
+    >
+      {[92, 84, 68].map((width) => (
+        <span
+          key={width}
+          aria-hidden="true"
+          style={{
+            background:
+              "color-mix(in srgb, var(--muted) 18%, transparent)",
+            borderRadius: 999,
+            display: "block",
+            height: 12,
+            width: `${width}%`,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 function ErrorBody({ message }: { message: string }) {
@@ -1715,7 +1756,7 @@ export function BlogHomeWorkspaceShell({
   canManageSharing = false,
   folders,
   homePath,
-  initialSidebarCollapsed = true,
+  initialSidebarCollapsed = false,
   initialPool,
   showGuestSignIn = false,
 }: {
@@ -1805,7 +1846,7 @@ export function PostReadWorkspaceShell({
   counts,
   folders,
   homePath,
-  initialSidebarCollapsed = true,
+  initialSidebarCollapsed = false,
   initialPool,
   initialPostBody,
   post,
