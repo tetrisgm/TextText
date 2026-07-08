@@ -83,6 +83,9 @@
 
 .status {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 7px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
@@ -99,9 +102,18 @@
   border-color: color-mix(in srgb, var(--muted) 28%, var(--hairline));
 }
 
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 55%, transparent);
+  border-top-color: color-mix(in srgb, var(--muted) 92%, var(--ink));
+  border-radius: 999px;
+}
+
 .failed {
-  border-color: color-mix(in srgb, var(--muted) 18%, var(--hairline));
-  background: transparent;
+  border-color: color-mix(in srgb, #c8102e 35%, var(--hairline));
+  background: color-mix(in srgb, #c8102e 6%, transparent);
+  color: color-mix(in srgb, #c8102e 70%, var(--ink));
 }
 
 .host {
@@ -159,6 +171,10 @@
   box-shadow: var(--ac-focus);
 }
 
+.mainDisabled {
+  cursor: default;
+}
+
 .thumbnailLink {
   width: 104px;
   height: 68px;
@@ -195,19 +211,19 @@
   background: var(--bg);
 }
 
+.thumbnailDisabled {
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  .pending {
-    animation: bookmarkCapturePulse 2.4s ease-in-out infinite;
+  .spinner {
+    animation: bookmarkCaptureSpin 1.2s linear infinite;
   }
 }
 
-@keyframes bookmarkCapturePulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--muted) 0%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted) 12%, transparent);
+@keyframes bookmarkCaptureSpin {
+  to {
+    transform: rotate(1turn);
   }
 }
 
