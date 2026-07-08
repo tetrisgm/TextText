@@ -93,6 +93,8 @@ const FALLBACK_FOLDERS: Folder[] = [
   },
 ];
 
+const ROOT_SECTION_MODES: FolderMode[] = ["blog", "notes", "bookmarks"];
+
 /** Client-safe mirror of store.ts folderPathForPostType. */
 export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
   if (type === "note") return "notes";
@@ -106,6 +108,53 @@ function folderWorkspaceHref(homePath: string, folder: SidebarFolderId): string 
 
 function workspaceRootHref(homePath: string): string {
   return homePath;
+}
+
+function rootSectionFolders(pool: WorkspacePoolPayload): Folder[] {
+  const roots = pool.folders
+    .filter(
+      (folder) =>
+        !folder.parentId && ROOT_SECTION_MODES.includes(folder.mode),
+    )
+    .slice()
+    .sort((a, b) => a.position - b.position);
+  if (roots.length > 0) return roots.slice(0, 3);
+  return ROOT_SECTION_MODES.map(
+    (mode) => pool.folders.find((folder) => folder.mode === mode) ?? null,
+  ).filter((folder): folder is Folder => Boolean(folder));
+}
+
+function validRootSectionPath(
+  pool: WorkspacePoolPayload,
+  preferred: string | null,
+): string | null {
+  const sections = rootSectionFolders(pool);
+  if (preferred && sections.some((folder) => folder.path === preferred)) {
+    return preferred;
+  }
+  return sections[0]?.path ?? null;
+}
+
+function selectedPostIdForView(
+  pool: WorkspacePoolPayload,
+  view: LocalWorkspaceView,
+  preferred?: string | null,
+): string | null {
+  if (view.level === "post" || view.level === "edit") return view.postId;
+  if (view.level !== "section") return null;
+  const posts = poolPostsForFolder(pool, view.folderPath);
+  if (preferred && posts.some((post) => post.id === preferred)) {
+    return preferred;
+  }
+  return posts[0]?.id ?? null;
+}
+
+function cssAttributeValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function domSafeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "_");
 }
 
 function readDocumentCookie(name: string): string | null {
@@ -837,8 +886,8 @@ export function WorkspaceSidebarChrome({
   onSelectRoot?: () => void;
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
-  // At the workspace root the sidebar IS the view, so Escape must not collapse
-  // it there (root is the top of the route). Callers pass false at root.
+  // Only the collapsed hover preview is an Escape overlay. The persistent
+  // sidebar is workspace chrome, so Escape remains available for navigation.
   escapeToCollapse?: boolean;
   showGuestSignIn?: boolean;
 }) {
@@ -874,7 +923,11 @@ export function WorkspaceSidebarChrome({
     onToggleCollapsed();
   }, [onToggleCollapsed]);
 
-  useEscapeLayer(escapeToCollapse && !collapsed, "Sidebar", closeSidebar);
+  useEscapeLayer(
+    escapeToCollapse && previewOpen,
+    "Sidebar preview",
+    hidePreview,
+  );
 
   return (
     <>
@@ -1001,13 +1054,71 @@ function autoGrowTextarea(node: HTMLTextAreaElement | null) {
   node.style.height = `${node.scrollHeight}px`;
 }
 
-function WorkspaceRootLanding({ blog }: { blog: Blog }) {
+function WorkspaceRootLanding({
+  blog,
+  counts,
+  folders,
+  onOpenSection,
+  onSelectSection,
+  selectedSectionPath,
+}: {
+  blog: Blog;
+  counts: Record<string, number>;
+  folders: Folder[];
+  onOpenSection: (folderPath: string) => void;
+  onSelectSection: (folderPath: string) => void;
+  selectedSectionPath: string | null;
+}) {
+  const activeId = selectedSectionPath
+    ? `workspace-root-section-${domSafeId(selectedSectionPath)}`
+    : undefined;
+
   return (
     <main className="workspace-root-page" aria-labelledby="workspace-root-title">
       <div className="workspace-root-inner">
         <span className="workspace-root-eyebrow">Workspace</span>
         <h1 id="workspace-root-title">{blog.name}</h1>
-        <p>Open Blog to start writing.</p>
+        <p>Choose a section.</p>
+        <div
+          className="workspace-root-sections"
+          role="listbox"
+          aria-label="Workspace sections"
+          aria-activedescendant={activeId}
+        >
+          {folders.map((folder) => {
+            const selected = folder.path === selectedSectionPath;
+            const count = counts[folder.path] ?? 0;
+            return (
+              <button
+                key={folder.id}
+                id={`workspace-root-section-${domSafeId(folder.path)}`}
+                type="button"
+                className={`workspace-root-section${
+                  selected ? " is-command-selected" : ""
+                }`}
+                role="option"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                data-workspace-section-path={folder.path}
+                onFocus={() => onSelectSection(folder.path)}
+                onMouseEnter={() => onSelectSection(folder.path)}
+                onClick={() => onOpenSection(folder.path)}
+              >
+                <span className="workspace-root-section-icon" aria-hidden="true">
+                  <SidebarFolderIcon mode={folder.mode} />
+                </span>
+                <span className="workspace-root-section-copy">
+                  <span className="workspace-root-section-name">
+                    {folder.name}
+                  </span>
+                  <span className="workspace-root-section-meta">
+                    {count === 1 ? "1 item" : `${count} items`}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </main>
   );
@@ -1321,8 +1432,11 @@ function LocalWorkspaceContent({
   handle,
   homePath,
   onNavigate,
+  onOpenSection,
   onOpenPost,
+  onSelectSection,
   pool,
+  selectedSectionPath,
   selectedPostId,
   view,
 }: {
@@ -1334,16 +1448,41 @@ function LocalWorkspaceContent({
   handle: string;
   homePath: string;
   onNavigate: (path: string) => Promise<void> | void;
+  onOpenSection: (folderPath: string) => void;
   onOpenPost: (post: Post) => void;
+  onSelectSection: (folderPath: string) => void;
   pool: WorkspacePoolPayload;
+  selectedSectionPath: string | null;
   selectedPostId: string | null;
   view: LocalWorkspaceView;
 }) {
-  if (view.level === "root") return <WorkspaceRootLanding blog={blog} />;
+  if (view.level === "root") {
+    return (
+      <WorkspaceRootLanding
+        blog={blog}
+        counts={pool.counts}
+        folders={rootSectionFolders(pool)}
+        selectedSectionPath={selectedSectionPath}
+        onSelectSection={onSelectSection}
+        onOpenSection={onOpenSection}
+      />
+    );
+  }
 
   if (view.level === "section") {
     const folder = pool.folders.find((entry) => entry.path === view.folderPath);
-    if (!folder) return <WorkspaceRootLanding blog={blog} />;
+    if (!folder) {
+      return (
+        <WorkspaceRootLanding
+          blog={blog}
+          counts={pool.counts}
+          folders={rootSectionFolders(pool)}
+          selectedSectionPath={selectedSectionPath}
+          onSelectSection={onSelectSection}
+          onOpenSection={onOpenSection}
+        />
+      );
+    }
     const items = poolPostsForFolder(pool, folder.path).map((post) =>
       postFromPoolPost(post),
     );
@@ -1363,7 +1502,18 @@ function LocalWorkspaceContent({
   }
 
   const post = findPoolPostById(pool, view.postId);
-  if (!post) return <WorkspaceRootLanding blog={blog} />;
+  if (!post) {
+    return (
+      <WorkspaceRootLanding
+        blog={blog}
+        counts={pool.counts}
+        folders={rootSectionFolders(pool)}
+        selectedSectionPath={selectedSectionPath}
+        onSelectSection={onSelectSection}
+        onOpenSection={onOpenSection}
+      />
+    );
+  }
   if (view.level === "edit") {
     return (
       <LocalWorkspacePostEditor
@@ -1415,10 +1565,14 @@ function LocalWorkspaceShell({
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
   const viewRef = useRef(view);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(
-    initialView.level === "post" || initialView.level === "edit"
-      ? initialView.postId
+    selectedPostIdForView(initialPool, initialView),
+  );
+  const [selectedSectionPath, setSelectedSectionPath] = useState<string | null>(
+    initialView.level === "root"
+      ? validRootSectionPath(initialPool, null)
       : null,
   );
+  const selectedSectionPathRef = useRef(selectedSectionPath);
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
@@ -1436,48 +1590,117 @@ function LocalWorkspaceShell({
   }, [view]);
 
   useEffect(() => {
+    selectedSectionPathRef.current = selectedSectionPath;
+  }, [selectedSectionPath]);
+
+  useEffect(() => {
     const nextView = currentLocalView(displayPool, homePath);
     viewRef.current = nextView;
     setView(nextView);
+    setSelectedPostId((current) =>
+      selectedPostIdForView(displayPool, nextView, current),
+    );
+    if (nextView.level === "root") {
+      setSelectedSectionPath((current) =>
+        validRootSectionPath(displayPool, current),
+      );
+    }
   }, [displayPool, homePath]);
 
   const navigateToView = useCallback(
-    (nextView: LocalWorkspaceView, href: string) => {
+    (
+      nextView: LocalWorkspaceView,
+      href: string,
+      options: {
+        selectedPostId?: string | null;
+        selectedSectionPath?: string | null;
+      } = {},
+    ) => {
       window.history.pushState(null, "", href);
       viewRef.current = nextView;
       setView(nextView);
-      setSelectedPostId(
-        nextView.level === "post" || nextView.level === "edit"
-          ? nextView.postId
-          : null,
-      );
+      const nextSelectedPostId =
+        "selectedPostId" in options
+          ? (options.selectedPostId ?? null)
+          : selectedPostIdForView(displayPoolRef.current, nextView);
+      setSelectedPostId(nextSelectedPostId);
+      if ("selectedSectionPath" in options) {
+        setSelectedSectionPath(
+          validRootSectionPath(
+            displayPoolRef.current,
+            options.selectedSectionPath ?? null,
+          ),
+        );
+      } else if (nextView.level === "root") {
+        setSelectedSectionPath(
+          validRootSectionPath(
+            displayPoolRef.current,
+            selectedSectionPathRef.current,
+          ),
+        );
+      }
     },
     [],
   );
 
   const replaceWithView = useCallback(
-    (nextView: LocalWorkspaceView, href: string) => {
+    (
+      nextView: LocalWorkspaceView,
+      href: string,
+      options: {
+        selectedPostId?: string | null;
+        selectedSectionPath?: string | null;
+      } = {},
+    ) => {
       window.history.replaceState(null, "", href);
       viewRef.current = nextView;
       setView(nextView);
-      setSelectedPostId(
-        nextView.level === "post" || nextView.level === "edit"
-          ? nextView.postId
-          : null,
-      );
+      const nextSelectedPostId =
+        "selectedPostId" in options
+          ? (options.selectedPostId ?? null)
+          : selectedPostIdForView(displayPoolRef.current, nextView);
+      setSelectedPostId(nextSelectedPostId);
+      if ("selectedSectionPath" in options) {
+        setSelectedSectionPath(
+          validRootSectionPath(
+            displayPoolRef.current,
+            options.selectedSectionPath ?? null,
+          ),
+        );
+      } else if (nextView.level === "root") {
+        setSelectedSectionPath(
+          validRootSectionPath(
+            displayPoolRef.current,
+            selectedSectionPathRef.current,
+          ),
+        );
+      }
     },
     [],
   );
 
-  const navigateRoot = useCallback(() => {
-    navigateToView({ level: "root" }, workspaceRootHref(homePath));
-  }, [homePath, navigateToView]);
+  const navigateRoot = useCallback(
+    (nextSelectedSectionPath?: string | null) => {
+      navigateToView(
+        { level: "root" },
+        workspaceRootHref(homePath),
+        {
+          selectedSectionPath:
+            nextSelectedSectionPath ?? selectedSectionPathRef.current,
+        },
+      );
+    },
+    [homePath, navigateToView],
+  );
 
   const navigateSection = useCallback(
-    (folderPath: SidebarFolderId) => {
+    (folderPath: SidebarFolderId, nextSelectedPostId?: string | null) => {
       navigateToView(
         { level: "section", folderPath },
         folderWorkspaceHref(homePath, folderPath),
+        nextSelectedPostId === undefined
+          ? {}
+          : { selectedPostId: nextSelectedPostId },
       );
     },
     [homePath, navigateToView],
@@ -1548,25 +1771,54 @@ function LocalWorkspaceShell({
     if (view.level === "post" || view.level === "edit") {
       return poolPostsForFolder(displayPool, view.folderPath);
     }
-    return poolPostsForFolder(displayPool, BLOG_FOLDER_PATH);
+    return [];
   }, [displayPool, view]);
 
   useEffect(() => {
-    if (!selectedPostId) return;
-    if (!visiblePosts.some((post) => post.id === selectedPostId)) {
-      setSelectedPostId(null);
-    }
-  }, [selectedPostId, visiblePosts]);
+    if (view.level !== "section") return;
+    setSelectedPostId((current) => {
+      if (current && visiblePosts.some((post) => post.id === current)) {
+        return current;
+      }
+      return visiblePosts[0]?.id ?? null;
+    });
+  }, [view.level, visiblePosts]);
+
+  useEffect(() => {
+    if (view.level !== "root") return;
+    setSelectedSectionPath((current) =>
+      validRootSectionPath(displayPool, current),
+    );
+  }, [displayPool, view.level]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const selector =
+      view.level === "root" && selectedSectionPath
+        ? `[data-workspace-section-path="${cssAttributeValue(
+            selectedSectionPath,
+          )}"]`
+        : selectedPostId
+          ? `[data-workspace-post-id="${cssAttributeValue(selectedPostId)}"]`
+          : null;
+    if (!selector) return;
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(selector)
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  }, [mounted, selectedPostId, selectedSectionPath, view.level]);
 
   const openPostId = useCallback(
-    (postId: string) => {
+    (postId: string, mode: "read" | "edit" = "read") => {
       const post = findPoolPostById(displayPool, postId);
       if (!post) return;
       openPoolPost(
         post,
-        view.level === "section" || view.level === "post"
+        view.level === "section" || view.level === "post" || view.level === "edit"
           ? view.folderPath
           : undefined,
+        mode,
       );
     },
     [displayPool, openPoolPost, view],
@@ -1597,6 +1849,53 @@ function LocalWorkspaceShell({
     [openPostId, selectedPostId, view, visiblePosts],
   );
 
+  const selectRelativeSection = useCallback((direction: 1 | -1) => {
+    const sections = rootSectionFolders(displayPoolRef.current);
+    if (sections.length === 0) return;
+    const currentPath =
+      selectedSectionPathRef.current ?? sections[0]?.path ?? null;
+    const currentIndex = currentPath
+      ? sections.findIndex((folder) => folder.path === currentPath)
+      : -1;
+    const nextIndex =
+      currentIndex === -1
+        ? direction > 0
+          ? 0
+          : sections.length - 1
+        : (currentIndex + direction + sections.length) % sections.length;
+    const nextPath = sections[nextIndex]?.path ?? null;
+    if (nextPath) setSelectedSectionPath(nextPath);
+  }, []);
+
+  const openSectionByIndex = useCallback(
+    (index: number) => {
+      const section = rootSectionFolders(displayPoolRef.current)[index];
+      if (!section) return;
+      setSelectedSectionPath(section.path);
+      navigateSection(section.path);
+    },
+    [navigateSection],
+  );
+
+  const openSelected = useCallback(() => {
+    if (viewRef.current.level === "root") {
+      const sectionPath =
+        validRootSectionPath(
+          displayPoolRef.current,
+          selectedSectionPathRef.current,
+        ) ?? rootSectionFolders(displayPoolRef.current)[0]?.path;
+      if (sectionPath) navigateSection(sectionPath);
+      return;
+    }
+    const current = viewRef.current;
+    const postId =
+      selectedPostId ??
+      (current.level === "post" || current.level === "edit"
+        ? current.postId
+        : null);
+    if (postId) openPostId(postId);
+  }, [navigateSection, openPostId, selectedPostId]);
+
   const navigatePath = useCallback(
     (path: string) => {
       const url = new URL(path, window.location.origin);
@@ -1623,11 +1922,11 @@ function LocalWorkspaceShell({
 
   const navigateUp = useCallback(() => {
     if (view.level === "post" || view.level === "edit") {
-      navigateSection(view.folderPath);
+      navigateSection(view.folderPath, view.postId);
       return true;
     }
     if (view.level === "section") {
-      navigateRoot();
+      navigateRoot(view.folderPath);
       return true;
     }
     return false;
@@ -1635,7 +1934,16 @@ function LocalWorkspaceShell({
 
   useEffect(() => {
     const onPopState = () => {
-      setView(currentLocalView(displayPool, homePath));
+      const nextView = currentLocalView(displayPool, homePath);
+      setView(nextView);
+      setSelectedPostId((current) =>
+        selectedPostIdForView(displayPool, nextView, current),
+      );
+      if (nextView.level === "root") {
+        setSelectedSectionPath((current) =>
+          validRootSectionPath(displayPool, current),
+        );
+      }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -1646,19 +1954,41 @@ function LocalWorkspaceShell({
       blog: displayPool.blog,
       handle: displayPool.blog.handle,
       homePath,
+      viewLevel: view.level,
       canCreate: canManageFolders,
       canEdit: canManageFolders,
       canManagePost: canManageFolders,
       activeFolderPath: localViewActiveFolder(view),
       activePostId:
         view.level === "post" || view.level === "edit" ? view.postId : null,
+      selectedSectionPath,
       selectedPostId,
+      getRootSectionPaths: () =>
+        rootSectionFolders(displayPoolRef.current).map((folder) => folder.path),
       getVisiblePostIds: () => visiblePosts.map((post) => post.id),
       getPost: (postId: string) =>
         findPoolPostById(displayPoolRef.current, postId),
       selectPost: (postId: string | null) => setSelectedPostId(postId),
-      selectNext: () => selectRelativePost(1),
-      selectPrevious: () => selectRelativePost(-1),
+      selectSection: (folderPath: string | null) =>
+        setSelectedSectionPath(
+          validRootSectionPath(displayPoolRef.current, folderPath),
+        ),
+      selectNext: () => {
+        if (viewRef.current.level === "root") {
+          selectRelativeSection(1);
+          return;
+        }
+        selectRelativePost(1);
+      },
+      selectPrevious: () => {
+        if (viewRef.current.level === "root") {
+          selectRelativeSection(-1);
+          return;
+        }
+        selectRelativePost(-1);
+      },
+      openSelected,
+      openSectionByIndex,
       openPost: openPostId,
       openCreatedPost,
       reconcileCreatedPost,
@@ -1689,9 +2019,13 @@ function LocalWorkspaceShell({
       navigateSection,
       navigateUp,
       openCreatedPost,
+      openSelected,
+      openSectionByIndex,
       openPostId,
       reconcileCreatedPost,
       selectRelativePost,
+      selectRelativeSection,
+      selectedSectionPath,
       selectedPostId,
       view,
       visiblePosts,
@@ -1710,8 +2044,15 @@ function LocalWorkspaceShell({
       handle={displayPool.blog.handle}
       homePath={homePath}
       onNavigate={navigatePath}
+      onOpenSection={navigateSection}
       onOpenPost={openPost}
+      onSelectSection={(folderPath) =>
+        setSelectedSectionPath(
+          validRootSectionPath(displayPoolRef.current, folderPath),
+        )
+      }
       pool={displayPool}
+      selectedSectionPath={selectedSectionPath}
       selectedPostId={selectedPostId}
       view={view}
     />

@@ -37,6 +37,14 @@ function itemTitle(post: Post): string {
   return post.title.trim() || "Untitled";
 }
 
+function domSafeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "_");
+}
+
+function postOptionId(postId: string | null | undefined): string | undefined {
+  return postId ? `workspace-post-${domSafeId(postId)}` : undefined;
+}
+
 function actionErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -183,15 +191,26 @@ function NotesFolderContents({
             Write your first private note.
           </FolderEmptyCard>
         ) : (
-          <div className="post-folder-list">
+          <div
+            className="post-folder-list"
+            role="listbox"
+            aria-label="Notes"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
             {notes.map((note) => {
               const preview = previewLine(postBodyPreview(note));
+              const selected = note.id === selectedPostId;
               return (
                 <Link
                   key={itemKey(note)}
+                  id={postOptionId(note.id)}
                   className={`post-folder-row${
-                    note.id === selectedPostId ? " is-command-selected" : ""
+                    selected ? " is-command-selected" : ""
                   }`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  data-workspace-post-id={note.id}
                   href={
                     onOpenPost
                       ? blogPostPath(blog, note)
@@ -384,22 +403,32 @@ function BookmarksFolderContents({
             Save your first link.
           </FolderEmptyCard>
         ) : (
-          <div className="post-folder-list">
-            {bookmarks.map((bookmark) => (
-              <BookmarkCard
-                key={itemKey(bookmark)}
-                post={bookmark}
-                selected={bookmark.id === selectedPostId}
-                editPath={
-                  onOpenPost
-                    ? blogPostPath(blog, bookmark)
-                    : canEditItems
-                      ? blogPostEditPath(blog, bookmark)
-                      : blogPostPath(blog, bookmark)
-                }
-                onOpenPost={onOpenPost}
-              />
-            ))}
+          <div
+            className="post-folder-list"
+            role="listbox"
+            aria-label="Bookmarks"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
+            {bookmarks.map((bookmark) => {
+              const selected = bookmark.id === selectedPostId;
+              return (
+                <BookmarkCard
+                  key={itemKey(bookmark)}
+                  post={bookmark}
+                  selected={selected}
+                  optionId={postOptionId(bookmark.id)}
+                  optionTabIndex={selected ? 0 : -1}
+                  editPath={
+                    onOpenPost
+                      ? blogPostPath(blog, bookmark)
+                      : canEditItems
+                        ? blogPostEditPath(blog, bookmark)
+                        : blogPostPath(blog, bookmark)
+                  }
+                  onOpenPost={onOpenPost}
+                />
+              );
+            })}
           </div>
         )}
       </section>
@@ -491,15 +520,26 @@ function BlogFolderContents({
             </FolderEmptyCard>
           </>
         ) : (
-          <div className="post-folder-list">
+          <div
+            className="post-folder-list"
+            role="listbox"
+            aria-label="Folder items"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
             {sorted.map((post) => {
               const preview = previewLine(postBodyPreview(post));
+              const selected = post.id === selectedPostId;
               return (
                 <Link
                   key={itemKey(post)}
+                  id={postOptionId(post.id)}
                   className={`post-folder-row${
-                    post.id === selectedPostId ? " is-command-selected" : ""
+                    selected ? " is-command-selected" : ""
                   }`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  data-workspace-post-id={post.id}
                   href={
                     onOpenPost
                       ? blogPostPath(blog, post)

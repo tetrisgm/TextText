@@ -126,11 +126,15 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  optionId,
+  optionTabIndex,
   selected = false,
 }: {
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  optionId?: string;
+  optionTabIndex?: number;
   selected?: boolean;
 }) {
   const router = useRouter();
@@ -228,7 +232,14 @@ export function BookmarkCard({
   );
 
   return (
-    <article className={classNames(styles.card, selected && styles.selected)}>
+    <article
+      id={optionId}
+      className={classNames(styles.card, selected && styles.selected)}
+      role={optionId ? "option" : undefined}
+      aria-selected={optionId ? selected : undefined}
+      tabIndex={optionTabIndex}
+      data-workspace-post-id={post.id}
+    >
       <div className={styles.body}>
         {isPending ? (
           <div

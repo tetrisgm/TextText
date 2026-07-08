@@ -13,7 +13,11 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { isTypingTarget } from "@/components/keyboard/typing-target";
-import { CommandPalette } from "@/components/keyboard/CommandPalette";
+import {
+  CommandPalette,
+  OPEN_COMMAND_PALETTE_EVENT,
+  OPEN_KEYBOARD_SHORTCUTS_EVENT,
+} from "@/components/keyboard/CommandPalette";
 import {
   availableWorkspaceCommands,
   shortcutList,
@@ -50,6 +54,7 @@ type CommandLayerValue = {
   pushEscapeLayer: (label: string, close: () => void) => () => void;
   setWorkspaceSurface: (surface: CommandWorkspaceSurface | null) => void;
   openPalette: (query?: string) => void;
+  openShortcuts: () => void;
   closePalette: () => void;
   commandContext: () => CommandContext;
 };
@@ -64,10 +69,16 @@ function runCommand(run: () => void | Promise<void>) {
   });
 }
 
+function isKeyboardShortcutsKey(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  return event.key === "?" || (event.key === "/" && event.shiftKey);
+}
+
 export function CommandLayer({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { pool } = useWorkspacePool();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [workspaceSurface, setWorkspaceSurface] =
     useState<CommandWorkspaceSurface | null>(null);
@@ -99,10 +110,18 @@ export function CommandLayer({ children }: { children: ReactNode }) {
 
   const closePalette = useCallback(() => {
     setPaletteOpen(false);
+    setShortcutsOpen(false);
   }, []);
 
   const openPalette = useCallback((query = "") => {
     setPaletteQuery(query);
+    setShortcutsOpen(false);
+    setPaletteOpen(true);
+  }, []);
+
+  const openShortcuts = useCallback(() => {
+    setPaletteQuery("");
+    setShortcutsOpen(true);
     setPaletteOpen(true);
   }, []);
 
@@ -128,10 +147,11 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       navigate: (path: string) => router.push(path),
       refresh: () => router.refresh(),
       openPalette,
+      openShortcuts,
       closePalette,
       toast: showToast,
     }),
-    [closePalette, openPalette, router, showToast],
+    [closePalette, openPalette, openShortcuts, router, showToast],
   );
 
   const registerKey = useCallback((binding: KeyBinding) => {
@@ -185,16 +205,15 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   }, []);
 
   const dispatchCommandShortcut = useCallback(
-    (event: KeyboardEvent) => {
+    (event: KeyboardEvent, typingTarget: boolean) => {
       const ctx = commandContext();
       for (const command of availableWorkspaceCommands(ctx)) {
-        if (
-          !shortcutList(command).some((shortcut) =>
-            shortcutMatches(shortcut, event),
-          )
-        ) {
-          continue;
-        }
+        const shortcut = shortcutList(command).find((candidate) =>
+          shortcutMatches(candidate, event),
+        );
+        if (!shortcut) continue;
+        if (typingTarget && !shortcut.allowTypingTarget) continue;
+        if (shortcut.requiresWorkspace && !ctx.workspace) continue;
         event.preventDefault();
         runCommand(() => command.run(ctx));
         return true;
@@ -205,37 +224,42 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    const onOpenPalette = () => openPalette();
+    const onOpenShortcuts = () => openShortcuts();
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenPalette);
+    window.addEventListener(OPEN_KEYBOARD_SHORTCUTS_EVENT, onOpenShortcuts);
+    return () => {
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenPalette);
+      window.removeEventListener(OPEN_KEYBOARD_SHORTCUTS_EVENT, onOpenShortcuts);
+    };
+  }, [openPalette, openShortcuts]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-
-      const key = event.key.toLowerCase();
-      const commandK =
-        key === "k" && (event.metaKey || event.ctrlKey) && !event.altKey;
-      if (commandK) {
-        event.preventDefault();
-        openPalette();
-        return;
-      }
+      const typingTarget = isTypingTarget(event.target);
 
       if (event.key === "Escape") {
         if (popEscapeLayer()) {
           event.preventDefault();
           return;
         }
-        if (document.querySelector(".is-edit-workspace-shell")) return;
-        event.preventDefault();
-        if (dispatchRegisteredKey(event)) return;
-        if (workspaceSurfaceRef.current?.navigateUp()) return;
-        if (isTypingTarget(event.target) && event.target instanceof HTMLElement) {
-          event.target.blur();
-        }
+        if (typingTarget) return;
+        if (dispatchCommandShortcut(event, false)) return;
+        dispatchRegisteredKey(event);
         return;
       }
 
-      if (isTypingTarget(event.target)) return;
+      if (!typingTarget && isKeyboardShortcutsKey(event)) {
+        event.preventDefault();
+        openShortcuts();
+        return;
+      }
+
+      if (dispatchCommandShortcut(event, typingTarget)) return;
+      if (typingTarget) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-      if (dispatchCommandShortcut(event)) return;
       dispatchRegisteredKey(event);
     };
 
@@ -244,7 +268,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   }, [
     dispatchCommandShortcut,
     dispatchRegisteredKey,
-    openPalette,
+    openShortcuts,
     popEscapeLayer,
   ]);
 
@@ -254,6 +278,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       pushEscapeLayer,
       setWorkspaceSurface,
       openPalette,
+      openShortcuts,
       closePalette,
       commandContext,
     }),
@@ -261,6 +286,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       closePalette,
       commandContext,
       openPalette,
+      openShortcuts,
       pushEscapeLayer,
       registerKey,
       setWorkspaceSurface,
@@ -273,6 +299,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       <CommandPalette
         initialQuery={paletteQuery}
         open={paletteOpen}
+        shortcutsOpen={shortcutsOpen}
         onClose={closePalette}
         commandContext={commandContext}
       />

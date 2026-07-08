@@ -14,7 +14,8 @@
   padding-inline: 10px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 22%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  outline-offset: -2px;
 }
 
 .body {

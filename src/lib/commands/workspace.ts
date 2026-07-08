@@ -31,6 +31,7 @@ const DELETE_UNDO_MS = 5000;
 function commandTargetPost(ctx: CommandContext): WorkspacePoolPost | null {
   const workspace = ctx.workspace;
   if (!workspace) return null;
+  if (workspace.viewLevel === "root") return null;
   const postId = workspace.selectedPostId ?? workspace.activePostId;
   return postId ? workspace.getPost(postId) : null;
 }
@@ -149,7 +150,7 @@ function createCommand(kind: CreatePostKind): AppCommand {
     id: `create.${kind}`,
     label: labels[kind],
     group: "Create",
-    shortcut: { key: "c", label: "C" },
+    showInShortcutSheet: false,
     when: (ctx) => Boolean(ctx.workspace?.canCreate),
     run: async (ctx) => {
       const workspace = ctx.workspace;
@@ -281,8 +282,28 @@ function moveSelectedTo(ctx: CommandContext, folder: Folder) {
 
 export const WORKSPACE_COMMANDS: AppCommand[] = [
   {
+    id: "command.palette",
+    label: "Open command palette",
+    group: "Command bar",
+    shortcut: [
+      { key: "k", meta: true, label: "⌘K", allowTypingTarget: true },
+      { key: "k", ctrl: true, label: "Ctrl K", allowTypingTarget: true },
+      { key: "/", label: "/", requiresWorkspace: true },
+    ],
+    when: () => true,
+    run: (ctx) => ctx.openPalette(),
+  },
+  {
+    id: "command.shortcuts",
+    label: "Keyboard shortcuts",
+    group: "Command bar",
+    shortcut: { key: "?", shift: true, label: "?" },
+    when: () => true,
+    run: (ctx) => ctx.openShortcuts(),
+  },
+  {
     id: "create.current",
-    label: "Create in current folder",
+    label: "Create in context",
     group: "Create",
     shortcut: { key: "c", label: "C" },
     when: (ctx) => Boolean(ctx.workspace?.canCreate),
@@ -296,73 +317,109 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   createCommand("bookmark"),
   {
     id: "selection.previous",
-    label: "Previous item",
+    label: "Previous item or section",
     group: "Navigate",
-    shortcut: { key: "k", label: "K" },
+    shortcut: [
+      { key: "ArrowUp", label: "↑" },
+      { key: "k", label: "K" },
+    ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.selectPrevious(),
   },
   {
     id: "selection.next",
-    label: "Next item",
+    label: "Next item or section",
     group: "Navigate",
-    shortcut: { key: "j", label: "J" },
+    shortcut: [
+      { key: "ArrowDown", label: "↓" },
+      { key: "j", label: "J" },
+    ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.selectNext(),
   },
   {
     id: "selection.open",
-    label: "Open selected",
+    label: "Open focused item",
     group: "Navigate",
-    shortcut: { key: "Enter", label: "Enter" },
-    when: (ctx) => {
-      const workspace = ctx.workspace;
-      if (!workspace) return false;
-      return Boolean(workspace.selectedPostId ?? workspace.activePostId);
-    },
+    shortcut: [
+      { key: "Enter", label: "Enter" },
+      { key: "ArrowRight", label: "→" },
+    ],
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.workspace?.openSelected(),
+  },
+  {
+    id: "navigation.up",
+    label: "Go up one level",
+    group: "Navigate",
+    shortcut: [
+      { key: "ArrowLeft", label: "←" },
+      { key: "Escape", label: "Esc" },
+    ],
+    when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
     run: (ctx) => {
-      const workspace = ctx.workspace;
-      const postId = workspace?.selectedPostId ?? workspace?.activePostId;
-      if (workspace && postId) workspace.openPost(postId);
+      ctx.workspace?.navigateUp();
     },
   },
   {
+    id: "navigation.section.1",
+    label: "Go to Blog",
+    group: "Navigate",
+    shortcut: { key: "1", label: "1" },
+    when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[0]),
+    run: (ctx) => ctx.workspace?.openSectionByIndex(0),
+  },
+  {
+    id: "navigation.section.2",
+    label: "Go to Notes",
+    group: "Navigate",
+    shortcut: { key: "2", label: "2" },
+    when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[1]),
+    run: (ctx) => ctx.workspace?.openSectionByIndex(1),
+  },
+  {
+    id: "navigation.section.3",
+    label: "Go to Bookmarks",
+    group: "Navigate",
+    shortcut: { key: "3", label: "3" },
+    when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[2]),
+    run: (ctx) => ctx.workspace?.openSectionByIndex(2),
+  },
+  {
     id: "post.edit",
-    label: "Edit",
-    group: "Post",
+    label: "Edit focused item",
+    group: "Act",
     shortcut: { key: "e", label: "E" },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canEdit),
     run: (ctx) => {
       const post = commandTargetPost(ctx);
-      const pool = ctx.pool;
-      if (!post || !pool) return;
-      ctx.navigate(blogPostEditPath(pool.blog, post));
+      if (!post) return;
+      ctx.workspace?.openPost(post.id, "edit");
     },
   },
   {
     id: "post.delete",
-    label: "Delete",
-    group: "Post",
+    label: "Delete focused item",
+    group: "Act",
     shortcut: [
       { key: "x", label: "X" },
       { key: "Delete", label: "Del" },
-      { key: "Backspace", label: "Del" },
     ],
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: deleteSelected,
   },
   {
     id: "post.pin",
-    label: "Pin or unpin",
-    group: "Post",
+    label: "Pin or unpin focused item",
+    group: "Act",
     shortcut: { key: "p", label: "P" },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: togglePinSelected,
   },
   {
     id: "post.move",
-    label: "Move",
-    group: "Post",
+    label: "Move focused item",
+    group: "Act",
     shortcut: { key: "m", label: "M" },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: (ctx) => ctx.openPalette("/move "),
@@ -370,7 +427,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   {
     id: "post.publish",
     label: "Publish or unpublish",
-    group: "Post",
+    group: "Act",
     when: (ctx) => {
       const post = commandTargetPost(ctx);
       return Boolean(
@@ -420,6 +477,29 @@ export function commandShortcutLabel(command: AppCommand): string | undefined {
     return `${modifiers}${key}`;
   });
   return shortcuts.length > 0 ? shortcuts.join(", ") : undefined;
+}
+
+export type WorkspaceShortcutRow = {
+  id: string;
+  label: string;
+  group: string;
+  shortcut: string;
+};
+
+export function workspaceShortcutRows(): WorkspaceShortcutRow[] {
+  const rows: WorkspaceShortcutRow[] = [];
+  for (const command of WORKSPACE_COMMANDS) {
+    if (command.showInShortcutSheet === false) continue;
+    const shortcut = commandShortcutLabel(command);
+    if (!shortcut) continue;
+    rows.push({
+      id: command.id,
+      label: command.label,
+      group: command.group,
+      shortcut,
+    });
+  }
+  return rows;
 }
 
 export function shortcutMatches(

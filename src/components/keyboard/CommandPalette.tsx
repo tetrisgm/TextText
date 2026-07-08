@@ -11,6 +11,7 @@ import {
   availableWorkspaceCommands,
   commandShortcutLabel,
   dynamicWorkspaceCommands,
+  workspaceShortcutRows,
 } from "@/lib/commands/workspace";
 import type { AppCommand, CommandContext } from "@/lib/commands/types";
 import type {
@@ -21,7 +22,6 @@ import {
   blogHomePath,
   blogPostPath,
 } from "@/lib/public-paths";
-import { isTypingTarget } from "./typing-target";
 
 export const OPEN_COMMAND_PALETTE_EVENT = "write:open-command-palette";
 export const OPEN_KEYBOARD_SHORTCUTS_EVENT = "write:open-keyboard-shortcuts";
@@ -108,6 +108,11 @@ type ShortcutSheetRow = {
   shortcut: string;
 };
 
+type ShortcutSheetGroup = {
+  group: string;
+  rows: ShortcutSheetRow[];
+};
+
 function postResult(
   post: WorkspacePoolPost,
   pool: WorkspacePoolPayload,
@@ -153,27 +158,26 @@ export function CommandPalette({
   initialQuery,
   onClose,
   open,
+  shortcutsOpen,
 }: {
   commandContext: () => CommandContext;
   initialQuery: string;
   onClose: () => void;
   open: boolean;
+  shortcutsOpen: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const wasOpenRef = useRef(open);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [fallbackPool, setFallbackPool] =
     useState<WorkspacePoolPayload | null>(null);
   const [fallbackHandle, setFallbackHandle] = useState<string | null>(null);
   const ctx = commandContext();
   const pool = ctx.pool ?? fallbackPool;
   const paletteOpen = open && !shortcutsOpen;
-  const dialogOpen = open || shortcutsOpen;
+  const dialogOpen = open;
 
   const closeDialog = () => {
-    setShortcutsOpen(false);
     onClose();
   };
 
@@ -183,52 +187,6 @@ export function CommandPalette({
     setSelected(0);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }, [initialQuery, paletteOpen]);
-
-  useEffect(() => {
-    if (wasOpenRef.current && !open) setShortcutsOpen(false);
-    wasOpenRef.current = open;
-  }, [open]);
-
-  useEffect(() => {
-    const openCommandPalette = () => {
-      setShortcutsOpen(false);
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "k",
-          metaKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    };
-    const openShortcuts = () => {
-      setShortcutsOpen(true);
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "k",
-          metaKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key !== "?") return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
-      event.preventDefault();
-      openShortcuts();
-    };
-    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, openCommandPalette);
-    window.addEventListener(OPEN_KEYBOARD_SHORTCUTS_EVENT, openShortcuts);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, openCommandPalette);
-      window.removeEventListener(OPEN_KEYBOARD_SHORTCUTS_EVENT, openShortcuts);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
 
   useEffect(() => {
     if (!dialogOpen || ctx.pool || fallbackPool) return;
@@ -295,45 +253,16 @@ export function CommandPalette({
       .map((entry) => entry.result);
   }, [ctx, pool, query]);
 
-  const shortcutRows = useMemo<ShortcutSheetRow[]>(() => {
-    const rows: ShortcutSheetRow[] = [
-      {
-        id: "system.palette",
-        label: "Open command palette",
-        group: "Workspace",
-        shortcut: "⌘K",
-      },
-      {
-        id: "system.shortcuts",
-        label: "Keyboard shortcuts",
-        group: "Workspace",
-        shortcut: "?",
-      },
-      {
-        id: "system.slash",
-        label: "Editor commands",
-        group: "Editor",
-        shortcut: "/",
-      },
-    ];
-    for (const command of availableWorkspaceCommands(ctx)) {
-      const shortcut = commandShortcutLabel(command);
-      if (!shortcut) continue;
-      rows.push({
-        id: command.id,
-        label: command.label,
-        group: command.group,
-        shortcut,
-      });
-    }
-    const seen = new Set<string>();
-    return rows.filter((row) => {
-      const key = `${row.label}:${row.shortcut}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [ctx]);
+  const shortcutGroups = useMemo<ShortcutSheetGroup[]>(() => {
+    const order = ["Navigate", "Create", "Act", "Command bar"];
+    const rows = workspaceShortcutRows();
+    return order
+      .map((group) => ({
+        group,
+        rows: rows.filter((row) => row.group === group),
+      }))
+      .filter((group) => group.rows.length > 0);
+  }, []);
 
   useEffect(() => {
     setSelected((current) =>
@@ -410,20 +339,31 @@ export function CommandPalette({
               </button>
             </div>
             <div className="command-palette-results" role="list">
-              {shortcutRows.map((row) => (
+              {shortcutGroups.map((group) => (
                 <div
-                  key={row.id}
-                  className="command-palette-row"
-                  role="listitem"
-                  style={{ cursor: "default" }}
+                  key={group.group}
+                  className="command-shortcut-group"
+                  role="group"
+                  aria-label={group.group}
                 >
-                  <span className="command-palette-copy">
-                    <span className="command-palette-label">{row.label}</span>
-                    <span className="command-palette-detail">{row.group}</span>
-                  </span>
-                  <span className="command-palette-shortcut">
-                    {row.shortcut}
-                  </span>
+                  <div className="command-shortcut-heading">{group.group}</div>
+                  {group.rows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="command-palette-row"
+                      role="listitem"
+                      style={{ cursor: "default" }}
+                    >
+                      <span className="command-palette-copy">
+                        <span className="command-palette-label">
+                          {row.label}
+                        </span>
+                      </span>
+                      <span className="command-palette-shortcut">
+                        {row.shortcut}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

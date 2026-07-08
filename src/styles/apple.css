@@ -1503,6 +1503,20 @@
 .command-palette-row.is-selected {
   background: var(--ac-tinted-fill);
 }
+.command-shortcut-group {
+  display: grid;
+  gap: 2px;
+}
+.command-shortcut-group + .command-shortcut-group {
+  margin-top: 10px;
+}
+.command-shortcut-heading {
+  padding: 7px 10px 3px;
+  color: var(--ac-label-2);
+  font: 750 var(--ac-fs-caption1)/1 var(--ac-font-text);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
 .command-palette-copy {
   min-width: 0;
   display: grid;

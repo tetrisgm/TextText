@@ -2713,6 +2713,76 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-weight: 600;
   line-height: 1.42;
 }
+.workspace-root-sections {
+  width: min(100%, 560px);
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+.workspace-root-section {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-root-section:hover {
+  background: color-mix(in srgb, var(--ink) 5%, var(--bg));
+}
+.workspace-root-section.is-command-selected {
+  border-color: color-mix(in srgb, var(--ac-accent, var(--accent)) 42%, var(--hairline));
+  background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, var(--bg));
+  outline: 2px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  outline-offset: -2px;
+}
+.workspace-root-section:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+.workspace-root-section-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--hairline) 80%, transparent);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--muted);
+}
+.workspace-root-section-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.workspace-root-section-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.workspace-root-section-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-root-section-meta {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
 .post-folder-page-header {
   width: min(100%, 760px);
   display: grid;
@@ -2851,7 +2921,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding-inline: 10px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 22%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  outline-offset: -2px;
 }
 .post-folder-row.is-bookmark {
   align-items: start;
