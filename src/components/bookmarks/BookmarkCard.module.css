@@ -185,6 +185,47 @@
   background: var(--bg-soft);
 }
 
+.thumbnailFallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 5px;
+  padding: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-soft) 88%, var(--bg));
+  color: var(--muted);
+}
+
+.thumbnailInitial {
+  min-width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 76%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: color-mix(in srgb, var(--ink) 72%, var(--muted));
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.thumbnailHost {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
 .faviconThumbnailLink {
   display: grid;
   place-items: center;
@@ -212,6 +253,10 @@
 }
 
 .thumbnailDisabled {
+  pointer-events: none;
+}
+
+.failedThumbnailTile {
   pointer-events: none;
 }
 
