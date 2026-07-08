@@ -218,6 +218,31 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .reader-cover.is-capture-cover img {
   object-position: top;
 }
+.reader-cover.is-favicon-cover {
+  display: grid;
+  place-items: center;
+  height: clamp(220px, var(--reader-cover-height, 42.85vw), 760px);
+  min-height: 220px;
+  max-height: min(540px, 58svh);
+  background: color-mix(in srgb, var(--bg-soft) 88%, var(--bg));
+}
+.reader-cover.is-favicon-cover[style*="--reader-cover-height"] {
+  max-height: none;
+}
+.reader-cover.is-favicon-cover img {
+  width: clamp(56px, 8vw, 92px);
+  height: clamp(56px, 8vw, 92px);
+  min-height: 0;
+  max-height: none;
+  object-fit: contain;
+  object-position: center;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--bg) 82%, transparent) inset,
+    0 16px 36px -30px color-mix(in srgb, var(--ink) 48%, transparent);
+}
 .reader-figcaption {
   display: block;
   max-width: 760px;
@@ -237,6 +262,45 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(1000px, 100%);
   margin: 0 auto 44px;
   padding: 0 24px;
+}
+.reader-bookmark-original {
+  display: grid;
+  gap: 6px;
+  width: min(680px, 100%);
+  margin: 0 auto;
+  padding: 13px 15px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-soft) 76%, transparent);
+}
+.reader-bookmark-original-label {
+  color: color-mix(in srgb, var(--post-accent, var(--muted)) 60%, var(--ink));
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.reader-bookmark-original a {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reader-bookmark-original a:hover {
+  color: color-mix(in srgb, var(--post-accent, var(--ink)) 60%, var(--ink));
+}
+.reader-bookmark-original a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
+  outline-offset: 3px;
 }
 .reader-bookmark-capture-frame {
   max-height: min(780px, 72svh);
@@ -3710,6 +3774,16 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     min-height: 220px;
     max-height: min(320px, 48svh);
     border-radius: 0;
+  }
+  .reader-cover.is-favicon-cover {
+    height: 56vw;
+    min-height: 220px;
+    max-height: min(320px, 48svh);
+  }
+  .reader-cover.is-favicon-cover img {
+    width: 64px;
+    height: 64px;
+    min-height: 0;
   }
   .reader-bookmark-capture {
     margin-bottom: 34px;

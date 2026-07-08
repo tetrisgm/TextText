@@ -1,10 +1,9 @@
 import Link from "next/link";
 import type { Post } from "@/lib/content";
-import { isVideoFile } from "@/lib/content";
+import { isSafeLinkHref, isVideoFile } from "@/lib/content";
 import {
-  isNoCoverValue,
-  resolveCover,
-  usesBookmarkCaptureCover,
+  bookmarkFaviconUrl,
+  resolveCoverSource,
 } from "@/lib/cover";
 import styles from "./BookmarkCard.module.css";
 
@@ -17,7 +16,14 @@ function itemTitle(post: Post): string {
 }
 
 function originalHref(post: Post): string | undefined {
-  return post.links?.[0]?.href;
+  const captureUrl = safeHref(post.capture?.url);
+  if (captureUrl) return captureUrl;
+  return safeHref(post.links?.[0]?.href);
+}
+
+function safeHref(value: string | undefined): string | undefined {
+  const href = value?.trim() ?? "";
+  return href && isSafeLinkHref(href) ? href : undefined;
 }
 
 function bookmarkHost(post: Post): string {
@@ -50,17 +56,6 @@ function previewLine(value: string | undefined): string {
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
 
-function faviconUrl(host: string): string {
-  return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`;
-}
-
-function bookmarkThumbnail(post: Post): string {
-  const cover = post.cover?.trim();
-  if (cover && !isNoCoverValue(cover)) return resolveCover(post);
-  if (usesBookmarkCaptureCover(post)) return resolveCover(post);
-  return "";
-}
-
 function StatusChip({ status }: { status: Post["captureStatus"] }) {
   if (status === "pending") {
     return (
@@ -89,13 +84,22 @@ export function BookmarkCard({
   const title = itemTitle(post);
   const href = originalHref(post);
   const host = bookmarkHost(post);
+  const faviconSrc = bookmarkFaviconUrl(post);
   const description =
-    previewLine(post.capture?.description) || previewLine(post.body);
+    previewLine(post.excerpt) ||
+    previewLine(post.capture?.description) ||
+    previewLine(post.body);
   const screenshotUrl = post.capture?.screenshotUrl?.trim();
   const htmlUrl = post.capture?.htmlUrl?.trim();
   const hasActions = Boolean(href || htmlUrl || screenshotUrl);
-  const thumbnailUrl = bookmarkThumbnail(post);
-  const thumbnailIsCapture = usesBookmarkCaptureCover(post);
+  const thumbnailSource = resolveCoverSource(post);
+  const thumbnailUrl = thumbnailSource.src;
+  const thumbnailIsCapture = thumbnailSource.kind === "bookmark-screenshot";
+  const thumbnailIsFavicon = thumbnailSource.kind === "bookmark-favicon";
+  const thumbnailLinkClass = classNames(
+    styles.thumbnailLink,
+    thumbnailIsFavicon && styles.faviconThumbnailLink,
+  );
   const thumbnailMedia = isVideoFile(thumbnailUrl) ? (
     <video
       className={styles.thumbnail}
@@ -111,6 +115,7 @@ export function BookmarkCard({
       className={classNames(
         styles.thumbnail,
         thumbnailIsCapture && styles.captureThumbnail,
+        thumbnailIsFavicon && styles.faviconThumbnail,
       )}
       src={thumbnailUrl}
       alt=""
@@ -124,10 +129,10 @@ export function BookmarkCard({
       <div className={styles.body}>
         <Link className={styles.main} href={editPath}>
           <span className={styles.favicon} aria-hidden="true">
-            {host && (
+            {faviconSrc && (
               <img
                 className={styles.faviconImage}
-                src={faviconUrl(host)}
+                src={faviconSrc}
                 alt=""
                 onError={(event) => {
                   event.currentTarget.hidden = true;
@@ -183,7 +188,7 @@ export function BookmarkCard({
       </div>
       {thumbnailUrl && thumbnailIsCapture && screenshotUrl && (
         <a
-          className={styles.thumbnailLink}
+          className={thumbnailLinkClass}
           href={screenshotUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -194,7 +199,7 @@ export function BookmarkCard({
       )}
       {thumbnailUrl && !thumbnailIsCapture && (
         <Link
-          className={styles.thumbnailLink}
+          className={thumbnailLinkClass}
           href={editPath}
           aria-label={`Open ${title}`}
         >

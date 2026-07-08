@@ -8,7 +8,7 @@ import {
   isSafeLinkHref,
   postAccent,
 } from "@/lib/content";
-import { resolveCover, usesBookmarkCaptureCover } from "@/lib/cover";
+import { resolveCoverSource } from "@/lib/cover";
 
 // The public reader: top cover hero, centered masthead, byline, and prose.
 // Server component; markdown renders on the server. The post's accent rides in
@@ -29,7 +29,7 @@ function safeHref(value: string | undefined): string {
 }
 
 function bookmarkOriginalHref(post: Post): string {
-  return safeHref(post.links?.[0]?.href) || safeHref(post.capture?.url);
+  return safeHref(post.capture?.url) || safeHref(post.links?.[0]?.href);
 }
 
 function BookmarkCapture({ post, title }: { post: Post; title: string }) {
@@ -43,6 +43,16 @@ function BookmarkCapture({ post, title }: { post: Post; title: string }) {
 
   return (
     <section className="reader-bookmark-capture" aria-label="Bookmark capture">
+      {originalUrl && (
+        <div className="reader-bookmark-original">
+          <span className="reader-bookmark-original-label">
+            Original link
+          </span>
+          <a href={originalUrl} target="_blank" rel="noopener noreferrer">
+            {originalUrl}
+          </a>
+        </div>
+      )}
       {screenshotUrl && (
         <div className="reader-bookmark-capture-frame" tabIndex={0}>
           {/* User media can be remote, so plain img avoids next/image config. */}
@@ -55,23 +65,20 @@ function BookmarkCapture({ post, title }: { post: Post; title: string }) {
           />
         </div>
       )}
-      <div className="reader-bookmark-links" aria-label="Bookmark links">
-        {originalUrl && (
-          <a href={originalUrl} target="_blank" rel="noopener noreferrer">
-            Open original
-          </a>
-        )}
-        {htmlUrl && (
-          <a href={htmlUrl} target="_blank" rel="noopener noreferrer">
-            View saved original
-          </a>
-        )}
-        {screenshotUrl && (
-          <a href={screenshotUrl} target="_blank" rel="noopener noreferrer">
-            View full page capture
-          </a>
-        )}
-      </div>
+      {(htmlUrl || screenshotUrl) && (
+        <div className="reader-bookmark-links" aria-label="Bookmark links">
+          {htmlUrl && (
+            <a href={htmlUrl} target="_blank" rel="noopener noreferrer">
+              View saved original
+            </a>
+          )}
+          {screenshotUrl && (
+            <a href={screenshotUrl} target="_blank" rel="noopener noreferrer">
+              View full page capture
+            </a>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -92,17 +99,21 @@ export function Reader({
   const title = post.title.trim() || "Untitled";
   const titleId = "reader-title";
   const excerpt = post.excerpt?.trim();
-  const resolvedCover = resolveCover(post);
-  const isCaptureCover = usesBookmarkCaptureCover(post);
+  const coverSource = resolveCoverSource(post);
+  const resolvedCover = coverSource.src;
   const coverCaption = post.coverCaption?.trim();
   const coverStyle = post.coverHeight
     ? ({ "--reader-cover-height": `${post.coverHeight}px` } as CSSProperties)
     : undefined;
+  const coverClassName = [
+    "reader-cover",
+    coverSource.kind === "bookmark-screenshot" ? "is-capture-cover" : "",
+    coverSource.kind === "bookmark-favicon" ? "is-favicon-cover" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const defaultCover = resolvedCover ? (
-    <figure
-      className={`reader-cover${isCaptureCover ? " is-capture-cover" : ""}`}
-      style={coverStyle}
-    >
+    <figure className={coverClassName} style={coverStyle}>
       {isVideoFile(resolvedCover) ? (
         <video src={resolvedCover} controls playsInline preload="metadata" />
       ) : (
