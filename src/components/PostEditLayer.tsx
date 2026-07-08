@@ -1184,12 +1184,6 @@ export function PostEditLayer({
   );
 
   const slots = {
-    toolbar: (
-      <div
-        ref={setBodyToolbarHost}
-        className="body-editor-toolbar-anchor"
-      />
-    ),
     title: (
       <textarea
         ref={titleRef}
@@ -1221,6 +1215,10 @@ export function PostEditLayer({
     ),
     body: (
       <div onKeyDown={onBodyKeyDown}>
+        <div
+          ref={setBodyToolbarHost}
+          className="body-editor-toolbar-anchor"
+        />
         <BodyEditor
           ref={bodyRef}
           value={draft.body}
