@@ -51,6 +51,9 @@ portfolio this was extracted from; it stays its own thing).
 
 ## Deploy
 
-Vercel (Neon Postgres + Blob wired via env). Preview deploys are fine;
-production pushes need an explicit per-change ask from Ramine, same as
-ramine.net.
+Vercel (Neon Postgres + Blob wired via env). ALWAYS ship the latest verified
+work straight to production and keep the Mac app (which loads prod) on it. Do
+not hold verified work on a preview or ask "should I ship this"; push to prod
+as soon as it is built and verified. Ramine evaluates on production, so
+anything not shipped does not exist for him. Only genuinely prohibited or
+irreversible-external actions pause for a check.
