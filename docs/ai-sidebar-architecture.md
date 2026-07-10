@@ -137,6 +137,45 @@ provider-hosted web_search tool (both Anthropic and OpenAI offer one) for
    llms.txt already in place. Later: the Mac app can host a Paper-style
    localhost MCP that forwards to the same commands with live view context.
 
+## How Notion does it (studied 2026-07-11, developers.notion.com/guides/mcp)
+
+Notion's hosted MCP (mcp.notion.com/mcp) is architecturally identical to what
+we shipped: streamable HTTP, RFC 9728 protected-resource metadata into RFC
+8414 authorization-server metadata, dynamic client registration, PKCE, OAuth
+consent. Their build-a-client guide documents the exact chain our
+scripts/test-oauth-mcp-loop.py walks. Validation that our approach is the
+industry-standard one; even Notion states "no true one-click automation
+exists due to security requirements", so paste-URL-and-approve IS the
+state of the art for ChatGPT and Claude.
+
+Where Notion is ahead, and what we adopt:
+
+- Zero-config discovery: they serve /.well-known/mcp.json
+  ({name, description, icon, endpoint}). Adopted, same shape.
+- One-click install links where clients support them: Cursor deeplink
+  (cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=base64) and
+  VS Code (vscode:mcp/install?urlencoded-json). Adopted on /docs/ai. Notion's
+  own docs do not even do this; it is Cursor/VS Code convention.
+- Docs depth: a supported-tools reference and a security best-practices page
+  (access model, prompt-injection warning, human-confirmation guidance).
+  Adopted as sections on /docs/ai.
+- Directory listings are the real one-click for ChatGPT and Claude: Notion
+  appears IN the clients' connector directories, so users click "Notion"
+  instead of pasting a URL. That is a business/ops submission per vendor
+  (OWNER-GATED, needs the real company identity), not code. Note for later.
+
+Roadmap deltas Notion suggests (for the shared tool module and token layer,
+NOT built yet):
+
+- Token lifecycle: Notion rotates access tokens (1h expiry) with refresh
+  tokens (180d absolute, 30d inactivity). Our wsk_ tokens never expire (they
+  are revocable). Adding expiry + refresh_token grant to /oauth/token is the
+  main security-hardening step left.
+- A read-only scope alongside "sync", so read-only connections exist.
+- Workspace identity: their fetch("self") returns workspace name/id; our
+  equivalent belongs in list_folders output or a small get_workspace tool.
+- Documented rate limits once we enforce any (they publish 180 rpm).
+
 ## Shipped 2026-07-10: click-to-approve connector discovery (Claude session)
 
 Phase 3's server half is live, built to slot under the assistant work without
@@ -164,3 +203,12 @@ should be consumed by `src/lib/mcp/tools.ts` registration; nothing in the
 discovery layer cares about tool shape, so extending the tool set requires no
 connector changes. The consent page (`src/app/oauth/authorize/page.tsx`) is
 the place to surface per-client names/logos later.
+
+## Shipped 2026-07-11: Notion-parity pass (Claude session)
+
+- `src/app/.well-known/mcp.json/route.ts`: zero-config discovery document.
+- `src/app/docs/ai/page.tsx`: one-click Add to Cursor / Add to VS Code links,
+  a "What a connected AI can do" tools table (keep it in sync when the tool
+  set grows; the MCP registration in src/lib/mcp/tools.ts is the source of
+  truth), and a Security section.
+- Regression gate unchanged: scripts/test-oauth-mcp-loop.py must pass.

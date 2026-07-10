@@ -24,9 +24,30 @@ const ACTIONS: Array<[name: string, what: string]> = [
   ["updateMarkdownItem", "Replace one markdown file with If-Match conflict checks."],
 ];
 
+const MCP_TOOLS: Array<[name: string, kind: "Read" | "Write", what: string]> = [
+  ["list_folders", "Read", "List the workspace folders with paths and modes."],
+  ["list_items", "Read", "List the markdown items in a folder."],
+  ["read_item", "Read", "Read one item as markdown with metadata."],
+  ["search", "Read", "Search items across the workspace."],
+  ["create_folder", "Write", "Create a subfolder under an existing folder."],
+  ["create_item", "Write", "Create a draft article, note, or bookmark."],
+  ["update_item", "Write", "Replace an item's markdown and metadata."],
+  ["append_to_item", "Write", "Append markdown to the end of an item."],
+];
+
+function base64(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
 export default function AiDocsPage() {
   const origin = rootDomainUrl().origin;
   const mcpUrl = `${origin}/api/mcp`;
+  const cursorInstallUrl = `cursor://anysphere.cursor-deeplink/mcp/install?name=write&config=${encodeURIComponent(
+    base64(JSON.stringify({ url: mcpUrl })),
+  )}`;
+  const vscodeInstallUrl = `vscode:mcp/install?${encodeURIComponent(
+    JSON.stringify({ name: "write", type: "http", url: mcpUrl }),
+  )}`;
 
   const registrationExample = `POST ${origin}/oauth/register
 Content-Type: application/json
@@ -122,14 +143,50 @@ Content-Type: application/json
         </section>
 
         <section className="connect-section">
-          <h2 className="connect-section-title">Cursor and other MCP editors</h2>
+          <h2 className="connect-section-title">Cursor, VS Code, and other MCP editors</h2>
+          <p className="connect-body">One-click installs:</p>
+          <p className="connect-link-actions">
+            <a className="ac-btn ac-btn-filled" href={cursorInstallUrl}>
+              Add to Cursor
+            </a>{" "}
+            <a className="ac-btn ac-btn-gray" href={vscodeInstallUrl}>
+              Add to VS Code
+            </a>
+          </p>
           <p className="connect-body">
-            Add Write to the editor&apos;s MCP config (Cursor:{" "}
-            <code className="connect-inline-code">.cursor/mcp.json</code>). The
-            editor walks the same approval flow on first use.
+            Or add Write to the editor&apos;s MCP config by hand (Cursor:{" "}
+            <code className="connect-inline-code">.cursor/mcp.json</code>, VS
+            Code: <code className="connect-inline-code">.vscode/mcp.json</code>
+            ). The editor walks the same approval flow on first use.
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{cursorConfig}</pre>
+          </div>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">What a connected AI can do</h2>
+          <div className="connect-table-wrap">
+            <table className="connect-table">
+              <thead>
+                <tr>
+                  <th>Tool</th>
+                  <th>Access</th>
+                  <th>What it does</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MCP_TOOLS.map(([name, kind, what]) => (
+                  <tr key={name}>
+                    <td>
+                      <code className="connect-inline-code">{name}</code>
+                    </td>
+                    <td>{kind}</td>
+                    <td>{what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -184,11 +241,43 @@ Content-Type: application/json
             </li>
           </ul>
           <p className="connect-body">
-            Manual registration, for developers wiring their own client:
+            Zero-config discovery for client developers:{" "}
+            <code className="connect-inline-code">
+              {origin}/.well-known/mcp.json
+            </code>{" "}
+            names this server and its endpoint. Manual registration, for
+            developers wiring their own client:
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{registrationExample}</pre>
           </div>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Security</h2>
+          <ul>
+            <li>
+              Approval grants access to your one workspace, nothing else. The
+              consent page names the app requesting it.
+            </li>
+            <li>
+              Every change a connected AI makes is written to the audit log,
+              and notes and bookmarks stay unlisted no matter who is calling.
+            </li>
+            <li>
+              Revoke any connection at any time from{" "}
+              <Link href="/connect">Connect</Link>. Revocation is immediate.
+            </li>
+            <li>
+              Content an AI reads can carry instructions (prompt injection).
+              Prefer clients that ask you to confirm each write, and treat
+              unexpected tool calls as a reason to stop and review.
+            </li>
+            <li>
+              Only connect clients you trust: a connected AI can read and
+              write your workspace the way you can.
+            </li>
+          </ul>
         </section>
 
         <section className="connect-section">
