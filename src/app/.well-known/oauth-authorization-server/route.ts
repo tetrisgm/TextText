@@ -1,4 +1,5 @@
 import { oauthAuthorizationServerMetadata } from "@/lib/oauth";
+import { metadataOptionsResponse } from "@/lib/mcp/resource-metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,15 @@ export async function GET(request: Request) {
     {
       headers: {
         "Cache-Control": "no-store",
+        // Browser-based MCP clients read this cross-origin during connect.
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
       },
     },
   );
+}
+
+export async function OPTIONS() {
+  return metadataOptionsResponse();
 }

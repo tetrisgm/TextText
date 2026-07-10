@@ -1,4 +1,6 @@
-// /docs/ai: the human-readable guide to connecting ChatGPT or another agent.
+// /docs/ai: the human-readable guide to connecting an AI to Write.
+// The click-to-approve path is the MCP endpoint plus OAuth discovery
+// (/.well-known/oauth-protected-resource -> /.well-known/oauth-authorization-server).
 // The machine-readable platform guide is /llms.txt; owner tokens live at
 // /connect, and OAuth clients can self-register at /oauth/register.
 
@@ -8,9 +10,9 @@ import { rootDomainUrl } from "@/lib/site-url";
 import "@/styles/connect.css";
 
 export const metadata: Metadata = {
-  title: "Connect ChatGPT or any AI",
+  title: "Connect your AI",
   description:
-    "OAuth, OpenAPI, MCP, and sync setup for connecting an AI tool to Write.",
+    "Connect ChatGPT, Claude, Claude Code, Cursor, or any MCP client to Write. Paste one URL and click Approve.",
 };
 
 const ACTIONS: Array<[name: string, what: string]> = [
@@ -24,6 +26,7 @@ const ACTIONS: Array<[name: string, what: string]> = [
 
 export default function AiDocsPage() {
   const origin = rootDomainUrl().origin;
+  const mcpUrl = `${origin}/api/mcp`;
 
   const registrationExample = `POST ${origin}/oauth/register
 Content-Type: application/json
@@ -37,10 +40,20 @@ Content-Type: application/json
   "scope": "sync"
 }`;
 
-  const mcpConfig = `{
+  const claudeCodeCommand = `claude mcp add --transport http write ${mcpUrl}`;
+
+  const cursorConfig = `{
   "mcpServers": {
     "write": {
-      "url": "${origin}/api/mcp",
+      "url": "${mcpUrl}"
+    }
+  }
+}`;
+
+  const tokenConfig = `{
+  "mcpServers": {
+    "write": {
+      "url": "${mcpUrl}",
       "headers": {
         "Authorization": "Bearer <wsk token>"
       }
@@ -51,59 +64,137 @@ Content-Type: application/json
   return (
     <div className="applecms connect-shell">
       <main className="connect-main connect-doc">
-        <h1 className="connect-title">Connect ChatGPT or any AI</h1>
+        <h1 className="connect-title">Connect your AI</h1>
         <p className="connect-lede">
-          Write exposes one owner workspace as folders of markdown files.
-          ChatGPT Actions can import{" "}
-          <code className="connect-inline-code">{origin}/openapi.json</code>
-          . MCP clients can use{" "}
-          <code className="connect-inline-code">{origin}/api/mcp</code>.
+          Write speaks MCP. Give any AI this one URL and approve it once:{" "}
+          <code className="connect-inline-code">{mcpUrl}</code>. The AI can
+          then read and write your folders and markdown items. Every change it
+          makes is logged, notes and bookmarks stay unlisted, and you can
+          revoke access anytime from <Link href="/connect">Connect</Link>.
         </p>
 
         <section className="connect-section">
-          <h2 className="connect-section-title">OAuth setup</h2>
+          <h2 className="connect-section-title">ChatGPT</h2>
+          <ul>
+            <li>Open Settings, then Connectors, then Create.</li>
+            <li>
+              Paste{" "}
+              <code className="connect-inline-code">{mcpUrl}</code> as the MCP
+              server URL.
+            </li>
+            <li>
+              ChatGPT opens a Write approval page. Sign in if needed and click
+              Approve.
+            </li>
+          </ul>
           <p className="connect-body">
-            Register the AI client first. The response contains a{" "}
-            <code className="connect-inline-code">client_id</code> and stores
-            the exact redirect URI allowlist for future authorization.
+            Creating and editing items requires connector write access, which
+            ChatGPT gates behind developer mode on paid plans. Read-only use
+            works everywhere connectors do.
+          </p>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Claude</h2>
+          <ul>
+            <li>
+              On claude.ai or in Claude Desktop, open Settings, then
+              Connectors, then Add custom connector.
+            </li>
+            <li>
+              Paste <code className="connect-inline-code">{mcpUrl}</code> and
+              click Add.
+            </li>
+            <li>Claude opens a Write approval page. Click Approve.</li>
+          </ul>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Claude Code</h2>
+          <p className="connect-body">Run this once, then approve in the browser:</p>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">{claudeCodeCommand}</pre>
+          </div>
+          <p className="connect-body">
+            Use <code className="connect-inline-code">/mcp</code> inside Claude
+            Code to check the connection or re-authenticate.
+          </p>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Cursor and other MCP editors</h2>
+          <p className="connect-body">
+            Add Write to the editor&apos;s MCP config (Cursor:{" "}
+            <code className="connect-inline-code">.cursor/mcp.json</code>). The
+            editor walks the same approval flow on first use.
+          </p>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">{cursorConfig}</pre>
+          </div>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Clients without OAuth, and local models</h2>
+          <p className="connect-body">
+            If a client cannot open an approval page, mint a token manually
+            from <Link href="/connect">Connect</Link> and pass it as a bearer
+            header:
+          </p>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">{tokenConfig}</pre>
+          </div>
+          <p className="connect-body">
+            Local models such as Ollama do not connect to MCP servers by
+            themselves. Run them inside an MCP-capable host (for example LM
+            Studio or mcphost) and use the token config above.
+          </p>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">How approval works</h2>
+          <ul>
+            <li>
+              The MCP endpoint answers unauthenticated requests with a pointer
+              to{" "}
+              <code className="connect-inline-code">
+                {origin}/.well-known/oauth-protected-resource
+              </code>
+              .
+            </li>
+            <li>
+              That names this origin as the authorization server, described at{" "}
+              <code className="connect-inline-code">
+                {origin}/.well-known/oauth-authorization-server
+              </code>
+              .
+            </li>
+            <li>
+              Clients self-register at{" "}
+              <code className="connect-inline-code">{origin}/oauth/register</code>{" "}
+              and send you to{" "}
+              <code className="connect-inline-code">{origin}/oauth/authorize</code>{" "}
+              to click Approve. PKCE S256, public client, scope{" "}
+              <code className="connect-inline-code">sync</code>.
+            </li>
+            <li>
+              The resulting token is a Write{" "}
+              <code className="connect-inline-code">wsk_</code> bearer token
+              scoped to your workspace. Revoke it anytime from{" "}
+              <Link href="/connect">Connect</Link>.
+            </li>
+          </ul>
+          <p className="connect-body">
+            Manual registration, for developers wiring their own client:
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{registrationExample}</pre>
           </div>
-          <ul>
-            <li>
-              Metadata:{" "}
-              <code className="connect-inline-code">
-                {origin}/.well-known/oauth-authorization-server
-              </code>
-            </li>
-            <li>
-              Authorize:{" "}
-              <code className="connect-inline-code">
-                {origin}/oauth/authorize
-              </code>
-            </li>
-            <li>
-              Token:{" "}
-              <code className="connect-inline-code">{origin}/oauth/token</code>
-            </li>
-            <li>
-              Scope: <code className="connect-inline-code">sync</code>
-            </li>
-            <li>PKCE: S256, public client, no client secret.</li>
-          </ul>
-          <p className="connect-body">
-            The OAuth token is a Write{" "}
-            <code className="connect-inline-code">wsk_</code> bearer token
-            with the sync scope. It can read and write the signed-in owner's
-            workspace and can be revoked from <Link href="/connect">Connect</Link>.
-          </p>
         </section>
 
         <section className="connect-section">
           <h2 className="connect-section-title">ChatGPT Actions</h2>
           <p className="connect-body">
-            Import this OpenAPI URL:
+            Custom GPTs can import the OpenAPI description instead of MCP:
           </p>
           <p>
             <code className="connect-inline-code">{origin}/openapi.json</code>
@@ -154,18 +245,6 @@ Content-Type: application/json
             </li>
             <li>Ask before publishing. Ask before deleting.</li>
           </ul>
-        </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">MCP option</h2>
-          <p className="connect-body">
-            MCP clients can use the same token with the streamable HTTP
-            endpoint. Create a token manually from <Link href="/connect">Connect</Link>{" "}
-            when the client does not support OAuth.
-          </p>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{mcpConfig}</pre>
-          </div>
         </section>
       </main>
     </div>

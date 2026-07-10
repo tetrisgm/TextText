@@ -30,9 +30,16 @@ function authorizePath(params: URLSearchParams): string {
 }
 
 function redirectResponse(location: string, request: Request): Response {
-  const response = Response.redirect(new URL(location, request.url), 303);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
+  // Response.redirect() marks its headers immutable, so setting Cache-Control
+  // on it throws (TypeError: immutable) and the approval 500s. Build the
+  // redirect by hand instead.
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: new URL(location, request.url).toString(),
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 function isSameOriginPost(request: Request): boolean {
