@@ -14,9 +14,10 @@
 # Ordering is load-bearing (a push must never point at a 404):
 #   1. versioned zip is built and uploaded first (immutable URL)
 #   2. appcast.xml is generated AFTER dist holds exactly one archive of the
-#      version, and uploaded after the zip
-#   3. the stable /download/Write.zip alias flips AFTER the appcast
-#   4. the advertised app-version marker (GET /api/app/version) flips LAST
+#      version
+#   3. versioned appcast is uploaded after the zip
+#   4. src/generated/app-release.ts is updated; the outer ship command deploys
+#      the website last, which flips /appcast.xml and /api/app/version
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MAC="$(pwd)"
@@ -90,10 +91,57 @@ else
   "$SPK/generate_appcast" --download-url-prefix "$BLOB_BASE/downloads/" "$MAC/dist"
 fi
 
+echo ">> verify staged appcast"
+APP_PLIST="$MAC/build/Write.app/Contents/Info.plist"
+APPCAST="$MAC/dist/appcast.xml"
+APP_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$APP_PLIST")"
+APP_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$APP_PLIST")"
+APP_FEED="$("$PB" -c 'Print :SUFeedURL' "$APP_PLIST")"
+APP_PUBLIC_KEY="$("$PB" -c 'Print :SUPublicEDKey' "$APP_PLIST")"
+APPCAST_BUILD="$(sed -n 's|.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*|\1|p' "$APPCAST" | head -1)"
+APPCAST_VERSION="$(sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:shortVersionString>.*|\1|p' "$APPCAST" | head -1)"
+APPCAST_ZIP_URL="$(sed -n 's|.*<enclosure[^>]* url="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
+APPCAST_SIGNATURE="$(sed -n 's|.*<enclosure[^>]* sparkle:edSignature="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
+EXPECTED_ZIP_URL="$BLOB_BASE/downloads/Write-$VERSION.zip"
+
+[ "$APP_VERSION" = "$VERSION" ] || { echo "Built app version is $APP_VERSION, expected $VERSION." >&2; exit 1; }
+[ "$APP_BUILD" = "$BUILD" ] || { echo "Built app build is $APP_BUILD, expected $BUILD." >&2; exit 1; }
+[ "$APP_FEED" = "$ORIGIN/appcast.xml" ] || { echo "Built app feed is $APP_FEED, expected $ORIGIN/appcast.xml." >&2; exit 1; }
+[ -n "$APP_PUBLIC_KEY" ] && [ "$APP_PUBLIC_KEY" != "REPLACE_WITH_SPARKLE_PUBLIC_KEY" ] || { echo "Built app has no real Sparkle public key." >&2; exit 1; }
+[ "$APPCAST_VERSION" = "$VERSION" ] || { echo "Appcast shortVersionString is $APPCAST_VERSION, expected $VERSION." >&2; exit 1; }
+[ "$APPCAST_BUILD" = "$BUILD" ] || { echo "Appcast sparkle:version is $APPCAST_BUILD, expected $BUILD." >&2; exit 1; }
+[ "$APPCAST_ZIP_URL" = "$EXPECTED_ZIP_URL" ] || { echo "Appcast zip URL is $APPCAST_ZIP_URL, expected $EXPECTED_ZIP_URL." >&2; exit 1; }
+[ -n "$APPCAST_SIGNATURE" ] || { echo "Appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
+
+INSTALLED_APP="${WRITE_INSTALLED_APP_PATH:-}"
+if [ -z "$INSTALLED_APP" ]; then
+  for candidate in /Applications/Write.app "$HOME/Applications/Write.app"; do
+    if [ -d "$candidate" ]; then
+      INSTALLED_APP="$candidate"
+      break
+    fi
+  done
+fi
+if [ -n "$INSTALLED_APP" ] && [ -f "$INSTALLED_APP/Contents/Info.plist" ]; then
+  INSTALLED_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$INSTALLED_APP/Contents/Info.plist")"
+  INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALLED_APP/Contents/Info.plist")"
+  echo "   installed app: $INSTALLED_VERSION ($INSTALLED_BUILD)"
+  if [ "$APPCAST_BUILD" -le "$INSTALLED_BUILD" ]; then
+    echo "Appcast build $APPCAST_BUILD is not newer than installed build $INSTALLED_BUILD." >&2
+    exit 1
+  fi
+else
+  echo "No installed Write.app found; skipping installed-build comparison."
+fi
+echo "   built app: $APP_VERSION ($APP_BUILD)"
+echo "   appcast:   $APPCAST_VERSION ($APPCAST_BUILD)"
+echo "   feed:      $APP_FEED"
+echo "   zip:       $APPCAST_ZIP_URL"
+
 echo ">> [5/5] upload artifacts"
-# Uploads Write-$VERSION.zip (immutable, referenced by the appcast) + the
-# stable Write.zip alias + appcast.xml, all at fixed Blob paths. No pointer:
-# /appcast.xml, /download/*, and /api/app/version resolve the fixed URLs.
+# Uploads immutable Write-$VERSION.zip and appcast-$VERSION.xml, then writes
+# src/generated/app-release.ts. The outer ship command deploys that generated
+# marker so /appcast.xml, /download/*, and /api/app/version flip together.
 ( cd "$MAC/.." && node scripts/publish-mac-release.mjs "$VERSION" )
 
 echo

@@ -90,6 +90,11 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   const poolRef = useRef(pool);
   const workspaceSurfaceRef = useRef(workspaceSurface);
   const toastTimerRef = useRef<number | null>(null);
+  const paletteOpenRef = useRef(paletteOpen);
+
+  useEffect(() => {
+    paletteOpenRef.current = paletteOpen;
+  }, [paletteOpen]);
 
   useEffect(() => {
     poolRef.current = pool;
@@ -249,6 +254,10 @@ export function CommandLayer({ children }: { children: ReactNode }) {
         dispatchRegisteredKey(event);
         return;
       }
+
+      // While the palette or the shortcut sheet is open it owns the keyboard:
+      // do not let background shortcuts (scroll, navigation) fire behind it.
+      if (paletteOpenRef.current) return;
 
       if (!typingTarget && isKeyboardShortcutsKey(event)) {
         event.preventDefault();

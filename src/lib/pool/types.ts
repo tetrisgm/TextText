@@ -45,6 +45,8 @@ export type WorkspacePoolPayload = {
   folders: Folder[];
   counts: Record<string, number>;
   posts: WorkspacePoolPost[];
+  /** Bodies worth warming with the workspace shell, currently every note. */
+  initialBodies?: WorkspaceInitialBody[];
   fetchedAt: string;
 };
 

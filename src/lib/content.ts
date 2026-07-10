@@ -88,14 +88,32 @@ export type BookmarkCapture = {
   description?: string;
   /** Blob URL of the full-page screenshot (PNG) */
   screenshotUrl?: string;
+  /** Ordered full-page screenshot tiles for pages taller than one safe image. */
+  screenshotTiles?: BookmarkCaptureScreenshotTile[];
   /** Blob URL of the original page HTML */
   htmlUrl?: string;
+  /** locally stored inline assets from the readable extraction */
+  assets?: BookmarkCaptureAsset[];
   /** ISO timestamp of the capture */
   capturedAt?: string;
   /** "server" (light fetch) | "mac" (full capture agent) */
   capturedBy?: string;
   /** why captureStatus is "failed", when it is */
   error?: string;
+};
+
+export type BookmarkCaptureScreenshotTile = {
+  index: number;
+  url: string;
+};
+
+export type BookmarkCaptureAsset = {
+  /** original remote image URL seen in the captured page */
+  originalUrl: string;
+  /** Blob URL served by Write */
+  url: string;
+  contentType?: string;
+  filename?: string;
 };
 
 export type CaptureStatus = "pending" | "captured" | "failed";

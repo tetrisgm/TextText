@@ -13,6 +13,6 @@ export async function GET() {
   }
   return Response.json(
     { version: advertised.version, buildNumber: advertised.buildNumber },
-    { headers: { "Cache-Control": "public, max-age=120" } },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }

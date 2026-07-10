@@ -4,11 +4,16 @@ import remarkGfm from "remark-gfm";
 import { PostByline } from "@/components/PostByline";
 import type { Blog, Post } from "@/lib/content";
 import {
+  formatArticleDate,
   isVideoFile,
-  isSafeLinkHref,
   postAccent,
+  readingTimeMin,
 } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
+import {
+  isRemoteImageUrl,
+  localizeRemoteMarkdownImages,
+} from "@/lib/markdown-images";
 
 // The public reader: top cover hero, centered masthead, byline, and prose.
 // Server component; markdown renders on the server. The post's accent rides in
@@ -23,68 +28,26 @@ type ReaderSlots = {
   body?: ReactNode;
 };
 
-function safeHref(value: string | undefined): string {
-  const href = value?.trim() ?? "";
-  return href && isSafeLinkHref(href) ? href : "";
-}
-
 function upgradeHttpImageSrc(src: string | undefined): string {
   const value = src ?? "";
   return value.startsWith("http://") ? `https://${value.slice(7)}` : value;
 }
 
-function bookmarkOriginalHref(post: Post): string {
-  return safeHref(post.capture?.url) || safeHref(post.links?.[0]?.href);
-}
-
-function BookmarkCapture({ post, title }: { post: Post; title: string }) {
-  if (post.type !== "bookmark") return null;
-
-  const screenshotUrl = safeHref(post.capture?.screenshotUrl);
-  const htmlUrl = safeHref(post.capture?.htmlUrl);
-  const originalUrl = bookmarkOriginalHref(post);
-
-  if (!screenshotUrl && !htmlUrl && !originalUrl) return null;
-
+function BookmarkMeta({ post }: { post: Post }) {
+  const items = [
+    post.body ? `${readingTimeMin(post.body)} min read` : "",
+    formatArticleDate(post.date, { style: "short" }),
+  ].filter(Boolean);
+  if (items.length === 0) return null;
   return (
-    <section className="reader-bookmark-capture" aria-label="Bookmark capture">
-      {originalUrl && (
-        <div className="reader-bookmark-original">
-          <span className="reader-bookmark-original-label">
-            Original link
-          </span>
-          <a href={originalUrl} target="_blank" rel="noopener noreferrer">
-            {originalUrl}
-          </a>
-        </div>
-      )}
-      {screenshotUrl && (
-        <div className="reader-bookmark-capture-frame" tabIndex={0}>
-          {/* User media can be remote, so plain img avoids next/image config. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={screenshotUrl}
-            alt={`Full-page screenshot of ${title}`}
-            decoding="async"
-            loading="lazy"
-          />
-        </div>
-      )}
-      {(htmlUrl || screenshotUrl) && (
-        <div className="reader-bookmark-links" aria-label="Bookmark links">
-          {htmlUrl && (
-            <a href={htmlUrl} target="_blank" rel="noopener noreferrer">
-              View saved original
-            </a>
-          )}
-          {screenshotUrl && (
-            <a href={screenshotUrl} target="_blank" rel="noopener noreferrer">
-              View full page capture
-            </a>
-          )}
-        </div>
-      )}
-    </section>
+    <div className="reader-bookmark-meta" aria-label="Bookmark details">
+      {items.map((item, index) => (
+        <span key={`${item}:${index}`}>
+          {index > 0 && <span aria-hidden="true"> · </span>}
+          {item}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -108,12 +71,23 @@ export function Reader({
   const resolvedCover = coverSource.src;
   const coverCaption = post.coverCaption?.trim();
   const coverImageSrc = upgradeHttpImageSrc(resolvedCover);
+  const hideRemoteBodyImages = false;
+  const bodyImageReplacements = new Map(
+    (post.capture?.assets ?? [])
+      .filter((asset) => asset.originalUrl && asset.url)
+      .map((asset) => [asset.originalUrl, asset.url] as const),
+  );
+  const allowedBodyImageUrls = new Set(bodyImageReplacements.values());
+  const bodyMarkdown = hideRemoteBodyImages
+    ? localizeRemoteMarkdownImages(post.body, bodyImageReplacements)
+    : post.body;
   const coverStyle = post.coverHeight
     ? ({ "--reader-cover-height": `${post.coverHeight}px` } as CSSProperties)
     : undefined;
   const coverClassName = [
     "reader-cover",
     coverSource.kind === "bookmark-screenshot" ? "is-capture-cover" : "",
+    coverSource.kind === "bookmark-body-image" ? "is-bookmark-image-cover" : "",
     coverSource.kind === "bookmark-favicon" ? "is-favicon-cover" : "",
   ]
     .filter(Boolean)
@@ -132,7 +106,7 @@ export function Reader({
             alt={title}
             decoding="async"
             loading={
-              coverSource.kind === "bookmark-screenshot" ? "lazy" : undefined
+              coverSource.kind === "bookmark-screenshot" ? "eager" : undefined
             }
           />
         </>
@@ -165,9 +139,12 @@ export function Reader({
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
-        <PostByline blog={blog} post={post} />
+        {post.type === "bookmark" ? (
+          <BookmarkMeta post={post} />
+        ) : (
+          <PostByline blog={blog} post={post} />
+        )}
       </header>
-      <BookmarkCapture post={post} title={title} />
       <div className="reader-prose">
         {slots?.body ?? (
           <ReactMarkdown
@@ -175,27 +152,35 @@ export function Reader({
             components={{
               h1: "h2",
               // Inline figures: ![caption](src); the alt doubles as the caption.
-              img: ({ src, alt }) => (
-                <span className="reader-figure">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={upgradeHttpImageSrc(
-                      typeof src === "string" ? src : undefined,
+              img: ({ src, alt }) => {
+                const imageSrc = typeof src === "string" ? src : undefined;
+                if (
+                  hideRemoteBodyImages &&
+                  isRemoteImageUrl(imageSrc) &&
+                  !allowedBodyImageUrls.has(imageSrc)
+                ) {
+                  return null;
+                }
+                return (
+                  <span className="reader-figure">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={upgradeHttpImageSrc(imageSrc)}
+                      alt={alt ?? ""}
+                      decoding="async"
+                      loading="lazy"
+                    />
+                    {alt && (
+                      <span className="reader-figcaption" aria-hidden="true">
+                        {alt}
+                      </span>
                     )}
-                    alt={alt ?? ""}
-                    decoding="async"
-                    loading="lazy"
-                  />
-                  {alt && (
-                    <span className="reader-figcaption" aria-hidden="true">
-                      {alt}
-                    </span>
-                  )}
-                </span>
-              ),
+                  </span>
+                );
+              },
             }}
           >
-            {post.body}
+            {bodyMarkdown}
           </ReactMarkdown>
         )}
       </div>

@@ -1,15 +1,15 @@
-// The Mac app release lives at FIXED Blob paths, no pointer indirection.
+import { generatedAppRelease } from "@/generated/app-release";
+
+// The Mac app release lives at immutable Blob paths selected by a generated
+// manifest.
 // Each release uploads (via scripts/publish-mac-release.mjs):
 //   downloads/Write-<version>.zip  immutable, referenced by the appcast enclosure
-//   downloads/Write.zip            the stable "latest" alias (overwritten)
-//   downloads/appcast.xml          the signed Sparkle appcast (overwritten)
+//   downloads/appcast-<version>.xml immutable, proxied by /appcast.xml
+// The public website deployment is the final version marker: it includes the
+// generated manifest that points /appcast.xml, /download/Write.zip, and
+// /api/app/version at the same immutable release.
 //
-// The appcast IS the source of truth. /appcast.xml proxies it, /download/*
-// redirect to the fixed zips, and /api/app/version parses the version out of
-// the appcast. No pointer JSON, no cache, no validation layer.
-//
-// Degradation is a contract: no Blob env resolves to null and the routes
-// answer 404, which the Mac app tolerates (Sparkle just skips the check).
+// The Blob-base fallback remains for older deployments and local experiments.
 
 const DOWNLOADS_PREFIX = "downloads";
 
@@ -38,14 +38,30 @@ export function blobBaseUrl(): string | null {
   return `https://${match[1].toLowerCase()}.public.blob.vercel-storage.com`;
 }
 
-/** Fixed Blob URL of the signed appcast, or null when Blob is not configured. */
+function isHttpUrl(value: string | undefined): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/** Current signed appcast URL, or null when no release is configured. */
 export function releaseAppcastUrl(): string | null {
+  if (isHttpUrl(generatedAppRelease.appcastUrl)) {
+    return generatedAppRelease.appcastUrl;
+  }
   const base = blobBaseUrl();
   return base ? `${base}/${DOWNLOADS_PREFIX}/appcast.xml` : null;
 }
 
-/** Fixed Blob URL of the stable "latest" app zip. */
+/** Current app zip URL, or null when no release is configured. */
 export function releaseZipUrl(): string | null {
+  if (isHttpUrl(generatedAppRelease.zipUrl)) {
+    return generatedAppRelease.zipUrl;
+  }
   const base = blobBaseUrl();
   return base ? `${base}/${DOWNLOADS_PREFIX}/Write.zip` : null;
 }
@@ -81,6 +97,16 @@ export function parseAdvertisedVersion(appcastXml: string): AdvertisedVersion | 
 
 /** The advertised version, read from the live appcast, or null. */
 export async function getAdvertisedVersion(): Promise<AdvertisedVersion | null> {
+  if (
+    generatedAppRelease.version &&
+    Number.isInteger(generatedAppRelease.buildNumber) &&
+    generatedAppRelease.buildNumber > 0
+  ) {
+    return {
+      version: generatedAppRelease.version,
+      buildNumber: generatedAppRelease.buildNumber,
+    };
+  }
   const url = releaseAppcastUrl();
   if (!url) return null;
   try {

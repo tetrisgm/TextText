@@ -7,6 +7,7 @@ import {
   releaseAppcastUrl,
   releaseZipUrl,
 } from "@/lib/app-release";
+import { generatedAppRelease } from "@/generated/app-release";
 
 const ENV_KEYS = ["WRITE_RELEASE_BLOB_BASE", "BLOB_READ_WRITE_TOKEN"] as const;
 const savedEnv = new Map<string, string | undefined>();
@@ -46,17 +47,17 @@ describe("blobBaseUrl", () => {
   });
 });
 
-describe("fixed release URLs", () => {
-  it("build the appcast and stable-zip URLs from the Blob base", () => {
+describe("release URLs", () => {
+  it("use the generated immutable release URLs", () => {
     process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Store9_secret";
-    const base = "https://store9.public.blob.vercel-storage.com";
-    expect(releaseAppcastUrl()).toBe(`${base}/downloads/appcast.xml`);
-    expect(releaseZipUrl()).toBe(`${base}/downloads/Write.zip`);
+    expect(releaseAppcastUrl()).toBe(generatedAppRelease.appcastUrl);
+    expect(releaseZipUrl()).toBe(generatedAppRelease.zipUrl);
   });
 
-  it("are null without Blob config", () => {
-    expect(releaseAppcastUrl()).toBeNull();
-    expect(releaseZipUrl()).toBeNull();
+  it("keep the Blob-base fallback derivation available", () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Store9_secret";
+    const base = "https://store9.public.blob.vercel-storage.com";
+    expect(blobBaseUrl()).toBe(base);
   });
 });
 
@@ -98,7 +99,10 @@ describe("parseAdvertisedVersion", () => {
 });
 
 describe("getAdvertisedVersion", () => {
-  it("resolves null without Blob config (no network)", async () => {
-    await expect(getAdvertisedVersion()).resolves.toBeNull();
+  it("uses the generated release manifest without a network fetch", async () => {
+    await expect(getAdvertisedVersion()).resolves.toEqual({
+      version: generatedAppRelease.version,
+      buildNumber: generatedAppRelease.buildNumber,
+    });
   });
 });

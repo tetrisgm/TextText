@@ -8,7 +8,6 @@ import { ProjectGallery } from "@/components/ProjectGallery";
 import type { Blog, LinkRef, Post } from "@/lib/content";
 import {
   formatArticleDate,
-  isSafeLinkHref,
   isVideoFile,
   isYouTube,
   postAccent,
@@ -16,6 +15,10 @@ import {
   youtubeEmbedUrl,
 } from "@/lib/content";
 import { resolveCover, resolveCoverSource } from "@/lib/cover";
+import {
+  isRemoteImageUrl,
+  localizeRemoteMarkdownImages,
+} from "@/lib/markdown-images";
 
 type EditReaderSlots = {
   toolbar?: ReactNode;
@@ -28,75 +31,38 @@ type EditReaderSlots = {
   talkMeta?: ReactNode;
 };
 
-function safeHref(value: string | undefined): string {
-  const href = value?.trim() ?? "";
-  return href && isSafeLinkHref(href) ? href : "";
-}
-
 function upgradeHttpImageSrc(src: string | undefined): string {
   const value = src ?? "";
   return value.startsWith("http://") ? `https://${value.slice(7)}` : value;
 }
 
-function bookmarkOriginalHref(post: Post): string {
-  return safeHref(post.capture?.url) || safeHref(post.links?.[0]?.href);
-}
-
-function BookmarkCapture({ post, title }: { post: Post; title: string }) {
-  if (post.type !== "bookmark") return null;
-
-  const screenshotUrl = safeHref(post.capture?.screenshotUrl);
-  const htmlUrl = safeHref(post.capture?.htmlUrl);
-  const originalUrl = bookmarkOriginalHref(post);
-
-  if (!screenshotUrl && !htmlUrl && !originalUrl) return null;
-
+function BookmarkMeta({ post }: { post: Post }) {
+  const items = [
+    post.body ? `${readingTimeMin(post.body)} min read` : "",
+    formatArticleDate(post.date, { style: "short" }),
+  ].filter(Boolean);
+  if (items.length === 0) return null;
   return (
-    <section className="reader-bookmark-capture" aria-label="Bookmark capture">
-      {originalUrl && (
-        <div className="reader-bookmark-original">
-          <span className="reader-bookmark-original-label">
-            Original link
-          </span>
-          <a href={originalUrl} target="_blank" rel="noopener noreferrer">
-            {originalUrl}
-          </a>
-        </div>
-      )}
-      {screenshotUrl && (
-        <div className="reader-bookmark-capture-frame" tabIndex={0}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={screenshotUrl}
-            alt={`Full-page screenshot of ${title}`}
-            decoding="async"
-            loading="lazy"
-          />
-        </div>
-      )}
-      {(htmlUrl || screenshotUrl) && (
-        <div className="reader-bookmark-links" aria-label="Bookmark links">
-          {htmlUrl && (
-            <a href={htmlUrl} target="_blank" rel="noopener noreferrer">
-              View saved original
-            </a>
-          )}
-          {screenshotUrl && (
-            <a href={screenshotUrl} target="_blank" rel="noopener noreferrer">
-              View full page capture
-            </a>
-          )}
-        </div>
-      )}
-    </section>
+    <div className="reader-bookmark-meta" aria-label="Bookmark details">
+      {items.map((item, index) => (
+        <span key={`${item}:${index}`}>
+          {index > 0 && <span aria-hidden="true"> · </span>}
+          {item}
+        </span>
+      ))}
+    </div>
   );
 }
 
 function MarkdownBody({
+  allowedRemoteImages,
   body,
+  hideRemoteImages = false,
   upgradeImages = false,
 }: {
+  allowedRemoteImages?: Set<string>;
   body: string;
+  hideRemoteImages?: boolean;
   upgradeImages?: boolean;
 }) {
   return (
@@ -104,30 +70,36 @@ function MarkdownBody({
       remarkPlugins={[remarkGfm]}
       components={{
         h1: "h2",
-        img: ({ src, alt }) => (
-          <span className="reader-figure">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={
-                upgradeImages
-                  ? upgradeHttpImageSrc(
-                      typeof src === "string" ? src : undefined,
-                    )
-                  : typeof src === "string"
-                    ? src
-                    : ""
-              }
-              alt={alt ?? ""}
-              decoding={upgradeImages ? "async" : undefined}
-              loading="lazy"
-            />
-            {alt && (
-              <span className="reader-figcaption" aria-hidden="true">
-                {alt}
-              </span>
-            )}
-          </span>
-        ),
+        img: ({ src, alt }) => {
+          const imageSrc = typeof src === "string" ? src : undefined;
+          if (
+            hideRemoteImages &&
+            isRemoteImageUrl(imageSrc) &&
+            !allowedRemoteImages?.has(imageSrc)
+          ) {
+            return null;
+          }
+          return (
+            <span className="reader-figure">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={
+                  upgradeImages
+                    ? upgradeHttpImageSrc(imageSrc)
+                    : imageSrc ?? ""
+                }
+                alt={alt ?? ""}
+                decoding={upgradeImages ? "async" : undefined}
+                loading="lazy"
+              />
+              {alt && (
+                <span className="reader-figcaption" aria-hidden="true">
+                  {alt}
+                </span>
+              )}
+            </span>
+          );
+        },
       }}
     >
       {body}
@@ -161,6 +133,7 @@ export function EditReaderPreview({
   const coverClassName = [
     "reader-cover",
     coverSource.kind === "bookmark-screenshot" ? "is-capture-cover" : "",
+    coverSource.kind === "bookmark-body-image" ? "is-bookmark-image-cover" : "",
     coverSource.kind === "bookmark-favicon" ? "is-favicon-cover" : "",
   ]
     .filter(Boolean)
@@ -177,7 +150,7 @@ export function EditReaderPreview({
             alt={title}
             decoding="async"
             loading={
-              coverSource.kind === "bookmark-screenshot" ? "lazy" : undefined
+              coverSource.kind === "bookmark-screenshot" ? "eager" : undefined
             }
           />
         </>
@@ -192,6 +165,15 @@ export function EditReaderPreview({
       ? slots.cover
       : defaultCover;
   const className = `reader${slots?.toolbar ? " has-editor-toolbar" : ""}`;
+  const bodyImageReplacements = new Map(
+    (post.capture?.assets ?? [])
+      .filter((asset) => asset.originalUrl && asset.url)
+      .map((asset) => [asset.originalUrl, asset.url] as const),
+  );
+  const bodyMarkdown =
+    post.type === "bookmark"
+      ? localizeRemoteMarkdownImages(post.body, bodyImageReplacements)
+      : post.body;
 
   return (
     <article
@@ -210,11 +192,21 @@ export function EditReaderPreview({
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
-        <PostByline blog={blog} post={post} />
+        {post.type === "bookmark" ? (
+          <BookmarkMeta post={post} />
+        ) : (
+          <PostByline blog={blog} post={post} />
+        )}
       </header>
-      <BookmarkCapture post={post} title={title} />
       <div className="reader-prose">
-        {slots?.body ?? <MarkdownBody body={post.body} upgradeImages />}
+        {slots?.body ?? (
+          <MarkdownBody
+            allowedRemoteImages={new Set(bodyImageReplacements.values())}
+            body={bodyMarkdown}
+            hideRemoteImages={false}
+            upgradeImages
+          />
+        )}
       </div>
     </article>
   );

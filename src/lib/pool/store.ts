@@ -28,6 +28,7 @@ type WorkspacePoolState = {
 };
 
 const listeners = new Set<() => void>();
+const bodyFetches = new Set<string>();
 
 let state: WorkspacePoolState = {
   pool: null,
@@ -81,31 +82,71 @@ function isNewer(candidate: string, current: string): boolean {
   return Date.parse(candidate) > Date.parse(current);
 }
 
+export function isWorkspacePostBodyStale(
+  postUpdatedAt: string | undefined,
+  bodyUpdatedAt: string | undefined,
+): boolean {
+  if (!postUpdatedAt) return false;
+  if (!bodyUpdatedAt) return true;
+  const postTime = Date.parse(postUpdatedAt);
+  const bodyTime = Date.parse(bodyUpdatedAt);
+  return Number.isFinite(postTime) && Number.isFinite(bodyTime) && postTime > bodyTime;
+}
+
+function isOptimisticPost(post: WorkspacePoolPost): boolean {
+  return post.id.startsWith("optimistic-");
+}
+
+function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
+  const current = state.pool;
+  if (!current || current.blogId !== pool.blogId) return pool;
+
+  const incomingIds = new Set(pool.posts.map((post) => post.id));
+  const pendingPosts = current.posts.filter(
+    (post) => isOptimisticPost(post) && !incomingIds.has(post.id),
+  );
+  if (pendingPosts.length === 0) return pool;
+
+  return {
+    ...pool,
+    posts: [...pendingPosts, ...pool.posts],
+  };
+}
+
 export function seedWorkspacePool(
   pool: WorkspacePoolPayload,
   initialBody?: WorkspaceInitialBody | null,
 ) {
+  const nextPool = mergeIncomingPool(pool);
   const current = state.pool;
   const shouldReplace =
     !current ||
-    current.blogId !== pool.blogId ||
-    isNewer(pool.fetchedAt, current.fetchedAt) ||
-    current.posts.length !== pool.posts.length;
+    current.blogId !== nextPool.blogId ||
+    isNewer(nextPool.fetchedAt, current.fetchedAt) ||
+    current.posts.length !== nextPool.posts.length;
   if (shouldReplace) {
-    state = { ...state, pool, error: null };
+    state = { ...state, pool: nextPool, error: null };
     emit();
-    void persistPool(pool);
+    void persistPool(nextPool);
   }
 
-  if (initialBody) {
+  const initialBodies = initialBody
+    ? [
+        ...(pool.initialBodies ?? []).filter(
+          (body) => body.postId !== initialBody.postId,
+        ),
+        initialBody,
+      ]
+    : (pool.initialBodies ?? []);
+  for (const initial of initialBodies) {
     const body: WorkspacePostBodyPayload = {
       blogId: pool.blogId,
-      postId: initialBody.postId,
-      body: initialBody.body,
-      updatedAt: initialBody.updatedAt,
+      postId: initial.postId,
+      body: initial.body,
+      updatedAt: initial.updatedAt,
       fetchedAt: new Date().toISOString(),
     };
-    setBodyEntry(pool.blogId, initialBody.postId, {
+    setBodyEntry(pool.blogId, initial.postId, {
       status: "ready",
       body,
     });
@@ -117,14 +158,14 @@ export async function hydrateWorkspacePoolFromStorage(blogId: string) {
   const cached = await readPersistedPool(blogId);
   if (!cached) return;
   const current = state.pool;
-  if (!current || current.blogId !== blogId || isNewer(cached.fetchedAt, current.fetchedAt)) {
-    setState({ pool: cached, error: null });
+  if (!current || current.blogId !== blogId) {
+    setState({ pool: mergeIncomingPool(cached), error: null });
   }
 }
 
 export async function refreshWorkspacePool(handle: string, blogId: string) {
   if (state.refreshing) return;
-  setState({ refreshing: true, error: null });
+  state = { ...state, refreshing: true, error: null };
   try {
     const params = new URLSearchParams({ handle });
     const response = await fetch(`/api/workspace/pool?${params.toString()}`, {
@@ -134,8 +175,28 @@ export async function refreshWorkspacePool(handle: string, blogId: string) {
     if (!response.ok) throw new Error("Could not refresh the workspace");
     const pool = (await response.json()) as WorkspacePoolPayload;
     if (pool.blogId !== blogId) throw new Error("Workspace response mismatch");
-    setState({ pool, refreshing: false, error: null });
-    void persistPool(pool);
+    const nextPool = mergeIncomingPool(pool);
+    setState({ pool: nextPool, refreshing: false, error: null });
+    void persistPool(nextPool);
+    for (const initial of nextPool.initialBodies ?? []) {
+      const key = bodyKey(blogId, initial.postId);
+      const current = state.bodies[key];
+      if (
+        current?.status === "ready" &&
+        !isWorkspacePostBodyStale(initial.updatedAt, current.body.updatedAt)
+      ) {
+        continue;
+      }
+      const body: WorkspacePostBodyPayload = {
+        blogId,
+        postId: initial.postId,
+        body: initial.body,
+        updatedAt: initial.updatedAt,
+        fetchedAt: new Date().toISOString(),
+      };
+      setBodyEntry(blogId, initial.postId, { status: "ready", body });
+      void persistPostBody(body);
+    }
   } catch (error) {
     setState({
       refreshing: false,
@@ -147,19 +208,33 @@ export async function refreshWorkspacePool(handle: string, blogId: string) {
 export async function ensurePostBody(
   blogId: string,
   postId: string,
+  options: { force?: boolean } = {},
 ): Promise<void> {
   const key = bodyKey(blogId, postId);
   const existing = state.bodies[key];
-  if (existing?.status === "ready" || existing?.status === "loading") return;
+  if (bodyFetches.has(key) || existing?.status === "loading") return;
+  if (existing?.status === "ready" && !options.force) return;
 
-  setBodyEntry(blogId, postId, { status: "loading" });
-  const cached = await readPersistedPostBody(blogId, postId);
-  if (cached) {
-    setBodyEntry(blogId, postId, { status: "ready", body: cached });
-    return;
+  bodyFetches.add(key);
+  if (existing?.status !== "ready") {
+    setBodyEntry(blogId, postId, { status: "loading" });
   }
 
   try {
+    if (!options.force) {
+      const cached = await readPersistedPostBody(blogId, postId);
+      const postUpdatedAt = state.pool?.posts.find(
+        (post) => post.id === postId,
+      )?.updatedAt;
+      if (
+        cached &&
+        !isWorkspacePostBodyStale(postUpdatedAt, cached.updatedAt)
+      ) {
+        setBodyEntry(blogId, postId, { status: "ready", body: cached });
+        return;
+      }
+    }
+
     const response = await fetch(`/api/post/${encodeURIComponent(postId)}/body`, {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
@@ -172,10 +247,14 @@ export async function ensurePostBody(
     setBodyEntry(blogId, postId, { status: "ready", body });
     void persistPostBody(body);
   } catch (error) {
-    setBodyEntry(blogId, postId, {
-      status: "error",
-      error: error instanceof Error ? error.message : "Could not load",
-    });
+    if (existing?.status !== "ready") {
+      setBodyEntry(blogId, postId, {
+        status: "error",
+        error: error instanceof Error ? error.message : "Could not load",
+      });
+    }
+  } finally {
+    bodyFetches.delete(key);
   }
 }
 
@@ -183,13 +262,41 @@ export function useWorkspacePool() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-export function useWorkspacePostBody(blogId: string, postId: string) {
+export function useWorkspacePostBody(
+  blogId: string,
+  postId: string,
+  initialBody?: WorkspaceInitialBody | null,
+) {
   const snapshot = useWorkspacePool();
-  const entry = snapshot.bodies[bodyKey(blogId, postId)] ?? { status: "idle" };
-  const load = useCallback(() => {
-    void ensurePostBody(blogId, postId);
-  }, [blogId, postId]);
-  return { entry, load };
+  const cachedEntry = snapshot.bodies[bodyKey(blogId, postId)];
+  const initialPayload = initialBody
+    ? {
+        blogId,
+        postId,
+        body: initialBody.body,
+        updatedAt: initialBody.updatedAt,
+        fetchedAt: snapshot.pool?.fetchedAt ?? "",
+      }
+    : null;
+  const entry =
+    initialPayload &&
+    (cachedEntry?.status !== "ready" ||
+      isWorkspacePostBodyStale(
+        initialPayload.updatedAt,
+        cachedEntry.body.updatedAt,
+      ))
+      ? ({ status: "ready", body: initialPayload } as const)
+      : (cachedEntry ?? ({ status: "idle" } as const));
+  const postUpdatedAt = snapshot.pool?.posts.find(
+    (post) => post.id === postId,
+  )?.updatedAt;
+  const stale =
+    entry.status === "ready" &&
+    isWorkspacePostBodyStale(postUpdatedAt, entry.body.updatedAt);
+  const load = useCallback((force = stale) => {
+    void ensurePostBody(blogId, postId, { force });
+  }, [blogId, postId, stale]);
+  return { entry, load, stale };
 }
 
 export function getWorkspacePost(postId: string): WorkspacePoolPost | null {
@@ -238,6 +345,18 @@ export function updatePost(postId: string, patch: Partial<WorkspacePoolPost>) {
     },
   });
   if (state.pool) void persistPool(state.pool);
+}
+
+export function updatePostBody(blogId: string, postId: string, body: string) {
+  const nextBody: WorkspacePostBodyPayload = {
+    blogId,
+    postId,
+    body,
+    updatedAt: new Date().toISOString(),
+    fetchedAt: new Date().toISOString(),
+  };
+  setBodyEntry(blogId, postId, { status: "ready", body: nextBody });
+  void persistPostBody(nextBody);
 }
 
 export function removePost(postId: string) {

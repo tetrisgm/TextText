@@ -41,6 +41,10 @@ export type CommandWorkspaceSurface = {
   openSelected: () => void;
   openSectionByIndex: (index: number) => void;
   openPost: (postId: string, mode?: "read" | "edit") => void;
+  scrollReader: (direction: "up" | "down", amount: "line" | "half" | "page") => void;
+  scrollReaderEdge: (edge: "top" | "bottom") => void;
+  readerTapG: () => void;
+  openAdjacentPost: (direction: 1 | -1) => void;
   openCreatedPost?: (post: WorkspacePoolPost) => void;
   reconcileCreatedPost?: (
     temporaryPostId: string,

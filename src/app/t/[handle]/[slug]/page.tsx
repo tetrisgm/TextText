@@ -185,7 +185,7 @@ export async function PostPageForHandle({
   }
   const adjacent = await adjacentPromise;
   const initialPool =
-    canEdit && access.isOwner && access.blogId
+    canEdit && access.blogId
       ? workspacePoolFromParts({
           blog,
           blogId: access.blogId,
@@ -233,6 +233,33 @@ export async function PostPageForHandle({
   }
 
   if (editMode) {
+    if (initialPool && canEdit) {
+      const reader = <ReaderComponent blog={blog} post={post} />;
+      return (
+        <PostReadWorkspaceShell
+          adjacent={adjacent}
+          blog={blog}
+          canManageFolders={canEdit}
+          canManageSharing={access.isOwner}
+          counts={counts}
+          folders={folders}
+          homePath={homePath}
+          initialMode="edit"
+          initialSidebarCollapsed={initialSidebarCollapsed}
+          initialPool={initialPool}
+          initialPostBody={
+            post.id
+              ? { postId: post.id, body: post.body, updatedAt: post.updatedAt }
+              : null
+          }
+          post={post}
+          postPath={currentPostPath}
+          showGuestSignIn={showGuestSignIn}
+        >
+          {reader}
+        </PostReadWorkspaceShell>
+      );
+    }
     return (
       <>
         <PostShortcuts

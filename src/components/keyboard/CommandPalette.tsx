@@ -113,6 +113,18 @@ type ShortcutSheetGroup = {
   rows: ShortcutSheetRow[];
 };
 
+// Reader line-scrolling reuses the selection keys (arrows and j / k) with a
+// context switch in the shell, so it has no standalone command. Surface it in
+// the sheet as its own row so the full reading scheme is discoverable.
+const READER_SCROLL_ROWS: ShortcutSheetRow[] = [
+  {
+    id: "read.scroll",
+    group: "Read",
+    label: "Scroll line by line",
+    shortcut: "↑ ↓ or J K",
+  },
+];
+
 function postResult(
   post: WorkspacePoolPost,
   pool: WorkspacePoolPayload,
@@ -254,14 +266,32 @@ export function CommandPalette({
   }, [ctx, pool, query]);
 
   const shortcutGroups = useMemo<ShortcutSheetGroup[]>(() => {
-    const order = ["Navigate", "Create", "Act", "Command bar"];
-    const rows = workspaceShortcutRows();
-    return order
-      .map((group) => ({
-        group,
-        rows: rows.filter((row) => row.group === group),
-      }))
-      .filter((group) => group.rows.length > 0);
+    const preferred = [
+      "Navigate",
+      "Read",
+      "Create",
+      "Act",
+      "Command bar",
+      "Workspace",
+    ];
+    const registryRows = workspaceShortcutRows();
+    const readRows = registryRows.filter((row) => row.group === "Read");
+    const otherRows = registryRows.filter((row) => row.group !== "Read");
+    const rows = [...otherRows, ...READER_SCROLL_ROWS, ...readRows];
+    const byGroup = new Map<string, ShortcutSheetRow[]>();
+    for (const row of rows) {
+      const list = byGroup.get(row.group);
+      if (list) list.push(row);
+      else byGroup.set(row.group, [row]);
+    }
+    const ordered = [
+      ...preferred.filter((group) => byGroup.has(group)),
+      ...[...byGroup.keys()].filter((group) => !preferred.includes(group)),
+    ];
+    return ordered.map((group) => ({
+      group,
+      rows: byGroup.get(group) ?? [],
+    }));
   }, []);
 
   useEffect(() => {
@@ -313,32 +343,29 @@ export function CommandPalette({
       }}
     >
       <div
-        className="command-palette"
+        className={`command-palette${shortcutsOpen ? " command-palette--sheet" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={shortcutsOpen ? "Keyboard shortcuts" : "Command palette"}
       >
         {shortcutsOpen ? (
           <>
-            <div
-              className="command-palette-input"
-              style={{
-                alignItems: "center",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>Keyboard shortcuts</span>
+            <div className="command-sheet-header">
+              <div className="command-sheet-titles">
+                <span className="command-sheet-title">Keyboard shortcuts</span>
+                <span className="command-sheet-subtitle">
+                  Press ? anytime to open this. Esc to close.
+                </span>
+              </div>
               <button
                 type="button"
-                className="command-palette-shortcut"
-                style={{ cursor: "pointer" }}
+                className="command-sheet-done"
                 onClick={closeDialog}
               >
                 Done
               </button>
             </div>
-            <div className="command-palette-results" role="list">
+            <div className="command-sheet-columns" role="list">
               {shortcutGroups.map((group) => (
                 <div
                   key={group.group}
@@ -350,17 +377,23 @@ export function CommandPalette({
                   {group.rows.map((row) => (
                     <div
                       key={row.id}
-                      className="command-palette-row"
+                      className="command-sheet-row"
                       role="listitem"
-                      style={{ cursor: "default" }}
                     >
-                      <span className="command-palette-copy">
-                        <span className="command-palette-label">
-                          {row.label}
-                        </span>
+                      <span className="command-sheet-row-label">
+                        {row.label}
                       </span>
-                      <span className="command-palette-shortcut">
-                        {row.shortcut}
+                      <span className="command-sheet-keys">
+                        {row.shortcut
+                          .split(", ")
+                          .map((chord, chordIndex) => (
+                            <kbd
+                              key={`${row.id}-${chordIndex}`}
+                              className="command-sheet-key"
+                            >
+                              {chord}
+                            </kbd>
+                          ))}
                       </span>
                     </div>
                   ))}

@@ -16,10 +16,10 @@ import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
 import { resolveFolderAccess, resolveWorkspaceAccess } from "@/lib/permissions";
-import { getWorkspacePoolForOwner } from "@/lib/pool/server";
 import {
   poolPostsForFolder,
   postFromPoolPost,
+  workspacePoolFromParts,
 } from "@/lib/pool/selectors";
 import {
   blogAtomHref,
@@ -29,6 +29,7 @@ import {
 } from "@/lib/feed-links";
 import {
   DEFAULT_ANONYMOUS_BLOG_NAME,
+  getAllPosts,
   getAccessibleFolderCounts,
   getAccessibleFolderPosts,
   getAccessibleFolders,
@@ -375,8 +376,14 @@ export async function BlogHomeForHandle({
   }
   const canEdit = access.canEdit;
   const initialPool =
-    access.isOwner && viewer
-      ? await getWorkspacePoolForOwner(handle, viewer)
+    canEdit && access.blogId
+      ? workspacePoolFromParts({
+          blog,
+          blogId: access.blogId,
+          folders: await getFolders(handle),
+          counts: await getFolderCounts(handle),
+          posts: await getAllPosts(handle),
+        })
       : null;
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
   const hasBlogWorkspaceContent =

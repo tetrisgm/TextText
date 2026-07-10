@@ -28,6 +28,7 @@ import {
   getOwnerPlan,
   getPostById,
   getUserIdBySub,
+  isWorkspaceStarterPost,
   markCapturePending,
   savePost,
   savePostContentPatch,
@@ -430,7 +431,10 @@ async function enforceAnonymousPostLimit(
   const tier: PlanTier = access.isUnclaimed
     ? "anonymous"
     : cleanPlanTier(await getOwnerPlan(handle));
-  const count = await countAllPosts(handle);
+  const count = access.isUnclaimed
+    ? (await getAllPosts(handle)).filter((post) => !isWorkspaceStarterPost(post))
+        .length
+    : await countAllPosts(handle);
   if (count >= planLimits(tier).maxPosts) {
     throw new Error(
       tier === "anonymous"
@@ -629,7 +633,7 @@ function cleanBookmarkUrl(value: unknown): URL {
 export async function createFolderItemAction(
   handleInput: unknown,
   folderInput: "notes" | "bookmarks",
-  input?: { url?: string; title?: string },
+  input?: { description?: string; title?: string; url?: string },
 ): Promise<Post> {
   const folder = cleanItemFolder(folderInput);
   const { handle, access } = await editableHandleFor(handleInput);
@@ -647,10 +651,12 @@ export async function createFolderItemAction(
   const url = cleanBookmarkUrl(input?.url);
   const host = url.hostname.replace(/^www\./, "");
   const title = cleanOptionalLine(input?.title, "Title") || host;
+  const description = cleanOptionalLine(input?.description, "Description");
   const created = await createDraft(handle, "bookmark");
   const saved = await savePost(handle, {
     ...created,
     title,
+    excerpt: description || undefined,
     links: [{ label: host || title, href: url.toString() }],
     body: "",
   });
@@ -665,7 +671,11 @@ export async function createFolderItemAction(
   }
   await auditEdit(access, "create_bookmark", "item", saved.id, url.toString());
   await revalidateBlog(handle, [saved.slug]);
-  return saved;
+  return {
+    ...saved,
+    captureStatus: "pending",
+    capture: { ...(saved.capture ?? {}), url: url.toString() },
+  };
 }
 
 export async function updateBlogAction(

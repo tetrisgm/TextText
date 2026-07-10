@@ -195,7 +195,7 @@ export function BlogHomeShell({
           </div>
         </div>
       </header>
-      {!namingCeremonyActive && children}
+      {children}
     </main>
   );
 }

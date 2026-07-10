@@ -14,7 +14,7 @@ export async function GET() {
     return new Response(await upstream.text(), {
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   } catch {

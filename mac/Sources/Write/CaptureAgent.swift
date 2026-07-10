@@ -22,6 +22,11 @@ final class CaptureAgent {
     private let maxUploadBodyBytes = 4 * 1024 * 1024
     private let maxScreenshotBytes = 3 * 1024 * 1024
     private let maxOriginalArtifactBytes = 1_536 * 1024
+    private let maxReadableAssetBytes = 3 * 1024 * 1024
+    private let maxReadableAssetDownloadBytes = 16 * 1024 * 1024
+    private let maxReadableAssetCount = 200
+    private let maxReadableAssetsPerUpload = 4
+    private let readableAssetMaxEdge = 1800.0
     // Hard ceiling on a downloaded PDF before it is handed to PDFKit, so a
     // multi-gigabyte (or streaming) PDF cannot exhaust the agent's memory.
     private let maxPDFBytes = 40 * 1024 * 1024
@@ -361,7 +366,7 @@ final class CaptureAgent {
             siteName: nil,
             description: nil,
             readable: pdfMarkdown(text: cleaned(document.string), url: finalURL, title: title),
-            screenshot: screenshot,
+            screenshots: screenshot.map { [$0] } ?? [],
             original: CaptureArtifact(
                 data: data,
                 filename: pdfFilename(url: finalURL),
@@ -501,10 +506,14 @@ final class CaptureAgent {
     private func prepare(page: PageCapture) -> Result<PreparedPageCapture, CaptureAgentError> {
         let readable = page.readable.flatMap { cleaned(truncateReadable($0)) }
         let original = page.original.flatMap { fitOriginalArtifact($0) }
-        guard readable != nil || page.screenshot != nil else {
+        guard readable != nil || !page.screenshots.isEmpty else {
             return .failure(CaptureAgentError("no readable text or screenshot captured"))
         }
-        return .success(PreparedPageCapture(readable: readable, screenshot: page.screenshot, original: original))
+        return .success(PreparedPageCapture(
+            readable: readable,
+            screenshots: page.screenshots,
+            original: original
+        ))
     }
 
     private func truncateReadable(_ readable: String) -> String {
@@ -555,6 +564,184 @@ final class CaptureAgent {
             return nil
         }
         return CaptureArtifact(data: data, filename: artifact.filename, contentType: artifact.contentType)
+    }
+
+    private func remoteMarkdownImageURLs(from markdown: String) -> [String] {
+        let pattern = #"!\[[^\]]*\]\(\s*<?(https?://[^\s<>)]+)>?(?:\s+["'][^)]*["'])?\s*\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return []
+        }
+        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        var seen = Set<String>()
+        var urls: [String] = []
+        for match in regex.matches(in: markdown, range: range) {
+            guard match.numberOfRanges > 1,
+                  let srcRange = Range(match.range(at: 1), in: markdown) else { continue }
+            let src = String(markdown[srcRange])
+            guard isHTTPImageURL(src), !seen.contains(src) else { continue }
+            seen.insert(src)
+            urls.append(src)
+        }
+        return urls
+    }
+
+    private func isHTTPImageURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
+    }
+
+    private func downloadReadableAsset(source: String, index: Int) -> CaptureReadableAsset? {
+        guard let originalURL = URL(string: source) else { return nil }
+        for candidate in assetDownloadCandidates(for: originalURL) {
+            guard let artifact = downloadReadableAssetCandidate(candidate, original: originalURL, index: index) else {
+                continue
+            }
+            return CaptureReadableAsset(
+                originalURL: source,
+                field: "asset\(index)",
+                artifact: artifact
+            )
+        }
+        return nil
+    }
+
+    private func assetDownloadCandidates(for url: URL) -> [URL] {
+        guard url.scheme?.lowercased() == "http",
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return [url]
+        }
+        components.scheme = "https"
+        guard let upgraded = components.url, upgraded != url else { return [url] }
+        return [upgraded, url]
+    }
+
+    private func downloadReadableAssetCandidate(_ url: URL, original: URL, index: Int) -> CaptureArtifact? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 8
+        request.setValue("image/avif,image/webp,image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
+
+        guard case .success(let reply) = BoundedDownloader.fetch(request, maxBytes: maxReadableAssetDownloadBytes),
+              (200...299).contains(reply.status),
+              !reply.data.isEmpty else {
+            return nil
+        }
+        guard let contentType = imageContentType(data: reply.data, contentType: reply.contentType, url: url) else { return nil }
+        let filename = readableAssetFilename(url: original, contentType: contentType, index: index)
+        return fitReadableAsset(
+            CaptureArtifact(data: reply.data, filename: filename, contentType: contentType)
+        )
+    }
+
+    private func fitReadableAsset(_ artifact: CaptureArtifact) -> CaptureArtifact? {
+        if artifact.data.count <= maxReadableAssetBytes { return artifact }
+        let lower = artifact.contentType.lowercased()
+        if lower == "image/gif" || lower == "image/avif" { return nil }
+        guard let source = CGImageSourceCreateWithData(artifact.data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+        let longest = Double(max(image.width, image.height))
+        let scale = min(1.0, readableAssetMaxEdge / max(1.0, longest))
+        let plans: [(type: UTType, contentType: String, ext: String, quality: Double)] = [
+            (.webP, "image/webp", "webp", 0.78),
+            (.webP, "image/webp", "webp", 0.62),
+            (.webP, "image/webp", "webp", 0.48),
+            (.jpeg, "image/jpeg", "jpg", 0.78),
+            (.jpeg, "image/jpeg", "jpg", 0.62),
+            (.jpeg, "image/jpeg", "jpg", 0.48),
+        ]
+        for plan in plans {
+            guard let rendered = renderedImage(image: image, scale: scale),
+                  let data = encodedImageData(image: rendered, type: plan.type, quality: plan.quality),
+                  data.count <= maxReadableAssetBytes else {
+                continue
+            }
+            return CaptureArtifact(
+                data: data,
+                filename: assetFilenameWithExtension(artifact.filename, ext: plan.ext),
+                contentType: plan.contentType
+            )
+        }
+        return nil
+    }
+
+    private func imageContentType(data: Data, contentType: String?, url: URL) -> String? {
+        let header = contentType?.lowercased().split(separator: ";").first.map(String.init)
+        if let normalized = normalizedImageContentType(header) { return normalized }
+        if let normalized = normalizedImageContentType(contentTypeForExtension(url.pathExtension)) {
+            return normalized
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source) as String? else {
+            return nil
+        }
+        if type == UTType.png.identifier { return "image/png" }
+        if type == UTType.jpeg.identifier { return "image/jpeg" }
+        if type == UTType.gif.identifier { return "image/gif" }
+        if type == UTType.webP.identifier { return "image/webp" }
+        return nil
+    }
+
+    private func normalizedImageContentType(_ value: String?) -> String? {
+        switch value?.lowercased() {
+        case "image/avif": return "image/avif"
+        case "image/gif": return "image/gif"
+        case "image/jpeg", "image/jpg", "image/pjpeg": return "image/jpeg"
+        case "image/png", "image/x-png": return "image/png"
+        case "image/webp": return "image/webp"
+        default: return nil
+        }
+    }
+
+    private func contentTypeForExtension(_ ext: String) -> String? {
+        switch ext.lowercased() {
+        case "avif": return "image/avif"
+        case "gif": return "image/gif"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "webp": return "image/webp"
+        default: return nil
+        }
+    }
+
+    private func readableAssetFilename(url: URL, contentType: String, index: Int) -> String {
+        let raw = url.deletingPathExtension().lastPathComponent.removingPercentEncoding ?? ""
+        let stem = safeAssetStem(raw, fallback: "image-\(index + 1)")
+        return "\(stem).\(assetExtension(for: contentType))"
+    }
+
+    private func assetFilenameWithExtension(_ filename: String, ext: String) -> String {
+        let stem = safeAssetStem(
+            URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent,
+            fallback: "image"
+        )
+        return "\(stem).\(ext)"
+    }
+
+    private func assetExtension(for contentType: String) -> String {
+        switch contentType.lowercased() {
+        case "image/avif": return "avif"
+        case "image/gif": return "gif"
+        case "image/png": return "png"
+        case "image/webp": return "webp"
+        default: return "jpg"
+        }
+    }
+
+    private func safeAssetStem(_ value: String, fallback: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        let scalars = value.lowercased().unicodeScalars.map { scalar -> Character in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        let joined = String(scalars)
+            .replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        if joined.isEmpty { return fallback }
+        return String(joined.prefix(64))
     }
 
     private func truncateUTF8(_ value: String, maxBytes: Int, note: String) -> String {
@@ -794,8 +981,21 @@ final class CaptureAgent {
         var storedContent = false
         var lastTransient: CaptureAgentError?
         var lastTerminal: CaptureAgentError?
+        var requiredArtifactFailure: CaptureUploadResult?
 
         if let readable = prepared.readable {
+            let assetCount = uploadReadableAssets(
+                capture: capture,
+                origin: origin,
+                token: token,
+                meta: meta,
+                readable: readable,
+                url: page.finalURL
+            )
+            if assetCount > 0 {
+                activity("captured \(assetCount) bookmark images \(host(for: page.finalURL))")
+            }
+
             switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, readable: readable) {
             case .success:
                 storedContent = true
@@ -808,12 +1008,15 @@ final class CaptureAgent {
             }
         }
 
-        if let screenshot = prepared.screenshot {
+        for (index, screenshot) in prepared.screenshots.enumerated() {
+            var screenshotMeta = meta
+            screenshotMeta.screenshotIndex = index
+            screenshotMeta.screenshotCount = prepared.screenshots.count
             switch uploadScreenshotBestEffort(
                 capture: capture,
                 origin: origin,
                 token: token,
-                meta: meta,
+                meta: screenshotMeta,
                 screenshot: screenshot,
                 url: page.finalURL
             ) {
@@ -821,11 +1024,13 @@ final class CaptureAgent {
                 storedContent = true
             case .transient(let reason):
                 lastTransient = reason
+                requiredArtifactFailure = .transient(reason)
                 if storedContent {
                     activity("capture screenshot skipped \(host(for: page.finalURL)): \(reason)")
                 }
             case .terminal(let reason):
                 lastTerminal = reason
+                requiredArtifactFailure = .terminal(reason)
                 if storedContent {
                     activity("capture screenshot skipped \(host(for: page.finalURL)): \(reason)")
                 }
@@ -838,13 +1043,23 @@ final class CaptureAgent {
                 break
             case .transient(let reason):
                 activity("capture original skipped \(host(for: page.finalURL)): \(reason)")
+                requiredArtifactFailure = .transient(reason)
             case .terminal(let reason):
                 activity("capture original skipped \(host(for: page.finalURL)): \(reason)")
+                requiredArtifactFailure = .terminal(reason)
             }
         }
 
         if storedContent {
-            return .success
+            if let requiredArtifactFailure { return requiredArtifactFailure }
+            var finalMeta = meta
+            finalMeta.isFinal = true
+            return uploadPartial(
+                capture: capture,
+                origin: origin,
+                token: token,
+                meta: finalMeta
+            )
         }
         if let lastTransient { return .transient(lastTransient) }
         if let lastTerminal { return .terminal(lastTerminal) }
@@ -853,17 +1068,91 @@ final class CaptureAgent {
 
     private func uploadPartial(
         capture: PendingCapture, origin: URL, token: String, meta: CaptureMeta,
-        readable: String? = nil, screenshot: CaptureArtifact? = nil, original: CaptureArtifact? = nil
+        readable: String? = nil, screenshot: CaptureArtifact? = nil, original: CaptureArtifact? = nil,
+        assets: [CaptureReadableAsset] = []
     ) -> CaptureUploadResult {
         guard let body = multipartBody(
             meta: meta,
             readable: readable,
             screenshot: screenshot,
-            original: original
+            original: original,
+            assets: assets
         ) else {
             return .terminal(CaptureAgentError("could not encode upload"))
         }
         return uploadWithRetry(capture: capture, origin: origin, token: token, body: body)
+    }
+
+    private func uploadReadableAssets(
+        capture: PendingCapture, origin: URL, token: String, meta: CaptureMeta, readable: String, url: URL
+    ) -> Int {
+        let allSources = remoteMarkdownImageURLs(from: readable)
+        let sources = Array(allSources.prefix(maxReadableAssetCount))
+        guard !sources.isEmpty else { return 0 }
+        var uploaded = 0
+        var batch: [CaptureReadableAsset] = []
+        for (index, source) in sources.enumerated() {
+            guard let asset = downloadReadableAsset(source: source, index: index) else { continue }
+            batch.append(asset)
+            if batch.count >= maxReadableAssetsPerUpload {
+                uploaded += uploadReadableAssetBatch(
+                    capture: capture,
+                    origin: origin,
+                    token: token,
+                    meta: meta,
+                    assets: batch,
+                    url: url
+                )
+                batch.removeAll(keepingCapacity: true)
+            }
+        }
+        uploaded += uploadReadableAssetBatch(
+            capture: capture,
+            origin: origin,
+            token: token,
+            meta: meta,
+            assets: batch,
+            url: url
+        )
+        let total = allSources.count
+        if total > maxReadableAssetCount {
+            activity("bookmark images capped \(host(for: url)): \(uploaded)/\(total)")
+        }
+        return uploaded
+    }
+
+    private func uploadReadableAssetBatch(
+        capture: PendingCapture, origin: URL, token: String, meta: CaptureMeta,
+        assets: [CaptureReadableAsset], url: URL
+    ) -> Int {
+        guard !assets.isEmpty else { return 0 }
+        switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, assets: assets) {
+        case .success:
+            return assets.count
+        case .transient(let reason):
+            guard assets.count > 1 else {
+                activity("bookmark image pending \(host(for: url)): \(reason)")
+                return 0
+            }
+        case .terminal(let reason):
+            guard assets.count > 1 else {
+                activity("bookmark image skipped \(host(for: url)): \(reason)")
+                return 0
+            }
+        }
+
+        var uploaded = 0
+        for asset in assets {
+            switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, assets: [asset]) {
+            case .success:
+                uploaded += 1
+            case .transient(let reason):
+                activity("bookmark image pending \(host(for: url)): \(reason)")
+            case .terminal(let reason):
+                activity("bookmark image skipped \(host(for: url)): \(reason)")
+            }
+        }
+        return uploaded
     }
 
     private func uploadScreenshotBestEffort(
@@ -964,7 +1253,7 @@ final class CaptureAgent {
 
     private func multipartBody(
         meta: CaptureMeta, readable: String? = nil, screenshot: CaptureArtifact? = nil,
-        original: CaptureArtifact? = nil
+        original: CaptureArtifact? = nil, assets: [CaptureReadableAsset] = []
     ) -> MultipartBody? {
         guard let metaData = try? JSONEncoder().encode(meta),
               let metaJSON = String(data: metaData, encoding: .utf8) else {
@@ -986,6 +1275,26 @@ final class CaptureAgent {
         if let original {
             appendFile(name: "html", filename: original.filename, contentType: original.contentType,
                        fileData: original.data, to: &data, boundary: boundary)
+        }
+        if !assets.isEmpty {
+            let manifest = assets.map {
+                CaptureAssetManifestEntry(
+                    field: $0.field,
+                    originalUrl: $0.originalURL,
+                    filename: $0.artifact.filename,
+                    contentType: $0.artifact.contentType
+                )
+            }
+            guard let manifestData = try? JSONEncoder().encode(manifest),
+                  let manifestJSON = String(data: manifestData, encoding: .utf8) else {
+                return nil
+            }
+            appendField(name: "assetManifest", value: manifestJSON, contentType: "application/json; charset=utf-8",
+                        to: &data, boundary: boundary)
+            for asset in assets {
+                appendFile(name: asset.field, filename: asset.artifact.filename, contentType: asset.artifact.contentType,
+                           fileData: asset.artifact.data, to: &data, boundary: boundary)
+            }
         }
         data.appendUTF8("--\(boundary)--\r\n")
         return MultipartBody(data: data, boundary: boundary)
@@ -1078,9 +1387,8 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     private var completed = false
     private let snapshotWidth: CGFloat = 1280
     private let minimumSnapshotHeight: CGFloat = 2000
-    private let maxSnapshotHeight: CGFloat = 14_000
-    private let maxSnapshotPixels: CGFloat = 18_000_000
-    private let lazyImageSettleDelay: TimeInterval = 1.5
+    private let snapshotTileHeight: CGFloat = 4000
+    private let maxSnapshotTileCount = 100
 
     init(
         url: URL, fallbackTitle: String?,
@@ -1180,10 +1488,19 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         guard let webView, !completed else { return }
         webView.evaluateJavaScript(snapshotSizeScript) { value, _ in
             guard let webView = self.webView, !self.completed else { return }
-            let size = self.snapshotSize(from: value)
-            webView.frame = NSRect(origin: .zero, size: size)
+            let pageSize = self.pageSize(from: value)
+            let viewportSize = NSSize(
+                width: self.snapshotWidth,
+                height: min(pageSize.height, self.snapshotTileHeight)
+            )
+            webView.frame = NSRect(origin: .zero, size: viewportSize)
             webView.layoutSubtreeIfNeeded()
-            webView.evaluateJavaScript(lazyImageHydrationScript) { _, _ in
+            webView.callAsyncJavaScript(
+                lazyImageHydrationScript,
+                arguments: [:],
+                in: nil,
+                in: .page
+            ) { _ in
                 self.settleAfterLazyImageHydration()
             }
         }
@@ -1199,7 +1516,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             }
         }
         settleDelay = delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + lazyImageSettleDelay, execute: delay)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: delay)
     }
 
     private func extract() {
@@ -1259,63 +1576,107 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                 self.finishPage(
                     readable: readable,
                     html: html,
-                    screenshot: nil,
+                    screenshots: [],
                     fallbackReason: error.localizedDescription
                 )
                 return
             }
-            let size = self.snapshotSize(from: value)
-            self.takeBoundedScreenshot(
+            let size = self.pageSize(from: value)
+            self.takeScreenshotTiles(
                 readable: readable,
                 html: html,
-                size: size,
+                pageHeight: size.height,
                 fallbackReason: fallbackReason
             )
         }
     }
 
-    private func takeBoundedScreenshot(
-        readable: ReadableExtraction?, html: Data?, size: NSSize, fallbackReason: String
+    private func takeScreenshotTiles(
+        readable: ReadableExtraction?, html: Data?, pageHeight: CGFloat, fallbackReason: String
+    ) {
+        let tileCount = min(
+            maxSnapshotTileCount,
+            max(1, Int(ceil(pageHeight / snapshotTileHeight)))
+        )
+        captureScreenshotTile(
+            index: 0,
+            tileCount: tileCount,
+            pageHeight: pageHeight,
+            screenshots: [],
+            readable: readable,
+            html: html,
+            fallbackReason: fallbackReason
+        )
+    }
+
+    private func captureScreenshotTile(
+        index: Int,
+        tileCount: Int,
+        pageHeight: CGFloat,
+        screenshots: [Data],
+        readable: ReadableExtraction?,
+        html: Data?,
+        fallbackReason: String
     ) {
         guard let webView, !completed else { return }
-        webView.frame = NSRect(origin: .zero, size: size)
+        guard index < tileCount else {
+            finishPage(
+                readable: readable,
+                html: html,
+                screenshots: screenshots,
+                fallbackReason: fallbackReason
+            )
+            return
+        }
+
+        let y = CGFloat(index) * snapshotTileHeight
+        let remaining = max(1, pageHeight - y)
+        let tileHeight = min(snapshotTileHeight, remaining)
+        let tileSize = NSSize(width: snapshotWidth, height: tileHeight)
+        webView.frame = NSRect(origin: .zero, size: tileSize)
         webView.layoutSubtreeIfNeeded()
-
-        let config = WKSnapshotConfiguration()
-        config.rect = NSRect(origin: .zero, size: size)
-        webView.takeSnapshot(with: config) { image, error in
-            if let error {
-                self.finishPage(
-                    readable: readable,
-                    html: html,
-                    screenshot: nil,
-                    fallbackReason: error.localizedDescription
-                )
-                return
+        let scrollScript = "window.scrollTo(0, \(Int(y))); true;"
+        webView.evaluateJavaScript(scrollScript) { _, _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                guard let webView = self.webView, !self.completed else { return }
+                let config = WKSnapshotConfiguration()
+                config.rect = NSRect(origin: .zero, size: tileSize)
+                webView.takeSnapshot(with: config) { image, error in
+                    guard error == nil, let image, let png = self.pngData(from: image) else {
+                        self.finishPage(
+                            readable: readable,
+                            html: html,
+                            screenshots: screenshots,
+                            fallbackReason: error?.localizedDescription ?? fallbackReason
+                        )
+                        return
+                    }
+                    self.captureScreenshotTile(
+                        index: index + 1,
+                        tileCount: tileCount,
+                        pageHeight: pageHeight,
+                        screenshots: screenshots + [png],
+                        readable: readable,
+                        html: html,
+                        fallbackReason: fallbackReason
+                    )
+                }
             }
-            guard let image,
-                  let tiff = image.tiffRepresentation,
-                  let rep = NSBitmapImageRep(data: tiff),
-                  let png = rep.representation(using: .png, properties: [:]) else {
-                self.finishPage(
-                    readable: readable,
-                    html: html,
-                    screenshot: nil,
-                    fallbackReason: fallbackReason
-                )
-                return
-            }
-
-            self.finishPage(readable: readable, html: html, screenshot: png, fallbackReason: fallbackReason)
         }
     }
 
+    private func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
     private func finishPage(
-        readable: ReadableExtraction?, html: Data?, screenshot: Data?, fallbackReason: String
+        readable: ReadableExtraction?, html: Data?, screenshots: [Data], fallbackReason: String
     ) {
         let title = self.cleaned(readable?.title) ?? self.cleaned(self.fallbackTitle)
         let readableMarkdown = readable.map { self.markdown(from: $0, title: title) }
-        guard readableMarkdown != nil || screenshot != nil else {
+        guard readableMarkdown != nil || !screenshots.isEmpty else {
             self.fail(url: self.currentURL, reason: fallbackReason)
             return
         }
@@ -1332,13 +1693,13 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             siteName: self.cleaned(readable?.siteName),
             description: self.cleaned(readable?.description),
             readable: readableMarkdown,
-            screenshot: screenshot,
+            screenshots: screenshots,
             original: original
         )
         self.finish(.success(page))
     }
 
-    private func snapshotSize(from value: Any?) -> NSSize {
+    private func pageSize(from value: Any?) -> NSSize {
         var measuredHeight = minimumSnapshotHeight
         if let json = value as? String,
            let data = json.data(using: .utf8),
@@ -1347,12 +1708,8 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             measuredHeight = max(minimumSnapshotHeight, CGFloat(decoded.height.rounded(.up)))
         }
 
-        let boundedHeight = min(measuredHeight, maxSnapshotHeightForWidth(snapshotWidth))
-        return NSSize(width: snapshotWidth, height: max(1, boundedHeight))
-    }
-
-    private func maxSnapshotHeightForWidth(_ width: CGFloat) -> CGFloat {
-        min(maxSnapshotHeight, floor(maxSnapshotPixels / max(1, width)))
+        let maxHeight = snapshotTileHeight * CGFloat(maxSnapshotTileCount)
+        return NSSize(width: snapshotWidth, height: min(maxHeight, max(1, measuredHeight)))
     }
 
     private func markdown(from readable: ReadableExtraction, title: String?) -> String {
@@ -1451,91 +1808,121 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
 }
 
 private let lazyImageHydrationScript = #"""
-(function() {
-  try {
-    function clean(value) {
-      return (value || "").replace(/\s+/g, " ").trim();
-    }
-    function isPlaceholder(value) {
-      var lower = clean(value).toLowerCase();
-      if (!lower) return true;
-      return /(^|[\/?&_.#=-])(default-cubic|placeholder|placehold|transparent|blank|spacer|pixel|1x1|lazy-placeholder|default[-_]?image)([\/?&_.#=-]|$)/.test(lower);
-    }
-    function firstDataValue(img, names) {
-      for (var i = 0; i < names.length; i++) {
-        var value = clean(img.getAttribute(names[i]));
-        if (value && !/^data:/i.test(value)) return value;
-      }
-      return "";
-    }
-    function dispatchViewportEvents() {
-      try { window.dispatchEvent(new Event("scroll")); } catch (_) {}
-      try { document.dispatchEvent(new Event("scroll")); } catch (_) {}
-      try { window.dispatchEvent(new Event("resize")); } catch (_) {}
-    }
-
-    var imgs = document.images || [];
-    for (var i = 0; i < imgs.length; i++) {
-      var img = imgs[i];
-      try { img.loading = "eager"; } catch (_) {}
-      try { img.decoding = "async"; } catch (_) {}
-
-      var src = clean(img.getAttribute("src"));
-      var dataSrc = firstDataValue(img, [
-        "data-src",
-        "data-original",
-        "data-lazy-src",
-        "data-hi-res-src",
-        "data-image"
-      ]);
-      if (dataSrc && (!src || isPlaceholder(src))) {
-        try { img.setAttribute("src", dataSrc); } catch (_) {}
-      }
-
-      var srcset = clean(img.getAttribute("srcset"));
-      var dataSrcset = firstDataValue(img, [
-        "data-srcset",
-        "data-lazy-srcset",
-        "data-responsive-srcset"
-      ]);
-      if (dataSrcset && (!srcset || isPlaceholder(srcset))) {
-        try { img.setAttribute("srcset", dataSrcset); } catch (_) {}
-      }
-    }
-
-    var root = document.scrollingElement || document.documentElement || document.body;
-    var viewport = Math.max(
-      window.innerHeight || 0,
-      (document.documentElement && document.documentElement.clientHeight) || 0,
-      800
-    );
-    var height = Math.max(
-      (root && root.scrollHeight) || 0,
-      (document.body && document.body.scrollHeight) || 0,
-      (document.documentElement && document.documentElement.scrollHeight) || 0,
-      viewport
-    );
-    var step = Math.max(600, Math.floor(viewport * 0.75));
-    var y = 0;
-    var count = 0;
-    window.scrollTo(0, 0);
-    dispatchViewportEvents();
-    while (y < height && count < 80) {
-      window.scrollTo(0, y);
-      dispatchViewportEvents();
-      y += step;
-      count += 1;
-    }
-    window.scrollTo(0, Math.max(0, height - viewport));
-    dispatchViewportEvents();
-    window.scrollTo(0, 0);
-    dispatchViewportEvents();
-
-    return JSON.stringify({ ok: true, images: imgs.length, height: height });
-  } catch (e) {
-    return JSON.stringify({ ok: false, error: String((e && e.message) || e || "lazy image hydration failed") });
+function clean(value) {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+function isPlaceholder(value) {
+  var lower = clean(value).toLowerCase();
+  if (!lower) return true;
+  return /(^|[\/?&_.#=-])(default-cubic|placeholder|placehold|transparent|blank|spacer|pixel|1x1|lazy-placeholder|default[-_]?image)([\/?&_.#=-]|$)/.test(lower);
+}
+function firstDataValue(img, names) {
+  for (var i = 0; i < names.length; i++) {
+    var value = clean(img.getAttribute(names[i]));
+    if (value && !/^data:/i.test(value)) return value;
   }
-})();
+  return "";
+}
+function dispatchViewportEvents() {
+  try { window.dispatchEvent(new Event("scroll")); } catch (_) {}
+  try { document.dispatchEvent(new Event("scroll")); } catch (_) {}
+  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+}
+function hydrateImages() {
+  var imgs = Array.prototype.slice.call(document.images || []);
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i];
+    try { img.loading = "eager"; } catch (_) {}
+    try { img.decoding = "async"; } catch (_) {}
+
+    var src = clean(img.getAttribute("src"));
+    var dataSrc = firstDataValue(img, [
+      "data-src",
+      "data-original",
+      "data-lazy-src",
+      "data-hi-res-src",
+      "data-image"
+    ]);
+    if (dataSrc && (!src || isPlaceholder(src))) {
+      try { img.setAttribute("src", dataSrc); } catch (_) {}
+    }
+
+    var srcset = clean(img.getAttribute("srcset"));
+    var dataSrcset = firstDataValue(img, [
+      "data-srcset",
+      "data-lazy-srcset",
+      "data-responsive-srcset"
+    ]);
+    if (dataSrcset && (!srcset || isPlaceholder(srcset))) {
+      try { img.setAttribute("srcset", dataSrcset); } catch (_) {}
+    }
+  }
+  return imgs;
+}
+function pageHeight(viewport) {
+  var root = document.scrollingElement || document.documentElement || document.body;
+  return Math.max(
+    (root && root.scrollHeight) || 0,
+    (document.body && document.body.scrollHeight) || 0,
+    (document.documentElement && document.documentElement.scrollHeight) || 0,
+    viewport
+  );
+}
+function delay(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
+try {
+  var viewport = Math.max(
+    window.innerHeight || 0,
+    (document.documentElement && document.documentElement.clientHeight) || 0,
+    800
+  );
+  var step = Math.max(700, Math.floor(viewport * 0.7));
+  var height = pageHeight(viewport);
+  var y = 0;
+  var count = 0;
+  hydrateImages();
+  window.scrollTo(0, 0);
+  dispatchViewportEvents();
+
+  // Give every viewport time to run IntersectionObserver callbacks and begin
+  // image requests. Re-measure because infinite/lazy layouts grow while moving.
+  while (y < height && count < 160) {
+    window.scrollTo(0, y);
+    dispatchViewportEvents();
+    await delay(70);
+    hydrateImages();
+    height = Math.max(height, pageHeight(viewport));
+    y += step;
+    count += 1;
+  }
+  window.scrollTo(0, Math.max(0, height - viewport));
+  dispatchViewportEvents();
+  await delay(250);
+
+  var imgs = hydrateImages();
+  var pending = imgs.filter(function(img) {
+    return !img.complete && !!clean(img.currentSrc || img.getAttribute("src"));
+  });
+  await Promise.race([
+    Promise.all(pending.map(function(img) {
+      return new Promise(function(resolve) {
+        var done = function() { resolve(true); };
+        img.addEventListener("load", done, { once: true });
+        img.addEventListener("error", done, { once: true });
+      });
+    })),
+    delay(3500)
+  ]);
+
+  window.scrollTo(0, 0);
+  dispatchViewportEvents();
+  await delay(120);
+  return JSON.stringify({ ok: true, images: imgs.length, height: pageHeight(viewport) });
+} catch (e) {
+  return JSON.stringify({ ok: false, error: String((e && e.message) || e || "lazy image hydration failed") });
+}
 """#
 
 private let lazyImageResetScrollScript = #"""
@@ -1804,10 +2191,26 @@ private let readableExtractionScript = #"""
     var siteName = clean(attr('meta[property="og:site_name"]', "content"));
     var description = clean(attr('meta[property="og:description"]', "content")) ||
       clean(attr('meta[name="description"]', "content"));
-    var root = document.querySelector("article") ||
-      document.querySelector("main") ||
-      document.querySelector('[role="main"]') ||
-      document.body;
+    function selectContentRoot() {
+      var candidates = document.querySelectorAll('article, main, [role="main"]');
+      var best = null;
+      var bestScore = -1;
+      for (var i = 0; i < candidates.length; i++) {
+        var candidate = candidates[i];
+        if (!candidate || isHidden(candidate)) continue;
+        var textLength = clean(candidate.textContent || "").length;
+        var imageCount = candidate.querySelectorAll
+          ? candidate.querySelectorAll("img").length
+          : 0;
+        var score = textLength + imageCount * 800;
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      }
+      return best || document.body;
+    }
+    var root = selectContentRoot();
     var contentBlocks = [];
     var textBuffer = "";
     var seenImages = {};
@@ -1938,8 +2341,72 @@ private let readableExtractionScript = #"""
       for (var i = 0; i < children.length; i++) walk(children[i]);
       if (isBlock) flushText();
     }
+    function seenImageCount() {
+      var count = 0;
+      for (var key in seenImages) {
+        if (Object.prototype.hasOwnProperty.call(seenImages, key)) count += 1;
+      }
+      return count;
+    }
+    function appendURLImage(src, alt) {
+      var resolved = realContentURL(src);
+      if (!resolved || badImagePattern(resolved) || seenImages[resolved]) return false;
+      seenImages[resolved] = true;
+      contentBlocks.push({
+        type: "image",
+        src: resolved,
+        alt: clean(alt || "")
+      });
+      return true;
+    }
+    function appendFallbackContentImages() {
+      var selectors = [
+        "article img",
+        "main img",
+        "[role='main'] img",
+        ".ContentParagraph-Image",
+        ".ContentParagraph img",
+        "[data-src]",
+        "[data-original]",
+        "[data-lazy-src]",
+        "[data-hi-res-src]"
+      ];
+      var nodes = [];
+      var seenNodes = [];
+      function pushNode(node) {
+        if (!node || node.tagName !== "IMG" || seenNodes.indexOf(node) >= 0) return;
+        seenNodes.push(node);
+        nodes.push(node);
+      }
+      for (var s = 0; s < selectors.length; s++) {
+        var matches = document.querySelectorAll(selectors[s]);
+        for (var m = 0; m < matches.length; m++) pushNode(matches[m]);
+      }
+      if (!nodes.length && document.images) {
+        for (var d = 0; d < document.images.length; d++) pushNode(document.images[d]);
+      }
+
+      var added = 0;
+      for (var n = 0; n < nodes.length; n++) {
+        if (added >= 48) break;
+        var image = imageBlock(nodes[n], "");
+        if (image && !seenImages[image.src]) {
+          seenImages[image.src] = true;
+          contentBlocks.push(image);
+          added += 1;
+        }
+      }
+    }
     walk(root);
     flushText();
+    if (seenImageCount() === 0) appendFallbackContentImages();
+    if (seenImageCount() === 0) {
+      appendURLImage(
+        attr('meta[property="og:image"]', "content") ||
+          attr('meta[name="twitter:image"]', "content"),
+        title
+      );
+    }
 
     var paragraphs = [];
     for (var i = 0; i < contentBlocks.length; i++) {
@@ -2004,6 +2471,9 @@ private struct CaptureMeta: Encodable {
     var description: String?
     let capturedBy: String
     var error: String?
+    var screenshotIndex: Int? = nil
+    var screenshotCount: Int? = nil
+    var isFinal = false
 }
 
 private struct PageCapture {
@@ -2012,7 +2482,7 @@ private struct PageCapture {
     let siteName: String?
     let description: String?
     let readable: String?
-    let screenshot: Data?
+    let screenshots: [Data]
     let original: CaptureArtifact?
 }
 
@@ -2078,9 +2548,22 @@ private struct CaptureArtifact {
     let contentType: String
 }
 
+private struct CaptureReadableAsset {
+    let originalURL: String
+    let field: String
+    let artifact: CaptureArtifact
+}
+
+private struct CaptureAssetManifestEntry: Encodable {
+    let field: String
+    let originalUrl: String
+    let filename: String
+    let contentType: String
+}
+
 private struct PreparedPageCapture {
     let readable: String?
-    let screenshot: Data?
+    let screenshots: [Data]
     let original: CaptureArtifact?
 }
 
@@ -2221,8 +2704,9 @@ final class BoundedDownloader: NSObject, URLSessionDataDelegate {
     static func fetch(_ request: URLRequest, maxBytes: Int) -> Result<Reply, BoundedDownloadError> {
         let delegate = BoundedDownloader(maxBytes: maxBytes)
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 120
+        let requestTimeout = request.timeoutInterval > 0 ? request.timeoutInterval : 60
+        config.timeoutIntervalForRequest = requestTimeout
+        config.timeoutIntervalForResource = max(requestTimeout, min(120, requestTimeout * 2))
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
 

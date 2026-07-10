@@ -88,7 +88,7 @@ export function PostShortcuts({
 
   useKey({
     key: "c",
-    label: "New article",
+    label: "Create post",
     group: "Create",
     when: () => owner,
     run: createArticle,
@@ -107,7 +107,7 @@ export function BlogHomeShortcuts({
   const createArticle = useCreateArticleShortcut(owner, handle);
   useKey({
     key: "c",
-    label: "New article",
+    label: "Create post",
     group: "Create",
     when: () => owner,
     run: createArticle,

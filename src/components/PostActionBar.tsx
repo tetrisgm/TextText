@@ -13,6 +13,9 @@ import { useRouter } from "next/navigation";
 import { saveEditablePostAction } from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
+import { shortcutLabelForCommand } from "@/lib/commands/workspace";
+import { preloadPostEditLayer } from "@/components/preloadPostEditLayer";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -41,7 +44,9 @@ type CommonProps = {
 };
 
 type ReadProps = CommonProps & {
+  bookmarkContentMode?: BookmarkContentMode;
   mode: "read";
+  onBookmarkContentModeChange?: (mode: BookmarkContentMode) => void;
 };
 
 type EditProps = CommonProps & {
@@ -62,6 +67,7 @@ type EditProps = CommonProps & {
 };
 
 type Props = ReadProps | EditProps;
+export type BookmarkContentMode = "readable" | "capture" | "saved" | "original";
 type ReadState = {
   source: Post;
   draft: DraftState;
@@ -105,6 +111,32 @@ function postEditPath(postPath: string, postId?: string): string {
   const params = new URLSearchParams({ edit: "1" });
   if (postId) params.set("id", postId);
   return `${postPath}?${params.toString()}`;
+}
+
+const warmedEditPaths = new Set<string>();
+
+function safePostUrl(value: string | undefined): string {
+  const raw = value?.trim() ?? "";
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.href;
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function displayUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    const path = `${url.pathname}${url.search}`.replace(/\/$/, "");
+    const text = `${url.hostname.replace(/^www\./, "")}${path}`;
+    if (text.length <= 46) return text;
+    return `${text.slice(0, 43)}...`;
+  } catch {
+    return value.length <= 46 ? value : `${value.slice(0, 43)}...`;
+  }
 }
 
 function initials(name: string): string {
@@ -281,20 +313,22 @@ function useDismissPopover<T extends HTMLElement>(
 function NavControl({
   href,
   label,
+  hint,
+  keys,
   disabled = false,
-  mode,
   onNavigate,
   children,
 }: {
   href?: string;
   label: string;
+  hint?: string;
+  keys?: string | null;
   disabled?: boolean;
-  mode: Props["mode"];
   onNavigate?: (path: string) => Promise<void> | void;
   children: ReactNode;
 }) {
-  if (disabled || !href) {
-    return (
+  const control =
+    disabled || !href ? (
       <button
         type="button"
         className="post-detail-nav is-disabled"
@@ -304,11 +338,7 @@ function NavControl({
       >
         <span className="post-detail-control-icon">{children}</span>
       </button>
-    );
-  }
-
-  if (onNavigate) {
-    return (
+    ) : onNavigate ? (
       <button
         type="button"
         className="post-detail-nav"
@@ -319,13 +349,17 @@ function NavControl({
       >
         <span className="post-detail-control-icon">{children}</span>
       </button>
+    ) : (
+      <Link className="post-detail-nav" href={href} aria-label={label}>
+        <span className="post-detail-control-icon">{children}</span>
+      </Link>
     );
-  }
 
+  if (!hint || disabled) return control;
   return (
-    <Link className="post-detail-nav" href={href} aria-label={label}>
-      <span className="post-detail-control-icon">{children}</span>
-    </Link>
+    <ShortcutTooltip label={hint} keys={keys} placement="bottom">
+      {control}
+    </ShortcutTooltip>
   );
 }
 
@@ -533,27 +567,75 @@ export function PostActionBar(props: Props) {
     setSettingsOpen((open) => !open);
   }, []);
 
+  const editHref = postEditPath(props.postPath, props.post.id);
+  const warmEditPath = useCallback(() => {
+    if (props.mode !== "read" || !canEditPost) return;
+    preloadPostEditLayer();
+    if (warmedEditPaths.has(editHref)) return;
+    warmedEditPaths.add(editHref);
+    router.prefetch(editHref);
+  }, [canEditPost, editHref, props.mode, router]);
+
+  useEffect(() => {
+    if (props.mode !== "read" || !canEditPost) return;
+    warmEditPath();
+  }, [canEditPost, props.mode, warmEditPath]);
+
   const doneControl =
     props.mode === "edit" ? (
-      <button
-        type="button"
-        className="post-owner-edit ac-btn ac-btn-filled"
-        onClick={() => {
-          void props.onDone();
-        }}
+      <ShortcutTooltip
+        label="Back to reading"
+        keys={shortcutLabelForCommand("post.toggle-edit")}
+        placement="bottom"
       >
-        Done
-      </button>
+        <button
+          type="button"
+          className="post-owner-edit ac-btn ac-btn-filled"
+          onClick={() => {
+            void props.onDone();
+          }}
+        >
+          Done
+        </button>
+      </ShortcutTooltip>
     ) : (
-      <Link
-        className="post-owner-edit ac-btn ac-btn-filled"
-        href={postEditPath(props.postPath, props.post.id)}
+      <ShortcutTooltip
+        label="Edit"
+        keys={shortcutLabelForCommand("post.edit")}
+        placement="bottom"
       >
-        <span className="post-action-button-icon">
-          <PencilIcon />
-        </span>
-        Edit
-      </Link>
+        {props.onNavigate ? (
+          <button
+            type="button"
+            className="post-owner-edit ac-btn ac-btn-filled"
+            onClick={() => {
+              warmEditPath();
+              void props.onNavigate?.(editHref);
+            }}
+            onFocus={warmEditPath}
+            onMouseEnter={warmEditPath}
+            onTouchStart={warmEditPath}
+          >
+            <span className="post-action-button-icon">
+              <PencilIcon />
+            </span>
+            Edit
+          </button>
+        ) : (
+          <Link
+            className="post-owner-edit ac-btn ac-btn-filled"
+            href={editHref}
+            onFocus={warmEditPath}
+            onMouseEnter={warmEditPath}
+            onTouchStart={warmEditPath}
+          >
+            <span className="post-action-button-icon">
+              <PencilIcon />
+            </span>
+            Edit
+          </Link>
+        )}
+      </ShortcutTooltip>
     );
 
   const readStatus =
@@ -570,7 +652,80 @@ export function PostActionBar(props: Props) {
     ? postPathFor(props.blog.handle, props.adjacent.next.slug)
     : undefined;
   const showPostNav = props.mode === "read" && Boolean(previousPath || nextPath);
-  const showTopActionBar = canEditPost || showPostNav;
+  const bookmarkMode =
+    props.mode === "read" ? (props.bookmarkContentMode ?? "readable") : "readable";
+  const bookmarkOriginalUrl =
+    props.mode === "read" && props.post.type === "bookmark"
+      ? safePostUrl(props.post.capture?.url) ||
+        safePostUrl(props.post.links?.[0]?.href)
+      : "";
+  const bookmarkCaptureUrl =
+    props.mode === "read" && props.post.type === "bookmark"
+      ? safePostUrl(props.post.capture?.screenshotTiles?.[0]?.url) ||
+        safePostUrl(props.post.capture?.screenshotUrl)
+      : "";
+  const bookmarkSavedUrl =
+    props.mode === "read" && props.post.type === "bookmark"
+      ? safePostUrl(props.post.capture?.htmlUrl)
+      : "";
+  const bookmarkControls =
+    props.mode === "read" &&
+    props.post.type === "bookmark" &&
+    props.onBookmarkContentModeChange &&
+    (bookmarkCaptureUrl || bookmarkSavedUrl || bookmarkOriginalUrl) ? (
+      <div className="post-bookmark-action-group" aria-label="Bookmark views">
+        {bookmarkMode !== "readable" && (
+          <button
+            type="button"
+            className="post-bookmark-view-button ac-btn ac-btn-gray"
+            onClick={() => props.onBookmarkContentModeChange?.("readable")}
+          >
+            Back
+          </button>
+        )}
+        {bookmarkCaptureUrl && (
+          <button
+            type="button"
+            className={`post-bookmark-view-button ac-btn ac-btn-gray${
+              bookmarkMode === "capture" ? " is-active" : ""
+            }`}
+            aria-pressed={bookmarkMode === "capture"}
+            onClick={() => props.onBookmarkContentModeChange?.("capture")}
+          >
+            Full capture
+          </button>
+        )}
+        {bookmarkSavedUrl && (
+          <button
+            type="button"
+            className={`post-bookmark-view-button ac-btn ac-btn-gray${
+              bookmarkMode === "saved" ? " is-active" : ""
+            }`}
+            aria-pressed={bookmarkMode === "saved"}
+            onClick={() => props.onBookmarkContentModeChange?.("saved")}
+          >
+            Saved page
+          </button>
+        )}
+        {bookmarkOriginalUrl && (
+          <button
+            type="button"
+            className={`post-bookmark-view-button post-bookmark-original-button ac-btn ac-btn-gray${
+              bookmarkMode === "original" ? " is-active" : ""
+            }`}
+            aria-pressed={bookmarkMode === "original"}
+            title={bookmarkOriginalUrl}
+            onClick={() => props.onBookmarkContentModeChange?.("original")}
+          >
+            <span>Original</span>
+            <span className="post-bookmark-original-url">
+              {displayUrl(bookmarkOriginalUrl)}
+            </span>
+          </button>
+        )}
+      </div>
+    ) : null;
+  const showTopActionBar = canEditPost || showPostNav || Boolean(bookmarkControls);
   const showAddHeaderItem =
     props.mode === "edit" &&
     activeDraft.type === "article" &&
@@ -697,7 +852,8 @@ export function PostActionBar(props: Props) {
         <NavControl
           href={props.homePath}
           label="Back"
-          mode={props.mode}
+          hint="Back"
+          keys={shortcutLabelForCommand("navigation.up")}
           onNavigate={props.onNavigate}
         >
           <BackIcon />
@@ -705,14 +861,17 @@ export function PostActionBar(props: Props) {
       </nav>
       {showTopActionBar && (
         <div
-          className={`post-top-action-bar applecms is-${props.mode}`}
+          className={`post-top-action-bar applecms is-${props.mode}${
+            bookmarkControls ? " has-bookmark-actions" : ""
+          }`}
           aria-label="Post controls"
         >
           <div className="post-action-toolbar ac-chrome">
-            {canEditPost && (
+            {(canEditPost || bookmarkControls) && (
               <div className="post-action-owner-group">
+                {bookmarkControls}
                 {canManagePost && shareControl}
-                {presenceControl}
+                {canEditPost && presenceControl}
                 {canManagePost && props.mode === "edit" && (
                   <div className="post-action-popover-wrap" ref={settingsWrapRef}>
                     <button
@@ -844,7 +1003,7 @@ export function PostActionBar(props: Props) {
                     )}
                   </div>
                 )}
-                {doneControl}
+                {canEditPost && doneControl}
               </div>
             )}
             {canManagePost && props.post.id && (
@@ -865,8 +1024,9 @@ export function PostActionBar(props: Props) {
                       ? `Previous post: ${postTitle(props.adjacent.previous.title)}`
                       : "No previous post"
                   }
+                  hint="Previous post"
+                  keys={shortcutLabelForCommand("post.previous")}
                   disabled={!previousPath}
-                  mode={props.mode}
                   onNavigate={props.onNavigate}
                 >
                   <ChevronIcon dir="left" />
@@ -878,8 +1038,9 @@ export function PostActionBar(props: Props) {
                       ? `Next post: ${postTitle(props.adjacent.next.title)}`
                       : "No next post"
                   }
+                  hint="Next post"
+                  keys={shortcutLabelForCommand("post.next")}
                   disabled={!nextPath}
-                  mode={props.mode}
                   onNavigate={props.onNavigate}
                 >
                   <ChevronIcon dir="right" />

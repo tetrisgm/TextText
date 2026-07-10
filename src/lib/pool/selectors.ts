@@ -102,6 +102,11 @@ export function workspacePoolFromParts({
   folders: Folder[];
   posts: Post[];
 }): WorkspacePoolPayload {
+  const initialBodies = posts.flatMap((post) =>
+    post.id && post.type === "note"
+      ? [{ postId: post.id, body: post.body, updatedAt: post.updatedAt }]
+      : [],
+  );
   return {
     version: 1,
     blogId,
@@ -111,6 +116,7 @@ export function workspacePoolFromParts({
     posts: posts
       .map((post) => narrowPostFromPost(post, blogId))
       .filter((post): post is WorkspacePoolPost => Boolean(post)),
+    initialBodies,
     fetchedAt: new Date().toISOString(),
   };
 }

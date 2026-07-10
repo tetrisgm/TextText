@@ -141,7 +141,7 @@ function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null 
 
 function createCommand(kind: CreatePostKind): AppCommand {
   const labels: Record<CreatePostKind, string> = {
-    article: "New article",
+    article: "Create post",
     note: "New note",
     bookmark: "New bookmark",
   };
@@ -297,7 +297,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "command.shortcuts",
     label: "Keyboard shortcuts",
     group: "Command bar",
-    shortcut: { key: "?", shift: true, label: "?" },
+    shortcut: { key: "?", label: "?" },
     when: () => true,
     run: (ctx) => ctx.openShortcuts(),
   },
@@ -344,8 +344,9 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     shortcut: [
       { key: "Enter", label: "Enter" },
       { key: "ArrowRight", label: "→" },
+      { key: "l", label: "L" },
     ],
-    when: (ctx) => Boolean(ctx.workspace),
+    when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "post"),
     run: (ctx) => ctx.workspace?.openSelected(),
   },
   {
@@ -355,6 +356,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     shortcut: [
       { key: "ArrowLeft", label: "←" },
       { key: "Escape", label: "Esc" },
+      { key: "h", label: "H" },
     ],
     when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
     run: (ctx) => {
@@ -384,6 +386,93 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     shortcut: { key: "3", label: "3" },
     when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[2]),
     run: (ctx) => ctx.workspace?.openSectionByIndex(2),
+  },
+  {
+    id: "read.page-down",
+    label: "Page down",
+    group: "Read",
+    shortcut: { key: " ", label: "Space" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.scrollReader("down", "page"),
+  },
+  {
+    id: "read.page-up",
+    label: "Page up",
+    group: "Read",
+    shortcut: { key: " ", shift: true, label: "Shift Space" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.scrollReader("up", "page"),
+  },
+  {
+    id: "read.half-down",
+    label: "Half page down",
+    group: "Read",
+    shortcut: { key: "d", ctrl: true, label: "Ctrl D" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.scrollReader("down", "half"),
+  },
+  {
+    id: "read.half-up",
+    label: "Half page up",
+    group: "Read",
+    shortcut: { key: "u", ctrl: true, label: "Ctrl U" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.scrollReader("up", "half"),
+  },
+  {
+    id: "read.bottom",
+    label: "Jump to end",
+    group: "Read",
+    shortcut: { key: "g", shift: true, label: "G" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.scrollReaderEdge("bottom"),
+  },
+  {
+    id: "read.top",
+    label: "Jump to top",
+    group: "Read",
+    shortcut: { key: "g", label: "G G" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.readerTapG(),
+  },
+  {
+    id: "post.previous",
+    label: "Previous post",
+    group: "Read",
+    shortcut: { key: "[", label: "[" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.openAdjacentPost(-1),
+  },
+  {
+    id: "post.next",
+    label: "Next post",
+    group: "Read",
+    shortcut: { key: "]", label: "]" },
+    when: (ctx) => ctx.workspace?.viewLevel === "post",
+    run: (ctx) => ctx.workspace?.openAdjacentPost(1),
+  },
+  {
+    id: "post.toggle-edit",
+    label: "Toggle read or edit",
+    group: "Read",
+    shortcut: [
+      { key: "e", meta: true, label: "⌘E", allowTypingTarget: true },
+      { key: "e", ctrl: true, label: "Ctrl E", allowTypingTarget: true },
+    ],
+    when: (ctx) =>
+      Boolean(
+        ctx.workspace &&
+          (ctx.workspace.viewLevel === "post" ||
+            ctx.workspace.viewLevel === "edit") &&
+          ctx.workspace.canEdit,
+      ),
+    run: (ctx) => {
+      const workspace = ctx.workspace;
+      if (!workspace) return;
+      const postId = workspace.activePostId;
+      if (!postId) return;
+      workspace.openPost(postId, workspace.viewLevel === "edit" ? "read" : "edit");
+    },
   },
   {
     id: "post.edit",
@@ -477,6 +566,17 @@ export function commandShortcutLabel(command: AppCommand): string | undefined {
     return `${modifiers}${key}`;
   });
   return shortcuts.length > 0 ? shortcuts.join(", ") : undefined;
+}
+
+export function primaryShortcutLabel(command: AppCommand): string | undefined {
+  return shortcutList(command)[0]?.label;
+}
+
+// Look up a command's shortcut label by id so tooltips stay in sync with the
+// registry (key + label live in exactly one place).
+export function shortcutLabelForCommand(id: string): string | undefined {
+  const command = WORKSPACE_COMMANDS.find((candidate) => candidate.id === id);
+  return command ? primaryShortcutLabel(command) : undefined;
 }
 
 export type WorkspaceShortcutRow = {

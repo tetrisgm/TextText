@@ -162,15 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // Foreground check, throttled to one per 5 minutes (the partyparty rule).
     private var lastForegroundCheck = Date.distantPast
-    private var lastForegroundWebReload = Date.distantPast
     func applicationDidBecomeActive(_ notification: Notification) {
-        if !WebAppWindowController.cacheWebView,
-           let webWindow,
-           Date().timeIntervalSince(lastForegroundWebReload) > 5 {
-            lastForegroundWebReload = Date()
-            webWindow.reloadFromOrigin()
-        }
-
         guard Date().timeIntervalSince(lastForegroundCheck) > 300 else { return }
         lastForegroundCheck = Date()
         updater?.checkNow()

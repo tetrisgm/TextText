@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { PostEditLayerProps } from "@/components/PostEditLayerClient";
+export { preloadPostEditLayer } from "@/components/preloadPostEditLayer";
 
 const DynamicPostEditLayer = dynamic<PostEditLayerProps>(
   () =>

@@ -55,12 +55,14 @@ function applyLink(editor: Editor) {
 
 function ToolbarButton({
   label,
+  keys,
   active,
   disabled,
   children,
   onPress,
 }: {
   label: string;
+  keys?: string;
   active?: boolean;
   disabled?: boolean;
   children: ReactNode;
@@ -70,9 +72,9 @@ function ToolbarButton({
     <button
       type="button"
       className={`body-editor-tool${active ? " is-active" : ""}`}
-      aria-label={label}
+      aria-label={keys ? `${label} (${keys})` : label}
       aria-pressed={active}
-      title={label}
+      title={keys ? `${label}  ·  ${keys}` : label}
       disabled={disabled}
       onMouseDown={(event) => {
         event.preventDefault();
@@ -263,6 +265,7 @@ export function BodyEditorToolbar({
         <div className="body-editor-toolgroup" aria-label="Inline style">
           <ToolbarButton
             label="Bold"
+            keys="⌘B"
             active={editor?.isActive("bold")}
             disabled={editorDisabled}
             onPress={() => editor?.chain().focus().toggleBold().run()}
@@ -271,6 +274,7 @@ export function BodyEditorToolbar({
           </ToolbarButton>
           <ToolbarButton
             label="Italic"
+            keys="⌘I"
             active={editor?.isActive("italic")}
             disabled={editorDisabled}
             onPress={() => editor?.chain().focus().toggleItalic().run()}
@@ -279,6 +283,7 @@ export function BodyEditorToolbar({
           </ToolbarButton>
           <ToolbarButton
             label="Strikethrough"
+            keys="⌘⇧X"
             active={editor?.isActive("strike")}
             disabled={editorDisabled}
             onPress={() => editor?.chain().focus().toggleStrike().run()}
@@ -289,6 +294,7 @@ export function BodyEditorToolbar({
         <div className="body-editor-toolgroup" aria-label="Lists">
           <ToolbarButton
             label="Bulleted list"
+            keys="⌘⇧8"
             active={editor?.isActive("bulletList")}
             disabled={editorDisabled}
             onPress={() => editor?.chain().focus().toggleBulletList().run()}
@@ -297,6 +303,7 @@ export function BodyEditorToolbar({
           </ToolbarButton>
           <ToolbarButton
             label="Numbered list"
+            keys="⌘⇧7"
             active={editor?.isActive("orderedList")}
             disabled={editorDisabled}
             onPress={() => editor?.chain().focus().toggleOrderedList().run()}

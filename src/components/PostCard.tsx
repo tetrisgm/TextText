@@ -100,6 +100,7 @@ export function PostCard({
   handle,
   href,
   onOpen,
+  onDeletePost,
   post,
   owner,
   categoryLabel,
@@ -108,6 +109,7 @@ export function PostCard({
   handle: string;
   href?: string;
   onOpen?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onDeletePost?: (post: Post) => Promise<void> | void;
   post: Post;
   owner: boolean;
   /** name of the subfolder this post lives in, shown as a quiet chip */
@@ -314,11 +316,13 @@ export function PostCard({
     if (!owner || !postId || deleting) return;
     setDeleting(true);
     startTransition(() => {
-      void deleteEditablePostAction(handle, postId)
+      void Promise.resolve(
+        onDeletePost ? onDeletePost(post) : deleteEditablePostAction(handle, postId),
+      )
         .then(() => {
           setDeleteDialogOpen(false);
           setMenuOpen(false);
-          router.refresh();
+          if (!onDeletePost) router.refresh();
         })
         .catch((error) => {
           setDeleting(false);
@@ -327,7 +331,7 @@ export function PostCard({
           setMenuError(actionErrorMessage(error, "Could not delete"));
         });
     });
-  }, [deleting, handle, owner, post.id, router]);
+  }, [deleting, handle, onDeletePost, owner, post, post.id, router]);
 
   const onTogglePinned = (event: MouseEvent<HTMLButtonElement>) => {
     stopMenuNavigation(event);

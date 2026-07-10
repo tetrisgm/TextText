@@ -872,6 +872,16 @@ export function PostEditLayer({
     },
     [],
   );
+  const containingFolderPath = useMemo(() => {
+    const folder = post.folderId
+      ? folders.find((entry) => entry.id === post.folderId)
+      : null;
+    return folder?.path ?? sidebarFolderPathForPostType(post.type);
+  }, [folders, post.folderId, post.type]);
+  const containingFolderHref = useMemo(
+    () => `${homePath}?folder=${encodeURIComponent(containingFolderPath)}`,
+    [containingFolderPath, homePath],
+  );
 
   const saveDraftNow = useCallback(
     async (
@@ -913,7 +923,9 @@ export function PostEditLayer({
         }
         if (options.exitEdit) {
           router.replace(
-            isEmptyDraft(nextDraft) ? homePath : blogPostPath(blog, { slug }),
+            isEmptyDraft(nextDraft)
+              ? containingFolderHref
+              : blogPostPath(blog, { slug }),
             { scroll: false },
           );
         }
@@ -955,12 +967,32 @@ export function PostEditLayer({
         setError(errorMessage(saveError, "Could not save"));
       }
     },
-    [blog, draft, homePath, postId, router],
+    [blog, containingFolderHref, draft, postId, router],
   );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+
+      // Cmd/Ctrl-E toggles back to reading (the reader binds the same chord to
+      // enter edit), so one key flips edit and read in both directions.
+      const isToggleEdit =
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "e";
+      if (isToggleEdit) {
+        if (hasOpenEditMenu()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        if (leavingEditRef.current) return;
+        void saveDraftNow({}, { exitEdit: true });
+        return;
+      }
+
       if (event.key !== "Escape") return;
       if (hasOpenEditMenu()) return;
 
@@ -1111,6 +1143,10 @@ export function PostEditLayer({
       : displayPost.type === "talk"
         ? "reader-dek talk-detail-dek edit-excerpt-field"
         : "reader-dek edit-excerpt-field";
+  const excerptPlaceholder =
+    displayPost.type === "bookmark"
+      ? "Add a description"
+      : "Add a short description";
   const titleText = displayPost.title.trim() || "Untitled";
   const resolvedHeaderCover = resolveCover(displayPost);
   const hasArticleHeaderImage =
@@ -1120,7 +1156,7 @@ export function PostEditLayer({
   // the way out), the same sidebar behavior as the home and read shells.
   const selectSidebarFolder = useCallback(
     (folder: SidebarFolderId) => {
-      const path = folder === "blog" ? homePath : `${homePath}?folder=${folder}`;
+      const path = `${homePath}?folder=${encodeURIComponent(folder)}`;
       void saveDraftNow({}, { navigatePath: path });
     },
     [homePath, saveDraftNow],
@@ -1220,7 +1256,7 @@ export function PostEditLayer({
         ref={excerptRef}
         className={excerptClass}
         aria-label="Excerpt"
-        placeholder="Add a short description"
+        placeholder={excerptPlaceholder}
         rows={1}
         value={draft.excerpt}
         onChange={(event) => updateDraft({ excerpt: event.currentTarget.value })}
@@ -1335,8 +1371,8 @@ export function PostEditLayer({
           setDeleting(false);
           setSaveState("saved");
           setError(null);
-          if (homePath) {
-            router.replace(homePath);
+          if (containingFolderHref) {
+            router.replace(containingFolderHref);
             return;
           }
           router.refresh();
@@ -1349,7 +1385,7 @@ export function PostEditLayer({
           setError(errorMessage(deleteError, "Could not delete"));
         });
     });
-  }, [blog.handle, deleting, homePath, postId, router]);
+  }, [blog.handle, containingFolderHref, deleting, postId, router]);
 
   const renderedPostPath = blogPostPath(blog, {
     slug: slugify(draft.slug, post.slug),

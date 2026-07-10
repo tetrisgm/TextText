@@ -29,6 +29,7 @@ import type {
   Blog,
   BlogCardStyle,
   BlogHomeLayout,
+  BookmarkCaptureAsset,
   BookmarkCapture,
   CaptureStatus,
   Folder,
@@ -41,6 +42,7 @@ import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
 import { blogs, folders, posts, users } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
+import { localizeRemoteMarkdownImages } from "./markdown-images";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import { rootDomainUrl } from "./site-url";
 import {
@@ -83,6 +85,7 @@ type PostListRow = Pick<
   | "wordCount"
 > & {
   bodyPreview: string | null;
+  capture: BookmarkCapture | null;
   captureUrl: string | null;
   captureTitle: string | null;
   captureDescription: string | null;
@@ -182,6 +185,7 @@ function mapPost(row: PostRow): Post {
 }
 
 function compactCapture(row: PostListRow): BookmarkCapture | undefined {
+  if (row.capture) return row.capture;
   const capture: Partial<BookmarkCapture> = {
     url: row.captureUrl ?? undefined,
     title: row.captureTitle ?? undefined,
@@ -232,7 +236,10 @@ function mapPostList(row: PostListRow): Post {
 const BODY_PREVIEW_LENGTH = 2048;
 
 function bodyPreviewSql(): SQL<string | null> {
-  return sql<string | null>`nullif(left(${posts.body}, ${BODY_PREVIEW_LENGTH}), '')`;
+  return sql<string | null>`case
+    when ${posts.type} = 'note' then nullif(${posts.body}, '')
+    else nullif(left(${posts.body}, ${BODY_PREVIEW_LENGTH}), '')
+  end`;
 }
 
 function wordCountSql(): SQL<number | null> {
@@ -269,6 +276,7 @@ function postListSelection() {
     updatedAt: posts.updatedAt,
     wordCount: wordCountSql(),
     bodyPreview: bodyPreviewSql(),
+    capture: posts.capture,
     captureUrl: sql<string | null>`${posts.capture}->>'url'`,
     captureTitle: sql<string | null>`${posts.capture}->>'title'`,
     captureDescription: sql<string | null>`${posts.capture}->>'description'`,
@@ -504,7 +512,7 @@ const STARTER_BLOG_POST = {
 
 ## Create
 
-Press C anywhere in the workspace to create a new article in the current folder.
+Press C anywhere in the workspace to create a post in the current folder.
 
 ## Commands
 
@@ -525,6 +533,16 @@ const STARTER_BOOKMARK = {
   slug: "write-ai-setup-guide",
   title: "Write AI setup guide",
 };
+
+const WORKSPACE_STARTER_POST_SLUGS = [
+  STARTER_BLOG_POST.slug,
+  STARTER_NOTE.slug,
+  STARTER_BOOKMARK.slug,
+] as const;
+
+export function isWorkspaceStarterPost(post: Pick<Post, "slug">): boolean {
+  return (WORKSPACE_STARTER_POST_SLUGS as readonly string[]).includes(post.slug);
+}
 
 function starterBookmarkUrl(): string {
   return new URL("/docs/ai", rootDomainUrl()).toString();
@@ -709,9 +727,13 @@ export async function saveBookmarkCapture(
     .limit(1);
   const row = existing[0];
   if (!row || row.type !== "bookmark") return null;
-  const readable = opts.readableMarkdown?.trim();
-  const body = row.body.trim() === "" && readable ? readable : row.body;
-  const merged: BookmarkCapture = { ...(row.capture ?? {}), ...capture };
+  const merged: BookmarkCapture = mergeBookmarkCapture(row.capture, capture);
+  const readable = opts.readableMarkdown
+    ? bookmarkReadableMarkdown(opts.readableMarkdown, merged.assets)
+    : "";
+  const body = shouldRefreshBookmarkReadable(row.body, readable, merged.assets)
+    ? readable
+    : row.body;
   let excerpt = row.excerpt;
   if (!row.excerpt?.trim()) {
     const clean = (value: string | undefined) =>
@@ -758,17 +780,108 @@ export async function saveBookmarkCapture(
   return updated[0] ? mapPost(updated[0]) : null;
 }
 
+function mergeBookmarkCapture(
+  existing: BookmarkCapture | null | undefined,
+  incoming: BookmarkCapture,
+): BookmarkCapture {
+  const merged: BookmarkCapture = { ...(existing ?? {}), ...incoming };
+  const assets = mergeBookmarkCaptureAssets(existing?.assets, incoming.assets);
+  if (assets.length > 0) merged.assets = assets;
+  const screenshotTiles = mergeBookmarkCaptureScreenshotTiles(
+    existing?.screenshotTiles,
+    incoming.screenshotTiles,
+  );
+  if (screenshotTiles.length > 0) {
+    merged.screenshotTiles = screenshotTiles;
+    merged.screenshotUrl = screenshotTiles[0]?.url ?? merged.screenshotUrl;
+  }
+  return merged;
+}
+
+function mergeBookmarkCaptureScreenshotTiles(
+  existing: BookmarkCapture["screenshotTiles"],
+  incoming: BookmarkCapture["screenshotTiles"],
+): NonNullable<BookmarkCapture["screenshotTiles"]> {
+  const byIndex = new Map<
+    number,
+    NonNullable<BookmarkCapture["screenshotTiles"]>[number]
+  >();
+  for (const tile of existing ?? []) {
+    if (Number.isInteger(tile.index) && tile.index >= 0 && tile.url) {
+      byIndex.set(tile.index, tile);
+    }
+  }
+  for (const tile of incoming ?? []) {
+    if (Number.isInteger(tile.index) && tile.index >= 0 && tile.url) {
+      byIndex.set(tile.index, tile);
+    }
+  }
+  return [...byIndex.values()].sort((a, b) => a.index - b.index);
+}
+
+function mergeBookmarkCaptureAssets(
+  existing: BookmarkCaptureAsset[] | undefined,
+  incoming: BookmarkCaptureAsset[] | undefined,
+): BookmarkCaptureAsset[] {
+  const byOriginalUrl = new Map<string, BookmarkCaptureAsset>();
+  for (const asset of existing ?? []) {
+    if (asset.originalUrl && asset.url) byOriginalUrl.set(asset.originalUrl, asset);
+  }
+  for (const asset of incoming ?? []) {
+    if (asset.originalUrl && asset.url) byOriginalUrl.set(asset.originalUrl, asset);
+  }
+  return [...byOriginalUrl.values()];
+}
+
+function bookmarkReadableMarkdown(
+  readableMarkdown: string,
+  assets: BookmarkCaptureAsset[] | undefined,
+): string {
+  const replacements = new Map<string, string>();
+  for (const asset of assets ?? []) {
+    if (asset.originalUrl && asset.url) replacements.set(asset.originalUrl, asset.url);
+  }
+  return localizeRemoteMarkdownImages(readableMarkdown, replacements).trim();
+}
+
+export function shouldRefreshBookmarkReadable(
+  currentBody: string,
+  nextBody: string,
+  assets: BookmarkCaptureAsset[] | undefined,
+): boolean {
+  if (!nextBody) return false;
+  if (!currentBody.trim()) return true;
+  const currentImageCount = markdownImageCount(currentBody);
+  const nextImageCount = markdownImageCount(nextBody);
+  if (nextImageCount > currentImageCount) return true;
+  const assetUrls = (assets ?? [])
+    .map((asset) => asset.url?.trim())
+    .filter((url): url is string => Boolean(url));
+  if (assetUrls.length === 0) return false;
+  const nextSavedImageCount = assetUrls.filter((url) => nextBody.includes(url)).length;
+  const currentSavedImageCount = assetUrls.filter((url) =>
+    currentBody.includes(url),
+  ).length;
+  return nextSavedImageCount > currentSavedImageCount;
+}
+
+function markdownImageCount(markdown: string): number {
+  return markdown.match(
+    /!\[[^\]]*]\(\s*<?(?:https?:\/\/|\/|\.\/|\.\.\/)[^\s<>)]+>?/gi,
+  )?.length ?? 0;
+}
+
 /** Enter a fresh bookmark into the capture pipeline. */
 export async function markCapturePending(
   handle: string,
   postId: string,
   url: string,
-): Promise<void> {
-  if (!db) return;
+): Promise<Post | null> {
+  if (!db) return null;
   const blogId = await blogIdFor(handle);
-  await db
-    .update(posts)
-    .set({ captureStatus: "pending", capture: { url }, updatedAt: new Date() })
+  const existing = await db
+    .select()
+    .from(posts)
     .where(
       and(
         eq(posts.id, postId),
@@ -776,7 +889,30 @@ export async function markCapturePending(
         eq(posts.type, "bookmark"),
         isNull(posts.deletedAt),
       ),
-    );
+    )
+    .limit(1);
+  const row = existing[0];
+  if (!row) return null;
+
+  const capture: BookmarkCapture = {
+    ...(row.capture ?? {}),
+    url,
+  };
+  delete capture.error;
+
+  const updated = await db
+    .update(posts)
+    .set({ captureStatus: "pending", capture, updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, postId),
+        eq(posts.blogId, blogId),
+        eq(posts.type, "bookmark"),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .returning();
+  return updated[0] ? mapPost(updated[0]) : null;
 }
 
 /**

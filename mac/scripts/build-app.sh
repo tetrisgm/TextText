@@ -59,6 +59,20 @@ STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $WRITE_BUNDLE_ID" "$STAGED"
 "$PB" -c "Set :SUFeedURL ${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
 "$PB" -c "Set :SUPublicEDKey $WRITE_SPARKLE_PUBLIC_KEY" "$STAGED"
+if [ -n "${APP_VERSION:-}" ]; then
+  [[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || {
+    echo "APP_VERSION must be dotted numeric, got: $APP_VERSION" >&2
+    exit 1
+  }
+  "$PB" -c "Set :CFBundleShortVersionString $APP_VERSION" "$STAGED"
+fi
+if [ -n "${APP_BUILD_NUMBER:-}" ]; then
+  [[ "$APP_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || {
+    echo "APP_BUILD_NUMBER must be a positive integer, got: $APP_BUILD_NUMBER" >&2
+    exit 1
+  }
+  "$PB" -c "Set :CFBundleVersion $APP_BUILD_NUMBER" "$STAGED"
+fi
 
 # Sparkle framework (auto-update): embed + make it discoverable via rpath.
 if [ -d "$BIN/Sparkle.framework" ]; then

@@ -3,11 +3,17 @@
 import {
   type MouseEvent,
   type SyntheticEvent,
+  useCallback,
   useEffect,
+  useRef,
   useState,
+  useTransition,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { deleteEditablePostAction } from "@/app/editor/actions";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import type { Post } from "@/lib/content";
 import { isSafeLinkHref, isVideoFile, postBodyPreview } from "@/lib/content";
 import {
@@ -126,42 +132,71 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  onCaptureResolved,
+  onDeletePost,
   optionId,
   optionTabIndex,
+  owner = false,
   selected = false,
+  handle,
 }: {
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  onCaptureResolved?: (post: Post) => void;
+  onDeletePost?: (post: Post) => Promise<void> | void;
   optionId?: string;
   optionTabIndex?: number;
+  owner?: boolean;
   selected?: boolean;
+  handle?: string;
 }) {
   const router = useRouter();
   const captureStatus = useCaptureStatus(post.id, post.captureStatus, {
     onResolved: () => {
-      router.refresh();
+      if (onCaptureResolved) onCaptureResolved(post);
+      else router.refresh();
     },
   });
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuError, setMenuError] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [, startTransition] = useTransition();
   const title = itemTitle(post);
-  const href = originalHref(post);
   const host = bookmarkHost(post);
   const faviconSrc = bookmarkFaviconUrl(post);
   const description =
     previewLine(post.excerpt) ||
     previewLine(post.capture?.description) ||
     previewLine(postBodyPreview(post));
-  const screenshotUrl = post.capture?.screenshotUrl?.trim();
-  const htmlUrl = post.capture?.htmlUrl?.trim();
-  const isPending = captureStatus === "pending";
   const isFailed = captureStatus === "failed";
-  const hasActions = !isPending && Boolean(href || htmlUrl || screenshotUrl);
+  const canDelete = owner && Boolean(post.id) && Boolean(onDeletePost || handle);
   const thumbnailSource = resolveCoverSource(post);
   const thumbnailUrl = thumbnailSource.src;
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   useEffect(() => {
-    setThumbnailFailed(false);
+    const frame = window.requestAnimationFrame(() => {
+      setThumbnailFailed(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [thumbnailUrl]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        menuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [menuOpen]);
+  useEscapeLayer(menuOpen, "Bookmark options", () => setMenuOpen(false));
   const thumbnailIsCapture = thumbnailSource.kind === "bookmark-screenshot";
   const thumbnailIsFavicon = thumbnailSource.kind === "bookmark-favicon";
   const thumbnailLinkClass = classNames(
@@ -175,6 +210,42 @@ export function BookmarkCard({
     event.currentTarget.hidden = true;
     setThumbnailFailed(true);
   };
+  const stopMenuNavigation = (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    stopMenuNavigation(event);
+    setMenuError(null);
+    setMenuOpen((open) => !open);
+  };
+  const confirmDelete = useCallback(() => {
+    if (!post.id || deleting) return;
+    setDeleting(true);
+    startTransition(() => {
+      const request = onDeletePost
+        ? Promise.resolve(onDeletePost(post))
+        : handle
+          ? deleteEditablePostAction(handle, post.id).then(() => {
+              router.refresh();
+            })
+          : Promise.reject(new Error("You cannot edit this blog"));
+      void request
+        .then(() => {
+          setDeleteDialogOpen(false);
+          setMenuOpen(false);
+        })
+        .catch((error) => {
+          setMenuOpen(true);
+          setMenuError(
+            error instanceof Error && error.message
+              ? error.message
+              : "Could not delete",
+          );
+        })
+        .finally(() => setDeleting(false));
+    });
+  }, [deleting, handle, onDeletePost, post, router]);
   const thumbnailMedia = thumbnailFailed ? (
     thumbnailFallback
   ) : isVideoFile(thumbnailUrl) ? (
@@ -241,58 +312,59 @@ export function BookmarkCard({
       data-workspace-post-id={post.id}
     >
       <div className={styles.body}>
-        {isPending ? (
+        <Link
+          className={styles.main}
+          href={editPath}
+          prefetch={onOpenPost ? false : undefined}
+          onClick={(event) => {
+            if (!onOpenPost || !shouldOpenLocally(event)) return;
+            event.preventDefault();
+            onOpenPost(post);
+          }}
+        >
+          {mainContent}
+        </Link>
+        {canDelete && (
           <div
-            className={classNames(styles.main, styles.mainDisabled)}
-            aria-disabled="true"
+            ref={menuRef}
+            className={classNames(styles.menuWrap, menuOpen && styles.menuOpen)}
+            onClick={stopMenuNavigation}
           >
-            {mainContent}
-          </div>
-        ) : (
-          <Link
-            className={styles.main}
-            href={editPath}
-            prefetch={onOpenPost ? false : undefined}
-            onClick={(event) => {
-              if (!onOpenPost || !shouldOpenLocally(event)) return;
-              event.preventDefault();
-              onOpenPost(post);
-            }}
-          >
-            {mainContent}
-          </Link>
-        )}
-        {hasActions && (
-          <div className={styles.actions}>
-            {href && (
-              <a
-                className={styles.action}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
+            <button
+              type="button"
+              className={styles.menuButton}
+              aria-label="Bookmark options"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={toggleMenu}
+            >
+              ...
+            </button>
+            {menuOpen && (
+              <div
+                className={styles.menu}
+                role="menu"
+                aria-label="Bookmark options"
               >
-                Open original
-              </a>
-            )}
-            {htmlUrl && (
-              <a
-                className={styles.action}
-                href={htmlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View saved original
-              </a>
-            )}
-            {screenshotUrl && (
-              <a
-                className={styles.action}
-                href={screenshotUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View full capture
-              </a>
+                <button
+                  type="button"
+                  className={classNames(styles.menuItem, styles.dangerItem)}
+                  role="menuitem"
+                  disabled={deleting}
+                  onClick={(event) => {
+                    stopMenuNavigation(event);
+                    setMenuOpen(false);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  {deleting ? "Deleting" : "Delete"}
+                </button>
+                {menuError && (
+                  <span className={styles.menuError} role="alert">
+                    {menuError}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -305,50 +377,61 @@ export function BookmarkCard({
           {thumbnailFallback}
         </div>
       )}
-      {!isFailed && thumbnailUrl && thumbnailIsCapture && screenshotUrl && (
-        isPending ? (
-          <div
-            className={classNames(thumbnailLinkClass, styles.thumbnailDisabled)}
-            aria-hidden="true"
-          >
-            {thumbnailMedia}
-          </div>
-        ) : (
-          <a
-            className={thumbnailLinkClass}
-            href={screenshotUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open screenshot for ${title}`}
-          >
-            {thumbnailMedia}
-          </a>
-        )
+      {!isFailed && thumbnailUrl && thumbnailIsCapture && (
+        <Link
+          className={thumbnailLinkClass}
+          href={editPath}
+          prefetch={onOpenPost ? false : undefined}
+          onClick={(event) => {
+            if (!onOpenPost || !shouldOpenLocally(event)) return;
+            event.preventDefault();
+            onOpenPost(post);
+          }}
+          aria-label={`Open ${title}`}
+        >
+          {thumbnailMedia}
+        </Link>
       )}
       {!isFailed && thumbnailUrl && !thumbnailIsCapture && (
-        isPending ? (
-          <div
-            className={classNames(thumbnailLinkClass, styles.thumbnailDisabled)}
-            aria-hidden="true"
-          >
-            {thumbnailMedia}
-          </div>
-        ) : (
-          <Link
-            className={thumbnailLinkClass}
-            href={editPath}
-            prefetch={onOpenPost ? false : undefined}
-            onClick={(event) => {
-              if (!onOpenPost || !shouldOpenLocally(event)) return;
-              event.preventDefault();
-              onOpenPost(post);
-            }}
-            aria-label={`Open ${title}`}
-          >
-            {thumbnailMedia}
-          </Link>
-        )
+        <Link
+          className={thumbnailLinkClass}
+          href={editPath}
+          prefetch={onOpenPost ? false : undefined}
+          onClick={(event) => {
+            if (!onOpenPost || !shouldOpenLocally(event)) return;
+            event.preventDefault();
+            onOpenPost(post);
+          }}
+          aria-label={`Open ${title}`}
+        >
+          {thumbnailMedia}
+        </Link>
       )}
+      {!isFailed && !thumbnailUrl && (
+        <Link
+          className={thumbnailLinkClass}
+          href={editPath}
+          prefetch={onOpenPost ? false : undefined}
+          onClick={(event) => {
+            if (!onOpenPost || !shouldOpenLocally(event)) return;
+            event.preventDefault();
+            onOpenPost(post);
+          }}
+          aria-label={`Open ${title}`}
+        >
+          {thumbnailFallback}
+        </Link>
+      )}
+      <ConfirmationDialog
+        open={deleteDialogOpen}
+        title="Delete bookmark?"
+        message="This moves the Markdown file to Trash. You can restore it later."
+        confirmLabel="Delete"
+        confirmingLabel="Deleting"
+        confirming={deleting}
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={confirmDelete}
+      />
     </article>
   );
 }

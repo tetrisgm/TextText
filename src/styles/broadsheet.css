@@ -320,107 +320,38 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   text-align: center;
 }
 
-/* Bookmark captures: full-page screenshots are tall, so the hero crops to the
-   top while this frame lets the reader inspect the saved page itself. */
-.reader-bookmark-capture {
-  display: grid;
-  gap: 14px;
-  width: min(1000px, 100%);
-  margin: 0 auto 44px;
-  padding: 0 24px;
-}
-.reader-bookmark-original {
-  display: grid;
-  gap: 6px;
-  width: min(680px, 100%);
-  margin: 0 auto;
-  padding: 13px 15px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-soft) 76%, transparent);
-}
-.reader-bookmark-original-label {
-  color: color-mix(in srgb, var(--post-accent, var(--muted)) 60%, var(--ink));
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-.reader-bookmark-original a {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.35;
-  letter-spacing: 0;
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.reader-bookmark-original a:hover {
-  color: color-mix(in srgb, var(--post-accent, var(--ink)) 60%, var(--ink));
-}
-.reader-bookmark-original a:focus-visible {
-  border-radius: 3px;
-  outline: 2px solid
-    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
-  outline-offset: 3px;
-}
-.reader-bookmark-capture-frame {
-  max-height: min(780px, 72svh);
-  overflow: auto;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--bg-soft);
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--bg) 72%, transparent) inset,
-    0 18px 58px -50px color-mix(in srgb, var(--ink) 44%, transparent);
-  scrollbar-gutter: stable;
-}
-.reader-bookmark-capture-frame:focus-visible {
-  outline: 2px solid
-    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
-  outline-offset: 4px;
-}
-.reader-bookmark-capture-frame img {
-  display: block;
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  object-position: top;
-  background: var(--bg-soft);
-}
-.reader-bookmark-links {
+.reader-bookmark-meta {
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 16px;
-  max-width: 680px;
-  margin: 0 auto;
+  gap: 0;
+  margin-top: 18px;
   color: var(--muted);
   font-size: 14px;
   font-weight: 650;
   line-height: 1.35;
   letter-spacing: 0;
 }
-.reader-bookmark-links a {
-  color: color-mix(in srgb, var(--post-accent, var(--ink-2)) 60%, var(--ink));
-  text-decoration: none;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--post-accent, var(--ink-2)) 32%, transparent);
+.bookmark-reader-view {
+  width: min(1180px, calc(100vw - 48px));
+  margin: 0 auto 56px;
+  border: 1px solid var(--hairline);
+  background: var(--bg-soft);
 }
-.reader-bookmark-links a:hover {
-  color: var(--ink);
-  border-color: var(--post-accent, var(--ink-2));
+.bookmark-reader-view.is-capture {
+  overflow: hidden;
 }
-.reader-bookmark-links a:focus-visible {
-  border-radius: 3px;
-  color: var(--ink);
-  outline: 2px solid
-    color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
-  outline-offset: 3px;
+.bookmark-reader-view.is-capture img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--bg-soft);
+}
+.bookmark-reader-frame {
+  display: block;
+  width: 100%;
+  min-height: max(720px, 76svh);
+  border: 0;
+  background: var(--bg);
 }
 
 /* ---------- prose (narrow column; media steps out wider) ---------- */
@@ -721,11 +652,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
 }
 .blog-home.is-naming-ceremony {
-  min-height: 100dvh;
+  min-height: 0;
 }
 .blog-name-target {
   visibility: hidden;
   pointer-events: none;
+  position: absolute;
+  inset: auto;
 }
 .blog-name-field-row {
   display: flex;
@@ -762,25 +695,23 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 55%, var(--muted));
 }
 .blog-name-form.is-ceremony {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 220;
-  width: min(760px, calc(100vw - 36px));
-  max-width: none;
-  margin: 0;
-  justify-items: center;
-  text-align: center;
-  transform: translate(-50%, -36px);
+  position: relative;
+  z-index: 1;
+  width: min(980px, 100%);
+  max-width: 980px;
+  margin: 0 auto 20px;
+  justify-items: stretch;
+  text-align: left;
+  transform: none;
 }
 .blog-name-form.is-ceremony .blog-name-field-row {
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 14px;
 }
 .blog-name-form.is-ceremony .blog-name-input {
-  font-size: 72px;
-  line-height: 0.98;
+  font-size: 96px;
+  line-height: 0.94;
   text-align: left;
   border-bottom-color: color-mix(in srgb, var(--muted) 16%, transparent);
 }
@@ -2046,6 +1977,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   max-width: calc(100vw - 16px);
   margin: 0;
 }
+.post-top-action-bar.has-bookmark-actions {
+  position: sticky !important;
+  top: 0;
+  right: auto;
+  left: auto;
+  z-index: 180;
+  width: 100%;
+  max-width: none;
+  padding: 8px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
 .post-action-toolbar {
   display: flex;
   align-items: center;
@@ -2059,11 +2003,49 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.48);
   --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
 }
+.post-top-action-bar.has-bookmark-actions .post-action-toolbar {
+  width: 100%;
+}
+.post-top-action-bar.has-bookmark-actions .post-action-owner-group {
+  width: 100%;
+  justify-content: flex-end;
+}
+.post-top-action-bar.has-bookmark-actions .post-bookmark-action-group {
+  margin-right: auto;
+}
 .post-action-owner-group {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+.post-bookmark-action-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.post-bookmark-view-button {
+  min-width: 0;
+  white-space: nowrap;
+}
+.post-bookmark-view-button.is-active {
+  background: var(--ac-label);
+  color: var(--ac-bg);
+}
+.post-bookmark-original-button {
+  max-width: min(36vw, 420px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.post-bookmark-original-url {
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .post-action-popover-wrap {
   position: relative;
@@ -2187,32 +2169,30 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   transition: margin-left 0.18s var(--ease);
 }
 .post-editor-content.is-blog-folder-view {
-  --ink: #1d1d1f;
-  --ink-2: #424245;
-  --muted: #6e6e73;
-  --hairline: #d2d2d7;
-  --hairline-2: #e8e8ed;
-  --bg: #ffffff;
-  --bg-soft: #f5f5f7;
-  --bg-soft-2: #fafafc;
+  --ink: var(--ac-label);
+  --ink-2: var(--ac-label-2);
+  --muted: var(--ac-label-2);
+  --hairline: var(--ac-hairline);
+  --hairline-2: var(--ac-separator);
+  --bg: var(--ac-bg);
+  --bg-soft: var(--ac-bg-2);
+  --bg-soft-2: color-mix(in srgb, var(--ac-bg-2) 86%, var(--ac-bg));
   min-height: 100dvh;
-  background: #fff;
-  color: #1d1d1f;
-  color-scheme: light;
+  background: var(--bg);
+  color: var(--ink);
 }
 .post-folder-blog-home {
-  --ink: #1d1d1f;
-  --ink-2: #424245;
-  --muted: #6e6e73;
-  --hairline: #d2d2d7;
-  --hairline-2: #e8e8ed;
-  --bg: #ffffff;
-  --bg-soft: #f5f5f7;
-  --bg-soft-2: #fafafc;
+  --ink: var(--ac-label);
+  --ink-2: var(--ac-label-2);
+  --muted: var(--ac-label-2);
+  --hairline: var(--ac-hairline);
+  --hairline-2: var(--ac-separator);
+  --bg: var(--ac-bg);
+  --bg-soft: var(--ac-bg-2);
+  --bg-soft-2: color-mix(in srgb, var(--ac-bg-2) 86%, var(--ac-bg));
   min-height: 100dvh;
   color: var(--ink);
-  background: #fff;
-  color-scheme: light;
+  background: var(--bg);
 }
 .post-folder-empty-state {
   display: grid;
@@ -2809,6 +2789,51 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   line-height: 0.98;
   letter-spacing: 0;
 }
+.post-folder-title-row,
+.post-folder-title-form {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+.post-folder-title-row {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.post-folder-title-edit {
+  flex: 0 0 auto;
+}
+.post-folder-title-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--muted) 16%, transparent);
+  border-radius: 0;
+  padding: 0 0 7px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 64px;
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: 0;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.post-folder-title-input::placeholder {
+  color: color-mix(in srgb, var(--muted) 66%, transparent);
+}
+.post-folder-title-input:focus-visible {
+  border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 55%, var(--muted));
+}
+.post-folder-title-confirm {
+  flex: 0 0 auto;
+  min-width: 112px;
+  border-radius: 999px;
+}
 .post-folder-page-header p {
   max-width: 540px;
   color: var(--muted);
@@ -2819,6 +2844,25 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-folder-page-items {
   width: min(100%, 760px);
   margin: 0 auto;
+}
+.post-folder-page-items:has(.post-folder-card-grid) {
+  width: min(100%, 1120px);
+}
+.post-folder-card-grid {
+  width: 100%;
+  margin: 0 auto;
+  align-items: start;
+}
+.post-folder-card-option {
+  min-width: 0;
+  border-radius: 16px;
+  outline: none;
+}
+.post-folder-card-option.is-command-selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+.post-folder-card-option:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 48%, transparent);
 }
 .post-folder-page-card {
   display: grid;
@@ -2900,6 +2944,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-folder-field.is-title {
   flex: 1 1 170px;
+}
+.post-folder-field.is-description {
+  flex: 1 1 220px;
+}
+.shortcut-letter {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 .post-folder-list {
   display: grid;
@@ -4188,7 +4240,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     font-size: 60px;
   }
   .blog-name-form.is-ceremony {
-    transform: translate(-50%, -28px);
+    transform: none;
   }
   .blog-name-form.is-ceremony .blog-name-field-row {
     gap: 12px;
@@ -4355,17 +4407,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     height: 64px;
     min-height: 0;
   }
-  .reader-bookmark-capture {
-    margin-bottom: 34px;
-    padding-inline: 16px;
-  }
-  .reader-bookmark-capture-frame {
-    max-height: 68svh;
-  }
-  .reader-bookmark-links {
-    justify-content: flex-start;
-    font-size: 13.5px;
-  }
   .edit-cover-toolbar {
     bottom: max(10px, env(safe-area-inset-bottom));
     left: 50%;
@@ -4445,7 +4486,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
   .blog-name-form.is-ceremony {
     width: min(760px, calc(100vw - 36px));
-    transform: translate(-50%, -23px);
+    transform: none;
   }
   .blog-name-form.is-ceremony .blog-name-input {
     font-size: 40px;
@@ -4708,4 +4749,18 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     padding: 0 10px;
     font-size: 12px;
   }
+}
+.post-top-action-bar.has-bookmark-actions {
+  position: sticky !important;
+  top: 0;
+  right: auto;
+  left: auto;
+  width: 100%;
+  max-width: none;
+}
+.post-top-action-bar.has-bookmark-actions .post-action-toolbar {
+  width: 100%;
+}
+.post-top-action-bar.has-bookmark-actions .post-action-owner-group {
+  width: 100%;
 }

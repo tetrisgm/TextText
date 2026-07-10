@@ -28,7 +28,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
 
-    static let cacheWebView = false // false = always fresh (dev); flip to true for production caching
+    static let cacheWebView = true
 
     private static let authHosts: Set<String> = [
         "accounts.google.com",

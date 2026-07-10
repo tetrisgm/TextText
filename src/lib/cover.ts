@@ -95,8 +95,12 @@ function coverHashBasis(post: CoverPost): string {
 
 function bookmarkCaptureCover(post: CoverPost): CoverSource | null {
   if (post.type !== "bookmark") return null;
-  const bodyImage = firstHttpMarkdownImage(post.body);
-  if (bodyImage) return { kind: "bookmark-body-image", src: bodyImage };
+  const asset = post.capture?.assets?.find((candidate) =>
+    isHttpUrl(candidate.url?.trim()),
+  );
+  if (asset?.url) {
+    return { kind: "bookmark-body-image", src: asset.url.trim() };
+  }
 
   const screenshot = post.capture?.screenshotUrl?.trim();
   if (screenshot && isHttpUrl(screenshot)) {

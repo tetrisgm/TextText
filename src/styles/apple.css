@@ -1630,3 +1630,147 @@
     font-size: 16px;
   }
 }
+
+/* ---- keyboard shortcuts sheet (Gmail-style cheat sheet) ---- */
+.command-palette--sheet {
+  width: min(100%, 760px);
+}
+.command-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid var(--ac-hairline);
+}
+.command-sheet-titles {
+  display: grid;
+  gap: 3px;
+}
+.command-sheet-title {
+  color: var(--ac-label);
+  font: 750 var(--ac-fs-headline)/1.15 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.command-sheet-subtitle {
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption1)/1.25 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.command-sheet-done {
+  flex-shrink: 0;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  padding: 6px 12px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 650 var(--ac-fs-footnote)/1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.command-sheet-columns {
+  columns: 2;
+  column-gap: 26px;
+  max-height: min(64dvh, 560px);
+  overflow: auto;
+  padding: 16px 18px 18px;
+}
+.command-sheet-columns .command-shortcut-group {
+  display: block;
+  break-inside: avoid;
+  margin: 0 0 16px;
+}
+.command-sheet-columns .command-shortcut-group + .command-shortcut-group {
+  margin-top: 0;
+}
+.command-sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  padding: 3px 0;
+}
+.command-sheet-row-label {
+  min-width: 0;
+  color: var(--ac-label);
+  font: 550 var(--ac-fs-subheadline)/1.25 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.command-sheet-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 5px;
+}
+.command-sheet-key {
+  padding: 3px 7px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 6px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label-2);
+  font: 650 var(--ac-fs-caption1)/1 var(--ac-font-text);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+@media (max-width: 680px) {
+  .command-sheet-columns {
+    columns: 1;
+  }
+}
+
+/* ---- shortcut tooltip (attached to .applecms chrome controls; theme-aware
+   via the apple-chrome tokens, with neutral fallbacks) ---- */
+.kbd-tip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.kbd-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--ac-hairline, var(--hairline));
+  border-radius: 8px;
+  background: var(--ac-mat-fallback, var(--bg));
+  color: var(--ac-label, var(--ink));
+  font: 600 12px/1 var(--ac-font-text, system-ui);
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transform: translate(-50%, 3px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.kbd-tip-wrap[data-tip-placement="bottom"] .kbd-tip {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translate(-50%, -3px);
+}
+.kbd-tip-wrap:hover > .kbd-tip,
+.kbd-tip-wrap:focus-within > .kbd-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.kbd-tip-key {
+  padding: 2px 6px;
+  border: 1px solid var(--ac-hairline, var(--hairline));
+  border-radius: 5px;
+  background: var(--ac-fill-4, var(--bg-soft));
+  color: var(--ac-label-2, var(--muted));
+  font: 650 11px/1 var(--ac-font-text, system-ui);
+  letter-spacing: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kbd-tip {
+    transition: none;
+    transform: translate(-50%, 0);
+  }
+}
+.local-workspace-surface:not([hidden]) {
+  display: contents;
+}
