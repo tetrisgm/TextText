@@ -5,8 +5,9 @@ import Sparkle
 /// Wraps Sparkle's updater (EdDSA-verified). Feed URL + public EdDSA key come
 /// from Info.plist (SUFeedURL / SUPublicEDKey), set by the release pipeline.
 ///
-/// Update model: scheduled checks find updates and Sparkle installs the latest
-/// on relaunch. We LET SPARKLE MANAGE the update; we do NOT take control via
+/// Update model: scheduled checks download verified updates in the background,
+/// then Sparkle installs the latest on quit/relaunch. We LET SPARKLE MANAGE the
+/// update; we do NOT take control via
 /// willInstallUpdateOnQuit. Returning YES there stalls Sparkle's update
 /// session and stops ALL future checks until the app quits, so on a
 /// never-quit app a newer build would not be picked up until relaunch, and
@@ -51,13 +52,11 @@ final class Updater: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate
         // Forced ON in code, not left to the first-run permission prompt or a
         // stale user default: every install behaves the same way.
         controller.updater.automaticallyChecksForUpdates = true
-        // DOWNLOAD-ON-DEMAND, not auto-download. Auto-downloaded updates are
-        // presented by Sparkle's automatic driver, which BYPASSES the gentle
-        // reminder hook, so the "Install and Relaunch" window could interrupt
-        // a sync flush. With auto-download off, updates flow through the
-        // scheduled driver, the only path that consults
-        // standardUserDriverShouldHandleShowingScheduledUpdate.
-        controller.updater.automaticallyDownloadsUpdates = false
+        // Download signed updates silently and let Sparkle stage them for the
+        // next quit/relaunch. It does not interrupt the current writing or sync
+        // session, and it keeps an installed app current without a manual
+        // download ceremony.
+        controller.updater.automaticallyDownloadsUpdates = true
     }
 
     /// A user-visible manual check (menu item).
