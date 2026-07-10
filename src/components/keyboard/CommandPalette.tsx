@@ -183,7 +183,7 @@ export function CommandPalette({
   const [selected, setSelected] = useState(0);
   const [fallbackPool, setFallbackPool] =
     useState<WorkspacePoolPayload | null>(null);
-  const [fallbackHandle, setFallbackHandle] = useState<string | null>(null);
+  const fallbackHandleRef = useRef<string | null>(null);
   const ctx = commandContext();
   const pool = ctx.pool ?? fallbackPool;
   const paletteOpen = open && !shortcutsOpen;
@@ -195,16 +195,19 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!paletteOpen) return;
-    setQuery(initialQuery);
-    setSelected(0);
-    window.requestAnimationFrame(() => inputRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => {
+      setQuery(initialQuery);
+      setSelected(0);
+      inputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [initialQuery, paletteOpen]);
 
   useEffect(() => {
     if (!dialogOpen || ctx.pool || fallbackPool) return;
     const handle = handleFromPathname(window.location.pathname);
-    if (!handle || fallbackHandle === handle) return;
-    setFallbackHandle(handle);
+    if (!handle || fallbackHandleRef.current === handle) return;
+    fallbackHandleRef.current = handle;
     const params = new URLSearchParams({ handle });
     void fetch(`/api/workspace/pool?${params.toString()}`, {
       credentials: "same-origin",
@@ -218,7 +221,7 @@ export function CommandPalette({
         // The fallback is best effort. Guests and collaborators may not have
         // an owner pool, so an empty local palette is a valid result.
       });
-  }, [ctx.pool, dialogOpen, fallbackHandle, fallbackPool]);
+  }, [ctx.pool, dialogOpen, fallbackPool]);
 
   const results = useMemo(() => {
     const slashMode = query.trimStart().startsWith("/");
@@ -259,7 +262,31 @@ export function CommandPalette({
             entry.score !== null,
           );
 
-    return [...commandRows, ...navigationRows]
+    const contextualFilter: Array<{ result: PaletteResult; score: number }> =
+      !slashMode &&
+      cleanQuery.trim() &&
+      ctx.workspace?.viewLevel === "section"
+        ? [
+            {
+              score: -1,
+              result: {
+                id: `filter:${cleanQuery}`,
+                label: `Filter this folder for “${cleanQuery}”`,
+                detail: "Current folder",
+                group: "Search",
+                run: () => {
+                  window.dispatchEvent(
+                    new CustomEvent("write:filter-current-folder", {
+                      detail: { query: cleanQuery },
+                    }),
+                  );
+                },
+              },
+            },
+          ]
+        : [];
+
+    return [...contextualFilter, ...commandRows, ...navigationRows]
       .sort((a, b) => a.score - b.score || a.result.label.localeCompare(b.result.label))
       .slice(0, 12)
       .map((entry) => entry.result);
@@ -294,16 +321,13 @@ export function CommandPalette({
     }));
   }, []);
 
-  useEffect(() => {
-    setSelected((current) =>
-      results.length === 0 ? 0 : Math.min(current, results.length - 1),
-    );
-  }, [results.length]);
+  const selectedIndex =
+    results.length === 0 ? 0 : Math.min(selected, results.length - 1);
 
   if (!dialogOpen) return null;
 
   const runSelected = () => {
-    const result = results[selected];
+    const result = results[selectedIndex];
     if (!result) return;
     closeDialog();
     void Promise.resolve(result.run());
@@ -338,6 +362,11 @@ export function CommandPalette({
     <div
       className="command-palette-backdrop applecms"
       role="presentation"
+      onWheel={(event) => {
+        if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+          event.preventDefault();
+        }
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) closeDialog();
       }}
@@ -427,10 +456,10 @@ export function CommandPalette({
                     key={result.id}
                     type="button"
                     className={`command-palette-row${
-                      index === selected ? " is-selected" : ""
+                      index === selectedIndex ? " is-selected" : ""
                     }`}
                     role="option"
-                    aria-selected={index === selected}
+                    aria-selected={index === selectedIndex}
                     onMouseEnter={() => setSelected(index)}
                     onClick={() => {
                       closeDialog();

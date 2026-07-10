@@ -13,6 +13,7 @@ import type {
   WorkspacePoolPost,
   WorkspacePostBodyPayload,
 } from "@/lib/pool/types";
+import type { Folder } from "@/lib/content";
 
 type BodyCacheEntry =
   | { status: "idle" }
@@ -347,6 +348,20 @@ export function updatePost(postId: string, patch: Partial<WorkspacePoolPost>) {
   if (state.pool) void persistPool(state.pool);
 }
 
+export function updateWorkspaceBlog(
+  patch: Partial<WorkspacePoolPayload["blog"]>,
+) {
+  if (!state.pool) return;
+  setState({
+    pool: {
+      ...state.pool,
+      blog: { ...state.pool.blog, ...patch },
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+}
+
 export function updatePostBody(blogId: string, postId: string, body: string) {
   const nextBody: WorkspacePostBodyPayload = {
     blogId,
@@ -371,6 +386,167 @@ export function removePost(postId: string) {
   if (state.pool) void persistPool(state.pool);
 }
 
+export function movePostToTrash(postId: string): WorkspacePoolPost | null {
+  if (!state.pool) return null;
+  const post = state.pool.posts.find((entry) => entry.id === postId) ?? null;
+  if (!post) return null;
+  setState({
+    pool: {
+      ...state.pool,
+      posts: state.pool.posts.filter((entry) => entry.id !== postId),
+      trashedPosts: [
+        post,
+        ...(state.pool.trashedPosts ?? []).filter((entry) => entry.id !== postId),
+      ],
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+  return post;
+}
+
+export function restorePostFromTrash(postId: string): WorkspacePoolPost | null {
+  if (!state.pool) return null;
+  const post = (state.pool.trashedPosts ?? []).find(
+    (entry) => entry.id === postId,
+  ) ?? null;
+  if (!post) return null;
+  setState({
+    pool: {
+      ...state.pool,
+      posts: [post, ...state.pool.posts.filter((entry) => entry.id !== postId)],
+      trashedPosts: (state.pool.trashedPosts ?? []).filter(
+        (entry) => entry.id !== postId,
+      ),
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+  return post;
+}
+
+export function removeTrashedPost(postId: string) {
+  if (!state.pool) return;
+  setState({
+    pool: {
+      ...state.pool,
+      trashedPosts: (state.pool.trashedPosts ?? []).filter(
+        (entry) => entry.id !== postId,
+      ),
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+}
+
+export function moveFolderToTrash(folderId: string) {
+  if (!state.pool) return;
+  const target = state.pool.folders.find((folder) => folder.id === folderId);
+  if (!target) return;
+  const removedFolders = state.pool.folders.filter(
+    (folder) =>
+      folder.path === target.path || folder.path.startsWith(`${target.path}/`),
+  );
+  const removedIds = new Set(removedFolders.map((folder) => folder.id));
+  const removedPosts = state.pool.posts.filter(
+    (post) => Boolean(post.folderId && removedIds.has(post.folderId)),
+  );
+  const removedPostIds = new Set(removedPosts.map((post) => post.id));
+  setState({
+    pool: {
+      ...state.pool,
+      folders: state.pool.folders.filter((folder) => !removedIds.has(folder.id)),
+      posts: state.pool.posts.filter((post) => !removedPostIds.has(post.id)),
+      trashedFolders: [
+        ...removedFolders,
+        ...(state.pool.trashedFolders ?? []).filter(
+          (folder) => !removedIds.has(folder.id),
+        ),
+      ],
+      trashedPosts: [
+        ...removedPosts,
+        ...(state.pool.trashedPosts ?? []).filter(
+          (post) => !removedPostIds.has(post.id),
+        ),
+      ],
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+}
+
+export function restoreFolderFromTrash(folderId: string) {
+  if (!state.pool) return;
+  const target = (state.pool.trashedFolders ?? []).find(
+    (folder) => folder.id === folderId,
+  );
+  if (!target) return;
+  const restoredFolders = (state.pool.trashedFolders ?? []).filter(
+    (folder) =>
+      folder.path === target.path || folder.path.startsWith(`${target.path}/`),
+  );
+  const restoredIds = new Set(restoredFolders.map((folder) => folder.id));
+  const restoredPosts = (state.pool.trashedPosts ?? []).filter(
+    (post) => Boolean(post.folderId && restoredIds.has(post.folderId)),
+  );
+  const restoredPostIds = new Set(restoredPosts.map((post) => post.id));
+  setState({
+    pool: {
+      ...state.pool,
+      folders: [...state.pool.folders, ...restoredFolders],
+      posts: [...restoredPosts, ...state.pool.posts],
+      trashedFolders: (state.pool.trashedFolders ?? []).filter(
+        (folder) => !restoredIds.has(folder.id),
+      ),
+      trashedPosts: (state.pool.trashedPosts ?? []).filter(
+        (post) => !restoredPostIds.has(post.id),
+      ),
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+}
+
+export function removeTrashedFolder(folderId: string) {
+  if (!state.pool) return;
+  const target = (state.pool.trashedFolders ?? []).find(
+    (folder) => folder.id === folderId,
+  );
+  if (!target) return;
+  const removedFolders = (state.pool.trashedFolders ?? []).filter(
+    (folder) =>
+      folder.path === target.path || folder.path.startsWith(`${target.path}/`),
+  );
+  const removedIds = new Set(removedFolders.map((folder) => folder.id));
+  setState({
+    pool: {
+      ...state.pool,
+      trashedFolders: (state.pool.trashedFolders ?? []).filter(
+        (folder) => !removedIds.has(folder.id),
+      ),
+      trashedPosts: (state.pool.trashedPosts ?? []).filter(
+        (post) => !post.folderId || !removedIds.has(post.folderId),
+      ),
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
+}
+
 export function movePost(postId: string, folderId: string | undefined) {
   updatePost(postId, { folderId });
+}
+
+export function updateFolder(folderId: string, patch: Partial<Folder>) {
+  if (!state.pool) return;
+  setState({
+    pool: {
+      ...state.pool,
+      folders: state.pool.folders.map((folder) =>
+        folder.id === folderId ? { ...folder, ...patch, id: folder.id } : folder,
+      ),
+      fetchedAt: new Date().toISOString(),
+    },
+  });
+  if (state.pool) void persistPool(state.pool);
 }

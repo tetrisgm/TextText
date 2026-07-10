@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   deleteEditablePostAction,
+  setEditablePostCreatedAtAction,
   toggleEditablePostPinnedAction,
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
 import { blogPostPath } from "@/lib/public-paths";
+import { updatePost } from "@/lib/pool/store";
 
 const TYPE_LABELS: Record<PostType, string> = {
   article: "Article",
@@ -125,6 +127,7 @@ export function PostCard({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pinning, setPinning] = useState(false);
   const [menuError, setMenuError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const title = postTitle(post);
   const desc = postDesc(post);
@@ -331,7 +334,7 @@ export function PostCard({
           setMenuError(actionErrorMessage(error, "Could not delete"));
         });
     });
-  }, [deleting, handle, onDeletePost, owner, post, post.id, router]);
+  }, [deleting, handle, onDeletePost, owner, post, router]);
 
   const onTogglePinned = (event: MouseEvent<HTMLButtonElement>) => {
     stopMenuNavigation(event);
@@ -340,19 +343,48 @@ export function PostCard({
 
     setMenuError(null);
     setPinning(true);
+    const previousPinned = Boolean(post.pinned);
+    updatePost(postId, { pinned: !previousPinned });
     startTransition(() => {
       void toggleEditablePostPinnedAction(handle, postId)
         .then(() => {
           setMenuOpen(false);
           setPinning(false);
-          router.refresh();
         })
         .catch((error) => {
+          updatePost(postId, { pinned: previousPinned });
           setPinning(false);
           setMenuOpen(true);
           setMenuError(actionErrorMessage(error, "Could not update pin"));
         });
     });
+  };
+
+  const sharePost = (event: MouseEvent<HTMLButtonElement>) => {
+    stopMenuNavigation(event);
+    const url = new URL(href ?? blogPostPath(blog, post), window.location.origin);
+    void navigator.clipboard.writeText(url.toString()).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    });
+  };
+
+  const changeCreatedDate = (value: string) => {
+    const postId = post.id;
+    if (!postId || !value || pinning) return;
+    const previous = post.createdAt;
+    setPinning(true);
+    updatePost(postId, { createdAt: `${value}T12:00:00.000Z` });
+    void setEditablePostCreatedAtAction(handle, postId, value)
+      .then((saved) => {
+        updatePost(postId, { createdAt: saved.createdAt });
+        setMenuOpen(false);
+      })
+      .catch((error) => {
+        updatePost(postId, { createdAt: previous });
+        setMenuError(actionErrorMessage(error, "Could not change date"));
+      })
+      .finally(() => setPinning(false));
   };
 
   const className = [
@@ -431,7 +463,7 @@ export function PostCard({
                 {categoryLabel && (
                   <span className="tvcard-category">{categoryLabel}</span>
                 )}
-                {showPinned && <span className="tvcard-pinned">Pinned</span>}
+                {showPinned && <span className="tvcard-pinned">Starred</span>}
                 {showUnlisted && (
                   <span className="tvcard-unlisted">Unlisted</span>
                 )}
@@ -467,8 +499,25 @@ export function PostCard({
                 disabled={!post.id || pinning}
                 onClick={onTogglePinned}
               >
-                {pinning ? "Updating" : post.pinned ? "Unpin" : "Pin"}
+                {pinning ? "Updating" : post.pinned ? "Unstar" : "Star"}
               </button>
+              <button
+                type="button"
+                className="tvcard-menu-item"
+                role="menuitem"
+                onClick={sharePost}
+              >
+                {copied ? "Link copied" : "Share"}
+              </button>
+              <label className="tvcard-menu-date">
+                <span>Created</span>
+                <input
+                  type="date"
+                  value={(post.createdAt ?? post.date ?? "").slice(0, 10)}
+                  disabled={pinning}
+                  onChange={(event) => changeCreatedDate(event.currentTarget.value)}
+                />
+              </label>
               <button
                 type="button"
                 className="tvcard-menu-item is-danger"

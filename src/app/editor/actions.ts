@@ -13,7 +13,6 @@ import type {
 import { isSafeLinkHref } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
-import type { CurrentUser } from "@/lib/session";
 import type { BlogPatch, PostContentPatch } from "@/lib/store";
 import {
   claimBlogForUser,
@@ -22,6 +21,8 @@ import {
   createDraft,
   createSubfolder,
   deletePost,
+  permanentlyDeleteFolder,
+  permanentlyDeletePost,
   getAllPosts,
   getFolders,
   getBlog,
@@ -30,11 +31,16 @@ import {
   getUserIdBySub,
   isWorkspaceStarterPost,
   markCapturePending,
+  renameFolder,
+  restoreFolder,
+  restorePost,
   savePost,
   savePostContentPatch,
   setPostFolder,
+  setPostCreatedAt,
   setPostPinned,
   trashBlogPosts,
+  trashFolder,
   updateBlogByHandle,
 } from "@/lib/store";
 import {
@@ -981,6 +987,56 @@ export async function createSubfolderAction(
   return folder;
 }
 
+export async function renameFolderAction(
+  handleInput: unknown,
+  folderIdInput: unknown,
+  nameInput: unknown,
+): Promise<Folder> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const folderId = cleanPostId(folderIdInput);
+  const name = typeof nameInput === "string" ? nameInput : "";
+  const folder = await renameFolder(handle, folderId, name);
+  await auditEdit(access, "rename_folder", "workspace", folder.id, folder.name);
+  await revalidateBlog(handle);
+  return folder;
+}
+
+export async function trashFolderAction(
+  handleInput: unknown,
+  folderIdInput: unknown,
+): Promise<{ folderId: string }> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const folderId = cleanPostId(folderIdInput);
+  await trashFolder(handle, folderId);
+  await auditEdit(access, "trash_folder", "workspace", folderId);
+  await revalidateBlog(handle);
+  return { folderId };
+}
+
+export async function restoreFolderAction(
+  handleInput: unknown,
+  folderIdInput: unknown,
+): Promise<{ folderId: string }> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const folderId = cleanPostId(folderIdInput);
+  await restoreFolder(handle, folderId);
+  await auditEdit(access, "restore_folder", "workspace", folderId);
+  await revalidateBlog(handle);
+  return { folderId };
+}
+
+export async function permanentlyDeleteFolderAction(
+  handleInput: unknown,
+  folderIdInput: unknown,
+): Promise<{ folderId: string }> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const folderId = cleanPostId(folderIdInput);
+  await permanentlyDeleteFolder(handle, folderId);
+  await auditEdit(access, "permanently_delete_folder", "workspace", folderId);
+  await revalidateBlog(handle);
+  return { folderId };
+}
+
 export async function movePostToFolderAction(
   handleInput: unknown,
   postIdInput: unknown,
@@ -1018,6 +1074,25 @@ export async function toggleEditablePostPinnedAction(
     saved.title,
   );
   await revalidateBlog(handle, [existing.slug]);
+  return saved;
+}
+
+export async function setEditablePostCreatedAtAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  dateInput: unknown,
+): Promise<Post> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const date = typeof dateInput === "string" ? dateInput.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Choose a valid date");
+  const saved = await setPostCreatedAt(
+    handle,
+    postId,
+    new Date(`${date}T12:00:00.000Z`),
+  );
+  await auditEdit(access, "change_post_date", "item", saved.id, date);
+  await revalidateBlog(handle, [saved.slug]);
   return saved;
 }
 
@@ -1063,6 +1138,30 @@ export async function deleteEditablePostAction(
   await auditEdit(access, "delete_post", "item", postId, existing.title);
   await revalidateBlog(handle, [existing.slug]);
   return { handle };
+}
+
+export async function restoreEditablePostAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<Post> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const restored = await restorePost(handle, postId);
+  await auditEdit(access, "restore_post", "item", postId, restored.title);
+  await revalidateBlog(handle, [restored.slug]);
+  return restored;
+}
+
+export async function permanentlyDeleteEditablePostAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<{ postId: string }> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const postId = cleanPostId(postIdInput);
+  await permanentlyDeletePost(handle, postId);
+  await auditEdit(access, "permanently_delete_post", "item", postId);
+  await revalidateBlog(handle);
+  return { postId };
 }
 
 export async function trashEditableBlogAction(

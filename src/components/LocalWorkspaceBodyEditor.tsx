@@ -9,6 +9,7 @@ export type LocalWorkspaceBodyEditorProps = {
   postType?: "article" | "project" | "talk" | "note" | "bookmark";
   mediaEnabled?: boolean;
   uploadEndpoint?: string;
+  onNavigateField?: (direction: "previous" | "next") => void;
 };
 
 export function LocalWorkspaceBodyEditor(props: LocalWorkspaceBodyEditorProps) {

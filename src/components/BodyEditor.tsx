@@ -11,8 +11,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import type { Editor } from "@tiptap/core";
-import type { AnyExtension } from "@tiptap/core";
+import { mergeAttributes } from "@tiptap/core";
+import type { AnyExtension, Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { SelectionBookmark } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
@@ -29,6 +29,7 @@ import { SlashCommand } from "@/components/editor/SlashCommand";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
 import { CollabProvider } from "@/lib/collab/provider";
 import type { PresencePeer } from "@/lib/collab/provider";
+import { isVideoFile } from "@/lib/content";
 
 export type BodyEditorHandle = {
   focus: () => void;
@@ -55,6 +56,7 @@ type BodyEditorProps = {
   /** when present, the body is a shared Yjs document (realtime co-editing) */
   collab?: BodyEditorCollab | null;
   onPresence?: (peers: PresencePeer[]) => void;
+  onNavigateField?: (direction: "previous" | "next") => void;
 };
 
 // Markdown is the source of truth for post bodies, so the toolbar only offers
@@ -70,6 +72,23 @@ type SlashCommandConfig = {
   mediaEnabled: boolean;
   onChooseImage: () => void;
 };
+
+const MediaImage = Image.extend({
+  renderHTML({ HTMLAttributes }) {
+    const src = typeof HTMLAttributes.src === "string" ? HTMLAttributes.src : "";
+    if (isVideoFile(src)) {
+      return [
+        "video",
+        mergeAttributes(HTMLAttributes, {
+          controls: "",
+          playsinline: "",
+          preload: "metadata",
+        }),
+      ];
+    }
+    return ["img", mergeAttributes(HTMLAttributes)];
+  },
+});
 
 function subscribeClientSnapshot() {
   return () => {};
@@ -95,7 +114,7 @@ function buildEditorExtensions(
       heading: { levels: [1, 2, 3] },
       ...(ydoc ? { history: false } : {}),
     }),
-    Image,
+    MediaImage,
     Link.configure({
       autolink: true,
       linkOnPaste: true,
@@ -148,6 +167,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       uploadEndpoint,
       collab,
       onPresence,
+      onNavigateField,
     },
     ref,
   ) {
@@ -157,6 +177,8 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     const onChangeRef = useRef(onChange);
     const collabRef = useRef(collab);
     const onPresenceRef = useRef(onPresence);
+    const onNavigateFieldRef = useRef(onNavigateField);
+    const insertMediaRef = useRef<(file: File) => void>(() => {});
     const initialValueRef = useRef(value);
     const selectionBookmarkRef = useRef<SelectionBookmark | null>(null);
     const mounted = useSyncExternalStore(
@@ -173,6 +195,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
 
     collabRef.current = collab;
     onPresenceRef.current = onPresence;
+    onNavigateFieldRef.current = onNavigateField;
 
     // One Y.Doc per co-edited post, created before the editor so the
     // Collaboration extension can bind to it. Null (and no collab) for solo
@@ -210,6 +233,47 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
             role: "textbox",
             "aria-label": "Body",
             "aria-multiline": "true",
+          },
+          handleDrop: (_view, event) => {
+            const files = Array.from(event.dataTransfer?.files ?? []).filter(
+              (file) =>
+                file.type.startsWith("image/") ||
+                file.type.startsWith("video/"),
+            );
+            if (files.length === 0) return false;
+            event.preventDefault();
+            for (const file of files) insertMediaRef.current(file);
+            return true;
+          },
+          handlePaste: (_view, event) => {
+            const files = Array.from(event.clipboardData?.files ?? []).filter(
+              (file) =>
+                file.type.startsWith("image/") ||
+                file.type.startsWith("video/"),
+            );
+            if (files.length === 0) return false;
+            event.preventDefault();
+            for (const file of files) insertMediaRef.current(file);
+            return true;
+          },
+          handleKeyDown: (view, event) => {
+            if (event.key === "Tab") {
+              event.preventDefault();
+              onNavigateFieldRef.current?.(
+                event.shiftKey ? "previous" : "next",
+              );
+              return true;
+            }
+            if (
+              event.key === "ArrowUp" &&
+              view.state.selection.empty &&
+              view.state.selection.from <= 1
+            ) {
+              event.preventDefault();
+              onNavigateFieldRef.current?.("previous");
+              return true;
+            }
+            return false;
           },
         },
         onSelectionUpdate: ({ editor }) => {
@@ -312,7 +376,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     }, [editor, mediaEnabled, saveSelectionBookmark]);
     slashChooseImageRef.current = chooseImage;
 
-    const insertImage = useCallback(
+    const insertMedia = useCallback(
       async (file: File) => {
         if (!editor) return;
 
@@ -321,7 +385,14 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         try {
           const url = await uploadMedia(file, { endpoint: uploadEndpoint });
           restoreSelectionBookmark(editor);
-          editor.chain().focus().setImage({ src: url }).run();
+          editor
+            .chain()
+            .focus()
+            .setImage({
+              src: url,
+              alt: file.type.startsWith("video/") ? file.name || "Video" : "",
+            })
+            .run();
           saveSelectionBookmark(editor);
         } catch (error) {
           setUploadError(uploadErrorMessage(error));
@@ -331,6 +402,9 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       },
       [editor, restoreSelectionBookmark, saveSelectionBookmark, uploadEndpoint],
     );
+    insertMediaRef.current = (file) => {
+      void insertMedia(file);
+    };
 
     useImperativeHandle(
       ref,
@@ -359,12 +433,13 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/*"
+          multiple
           hidden
           onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
+            const files = Array.from(event.currentTarget.files ?? []);
             event.currentTarget.value = "";
-            if (file) void insertImage(file);
+            for (const file of files) void insertMedia(file);
           }}
         />
         <div className="body-editor">

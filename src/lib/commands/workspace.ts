@@ -2,7 +2,6 @@
 
 import {
   createWorkspacePostAction,
-  deleteEditablePostAction,
   movePostToFolderAction,
   setEditablePostStatusAction,
   toggleEditablePostPinnedAction,
@@ -25,8 +24,6 @@ import type {
   CommandShortcut,
   CreatePostKind,
 } from "@/lib/commands/types";
-
-const DELETE_UNDO_MS = 5000;
 
 function commandTargetPost(ctx: CommandContext): WorkspacePoolPost | null {
   const workspace = ctx.workspace;
@@ -142,8 +139,8 @@ function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null 
 function createCommand(kind: CreatePostKind): AppCommand {
   const labels: Record<CreatePostKind, string> = {
     article: "Create post",
-    note: "New note",
-    bookmark: "New bookmark",
+    note: "Create note",
+    bookmark: "Create bookmark",
   };
 
   return {
@@ -202,35 +199,6 @@ function createCommand(kind: CreatePostKind): AppCommand {
       }
     },
   };
-}
-
-function deleteSelected(ctx: CommandContext) {
-  const workspace = ctx.workspace;
-  const post = commandTargetPost(ctx);
-  if (!workspace || !post?.id || !workspace.canManagePost) return;
-
-  removePost(post.id);
-  workspace.afterDelete(post.id);
-
-  let undone = false;
-  const timer = window.setTimeout(() => {
-    if (undone) return;
-    void deleteEditablePostAction(workspace.handle, post.id).catch((error) => {
-      addPost(post);
-      ctx.toast(error instanceof Error ? error.message : "Could not delete");
-      ctx.refresh();
-    });
-  }, DELETE_UNDO_MS);
-
-  ctx.toast("Deleted", {
-    label: "Undo",
-    run: () => {
-      undone = true;
-      window.clearTimeout(timer);
-      addPost(post);
-      workspace.selectPost(post.id);
-    },
-  });
 }
 
 function togglePinSelected(ctx: CommandContext) {
@@ -317,35 +285,41 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   createCommand("bookmark"),
   {
     id: "selection.previous",
-    label: "Previous item or section",
+    label: "Move up",
     group: "Navigate",
-    shortcut: [
-      { key: "ArrowUp", label: "↑" },
-      { key: "k", label: "K" },
-    ],
+    shortcut: { key: "ArrowUp", label: "↑" },
     when: (ctx) => Boolean(ctx.workspace),
-    run: (ctx) => ctx.workspace?.selectPrevious(),
+    run: (ctx) => ctx.workspace?.selectSpatial("up"),
   },
   {
     id: "selection.next",
-    label: "Next item or section",
+    label: "Move down",
     group: "Navigate",
-    shortcut: [
-      { key: "ArrowDown", label: "↓" },
-      { key: "j", label: "J" },
-    ],
+    shortcut: { key: "ArrowDown", label: "↓" },
     when: (ctx) => Boolean(ctx.workspace),
-    run: (ctx) => ctx.workspace?.selectNext(),
+    run: (ctx) => ctx.workspace?.selectSpatial("down"),
+  },
+  {
+    id: "selection.left",
+    label: "Move left",
+    group: "Navigate",
+    shortcut: { key: "ArrowLeft", label: "←" },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.workspace?.selectSpatial("left"),
+  },
+  {
+    id: "selection.right",
+    label: "Move right",
+    group: "Navigate",
+    shortcut: { key: "ArrowRight", label: "→" },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.workspace?.selectSpatial("right"),
   },
   {
     id: "selection.open",
     label: "Open focused item",
     group: "Navigate",
-    shortcut: [
-      { key: "Enter", label: "Enter" },
-      { key: "ArrowRight", label: "→" },
-      { key: "l", label: "L" },
-    ],
+    shortcut: { key: "Enter", label: "Enter" },
     when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "post"),
     run: (ctx) => ctx.workspace?.openSelected(),
   },
@@ -354,39 +328,33 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Go up one level",
     group: "Navigate",
     shortcut: [
-      { key: "ArrowLeft", label: "←" },
-      { key: "Escape", label: "Esc" },
-      { key: "h", label: "H" },
+      { key: "Escape", label: "Esc", allowTypingTarget: true },
+      { key: "Backspace", label: "Backspace" },
     ],
     when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
     run: (ctx) => {
-      ctx.workspace?.navigateUp();
+      const workspace = ctx.workspace;
+      if (!workspace) return;
+      if (workspace.viewLevel === "edit") workspace.stopEditing();
+      else workspace.navigateUp();
     },
   },
-  {
-    id: "navigation.section.1",
-    label: "Go to Blog",
+  ...Array.from({ length: 9 }, (_, index): AppCommand => ({
+    id: `navigation.item.${index + 1}`,
+    label: `Open visible item ${index + 1}`,
     group: "Navigate",
-    shortcut: { key: "1", label: "1" },
-    when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[0]),
-    run: (ctx) => ctx.workspace?.openSectionByIndex(0),
-  },
-  {
-    id: "navigation.section.2",
-    label: "Go to Notes",
-    group: "Navigate",
-    shortcut: { key: "2", label: "2" },
-    when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[1]),
-    run: (ctx) => ctx.workspace?.openSectionByIndex(1),
-  },
-  {
-    id: "navigation.section.3",
-    label: "Go to Bookmarks",
-    group: "Navigate",
-    shortcut: { key: "3", label: "3" },
-    when: (ctx) => Boolean(ctx.workspace?.getRootSectionPaths()[2]),
-    run: (ctx) => ctx.workspace?.openSectionByIndex(2),
-  },
+    shortcut: { key: String(index + 1), label: String(index + 1) },
+    when: (ctx) => {
+      const workspace = ctx.workspace;
+      if (!workspace) return false;
+      return workspace.viewLevel === "root"
+        ? Boolean(workspace.getRootSectionPaths()[index])
+        : workspace.viewLevel === "section"
+          ? Boolean(workspace.getVisiblePostIds()[index])
+          : false;
+    },
+    run: (ctx) => ctx.workspace?.openItemByIndex(index),
+  })),
   {
     id: "read.page-down",
     label: "Page down",
@@ -452,58 +420,57 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     run: (ctx) => ctx.workspace?.openAdjacentPost(1),
   },
   {
-    id: "post.toggle-edit",
-    label: "Toggle read or edit",
-    group: "Read",
+    id: "post.stop-editing",
+    label: "Stop editing",
+    group: "Edit",
     shortcut: [
-      { key: "e", meta: true, label: "⌘E", allowTypingTarget: true },
-      { key: "e", ctrl: true, label: "Ctrl E", allowTypingTarget: true },
+      { key: "Enter", meta: true, label: "⌘Enter", allowTypingTarget: true },
+      { key: "Enter", ctrl: true, label: "Ctrl Enter", allowTypingTarget: true },
     ],
-    when: (ctx) =>
-      Boolean(
-        ctx.workspace &&
-          (ctx.workspace.viewLevel === "post" ||
-            ctx.workspace.viewLevel === "edit") &&
-          ctx.workspace.canEdit,
-      ),
-    run: (ctx) => {
-      const workspace = ctx.workspace;
-      if (!workspace) return;
-      const postId = workspace.activePostId;
-      if (!postId) return;
-      workspace.openPost(postId, workspace.viewLevel === "edit" ? "read" : "edit");
-    },
+    when: (ctx) => ctx.workspace?.viewLevel === "edit",
+    run: (ctx) => ctx.workspace?.stopEditing(),
   },
   {
     id: "post.edit",
-    label: "Edit focused item",
+    label: "Edit current page",
     group: "Act",
-    shortcut: { key: "e", label: "E" },
-    when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canEdit),
-    run: (ctx) => {
-      const post = commandTargetPost(ctx);
-      if (!post) return;
-      ctx.workspace?.openPost(post.id, "edit");
-    },
+    shortcut: [
+      { key: "e", label: "E" },
+      { key: "F2", label: "F2" },
+    ],
+    when: (ctx) => Boolean(ctx.workspace?.canEdit && ctx.workspace.viewLevel !== "edit"),
+    run: (ctx) => ctx.workspace?.editCurrent(),
   },
   {
     id: "post.delete",
-    label: "Delete focused item",
+    label: "Move focused item to Trash",
     group: "Act",
     shortcut: [
-      { key: "x", label: "X" },
       { key: "Delete", label: "Del" },
+      { key: "Backspace", meta: true, label: "⌘Delete", allowTypingTarget: true },
+      { key: "Delete", ctrl: true, label: "Ctrl Delete", allowTypingTarget: true },
     ],
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
-    run: deleteSelected,
+    run: (ctx) => ctx.workspace?.requestDeleteTarget(),
   },
   {
     id: "post.pin",
-    label: "Pin or unpin focused item",
+    label: "Star or unstar focused item",
     group: "Act",
-    shortcut: { key: "p", label: "P" },
+    shortcut: { key: "s", label: "S" },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: togglePinSelected,
+  },
+  {
+    id: "post.saved-status",
+    label: "Show save status",
+    group: "Edit",
+    shortcut: [
+      { key: "s", meta: true, label: "⌘S", allowTypingTarget: true },
+      { key: "s", ctrl: true, label: "Ctrl S", allowTypingTarget: true },
+    ],
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.toast("Already saved"),
   },
   {
     id: "post.move",

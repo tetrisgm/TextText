@@ -366,11 +366,13 @@ function NavControl({
 export function PostActionBar(props: Props) {
   const router = useRouter();
   const shareWrapRef = useRef<HTMLDivElement>(null);
+  const typeWrapRef = useRef<HTMLDivElement>(null);
   const settingsWrapRef = useRef<HTMLDivElement>(null);
   const copiedTimerRef = useRef<number | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [typeOpen, setTypeOpen] = useState(false);
   const origin = useSyncExternalStore(
     subscribeClientSnapshot,
     getBrowserOrigin,
@@ -388,7 +390,9 @@ export function PostActionBar(props: Props) {
 
   const closeShare = useCallback(() => setShareOpen(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const closeType = useCallback(() => setTypeOpen(false), []);
   useDismissPopover(shareOpen, shareWrapRef, closeShare);
+  useDismissPopover(typeOpen, typeWrapRef, closeType);
   useDismissPopover(settingsOpen, settingsWrapRef, closeSettings);
 
   let readDraft = readState.draft;
@@ -410,6 +414,7 @@ export function PostActionBar(props: Props) {
   useEffect(() => {
     const closePopovers = () => {
       setShareOpen(false);
+      setTypeOpen(false);
       setSettingsOpen(false);
     };
     window.addEventListener(CLOSE_EDIT_MENU_EVENT, closePopovers);
@@ -426,11 +431,6 @@ export function PostActionBar(props: Props) {
 
   const activeDraft = props.mode === "edit" ? props.draft : readDraft;
   const unlistedItem = isUnlistedPostType(activeDraft.type);
-  // Blog-mode folders a blog post can be filed into (root Blog + subfolders).
-  const moveTargets =
-    props.mode === "edit" && props.folders
-      ? props.folders.filter((folder) => folder.mode === "blog")
-      : [];
   const activeSlug = slugify(activeDraft.slug, props.post.slug);
   const publicPath = postPathFor(props.blog.handle, activeSlug);
   const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
@@ -540,6 +540,7 @@ export function PostActionBar(props: Props) {
         return;
       }
       setShareOpen(false);
+      setTypeOpen(false);
       setSettingsOpen(false);
       props.onUpdateDraft({ type });
     },
@@ -558,13 +559,21 @@ export function PostActionBar(props: Props) {
   }, [publicUrl]);
 
   const openShare = useCallback(() => {
+    setTypeOpen(false);
     setSettingsOpen(false);
     setShareOpen((open) => !open);
   }, []);
 
   const openSettings = useCallback(() => {
     setShareOpen(false);
+    setTypeOpen(false);
     setSettingsOpen((open) => !open);
+  }, []);
+
+  const openType = useCallback(() => {
+    setShareOpen(false);
+    setSettingsOpen(false);
+    setTypeOpen((open) => !open);
   }, []);
 
   const editHref = postEditPath(props.postPath, props.post.id);
@@ -584,8 +593,8 @@ export function PostActionBar(props: Props) {
   const doneControl =
     props.mode === "edit" ? (
       <ShortcutTooltip
-        label="Back to reading"
-        keys={shortcutLabelForCommand("post.toggle-edit")}
+        label="Stop editing"
+        keys={shortcutLabelForCommand("post.stop-editing")}
         placement="bottom"
       >
         <button
@@ -595,7 +604,7 @@ export function PostActionBar(props: Props) {
             void props.onDone();
           }}
         >
-          Done
+          Stop editing
         </button>
       </ShortcutTooltip>
     ) : (
@@ -872,6 +881,56 @@ export function PostActionBar(props: Props) {
                 {bookmarkControls}
                 {canManagePost && shareControl}
                 {canEditPost && presenceControl}
+                {canManagePost &&
+                  props.mode === "edit" &&
+                  !unlistedItem && (
+                    <div className="post-action-popover-wrap" ref={typeWrapRef}>
+                      <button
+                        type="button"
+                        className="post-turn-into-button ac-btn ac-btn-gray"
+                        aria-haspopup="menu"
+                        aria-expanded={typeOpen}
+                        onClick={openType}
+                      >
+                        Turn into
+                        <span aria-hidden="true">▾</span>
+                      </button>
+                      {typeOpen && (
+                        <div
+                          className="post-edit-menu post-turn-into-menu"
+                          data-post-edit-menu-open="true"
+                          role="menu"
+                          aria-label="Turn into"
+                        >
+                          {POST_TYPE_OPTIONS.map((option) => {
+                            const active = activeDraft.type === option.type;
+                            return (
+                              <button
+                                key={option.type}
+                                className={`post-edit-menu-item post-turn-into-item${
+                                  active ? " is-active" : ""
+                                }`}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={active}
+                                onClick={() => {
+                                  if (!active) changeType(option.type);
+                                  setTypeOpen(false);
+                                }}
+                              >
+                                <span>{option.label}</span>
+                                {active && (
+                                  <span className="post-turn-into-check">
+                                    <MenuCheckIcon />
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 {canManagePost && props.mode === "edit" && (
                   <div className="post-action-popover-wrap" ref={settingsWrapRef}>
                     <button
@@ -891,48 +950,6 @@ export function PostActionBar(props: Props) {
                         role="menu"
                         aria-label="Post actions"
                       >
-                        {!unlistedItem && (
-                          <div
-                            className="post-edit-menu-section"
-                            role="group"
-                            aria-label="Turn into"
-                          >
-                            <div
-                              className="post-edit-menu-section-title"
-                              role="presentation"
-                            >
-                              Turn into
-                            </div>
-                            {POST_TYPE_OPTIONS.map((option) => {
-                              const active = activeDraft.type === option.type;
-                              return (
-                                <button
-                                  key={option.type}
-                                  className={`post-edit-menu-item post-turn-into-item${
-                                    active ? " is-active" : ""
-                                  }`}
-                                  type="button"
-                                  role="menuitemradio"
-                                  aria-checked={active}
-                                  onClick={() => {
-                                    if (active) {
-                                      setSettingsOpen(false);
-                                      return;
-                                    }
-                                    changeType(option.type);
-                                  }}
-                                >
-                                  <span>{option.label}</span>
-                                  {active && (
-                                    <span className="post-turn-into-check">
-                                      <MenuCheckIcon />
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
                         {showAddHeaderItem && (
                           <button
                             className="post-edit-menu-item"
@@ -946,47 +963,6 @@ export function PostActionBar(props: Props) {
                             Add header image
                           </button>
                         )}
-                        {!unlistedItem &&
-                          props.onMoveToFolder &&
-                          moveTargets.length > 0 && (
-                            <div
-                              className="post-edit-menu-section"
-                              role="group"
-                              aria-label="Move to folder"
-                            >
-                              <div
-                                className="post-edit-menu-section-title"
-                                role="presentation"
-                              >
-                                Move to
-                              </div>
-                              {moveTargets.map((folder) => {
-                                const active = folder.id === props.post.folderId;
-                                return (
-                                  <button
-                                    key={folder.id}
-                                    className={`post-edit-menu-item post-turn-into-item${
-                                      active ? " is-active" : ""
-                                    }`}
-                                    type="button"
-                                    role="menuitemradio"
-                                    aria-checked={active}
-                                    onClick={() => {
-                                      setSettingsOpen(false);
-                                      if (!active) props.onMoveToFolder?.(folder.path);
-                                    }}
-                                  >
-                                    <span>{folder.name}</span>
-                                    {active && (
-                                      <span className="post-turn-into-check">
-                                        <MenuCheckIcon />
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
                         <button
                           className="post-edit-delete"
                           type="button"

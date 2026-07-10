@@ -11,7 +11,11 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { deleteEditablePostAction } from "@/app/editor/actions";
+import {
+  deleteEditablePostAction,
+  setEditablePostCreatedAtAction,
+  toggleEditablePostPinnedAction,
+} from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import type { Post } from "@/lib/content";
@@ -21,6 +25,7 @@ import {
   resolveCoverSource,
 } from "@/lib/cover";
 import { useCaptureStatus } from "./useCaptureStatus";
+import { updatePost } from "@/lib/pool/store";
 import styles from "./BookmarkCard.module.css";
 
 function classNames(...names: Array<string | false | undefined>): string {
@@ -132,6 +137,7 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  onSelect,
   onCaptureResolved,
   onDeletePost,
   optionId,
@@ -143,6 +149,7 @@ export function BookmarkCard({
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  onSelect?: () => void;
   onCaptureResolved?: (post: Post) => void;
   onDeletePost?: (post: Post) => Promise<void> | void;
   optionId?: string;
@@ -163,6 +170,8 @@ export function BookmarkCard({
   const [menuError, setMenuError] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [, startTransition] = useTransition();
   const title = itemTitle(post);
   const host = bookmarkHost(post);
@@ -246,6 +255,50 @@ export function BookmarkCard({
         .finally(() => setDeleting(false));
     });
   }, [deleting, handle, onDeletePost, post, router]);
+  const toggleStar = useCallback(() => {
+    if (!post.id || !handle || pinning) return;
+    const previous = Boolean(post.pinned);
+    setPinning(true);
+    setMenuError(null);
+    updatePost(post.id, { pinned: !previous });
+    void toggleEditablePostPinnedAction(handle, post.id)
+      .then(() => setMenuOpen(false))
+      .catch((error) => {
+        updatePost(post.id!, { pinned: previous });
+        setMenuError(
+          error instanceof Error ? error.message : "Could not update star",
+        );
+      })
+      .finally(() => setPinning(false));
+  }, [handle, pinning, post.id, post.pinned]);
+  const shareBookmark = useCallback(() => {
+    const url = new URL(editPath, window.location.origin).toString();
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    });
+  }, [editPath]);
+  const changeCreatedDate = useCallback(
+    (value: string) => {
+      if (!post.id || !handle || !value || pinning) return;
+      const previous = post.createdAt;
+      setPinning(true);
+      updatePost(post.id, { createdAt: `${value}T12:00:00.000Z` });
+      void setEditablePostCreatedAtAction(handle, post.id, value)
+        .then((saved) => {
+          updatePost(post.id!, { createdAt: saved.createdAt });
+          setMenuOpen(false);
+        })
+        .catch((error) => {
+          updatePost(post.id!, { createdAt: previous });
+          setMenuError(
+            error instanceof Error ? error.message : "Could not change date",
+          );
+        })
+        .finally(() => setPinning(false));
+    },
+    [handle, pinning, post.createdAt, post.id],
+  );
   const thumbnailMedia = thumbnailFailed ? (
     thumbnailFallback
   ) : isVideoFile(thumbnailUrl) ? (
@@ -276,40 +329,47 @@ export function BookmarkCard({
     />
   );
   const mainContent = (
-    <>
-      <span className={styles.favicon} aria-hidden="true">
-        {faviconSrc && (
-          <img
-            className={styles.faviconImage}
-            src={faviconSrc}
-            alt=""
-            onError={(event) => {
-              event.currentTarget.hidden = true;
-            }}
-          />
-        )}
-      </span>
-      <span className={styles.content}>
+    <span className={styles.content}>
         <span className={styles.titleRow}>
           <span className={styles.title}>{title}</span>
           <StatusChip status={captureStatus} />
         </span>
-        {host && <span className={styles.host}>{host}</span>}
+        {host && (
+          <span className={styles.metaRow}>
+            <span className={styles.favicon} aria-hidden="true">
+              {faviconSrc && (
+                // Bookmark favicons can come from any source host, so they
+                // intentionally bypass Next's configured image allowlist.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className={styles.faviconImage}
+                  src={faviconSrc}
+                  alt=""
+                  onError={(event) => {
+                    event.currentTarget.hidden = true;
+                  }}
+                />
+              )}
+            </span>
+            <span className={styles.host}>{host}</span>
+          </span>
+        )}
         {description && (
           <span className={styles.description}>{description}</span>
         )}
       </span>
-    </>
   );
 
   return (
     <article
       id={optionId}
-      className={classNames(styles.card, selected && styles.selected)}
+      className={classNames("bookmark-folder-card", styles.card, selected && styles.selected)}
       role={optionId ? "option" : undefined}
       aria-selected={optionId ? selected : undefined}
       tabIndex={optionTabIndex}
       data-workspace-post-id={post.id}
+      onFocus={onSelect}
+      onMouseEnter={onSelect}
     >
       <div className={styles.body}>
         <Link
@@ -346,6 +406,40 @@ export function BookmarkCard({
                 role="menu"
                 aria-label="Bookmark options"
               >
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  disabled={pinning}
+                  onClick={(event) => {
+                    stopMenuNavigation(event);
+                    toggleStar();
+                  }}
+                >
+                  {pinning ? "Updating" : post.pinned ? "Unstar" : "Star"}
+                </button>
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  onClick={(event) => {
+                    stopMenuNavigation(event);
+                    shareBookmark();
+                  }}
+                >
+                  {copied ? "Link copied" : "Share"}
+                </button>
+                <label className={styles.menuDate}>
+                  <span>Created</span>
+                  <input
+                    type="date"
+                    value={(post.createdAt ?? post.date ?? "").slice(0, 10)}
+                    disabled={pinning}
+                    onChange={(event) =>
+                      changeCreatedDate(event.currentTarget.value)
+                    }
+                  />
+                </label>
                 <button
                   type="button"
                   className={classNames(styles.menuItem, styles.dangerItem)}

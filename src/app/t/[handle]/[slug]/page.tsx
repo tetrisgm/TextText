@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
+import { getSharedPostsForUser } from "@/lib/shares";
 import { colorForSub } from "@/lib/collab";
 import { resolveItemAccess } from "@/lib/permissions";
 import {
@@ -15,6 +16,8 @@ import {
   getBlog,
   getFolderCounts,
   getFolders,
+  getTrashedFolders,
+  getTrashedPosts,
   getPost,
   getPostById,
 } from "@/lib/store";
@@ -184,6 +187,13 @@ export async function PostPageForHandle({
         : {};
   }
   const adjacent = await adjacentPromise;
+  const [trashedFolders, trashedPosts] = canEdit
+    ? await Promise.all([
+        getTrashedFolders(handle),
+        getTrashedPosts(handle),
+      ])
+    : [[], []];
+  const sharedEntries = canEdit ? await getSharedPostsForUser(viewer) : [];
   const initialPool =
     canEdit && access.blogId
       ? workspacePoolFromParts({
@@ -192,6 +202,9 @@ export async function PostPageForHandle({
           counts,
           folders,
           posts: allPosts,
+          trashedFolders,
+          trashedPosts,
+          sharedEntries,
         })
       : null;
   const usedSlugs = editMode

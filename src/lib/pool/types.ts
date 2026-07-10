@@ -8,6 +8,7 @@ import type {
   Post,
   PostType,
 } from "@/lib/content";
+import type { SharedWithMeEntry } from "@/lib/shares";
 
 export type WorkspacePoolPost = {
   id: string;
@@ -45,6 +46,9 @@ export type WorkspacePoolPayload = {
   folders: Folder[];
   counts: Record<string, number>;
   posts: WorkspacePoolPost[];
+  trashedPosts?: WorkspacePoolPost[];
+  trashedFolders?: Folder[];
+  sharedEntries?: SharedWithMeEntry[];
   /** Bodies worth warming with the workspace shell, currently every note. */
   initialBodies?: WorkspaceInitialBody[];
   fetchedAt: string;

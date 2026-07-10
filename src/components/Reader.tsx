@@ -152,16 +152,23 @@ export function Reader({
             components={{
               h1: "h2",
               // Inline figures: ![caption](src); the alt doubles as the caption.
-              img: ({ src, alt }) => {
+        img: ({ src, alt }) => {
                 const imageSrc = typeof src === "string" ? src : undefined;
                 if (
                   hideRemoteBodyImages &&
                   isRemoteImageUrl(imageSrc) &&
                   !allowedBodyImageUrls.has(imageSrc)
                 ) {
-                  return null;
-                }
-                return (
+            return null;
+          }
+          if (imageSrc && isVideoFile(imageSrc)) {
+            return (
+              <span className="reader-figure is-video">
+                <video src={imageSrc} controls playsInline preload="metadata" />
+              </span>
+            );
+          }
+          return (
                   <span className="reader-figure">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img

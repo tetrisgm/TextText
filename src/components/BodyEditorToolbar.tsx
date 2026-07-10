@@ -1,11 +1,28 @@
-import type { Editor } from "@tiptap/core";
-import type { ReactNode } from "react";
+"use client";
 
-type BodyEditorBlock = "body" | "title" | "heading";
+import type { Editor } from "@tiptap/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
+
+type BodyEditorBlock = "body" | "heading1" | "heading2" | "heading3";
+
+const BLOCK_OPTIONS: Array<{
+  value: BodyEditorBlock;
+  label: string;
+  keys: string;
+}> = [
+  { value: "body", label: "Body", keys: "⌘⌥0" },
+  { value: "heading1", label: "Heading 1", keys: "⌘⌥1" },
+  { value: "heading2", label: "Heading 2", keys: "⌘⌥2" },
+  { value: "heading3", label: "Heading 3", keys: "⌘⌥3" },
+];
 
 function bodyEditorBlock(editor: Editor): BodyEditorBlock {
-  if (editor.isActive("heading", { level: 1 })) return "title";
-  if (editor.isActive("heading", { level: 2 })) return "heading";
+  if (editor.isActive("heading", { level: 1 })) return "heading1";
+  if (editor.isActive("heading", { level: 2 })) return "heading2";
+  if (editor.isActive("heading", { level: 3 })) return "heading3";
   return "body";
 }
 
@@ -24,9 +41,8 @@ function applyBlock(editor: Editor, block: BodyEditorBlock) {
     return;
   }
 
-  chain
-    .toggleHeading({ level: block === "title" ? 1 : 2 })
-    .run();
+  const level = Number(block.slice(-1)) as 1 | 2 | 3;
+  chain.setHeading({ level }).run();
 }
 
 function applyLink(editor: Editor) {
@@ -69,20 +85,21 @@ function ToolbarButton({
   onPress: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className={`body-editor-tool${active ? " is-active" : ""}`}
-      aria-label={keys ? `${label} (${keys})` : label}
-      aria-pressed={active}
-      title={keys ? `${label}  ·  ${keys}` : label}
-      disabled={disabled}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        if (!disabled) onPress();
-      }}
-    >
-      {children}
-    </button>
+    <ShortcutTooltip label={label} keys={keys} placement="top">
+      <button
+        type="button"
+        className={`body-editor-tool${active ? " is-active" : ""}`}
+        aria-label={keys ? `${label} (${keys})` : label}
+        aria-pressed={active}
+        disabled={disabled}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          if (!disabled) onPress();
+        }}
+      >
+        {children}
+      </button>
+    </ShortcutTooltip>
   );
 }
 
@@ -232,6 +249,28 @@ export function BodyEditorToolbar({
 }) {
   const editorDisabled = !editor;
   const activeBlock = editor ? bodyEditorBlock(editor) : "body";
+  const activeBlockOption =
+    BLOCK_OPTIONS.find((option) => option.value === activeBlock) ??
+    BLOCK_OPTIONS[0];
+  const blockMenuRef = useRef<HTMLDivElement | null>(null);
+  const [blockMenuOpen, setBlockMenuOpen] = useState(false);
+  const closeBlockMenu = useCallback(() => setBlockMenuOpen(false), []);
+  useEscapeLayer(blockMenuOpen, "Text style", closeBlockMenu);
+
+  useEffect(() => {
+    if (!blockMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        blockMenuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      closeBlockMenu();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [blockMenuOpen, closeBlockMenu]);
 
   return (
     <div className="body-editor-toolbar-shell">
@@ -241,26 +280,63 @@ export function BodyEditorToolbar({
         role="toolbar"
         aria-label="Body formatting"
       >
-        <div className="body-editor-toolgroup is-text" aria-label="Text style">
-          {[
-            ["title", "Title"],
-            ["heading", "Heading"],
-            ["body", "Body"],
-          ].map(([valueName, label]) => (
+        <div
+          ref={blockMenuRef}
+          className="body-editor-toolgroup is-text body-editor-block-picker"
+          aria-label="Text style"
+        >
+          <ShortcutTooltip
+            label="Text style"
+            keys={activeBlockOption.keys}
+            placement="top"
+          >
             <button
-              key={valueName}
               type="button"
-              className={`body-editor-text-tool${activeBlock === valueName ? " is-active" : ""}`}
-              aria-pressed={activeBlock === valueName}
+              className={`body-editor-text-tool body-editor-block-trigger${
+                blockMenuOpen ? " is-active" : ""
+              }`}
+              aria-haspopup="menu"
+              aria-expanded={blockMenuOpen}
               disabled={editorDisabled}
               onMouseDown={(event) => {
                 event.preventDefault();
-                if (editor) applyBlock(editor, valueName as BodyEditorBlock);
+                if (!editorDisabled) setBlockMenuOpen((open) => !open);
               }}
             >
-              {label}
+              <span>{activeBlockOption.label}</span>
+              <span className="body-editor-block-chevron" aria-hidden="true">
+                ▾
+              </span>
             </button>
-          ))}
+          </ShortcutTooltip>
+          {blockMenuOpen && editor && (
+            <div
+              className="body-editor-block-menu"
+              role="menu"
+              data-post-edit-menu-open="true"
+              aria-label="Text style"
+            >
+              {BLOCK_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`body-editor-block-option${
+                    activeBlock === option.value ? " is-active" : ""
+                  }`}
+                  role="menuitemradio"
+                  aria-checked={activeBlock === option.value}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    applyBlock(editor, option.value);
+                    closeBlockMenu();
+                  }}
+                >
+                  <span>{option.label}</span>
+                  <kbd>{option.keys}</kbd>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="body-editor-toolgroup" aria-label="Inline style">
           <ToolbarButton
@@ -312,6 +388,7 @@ export function BodyEditorToolbar({
           </ToolbarButton>
           <ToolbarButton
             label="Checklist"
+            keys="⌘⇧9"
             active={editor?.isActive("taskList")}
             disabled={editorDisabled}
             onPress={() => editor?.chain().focus().toggleTaskList().run()}
@@ -322,6 +399,7 @@ export function BodyEditorToolbar({
         <div className="body-editor-toolgroup" aria-label="Insert">
           <ToolbarButton
             label="Link"
+            keys="⌘K"
             active={editor?.isActive("link")}
             disabled={editorDisabled}
             onPress={() => {
@@ -332,7 +410,8 @@ export function BodyEditorToolbar({
           </ToolbarButton>
           {mediaEnabled && (
             <ToolbarButton
-              label="Insert image"
+              label="Insert photo or video"
+              keys="Drop or paste"
               disabled={editorDisabled || uploading}
               onPress={onChooseImage}
             >

@@ -10,15 +10,21 @@ import styles from "./WorkspaceMenu.module.css";
 export type WorkspaceMenuProps = {
   blogName: string;
   email: string | null;
-  settingsHref: string;
+  inNativeApp?: boolean;
+  onHome?: () => void;
   onInvite?: () => void;
+  onSettings?: () => void;
+  signedIn?: boolean;
 };
 
 export function WorkspaceMenu({
   blogName,
   email,
-  settingsHref,
+  inNativeApp = false,
+  onHome,
   onInvite,
+  onSettings,
+  signedIn = false,
 }: WorkspaceMenuProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -63,33 +69,55 @@ export function WorkspaceMenu({
             {email && <div className={styles.headerEmail}>{email}</div>}
           </div>
 
-          <Link
-            className={styles.menuItem}
-            href={settingsHref}
-            role="menuitem"
-            onClick={close}
-          >
-            Settings
-          </Link>
+          <div className={styles.primaryActions} role="presentation">
+            {onSettings && (
+              <button
+                className={styles.primaryAction}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onSettings();
+                  close();
+                }}
+              >
+                Settings
+              </button>
+            )}
+            {onInvite && (
+              <button
+                className={styles.primaryAction}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onInvite();
+                  close();
+                }}
+              >
+                Invite members
+              </button>
+            )}
+          </div>
 
-          <Link
-            className={styles.menuItem}
-            href="/shared"
-            role="menuitem"
-            onClick={close}
-          >
-            Shared with me
-          </Link>
-
-          {onInvite && (
+          {onHome && (
             <button
               className={styles.menuItem}
               type="button"
               role="menuitem"
               onClick={() => {
-                onInvite();
+                onHome();
                 close();
               }}
+            >
+              Workspace home
+            </button>
+          )}
+
+          {signedIn && !onInvite && (
+            <button
+              className={styles.menuItem}
+              type="button"
+              role="menuitem"
+              disabled
             >
               Invite members
             </button>
@@ -107,14 +135,16 @@ export function WorkspaceMenu({
             Keyboard shortcuts
           </button>
 
-          <Link
-            className={styles.menuItem}
-            href="/download"
-            role="menuitem"
-            onClick={close}
-          >
-            Download the Mac app
-          </Link>
+          {!inNativeApp && (
+            <Link
+              className={styles.menuItem}
+              href="/download"
+              role="menuitem"
+              onClick={close}
+            >
+              Download the Mac app
+            </Link>
+          )}
 
           <Link
             className={styles.menuItem}
@@ -127,11 +157,13 @@ export function WorkspaceMenu({
 
           <div className={styles.divider} role="separator" />
 
-          <SignOutButton
-            className={styles.signOutButton}
-            role="menuitem"
-            aria-label="Log out"
-          />
+          {signedIn && (
+            <SignOutButton
+              className={styles.signOutButton}
+              role="menuitem"
+              aria-label="Log out"
+            />
+          )}
         </div>
       )}
     </div>

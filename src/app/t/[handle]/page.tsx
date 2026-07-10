@@ -15,6 +15,7 @@ import { TalkReader } from "@/components/TalkReader";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
+import { getSharedPostsForUser } from "@/lib/shares";
 import { resolveFolderAccess, resolveWorkspaceAccess } from "@/lib/permissions";
 import {
   poolPostsForFolder,
@@ -37,6 +38,8 @@ import {
   getFolderCounts,
   getFolderPosts,
   getFolders,
+  getTrashedFolders,
+  getTrashedPosts,
   getPost,
 } from "@/lib/store";
 import {
@@ -55,6 +58,10 @@ import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
+import {
+  SHARED_FOLDER_PATH,
+  TRASH_FOLDER_PATH,
+} from "@/lib/workspace-paths";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -383,6 +390,9 @@ export async function BlogHomeForHandle({
           folders: await getFolders(handle),
           counts: await getFolderCounts(handle),
           posts: await getAllPosts(handle),
+          trashedFolders: await getTrashedFolders(handle),
+          trashedPosts: await getTrashedPosts(handle),
+          sharedEntries: await getSharedPostsForUser(viewer),
         })
       : null;
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
@@ -442,6 +452,11 @@ export async function BlogHomeForHandle({
       ? folders.find(
           (folder) => folder.path === (requestedFolder ?? defaultFolderPath),
         ) ?? null
+      : null;
+  const activeSpecialFolder =
+    requestedFolder === TRASH_FOLDER_PATH ||
+    requestedFolder === SHARED_FOLDER_PATH
+      ? requestedFolder
       : null;
   const folderItemsPromise = activeFolder
     ? initialPool
@@ -561,7 +576,7 @@ export async function BlogHomeForHandle({
   return showWorkspaceShell ? (
     <BlogHomeWorkspaceShell
       blog={blog}
-      activeFolder={activeFolder ? activeFolder.path : null}
+      activeFolder={activeFolder?.path ?? activeSpecialFolder}
       canManageFolders={canEdit}
       canManageSharing={canManageSharing}
       counts={counts}

@@ -249,8 +249,8 @@ export function CommandLayer({ children }: { children: ReactNode }) {
           event.preventDefault();
           return;
         }
+        if (dispatchCommandShortcut(event, typingTarget)) return;
         if (typingTarget) return;
-        if (dispatchCommandShortcut(event, false)) return;
         dispatchRegisteredKey(event);
         return;
       }

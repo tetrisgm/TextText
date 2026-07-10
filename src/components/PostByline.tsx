@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Blog, Post } from "@/lib/content";
 import { formatArticleDate, monogram, readingTimeMin } from "@/lib/content";
 
@@ -9,6 +10,7 @@ type PostBylineProps = {
   className?: string;
   metaItems?: Array<string | undefined | null | false>;
   variant?: PostBylineVariant;
+  dateControl?: ReactNode;
 };
 
 function defaultMetaItems(post: Post): string[] {
@@ -24,8 +26,14 @@ export function PostByline({
   className,
   metaItems,
   variant = "detail",
+  dateControl,
 }: PostBylineProps) {
-  const items = (metaItems ?? defaultMetaItems(post)).filter(Boolean) as string[];
+  const items = (
+    metaItems ??
+    (dateControl
+      ? [post.body ? `${readingTimeMin(post.body)} min read` : ""]
+      : defaultMetaItems(post))
+  ).filter(Boolean) as string[];
   const rootClassName = [
     "post-byline",
     `is-${variant}`,
@@ -54,6 +62,14 @@ export function PostByline({
                   <span>{item}</span>
                 </span>
               ))}
+            </span>
+          )}
+          {dateControl && (
+            <span className="post-byline-meta post-byline-date-control">
+              <span className="post-byline-dot" aria-hidden="true">
+                ·
+              </span>
+              {dateControl}
             </span>
           )}
         </span>

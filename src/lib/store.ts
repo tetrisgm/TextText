@@ -9,6 +9,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   like,
   ne,
@@ -40,7 +41,14 @@ import type {
 } from "./content";
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
-import { blogs, folders, posts, users } from "./db/schema";
+import {
+  blogs,
+  collabPresence,
+  collabUpdates,
+  folders,
+  posts,
+  users,
+} from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
@@ -656,6 +664,30 @@ export async function createSubfolder(
     if (inserted[0]) return mapFolder(inserted[0]);
   }
   throw new Error("A folder with that name already exists here.");
+}
+
+export async function renameFolder(
+  handle: string,
+  folderId: string,
+  name: string,
+): Promise<Folder> {
+  if (!db) throw new Error("Renaming folders needs a database.");
+  const blogId = await blogIdFor(handle);
+  const cleanName = name.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!cleanName) throw new Error("A folder needs a name.");
+  const updated = await db
+    .update(folders)
+    .set({ name: cleanName, updatedAt: new Date() })
+    .where(
+      and(
+        eq(folders.id, folderId),
+        eq(folders.blogId, blogId),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Folder not found");
+  return mapFolder(updated[0]);
 }
 
 /**
@@ -1613,6 +1645,206 @@ export async function deletePost(handle: string, id: string): Promise<void> {
     );
 }
 
+export async function getTrashedPosts(handle: string): Promise<Post[]> {
+  if (!db) return [];
+  const rows = await db
+    .select({ post: posts })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNotNull(posts.deletedAt),
+      ),
+    )
+    .orderBy(desc(posts.deletedAt), desc(posts.updatedAt));
+  return rows.map((row) => mapPost(row.post));
+}
+
+export async function getTrashedFolders(handle: string): Promise<Folder[]> {
+  if (!db) return [];
+  const blogId = await blogIdFor(handle);
+  const rows = await db
+    .select()
+    .from(folders)
+    .where(and(eq(folders.blogId, blogId), isNotNull(folders.deletedAt)))
+    .orderBy(desc(folders.deletedAt), asc(folders.position));
+  return rows.map(mapFolder);
+}
+
+export async function restorePost(handle: string, id: string): Promise<Post> {
+  if (!db) throw new Error("restorePost requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const updated = await db
+    .update(posts)
+    .set({ deletedAt: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNotNull(posts.deletedAt),
+      ),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Item not found in Trash");
+  return mapPost(updated[0]);
+}
+
+export async function permanentlyDeletePost(
+  handle: string,
+  id: string,
+): Promise<void> {
+  if (!db) throw new Error("permanentlyDeletePost requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  await db.delete(collabPresence).where(eq(collabPresence.postId, id));
+  await db.delete(collabUpdates).where(eq(collabUpdates.postId, id));
+  await db
+    .delete(posts)
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNotNull(posts.deletedAt),
+      ),
+    );
+}
+
+export async function trashFolder(
+  handle: string,
+  folderId: string,
+): Promise<void> {
+  if (!db) throw new Error("trashFolder requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const target = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.id, folderId),
+        eq(folders.blogId, blogId),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const folder = target[0];
+  if (!folder) throw new Error("Folder not found");
+  const descendants = await db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        isNull(folders.deletedAt),
+        or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
+      ),
+    );
+  const ids = descendants.map((entry) => entry.id);
+  const now = new Date();
+  if (ids.length > 0) {
+    await db
+      .update(posts)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(posts.blogId, blogId), inArray(posts.folderId, ids)));
+    await db
+      .update(folders)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
+  }
+}
+
+export async function restoreFolder(
+  handle: string,
+  folderId: string,
+): Promise<void> {
+  if (!db) throw new Error("restoreFolder requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const target = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.id, folderId),
+        eq(folders.blogId, blogId),
+        isNotNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const folder = target[0];
+  if (!folder) throw new Error("Folder not found in Trash");
+  const descendants = await db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        isNotNull(folders.deletedAt),
+        or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
+      ),
+    );
+  const ids = descendants.map((entry) => entry.id);
+  if (ids.length > 0) {
+    const now = new Date();
+    await db
+      .update(folders)
+      .set({ deletedAt: null, updatedAt: now })
+      .where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
+    await db
+      .update(posts)
+      .set({ deletedAt: null, updatedAt: now })
+      .where(
+        and(
+          eq(posts.blogId, blogId),
+          inArray(posts.folderId, ids),
+          isNotNull(posts.deletedAt),
+        ),
+      );
+  }
+}
+
+export async function permanentlyDeleteFolder(
+  handle: string,
+  folderId: string,
+): Promise<void> {
+  if (!db) throw new Error("permanentlyDeleteFolder requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const target = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.id, folderId),
+        eq(folders.blogId, blogId),
+        isNotNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const folder = target[0];
+  if (!folder) return;
+  const descendants = await db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.blogId, blogId),
+        isNotNull(folders.deletedAt),
+        or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
+      ),
+    );
+  const ids = descendants.map((entry) => entry.id);
+  if (ids.length === 0) return;
+  const trashedPosts = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(eq(posts.blogId, blogId), inArray(posts.folderId, ids)));
+  for (const post of trashedPosts) {
+    await db.delete(collabPresence).where(eq(collabPresence.postId, post.id));
+    await db.delete(collabUpdates).where(eq(collabUpdates.postId, post.id));
+  }
+  await db.delete(posts).where(and(eq(posts.blogId, blogId), inArray(posts.folderId, ids)));
+  await db.delete(folders).where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
+}
+
 export async function trashBlogPosts(handle: string): Promise<void> {
   if (!db) throw new Error("trashBlogPosts requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
@@ -1634,6 +1866,29 @@ export async function setPostPinned(
     // Bump updatedAt so a pin/unpin advances the workspace change cursor and
     // reaches sync clients instantly, not only on the 60s fallback pass.
     .set({ pinned, updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Post not found");
+  return mapPost(updated[0]);
+}
+
+export async function setPostCreatedAt(
+  handle: string,
+  id: string,
+  createdAt: Date,
+): Promise<Post> {
+  if (!db) throw new Error("setPostCreatedAt requires DATABASE_URL");
+  if (!Number.isFinite(createdAt.getTime())) throw new Error("Choose a valid date");
+  const blogId = await blogIdFor(handle);
+  const updated = await db
+    .update(posts)
+    .set({ createdAt, updatedAt: new Date() })
     .where(
       and(
         eq(posts.id, id),

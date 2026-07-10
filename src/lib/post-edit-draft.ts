@@ -15,6 +15,7 @@ export type DraftState = {
   videoUrl: string;
   venue: string;
   duration: string;
+  date: string;
 };
 
 export type SaveState = "saved" | "saving" | "error";
@@ -40,6 +41,7 @@ export function initialDraft(post: Post): DraftState {
     videoUrl: post.videoUrl ?? "",
     venue: post.venue ?? "",
     duration: post.duration ?? "",
+    date: post.date ?? "",
   };
 }
 
@@ -99,6 +101,7 @@ export function payloadFor(id: string, draft: DraftState, fallbackSlug: string) 
     videoUrl: draft.videoUrl || null,
     venue: draft.venue || null,
     duration: draft.duration || null,
+    date: draft.date || null,
   };
 }
 

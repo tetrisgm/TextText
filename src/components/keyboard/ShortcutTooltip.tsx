@@ -1,11 +1,17 @@
 "use client";
 
-import type { ReactNode } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
-// A small hover/focus tooltip that shows an action's label and its keyboard
-// shortcut. Keys come from the command registry (shortcutLabelForCommand) so the
-// hint stays in sync with what actually fires. Styled in apple.css (.kbd-tip*),
-// neutral tokens so it renders in both the reader and the editor chrome.
+type TipPosition = { left: number; top: number };
+
 export function ShortcutTooltip({
   label,
   keys,
@@ -19,16 +25,74 @@ export function ShortcutTooltip({
   className?: string;
   children: ReactNode;
 }) {
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const tipRef = useRef<HTMLSpanElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState<TipPosition | null>(null);
+
+  const hide = useCallback(() => {
+    setVisible(false);
+    setPosition(null);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!visible || !wrapRef.current || !tipRef.current) return;
+    const anchor = wrapRef.current.getBoundingClientRect();
+    const tip = tipRef.current.getBoundingClientRect();
+    const gutter = 8;
+    const viewportPadding = 8;
+    const desiredLeft = anchor.left + anchor.width / 2 - tip.width / 2;
+    const left = Math.min(
+      window.innerWidth - tip.width - viewportPadding,
+      Math.max(viewportPadding, desiredLeft),
+    );
+    const preferredTop =
+      placement === "bottom"
+        ? anchor.bottom + gutter
+        : anchor.top - tip.height - gutter;
+    const top =
+      preferredTop >= viewportPadding &&
+      preferredTop + tip.height <= window.innerHeight - viewportPadding
+        ? preferredTop
+        : placement === "bottom"
+          ? Math.max(viewportPadding, anchor.top - tip.height - gutter)
+          : Math.min(
+              window.innerHeight - tip.height - viewportPadding,
+              anchor.bottom + gutter,
+            );
+    setPosition({ left, top });
+  }, [keys, label, placement, visible]);
+
+  const style = position
+    ? ({ left: position.left, top: position.top } as CSSProperties)
+    : undefined;
+
   return (
     <span
+      ref={wrapRef}
       className={`kbd-tip-wrap${className ? ` ${className}` : ""}`}
-      data-tip-placement={placement}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={hide}
+      onFocusCapture={() => setVisible(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) hide();
+      }}
     >
       {children}
-      <span className="kbd-tip" role="tooltip" aria-hidden="true">
-        <span className="kbd-tip-label">{label}</span>
-        {keys ? <kbd className="kbd-tip-key">{keys}</kbd> : null}
-      </span>
+      {visible && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              ref={tipRef}
+              className="kbd-tip is-fixed"
+              role="tooltip"
+              style={style}
+            >
+              <span className="kbd-tip-label">{label}</span>
+              {keys ? <kbd className="kbd-tip-key">{keys}</kbd> : null}
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }

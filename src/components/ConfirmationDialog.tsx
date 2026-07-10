@@ -45,7 +45,7 @@ export function ConfirmationDialog({
         ? document.activeElement
         : null;
     const frame = window.requestAnimationFrame(() => {
-      cancelRef.current?.focus({ preventScroll: true });
+      confirmRef.current?.focus({ preventScroll: true });
     });
     return () => {
       window.cancelAnimationFrame(frame);
@@ -88,6 +88,12 @@ export function ConfirmationDialog({
           event.preventDefault();
           event.stopPropagation();
           cancel();
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.stopPropagation();
+          runConfirm();
           return;
         }
         if (
@@ -136,14 +142,14 @@ export function ConfirmationDialog({
             {message}
           </p>
           <p className="confirmation-dialog-shortcuts">
-            Esc cancels. Command-Delete confirms.
+            Enter confirms. Esc cancels.
           </p>
         </div>
         <div className="confirmation-dialog-actions">
           <button
             ref={cancelRef}
             type="button"
-            className="confirmation-dialog-button confirmation-dialog-cancel ac-btn ac-btn-filled"
+            className="confirmation-dialog-button confirmation-dialog-cancel ac-btn ac-btn-gray"
             disabled={confirming}
             onClick={cancel}
           >
@@ -152,7 +158,7 @@ export function ConfirmationDialog({
           <button
             ref={confirmRef}
             type="button"
-            className="confirmation-dialog-button confirmation-dialog-confirm ac-btn"
+            className="confirmation-dialog-button confirmation-dialog-confirm ac-btn ac-btn-filled"
             disabled={confirming}
             onClick={runConfirm}
           >

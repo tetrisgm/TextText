@@ -95,12 +95,18 @@ export function workspacePoolFromParts({
   counts,
   folders,
   posts,
+  trashedFolders = [],
+  trashedPosts = [],
+  sharedEntries = [],
 }: {
   blog: Blog;
   blogId: string;
   counts: Record<string, number>;
   folders: Folder[];
   posts: Post[];
+  trashedFolders?: Folder[];
+  trashedPosts?: Post[];
+  sharedEntries?: WorkspacePoolPayload["sharedEntries"];
 }): WorkspacePoolPayload {
   const initialBodies = posts.flatMap((post) =>
     post.id && post.type === "note"
@@ -116,6 +122,11 @@ export function workspacePoolFromParts({
     posts: posts
       .map((post) => narrowPostFromPost(post, blogId))
       .filter((post): post is WorkspacePoolPost => Boolean(post)),
+    trashedPosts: trashedPosts
+      .map((post) => narrowPostFromPost(post, blogId))
+      .filter((post): post is WorkspacePoolPost => Boolean(post)),
+    trashedFolders,
+    sharedEntries,
     initialBodies,
     fetchedAt: new Date().toISOString(),
   };

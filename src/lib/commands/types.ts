@@ -1,4 +1,4 @@
-import type { Blog, Folder, PostType } from "@/lib/content";
+import type { Blog, PostType } from "@/lib/content";
 import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
@@ -17,7 +17,15 @@ export type CommandShortcut = {
 
 export type CommandRunResult = void | Promise<void>;
 
-export type CommandWorkspaceLevel = "root" | "section" | "post" | "edit";
+export type CommandWorkspaceLevel =
+  | "root"
+  | "section"
+  | "trash"
+  | "shared"
+  | "post"
+  | "edit";
+
+export type SpatialDirection = "up" | "down" | "left" | "right";
 
 export type CommandWorkspaceSurface = {
   blog: Blog;
@@ -36,11 +44,16 @@ export type CommandWorkspaceSurface = {
   getPost: (postId: string) => WorkspacePoolPost | null;
   selectPost: (postId: string | null) => void;
   selectSection: (folderPath: string | null) => void;
+  selectSpatial: (direction: SpatialDirection) => void;
   selectNext: () => void;
   selectPrevious: () => void;
   openSelected: () => void;
+  openItemByIndex: (index: number) => void;
   openSectionByIndex: (index: number) => void;
   openPost: (postId: string, mode?: "read" | "edit") => void;
+  editCurrent: () => void;
+  stopEditing: () => void;
+  requestDeleteTarget: () => void;
   scrollReader: (direction: "up" | "down", amount: "line" | "half" | "page") => void;
   scrollReaderEdge: (edge: "top" | "bottom") => void;
   readerTapG: () => void;

@@ -20,7 +20,14 @@ import {
   createWorkspacePostAction,
   deleteEditablePostAction,
   saveEditablePostAction,
+  permanentlyDeleteEditablePostAction,
+  permanentlyDeleteFolderAction,
+  restoreEditablePostAction,
+  restoreFolderAction,
+  trashFolderAction,
 } from "@/app/editor/actions";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
   useEscapeLayer,
   useWorkspaceCommandSurface,
@@ -37,6 +44,7 @@ import {
   PostActionBar,
   type BookmarkContentMode,
 } from "@/components/PostActionBar";
+import { PostByline } from "@/components/PostByline";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
@@ -44,7 +52,9 @@ import { EditReaderPreview } from "@/components/editor/EditReaderPreview";
 import { LocalWorkspaceBodyEditor } from "@/components/LocalWorkspaceBodyEditor";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
+import { SharedWithMe } from "@/components/workspace/SharedWithMe";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
+import { isVideoFile } from "@/lib/content";
 import {
   adjacentPublishedPostsForPool,
   findPoolPostById,
@@ -57,8 +67,14 @@ import {
 import {
   addPost,
   getWorkspacePost,
+  moveFolderToTrash,
+  movePostToTrash,
+  removeTrashedFolder,
+  removeTrashedPost,
   refreshWorkspacePool,
   removePost,
+  restoreFolderFromTrash,
+  restorePostFromTrash,
   replacePost,
   updatePost,
   updatePostBody,
@@ -81,6 +97,7 @@ import {
   uniqueSlug,
 } from "@/lib/post-edit-draft";
 import type { DraftState } from "@/lib/post-edit-draft";
+import type { SpatialDirection } from "@/lib/commands/types";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import {
   isRemoteImageUrl,
@@ -92,6 +109,10 @@ import {
   WORKSPACE_SIDEBAR_STORAGE_KEY,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
+import {
+  SHARED_FOLDER_PATH,
+  TRASH_FOLDER_PATH,
+} from "@/lib/workspace-paths";
 import { mediaUploadEndpointForHandle } from "@/lib/upload";
 
 /** A folder's workspace-unique path segment, e.g. "blog" or "notes". */
@@ -143,6 +164,7 @@ const FALLBACK_FOLDERS: Folder[] = [
 ];
 
 const ROOT_SECTION_MODES: FolderMode[] = ["blog", "notes", "bookmarks"];
+const STOP_LOCAL_EDITING_EVENT = "write:stop-local-editing";
 
 /** Client-safe mirror of store.ts folderPathForPostType. */
 export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
@@ -278,6 +300,11 @@ function selectedPostIdForView(
   preferred?: string | null,
 ): string | null {
   if (view.level === "post" || view.level === "edit") return view.postId;
+  if (view.level === "trash") {
+    const posts = pool.trashedPosts ?? [];
+    if (preferred && posts.some((post) => post.id === preferred)) return preferred;
+    return posts[0]?.id ?? null;
+  }
   if (view.level !== "section") return null;
   const posts = poolPostsForFolder(pool, view.folderPath);
   if (preferred && posts.some((post) => post.id === preferred)) {
@@ -288,6 +315,54 @@ function selectedPostIdForView(
 
 function cssAttributeValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function visibleWorkspaceItems(attribute: string): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(`[${attribute}]`),
+  ).filter((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+}
+
+function spatialNeighbor(
+  items: HTMLElement[],
+  current: HTMLElement | null,
+  direction: SpatialDirection,
+): HTMLElement | null {
+  if (items.length === 0) return null;
+  if (!current) return items[0] ?? null;
+  const currentRect = current.getBoundingClientRect();
+  const cx = currentRect.left + currentRect.width / 2;
+  const cy = currentRect.top + currentRect.height / 2;
+  let best: { element: HTMLElement; score: number } | null = null;
+
+  for (const element of items) {
+    if (element === current) continue;
+    const rect = element.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const dx = x - cx;
+    const dy = y - cy;
+    const primary =
+      direction === "left"
+        ? -dx
+        : direction === "right"
+          ? dx
+          : direction === "up"
+            ? -dy
+            : dy;
+    if (primary <= 2) continue;
+    const cross =
+      direction === "left" || direction === "right"
+        ? Math.abs(dy)
+        : Math.abs(dx);
+    const score = primary + cross * 3;
+    if (!best || score < best.score) best = { element, score };
+  }
+
+  return best?.element ?? current;
 }
 
 function domSafeId(value: string): string {
@@ -495,6 +570,196 @@ function SidebarPinIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="4.75" stroke="currentColor" strokeWidth="1.55" />
+      <path d="m11.6 11.6 3.1 3.1" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M4.75 5.5h8.5l-.55 9h-7.4l-.55-9ZM3.5 5.5h11M7 3.5h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function SharedIcon() {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <circle cx="7" cy="6" r="2.25" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12.4" cy="7.2" r="1.7" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M3.6 14c.4-2.35 1.55-3.55 3.4-3.55S10 11.65 10.4 14M10.2 11c1.95-.35 3.35.55 3.85 2.55" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+type SidebarDocumentSort = "recent" | "alphabetical" | "created" | "edited";
+
+function sidebarDocumentTitle(post: WorkspacePoolPost): string {
+  return post.title.trim() || "Untitled";
+}
+
+function dateKey(value: string | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function SidebarActivity({
+  documents,
+  onOpenDocument,
+}: {
+  documents: WorkspacePoolPost[];
+  onOpenDocument?: (postId: string) => void;
+}) {
+  const now = new Date();
+  const [monthStart, setMonthStart] = useState(
+    () => new Date(now.getFullYear(), now.getMonth(), 1),
+  );
+  const [sort, setSort] = useState<SidebarDocumentSort>("recent");
+  const datedDocuments = useMemo(() => {
+    const byDate = new Map<string, WorkspacePoolPost[]>();
+    for (const post of documents) {
+      const key = dateKey(post.createdAt ?? post.date);
+      if (!key) continue;
+      const list = byDate.get(key) ?? [];
+      list.push(post);
+      byDate.set(key, list);
+    }
+    return byDate;
+  }, [documents]);
+  const sorted = useMemo(() => {
+    const next = [...documents];
+    if (sort === "alphabetical") {
+      return next.sort((a, b) =>
+        sidebarDocumentTitle(a).localeCompare(sidebarDocumentTitle(b), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        }),
+      );
+    }
+    const field = sort === "created" ? "createdAt" : "updatedAt";
+    return next.sort((a, b) =>
+      (b[field] ?? b.date ?? "").localeCompare(a[field] ?? a.date ?? ""),
+    );
+  }, [documents, sort]);
+  const calendarDays = useMemo(() => {
+    const first = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
+    const start = new Date(first);
+    const mondayOffset = (first.getDay() + 6) % 7;
+    start.setDate(first.getDate() - mondayOffset);
+    return Array.from({ length: 42 }, (_, index) => {
+      const day = new Date(start);
+      day.setDate(start.getDate() + index);
+      return day;
+    });
+  }, [monthStart]);
+  const monthLabel = new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    year: "numeric",
+  }).format(monthStart);
+  const todayKey = dateKey(new Date().toISOString());
+
+  return (
+    <div className="post-editor-sidebar-activity">
+      <section className="post-editor-calendar" aria-label={monthLabel}>
+        <header>
+          <strong>{monthLabel}</strong>
+          <span>
+            <button
+              type="button"
+              aria-label="Previous month"
+              onClick={() =>
+                setMonthStart(
+                  (current) =>
+                    new Date(current.getFullYear(), current.getMonth() - 1, 1),
+                )
+              }
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Next month"
+              onClick={() =>
+                setMonthStart(
+                  (current) =>
+                    new Date(current.getFullYear(), current.getMonth() + 1, 1),
+                )
+              }
+            >
+              ›
+            </button>
+          </span>
+        </header>
+        <div className="post-editor-calendar-weekdays" aria-hidden="true">
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => (
+            <span key={`${day}-${index}`}>{day}</span>
+          ))}
+        </div>
+        <div className="post-editor-calendar-grid">
+          {calendarDays.map((day) => {
+            const key = dateKey(day.toISOString()) ?? "";
+            const posts = datedDocuments.get(key) ?? [];
+            const outside = day.getMonth() !== monthStart.getMonth();
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`${outside ? "is-outside" : ""}${
+                  posts.length > 0 ? " has-documents" : ""
+                }${key === todayKey ? " is-today" : ""}`}
+                aria-label={`${day.toLocaleDateString()}${
+                  posts.length > 0 ? `, ${posts.length} documents` : ""
+                }`}
+                disabled={posts.length === 0}
+                onClick={() => posts[0]?.id && onOpenDocument?.(posts[0].id)}
+              >
+                {day.getDate()}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+      <section className="post-editor-documents" aria-label="Documents">
+        <header>
+          <strong>Documents</strong>
+          <select
+            value={sort}
+            aria-label="Sort documents"
+            onChange={(event) => setSort(event.currentTarget.value as SidebarDocumentSort)}
+          >
+            <option value="recent">Recent</option>
+            <option value="alphabetical">Alphabetical</option>
+            <option value="created">Date created</option>
+            <option value="edited">Last edited</option>
+          </select>
+        </header>
+        <div className="post-editor-document-list">
+          {sorted.slice(0, 30).map((post) => (
+            <button
+              key={post.id}
+              type="button"
+              onClick={() => onOpenDocument?.(post.id)}
+              title={sidebarDocumentTitle(post)}
+            >
+              <span>{sidebarDocumentTitle(post)}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function FolderShareIcon() {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -521,7 +786,9 @@ function focusSidebarRow(
   direction: "first" | "last" | "next" | "previous",
 ) {
   const rows = Array.from(
-    nav.querySelectorAll<HTMLButtonElement>(".post-editor-folder-row"),
+    nav.querySelectorAll<HTMLButtonElement>(
+      ".post-editor-folder-main, .post-editor-special-main",
+    ),
   );
   if (rows.length === 0) return;
 
@@ -619,7 +886,34 @@ function buildFolderTree(folders: Folder[]): FolderTreeNode[] {
 }
 
 const FOLDER_EXPANDED_KEY = "write.folders.expanded";
+const FOLDER_EXPANDED_EVENT = "write:folders-expanded";
 const MAX_FOLDER_DEPTH = 4;
+
+function persistedExpandedSnapshot(): string {
+  try {
+    return window.localStorage.getItem(FOLDER_EXPANDED_KEY) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+
+function subscribeExpandedFolders(notify: () => void) {
+  window.addEventListener("storage", notify);
+  window.addEventListener(FOLDER_EXPANDED_EVENT, notify);
+  return () => {
+    window.removeEventListener("storage", notify);
+    window.removeEventListener(FOLDER_EXPANDED_EVENT, notify);
+  };
+}
+
+function persistExpandedFolders(ids: Set<string>) {
+  try {
+    window.localStorage.setItem(FOLDER_EXPANDED_KEY, JSON.stringify([...ids]));
+    window.dispatchEvent(new Event(FOLDER_EXPANDED_EVENT));
+  } catch {
+    // The active-folder ancestors still remain visible without persistence.
+  }
+}
 
 // The Apple Notes-style nested folder tree: disclosure triangles, indentation
 // by depth, per-folder "new subfolder", and expand state that persists and
@@ -651,10 +945,36 @@ function FolderTreeNav({
 }) {
   const router = useRouter();
   const tree = buildFolderTree(folders);
-  const foldersById = new Map(folders.map((f) => [f.id, f]));
-  const foldersByPath = new Map(folders.map((f) => [f.path, f]));
+  const foldersById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders],
+  );
+  const foldersByPath = useMemo(
+    () => new Map(folders.map((folder) => [folder.path, folder])),
+    [folders],
+  );
 
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const expandedSnapshot = useSyncExternalStore(
+    subscribeExpandedFolders,
+    persistedExpandedSnapshot,
+    () => "[]",
+  );
+  const persistedExpanded = useMemo(() => {
+    try {
+      return new Set(JSON.parse(expandedSnapshot) as string[]);
+    } catch {
+      return new Set<string>();
+    }
+  }, [expandedSnapshot]);
+  const expanded = useMemo(() => {
+    const next = new Set(persistedExpanded);
+    let node = activeFolder ? foldersByPath.get(activeFolder) : undefined;
+    while (node?.parentId) {
+      next.add(node.parentId);
+      node = foldersById.get(node.parentId);
+    }
+    return next;
+  }, [activeFolder, foldersById, foldersByPath, persistedExpanded]);
   const [creatingUnder, setCreatingUnder] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -667,40 +987,11 @@ function FolderTreeNav({
     [homePath, prefetchFolders, router],
   );
 
-  // Load persisted expand state, then force-open the ancestors of the active
-  // folder so the current selection is always visible.
-  useEffect(() => {
-    const next = new Set<string>();
-    try {
-      const raw = window.localStorage.getItem(FOLDER_EXPANDED_KEY);
-      if (raw) for (const id of JSON.parse(raw) as string[]) next.add(id);
-    } catch {
-      // ignore malformed storage
-    }
-    let node = activeFolder ? foldersByPath.get(activeFolder) : undefined;
-    while (node?.parentId) {
-      next.add(node.parentId);
-      node = foldersById.get(node.parentId);
-    }
-    setExpanded(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFolder]);
-
   const toggle = (id: string) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        window.localStorage.setItem(
-          FOLDER_EXPANDED_KEY,
-          JSON.stringify([...next]),
-        );
-      } catch {
-        // ignore
-      }
-      return next;
-    });
+    const next = new Set(persistedExpanded);
+    if (expanded.has(id)) next.delete(id);
+    else next.add(id);
+    persistExpandedFolders(next);
   };
 
   const submitNewFolder = async (parentPath: string) => {
@@ -714,7 +1005,9 @@ function FolderTreeNav({
       setCreatingUnder(null);
       // Make sure the parent is open so the new child is visible.
       const parent = foldersByPath.get(parentPath);
-      if (parent) setExpanded((c) => new Set(c).add(parent.id));
+      if (parent) {
+        persistExpandedFolders(new Set(persistedExpanded).add(parent.id));
+      }
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create the folder");
@@ -774,7 +1067,9 @@ function FolderTreeNav({
                 setCreatingUnder(folder.path);
                 setNewName("");
                 setError(null);
-                setExpanded((c) => new Set(c).add(folder.id));
+                persistExpandedFolders(
+                  new Set(persistedExpanded).add(folder.id),
+                );
               }}
             >
               +
@@ -846,6 +1141,7 @@ export function PostFolderSidebar({
   activeFolder,
   collapsed,
   counts,
+  documents = [],
   prefetchFolders = true,
   canManageFolders = false,
   canManageSharing = false,
@@ -853,13 +1149,18 @@ export function PostFolderSidebar({
   homePath,
   onSelectRoot,
   onSelectFolder,
+  onOpenDocument,
   onToggleCollapsed,
+  previewOpen = false,
+  sharedCount = 0,
   showGuestSignIn = false,
+  trashCount = 0,
 }: {
   blog: Blog;
   activeFolder: SidebarFolderId | null;
   collapsed: boolean;
   counts: Record<string, number>;
+  documents?: WorkspacePoolPost[];
   prefetchFolders?: boolean;
   canManageFolders?: boolean;
   canManageSharing?: boolean;
@@ -867,24 +1168,16 @@ export function PostFolderSidebar({
   homePath?: string;
   onSelectRoot?: () => void;
   onSelectFolder: (folder: SidebarFolderId) => void;
+  onOpenDocument?: (postId: string) => void;
   onToggleCollapsed: () => void;
+  previewOpen?: boolean;
+  sharedCount?: number;
   showGuestSignIn?: boolean;
+  trashCount?: number;
 }) {
   const navFolders =
     folders.length > 0 || !canManageFolders ? folders : FALLBACK_FOLDERS;
   const [sharingFolder, setSharingFolder] = useState<Folder | null>(null);
-  const homeContent = (
-    <>
-      <span className="post-editor-home-icon" aria-hidden="true">
-        <FolderIcon />
-      </span>
-      <span className="post-editor-home-copy">
-        <span className="post-editor-home-name">{blog.name}</span>
-        <span className="post-editor-home-meta">Workspace</span>
-      </span>
-    </>
-  );
-
   return (
     <aside
       className={`ac-sidebar ac-chrome post-editor-sidebar${
@@ -897,48 +1190,18 @@ export function PostFolderSidebar({
           blogName={blog.name}
           canManageSharing={canManageSharing}
           handle={blog.handle}
-          settingsHref={homePath ?? "/"}
-          fallback={
-            homePath ? (
-              <a
-                className="post-editor-home-link"
-                href={workspaceRootHref(homePath)}
-                onClick={(event) => {
-                  if (!onSelectRoot) return;
-                  if (
-                    event.button !== 0 ||
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.shiftKey ||
-                    event.altKey
-                  ) {
-                    return;
-                  }
-                  event.preventDefault();
-                  onSelectRoot();
-                }}
-              >
-                {homeContent}
-              </a>
-            ) : (
-              <div className="post-editor-home-link is-static">{homeContent}</div>
-            )
-          }
+          onHome={onSelectRoot}
         />
-        <button
-          type="button"
-          className="post-editor-sidebar-toggle"
-          aria-label="Open command palette"
-          title="Command palette"
-          style={{
-            color: "var(--ink)",
-            font: "700 12px/1 var(--font-body)",
-            letterSpacing: "0",
-          }}
-          onClick={openCommandPalette}
-        >
-          <span aria-hidden="true">⌘K</span>
-        </button>
+        <ShortcutTooltip label="Search" keys="⌘K">
+          <button
+            type="button"
+            className="post-editor-sidebar-toggle"
+            aria-label="Search"
+            onClick={openCommandPalette}
+          >
+            <SearchIcon />
+          </button>
+        </ShortcutTooltip>
         <button
           type="button"
           className="post-editor-sidebar-toggle"
@@ -968,7 +1231,62 @@ export function PostFolderSidebar({
           onSelectFolder={onSelectFolder}
           onShareFolder={setSharingFolder}
         />
+        <div className="post-editor-special-folders">
+          <div
+            className={`post-editor-folder-row post-editor-special-row${
+              activeFolder === SHARED_FOLDER_PATH ? " is-active" : ""
+            }`}
+          >
+            <button
+              type="button"
+              className="post-editor-folder-main post-editor-special-main"
+              aria-current={activeFolder === SHARED_FOLDER_PATH ? "true" : undefined}
+              title={collapsed ? "Shared with me" : undefined}
+              onClick={() => onSelectFolder(SHARED_FOLDER_PATH)}
+            >
+              <span className="post-editor-folder-icon" aria-hidden="true">
+                <SharedIcon />
+              </span>
+              <span className="post-editor-folder-name">Shared with me</span>
+            </button>
+            {sharedCount > 0 && (
+              <span className="post-editor-folder-count" aria-hidden="true">
+                {sharedCount}
+              </span>
+            )}
+          </div>
+          <div
+            className={`post-editor-folder-row post-editor-special-row${
+              activeFolder === TRASH_FOLDER_PATH ? " is-active" : ""
+            }`}
+          >
+            <button
+              type="button"
+              className="post-editor-folder-main post-editor-special-main"
+              aria-current={activeFolder === TRASH_FOLDER_PATH ? "true" : undefined}
+              title={collapsed ? "Trash" : undefined}
+              onClick={() => onSelectFolder(TRASH_FOLDER_PATH)}
+            >
+              <span className="post-editor-folder-icon" aria-hidden="true">
+                <TrashIcon />
+              </span>
+              <span className="post-editor-folder-name">Trash</span>
+            </button>
+            {trashCount > 0 && (
+              <span className="post-editor-folder-count" aria-hidden="true">
+                {trashCount}
+              </span>
+            )}
+          </div>
+        </div>
       </nav>
+
+      {(!collapsed || previewOpen) && (
+        <SidebarActivity
+          documents={documents}
+          onOpenDocument={onOpenDocument}
+        />
+      )}
 
       {showGuestSignIn && (
         <div className="post-editor-sidebar-footer">
@@ -1002,14 +1320,18 @@ export function WorkspaceSidebarChrome({
   canManageFolders = false,
   canManageSharing = false,
   counts,
+  documents = [],
   folders,
   homePath,
   onSelectFolder,
+  onOpenDocument,
   onSelectRoot,
   prefetchFolders = true,
   onToggleCollapsed,
   escapeToCollapse = true,
   showGuestSignIn = false,
+  sharedCount = 0,
+  trashCount = 0,
 }: {
   activeFolder: SidebarFolderId | null;
   blog: Blog;
@@ -1017,9 +1339,11 @@ export function WorkspaceSidebarChrome({
   canManageFolders?: boolean;
   canManageSharing?: boolean;
   counts: Record<string, number>;
+  documents?: WorkspacePoolPost[];
   folders: Folder[];
   homePath?: string;
   onSelectFolder: (folder: SidebarFolderId) => void;
+  onOpenDocument?: (postId: string) => void;
   onSelectRoot?: () => void;
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
@@ -1027,6 +1351,8 @@ export function WorkspaceSidebarChrome({
   // sidebar is workspace chrome, so Escape remains available for navigation.
   escapeToCollapse?: boolean;
   showGuestSignIn?: boolean;
+  sharedCount?: number;
+  trashCount?: number;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const showPreview = useCallback(() => {
@@ -1093,13 +1419,18 @@ export function WorkspaceSidebarChrome({
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
           counts={counts}
+          documents={documents}
           folders={folders}
           homePath={homePath}
           onSelectFolder={selectFolder}
+          onOpenDocument={onOpenDocument}
           onSelectRoot={selectRoot}
           prefetchFolders={prefetchFolders}
+          previewOpen={previewOpen}
           onToggleCollapsed={toggleSidebar}
+          sharedCount={sharedCount}
           showGuestSignIn={showGuestSignIn}
+          trashCount={trashCount}
         />
       </div>
       <button
@@ -1116,6 +1447,8 @@ export function WorkspaceSidebarChrome({
 type LocalWorkspaceView =
   | { level: "root" }
   | { folderPath: string; level: "section" }
+  | { folderPath: typeof TRASH_FOLDER_PATH; level: "trash" }
+  | { folderPath: typeof SHARED_FOLDER_PATH; level: "shared" }
   | { folderPath: string; level: "post"; postId: string }
   | { folderPath: string; level: "edit"; postId: string };
 
@@ -1145,6 +1478,12 @@ function viewFromUrl(
 
   if (pathname === matchingHome) {
     const folderPath = url.searchParams.get("folder");
+    if (folderPath === TRASH_FOLDER_PATH) {
+      return { level: "trash", folderPath: TRASH_FOLDER_PATH };
+    }
+    if (folderPath === SHARED_FOLDER_PATH) {
+      return { level: "shared", folderPath: SHARED_FOLDER_PATH };
+    }
     if (folderPath && pool.folders.some((folder) => folder.path === folderPath)) {
       return { level: "section", folderPath };
     }
@@ -1177,12 +1516,29 @@ function currentLocalView(
   return viewFromUrl(pool, homePath, new URL(window.location.href));
 }
 
+function localWorkspaceViewDepth(view: LocalWorkspaceView): number {
+  if (view.level === "root") return 0;
+  if (view.level === "section" || view.level === "trash" || view.level === "shared") {
+    return 1;
+  }
+  return 2;
+}
+
 function localViewActiveFolder(view: LocalWorkspaceView): SidebarFolderId | null {
   return view.level === "root" ? null : view.folderPath;
 }
 
 function isOptimisticPostId(postId: string): boolean {
   return postId.startsWith("optimistic-");
+}
+
+function workspaceActionErrorMessage(
+  error: unknown,
+  fallback: string,
+): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : fallback;
 }
 
 function autoGrowTextarea(node: HTMLTextAreaElement | null) {
@@ -1192,14 +1548,12 @@ function autoGrowTextarea(node: HTMLTextAreaElement | null) {
 }
 
 function WorkspaceRootLanding({
-  blog,
   counts,
   folders,
   onOpenSection,
   onSelectSection,
   selectedSectionPath,
 }: {
-  blog: Blog;
   counts: Record<string, number>;
   folders: Folder[];
   onOpenSection: (folderPath: string) => void;
@@ -1213,9 +1567,7 @@ function WorkspaceRootLanding({
   return (
     <main className="workspace-root-page" aria-labelledby="workspace-root-title">
       <div className="workspace-root-inner">
-        <span className="workspace-root-eyebrow">Workspace</span>
-        <h1 id="workspace-root-title">{blog.name}</h1>
-        <p>Choose a section.</p>
+        <h1 id="workspace-root-title">Folders</h1>
         <div
           className="workspace-root-sections"
           role="listbox"
@@ -1257,6 +1609,195 @@ function WorkspaceRootLanding({
           })}
         </div>
       </div>
+    </main>
+  );
+}
+
+type TrashDeleteTarget =
+  | { kind: "post"; id: string; label: string }
+  | { kind: "folder"; id: string; label: string };
+
+function TrashPage({
+  handle,
+  pool,
+  selectedPostId,
+  onSelectPost,
+}: {
+  handle: string;
+  pool: WorkspacePoolPayload;
+  selectedPostId: string | null;
+  onSelectPost: (postId: string) => void;
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TrashDeleteTarget | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const trashedFolders = pool.trashedFolders ?? [];
+  const trashedPosts = pool.trashedPosts ?? [];
+  const trashedFolderIds = new Set(trashedFolders.map((folder) => folder.id));
+  const rootTrashedFolders = trashedFolders.filter(
+    (folder) => !folder.parentId || !trashedFolderIds.has(folder.parentId),
+  );
+
+  const restoreItem = useCallback(
+    (postId: string) => {
+      if (busyId) return;
+      setBusyId(postId);
+      setError(null);
+      restorePostFromTrash(postId);
+      void restoreEditablePostAction(handle, postId)
+        .catch((restoreError) => {
+          movePostToTrash(postId);
+          setError(workspaceActionErrorMessage(restoreError, "Could not restore item"));
+        })
+        .finally(() => setBusyId(null));
+    },
+    [busyId, handle],
+  );
+
+  const restoreFolderItem = useCallback(
+    (folderId: string) => {
+      if (busyId) return;
+      setBusyId(folderId);
+      setError(null);
+      restoreFolderFromTrash(folderId);
+      void restoreFolderAction(handle, folderId)
+        .catch((restoreError) => {
+          moveFolderToTrash(folderId);
+          setError(workspaceActionErrorMessage(restoreError, "Could not restore folder"));
+        })
+        .finally(() => setBusyId(null));
+    },
+    [busyId, handle],
+  );
+
+  const permanentlyDelete = useCallback(() => {
+    if (!deleteTarget || busyId) return;
+    const target = deleteTarget;
+    setBusyId(target.id);
+    setError(null);
+    if (target.kind === "post") removeTrashedPost(target.id);
+    else removeTrashedFolder(target.id);
+    const request =
+      target.kind === "post"
+        ? permanentlyDeleteEditablePostAction(handle, target.id)
+        : permanentlyDeleteFolderAction(handle, target.id);
+    void request
+      .then(() => setDeleteTarget(null))
+      .catch((deleteError) => {
+        setError(workspaceActionErrorMessage(deleteError, "Could not delete permanently"));
+        void refreshWorkspacePool(handle, pool.blogId);
+      })
+      .finally(() => setBusyId(null));
+  }, [busyId, deleteTarget, handle, pool.blogId]);
+
+  return (
+    <main className="workspace-collection-page workspace-trash-page">
+      <header className="workspace-collection-header">
+        <h1>Trash</h1>
+      </header>
+      {error && <p className="post-folder-error" role="alert">{error}</p>}
+      {rootTrashedFolders.length === 0 && trashedPosts.length === 0 ? (
+        <p className="workspace-collection-empty">Trash is empty.</p>
+      ) : (
+        <div className="workspace-trash-list">
+          {rootTrashedFolders.map((folder) => (
+            <article className="workspace-trash-row is-folder" key={folder.id}>
+              <div>
+                <strong>{folder.name}</strong>
+                <span>Folder</span>
+              </div>
+              <div className="workspace-trash-actions">
+                <button
+                  type="button"
+                  className="ac-btn ac-btn-gray"
+                  disabled={busyId === folder.id}
+                  onClick={() => restoreFolderItem(folder.id)}
+                >
+                  Restore
+                </button>
+                <button
+                  type="button"
+                  className="ac-btn ac-btn-gray is-danger"
+                  disabled={busyId === folder.id}
+                  onClick={() =>
+                    setDeleteTarget({ kind: "folder", id: folder.id, label: folder.name })
+                  }
+                >
+                  Delete permanently
+                </button>
+              </div>
+            </article>
+          ))}
+          {trashedPosts.map((post) => {
+            const selected = post.id === selectedPostId;
+            return (
+              <article
+                key={post.id}
+                className={`workspace-trash-row${selected ? " is-command-selected" : ""}`}
+                data-workspace-post-id={post.id}
+                tabIndex={selected ? 0 : -1}
+                onFocus={() => onSelectPost(post.id)}
+                onMouseEnter={() => onSelectPost(post.id)}
+              >
+                <div>
+                  <strong>{post.title.trim() || "Untitled"}</strong>
+                  <span>{post.type}</span>
+                </div>
+                <div className="workspace-trash-actions">
+                  <button
+                    type="button"
+                    className="ac-btn ac-btn-gray"
+                    disabled={busyId === post.id}
+                    onClick={() => restoreItem(post.id)}
+                  >
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    className="ac-btn ac-btn-gray is-danger"
+                    disabled={busyId === post.id}
+                    onClick={() =>
+                      setDeleteTarget({
+                        kind: "post",
+                        id: post.id,
+                        label: post.title.trim() || "Untitled",
+                      })
+                    }
+                  >
+                    Delete permanently
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      <ConfirmationDialog
+        open={Boolean(deleteTarget)}
+        title={`Delete ${deleteTarget?.label ?? "item"} permanently?`}
+        message="This cannot be undone."
+        confirmLabel="Delete permanently"
+        confirmingLabel="Deleting"
+        confirming={Boolean(deleteTarget && busyId === deleteTarget.id)}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={permanentlyDelete}
+      />
+    </main>
+  );
+}
+
+function SharedPage({ pool }: { pool: WorkspacePoolPayload }) {
+  const entries = pool.sharedEntries ?? [];
+  return (
+    <main className="workspace-collection-page">
+      <header className="workspace-collection-header">
+        <h1>Shared with me</h1>
+      </header>
+      {entries.length > 0 ? (
+        <SharedWithMe entries={entries} />
+      ) : (
+        <p className="workspace-collection-empty">Nothing has been shared with you yet.</p>
+      )}
     </main>
   );
 }
@@ -1313,6 +1854,13 @@ function MarkdownBody({
             !allowedRemoteImages?.has(imageSrc)
           ) {
             return null;
+          }
+          if (imageSrc && isVideoFile(imageSrc)) {
+            return (
+              <span className="reader-figure is-video">
+                <video src={imageSrc} controls playsInline preload="metadata" />
+              </span>
+            );
           }
           return (
             <span className="reader-figure">
@@ -1599,6 +2147,7 @@ function LocalWorkspacePostEditor({
   const [draft, setDraft] = useState<DraftState>(() => initialDraft(post));
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
   const bodyLoadedPostIdRef = useRef<string | null>(
     entry.status === "ready" ? poolPost.id : null,
   );
@@ -1664,19 +2213,9 @@ function LocalWorkspacePostEditor({
 
   const updateDraft = useCallback(
     (patch: Partial<DraftState>) => {
-      setDraft((current) => {
-        const next = { ...current, ...patch };
-        updatePost(poolPost.id, {
-          title: next.title,
-          excerpt: next.excerpt || undefined,
-          slug: next.slug,
-          status: next.status,
-          updatedAt: new Date().toISOString(),
-        });
-        return next;
-      });
+      setDraft((current) => ({ ...current, ...patch }));
     },
-    [poolPost.id],
+    [],
   );
 
   const deriveSlugFromTitle = useCallback(
@@ -1705,6 +2244,10 @@ function LocalWorkspacePostEditor({
       });
       updatePostBody(pool.blogId, poolPost.id, nextDraft.body);
 
+      if (options.navigatePath) {
+        await onNavigate(options.navigatePath);
+      }
+
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
@@ -1731,9 +2274,6 @@ function LocalWorkspacePostEditor({
         }
       }
 
-      if (options.navigatePath) {
-        await onNavigate(options.navigatePath);
-      }
     },
     [blog.handle, draft, onNavigate, pool.blogId, poolPost.id, post.slug],
   );
@@ -1779,6 +2319,15 @@ function LocalWorkspacePostEditor({
     };
   }, [blog.handle, draft, pool.blogId, poolPost.id, post.slug]);
 
+  useEffect(() => {
+    if (!active) return;
+    const stop = () => {
+      void saveDraftNow();
+    };
+    window.addEventListener(STOP_LOCAL_EDITING_EVENT, stop);
+    return () => window.removeEventListener(STOP_LOCAL_EDITING_EVENT, stop);
+  }, [active, saveDraftNow]);
+
   const displayPost = useMemo<Post>(
     () => ({
       ...post,
@@ -1787,6 +2336,7 @@ function LocalWorkspacePostEditor({
       body: draft.body,
       status: draft.status,
       slug: draft.slug || post.slug,
+      date: draft.date || undefined,
     }),
     [draft, post],
   );
@@ -1796,6 +2346,13 @@ function LocalWorkspacePostEditor({
   const renderedPostPath = blogPostPath(blog, {
     slug: slugify(draft.slug, post.slug),
   });
+  const focusBody = useCallback(() => {
+    document
+      .querySelector<HTMLElement>(
+        ".local-workspace-edit .body-editor-content",
+      )
+      ?.focus({ preventScroll: true });
+  }, []);
   const deletePost = useCallback(() => {
     if (!onDeleteItem || deleting) return;
     setDeleting(true);
@@ -1814,7 +2371,7 @@ function LocalWorkspacePostEditor({
         canEditPost
         canManagePost={canManagePost}
         blog={blog}
-        post={post}
+        post={displayPost}
         adjacent={adjacentPublishedPostsForPool(pool, displayPost.slug)}
         homePath={containingFolderHref}
         postPath={renderedPostPath}
@@ -1823,7 +2380,7 @@ function LocalWorkspacePostEditor({
         hasHeaderImage
         folders={pool.folders}
         onDelete={deletePost}
-        onDone={() => saveDraftNow({}, { navigatePath: containingFolderHref })}
+        onDone={() => saveDraftNow({}, { navigatePath: renderedPostPath })}
         onAddHeaderImage={() => {}}
         onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
         onSlugBlur={() => {
@@ -1831,9 +2388,7 @@ function LocalWorkspacePostEditor({
         }}
         onSlugInput={(value) => updateDraft({ slug: slugify(value, "") })}
         onUpdateDraft={updateDraft}
-        onVisibilityChange={(status) =>
-          saveDraftNow({ status }, { navigatePath: containingFolderHref })
-        }
+        onVisibilityChange={(status) => saveDraftNow({ status })}
       />
       <main className="local-workspace-edit" aria-label="Edit post">
         <EditReaderPreview
@@ -1856,7 +2411,11 @@ function LocalWorkspacePostEditor({
                 onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
                 onKeyDown={(event) => {
                   if (event.metaKey || event.ctrlKey || event.altKey) return;
-                  if (event.key === "Enter") {
+                  if (
+                    event.key === "Enter" ||
+                    event.key === "ArrowDown" ||
+                    (event.key === "Tab" && !event.shiftKey)
+                  ) {
                     event.preventDefault();
                     deriveSlugFromTitle(event.currentTarget.value);
                     excerptRef.current?.focus({ preventScroll: true });
@@ -1877,12 +2436,27 @@ function LocalWorkspacePostEditor({
                 }
                 onKeyDown={(event) => {
                   if (event.metaKey || event.ctrlKey || event.altKey) return;
-                  if (event.key === "Enter") {
+                  const target = event.currentTarget;
+                  const atStart =
+                    target.selectionStart === 0 && target.selectionEnd === 0;
+                  const atEnd =
+                    target.selectionStart === target.value.length &&
+                    target.selectionEnd === target.value.length;
+                  if (
+                    (event.key === "ArrowUp" && atStart) ||
+                    (event.key === "Tab" && event.shiftKey)
+                  ) {
                     event.preventDefault();
-                    const editor = document.querySelector<HTMLElement>(
-                      ".local-workspace-edit .body-editor-content",
-                    );
-                    editor?.focus({ preventScroll: true });
+                    titleRef.current?.focus({ preventScroll: true });
+                    return;
+                  }
+                  if (
+                    event.key === "Enter" ||
+                    (event.key === "ArrowDown" && atEnd) ||
+                    (event.key === "Tab" && !event.shiftKey)
+                  ) {
+                    event.preventDefault();
+                    focusBody();
                   }
                 }}
               />
@@ -1896,12 +2470,54 @@ function LocalWorkspacePostEditor({
                 <LocalWorkspaceBodyEditor
                   value={draft.body}
                   onChange={(body) => updateDraft({ body })}
+                  onNavigateField={(direction) => {
+                    if (direction === "next") {
+                      dateRef.current?.focus({ preventScroll: true });
+                    } else {
+                      excerptRef.current?.focus({ preventScroll: true });
+                      const excerpt = excerptRef.current;
+                      if (excerpt) {
+                        excerpt.setSelectionRange(
+                          excerpt.value.length,
+                          excerpt.value.length,
+                        );
+                      }
+                    }
+                  }}
                   mediaEnabled
                   postType={displayPost.type}
                   toolbarHost={bodyToolbarHost}
                   uploadEndpoint={mediaUploadEndpointForHandle(blog.handle)}
                 />
               </div>
+            ),
+            byline: (
+              <PostByline
+                blog={blog}
+                post={displayPost}
+                dateControl={
+                  <label className="post-edit-date-control">
+                    <span className="sr-only">Post date</span>
+                    <input
+                      ref={dateRef}
+                      type="date"
+                      value={draft.date.slice(0, 10)}
+                      onChange={(event) =>
+                        updateDraft({ date: event.currentTarget.value })
+                      }
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "ArrowUp" ||
+                          (event.key === "Tab" && event.shiftKey)
+                        ) {
+                          event.preventDefault();
+                          focusBody();
+                        }
+                      }}
+                    />
+                  </label>
+                }
+              />
             ),
           }}
         />
@@ -1916,14 +2532,17 @@ function LocalWorkspaceContent({
   canEditItems,
   canManagePost,
   createBookmarkRequestKey,
+  editFolderRequestKey,
   handle,
   homePath,
   onNavigate,
   onCaptureResolved,
   onCreateItem,
   onDeleteItem,
+  onDeleteFolder,
   onOpenSection,
   onOpenPost,
+  onSelectPost,
   onSelectSection,
   pool,
   selectedSectionPath,
@@ -1935,14 +2554,17 @@ function LocalWorkspaceContent({
   canEditItems: boolean;
   canManagePost: boolean;
   createBookmarkRequestKey: number;
+  editFolderRequestKey: number;
   handle: string;
   homePath: string;
   onNavigate: (path: string) => Promise<void> | void;
   onCaptureResolved?: FolderCaptureResolved;
   onCreateItem?: FolderCreateItem;
   onDeleteItem?: FolderDeleteItem;
+  onDeleteFolder?: (folder: Folder) => Promise<void> | void;
   onOpenSection: (folderPath: string) => void;
   onOpenPost: (post: Post) => void;
+  onSelectPost: (postId: string) => void;
   onSelectSection: (folderPath: string) => void;
   pool: WorkspacePoolPayload;
   selectedSectionPath: string | null;
@@ -1955,7 +2577,6 @@ function LocalWorkspaceContent({
   if (view.level === "root") {
     page = (
       <WorkspaceRootLanding
-        blog={blog}
         counts={pool.counts}
         folders={rootSectionFolders(pool)}
         selectedSectionPath={selectedSectionPath}
@@ -1963,12 +2584,22 @@ function LocalWorkspaceContent({
         onOpenSection={onOpenSection}
       />
     );
+  } else if (view.level === "trash") {
+    page = (
+      <TrashPage
+        handle={handle}
+        pool={pool}
+        selectedPostId={selectedPostId}
+        onSelectPost={onSelectPost}
+      />
+    );
+  } else if (view.level === "shared") {
+    page = <SharedPage pool={pool} />;
   } else if (view.level === "section") {
     const folder = pool.folders.find((entry) => entry.path === view.folderPath);
     if (!folder) {
       page = (
         <WorkspaceRootLanding
-          blog={blog}
           counts={pool.counts}
           folders={rootSectionFolders(pool)}
           selectedSectionPath={selectedSectionPath}
@@ -1994,8 +2625,11 @@ function LocalWorkspaceContent({
           onCaptureResolved={onCaptureResolved}
           onCreateItem={onCreateItem}
           onDeleteItem={onDeleteItem}
+          onDeleteFolder={onDeleteFolder}
           onOpenPost={onOpenPost}
           createBookmarkRequestKey={createBookmarkRequestKey}
+          editRequestKey={editFolderRequestKey}
+          onSelectPost={onSelectPost}
           selectedPostId={selectedPostId}
         />
       );
@@ -2014,7 +2648,6 @@ function LocalWorkspaceContent({
       />
     ) : (
       <WorkspaceRootLanding
-        blog={blog}
         counts={pool.counts}
         folders={rootSectionFolders(pool)}
         selectedSectionPath={selectedSectionPath}
@@ -2025,10 +2658,7 @@ function LocalWorkspaceContent({
   }
 
   const editorVisible = view.level === "edit" && Boolean(activePost);
-  const shouldWarmEditor =
-    Boolean(activePost) &&
-    canEditItems &&
-    (view.level !== "section" || activePost?.type === "note");
+  const shouldWarmEditor = Boolean(activePost) && canEditItems;
 
   return (
     <>
@@ -2037,7 +2667,7 @@ function LocalWorkspaceContent({
       </div>
       {shouldWarmEditor && activePost && (
         <div className="local-workspace-surface" hidden={!editorVisible}>
-          <LocalWorkspacePostEditor
+      <LocalWorkspacePostEditor
             key={activePost.id}
             active={editorVisible}
             blog={blog}
@@ -2079,9 +2709,10 @@ function LocalWorkspaceShell({
   const { pool } = useWorkspacePool();
   const displayPool = pool?.blogId === initialPool.blogId ? pool : initialPool;
   const displayPoolRef = useRef(displayPool);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const cancelledOptimisticPostIdsRef = useRef(new Set<string>());
   const gTapRef = useRef(0);
-  const [mounted, setMounted] = useState(false);
+  const mounted = typeof window !== "undefined";
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
   const viewRef = useRef(view);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(
@@ -2094,12 +2725,11 @@ function LocalWorkspaceShell({
   );
   const selectedSectionPathRef = useRef(selectedSectionPath);
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
+  const [editFolderRequestKey, setEditFolderRequestKey] = useState(0);
+  const [pendingDeletePostId, setPendingDeletePostId] = useState<string | null>(null);
+  const [deletingTarget, setDeletingTarget] = useState(false);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     displayPoolRef.current = displayPool;
@@ -2113,20 +2743,6 @@ function LocalWorkspaceShell({
     selectedSectionPathRef.current = selectedSectionPath;
   }, [selectedSectionPath]);
 
-  useEffect(() => {
-    const nextView = currentLocalView(displayPool, homePath);
-    viewRef.current = nextView;
-    setView(nextView);
-    setSelectedPostId((current) =>
-      selectedPostIdForView(displayPool, nextView, current),
-    );
-    if (nextView.level === "root") {
-      setSelectedSectionPath((current) =>
-        validRootSectionPath(displayPool, current),
-      );
-    }
-  }, [displayPool, homePath]);
-
   const navigateToView = useCallback(
     (
       nextView: LocalWorkspaceView,
@@ -2136,6 +2752,7 @@ function LocalWorkspaceShell({
         selectedSectionPath?: string | null;
       } = {},
     ) => {
+      const previousView = viewRef.current;
       window.history.pushState(null, "", href);
       viewRef.current = nextView;
       setView(nextView);
@@ -2158,6 +2775,25 @@ function LocalWorkspaceShell({
             selectedSectionPathRef.current,
           ),
         );
+      }
+      const previousDepth = localWorkspaceViewDepth(previousView);
+      const nextDepth = localWorkspaceViewDepth(nextView);
+      if (
+        previousDepth !== nextDepth &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        window.requestAnimationFrame(() => {
+          contentRef.current?.animate(
+            [
+              {
+                opacity: 0.78,
+                transform: `translateX(${nextDepth > previousDepth ? 22 : -22}px)`,
+              },
+              { opacity: 1, transform: "translateX(0)" },
+            ],
+            { duration: 170, easing: "cubic-bezier(.2,.75,.25,1)" },
+          );
+        });
       }
     },
     [],
@@ -2215,8 +2851,14 @@ function LocalWorkspaceShell({
 
   const navigateSection = useCallback(
     (folderPath: SidebarFolderId, nextSelectedPostId?: string | null) => {
+      const nextView: LocalWorkspaceView =
+        folderPath === TRASH_FOLDER_PATH
+          ? { level: "trash", folderPath: TRASH_FOLDER_PATH }
+          : folderPath === SHARED_FOLDER_PATH
+            ? { level: "shared", folderPath: SHARED_FOLDER_PATH }
+            : { level: "section", folderPath };
       navigateToView(
-        { level: "section", folderPath },
+        nextView,
         folderWorkspaceHref(homePath, folderPath),
         nextSelectedPostId === undefined
           ? {}
@@ -2386,7 +3028,7 @@ function LocalWorkspaceShell({
         }
         return;
       }
-      removePost(post.id);
+      movePostToTrash(post.id);
       setSelectedPostId((current) => (current === post.id ? null : current));
       const currentView = viewRef.current;
       if (
@@ -2399,12 +3041,56 @@ function LocalWorkspaceShell({
       try {
         await deleteEditablePostAction(pool.blog.handle, post.id);
       } catch (error) {
-        addPost(poolPost);
+        restorePostFromTrash(poolPost.id);
         throw error;
       }
     },
     [canManageFolders, navigateSection],
   );
+
+  const deleteWorkspaceFolder = useCallback(
+    async (folder: Folder) => {
+      if (!canManageFolders) throw new Error("You cannot edit this workspace");
+      moveFolderToTrash(folder.id);
+      navigateRoot();
+      try {
+        await trashFolderAction(displayPoolRef.current.blog.handle, folder.id);
+      } catch (error) {
+        restoreFolderFromTrash(folder.id);
+        throw error;
+      }
+    },
+    [canManageFolders, navigateRoot],
+  );
+
+  const requestDeleteTarget = useCallback(() => {
+    const current = viewRef.current;
+    const postId =
+      selectedPostId ??
+      (current.level === "post" || current.level === "edit"
+        ? current.postId
+        : null);
+    if (postId && findPoolPostById(displayPoolRef.current, postId)) {
+      setPendingDeletePostId(postId);
+    }
+  }, [selectedPostId]);
+
+  const confirmDeleteTarget = useCallback(() => {
+    if (!pendingDeletePostId || deletingTarget) return;
+    const poolPost = findPoolPostById(
+      displayPoolRef.current,
+      pendingDeletePostId,
+    );
+    if (!poolPost) {
+      setPendingDeletePostId(null);
+      return;
+    }
+    setDeletingTarget(true);
+    void Promise.resolve(deleteWorkspaceItem(postFromPoolPost(poolPost)))
+      .then(() => setPendingDeletePostId(null))
+      .catch((error) => console.warn("workspace item delete failed", error))
+      .finally(() => setDeletingTarget(false));
+  }, [deleteWorkspaceItem, deletingTarget, pendingDeletePostId]);
 
   const refreshCaptureForPost = useCallback<FolderCaptureResolved>((post) => {
     if (!post.id) return;
@@ -2417,16 +3103,28 @@ function LocalWorkspaceShell({
       if (!post.id) return;
       const poolPost = findPoolPostById(displayPool, post.id);
       if (!poolPost) return;
+      const warmedBody = displayPool.initialBodies?.find(
+        (body) => body.postId === poolPost.id,
+      )?.body;
+      const opensDirectlyInEdit =
+        poolPost.type === "note" ||
+        (!poolPost.title.trim() &&
+          !(poolPost.excerpt ?? "").trim() &&
+          !(warmedBody ?? "").trim() &&
+          (poolPost.wordCount ?? 0) === 0);
       openPoolPost(
         poolPost,
         view.level === "section" ? view.folderPath : undefined,
-        poolPost.type === "note" ? "edit" : "read",
+        opensDirectlyInEdit ? "edit" : "read",
       );
     },
     [displayPool, openPoolPost, view],
   );
 
   const visiblePosts = useMemo(() => {
+    if (view.level === "trash") {
+      return displayPool.trashedPosts ?? [];
+    }
     if (view.level === "section") {
       return poolPostsForFolder(displayPool, view.folderPath);
     }
@@ -2436,32 +3134,24 @@ function LocalWorkspaceShell({
     return [];
   }, [displayPool, view]);
 
-  useEffect(() => {
-    if (view.level !== "section") return;
-    setSelectedPostId((current) => {
-      if (current && visiblePosts.some((post) => post.id === current)) {
-        return current;
-      }
-      return visiblePosts[0]?.id ?? null;
-    });
-  }, [view.level, visiblePosts]);
-
-  useEffect(() => {
-    if (view.level !== "root") return;
-    setSelectedSectionPath((current) =>
-      validRootSectionPath(displayPool, current),
-    );
-  }, [displayPool, view.level]);
+  const effectiveSelectedPostId =
+    selectedPostId && visiblePosts.some((post) => post.id === selectedPostId)
+      ? selectedPostId
+      : (visiblePosts[0]?.id ?? null);
+  const effectiveSelectedSectionPath = validRootSectionPath(
+    displayPool,
+    selectedSectionPath,
+  );
 
   useEffect(() => {
     if (!mounted) return;
     const selector =
-      view.level === "root" && selectedSectionPath
+      view.level === "root" && effectiveSelectedSectionPath
         ? `[data-workspace-section-path="${cssAttributeValue(
-            selectedSectionPath,
+            effectiveSelectedSectionPath,
           )}"]`
-        : selectedPostId
-          ? `[data-workspace-post-id="${cssAttributeValue(selectedPostId)}"]`
+        : effectiveSelectedPostId
+          ? `[data-workspace-post-id="${cssAttributeValue(effectiveSelectedPostId)}"]`
           : null;
     if (!selector) return;
     window.requestAnimationFrame(() => {
@@ -2469,7 +3159,7 @@ function LocalWorkspaceShell({
         .querySelector<HTMLElement>(selector)
         ?.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
-  }, [mounted, selectedPostId, selectedSectionPath, view.level]);
+  }, [effectiveSelectedPostId, effectiveSelectedSectionPath, mounted, view.level]);
 
   const openPostId = useCallback(
     (postId: string, mode: "read" | "edit" = "read") => {
@@ -2492,7 +3182,7 @@ function LocalWorkspaceShell({
       const ids = visiblePosts.map((post) => post.id);
       if (ids.length === 0) return;
       const currentId =
-        selectedPostId ??
+        effectiveSelectedPostId ??
         (view.level === "post" || view.level === "edit" ? view.postId : null);
       const currentIndex = currentId ? ids.indexOf(currentId) : -1;
       const nextIndex =
@@ -2509,7 +3199,64 @@ function LocalWorkspaceShell({
       }
       setSelectedPostId(nextId);
     },
-    [openPostId, selectedPostId, view, visiblePosts],
+    [effectiveSelectedPostId, openPostId, view, visiblePosts],
+  );
+
+  const visiblePostIdsInDocumentOrder = useCallback(() => {
+    if (typeof document === "undefined") return visiblePosts.map((post) => post.id);
+    const ids = visibleWorkspaceItems("data-workspace-post-id")
+      .map((element) => element.dataset.workspacePostId)
+      .filter((id): id is string => Boolean(id));
+    return ids.length > 0 ? ids : visiblePosts.map((post) => post.id);
+  }, [visiblePosts]);
+
+  const selectSpatial = useCallback(
+    (direction: SpatialDirection) => {
+      const current = viewRef.current;
+      if (current.level === "post") {
+        if (
+          (direction === "up" || direction === "down") &&
+          typeof window !== "undefined"
+        ) {
+          const step = Math.max(
+            64,
+            Math.round((window.innerHeight || 800) * 0.16),
+          );
+          window.scrollBy({
+            top: direction === "down" ? step : -step,
+            behavior: "auto",
+          });
+        }
+        return;
+      }
+      if (current.level === "edit" || typeof document === "undefined") return;
+
+      const root = current.level === "root";
+      const attribute = root
+        ? "data-workspace-section-path"
+        : "data-workspace-post-id";
+      const selectedValue = root
+        ? effectiveSelectedSectionPath
+        : effectiveSelectedPostId;
+      const items = visibleWorkspaceItems(attribute);
+      const currentElement = selectedValue
+        ? items.find((element) =>
+            root
+              ? element.dataset.workspaceSectionPath === selectedValue
+              : element.dataset.workspacePostId === selectedValue,
+          ) ?? null
+        : null;
+      const next = spatialNeighbor(items, currentElement, direction);
+      if (!next) return;
+      if (root) {
+        const path = next.dataset.workspaceSectionPath;
+        if (path) setSelectedSectionPath(path);
+      } else {
+        const postId = next.dataset.workspacePostId;
+        if (postId) setSelectedPostId(postId);
+      }
+    },
+    [effectiveSelectedPostId, effectiveSelectedSectionPath],
   );
 
   const selectRelativeSection = useCallback((direction: 1 | -1) => {
@@ -2540,6 +3287,20 @@ function LocalWorkspaceShell({
     [navigateSection],
   );
 
+  const openItemByIndex = useCallback(
+    (index: number) => {
+      const current = viewRef.current;
+      if (current.level === "root") {
+        openSectionByIndex(index);
+        return;
+      }
+    if (current.level !== "section" && current.level !== "trash") return;
+      const postId = visiblePostIdsInDocumentOrder()[index];
+      if (postId) openPostId(postId);
+    },
+    [openPostId, openSectionByIndex, visiblePostIdsInDocumentOrder],
+  );
+
   const openSelected = useCallback(() => {
     if (viewRef.current.level === "root") {
       const sectionPath =
@@ -2552,12 +3313,44 @@ function LocalWorkspaceShell({
     }
     const current = viewRef.current;
     const postId =
-      selectedPostId ??
+      effectiveSelectedPostId ??
+      visiblePostIdsInDocumentOrder()[0] ??
       (current.level === "post" || current.level === "edit"
         ? current.postId
         : null);
     if (postId) openPostId(postId);
-  }, [navigateSection, openPostId, selectedPostId]);
+  }, [effectiveSelectedPostId, navigateSection, openPostId, visiblePostIdsInDocumentOrder]);
+
+  const stopEditing = useCallback(() => {
+    const current = viewRef.current;
+    if (current.level !== "edit") return;
+    window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
+    const post = findPoolPostById(displayPoolRef.current, current.postId);
+    if (!post) {
+      navigateSection(current.folderPath, current.postId);
+      return;
+    }
+    navigateToView(
+      { level: "post", postId: post.id, folderPath: current.folderPath },
+      blogPostPath(displayPoolRef.current.blog, post),
+      { selectedPostId: post.id },
+    );
+  }, [navigateSection, navigateToView]);
+
+  const editCurrent = useCallback(() => {
+    const current = viewRef.current;
+    if (current.level === "post") {
+      openPostId(current.postId, "edit");
+      return;
+    }
+    if (current.level === "section") {
+      setEditFolderRequestKey((value) => value + 1);
+      return;
+    }
+    if (current.level === "root") {
+      window.dispatchEvent(new Event("write:open-workspace-settings"));
+    }
+  }, [openPostId]);
 
   const navigatePath = useCallback(
     (path: string) => {
@@ -2584,16 +3377,24 @@ function LocalWorkspaceShell({
   );
 
   const navigateUp = useCallback(() => {
-    if (view.level === "post" || view.level === "edit") {
+    if (view.level === "edit") {
+      stopEditing();
+      return true;
+    }
+    if (view.level === "post") {
       navigateSection(view.folderPath, view.postId);
       return true;
     }
-    if (view.level === "section") {
+    if (
+      view.level === "section" ||
+      view.level === "trash" ||
+      view.level === "shared"
+    ) {
       navigateRoot(view.folderPath);
       return true;
     }
     return false;
-  }, [navigateRoot, navigateSection, view]);
+  }, [navigateRoot, navigateSection, stopEditing, view]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -2667,11 +3468,11 @@ function LocalWorkspaceShell({
       activeFolderPath: localViewActiveFolder(view),
       activePostId:
         view.level === "post" || view.level === "edit" ? view.postId : null,
-      selectedSectionPath,
-      selectedPostId,
+      selectedSectionPath: effectiveSelectedSectionPath,
+      selectedPostId: effectiveSelectedPostId,
       getRootSectionPaths: () =>
         rootSectionFolders(displayPoolRef.current).map((folder) => folder.path),
-      getVisiblePostIds: () => visiblePosts.map((post) => post.id),
+      getVisiblePostIds: visiblePostIdsInDocumentOrder,
       getPost: (postId: string) =>
         findPoolPostById(displayPoolRef.current, postId),
       selectPost: (postId: string | null) => setSelectedPostId(postId),
@@ -2679,6 +3480,7 @@ function LocalWorkspaceShell({
         setSelectedSectionPath(
           validRootSectionPath(displayPoolRef.current, folderPath),
         ),
+      selectSpatial,
       selectNext: () => {
         if (viewRef.current.level === "post") {
           scrollReader("down", "line");
@@ -2702,8 +3504,12 @@ function LocalWorkspaceShell({
         selectRelativePost(-1);
       },
       openSelected,
+      openItemByIndex,
       openSectionByIndex,
       openPost: openPostId,
+      editCurrent,
+      stopEditing,
+      requestDeleteTarget,
       scrollReader,
       scrollReaderEdge,
       readerTapG,
@@ -2714,7 +3520,7 @@ function LocalWorkspaceShell({
       navigateRoot,
       navigateUp,
       afterDelete: (postId: string) => {
-        if (selectedPostId === postId) setSelectedPostId(null);
+        setSelectedPostId((current) => (current === postId ? null : current));
         if (
           (view.level === "post" || view.level === "edit") &&
           view.postId === postId
@@ -2732,24 +3538,29 @@ function LocalWorkspaceShell({
     [
       canManageFolders,
       displayPool,
+      editCurrent,
       homePath,
       navigateRoot,
       navigateSection,
       navigateUp,
       openCreatedPost,
       openSelected,
+      openItemByIndex,
       openSectionByIndex,
       openPostId,
       reconcileCreatedPost,
       readerTapG,
+      requestDeleteTarget,
       scrollReader,
       scrollReaderEdge,
       selectRelativePost,
       selectRelativeSection,
-      selectedSectionPath,
-      selectedPostId,
+      selectSpatial,
+      effectiveSelectedSectionPath,
+      effectiveSelectedPostId,
+      stopEditing,
       view,
-      visiblePosts,
+      visiblePostIdsInDocumentOrder,
     ],
   );
 
@@ -2762,22 +3573,25 @@ function LocalWorkspaceShell({
       canEditItems={canManageFolders}
       canManagePost={canManageFolders}
       createBookmarkRequestKey={createBookmarkRequestKey}
+      editFolderRequestKey={editFolderRequestKey}
       handle={displayPool.blog.handle}
       homePath={homePath}
       onNavigate={navigatePath}
       onCaptureResolved={refreshCaptureForPost}
       onCreateItem={createWorkspaceItem}
       onDeleteItem={deleteWorkspaceItem}
+      onDeleteFolder={deleteWorkspaceFolder}
       onOpenSection={navigateSection}
       onOpenPost={openPost}
+      onSelectPost={setSelectedPostId}
       onSelectSection={(folderPath) =>
         setSelectedSectionPath(
           validRootSectionPath(displayPoolRef.current, folderPath),
         )
       }
       pool={displayPool}
-      selectedSectionPath={selectedSectionPath}
-      selectedPostId={selectedPostId}
+      selectedSectionPath={effectiveSelectedSectionPath}
+      selectedPostId={effectiveSelectedPostId}
       view={view}
     />
   );
@@ -2798,22 +3612,40 @@ function LocalWorkspaceShell({
         canManageSharing={canManageSharing}
         collapsed={effectiveSidebarCollapsed}
         counts={displayPool.counts}
+        documents={displayPool.posts}
         folders={displayPool.folders}
         homePath={homePath}
         onSelectFolder={navigateSection}
+        onOpenDocument={(postId) => openPostId(postId)}
         onSelectRoot={navigateRoot}
         onToggleCollapsed={toggleSidebarCollapsed}
         escapeToCollapse={!atRoot}
         prefetchFolders={false}
+        sharedCount={displayPool.sharedEntries?.length ?? 0}
         showGuestSignIn={showGuestSignIn}
+        trashCount={
+          (displayPool.trashedPosts?.length ?? 0) +
+          (displayPool.trashedFolders?.length ?? 0)
+        }
       />
       <div
+        ref={contentRef}
         className={`post-editor-content${
           localViewActiveFolder(view) === "blog" ? " is-blog-folder-view" : ""
         }`}
       >
         {content}
       </div>
+      <ConfirmationDialog
+        open={Boolean(pendingDeletePostId)}
+        title="Move this item to Trash?"
+        message="You can restore it later from Trash."
+        confirmLabel="Move to Trash"
+        confirmingLabel="Moving"
+        confirming={deletingTarget}
+        onCancel={() => setPendingDeletePostId(null)}
+        onConfirm={confirmDeleteTarget}
+      />
     </div>
   );
 }
@@ -2866,9 +3698,13 @@ export function BlogHomeWorkspaceShell({
           initialPool={initialPool}
           initialSidebarCollapsed={initialSidebarCollapsed}
           initialView={
-            activeFolder
-              ? { level: "section", folderPath: activeFolder }
-              : { level: "root" }
+            activeFolder === TRASH_FOLDER_PATH
+              ? { level: "trash", folderPath: TRASH_FOLDER_PATH }
+              : activeFolder === SHARED_FOLDER_PATH
+                ? { level: "shared", folderPath: SHARED_FOLDER_PATH }
+                : activeFolder
+                  ? { level: "section", folderPath: activeFolder }
+                  : { level: "root" }
           }
           showGuestSignIn={showGuestSignIn}
         >

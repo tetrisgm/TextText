@@ -4,11 +4,14 @@ import {
   getBlog,
   getFolderCounts,
   getFolders,
+  getTrashedFolders,
+  getTrashedPosts,
 } from "@/lib/store";
 import {
   workspacePoolFromParts,
 } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
+import { getSharedPostsForUser } from "@/lib/shares";
 
 export async function getWorkspacePoolForOwner(
   handle: string,
@@ -20,10 +23,15 @@ export async function getWorkspacePoolForOwner(
   ]);
   if (!blog || !access.isOwner || !access.blogId) return null;
 
-  const [folders, counts, posts] = await Promise.all([
+  const [folders, counts, posts, trashedFolders, trashedPosts, sharedEntries] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
     getAllPosts(handle),
+    getTrashedFolders(handle),
+    getTrashedPosts(handle),
+    getSharedPostsForUser(
+      user?.sub ? { ...user, sub: user.sub } : null,
+    ),
   ]);
 
   return workspacePoolFromParts({
@@ -32,5 +40,8 @@ export async function getWorkspacePoolForOwner(
     counts,
     folders,
     posts,
+    trashedFolders,
+    trashedPosts,
+    sharedEntries,
   });
 }

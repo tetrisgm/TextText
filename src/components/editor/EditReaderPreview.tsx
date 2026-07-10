@@ -29,6 +29,7 @@ type EditReaderSlots = {
   gallery?: ReactNode;
   stage?: ReactNode;
   talkMeta?: ReactNode;
+  byline?: ReactNode;
 };
 
 function upgradeHttpImageSrc(src: string | undefined): string {
@@ -78,6 +79,13 @@ function MarkdownBody({
             !allowedRemoteImages?.has(imageSrc)
           ) {
             return null;
+          }
+          if (imageSrc && isVideoFile(imageSrc)) {
+            return (
+              <span className="reader-figure is-video">
+                <video src={imageSrc} controls playsInline preload="metadata" />
+              </span>
+            );
           }
           return (
             <span className="reader-figure">
@@ -192,11 +200,11 @@ export function EditReaderPreview({
         {slots?.excerpt ?? (
           excerpt && <p className="reader-dek">{excerpt}</p>
         )}
-        {post.type === "bookmark" ? (
+        {slots?.byline ?? (post.type === "bookmark" ? (
           <BookmarkMeta post={post} />
         ) : (
           <PostByline blog={blog} post={post} />
-        )}
+        ))}
       </header>
       <div className="reader-prose">
         {slots?.body ?? (
@@ -248,11 +256,11 @@ export function EditProjectReaderPreview({
           {slots?.excerpt ?? (
             excerpt && <p className="reader-dek project-dek">{excerpt}</p>
           )}
-          <PostByline
+          {slots?.byline ?? <PostByline
             blog={blog}
             post={post}
             className="project-byline"
-          />
+          />}
           {(slots?.body || post.body) && (
             <div className="reader-prose project-prose">
               {slots?.body ?? <MarkdownBody body={post.body} />}
@@ -378,7 +386,7 @@ export function EditTalkReaderPreview({
           </h1>
         )}
         {slots?.excerpt}
-        {slots?.talkMeta ?? (
+        {slots?.talkMeta ?? slots?.byline ?? (
           <PostByline
             blog={blog}
             post={post}
