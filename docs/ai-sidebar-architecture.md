@@ -290,6 +290,36 @@ with real generated bodies plus a summary sentence in 11.4s.
   the composer through `nativeAgent` (agent commands) or the one-shot ops
   (utility commands), and surface tool events as progress.
 
+## Shipped 2026-07-12 (later): the sidebar is wired and proven end to end
+
+The last wire is in (owner asked Claude to finish it rather than wait):
+
+- `src/components/workspace/assistant/useNativeAssistant.ts`: the brain
+  hook: capability probe, executor registration
+  (createWorkspaceAgentTools), submit routing through nativeAgent with the
+  context envelope, transcript state, tool events as progress rows, and
+  honest unavailability explanations per reason.
+- `src/components/workspace/assistant/AssistantConversation.tsx` (+ module
+  css): the transcript UI (user/assistant/progress/error turns, empty state
+  that names the on-device story). All .applecms tokens, both themes.
+- `src/components/PostWorkspaceShell.tsx`: the AssistantSidebar mount now
+  passes onSubmit/submitting/children from the hook (was onSubmit no-op +
+  submitDisabled). Codex's sidebar component itself was NOT modified.
+
+Verified end to end headlessly (the Mac's screen was locked, so a scratch
+WKWebView harness compiled WITH THE APP'S OWN NativeAI.swift drove the real
+page from the dev server): sign in, open assistant, submit "create three
+draft posts: a rap song about keyboards, a lighthouse story, five dad
+jokes", three "Creating an item" progress rows, reply "I created the three
+draft posts in the blog folder", and the three drafts landed in Neon with
+real generated bodies in about 20s, fully on-device. Test rows cleaned. The
+harness lives in mac-kit templates/native-ai/e2e-harness.reference.swift.
+
+Remaining polish for Codex (nothing blocking): replace window.confirm with
+a styled confirm dialog, add utility quick-action buttons over the one-shot
+ops, and route to the BYO cloud rung when capabilities are unavailable or
+the request needs the web.
+
 ## Extracted to the stack repo (2026-07-11)
 
 The whole connector surface is now also `~/dev/stack/mcp-kit` (GitHub
