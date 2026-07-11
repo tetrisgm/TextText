@@ -13,9 +13,12 @@ let package = Package(
     products: [
         .library(name: "WriteFileProviderCore", targets: ["WriteFileProviderCore"]),
         .library(name: "WriteWorkspaceCore", targets: ["WriteWorkspaceCore"]),
+        .library(name: "WriteShareCore", targets: ["WriteShareCore"]),
         .library(name: "WriteEditor", targets: ["WriteEditor"]),
         .library(name: "WriteAppIntents", targets: ["WriteAppIntents"]),
-        .library(name: "WriteSpotlight", targets: ["WriteSpotlight"])
+        .library(name: "WriteSpotlight", targets: ["WriteSpotlight"]),
+        .library(name: "WriteShareExtensionCore", targets: ["WriteShareExtensionCore"]),
+        .library(name: "WriteQuickLookCore", targets: ["WriteQuickLookCore"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -29,6 +32,10 @@ let package = Package(
         .target(
             name: "WriteWorkspaceCore",
             path: "Sources/WriteWorkspaceCore"
+        ),
+        .target(
+            name: "WriteShareCore",
+            path: "Sources/WriteShareCore"
         ),
         .target(
             name: "WriteEditor",
@@ -49,10 +56,23 @@ let package = Package(
             dependencies: ["WriteWorkspaceCore"],
             path: "Sources/WriteSpotlight"
         ),
+        .target(
+            name: "WriteShareExtensionCore",
+            dependencies: ["WriteShareCore"],
+            path: "Extensions/WriteShareExtension",
+            exclude: ["Info.plist", "WriteShareExtension.entitlements.template"]
+        ),
+        .target(
+            name: "WriteQuickLookCore",
+            dependencies: ["WriteShareCore"],
+            path: "Extensions/WriteQuickLookPreview",
+            exclude: ["Info.plist", "WriteQuickLookPreview.entitlements.template"]
+        ),
         .executableTarget(
             name: "Write",
             dependencies: [
                 "WriteEditor",
+                "WriteShareCore",
                 "WriteWorkspaceCore",
                 "WriteAppIntents",
                 "WriteSpotlight",
@@ -92,6 +112,16 @@ let package = Package(
             name: "WriteSpotlightTests",
             dependencies: ["WriteSpotlight"],
             path: "Tests/WriteSpotlightTests"
+        ),
+        .testTarget(
+            name: "WriteShareCoreTests",
+            dependencies: [
+                "Write",
+                "WriteShareCore",
+                "WriteShareExtensionCore",
+                "WriteQuickLookCore",
+            ],
+            path: "Tests/WriteShareCoreTests"
         ),
         .testTarget(
             name: "WriteTests",
