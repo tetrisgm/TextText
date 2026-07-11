@@ -102,3 +102,117 @@ export function nativeCategorize(
 export function nativeOcr(imageBase64: string): Promise<{ text: string }> {
   return request("ocr", { imageBase64 });
 }
+
+// ---- Agent: on-device tool calling over the workspace commands ----
+//
+// The model runs in the Mac app (NativeAI.swift) but its tools EXECUTE here,
+// in the page, through the executor registered below, so the model can only
+// do what the signed-in page can do. Flow: nativeAgent() posts the prompt;
+// the model calls tools; each call arrives via window.__writeNativeAIToolCall,
+// runs through the executor, and replies over the same message handler; the
+// final text resolves the promise.
+
+export type NativeAgentEvent = { type: "tool"; name: string };
+
+export type NativeAgentToolExecutor = (
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>;
+
+let toolExecutor: NativeAgentToolExecutor | null = null;
+const agentEventHandlers = new Map<string, (event: NativeAgentEvent) => void>();
+let globalsInstalled = false;
+
+function postToolReply(callId: string, ok: boolean, result: string) {
+  const handler = (
+    window as unknown as {
+      webkit?: {
+        messageHandlers?: {
+          nativeAI?: { postMessage: (body: unknown) => void };
+        };
+      };
+    }
+  ).webkit?.messageHandlers?.nativeAI;
+  handler?.postMessage({ toolReply: { callId, ok, result } });
+}
+
+function installAgentGlobals() {
+  if (globalsInstalled || typeof window === "undefined") return;
+  globalsInstalled = true;
+  const target = window as unknown as {
+    __writeNativeAIToolCall?: (
+      callId: string,
+      name: string,
+      argsJSON: string,
+      eventTag: string,
+    ) => boolean;
+    __writeNativeAIAgentEvent?: (tag: string, event: NativeAgentEvent) => void;
+  };
+  target.__writeNativeAIToolCall = (callId, name, argsJSON) => {
+    const executor = toolExecutor;
+    if (!executor) return false;
+    void (async () => {
+      try {
+        const args = (JSON.parse(argsJSON) ?? {}) as Record<string, unknown>;
+        const result = await executor(name, args);
+        postToolReply(callId, true, JSON.stringify(result ?? { ok: true }));
+      } catch (error) {
+        postToolReply(
+          callId,
+          false,
+          error instanceof Error ? error.message : "Tool failed",
+        );
+      }
+    })();
+    return true;
+  };
+  target.__writeNativeAIAgentEvent = (tag, event) => {
+    agentEventHandlers.get(tag)?.(event);
+  };
+}
+
+/**
+ * Register the page-side executor for agent tool calls (see agent-tools.ts
+ * for the workspace implementation). Call once when the assistant mounts;
+ * returns an unregister function.
+ */
+export function registerNativeAgentTools(
+  executor: NativeAgentToolExecutor,
+): () => void {
+  installAgentGlobals();
+  toolExecutor = executor;
+  return () => {
+    if (toolExecutor === executor) toolExecutor = null;
+  };
+}
+
+/**
+ * Run an agentic command on the on-device model ("create three posts
+ * about..."). Requires a registered tool executor. `context` is a short
+ * plain-text description of what the user is looking at; `tools` restricts
+ * the tool surface; `onEvent` observes tool calls for progress UI.
+ */
+export async function nativeAgent(
+  prompt: string,
+  options: {
+    context?: string;
+    instructions?: string;
+    tools?: string[];
+    onEvent?: (event: NativeAgentEvent) => void;
+  } = {},
+): Promise<{ text: string; truncated: boolean }> {
+  installAgentGlobals();
+  const eventTag = `tag${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  if (options.onEvent) agentEventHandlers.set(eventTag, options.onEvent);
+  try {
+    return await request("agent", {
+      prompt,
+      context: options.context,
+      instructions: options.instructions,
+      tools: options.tools,
+      eventTag,
+    });
+  } finally {
+    agentEventHandlers.delete(eventTag);
+  }
+}

@@ -256,6 +256,40 @@ cold including model load, tags ~1.1s warm):
   `describeImage` return a clear unsupported error today) and the
   third-party-provider protocol.
 
+## Shipped 2026-07-12: on-device agent tool calling (Claude session)
+
+The "perform things" class runs fully local. Proven first with a standalone
+probe: the on-device model, given one create_item tool, executed "create
+three draft posts: a rap song, a short story, dad jokes" as three tool calls
+with real generated bodies plus a summary sentence in 11.4s.
+
+- `NativeAI.swift` gained the `agent` op: a LanguageModelSession with
+  WebProxyTool instances (FoundationModels `Tool` protocol,
+  `DynamicGenerationSchema` parameters, `GeneratedContent` arguments passed
+  through as JSON). Tool DEFINITIONS live in Swift (list_folders,
+  list_items, read_item, create_item, update_item, append_to_item,
+  move_item, delete_item, set_item_status); tool EXECUTION lives in the
+  page, so the model can never do anything the signed-in page cannot.
+  Plumbing: each model tool call is forwarded via
+  `window.__writeNativeAIToolCall(callId, name, argsJSON, tag)`, the page
+  replies over the same message handler (`{toolReply}`), continuations are
+  lock-guarded with a 60s timeout and a fail-fast when no executor is
+  registered. Progress events reach the page via
+  `window.__writeNativeAIAgentEvent`.
+- `src/lib/ai/native.ts` gained `nativeAgent(prompt, {context,
+  instructions, tools, onEvent})` and `registerNativeAgentTools(executor)`.
+- `src/lib/ai/agent-tools.ts` (new) is the turnkey executor:
+  `createWorkspaceAgentTools({handle, getPool, confirmDestructive})` maps
+  every tool onto the same pool mutations + server actions the UI uses
+  (optimistic, synced, audited), enforces notes/bookmarks-never-publish in
+  the executor, gates delete/publish behind the optional confirm callback,
+  caps result sizes for the small context window, and provides
+  `describeContext(view)` for the context envelope. The file header shows
+  the exact sidebar wiring.
+- The sidebar integration that remains for Codex: mount the executor, pipe
+  the composer through `nativeAgent` (agent commands) or the one-shot ops
+  (utility commands), and surface tool events as progress.
+
 ## Extracted to the stack repo (2026-07-11)
 
 The whole connector surface is now also `~/dev/stack/mcp-kit` (GitHub

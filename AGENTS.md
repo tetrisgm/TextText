@@ -11,9 +11,11 @@ agent working here follows:
 
 - **The provider ladder, in order.** (1) Apple on-device foundation models
   are the DEFAULT AI layer on Apple devices (the Mac app's `nativeAI` bridge,
-  `mac/Sources/Write/NativeAI.swift` + `src/lib/ai/native.ts`): free,
-  private, offline; it owns the instant utility ops (title, tags, excerpt,
-  summarize, rewrite, categorize, OCR). (2) Bring-your-own cloud keys
+  `mac/Sources/Write/NativeAI.swift` + `src/lib/ai/native.ts` +
+  `src/lib/ai/agent-tools.ts`): free, private, offline; it owns the instant
+  utility ops (title, tags, excerpt, summarize, rewrite, categorize, OCR)
+  AND agent commands via on-device tool calling (the `agent` op; tools
+  defined in Swift, executed by the page through the registered executor). (2) Bring-your-own cloud keys
   (workspace settings) augment it for long-context, tool-calling, and web
   research. (3) External agents connect via MCP (`/api/mcp`,
   click-to-approve OAuth). Never send content to a cloud model when the

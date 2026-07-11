@@ -66,8 +66,20 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         _ ucc: WKUserContentController, didReceive message: WKScriptMessage
     ) {
         guard message.name == Self.handlerName,
-              let body = message.body as? [String: Any],
-              let id = body["id"] as? String,
+              let body = message.body as? [String: Any]
+        else { return }
+
+        // A tool reply from the page (the second half of an agent tool call).
+        if let reply = body["toolReply"] as? [String: Any],
+           let callId = reply["callId"] as? String
+        {
+            let ok = reply["ok"] as? Bool ?? false
+            let result = reply["result"] as? String ?? ""
+            resolveWebToolCall(callId: callId, ok: ok, result: result)
+            return
+        }
+
+        guard let id = body["id"] as? String,
               let op = body["op"] as? String
         else { return }
         let payload = body["payload"] as? [String: Any] ?? [:]
@@ -119,6 +131,11 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 throw BridgeError(message: "On-device AI needs macOS 26 or later.")
             }
             return try await languageOp(op, payload)
+        case "agent":
+            guard #available(macOS 26.0, *) else {
+                throw BridgeError(message: "On-device AI needs macOS 26 or later.")
+            }
+            return try await agentOp(payload)
         case "altText", "describeImage":
             throw BridgeError(
                 message: "Image understanding arrives with the next SDK; use OCR for text in images.")
@@ -298,6 +315,254 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         }
         return value
     }
+
+    // MARK: Agent (on-device tool calling over the page's workspace commands)
+
+    /// The workspace tool surface the model may drive. The definitions live
+    /// here; the EXECUTION lives in the page (src/lib/ai/agent-tools.ts maps
+    /// each name onto the same pool commands the UI uses), so the model can
+    /// never touch anything the signed-in page could not. Keep this list in
+    /// sync with the page executor and the shared tool module.
+    private struct AgentToolSpec {
+        let name: String
+        let description: String
+        let properties: [(name: String, description: String, optional: Bool, choices: [String]?)]
+    }
+
+    private static let agentToolSpecs: [AgentToolSpec] = [
+        .init(
+            name: "list_folders",
+            description:
+                "List the workspace folders with their paths and item counts. Call this first when unsure where things live.",
+            properties: []),
+        .init(
+            name: "list_items",
+            description: "List the items in a folder (id, title, type, status).",
+            properties: [
+                ("folder", "Folder path, e.g. blog, notes, or bookmarks", false, nil)
+            ]),
+        .init(
+            name: "read_item",
+            description: "Read one item's title and markdown body by id.",
+            properties: [("id", "The item id", false, nil)]),
+        .init(
+            name: "create_item",
+            description:
+                "Create one new draft item. Call once per item. Write real content for the body when the user asked for content.",
+            properties: [
+                ("folder", "Destination folder path, e.g. blog or notes", false, nil),
+                ("title", "The item title", false, nil),
+                ("body", "Markdown body", true, nil),
+                ("kind", "Item kind", true, ["article", "note", "bookmark"]),
+            ]),
+        .init(
+            name: "update_item",
+            description:
+                "Update an existing item's title or replace its whole markdown body.",
+            properties: [
+                ("id", "The item id", false, nil),
+                ("title", "New title", true, nil),
+                ("body", "New full markdown body", true, nil),
+            ]),
+        .init(
+            name: "append_to_item",
+            description: "Append markdown to the end of an existing item.",
+            properties: [
+                ("id", "The item id", false, nil),
+                ("markdown", "Markdown to append", false, nil),
+            ]),
+        .init(
+            name: "move_item",
+            description: "Move an item to another folder.",
+            properties: [
+                ("id", "The item id", false, nil),
+                ("folder", "Destination folder path", false, nil),
+            ]),
+        .init(
+            name: "delete_item",
+            description: "Delete an item. Only when the user explicitly asked.",
+            properties: [("id", "The item id", false, nil)]),
+        .init(
+            name: "set_item_status",
+            description:
+                "Publish or unpublish an item. Only when the user explicitly asked.",
+            properties: [
+                ("id", "The item id", false, nil),
+                ("status", "The new status", false, ["published", "draft"]),
+            ]),
+    ]
+
+    private let toolCallLock = NSLock()
+    private var pendingToolCalls: [String: CheckedContinuation<String, Error>] = [:]
+
+    private func takeToolCall(callId: String) -> CheckedContinuation<String, Error>? {
+        toolCallLock.lock()
+        defer { toolCallLock.unlock() }
+        return pendingToolCalls.removeValue(forKey: callId)
+    }
+
+    private func storeToolCall(
+        callId: String, continuation: CheckedContinuation<String, Error>
+    ) {
+        toolCallLock.lock()
+        defer { toolCallLock.unlock() }
+        pendingToolCalls[callId] = continuation
+    }
+
+    private func resolveWebToolCall(callId: String, ok: Bool, result: String) {
+        guard let continuation = takeToolCall(callId: callId) else { return }
+        if ok {
+            continuation.resume(returning: result)
+        } else {
+            continuation.resume(
+                throwing: BridgeError(message: result.isEmpty ? "Tool failed" : result))
+        }
+    }
+
+    /// Forwards one model-initiated tool call into the page and awaits the
+    /// page's reply. Fails fast when no executor is registered and times out
+    /// so a dead page can never hang a session.
+    fileprivate func callWebTool(
+        name: String, argsJSON: String, eventTag: String
+    ) async throws -> String {
+        let callId = UUID().uuidString
+        let dispatched: Bool = await MainActor.run { [weak self] in
+            guard let self, let webView = self.webView else { return false }
+            guard
+                let encoded = try? JSONSerialization.data(
+                    withJSONObject: [callId, name, argsJSON, eventTag]),
+                let args = String(data: encoded, encoding: .utf8)
+            else { return false }
+            let script = """
+                (function (a) {
+                  if (!window.__writeNativeAIToolCall) return false;
+                  return window.__writeNativeAIToolCall(a[0], a[1], a[2], a[3]) === true;
+                })(\(args));
+                """
+            webView.evaluateJavaScript(script) { [weak self] result, _ in
+                if (result as? Bool) != true {
+                    self?.resolveWebToolCall(
+                        callId: callId, ok: false,
+                        result: "The page has no agent tool executor registered.")
+                }
+            }
+            return true
+        }
+        guard dispatched else {
+            throw BridgeError(message: "The web view is gone.")
+        }
+
+        // 60s guards content-writing tools (server save round-trips included);
+        // the reply path removes the continuation first, so only one side wins.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            self?.resolveWebToolCall(
+                callId: callId, ok: false, result: "Tool call timed out.")
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            storeToolCall(callId: callId, continuation: continuation)
+        }
+    }
+
+    #if canImport(FoundationModels)
+        /// A FoundationModels tool whose implementation is the web page.
+        @available(macOS 26.0, *)
+        private struct WebProxyTool: Tool {
+            typealias Arguments = GeneratedContent
+            typealias Output = String
+
+            let name: String
+            let description: String
+            let parameters: GenerationSchema
+            let bridge: NativeAIBridge
+            let eventTag: String
+
+            init(spec: AgentToolSpec, bridge: NativeAIBridge, eventTag: String) throws {
+                self.name = spec.name
+                self.description = spec.description
+                self.bridge = bridge
+                self.eventTag = eventTag
+                let properties = spec.properties.map { property in
+                    DynamicGenerationSchema.Property(
+                        name: property.name,
+                        description: property.description,
+                        schema: property.choices.map {
+                            DynamicGenerationSchema(
+                                name: "\(spec.name)_\(property.name)", anyOf: $0)
+                        } ?? DynamicGenerationSchema(type: String.self),
+                        isOptional: property.optional)
+                }
+                self.parameters = try GenerationSchema(
+                    root: DynamicGenerationSchema(
+                        name: spec.name, properties: properties),
+                    dependencies: [])
+            }
+
+            func call(arguments: GeneratedContent) async throws -> String {
+                let argsJSON = arguments.jsonString
+                await bridge.emitAgentEvent(
+                    tag: eventTag, event: ["type": "tool", "name": name])
+                return try await bridge.callWebTool(
+                    name: name, argsJSON: argsJSON, eventTag: eventTag)
+            }
+        }
+
+        @MainActor
+        fileprivate func emitAgentEvent(tag: String, event: [String: Any]) {
+            guard let webView,
+                  let data = try? JSONSerialization.data(withJSONObject: [tag]),
+                  let tagJSON = String(data: data, encoding: .utf8),
+                  let eventData = try? JSONSerialization.data(withJSONObject: event),
+                  let eventJSON = String(data: eventData, encoding: .utf8)
+            else { return }
+            webView.evaluateJavaScript(
+                "window.__writeNativeAIAgentEvent && window.__writeNativeAIAgentEvent(\(tagJSON)[0], \(eventJSON));",
+                completionHandler: nil)
+        }
+
+        @available(macOS 26.0, *)
+        private func agentOp(_ payload: [String: Any]) async throws -> [String: Any] {
+            let (prompt, truncated) = try trimmedText(payload, key: "prompt")
+            let eventTag = payload["eventTag"] as? String ?? ""
+            let enabled = payload["tools"] as? [String]
+            let specs = Self.agentToolSpecs.filter {
+                enabled == nil || enabled!.contains($0.name)
+            }
+            let tools: [any Tool] = try specs.map {
+                try WebProxyTool(spec: $0, bridge: self, eventTag: eventTag)
+            }
+
+            var instructions =
+                payload["instructions"] as? String
+                ?? """
+                You are the assistant inside Write, a notes and blogging app. Use \
+                the tools to perform the user's request on their workspace; call \
+                one tool per item you touch, and write real content when asked to \
+                create or edit items. Never delete or publish unless the user \
+                explicitly asked. After the tools finish, reply with one short \
+                sentence describing what you did.
+                """
+            if let context = payload["context"] as? String, !context.isEmpty {
+                instructions += "\n\nCurrent context: \(context.prefix(2_000))"
+            }
+
+            let session = LanguageModelSession(tools: tools, instructions: instructions)
+            let response = try await session.respond(to: prompt)
+            return [
+                "text": response.content.trimmingCharacters(
+                    in: .whitespacesAndNewlines),
+                "truncated": truncated,
+            ]
+        }
+    #else
+        @MainActor
+        fileprivate func emitAgentEvent(tag: String, event: [String: Any]) {}
+
+        private func agentOp(_ payload: [String: Any]) async throws -> [String: Any] {
+            throw BridgeError(message: "On-device AI is not in this build.")
+        }
+    #endif
 
     // MARK: OCR (Vision, works on every supported macOS)
 
