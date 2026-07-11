@@ -68,6 +68,8 @@ import {
   type AssistantAttachment,
   type AssistantSidebarState,
 } from "@/components/workspace/assistant";
+import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
+import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import { isVideoFile } from "@/lib/content";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
@@ -3261,6 +3263,24 @@ function LocalWorkspaceShell({
     (next: number) => setWorkspaceAssistantWidth(next),
     [],
   );
+  // Layer 1 of the provider ladder: the on-device model through the Mac
+  // app's bridge, with agent tools executing against this pool.
+  const assistant = useNativeAssistant({
+    handle: displayPool.blog.handle,
+    getPool: () => displayPoolRef.current,
+    getView: () => {
+      const current = viewRef.current;
+      if (current.level === "root") return { level: "root" };
+      if (current.level === "post" || current.level === "edit") {
+        return {
+          level: current.level,
+          folderPath: current.folderPath,
+          postId: current.postId,
+        };
+      }
+      return { level: "section", folderPath: current.folderPath };
+    },
+  });
 
   useEffect(() => {
     displayPoolRef.current = displayPool;
@@ -4345,10 +4365,25 @@ function LocalWorkspaceShell({
             current.filter((candidate) => candidate.id !== attachment.id),
           )
         }
-        onSubmit={() => {}}
-        submitDisabled
+        onSubmit={(submission) => {
+          setAssistantComposer("");
+          setAssistantAttachments([]);
+          void assistant.submit(submission.text);
+        }}
+        submitting={assistant.submitting}
+        composerPlaceholder={
+          assistant.capabilities?.available
+            ? "Ask or act, on this Mac"
+            : "Ask about this page"
+        }
         accept="image/*,.pdf,.txt,.md"
-      />
+      >
+        <AssistantConversation
+          capabilities={assistant.capabilities}
+          messages={assistant.messages}
+          submitting={assistant.submitting}
+        />
+      </AssistantSidebar>
       <ConfirmationDialog
         open={Boolean(pendingDeletePostId)}
         title="Move this item to Trash?"
