@@ -212,3 +212,14 @@ the place to surface per-client names/logos later.
   set grows; the MCP registration in src/lib/mcp/tools.ts is the source of
   truth), and a Security section.
 - Regression gate unchanged: scripts/test-oauth-mcp-loop.py must pass.
+
+## Extracted to the stack repo (2026-07-11)
+
+The whole connector surface is now also `~/dev/stack/mcp-kit` (GitHub
+VaporWorks/stack): the reference copies of write's MCP + OAuth + well-known
+files, the loop test, an integration-contract README with the pitfall list,
+the `add-mcp` skill, and an AI-connectivity section in the template
+CLAUDE.md. Write stays the laboratory: when the pattern is hardened here
+(token expiry + refresh rotation, read-only scope, workspace-identity tool),
+port the improvement back to the kit and note it in its README roadmap. The
+kit is reference code; nothing in write imports from it.
