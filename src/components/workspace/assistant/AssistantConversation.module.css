@@ -198,3 +198,89 @@
   font: 500 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
   letter-spacing: 0;
 }
+
+.skillRemove {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--ac-label-2);
+  font: 550 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.skillRemove:hover {
+  background: var(--ac-fill-4);
+  color: var(--ac-red);
+}
+
+.skillInstall {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.skillInstallInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+  letter-spacing: 0;
+  outline: none;
+}
+
+.skillInstallInput::placeholder {
+  color: var(--ac-placeholder, var(--ac-label-2));
+}
+
+.skillInstallButton {
+  flex-shrink: 0;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  padding: 5px 10px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.skillInstallButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.skillInstallError {
+  margin: 0;
+  color: var(--ac-red);
+  font: 500 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.skillsToggleRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.skillsToggle {
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: transparent;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.skillsToggle:hover {
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+}

@@ -4409,6 +4409,8 @@ function LocalWorkspaceShell({
               navigatePath(job.contextKey.slice("place:".length));
             }
           }}
+          onInstallSkill={assistant.addSkill}
+          onRemoveSkill={assistant.deleteSkill}
           onToggleSkill={assistant.toggleSkill}
         />
       </AssistantSidebar>

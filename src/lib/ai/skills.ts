@@ -31,6 +31,8 @@ export const BASE_ASSISTANT_INSTRUCTIONS = `You are the assistant inside Write, 
 
 Perform the user's request with the tools, acting on their workspace directly. Prefer acting over asking: when a reasonable interpretation exists, proceed with it instead of asking a question. Only list or read existing items when the request is about existing items.
 
+You CAN delete a whole item with delete_item. To remove or change PART of an item's content (some jokes from a list, a paragraph, a section), use read_item, then update_item with the revised full body.
+
 When asked to write something, the item body must be the complete finished piece in markdown. Never put a one-line answer where the piece should be, never add meta commentary, and never mention being an AI.
 
 Handle every item the user names: each named item gets its own tool call, and you are not done until all of them are handled. Never delete or publish unless the user explicitly asked. When everything is done, reply with one short sentence about what you did.`;
@@ -63,6 +65,7 @@ export const BUILTIN_SKILLS: AssistantSkill[] = [
 ];
 
 const DISABLED_KEY_PREFIX = "write:ai-skills-disabled:";
+const CUSTOM_KEY_PREFIX = "write:ai-skills-custom:";
 
 function disabledSet(handle: string): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -74,11 +77,87 @@ function disabledSet(handle: string): Set<string> {
   }
 }
 
+export type CustomSkill = AssistantSkill & { source: string };
+
+function customSkills(handle: string): CustomSkill[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(`${CUSTOM_KEY_PREFIX}${handle}`);
+    return raw ? (JSON.parse(raw) as CustomSkill[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomSkills(handle: string, skills: CustomSkill[]) {
+  try {
+    localStorage.setItem(`${CUSTOM_KEY_PREFIX}${handle}`, JSON.stringify(skills));
+  } catch {
+    // Best effort.
+  }
+}
+
+/**
+ * Install a skill from skills.sh or GitHub by URL or owner/repo/skill
+ * reference. The server route fetches SKILL.md (GitHub raw only) and trims
+ * it for the on-device context budget. Installed skill text becomes part of
+ * the model's instructions, so installing is an act of trust, like
+ * installing any agent skill; the confirm lives in the UI.
+ */
+export async function installSkill(
+  handle: string,
+  reference: string,
+): Promise<CustomSkill> {
+  const response = await fetch(
+    `/api/ai/skills/fetch?ref=${encodeURIComponent(reference)}`,
+    { credentials: "same-origin" },
+  );
+  const payload = (await response.json()) as
+    | { error: string }
+    | {
+        id: string;
+        name: string;
+        description: string;
+        instructions: string;
+        source: string;
+      };
+  if ("error" in payload) throw new Error(payload.error);
+  const triggers = [
+    ...new Set(
+      `${payload.name} ${payload.id.split("/").pop() ?? ""}`
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 3),
+    ),
+  ];
+  const skill: CustomSkill = {
+    id: `custom:${payload.id}`,
+    name: payload.name,
+    description: payload.description || "Installed skill",
+    triggers,
+    contextTriggers: [],
+    instructions: payload.instructions,
+    source: payload.source,
+  };
+  const existing = customSkills(handle).filter(
+    (candidate) => candidate.id !== skill.id,
+  );
+  saveCustomSkills(handle, [...existing, skill]);
+  return skill;
+}
+
+export function removeSkill(handle: string, skillId: string) {
+  saveCustomSkills(
+    handle,
+    customSkills(handle).filter((skill) => skill.id !== skillId),
+  );
+}
+
 export function skillStates(
   handle: string,
-): Array<AssistantSkill & { enabled: boolean }> {
+): Array<AssistantSkill & { enabled: boolean; source?: string }> {
   const disabled = disabledSet(handle);
-  return BUILTIN_SKILLS.map((skill) => ({
+  return [...BUILTIN_SKILLS, ...customSkills(handle)].map((skill) => ({
     ...skill,
     enabled: !disabled.has(skill.id),
   }));

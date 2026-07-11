@@ -35,6 +35,8 @@ import {
 } from "@/lib/ai/jobs";
 import {
   composeInstructions,
+  installSkill,
+  removeSkill,
   setSkillEnabled,
   skillStates,
 } from "@/lib/ai/skills";
@@ -313,6 +315,21 @@ export function useNativeAssistant({
     },
     [handle],
   );
+  const addSkill = useCallback(
+    async (reference: string) => {
+      const skill = await installSkill(handle, reference);
+      setSkillsVersion((current) => current + 1);
+      return skill;
+    },
+    [handle],
+  );
+  const deleteSkill = useCallback(
+    (skillId: string) => {
+      removeSkill(handle, skillId);
+      setSkillsVersion((current) => current + 1);
+    },
+    [handle],
+  );
 
   const jobs = useSyncExternalStore(
     subscribeAssistantJobs,
@@ -326,7 +343,9 @@ export function useNativeAssistant({
   );
 
   return {
+    addSkill,
     capabilities,
+    deleteSkill,
     jobs,
     messages,
     runningJobs,
