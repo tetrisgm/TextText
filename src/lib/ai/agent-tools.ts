@@ -29,7 +29,13 @@ import {
 } from "@/app/editor/actions";
 import { isPrivatePostType } from "@/lib/content";
 import type { Post, PostType } from "@/lib/content";
-import { initialDraft, payloadFor } from "@/lib/post-edit-draft";
+import {
+  initialDraft,
+  isPlaceholderSlug,
+  payloadFor,
+  slugify,
+  uniqueSlug,
+} from "@/lib/post-edit-draft";
 import {
   addPost,
   ensurePostBody,
@@ -215,6 +221,14 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     const draft = initialDraft(post);
     if (patch.title !== undefined) draft.title = patch.title;
     if (patch.body !== undefined) draft.body = patch.body;
+    // Same behavior as the editor's title blur: a placeholder slug follows
+    // the title, so agent-created posts get real slugs, not untitled-x URLs.
+    if (patch.title && isPlaceholderSlug(draft.slug)) {
+      const used = pool()
+        .posts.filter((candidate) => candidate.id !== poolPost.id)
+        .map((candidate) => candidate.slug);
+      draft.slug = uniqueSlug(slugify(patch.title, "post"), used);
+    }
     const saved = await saveEditablePostAction(
       handle,
       payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
