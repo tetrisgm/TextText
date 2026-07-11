@@ -29,10 +29,21 @@ public struct WorkspaceRootResolver {
         self.fileManager = fileManager
     }
 
+    static func environmentOverrideRoot() -> URL? {
+        guard let path = ProcessInfo.processInfo.environment["WRITE_SYNC_ROOT"],
+              !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    }
+
     public func resolve() -> WorkspaceLocation {
-        if let overrideRoot {
+        // WRITE_SYNC_ROOT isolates the workspace for headless smokes and tests,
+        // exactly as WRITE_STATE_DIR isolates state. Without it the app always
+        // resolves the real iCloud Drive/Write folder, so a smoke that omits it
+        // is NOT isolated (it reads and can write the real workspace).
+        let root = overrideRoot ?? Self.environmentOverrideRoot()
+        if let root {
             return WorkspaceLocation(
-                url: overrideRoot,
+                url: root,
                 kind: .injected,
                 iCloudAvailable: isICloudDriveAvailable(),
                 statusMessage: "Using injected Write workspace"

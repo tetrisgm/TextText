@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let spotlightQueue = DispatchQueue(label: "com.example.write.mac.spotlight", qos: .utility)
     private var spotlightDebounce: DispatchWorkItem?
     private var shareInboxWatcher: WorkspaceFolderWatcher?
+    private var shareContainerAppearanceWatcher: WorkspaceFolderWatcher?
     private var shareInboxDebounce: DispatchWorkItem?
     private let shareInboxQueue = DispatchQueue(label: "com.example.write.mac.share-inbox", qos: .utility)
     private var activityLog: [String] = []
@@ -344,7 +345,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Share inbox
 
     private func configureShareInbox() {
-        guard let container = shareInboxContainerURL() else { return }
+        guard let container = shareInboxContainerURL() else {
+            // The group container does not exist until the Share extension runs
+            // for the first time. Watch the Group Containers root so the very
+            // first shared item is picked up without an app restart.
+            watchForShareContainerCreation()
+            return
+        }
+        shareContainerAppearanceWatcher?.stop()
+        shareContainerAppearanceWatcher = nil
         let inboxURL = InboxReader.inboxURL(containerURL: container)
         try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
 
@@ -359,26 +368,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleShareInboxDrain(containerURL: container, delay: 0)
     }
 
+    /// The system group-containers directory; WRITE_GROUP_CONTAINERS_DIR
+    /// overrides it for isolated tests (the real path ignores $HOME).
+    private static func groupContainersRoot() -> URL {
+        if let override = ProcessInfo.processInfo.environment["WRITE_GROUP_CONTAINERS_DIR"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers", isDirectory: true)
+    }
+
+    private func watchForShareContainerCreation() {
+        guard shareContainerAppearanceWatcher == nil else { return }
+        let groupsRoot = Self.groupContainersRoot()
+        guard FileManager.default.fileExists(atPath: groupsRoot.path) else { return }
+        shareContainerAppearanceWatcher = WorkspaceFolderWatcher(
+            path: groupsRoot.path,
+            queue: shareInboxQueue,
+            includeUbiquitousItems: false
+        ) { [weak self] in
+            guard let self, self.shareInboxContainerURL() != nil else { return }
+            DispatchQueue.main.async { self.configureShareInbox() }
+        }
+    }
+
     private func shareInboxContainerURL() -> URL? {
-        guard let groupIdentifier = Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
+        let envGroup = ProcessInfo.processInfo.environment["WRITE_APP_GROUP"]
+        guard let groupIdentifier = envGroup
+            ?? Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
               !groupIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               groupIdentifier != "WRITE_APP_GROUP" else {
             return nil
         }
-        // The clean path when the app itself carries the app-group entitlement
-        // and a matching provisioning profile.
-        if let entitled = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: groupIdentifier) {
-            return entitled
-        }
-        // The app ships non-sandboxed and without an app-group profile, so the
-        // entitlement API returns nil. The sandboxed Share extension still owns
-        // the app-group entitlement and creates the group container; a
-        // non-sandboxed app running as the same user can read it directly.
-        // Scan for it (the on-disk directory name is either the bare group id
-        // or "<team>.<group id>" depending on registration, so match by suffix).
-        let groupsRoot = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Group Containers", isDirectory: true)
+        // The app ships non-sandboxed and without the app-group entitlement, so
+        // FileManager.containerURL(forSecurityApplicationGroupIdentifier:) is no
+        // help here: on a non-entitled process it returns a naive
+        // "<home>/Library/Group Containers/<group id>" path, but the sandboxed
+        // Share extension actually creates a TEAM-PREFIXED container
+        // ("<team>.<group id>"). A non-sandboxed app running as the same user can
+        // read that directory directly, so locate it by scanning and matching
+        // the id as either the bare name or a ".<group id>" suffix.
+        let groupsRoot = Self.groupContainersRoot()
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: groupsRoot, includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]) else {
