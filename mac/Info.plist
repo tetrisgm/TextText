@@ -61,5 +61,7 @@
 	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>3600</integer>
+	<key>WriteAppGroupIdentifier</key>
+	<string>WRITE_APP_GROUP</string>
 </dict>
 </plist>
