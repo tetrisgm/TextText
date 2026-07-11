@@ -1,5 +1,7 @@
 import AppKit
+import CoreSpotlight
 import ServiceManagement
+import WriteSpotlight
 import WriteWorkspaceCore
 
 /// Regular Dock app + a menu-bar status item (menu rebuilt on open, the
@@ -24,6 +26,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
     private var webWindow: WebAppWindowController?
+    // Spotlight state is owned by spotlightQueue exclusively; the main
+    // thread only ever schedules work onto it.
+    private var spotlightIndexer: WorkspaceSpotlightIndexer?
+    private var spotlightWatcher: WorkspaceFolderWatcher?
+    private var spotlightIndexRootPath: String?
+    private var spotlightIndexedIds = Set<String>()
+    private var spotlightIndexedHashes: [String: String] = [:]
+    private let spotlightQueue = DispatchQueue(label: "com.example.write.mac.spotlight", qos: .utility)
+    private var spotlightDebounce: DispatchWorkItem?
     private var activityLog: [String] = []
     private var wasBusy = false
     private let workspaceLocationLock = NSLock()
@@ -80,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         setupStatusItem()
         engine.start()
+        configureSpotlightIndexing()
 
         // Near-instant remote sync: a change on the web (edit, delete, new
         // bookmark) triggers a pass within seconds; the engine's 60s timer
@@ -98,10 +110,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        let unhandled = OpenFileHandler.open(urls: urls, store: store, syncRoot: syncRoot())
+        for url in urls where url.scheme == "write-app" {
+            openWriteItemURL(url)
+        }
+        let fileURLs = urls.filter { $0.scheme != "write-app" }
+        guard !fileURLs.isEmpty else { return }
+        let unhandled = OpenFileHandler.open(urls: fileURLs, store: store, syncRoot: syncRoot())
         if !unhandled.isEmpty {
             appendActivity("Could not open \(unhandled.count) file(s): not in the Write folder")
         }
+    }
+
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let id = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else {
+            return false
+        }
+        openWriteItem(id: id)
+        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
@@ -194,6 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // An update Sparkle offered mid-pass was deferred; the moment the
         // engine goes idle, let it surface.
         if wasBusy && !busy { updater?.busyDidEnd() }
+        if wasBusy && !busy { scheduleSpotlightReindex() }
         wasBusy = busy
         refreshUI()
     }
@@ -296,7 +327,142 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setWorkspaceLocation(WorkspaceRootResolver(overrideRoot: url).resolve())
         appendActivity("Sync folder is now \(url.path)")
         engine.resetForNewRoot()
+        configureSpotlightIndexing()
         refreshUI()
+    }
+
+    // MARK: Spotlight and deep links
+
+    private struct SpotlightPersistedState: Codable {
+        var rootPath: String
+        var indexedIds: [String]
+    }
+
+    private var spotlightStateURL: URL {
+        store.baseDir.appendingPathComponent("spotlight-index.json")
+    }
+
+    private func configureSpotlightIndexing() {
+        let root = syncRoot()
+        spotlightQueue.async { [weak self] in
+            guard let self else { return }
+            let rootPath = root.standardizedFileURL.path
+            self.spotlightWatcher?.stop()
+            self.spotlightIndexer = WorkspaceSpotlightIndexer(root: root)
+            self.spotlightIndexRootPath = rootPath
+            self.spotlightIndexedHashes = [:]
+            // Reconcile with what earlier runs indexed: a changed root drops
+            // the whole domain; the same root seeds the known-id set so items
+            // deleted while the app was not running get removed on the first
+            // refresh instead of persisting forever.
+            if let data = try? Data(contentsOf: self.spotlightStateURL),
+               let persisted = try? JSONDecoder().decode(SpotlightPersistedState.self, from: data),
+               persisted.rootPath == rootPath {
+                self.spotlightIndexedIds = Set(persisted.indexedIds)
+            } else {
+                self.spotlightIndexer?.removeAll()
+                self.spotlightIndexedIds = []
+            }
+            self.spotlightWatcher = WorkspaceFolderWatcher(
+                path: root.path, queue: self.spotlightQueue
+            ) { [weak self] in
+                self?.scheduleSpotlightReindexOnQueue()
+            }
+            self.scheduleSpotlightReindexOnQueue()
+        }
+    }
+
+    /// Safe from any thread.
+    private func scheduleSpotlightReindex() {
+        spotlightQueue.async { [weak self] in
+            self?.scheduleSpotlightReindexOnQueue()
+        }
+    }
+
+    /// spotlightQueue only.
+    private func scheduleSpotlightReindexOnQueue() {
+        spotlightDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshSpotlightIndex() }
+        spotlightDebounce = work
+        spotlightQueue.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    /// spotlightQueue only. Incremental: the engine's index is the source of
+    /// truth (it reflects server state, so evicted or unreadable local files
+    /// can never look like deletions), and only added, changed, or removed
+    /// ids are submitted rather than the whole workspace on every event.
+    private func refreshSpotlightIndex() {
+        guard let indexer = spotlightIndexer else { return }
+        let entries = store.loadIndex().entries
+        let currentIds = Set(entries.keys)
+        let removed = spotlightIndexedIds.subtracting(currentIds)
+        var changed: [String: IndexEntry] = [:]
+        for (id, entry) in entries where spotlightIndexedHashes[id] != entry.hash {
+            changed[id] = entry
+        }
+        if !removed.isEmpty { indexer.remove(ids: Array(removed)) }
+        if !changed.isEmpty { indexer.reindex(entries: changed) }
+        spotlightIndexedIds = currentIds
+        spotlightIndexedHashes = entries.mapValues(\.hash)
+        let persisted = SpotlightPersistedState(
+            rootPath: spotlightIndexRootPath ?? "",
+            indexedIds: Array(currentIds)
+        )
+        if let data = try? JSONEncoder().encode(persisted) {
+            try? data.write(to: spotlightStateURL, options: .atomic)
+        }
+    }
+
+    /// Main thread. Resolution happens off-main and only through the known
+    /// indexes: the scheme is invokable by any app on the system, so an
+    /// unknown id must cost a dictionary miss, never a workspace scan.
+    private func openWriteItemURL(_ url: URL) {
+        guard url.host == "item",
+              url.pathComponents.count == 2,
+              let id = url.pathComponents.last else {
+            appendActivity("Ignored malformed Write link \(url.absoluteString)")
+            return
+        }
+        openWriteItem(id: id)
+    }
+
+    private func openWriteItem(id: String) {
+        guard isValidWriteItemId(id) else {
+            appendActivity("Ignored Write link with an invalid item id")
+            return
+        }
+        let root = syncRoot()
+        spotlightQueue.async { [weak self] in
+            guard let self else { return }
+            var target: URL?
+            if let entry = self.store.loadIndex().entries[id] {
+                let candidate = root.appendingPathComponent(entry.relativePath)
+                if FileManager.default.fileExists(atPath: candidate.path) { target = candidate }
+            }
+            if target == nil, let entry = WorkspaceIndexStore.load(root: root)?.entries[id] {
+                let candidate = root.appendingPathComponent(entry.relativePath)
+                if FileManager.default.fileExists(atPath: candidate.path) { target = candidate }
+            }
+            DispatchQueue.main.async {
+                guard let target else {
+                    self.appendActivity("No item found for Write link")
+                    return
+                }
+                let unhandled = OpenFileHandler.open(urls: [target], store: self.store, syncRoot: root)
+                if !unhandled.isEmpty {
+                    self.showMainWindow()
+                    NSWorkspace.shared.activateFileViewerSelecting([target])
+                }
+            }
+        }
+    }
+
+    private func isValidWriteItemId(_ id: String) -> Bool {
+        guard !id.isEmpty, id.count <= 64 else { return false }
+        return id.allSatisfy { character in
+            (character.isASCII && (character.isLetter || character.isNumber))
+                || character == "-"
+        }
     }
 
     // MARK: Account

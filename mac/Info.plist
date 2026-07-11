@@ -32,6 +32,17 @@
 	<string>Write</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Write item links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>write-app</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>0.22</string>
 	<key>CFBundleVersion</key>
