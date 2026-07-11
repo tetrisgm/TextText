@@ -213,6 +213,39 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        observeVisibilityForRepaint()
+    }
+
+    /// WKWebView stops compositing while its window is occluded (another Space,
+    /// the display asleep, the screen locked). On some returns to visibility it
+    /// keeps showing the stale, blank surface until something forces a repaint,
+    /// which reads as a white window even though the DOM is fully present.
+    /// Nudge the layer whenever the window becomes visible again.
+    private var repaintObserversInstalled = false
+    private func observeVisibilityForRepaint() {
+        guard !repaintObserversInstalled, let window else { return }
+        repaintObserversInstalled = true
+        let center = NotificationCenter.default
+        for name: NSNotification.Name in [
+            NSWindow.didChangeOcclusionStateNotification,
+            NSApplication.didBecomeActiveNotification,
+        ] {
+            center.addObserver(
+                forName: name, object: name == NSWindow.didChangeOcclusionStateNotification ? window : nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.forceWebViewRepaintIfVisible()
+            }
+        }
+    }
+
+    private func forceWebViewRepaintIfVisible() {
+        guard let window, window.occlusionState.contains(.visible) else { return }
+        // Toggling the hosted layer's hidden state forces WebKit to recomposite
+        // the current DOM without a reload (which would drop scroll and state).
+        let layer = webView.layer
+        layer?.isHidden = true
+        DispatchQueue.main.async { layer?.isHidden = false }
     }
 
     /// Navigate the web view to a path on the origin (used after linking).
