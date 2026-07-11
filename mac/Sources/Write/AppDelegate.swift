@@ -2,6 +2,7 @@ import AppKit
 import CoreSpotlight
 import ServiceManagement
 import WriteEditor
+import WriteShareCore
 import WriteSpotlight
 import WriteWorkspaceCore
 
@@ -37,6 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var spotlightIndexedHashes: [String: String] = [:]
     private let spotlightQueue = DispatchQueue(label: "com.example.write.mac.spotlight", qos: .utility)
     private var spotlightDebounce: DispatchWorkItem?
+    private var shareInboxWatcher: WorkspaceFolderWatcher?
+    private var shareInboxDebounce: DispatchWorkItem?
+    private let shareInboxQueue = DispatchQueue(label: "com.example.write.mac.share-inbox", qos: .utility)
     private var activityLog: [String] = []
     private var wasBusy = false
     private let workspaceLocationLock = NSLock()
@@ -94,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupStatusItem()
         engine.start()
         configureSpotlightIndexing()
+        configureShareInbox()
 
         // Near-instant remote sync: a change on the web (edit, delete, new
         // bookmark) triggers a pass within seconds; the engine's 60s timer
@@ -332,7 +337,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appendActivity("Sync folder is now \(url.path)")
         engine.resetForNewRoot()
         configureSpotlightIndexing()
+        configureShareInbox()
         refreshUI()
+    }
+
+    // MARK: Share inbox
+
+    private func configureShareInbox() {
+        guard let container = shareInboxContainerURL() else { return }
+        let inboxURL = InboxReader.inboxURL(containerURL: container)
+        try? FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+
+        shareInboxWatcher?.stop()
+        shareInboxWatcher = WorkspaceFolderWatcher(
+            path: inboxURL.path,
+            queue: shareInboxQueue,
+            includeUbiquitousItems: false
+        ) { [weak self] in
+            self?.scheduleShareInboxDrain(containerURL: container)
+        }
+        scheduleShareInboxDrain(containerURL: container, delay: 0)
+    }
+
+    private func shareInboxContainerURL() -> URL? {
+        guard let groupIdentifier = Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
+              !groupIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
+    }
+
+    private func scheduleShareInboxDrain(containerURL: URL, delay: TimeInterval = 0.5) {
+        shareInboxDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.drainShareInbox(containerURL: containerURL)
+        }
+        shareInboxDebounce = work
+        shareInboxQueue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func drainShareInbox(containerURL: URL) {
+        let root = syncRoot()
+        let reader = InboxReader(containerURL: containerURL)
+        let records: [InboxRecord]
+        do {
+            records = try reader.completeItems()
+        } catch {
+            DispatchQueue.main.async { [weak self] in
+                self?.appendActivity("Share inbox read failed: \(error.localizedDescription)")
+            }
+            return
+        }
+        guard !records.isEmpty else { return }
+
+        let filer = InboxFiler(root: root)
+        var filed = 0
+        for record in records {
+            do {
+                _ = try filer.file(record)
+                try reader.deleteConsumed(record)
+                filed += 1
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.appendActivity("Share inbox filing failed: \(error.localizedDescription)")
+                }
+            }
+        }
+        guard filed > 0 else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.appendActivity("Filed \(filed) shared item\(filed == 1 ? "" : "s")")
+            self?.engine.syncNow()
+            self?.scheduleSpotlightReindex()
+            self?.refreshUI()
+        }
     }
 
     // MARK: Spotlight and deep links
