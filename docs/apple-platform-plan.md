@@ -270,3 +270,9 @@ application:
 
 The result must be a working macOS foundation, not an architecture
 proposal.
+
+## Verification
+
+Evals for every phase and invariant of this plan live in
+[apple-platform-evals.md](apple-platform-evals.md). Run
+`mac/scripts/apple-plan-eval.sh` for the acceptance matrix.

@@ -229,3 +229,9 @@ Owner steps to embed the extensions:
    `codesign --verify --strict --deep` and
    `pluginkit -m -p com.apple.share-services | grep -i write`, then notarize
    the whole app as usual.
+
+## Evals
+
+The eval catalog and the acceptance runner for the workspace, editor,
+intents, Spotlight, share, and publishing surfaces are documented in
+[apple-platform-evals.md](apple-platform-evals.md).
