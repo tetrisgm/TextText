@@ -494,6 +494,13 @@ async function ensureFirstArticleDraftPath(
   if (!post) {
     if (access) await enforceAnonymousPostLimit(handle, access);
     post = await createDraft(handle, "article");
+    await auditEdit(
+      access ?? (await getBlogEditAccess(handle)),
+      "create_post",
+      "item",
+      post.id,
+      "starter draft",
+    );
   }
 
   await revalidateBlog(handle, [post.slug]);

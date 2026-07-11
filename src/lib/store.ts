@@ -39,6 +39,7 @@ import type {
   Post,
   PostType,
 } from "./content";
+import { recordAction } from "./audit";
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
 import {
@@ -1128,6 +1129,15 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
       target: [posts.blogId, posts.slug],
       where: sql`${posts.deletedAt} is null`,
     });
+  // Provisioning is a mutation like any other; without this row the starter
+  // posts are the only content that appears with no audit trail.
+  await recordAction({
+    actorType: "human",
+    actionName: "provision_workspace_defaults",
+    targetType: "workspace",
+    targetId: blogId,
+    inputSummary: "starter article, note, bookmark",
+  });
 }
 
 // Resolve the default "blog" folder. Creation is handled during workspace
