@@ -117,6 +117,7 @@ export type NativeAgentEvent = { type: "tool"; name: string };
 export type NativeAgentToolExecutor = (
   name: string,
   args: Record<string, unknown>,
+  requestTag?: string,
 ) => Promise<unknown>;
 
 let toolExecutor: NativeAgentToolExecutor | null = null;
@@ -148,13 +149,13 @@ function installAgentGlobals() {
     ) => boolean;
     __writeNativeAIAgentEvent?: (tag: string, event: NativeAgentEvent) => void;
   };
-  target.__writeNativeAIToolCall = (callId, name, argsJSON) => {
+  target.__writeNativeAIToolCall = (callId, name, argsJSON, eventTag) => {
     const executor = toolExecutor;
     if (!executor) return false;
     void (async () => {
       try {
         const args = (JSON.parse(argsJSON) ?? {}) as Record<string, unknown>;
-        const result = await executor(name, args);
+        const result = await executor(name, args, eventTag);
         postToolReply(callId, true, JSON.stringify(result ?? { ok: true }));
       } catch (error) {
         postToolReply(

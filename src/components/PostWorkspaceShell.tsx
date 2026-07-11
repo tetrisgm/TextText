@@ -3264,9 +3264,22 @@ function LocalWorkspaceShell({
     [],
   );
   // Layer 1 of the provider ladder: the on-device model through the Mac
-  // app's bridge, with agent tools executing against this pool.
+  // app's bridge, with agent tools executing against this pool. Each context
+  // owns its own transcript: items key by id (read and edit share a thread);
+  // containers key by their URL, which stays stable even where the URL to
+  // view-level mapping differs between initial load and history navigation.
+  const assistantContextKey = useMemo(() => {
+    if (view.level === "post" || view.level === "edit") {
+      return `item:${view.postId}`;
+    }
+    if (typeof window === "undefined") return "place:root";
+    const params = new URLSearchParams(window.location.search);
+    const folder = params.get("folder");
+    return `place:${window.location.pathname}${folder ? `?folder=${folder}` : ""}`;
+  }, [view]);
   const assistant = useNativeAssistant({
     handle: displayPool.blog.handle,
+    contextKey: assistantContextKey,
     getPool: () => displayPoolRef.current,
     getView: () => {
       const current = viewRef.current;

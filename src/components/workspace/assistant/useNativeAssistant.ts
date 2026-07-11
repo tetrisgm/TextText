@@ -4,14 +4,20 @@
 // foundation model through the Mac app's nativeAI bridge. Free, private,
 // offline. The hook probes capabilities, registers the workspace tool
 // executor (agent tool calls EXECUTE here in the page), routes submissions
-// to the on-device agent, and keeps a small conversation transcript.
+// to the on-device agent, and keeps one transcript PER CONTEXT: the root,
+// each folder, and each item own their own thread, keyed by contextKey.
+//
+// Transcripts live in a module store mirrored to sessionStorage, so they
+// survive component remounts, route changes (the full editor is a different
+// route), and pool refreshes. A reply always lands in the thread that
+// SUBMITTED it, even if the user navigates elsewhere while the model works.
 //
 // When the bridge or model is unavailable (plain web, old macOS, Apple
 // Intelligence off) the transcript explains the fallback path instead of
 // failing silently. The BYO-cloud rung slots in here later: same submit
 // entry point, different transport.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   hasNativeAI,
   nativeAgent,
@@ -38,6 +44,7 @@ export type AssistantViewSnapshot = {
 
 type UseNativeAssistantOptions = {
   handle: string;
+  contextKey: string;
   getPool: () => WorkspacePoolPayload | null;
   getView: () => AssistantViewSnapshot;
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
@@ -55,11 +62,71 @@ const TOOL_PROGRESS_LABELS: Record<string, string> = {
   set_item_status: "Changing publish status",
 };
 
+// ---- Per-context transcript store (module scope, sessionStorage mirror) ----
+
+const MAX_MESSAGES_PER_THREAD = 200;
+const transcripts = new Map<string, AssistantMessage[]>();
+const busyThreads = new Set<string>();
+const listeners = new Set<() => void>();
 let messageCounter = 0;
+
 function nextMessageId(): string {
   messageCounter += 1;
-  return `m${messageCounter}`;
+  return `m${Date.now().toString(36)}_${messageCounter}`;
 }
+
+function storageKey(threadKey: string): string {
+  return `write:assistant:${threadKey}`;
+}
+
+function threadFor(threadKey: string): AssistantMessage[] {
+  const existing = transcripts.get(threadKey);
+  if (existing) return existing;
+  let restored: AssistantMessage[] = [];
+  try {
+    const raw = sessionStorage.getItem(storageKey(threadKey));
+    if (raw) restored = JSON.parse(raw) as AssistantMessage[];
+  } catch {
+    // Session storage is best effort; an empty thread is a valid start.
+  }
+  transcripts.set(threadKey, restored);
+  return restored;
+}
+
+function notify() {
+  for (const listener of listeners) listener();
+}
+
+function appendToThread(
+  threadKey: string,
+  role: AssistantMessageRole,
+  text: string,
+) {
+  const next = [
+    ...threadFor(threadKey),
+    { id: nextMessageId(), role, text },
+  ].slice(-MAX_MESSAGES_PER_THREAD);
+  transcripts.set(threadKey, next);
+  try {
+    sessionStorage.setItem(storageKey(threadKey), JSON.stringify(next));
+  } catch {
+    // Quota or private mode: the in-memory thread still works.
+  }
+  notify();
+}
+
+function setThreadBusy(threadKey: string, busy: boolean) {
+  if (busy) busyThreads.add(threadKey);
+  else busyThreads.delete(threadKey);
+  notify();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+// ---- Unavailability copy ----
 
 function unavailableExplanation(
   capabilities: NativeAICapabilities | null,
@@ -83,23 +150,34 @@ function unavailableExplanation(
 
 export function useNativeAssistant({
   handle,
+  contextKey,
   getPool,
   getView,
   confirmDestructive,
 }: UseNativeAssistantOptions) {
-  const [messages, setMessages] = useState<AssistantMessage[]>([]);
-  const [submitting, setSubmitting] = useState(false);
   const [capabilities, setCapabilities] =
     useState<NativeAICapabilities | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
   const confirmRef = useRef(confirmDestructive);
+  const threadKey = `${handle}:${contextKey}`;
 
   useEffect(() => {
     getPoolRef.current = getPool;
     getViewRef.current = getView;
     confirmRef.current = confirmDestructive;
   }, [confirmDestructive, getPool, getView]);
+
+  const messages = useSyncExternalStore(
+    subscribe,
+    () => threadFor(threadKey),
+    () => threadFor(threadKey),
+  );
+  const submitting = useSyncExternalStore(
+    subscribe,
+    () => busyThreads.has(threadKey),
+    () => false,
+  );
 
   const tools = useMemo(
     () =>
@@ -126,47 +204,48 @@ export function useNativeAssistant({
     };
   }, []);
 
-  const append = useCallback((role: AssistantMessageRole, text: string) => {
-    setMessages((current) => [...current, { id: nextMessageId(), role, text }]);
-  }, []);
-
   const submit = useCallback(
     async (text: string) => {
       const prompt = text.trim();
-      if (!prompt || submitting) return;
-      append("user", prompt);
-      setSubmitting(true);
+      // One request per thread at a time; replies land in the thread that
+      // asked, even if the user navigates away while the model works.
+      const thread = threadKey;
+      if (!prompt || busyThreads.has(thread)) return;
+      appendToThread(thread, "user", prompt);
+      setThreadBusy(thread, true);
       try {
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
-          append("assistant", unavailableExplanation(current));
+          appendToThread(thread, "assistant", unavailableExplanation(current));
           return;
         }
         const reply = await nativeAgent(prompt, {
           context: tools.describeContext(getViewRef.current()),
           onEvent: (event) => {
             if (event.type === "tool") {
-              append(
+              appendToThread(
+                thread,
                 "progress",
                 TOOL_PROGRESS_LABELS[event.name] ?? `Running ${event.name}`,
               );
             }
           },
         });
-        append("assistant", reply.text || "Done.");
+        appendToThread(thread, "assistant", reply.text || "Done.");
       } catch (error) {
-        append(
+        appendToThread(
+          thread,
           "error",
           error instanceof Error && error.message
             ? error.message
             : "The assistant could not finish that.",
         );
       } finally {
-        setSubmitting(false);
+        setThreadBusy(thread, false);
       }
     },
-    [append, submitting, tools],
+    [threadKey, tools],
   );
 
   return { capabilities, messages, submit, submitting };

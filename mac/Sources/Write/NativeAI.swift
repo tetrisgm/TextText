@@ -501,11 +501,30 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
             func call(arguments: GeneratedContent) async throws -> String {
                 let argsJSON = arguments.jsonString
+                bridge.countToolCall(tag: eventTag)
                 await bridge.emitAgentEvent(
                     tag: eventTag, event: ["type": "tool", "name": name])
                 return try await bridge.callWebTool(
                     name: name, argsJSON: argsJSON, eventTag: eventTag)
             }
+        }
+
+        // Tool calls per agent request, keyed by event tag. The small
+        // on-device model tends to stop after the first item of a multi-item
+        // request; agentOp uses this count to decide whether to run a
+        // completion-check turn on the same session.
+        private var toolCallCounts: [String: Int] = [:]
+
+        fileprivate func countToolCall(tag: String) {
+            toolCallLock.lock()
+            defer { toolCallLock.unlock() }
+            toolCallCounts[tag, default: 0] += 1
+        }
+
+        private func takeToolCallCount(tag: String) -> Int {
+            toolCallLock.lock()
+            defer { toolCallLock.unlock() }
+            return toolCallCounts.removeValue(forKey: tag) ?? 0
         }
 
         @MainActor
@@ -536,19 +555,30 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             var instructions =
                 payload["instructions"] as? String
                 ?? """
-                You are the assistant inside Write, a notes and blogging app. Use \
-                the tools to perform the user's request on their workspace; call \
-                one tool per item you touch, and write real content when asked to \
-                create or edit items. Never delete or publish unless the user \
-                explicitly asked. After the tools finish, reply with one short \
-                sentence describing what you did.
+                You are the assistant inside Write, a notes and blogging app. \
+                Perform the user's request on their workspace with the tools.
+
+                First, silently count how many distinct items the request names. \
+                Then call the right tool once for EACH item, one call per item, \
+                until every single item is done. A request naming three posts \
+                needs three create_item calls. Never stop after the first item. \
+                Write real, complete content whenever the user asks for content. \
+                Never delete or publish unless the user explicitly asked. When \
+                every item is done, reply with one short sentence listing what \
+                you did.
                 """
             if let context = payload["context"] as? String, !context.isEmpty {
                 instructions += "\n\nCurrent context: \(context.prefix(2_000))"
             }
 
+            // No model-judged completion pass: the decomposition instructions
+            // above make the first pass complete multi-item requests, and a
+            // self-check turn measurably DUPLICATES the last item instead of
+            // detecting completion (the page executor also dedupes create_item
+            // per request as the deterministic safety net).
             let session = LanguageModelSession(tools: tools, instructions: instructions)
             let response = try await session.respond(to: prompt)
+            _ = takeToolCallCount(tag: eventTag)
             return [
                 "text": response.content.trimmingCharacters(
                     in: .whitespacesAndNewlines),

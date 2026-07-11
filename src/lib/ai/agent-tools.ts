@@ -127,6 +127,26 @@ function poolPostFromPost(
   };
 }
 
+// Deterministic idempotency for create_item within one agent request: if the
+// model asks to create the same title in the same folder twice under one
+// request tag (small models sometimes redo the last item), return the first
+// result instead of creating a duplicate.
+const createdByRequest = new Map<string, Map<string, unknown>>();
+const CREATED_REQUEST_LIMIT = 8;
+
+function requestCreates(tag: string): Map<string, unknown> {
+  const existing = createdByRequest.get(tag);
+  if (existing) return existing;
+  const created = new Map<string, unknown>();
+  createdByRequest.set(tag, created);
+  while (createdByRequest.size > CREATED_REQUEST_LIMIT) {
+    const oldest = createdByRequest.keys().next().value;
+    if (oldest === undefined) break;
+    createdByRequest.delete(oldest);
+  }
+  return created;
+}
+
 async function readBody(blogId: string, postId: string): Promise<string> {
   const cached = getCachedWorkspacePostBody(blogId, postId);
   if (cached) return cached.body;
@@ -189,7 +209,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     return saved;
   }
 
-  const executor: NativeAgentToolExecutor = async (name, args) => {
+  const executor: NativeAgentToolExecutor = async (name, args, requestTag) => {
     switch (name) {
       case "list_folders": {
         const current = pool();
@@ -235,6 +255,12 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         const folder = str(args, "folder");
         const title = str(args, "title");
         const body = optionalStr(args, "body");
+        const dedupeKey = `${folder}::${title.toLowerCase()}`;
+        const priorCreates = requestTag ? requestCreates(requestTag) : null;
+        const prior = priorCreates?.get(dedupeKey);
+        if (prior) {
+          return { ...(prior as Record<string, unknown>), alreadyCreated: true };
+        }
         const requestedKind = optionalStr(args, "kind");
         const folderMode = pool().folders.find(
           (candidate) => candidate.path === folder,
@@ -254,13 +280,15 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         if (poolPost && (title || body)) {
           saved = await saveDraftPatch(poolPost, { title, body });
         }
-        return {
+        const created = {
           ok: true,
           id: saved.id,
           title: saved.title,
           folder,
           status: saved.status,
         };
+        priorCreates?.set(dedupeKey, created);
+        return created;
       }
 
       case "update_item": {
