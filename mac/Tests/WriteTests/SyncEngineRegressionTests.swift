@@ -500,6 +500,69 @@ final class SyncEngineRegressionTests: XCTestCase {
         XCTAssertEqual(fake.deletedIds, [], "an .icloud placeholder means evicted, not deleted")
     }
 
+    func testDownloadedFileCarriesThePublishedUrlFrontMatter() throws {
+        // Phase 5, published URL tracking: the server renders the public URL
+        // into the file as the canonical front matter line and the mirror
+        // must land it on disk verbatim.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        let serverText = "---\n"
+            + "title: \"Live Post\"\n"
+            + "status: \"published\"\n"
+            + "slug: \"live-post\"\n"
+            + "canonical: \"https://example.com/@demo/live-post\"\n"
+            + "---\n\nPublished body\n"
+        fake.manifestReplies["blog"] = .manifest([
+            item(id: "p1", kind: "article", slug: "live-post", status: "published",
+                 hash: MarkdownIdentityCodec.syncHash(for: serverText))
+        ], etag: nil)
+        fake.fileTexts["p1"] = serverText
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake)
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        let saved = try readWorkspaceText(root: root, relativePath: "Blogs/demo/Posts/live-post.md")
+        XCTAssertTrue(
+            saved.contains("canonical: \"https://example.com/@demo/live-post\""),
+            "the public URL must be tracked in the local file: \(saved)"
+        )
+        XCTAssertTrue(saved.contains("status: \"published\""))
+    }
+
+    func testUnreachableBackendLeavesLocalFilesUntouched() throws {
+        // Phase 5, offline safety: a pass against an unreachable backend
+        // reports the pause and mutates nothing on disk.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let localText = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Offline", body: "unsynced local edit\n"),
+            itemId: "p1", folderId: "notes", kind: "note")
+        try write(localText, to: root.appendingPathComponent("Notes/offline.md"))
+        try write("marker\nmirror-id: era-o\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+        let before = try readWorkspaceText(root: root, relativePath: "Notes/offline.md")
+
+        let fake = FakeSyncClient()
+        fake.unreachable = true
+        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: ["p1": IndexEntry(hash: "stale", relativePath: "Notes/offline.md", folderId: "notes", kind: "note")],
+                mirrorId: "era-o"
+            ))
+        }
+
+        XCTAssertGreaterThan(summary.errors, 0)
+        XCTAssertEqual(fake.deletedIds, [])
+        XCTAssertEqual(fake.puts.count, 0)
+        XCTAssertEqual(try readWorkspaceText(root: root, relativePath: "Notes/offline.md"), before)
+    }
+
+    private func readWorkspaceText(root: URL, relativePath: String) throws -> String {
+        let url = root.appendingPathComponent(relativePath)
+        return try XCTUnwrap(String(data: Data(contentsOf: url), encoding: .utf8))
+    }
+
     private func runEngine(
         root: URL,
         state: URL,
@@ -638,8 +701,10 @@ private final class FakeSyncClient: SyncClient {
     var posts: [String] = []
     var puts: [(postId: String, body: String, ifMatch: String)] = []
     var activities: [String] = []
+    var unreachable = false
 
     func workspace() -> Result<(Workspace, Data), ClientFailure> {
+        if unreachable { return .failure(.network("offline")) }
         let data = (try? JSONEncoder().encode(workspaceValue)) ?? Data()
         return .success((workspaceValue, data))
     }

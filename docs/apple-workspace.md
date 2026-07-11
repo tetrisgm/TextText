@@ -123,3 +123,57 @@ more indexed files are missing and they amount to half or more of the index,
 the pass pauses every server delete and reports it, on the theory that mass
 disappearance is an eviction, a half-materialized root, or a wrong mount far
 more often than a person deleting nearly everything at once.
+
+## Publishing Rules
+
+Publishing is driven entirely by the local file. Flipping `status:` from
+draft to published in a blog-kind file (article, project, talk) publishes on
+the next sync pass: the engine sees the hash move, PUTs with `If-Match`, and
+the converge re-download writes back the server render, which then carries
+the publication `date:` and the public URL as the `canonical:` front matter
+line. That `canonical:` line is the local record of where a post lives
+publicly; drafts carry their would-be URL, and the value refreshes whenever a
+download or converge runs.
+
+Notes and bookmarks are unlisted forever. A local `status: published` flip on
+them is refused by the App Intents layer and force-reverted by the server;
+the file converges back to draft. A draft's local file has no `date:` line
+until it is actually published, which avoids backdating.
+
+One asymmetry to know: file CONTENT is local-canonical, but the file NAME
+follows the server's slug. A slug change on the server renames the local
+file; the native editor follows those renames by writeId.
+
+When the backend is unreachable, nothing local changes: passes abort early,
+report the pause in the activity log, and every local mutation the engine
+performs happens only on successful server responses. Editing never waits on
+the network.
+
+## Native Editor
+
+Workspace markdown files open in a native TextKit 2 editor window: a title
+field plus a plain body view with native undo, spelling, accessibility, and
+Apple Writing Tools on the body (fenced and inline code are excluded via the
+ignored-ranges delegate). Front matter never enters the text view and
+round-trips byte-for-byte. Saves are compare-and-swap: an external write that
+landed unseen is preserved as a conflicted copy; identity-only rewrites from
+the sync engine merge into the buffer silently; a save that fails at window
+close preserves the buffer under `.write-local.nosync/recovery/`.
+
+## App Intents and Spotlight
+
+The capability manifest at `mac/Resources/AppCapabilities.yaml` declares the
+entities and the ten intents; `swift run --package-path mac
+capability-generator` regenerates the identifiers, catalog, docs, and
+completeness test from it. Intents operate on local workspace files only.
+
+Core Spotlight indexes the workspace incrementally from the engine's sync
+index (title, body, kind, blog, folder, publication state, keywords, public
+URL), never reads `.write/` metadata, never force-downloads evicted files,
+and reconciles persisted state across launches and root changes. Results and
+`write-app://item/<writeId>` links open the item directly.
+
+Known gap: Shortcuts-app discovery of the intents requires App Intents
+metadata that only Xcode's per-file compiles can currently produce; see the
+header of `mac/scripts/appintents-metadata.sh` for the state of that work.
+The intents themselves are functional in-process.

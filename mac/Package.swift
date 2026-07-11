@@ -11,7 +11,6 @@ let package = Package(
     name: "Write",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "WriteFileProviderCore", targets: ["WriteFileProviderCore"]),
         .library(name: "WriteWorkspaceCore", targets: ["WriteWorkspaceCore"]),
         .library(name: "WriteEditor", targets: ["WriteEditor"]),
         .library(name: "WriteAppIntents", targets: ["WriteAppIntents"]),
@@ -22,10 +21,6 @@ let package = Package(
         .package(url: "https://github.com/SDWebImage/libwebp-Xcode", from: "1.3.2")
     ],
     targets: [
-        .target(
-            name: "WriteFileProviderCore",
-            path: "Sources/WriteFileProviderCore"
-        ),
         .target(
             name: "WriteWorkspaceCore",
             path: "Sources/WriteWorkspaceCore"
@@ -67,11 +62,6 @@ let package = Package(
             name: "capability-generator",
             dependencies: ["WriteCapabilitySpec"],
             path: "Tools/CapabilityGenerator"
-        ),
-        .testTarget(
-            name: "WriteFileProviderCoreTests",
-            dependencies: ["WriteFileProviderCore"],
-            path: "Tests/WriteFileProviderCoreTests"
         ),
         .testTarget(
             name: "WriteWorkspaceCoreTests",
