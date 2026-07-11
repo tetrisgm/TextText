@@ -173,10 +173,11 @@ URL), never reads `.write/` metadata, never force-downloads evicted files,
 and reconciles persisted state across launches and root changes. Results and
 `write-app://item/<writeId>` links open the item directly.
 
-Known gap: Shortcuts-app discovery of the intents requires App Intents
-metadata that only Xcode's per-file compiles can currently produce; see the
-header of `mac/scripts/appintents-metadata.sh` for the state of that work.
-The intents themselves are functional in-process.
+Shortcuts discovery: the release build embeds
+`Contents/Resources/Metadata.appintents`, produced by an xcodebuild
+const-values pass wired into `mac/scripts/build-app.sh` (SwiftPM alone cannot
+emit the required .swiftconstvalues). The Shortcuts app discovers the ten
+intents from that metadata once the app has launched.
 
 ## Share Extension and Quick Look
 

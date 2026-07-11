@@ -72,6 +72,8 @@ check "p3.generator" "Phase 3: capability generator target present" \
   "test -f '$MAC/Tools/CapabilityGenerator/main.swift'"
 check "p3.deeplink" "Phase 3: write-app:// URL scheme registered" \
   "grep -q 'write-app' '$MAC/Info.plist'"
+check "p3.shortcuts-metadata" "Phase 3: App Intents metadata step wired into the release build" \
+  "grep -q 'appintents-metadata.sh' '$MAC/scripts/build-app.sh'"
 
 # --- Phase 4: share inbox + quick look renderer ---
 check "p4.inbox" "Phase 4: app-group inbox contract present" \

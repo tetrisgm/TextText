@@ -55,6 +55,22 @@ else
   echo "   (no AppIcon.icns yet; run mac/scripts/make-icon.sh)"
 fi
 
+echo ">> App Intents metadata (xcodebuild const-values pass)"
+# SwiftPM cannot emit the .swiftconstvalues the App Intents metadata
+# processor requires, so a parallel xcodebuild pass produces them; the shipped
+# binary stays the SwiftPM one above. The derived-data cache makes this fast
+# after the first release. Metadata failure fails the build: the intents
+# would silently be invisible to Shortcuts otherwise.
+xcodebuild build -scheme Write -destination 'platform=macOS' \
+  -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
+  SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
+CONSTVALS="$MAC/build/appintents-constvals.txt"
+find "$MAC/.build/xcode-dd" -name '*.swiftconstvalues' | sort > "$CONSTVALS"
+[ -s "$CONSTVALS" ] || { echo "xcodebuild emitted no .swiftconstvalues" >&2; exit 1; }
+APPINTENTS_SWIFT_CONST_VALS_LIST="$CONSTVALS" "$MAC/scripts/appintents-metadata.sh" \
+  "$APP/Contents/MacOS/Write" "$APP"
+rm -f "$CONSTVALS"
+
 STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $WRITE_BUNDLE_ID" "$STAGED"
 "$PB" -c "Set :SUFeedURL ${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"

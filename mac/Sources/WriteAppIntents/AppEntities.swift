@@ -3,7 +3,7 @@ import Foundation
 
 @available(macOS 13.0, *)
 public struct WriteDocumentEntity: AppEntity {
-    public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Document"
+    public static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Document")
     public static var defaultQuery = WriteDocumentEntityQuery()
 
     public var id: String
@@ -58,7 +58,7 @@ public struct WriteDocumentEntityQuery: EntityStringQuery {
 
 @available(macOS 13.0, *)
 public struct WriteFolderEntity: AppEntity {
-    public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Folder"
+    public static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Folder")
     public static var defaultQuery = WriteFolderEntityQuery()
 
     public var id: String
@@ -106,7 +106,7 @@ public struct WriteFolderEntityQuery: EntityStringQuery {
 
 @available(macOS 13.0, *)
 public struct WriteBookmarkEntity: AppEntity {
-    public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Bookmark"
+    public static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Bookmark")
     public static var defaultQuery = WriteBookmarkEntityQuery()
 
     public var id: String
@@ -154,7 +154,7 @@ public struct WriteBookmarkEntityQuery: EntityStringQuery {
 
 @available(macOS 13.0, *)
 public struct WritePublicationEntity: AppEntity {
-    public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Publication"
+    public static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Publication")
     public static var defaultQuery = WritePublicationEntityQuery()
 
     public var id: String
@@ -207,7 +207,7 @@ public struct WritePublicationEntityQuery: EntityStringQuery {
 
 @available(macOS 13.0, *)
 public struct WriteBlogEntity: AppEntity {
-    public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Blog"
+    public static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Blog")
     public static var defaultQuery = WriteBlogEntityQuery()
 
     public var id: String

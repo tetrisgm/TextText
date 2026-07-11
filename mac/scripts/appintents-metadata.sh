@@ -7,15 +7,13 @@
 # The maintainer should call this after copying the SwiftPM binary into
 # Contents/MacOS and before codesigning the app bundle.
 #
-# KNOWN LIMITATION (verified 2026-07-11, Xcode 26.6 toolchain): the
-# processor requires .swiftconstvalues files that only Xcode's per-file
-# frontend invocations emit; the SwiftPM driver ignores -emit-const-values
-# and -emit-const-values-path at every level tried, so this script fails
-# loudly on a plain SwiftPM build. It is therefore NOT wired into
-# build-app.sh yet. When const values are available (toolchain support or
-# an xcodebuild step), pass them via APPINTENTS_SWIFT_CONST_VALS_LIST and
-# wire this in after the binary copy, before codesigning. Until then the
-# intents work in-process; only Shortcuts-app discovery is deferred.
+# Const values come from an xcodebuild pass (SwiftPM cannot emit them):
+# build-app.sh builds the Write scheme with SWIFT_EMIT_CONST_VALUES=YES into
+# a derived-data cache and passes the resulting .swiftconstvalues via
+# APPINTENTS_SWIFT_CONST_VALS_LIST. Note the extractor also requires
+# compile-time-literal spellings, e.g.
+# TypeDisplayRepresentation(name: "...") rather than a string-literal
+# assignment; it fails loudly naming the offending property otherwise.
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
