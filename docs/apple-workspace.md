@@ -113,3 +113,13 @@ Deletes remain intentional only when the per-device workspace marker under
 `.write-local.nosync/state` is present. If the whole workspace appears newly
 created or lost, Write drops the index and mirrors from the backend instead of
 propagating mass deletion.
+
+A server delete requires the full ladder to pass: the marker exists and its
+mirror id matches the index, no markdown file in the workspace is unreadable,
+the file is not merely evicted by iCloud (a sibling `.name.icloud` placeholder
+counts as present), and the absence is a confirmed ENOENT rather than a
+permission or I/O error. On top of that sits a circuit breaker: when ten or
+more indexed files are missing and they amount to half or more of the index,
+the pass pauses every server delete and reports it, on the theory that mass
+disappearance is an eviction, a half-materialized root, or a wrong mount far
+more often than a person deleting nearly everything at once.
