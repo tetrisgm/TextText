@@ -86,6 +86,13 @@ final class SyncEngine {
     /// fileExists without being deleted; those must never become server
     /// deletes.
     private func fileConfirmedMissing(at url: URL) -> Bool {
+        // An evicted iCloud item can vanish from its real path while a
+        // ".name.icloud" placeholder holds its place; that is not a deletion.
+        let placeholder = url.deletingLastPathComponent()
+            .appendingPathComponent("." + url.lastPathComponent + ".icloud")
+        if FileManager.default.fileExists(atPath: placeholder.path) {
+            return false
+        }
         do {
             _ = try FileManager.default.attributesOfItem(atPath: url.path)
             return false
@@ -638,7 +645,18 @@ final class SyncEngine {
         }) {
             identityScan = scanIdentityFiles(root: root, index: index)
         }
-        for (postId, entry) in index.entries {
+        // Circuit breaker: a pass that would erase most of the workspace is
+        // far more likely to be looking at an evicted, half-materialized, or
+        // wrong root than at a person who deleted nearly everything at once.
+        // Stand down on deletes; every other sync direction still runs.
+        let missingCount = index.entries.values.filter {
+            !fm.fileExists(atPath: root.appendingPathComponent($0.relativePath).path)
+        }.count
+        let deletesPaused = missingCount >= 10 && missingCount * 2 >= index.entries.count
+        if deletesPaused {
+            activity("Sync paused server deletes: \(missingCount) of \(index.entries.count) indexed files are missing locally. If this is intentional, delete the items in the app; if not, restore the files and sync will recover.")
+        }
+        for (postId, entry) in index.entries where !deletesPaused {
             let url = root.appendingPathComponent(entry.relativePath)
             guard !fm.fileExists(atPath: url.path) else { continue }
             if let found = identityScan?.index.entries[postId] {

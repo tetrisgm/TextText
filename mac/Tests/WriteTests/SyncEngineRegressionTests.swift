@@ -415,6 +415,91 @@ final class SyncEngineRegressionTests: XCTestCase {
         XCTAssertEqual(fake.deletedIds, [], "inaccessible files must never become server deletes")
     }
 
+    func testMassMissingFilesPauseServerDeletes() throws {
+        // Losing most of the workspace at once (eviction, half-materialized
+        // iCloud root, wrong mount) must trip the circuit breaker: no server
+        // deletes, loud activity, everything else still syncs.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        try write("marker\nmirror-id: era-m\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        var entries: [String: IndexEntry] = [:]
+        for i in 1...12 {
+            entries["p\(i)"] = IndexEntry(
+                hash: "h\(i)", relativePath: "Notes/missing-\(i).md",
+                folderId: "notes", kind: "note")
+        }
+        let (_, _) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(entries: entries, mirrorId: "era-m"))
+        }
+
+        XCTAssertEqual(fake.deletedIds, [], "mass disappearance must never become mass server deletes")
+        XCTAssertTrue(
+            fake.activities.contains { $0.contains("paused server deletes") },
+            fake.activities.joined(separator: " | ")
+        )
+    }
+
+    func testSingleMissingFileStillDeletesOnServer() throws {
+        // The breaker must not swallow ordinary deletions: one file removed
+        // out of a healthy workspace still propagates to the server.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        let keptText = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Kept", body: "kept"),
+            itemId: "keep", folderId: "notes", kind: "note")
+        try write(keptText, to: root.appendingPathComponent("Notes/kept.md"))
+        try write("marker\nmirror-id: era-s\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "keep": IndexEntry(
+                        hash: MarkdownIdentityCodec.syncHash(for: keptText),
+                        relativePath: "Notes/kept.md", folderId: "notes", kind: "note"),
+                    "gone": IndexEntry(
+                        hash: "h-gone", relativePath: "Notes/gone.md",
+                        folderId: "notes", kind: "note"),
+                ],
+                mirrorId: "era-s"
+            ))
+        }
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, ["gone"])
+    }
+
+    func testEvictedICloudPlaceholderBlocksServerDelete() throws {
+        // iCloud eviction can replace foo.md with .foo.md.icloud; the item
+        // still exists in the cloud and must not be deleted on the server.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        try write("evicted stand-in", to: root.appendingPathComponent("Notes/.evicted.md.icloud"))
+        try write("marker\nmirror-id: era-e\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        let (_, _) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "p1": IndexEntry(
+                        hash: "h1", relativePath: "Notes/evicted.md",
+                        folderId: "notes", kind: "note")
+                ],
+                mirrorId: "era-e"
+            ))
+        }
+
+        XCTAssertEqual(fake.deletedIds, [], "an .icloud placeholder means evicted, not deleted")
+    }
+
     private func runEngine(
         root: URL,
         state: URL,
