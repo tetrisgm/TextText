@@ -177,3 +177,55 @@ Known gap: Shortcuts-app discovery of the intents requires App Intents
 metadata that only Xcode's per-file compiles can currently produce; see the
 header of `mac/scripts/appintents-metadata.sh` for the state of that work.
 The intents themselves are functional in-process.
+
+## Share Extension and Quick Look
+
+Shared content reaches the workspace across the extension sandbox through an
+app-group inbox. The Share extension serializes each shared item into
+`<app group container>/Inbox/<uuid>/` as a JSON sidecar plus optional
+payload (payload written first, JSON last, so a half-written item is
+invisible), and the main app drains the inbox on launch and while running,
+filing each item through `WriteWorkspaceCore`. Notes, drafts, and bookmarks
+become markdown (a bookmark's URL rides in the `links:` list, not a `url:`
+key the server drops); appends are coordinated read-modify-writes that
+preserve the existing body; files land in `Media/` with unique suffixes.
+The Quick Look preview renders workspace markdown with front matter
+interpreted, all content HTML-escaped, and zero external resources (local
+images show as a labeled placeholder since a sandboxed preview cannot read
+sibling `Media/` files).
+
+The extension code, the inbox contract, and the preview renderer are merged
+and covered by tests (`WriteShareCore`, `WriteShareExtensionCore`,
+`WriteQuickLookCore`). Embedding the two `.appex` bundles into the shipped
+app is OWNER-GATED and not yet wired into `mac/scripts/build-app.sh`, for a
+real reason: an app group between a Developer-ID main app and its sandboxed
+extensions is a restricted entitlement. It is honored at runtime only when
+the App Group is registered in the Apple Developer portal and a matching
+provisioning profile is embedded; without that,
+`FileManager.containerURL(forSecurityApplicationGroupIdentifier:)` returns
+nil and the hand-off silently fails. Shipping the appex without that setup
+would ship a broken Share feature.
+
+Owner steps to embed the extensions:
+
+1. In the Apple Developer portal, register an App Group (for example
+   `group.net.writeapp.write`) and add it to the App IDs for the main app
+   (`net.writeapp.write.mac`), the share extension
+   (`net.writeapp.write.mac.share`), and the Quick Look extension
+   (`net.writeapp.write.mac.quicklook`). Create and download Developer ID
+   provisioning profiles that include the group for each.
+2. Substitute the real group id for the `WRITE_APP_GROUP` placeholder in
+   `mac/Info.plist` (`WriteAppGroupIdentifier`) and in both
+   `mac/Extensions/*/`.entitlements.template files, and add
+   `com.apple.security.application-groups` with that id to the main app's
+   `mac/write.entitlements`.
+3. Compile each extension as an `.appex`: link the extension sources against
+   their `WriteShareCore`/`WriteQuickLookCore` library plus a
+   `-e _NSExtensionMain` entry point, place the built binary and its
+   `Info.plist` under `Write.app/Contents/PlugIns/<Name>.appex/Contents/`,
+   and embed the downloaded provisioning profile as `embedded.provisionprofile`.
+4. Sign inside-out with hardened runtime: each `.appex` with its
+   sandbox + app-group entitlements first, then the main app. Verify with
+   `codesign --verify --strict --deep` and
+   `pluginkit -m -p com.apple.share-services | grep -i write`, then notarize
+   the whole app as usual.
