@@ -87,7 +87,8 @@ final class WorkspaceIntentActionsTests: XCTestCase {
         XCTAssertTrue(bookmark.relativePath.hasPrefix("Bookmarks/2026/"))
         let text = try String(contentsOf: root.appendingPathComponent(bookmark.relativePath), encoding: .utf8)
         XCTAssertTrue(text.contains("type: \"bookmark\""))
-        XCTAssertTrue(text.contains("url: \"https:\\/\\/example.invalid\\/read\""))
+        XCTAssertTrue(text.contains("links: [{\"label\":\"Reading\",\"href\":\"https://example.invalid/read\"}]"))
+        XCTAssertFalse(text.contains("\nurl: "), "bare url: is dropped by the server")
         XCTAssertTrue(text.contains("created_at:"))
         XCTAssertNotNil(MarkdownIdentityCodec.extract(from: text))
     }

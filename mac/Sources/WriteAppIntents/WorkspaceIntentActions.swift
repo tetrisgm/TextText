@@ -220,6 +220,11 @@ public struct WorkspaceIntentActions {
         let slug = slugForTitle(displayTitle)
         let target = uniqueMarkdownURL(directory: directory, slug: slug)
         let dateText = isoString(date)
+        // The server keeps a bookmark's URL only in the links list; a bare
+        // url: scalar is dropped, syncing the bookmark with no link. Emit the
+        // links list matching the server's JSON.stringify render (slashes not
+        // escaped, so the hashes agree).
+        let linksJSON = "[{\"label\":\(jsonStringNoSlashEscape(displayTitle)),\"href\":\(jsonStringNoSlashEscape(url.absoluteString))}]"
         let markdown = MarkdownIdentityCodec.inject(
             into: renderMarkdown(
                 title: displayTitle,
@@ -230,9 +235,9 @@ public struct WorkspaceIntentActions {
                 updatedAt: dateText,
                 extraFrontMatter: [
                     "type": "bookmark",
-                    "url": url.absoluteString,
                     "created_at": dateText,
                 ],
+                rawFrontMatterLines: ["links: \(linksJSON)"],
                 body: "[\(displayTitle)](\(url.absoluteString))\n"
             ),
             itemId: id,
@@ -455,6 +460,7 @@ public struct WorkspaceIntentActions {
         createdAt: String,
         updatedAt: String,
         extraFrontMatter: [String: String],
+        rawFrontMatterLines: [String] = [],
         body: String
     ) -> String {
         var lines = [
@@ -471,6 +477,7 @@ public struct WorkspaceIntentActions {
                 lines.append("\(key): \(jsonString(value))")
             }
         }
+        lines.append(contentsOf: rawFrontMatterLines)
         lines.append("---")
         lines.append("")
         lines.append(body)
@@ -573,6 +580,16 @@ public struct WorkspaceIntentActions {
         guard let data = try? JSONEncoder().encode(value),
               let text = String(data: data, encoding: .utf8) else {
             return "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+        return text
+    }
+
+    private func jsonStringNoSlashEscape(_ value: String) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        guard let data = try? encoder.encode(value),
+              let text = String(data: data, encoding: .utf8) else {
+            return jsonString(value)
         }
         return text
     }
