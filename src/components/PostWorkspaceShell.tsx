@@ -4384,6 +4384,7 @@ function LocalWorkspaceShell({
           void assistant.submit(submission.text);
         }}
         submitting={assistant.submitting}
+        launcherBusy={assistant.runningJobs > 0}
         composerPlaceholder={
           assistant.capabilities?.available
             ? "Ask or act, on this Mac"
@@ -4393,9 +4394,21 @@ function LocalWorkspaceShell({
       >
         <AssistantConversation
           capabilities={assistant.capabilities}
+          jobs={assistant.jobs}
           messages={assistant.messages}
           skills={assistant.skills}
           submitting={assistant.submitting}
+          onOpenJob={(job) => {
+            // Jump to the context the job reports into: items open directly,
+            // places navigate by their stored URL.
+            if (job.contextKey.startsWith("item:")) {
+              openPostId(job.contextKey.slice("item:".length));
+              return;
+            }
+            if (job.contextKey.startsWith("place:")) {
+              navigatePath(job.contextKey.slice("place:".length));
+            }
+          }}
           onToggleSkill={assistant.toggleSkill}
         />
       </AssistantSidebar>

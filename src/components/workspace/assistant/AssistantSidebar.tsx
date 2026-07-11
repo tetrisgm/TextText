@@ -65,6 +65,8 @@ export type AssistantSidebarProps = {
   disabled?: boolean;
   submitDisabled?: boolean;
   submitting?: boolean;
+  /** Shows a pulsing badge on the launcher while background jobs run. */
+  launcherBusy?: boolean;
   panelId?: string;
   className?: string;
   style?: CSSProperties;
@@ -136,6 +138,7 @@ export function AssistantSidebar({
   disabled = false,
   submitDisabled = false,
   submitting = false,
+  launcherBusy = false,
   panelId: panelIdProp,
   className,
   style,
@@ -304,11 +307,16 @@ export function AssistantSidebar({
           type="button"
           aria-controls={panelId}
           aria-expanded="false"
-          aria-label="Open assistant"
-          title="Open assistant"
+          aria-label={
+            launcherBusy ? "Open assistant (working)" : "Open assistant"
+          }
+          title={launcherBusy ? "Assistant is working" : "Open assistant"}
           onClick={() => onStateChange("open")}
         >
           <SidebarIcon />
+          {launcherBusy && (
+            <span className={styles.launcherBusy} aria-hidden="true" />
+          )}
         </button>
       )}
 

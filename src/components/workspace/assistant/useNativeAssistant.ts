@@ -27,10 +27,18 @@ import {
 } from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
+  assistantJobs,
+  runningAssistantJobCount,
+  startAssistantJob,
+  subscribeAssistantJobs,
+  updateAssistantJob,
+} from "@/lib/ai/jobs";
+import {
   composeInstructions,
   setSkillEnabled,
   skillStates,
 } from "@/lib/ai/skills";
+import { findPoolPostById } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 
 export type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
@@ -197,7 +205,13 @@ export function useNativeAssistant({
     [handle],
   );
 
-  useEffect(() => registerNativeAgentTools(tools.executor), [tools]);
+  // Registration is deliberately sticky (no unregister on unmount): a job
+  // started here must keep executing its tool calls while the user is on the
+  // full-editor route, where this shell is unmounted. The pool store and the
+  // executor's refs are module-lived, and the next mount re-registers.
+  useEffect(() => {
+    registerNativeAgentTools(tools.executor);
+  }, [tools]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,20 +223,46 @@ export function useNativeAssistant({
     };
   }, []);
 
+  const contextLabel = useCallback(() => {
+    const view = getViewRef.current();
+    if (view.level === "post" || view.level === "edit") {
+      const pool = getPoolRef.current();
+      const post =
+        pool && view.postId ? findPoolPostById(pool, view.postId) : null;
+      return post?.title?.trim() || "Untitled";
+    }
+    if (view.folderPath) {
+      const pool = getPoolRef.current();
+      const folder = pool?.folders.find(
+        (candidate) => candidate.path === view.folderPath,
+      );
+      return folder?.name ?? view.folderPath;
+    }
+    return "Workspace";
+  }, []);
+
   const submit = useCallback(
     async (text: string) => {
       const prompt = text.trim();
-      // One request per thread at a time; replies land in the thread that
-      // asked, even if the user navigates away while the model works.
+      // One request per thread at a time; different threads run in parallel.
+      // Replies and job updates land in the thread that asked, even if the
+      // user navigates away while the model works.
       const thread = threadKey;
       if (!prompt || busyThreads.has(thread)) return;
       appendToThread(thread, "user", prompt);
       setThreadBusy(thread, true);
+      const jobId = startAssistantJob({
+        threadKey: thread,
+        contextKey,
+        contextLabel: contextLabel(),
+        prompt,
+      });
       try {
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
           appendToThread(thread, "assistant", unavailableExplanation(current));
+          updateAssistantJob(jobId, { status: "done" });
           return;
         }
         const context = tools.describeContext(getViewRef.current());
@@ -232,15 +272,15 @@ export function useNativeAssistant({
           instructions,
           onEvent: (event) => {
             if (event.type === "tool") {
-              appendToThread(
-                thread,
-                "progress",
-                TOOL_PROGRESS_LABELS[event.name] ?? `Running ${event.name}`,
-              );
+              const activity =
+                TOOL_PROGRESS_LABELS[event.name] ?? `Running ${event.name}`;
+              appendToThread(thread, "progress", activity);
+              updateAssistantJob(jobId, { activity });
             }
           },
         });
         appendToThread(thread, "assistant", reply.text || "Done.");
+        updateAssistantJob(jobId, { status: "done" });
       } catch (error) {
         appendToThread(
           thread,
@@ -249,11 +289,12 @@ export function useNativeAssistant({
             ? error.message
             : "The assistant could not finish that.",
         );
+        updateAssistantJob(jobId, { status: "error" });
       } finally {
         setThreadBusy(thread, false);
       }
     },
-    [handle, threadKey, tools],
+    [contextKey, contextLabel, handle, threadKey, tools],
   );
 
   // Skill toggles for the sidebar; a plain version counter re-reads
@@ -273,5 +314,25 @@ export function useNativeAssistant({
     [handle],
   );
 
-  return { capabilities, messages, skills, submit, submitting, toggleSkill };
+  const jobs = useSyncExternalStore(
+    subscribeAssistantJobs,
+    assistantJobs,
+    assistantJobs,
+  );
+  const runningJobs = useSyncExternalStore(
+    subscribeAssistantJobs,
+    runningAssistantJobCount,
+    () => 0,
+  );
+
+  return {
+    capabilities,
+    jobs,
+    messages,
+    runningJobs,
+    skills,
+    submit,
+    submitting,
+    toggleSkill,
+  };
 }

@@ -77,6 +77,83 @@
   letter-spacing: 0;
 }
 
+.jobs {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ac-hairline);
+}
+
+.jobRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jobRow:hover {
+  background: var(--ac-fill-4);
+}
+
+.jobDot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ac-label-2);
+}
+
+.jobRow[data-status="running"] .jobDot {
+  background: var(--ac-accent);
+  animation: assistant-job-pulse 1.2s ease-in-out infinite;
+}
+
+.jobRow[data-status="error"] .jobDot {
+  background: var(--ac-red);
+}
+
+@keyframes assistant-job-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jobRow[data-status="running"] .jobDot {
+    animation: none;
+  }
+}
+
+.jobCopy {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.jobLabel {
+  overflow: hidden;
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobMeta {
+  overflow: hidden;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption2, var(--ac-fs-caption1)) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .skills {
   display: grid;
   gap: 8px;
