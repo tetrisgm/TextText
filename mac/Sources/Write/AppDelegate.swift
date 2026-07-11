@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import WriteEditor
 import WriteWorkspaceCore
 
 /// Regular Dock app + a menu-bar status item (menu rebuilt on open, the
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
     private var webWindow: WebAppWindowController?
+    private var editorWindows: [URL: EditorWindowController] = [:]
     private var activityLog: [String] = []
     private var wasBusy = false
     private let workspaceLocationLock = NSLock()
@@ -98,7 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        let unhandled = OpenFileHandler.open(urls: urls, store: store, syncRoot: syncRoot())
+        let unhandled = OpenFileHandler.open(urls: urls, store: store, syncRoot: syncRoot()) { [weak self] url in
+            self?.openEditorWindow(for: url) ?? false
+        }
         if !unhandled.isEmpty {
             appendActivity("Could not open \(unhandled.count) file(s): not in the Write folder")
         }
@@ -537,6 +541,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func syncNowAction() { engine.syncNow() }
 
+    @objc private func newNoteAction() {
+        do {
+            let url = try EditorNoteCreator.createUntitledNote(in: syncRoot())
+            _ = openEditorWindow(for: url)
+        } catch {
+            appendActivity("Could not create note: \(error.localizedDescription)")
+        }
+    }
+
     @objc private func openFolderAction() {
         let root = syncRoot()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -596,6 +609,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 })
         }
         webWindow?.present()
+    }
+
+    @discardableResult
+    private func openEditorWindow(for url: URL) -> Bool {
+        let key = url.standardizedFileURL
+        if let existing = editorWindows[key] {
+            existing.present()
+            return true
+        }
+
+        do {
+            let controller = try EditorWindowController(
+                fileURL: key,
+                workspaceRootURL: syncRoot(),
+                onClose: { [weak self] closedURL in
+                    self?.editorWindows.removeValue(forKey: closedURL.standardizedFileURL)
+                }
+            )
+            editorWindows[key] = controller
+            controller.present()
+            return true
+        } catch {
+            appendActivity("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
+            return false
+        }
     }
 
     /// The web view minted a sync token in the background: store it and start
@@ -712,6 +750,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appMenu.addItem(.separator())
         _ = appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+        let fileItem = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
+        main.addItem(fileItem)
+        let file = NSMenu(title: "File")
+        fileItem.submenu = file
+        let newNote = file.addItem(withTitle: "New Note", action: #selector(newNoteAction), keyEquivalent: "n")
+        newNote.target = self
+
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         main.addItem(editItem)
         let edit = NSMenu(title: "Edit")
@@ -719,10 +764,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         _ = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
         edit.addItem(.separator())
-        _ = edit.addItem(withTitle: "Cut", action: Selector(("cut:")), keyEquivalent: "x")
-        _ = edit.addItem(withTitle: "Copy", action: Selector(("copy:")), keyEquivalent: "c")
-        _ = edit.addItem(withTitle: "Paste", action: Selector(("paste:")), keyEquivalent: "v")
-        _ = edit.addItem(withTitle: "Select All", action: Selector(("selectAll:")), keyEquivalent: "a")
+        _ = edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        _ = edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        _ = edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        _ = edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
         let viewItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
         main.addItem(viewItem)
