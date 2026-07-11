@@ -22,6 +22,7 @@ import {
   createSubfolderAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
+  emptyTrashAction,
   saveEditablePostAction,
   permanentlyDeleteEditablePostAction,
   permanentlyDeleteFolderAction,
@@ -1943,6 +1944,7 @@ function TrashPage({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TrashDeleteTarget | null>(null);
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trashedFolders = pool.trashedFolders ?? [];
   const trashedPosts = pool.trashedPosts ?? [];
@@ -2003,10 +2005,37 @@ function TrashPage({
       .finally(() => setBusyId(null));
   }, [busyId, deleteTarget, handle, pool.blogId]);
 
+  const trashedCount = trashedPosts.length + trashedFolders.length;
+
+  const emptyAll = useCallback(() => {
+    if (busyId) return;
+    setBusyId("empty-trash");
+    setError(null);
+    void emptyTrashAction(handle)
+      .then(() => setEmptyTrashOpen(false))
+      .catch((emptyError) => {
+        setError(workspaceActionErrorMessage(emptyError, "Could not empty Trash"));
+      })
+      .finally(() => {
+        void refreshWorkspacePool(handle, pool.blogId);
+        setBusyId(null);
+      });
+  }, [busyId, handle, pool.blogId]);
+
   return (
     <main className="workspace-collection-page workspace-trash-page">
       <header className="workspace-collection-header">
         <h1>Trash</h1>
+        {trashedCount > 0 && (
+          <button
+            type="button"
+            className="ac-btn ac-btn-gray is-danger"
+            disabled={busyId === "empty-trash"}
+            onClick={() => setEmptyTrashOpen(true)}
+          >
+            Empty Trash
+          </button>
+        )}
       </header>
       {error && <p className="post-folder-error" role="alert">{error}</p>}
       {rootTrashedFolders.length === 0 && trashedPosts.length === 0 ? (
@@ -2094,6 +2123,16 @@ function TrashPage({
         confirming={Boolean(deleteTarget && busyId === deleteTarget.id)}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={permanentlyDelete}
+      />
+      <ConfirmationDialog
+        open={emptyTrashOpen}
+        title="Empty Trash?"
+        message={`This permanently deletes ${trashedCount === 1 ? "1 item" : `${trashedCount} items`}. This cannot be undone.`}
+        confirmLabel="Empty Trash"
+        confirmingLabel="Emptying"
+        confirming={busyId === "empty-trash"}
+        onCancel={() => setEmptyTrashOpen(false)}
+        onConfirm={emptyAll}
       />
     </main>
   );

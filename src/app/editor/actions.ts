@@ -21,6 +21,7 @@ import {
   createDraft,
   createSubfolder,
   deletePost,
+  emptyTrash,
   permanentlyDeleteFolder,
   permanentlyDeletePost,
   getAllPosts,
@@ -1183,6 +1184,16 @@ export async function permanentlyDeleteEditablePostAction(
   await auditEdit(access, "permanently_delete_post", "item", postId);
   await revalidateBlog(handle);
   return { postId };
+}
+
+export async function emptyTrashAction(
+  handleInput: unknown,
+): Promise<{ removed: number }> {
+  const { handle, access } = await editableHandleFor(handleInput);
+  const removed = await emptyTrash(handle);
+  await auditEdit(access, "empty_trash", "workspace", handle, `${removed} items`);
+  await revalidateBlog(handle);
+  return { removed };
 }
 
 export async function trashEditableBlogAction(

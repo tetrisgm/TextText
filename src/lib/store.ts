@@ -1724,6 +1724,28 @@ export async function permanentlyDeletePost(
     );
 }
 
+export async function emptyTrash(handle: string): Promise<number> {
+  if (!db) throw new Error("emptyTrash requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const trashed = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
+  const ids = trashed.map((row) => row.id);
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    await db.delete(collabPresence).where(inArray(collabPresence.postId, chunk));
+    await db.delete(collabUpdates).where(inArray(collabUpdates.postId, chunk));
+  }
+  await db
+    .delete(posts)
+    .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
+  await db
+    .delete(folders)
+    .where(and(eq(folders.blogId, blogId), isNotNull(folders.deletedAt)));
+  return ids.length;
+}
+
 export async function trashFolder(
   handle: string,
   folderId: string,

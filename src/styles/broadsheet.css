@@ -2807,6 +2807,12 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-collection-header {
   margin-bottom: 30px;
 }
+.workspace-trash-page .workspace-collection-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+}
 .workspace-collection-header h1 {
   margin: 0;
   color: var(--ink);
