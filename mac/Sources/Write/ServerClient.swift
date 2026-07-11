@@ -94,9 +94,20 @@ enum SaveReply {
     case rejected(String)
 }
 
+protocol SyncClient {
+    func workspace() -> Result<(Workspace, Data), ClientFailure>
+    func manifest(folderId: String, etag: String?) -> Result<ManifestReply, ClientFailure>
+    func createFolder(parentPath: String, name: String) -> Result<WorkspaceFolder, ClientFailure>
+    func fileText(postId: String) -> Result<(text: String, hash: String?), ClientFailure>
+    func putFile(postId: String, body: String, ifMatch hash: String) -> Result<SaveReply, ClientFailure>
+    func postFile(body: String) -> Result<SaveReply, ClientFailure>
+    func deleteFile(postId: String) -> Result<Void, ClientFailure>
+    func advertisedAppVersion() -> String?
+}
+
 /// Synchronous URLSession client for the write platform. Called only from
 /// background queues (the sync queue, the link poll queue), never main.
-final class ServerClient {
+final class ServerClient: SyncClient {
     let origin: URL
     private let token: String?
     private let session: URLSession

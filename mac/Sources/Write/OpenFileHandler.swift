@@ -1,5 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
+import WriteWorkspaceCore
 
 /// Opening markdown files with Write.app: files inside the sync root map to
 /// their post and open in the web editor; anything else is politely refused

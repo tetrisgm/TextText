@@ -11,6 +11,7 @@ struct StatusModel {
     var linkFailed: Bool           // expired/failed: the button becomes Try Again
     var waitingApproval: Bool      // pending code: offer to reopen the SAME page
     var folderPath: String
+    var folderStatus: String?
     var lastSyncLine: String
     var busy: Bool
     var activity: [String]
@@ -39,6 +40,7 @@ final class StatusWindowController: NSWindowController {
     private let accountButton = NSButton(title: "Sign In", target: nil, action: nil)
     private let reopenButton = NSButton(title: "Open Approval Page", target: nil, action: nil)
     private let folderLabel = NSTextField(labelWithString: "")
+    private let folderStatusLabel = NSTextField(labelWithString: "")
     private let changeButton = NSButton(title: "Change", target: nil, action: nil)
     private let openButton = NSButton(title: "Open", target: nil, action: nil)
     private let syncLabel = NSTextField(labelWithString: "")
@@ -92,6 +94,8 @@ final class StatusWindowController: NSWindowController {
         folderLabel.font = .systemFont(ofSize: 12)
         folderLabel.lineBreakMode = .byTruncatingMiddle
         folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        folderStatusLabel.font = .systemFont(ofSize: 11)
+        folderStatusLabel.textColor = .secondaryLabelColor
         changeButton.target = self
         changeButton.action = #selector(changeFolderAction)
         openButton.target = self
@@ -129,7 +133,7 @@ final class StatusWindowController: NSWindowController {
 
         let stack = NSStackView(views: [
             accountRow, accountDetailLabel, codeLabel, linkHintLabel,
-            separator(), folderTitle, folderRow,
+            separator(), folderTitle, folderRow, folderStatusLabel,
             separator(), sectionTitle("Sync"), syncRow,
             separator(), sectionTitle("Recent activity"), scroll,
         ])
@@ -198,6 +202,8 @@ final class StatusWindowController: NSWindowController {
         }
 
         folderLabel.stringValue = model.folderPath
+        folderStatusLabel.stringValue = model.folderStatus ?? ""
+        folderStatusLabel.isHidden = (model.folderStatus ?? "").isEmpty
         syncLabel.stringValue = model.lastSyncLine
         syncButton.isEnabled = model.linked && !model.busy
         if model.busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }

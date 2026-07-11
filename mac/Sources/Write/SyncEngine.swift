@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import WriteWorkspaceCore
 
 /// One pass's outcome; also the headless mode's JSON summary.
 struct SyncSummary {
@@ -41,21 +42,80 @@ struct SyncSummary {
 /// authoritative: slug changes rename local files.
 final class SyncEngine {
     enum PassKind { case full, pushOnly }
+    private enum LocalFileHash {
+        case missing
+        case unreadable(Error)
+        case readable(String)
+    }
+
+    private struct IdentityScan {
+        var index: SyncIndex
+        var unreadableRelativePaths: [String]
+    }
 
     /// Dot-prefixed so the new-file scan never sees it; its absence next to a
     /// non-empty index is the vanished-mirror signal (see performPass).
-    private let breadcrumbName = ".write-sync"
+    private let breadcrumbRelativePath = "\(WorkspaceLayout.localMetadataDirectoryName)/state/sync-marker.txt"
     private let breadcrumbBody =
         "Write keeps this folder in sync. This marker tells the app the folder is the same mirror it indexed; if the folder is deleted or replaced, Write re-mirrors from the server instead of propagating the loss as deletions.\n"
+
+    /// The mirror id inside the marker file, or nil when the marker is
+    /// missing or predates mirror ids. The index only trusts a marker whose
+    /// id matches the one it recorded, which pins the index to ONE mirror:
+    /// root flips (iCloud sign-out re-mirroring to the local fallback, then
+    /// back) can then never run the delete loop against a foreign mirror.
+    private func mirrorId(atBreadcrumb url: URL) -> String? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        for line in text.split(separator: "\n") where line.hasPrefix("mirror-id: ") {
+            let value = line.dropFirst("mirror-id: ".count)
+                .trimmingCharacters(in: .whitespaces)
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    private func writeBreadcrumb(at url: URL, mirrorId: String) {
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data((breadcrumbBody + "mirror-id: \(mirrorId)\n").utf8)
+            .write(to: url, options: .atomic)
+    }
+
+    /// True only when the path is CONFIRMED absent (ENOENT). Permission or
+    /// I/O errors on the file or a parent directory make files invisible to
+    /// fileExists without being deleted; those must never become server
+    /// deletes.
+    private func fileConfirmedMissing(at url: URL) -> Bool {
+        do {
+            _ = try FileManager.default.attributesOfItem(atPath: url.path)
+            return false
+        } catch let error as NSError {
+            if error.domain == NSCocoaErrorDomain,
+               error.code == CocoaError.fileReadNoSuchFile.rawValue
+                || error.code == CocoaError.fileNoSuchFile.rawValue {
+                return true
+            }
+            if error.domain == NSPOSIXErrorDomain, error.code == Int(ENOENT) {
+                return true
+            }
+            if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+               underlying.domain == NSPOSIXErrorDomain,
+               underlying.code == Int(ENOENT) {
+                return true
+            }
+            return false
+        }
+    }
 
     private let queue = DispatchQueue(label: "com.example.write.mac.sync", qos: .utility)
     private let store: StateStore
 
     /// nil when not linked; rebuilt each pass so sign in/out needs no plumbing.
-    var makeClient: () -> ServerClient? = { nil }
+    var makeClient: () -> SyncClient? = { nil }
     var syncRootProvider: () -> URL = {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write", isDirectory: true)
     }
+    var workspaceLocationProvider: () -> WorkspaceLocation? = { nil }
 
     /// UI hooks. Delivered on `callbackQueue` (main by default); headless
     /// sets it nil to get inline delivery, since no runloop spins there.
@@ -77,6 +137,7 @@ final class SyncEngine {
 
     private var timer: DispatchSourceTimer?
     private var watcher: FolderWatcher?
+    private var fileCoordinator: WorkspaceFileCoordinator?
     private var pushDebounce: DispatchWorkItem?
     private var wakeObserver: NSObjectProtocol?
 
@@ -174,6 +235,8 @@ final class SyncEngine {
     private func startWatcher() {
         let root = syncRootProvider()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        pushDebounce?.cancel()
+        watcher?.stop()
         watcher = FolderWatcher(path: root.path, queue: queue) { [weak self] in
             guard let self else { return }
             // Debounce 2s: editors save in bursts, and our own pull writes
@@ -212,6 +275,7 @@ final class SyncEngine {
 
         let root = syncRootProvider()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        _ = coordinator(for: root)
 
         let workspace: Workspace
         switch client.workspace() {
@@ -223,8 +287,20 @@ final class SyncEngine {
             summary.errors += 1
             return summary
         }
+        let workspaceDescriptor = descriptor(for: workspace)
+        do {
+            try WorkspaceLayout.ensureSkeleton(
+                at: root,
+                workspace: workspaceDescriptor,
+                location: workspaceLocationProvider()
+            )
+        } catch {
+            activity("Could not prepare Write workspace: \(error.localizedDescription)")
+            summary.errors += 1
+            return summary
+        }
 
-        var index = store.loadIndex()
+        var index = loadIndex(root: root)
 
         // Mass-deletion guard. The breadcrumb marks the directory as the live
         // mirror the index describes. If the index lists files but the
@@ -237,27 +313,45 @@ final class SyncEngine {
         // nothing is ever deleted on the server. Deleting individual files
         // inside an intact mirror still propagates normally.
         let fm = FileManager.default
-        let breadcrumb = root.appendingPathComponent(breadcrumbName)
-        if !index.entries.isEmpty && !fm.fileExists(atPath: breadcrumb.path) {
-            activity("Sync folder looks new or was lost; re-mirroring from the server instead of treating its files as deleted")
-            index = SyncIndex()
+        let breadcrumb = root.appendingPathComponent(breadcrumbRelativePath)
+        var markerMirrorId = mirrorId(atBreadcrumb: breadcrumb)
+        if !index.entries.isEmpty {
+            if !fm.fileExists(atPath: breadcrumb.path) {
+                activity("Sync folder looks new or was lost; re-mirroring from the server instead of treating its files as deleted")
+                index = SyncIndex()
+            } else if let indexId = index.mirrorId, markerMirrorId != indexId {
+                // A marker with a different id (or an id-less marker while the
+                // index expects one) means this root is a DIFFERENT mirror than
+                // the one indexed: re-mirror, never delete.
+                activity("Sync folder is a different mirror than the one indexed; re-mirroring from the server instead of treating differences as deletions")
+                index = SyncIndex()
+            }
         }
-        if !fm.fileExists(atPath: breadcrumb.path) {
-            try? Data(breadcrumbBody.utf8).write(to: breadcrumb, options: .atomic)
+        if markerMirrorId == nil {
+            let newId = UUID().uuidString
+            writeBreadcrumb(at: breadcrumb, mirrorId: newId)
+            markerMirrorId = newId
+        }
+        if index.mirrorId == nil {
+            index.mirrorId = markerMirrorId
+        }
+        if indexContainsLegacyMirrorPaths(index) {
+            index.folderETags.removeAll()
         }
 
-        materializeFolders(workspace.folders, root: root, summary: &summary)
+        materializeFolders(workspace.folders, workspace: workspaceDescriptor, root: root, summary: &summary)
+        let identityScan = reconcileIndexedMoves(root: root, index: &index, summary: &summary)
 
         if kind == .full {
             for folder in workspace.folders {
                 pullFolder(folder, allFolders: workspace.folders, client: client,
-                           root: root, index: &index, summary: &summary)
+                           root: root, workspace: workspaceDescriptor, index: &index, summary: &summary)
             }
         }
         let createdFolders = pushPass(workspace, client: client, root: root,
-                                      index: &index, summary: &summary)
+                                      index: &index, summary: &summary, identityScan: identityScan)
 
-        store.saveIndex(index)
+        saveIndex(index)
 
         if createdFolders { enqueue(.full) }
 
@@ -270,9 +364,10 @@ final class SyncEngine {
     // MARK: Pull
 
     private func pullFolder(
-        _ folder: WorkspaceFolder, allFolders: [WorkspaceFolder], client: ServerClient, root: URL,
-        index: inout SyncIndex, summary: inout SyncSummary
+        _ folder: WorkspaceFolder, allFolders: [WorkspaceFolder], client: SyncClient, root: URL,
+        workspace: WorkspaceDescriptor, index: inout SyncIndex, summary: inout SyncSummary
     ) {
+        let fm = FileManager.default
         let reply = client.manifest(folderId: folder.id, etag: index.folderETags[folder.id])
         switch reply {
         case .failure(let error):
@@ -287,16 +382,25 @@ final class SyncEngine {
                 guard let id = item.id else { continue }
                 remoteIds.insert(id)
                 applyRemoteItem(item, id: id, folder: folder, client: client,
-                                root: root, index: &index, summary: &summary)
+                                workspace: workspace, root: root, index: &index, summary: &summary)
             }
             // In the index, filed under this folder, gone from the manifest:
             // deleted on the server. The local file moves to the state trash.
             for (postId, entry) in index.entries
-            where folderPath(of: entry.relativePath, in: allFolders)?.id == folder.id
+            where (entry.folderId == folder.id
+                   || (entry.folderId == nil && folderPath(of: entry.relativePath, in: allFolders, workspace: workspace)?.id == folder.id))
                 && !remoteIds.contains(postId) {
                 let url = root.appendingPathComponent(entry.relativePath)
-                if let kept = store.moveToTrash(url) {
-                    activity("Server deleted \(entry.relativePath); kept a copy in \(kept.deletingLastPathComponent().lastPathComponent)/")
+                if fm.fileExists(atPath: url.path) {
+                    if let kept = store.moveToTrash(url, mover: { source, target in
+                        try self.moveItem(at: source, to: target, root: root)
+                    }) {
+                        activity("Server deleted \(entry.relativePath); kept a copy in \(kept.deletingLastPathComponent().lastPathComponent)/")
+                    } else {
+                        summary.errors += 1
+                        activity("Server deleted \(entry.relativePath), but Write could not move the local copy to trash")
+                        continue
+                    }
                 } else {
                     activity("Server deleted \(entry.relativePath)")
                 }
@@ -312,29 +416,66 @@ final class SyncEngine {
     }
 
     private func applyRemoteItem(
-        _ item: ManifestItem, id: String, folder: WorkspaceFolder, client: ServerClient,
-        root: URL, index: inout SyncIndex, summary: inout SyncSummary
+        _ item: ManifestItem, id: String, folder: WorkspaceFolder, client: SyncClient,
+        workspace: WorkspaceDescriptor, root: URL, index: inout SyncIndex, summary: inout SyncSummary
     ) {
         let fm = FileManager.default
-        let expectedRel = "\(folder.path)/\(item.slug).md"
+        let expectedRel = WorkspaceLayout.relativePath(
+            for: descriptor(for: item),
+            in: descriptor(for: folder),
+            workspace: workspace
+        )
         let expectedURL = root.appendingPathComponent(expectedRel)
 
         guard var entry = index.entries[id] else {
             // New remote item. A local file already at its path is either the
             // same bytes (adopt: a re-link over an existing mirror) or a
             // stranger (preserve it as a conflicted copy, then pull).
-            if let localHash = fileHash(expectedURL) {
+            if !fm.fileExists(atPath: expectedURL.path),
+               let candidate = localCandidateForRemoteItem(
+                item,
+                folder: folder,
+                expectedRel: expectedRel,
+                workspace: workspace,
+                root: root
+               ) {
+                do {
+                    try moveItem(at: candidate, to: expectedURL, root: root)
+                    activity("Adopted local \(candidate.lastPathComponent) for \(expectedRel)")
+                } catch {
+                    summary.errors += 1
+                    activity("Could not adopt local file for \(expectedRel): \(error.localizedDescription)")
+                }
+            }
+            switch localFileHash(expectedURL, root: root) {
+            case .readable(let localHash):
                 if localHash == item.hash {
-                    index.entries[id] = IndexEntry(hash: item.hash, relativePath: expectedRel,
-                                                   fileMtime: fileMtime(expectedURL))
+                    index.entries[id] = IndexEntry(
+                        hash: item.hash,
+                        relativePath: expectedRel,
+                        fileMtime: fileMtime(expectedURL),
+                        folderId: folder.id,
+                        kind: item.kind
+                    )
                     return
                 }
                 preserveAsConflictedCopy(expectedURL)
                 summary.conflicts += 1
+            case .unreadable(let error):
+                summary.errors += 1
+                activity("\(expectedRel) exists but is not readable yet: \(error.localizedDescription); skipping pull")
+                return
+            case .missing:
+                break
             }
-            if let written = download(id, to: expectedURL, client: client) {
-                index.entries[id] = IndexEntry(hash: written, relativePath: expectedRel,
-                                               fileMtime: fileMtime(expectedURL))
+            if let written = download(id, to: expectedURL, client: client, folderId: folder.id, kind: item.kind) {
+                index.entries[id] = IndexEntry(
+                    hash: written,
+                    relativePath: expectedRel,
+                    fileMtime: fileMtime(expectedURL),
+                    folderId: folder.id,
+                    kind: item.kind
+                )
                 summary.pulled += 1
                 activity("Pulled \(expectedRel)")
             } else {
@@ -343,78 +484,185 @@ final class SyncEngine {
             }
             return
         }
+
+        var activeRel = expectedRel
+        var activeURL = expectedURL
 
         // The server's slug is authoritative: follow renames first, carrying
         // any local edit along with the file.
         if entry.relativePath != expectedRel {
             let oldURL = root.appendingPathComponent(entry.relativePath)
             if fm.fileExists(atPath: oldURL.path) {
-                try? fm.createDirectory(at: expectedURL.deletingLastPathComponent(),
-                                        withIntermediateDirectories: true)
-                if fm.fileExists(atPath: expectedURL.path) {
-                    preserveAsConflictedCopy(expectedURL) // never overwrite a stranger
+                if urlsReferToSameExistingFile(oldURL, expectedURL) {
+                    entry.relativePath = expectedRel
+                    activity("Retargeted \(oldURL.lastPathComponent) to \(expectedRel)")
+                } else if shouldPreserveNonCanonicalLocalPath(
+                    entry.relativePath,
+                    expectedRel: expectedRel,
+                    folder: folder,
+                    workspace: workspace
+                ) {
+                    activeRel = entry.relativePath
+                    activeURL = oldURL
+                } else {
+                    try? fm.createDirectory(at: expectedURL.deletingLastPathComponent(),
+                                            withIntermediateDirectories: true)
+                    if fm.fileExists(atPath: expectedURL.path) {
+                        preserveAsConflictedCopy(expectedURL) // never overwrite a stranger
+                    }
+                    do {
+                        try moveItem(at: oldURL, to: expectedURL, root: root)
+                        activity("Renamed \(entry.relativePath) to \(expectedRel)")
+                        entry.relativePath = expectedRel
+                    } catch {
+                        summary.errors += 1
+                        activity("Could not rename \(entry.relativePath): \(error.localizedDescription)")
+                        return
+                    }
                 }
+            } else if fm.fileExists(atPath: expectedURL.path) {
+                entry.relativePath = expectedRel
+            } else if let migratedURL = migratedLegacyCandidate(
+                for: entry.relativePath,
+                expectedRel: expectedRel,
+                item: item,
+                workspace: workspace,
+                root: root
+            ) {
                 do {
-                    try fm.moveItem(at: oldURL, to: expectedURL)
-                    activity("Renamed \(entry.relativePath) to \(expectedRel)")
+                    try? fm.createDirectory(at: expectedURL.deletingLastPathComponent(),
+                                            withIntermediateDirectories: true)
+                    try moveItem(at: migratedURL, to: expectedURL, root: root)
+                    activity("Retargeted migrated \(entry.relativePath) to \(expectedRel)")
+                    entry.relativePath = expectedRel
                 } catch {
                     summary.errors += 1
-                    activity("Could not rename \(entry.relativePath): \(error.localizedDescription)")
+                    activity("Could not retarget migrated \(entry.relativePath): \(error.localizedDescription)")
                     return
                 }
+            } else if isLegacyMirrorRelativePath(entry.relativePath) {
+                index.entries[id] = entry
+                activity("Legacy indexed path \(entry.relativePath) has not appeared at \(expectedRel); skipping server delete")
+                return
+            } else {
+                entry.relativePath = expectedRel
             }
-            entry.relativePath = expectedRel
+            entry.folderId = folder.id
+            entry.kind = item.kind
             index.entries[id] = entry
+            activeRel = entry.relativePath
+            activeURL = root.appendingPathComponent(entry.relativePath)
         }
 
         guard item.hash != entry.hash else { return } // remote unchanged; push owns local edits
 
-        let localHash = fileHash(expectedURL)
-        if localHash == nil || localHash == entry.hash {
+        switch localFileHash(activeURL, root: root) {
+        case .missing:
             // Missing (resurrect) or clean: take the server's copy.
-            if let written = download(id, to: expectedURL, client: client) {
+            if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
                 entry.hash = written
-                entry.fileMtime = fileMtime(expectedURL)
+                entry.fileMtime = fileMtime(activeURL)
+                entry.folderId = folder.id
+                entry.kind = item.kind
                 index.entries[id] = entry
                 summary.pulled += 1
-                activity("Pulled \(expectedRel)")
+                activity("Pulled \(activeRel)")
             } else {
                 summary.errors += 1
-                activity("Could not pull \(expectedRel)")
+                activity("Could not pull \(activeRel)")
             }
             return
+        case .unreadable(let error):
+            summary.errors += 1
+            activity("\(activeRel) exists but is not readable yet: \(error.localizedDescription); skipping pull")
+            return
+        case .readable(let localHash) where localHash == entry.hash:
+            if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
+                entry.hash = written
+                entry.fileMtime = fileMtime(activeURL)
+                entry.folderId = folder.id
+                entry.kind = item.kind
+                index.entries[id] = entry
+                summary.pulled += 1
+                activity("Pulled \(activeRel)")
+            } else {
+                summary.errors += 1
+                activity("Could not pull \(activeRel)")
+            }
+            return
+        case .readable:
+            break
         }
 
         // Both sides changed: the server copy wins the canonical name, the
         // local edit survives as a conflicted copy that is never auto-pushed.
-        if let kept = preserveAsConflictedCopy(expectedURL) {
-            activity("Conflict on \(expectedRel); your edit is \(kept.lastPathComponent)")
+        if let kept = preserveAsConflictedCopy(activeURL) {
+            activity("Conflict on \(activeRel); your edit is \(kept.lastPathComponent)")
         }
-        if let written = download(id, to: expectedURL, client: client) {
+        if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
             entry.hash = written
-            entry.fileMtime = fileMtime(expectedURL)
+            entry.fileMtime = fileMtime(activeURL)
+            entry.folderId = folder.id
+            entry.kind = item.kind
             index.entries[id] = entry
             summary.conflicts += 1
         } else {
             summary.errors += 1
-            activity("Could not pull \(expectedRel) after conflict")
+            activity("Could not pull \(activeRel) after conflict")
         }
     }
 
     // MARK: Push
 
     private func pushPass(
-        _ workspace: Workspace, client: ServerClient, root: URL,
-        index: inout SyncIndex, summary: inout SyncSummary
+        _ workspace: Workspace, client: SyncClient, root: URL,
+        index: inout SyncIndex, summary: inout SyncSummary, identityScan incomingIdentityScan: IdentityScan?
     ) -> Bool {
         let fm = FileManager.default
+        let workspaceDescriptor = descriptor(for: workspace)
+        let folderById = Dictionary(uniqueKeysWithValues: workspace.folders.map { ($0.id, $0) })
 
         // 1. Local deletions: an index row whose file is gone. The pull phase
         // already resurrected files the server had changed, so what is left
         // is a safe delete.
+        let breadcrumb = root.appendingPathComponent(breadcrumbRelativePath)
+        guard fm.fileExists(atPath: breadcrumb.path),
+              mirrorId(atBreadcrumb: breadcrumb) == index.mirrorId else {
+            activity("Sync folder marker disappeared or changed during this pass; skipping server deletes")
+            index = SyncIndex()
+            return false
+        }
+        var identityScan = incomingIdentityScan
+        if identityScan == nil && index.entries.values.contains(where: {
+            !fm.fileExists(atPath: root.appendingPathComponent($0.relativePath).path)
+        }) {
+            identityScan = scanIdentityFiles(root: root, index: index)
+        }
         for (postId, entry) in index.entries {
             let url = root.appendingPathComponent(entry.relativePath)
             guard !fm.fileExists(atPath: url.path) else { continue }
+            if let found = identityScan?.index.entries[postId] {
+                var moved = entry
+                moved.relativePath = found.relativePath
+                moved.fileMtime = found.fileMtime
+                moved.folderId = found.folderId ?? moved.folderId
+                moved.kind = found.kind ?? moved.kind
+                index.entries[postId] = moved
+                activity("Found moved local file for \(entry.relativePath) at \(found.relativePath); skipping server delete")
+                continue
+            }
+            if isLegacyMirrorRelativePath(entry.relativePath) {
+                activity("Skipping server delete for legacy indexed path \(entry.relativePath) until it is reconciled")
+                continue
+            }
+            if let unreadable = identityScan?.unreadableRelativePaths, !unreadable.isEmpty {
+                activity("Skipping server delete for \(entry.relativePath); \(unreadable.count) local markdown file(s) are not readable yet")
+                continue
+            }
+            if !fileConfirmedMissing(at: url) {
+                activity("Cannot confirm \(entry.relativePath) was deleted (unreadable parent?); skipping server delete")
+                continue
+            }
             switch client.deleteFile(postId: postId) {
             case .success:
                 index.entries.removeValue(forKey: postId)
@@ -430,8 +678,8 @@ final class SyncEngine {
         for (postId, entry) in index.entries {
             var entry = entry
             let url = root.appendingPathComponent(entry.relativePath)
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let localHash = sha256Hex(data)
+            guard let data = try? readData(url, root: root) else { continue }
+            let localHash = MarkdownIdentityCodec.syncHash(for: data)
             guard localHash != entry.hash else {
                 if entry.fileMtime != fileMtime(url) {
                     entry.fileMtime = fileMtime(url)
@@ -440,29 +688,45 @@ final class SyncEngine {
                 continue
             }
             if rejectedContent[entry.relativePath] == localHash { continue }
-            guard let body = String(data: data, encoding: .utf8) else {
+            guard let bodyWithIdentity = String(data: data, encoding: .utf8) else {
                 summary.errors += 1
                 activity("\(entry.relativePath) is not UTF-8; not pushed")
                 continue
             }
+            let body = MarkdownIdentityCodec.strip(from: bodyWithIdentity)
 
             switch client.putFile(postId: postId, body: body, ifMatch: entry.hash) {
             case .success(.saved(let item)):
                 rejectedContent.removeValue(forKey: entry.relativePath)
-                let dirPart = (entry.relativePath as NSString).deletingLastPathComponent
-                let newRel = dirPart.isEmpty ? "\(item.slug).md" : "\(dirPart)/\(item.slug).md"
+                let folder = entry.folderId.flatMap { folderById[$0] }
+                    ?? WorkspaceLayout.classify(relativePath: entry.relativePath, workspace: workspaceDescriptor)
+                        .flatMap { folderById[$0.folder.id] }
+                    ?? workspace.folders.first { $0.mode == item.kind || $0.id == entry.folderId }
+                    ?? workspace.folders.first
+                let newRel = folder.map {
+                    WorkspaceLayout.relativePath(
+                        for: descriptor(for: item),
+                        in: descriptor(for: $0),
+                        workspace: workspaceDescriptor
+                    )
+                } ?? entry.relativePath
                 var fileURL = url
                 if newRel != entry.relativePath {
                     let target = root.appendingPathComponent(newRel)
                     if fm.fileExists(atPath: target.path) { preserveAsConflictedCopy(target) }
-                    try? fm.moveItem(at: fileURL, to: target)
-                    fileURL = target
-                    entry.relativePath = newRel
+                    do {
+                        try moveItem(at: fileURL, to: target, root: root)
+                        fileURL = target
+                        entry.relativePath = newRel
+                    } catch {
+                        summary.errors += 1
+                        activity("Could not move \(entry.relativePath) to \(newRel): \(error.localizedDescription)")
+                    }
                 }
                 // Converge canonicalization: rewrite the local file only when
                 // the server's render differs from what we just sent.
                 if item.hash != localHash {
-                    if let written = download(postId, to: fileURL, client: client) {
+                    if let written = download(postId, to: fileURL, client: client, folderId: folder?.id ?? entry.folderId, kind: item.kind) {
                         entry.hash = written
                     } else {
                         entry.hash = item.hash // next pass re-pulls via the manifest
@@ -471,6 +735,8 @@ final class SyncEngine {
                     entry.hash = item.hash
                 }
                 entry.fileMtime = fileMtime(fileURL)
+                entry.folderId = folder?.id ?? entry.folderId
+                entry.kind = item.kind
                 index.entries[postId] = entry
                 summary.pushed += 1
                 activity("Pushed \(entry.relativePath)")
@@ -480,7 +746,7 @@ final class SyncEngine {
                 if let kept = preserveAsConflictedCopy(url) {
                     activity("Conflict on \(entry.relativePath); your edit is \(kept.lastPathComponent)")
                 }
-                if let written = download(postId, to: url, client: client) {
+                if let written = download(postId, to: url, client: client, folderId: entry.folderId, kind: entry.kind) {
                     entry.hash = written
                     entry.fileMtime = fileMtime(url)
                     index.entries[postId] = entry
@@ -504,16 +770,22 @@ final class SyncEngine {
         var createdFolders = false
         var knownFolderPaths = Set(workspace.folders.map { $0.path })
         for folder in workspace.folders {
-            let dir = root.appendingPathComponent(folder.path, isDirectory: true)
+            let dir = root.appendingPathComponent(
+                WorkspaceLayout.directoryRelativePath(for: descriptor(for: folder), workspace: workspaceDescriptor),
+                isDirectory: true
+            )
             let contents = directoryContents(dir)
             for child in contents {
                 let name = child.lastPathComponent
                 guard isDirectory(child) else { continue }
+                guard !(folder.mode == "bookmarks" && name.range(of: #"^\d{4}$"#, options: .regularExpression) != nil) else {
+                    continue
+                }
                 guard shouldScanDirectory(named: name) else { continue }
                 let childPath = childFolderPath(parentPath: folder.path, name: name)
                 guard !knownFolderPaths.contains(childPath) else { continue }
                 if let created = createFolderForLocalDirectory(
-                    child, parent: folder, client: client, root: root, summary: &summary
+                    child, parent: folder, workspace: workspaceDescriptor, client: client, root: root, summary: &summary
                 ) {
                     knownFolderPaths.insert(created.path)
                     createdFolders = true
@@ -521,28 +793,26 @@ final class SyncEngine {
             }
         }
 
-        // 4. New local files: .md files in a folder dir with no index row.
+        // 4. New local files: .md files in the visible workspace with no
+        // index row.
         let indexedPaths = Set(index.entries.values.map { $0.relativePath })
-        for folder in workspace.folders {
-            let dir = root.appendingPathComponent(folder.path, isDirectory: true)
-            let contents = directoryContents(dir)
-            for fileURL in contents {
-                guard !isDirectory(fileURL) else { continue }
-                guard fileURL.pathExtension.lowercased() == "md" else { continue }
-                let name = fileURL.lastPathComponent
-                guard !name.hasPrefix(".") else { continue }
-                guard !isConflictedCopy(fileURL) else { continue } // never auto-pushed
-                let rel = "\(folder.path)/\(name)"
-                guard !indexedPaths.contains(rel) else { continue }
-                pushNewFile(fileURL, rel: rel, folder: folder, client: client,
-                            root: root, index: &index, summary: &summary)
-            }
+        for fileURL in WorkspaceLayout.markdownFiles(at: root) {
+            guard !isDirectory(fileURL) else { continue }
+            let name = fileURL.lastPathComponent
+            guard !name.hasPrefix(".") else { continue }
+            guard !isConflictedCopy(fileURL) else { continue } // never auto-pushed
+            guard let rel = WorkspaceLayout.relativePath(for: fileURL, under: root) else { continue }
+            guard !indexedPaths.contains(rel) else { continue }
+            guard let classification = WorkspaceLayout.classify(relativePath: rel, workspace: workspaceDescriptor),
+                  let folder = folderById[classification.folder.id] else { continue }
+            pushNewFile(fileURL, rel: rel, folder: folder, workspace: workspaceDescriptor, client: client,
+                        root: root, index: &index, summary: &summary)
         }
         return createdFolders
     }
 
     private func createFolderForLocalDirectory(
-        _ dir: URL, parent: WorkspaceFolder, client: ServerClient, root: URL,
+        _ dir: URL, parent: WorkspaceFolder, workspace: WorkspaceDescriptor, client: SyncClient, root: URL,
         summary: inout SyncSummary
     ) -> WorkspaceFolder? {
         let localName = dir.lastPathComponent
@@ -555,7 +825,10 @@ final class SyncEngine {
         case .success(let created):
             let serverSegment = lastSegment(of: created.path)
             if serverSegment != localName {
-                let target = root.appendingPathComponent(created.path, isDirectory: true)
+                let target = root.appendingPathComponent(
+                    WorkspaceLayout.directoryRelativePath(for: descriptor(for: created), workspace: workspace),
+                    isDirectory: true
+                )
                 if let message = renameDirectory(dir, to: target) {
                     summary.errors += 1
                     activity("Created folder \(created.path) but could not rename \(localPath): \(message)")
@@ -570,18 +843,26 @@ final class SyncEngine {
     }
 
     private func pushNewFile(
-        _ fileURL: URL, rel: String, folder: WorkspaceFolder, client: ServerClient,
+        _ fileURL: URL, rel: String, folder: WorkspaceFolder, workspace: WorkspaceDescriptor, client: SyncClient,
         root: URL, index: inout SyncIndex, summary: inout SyncSummary
     ) {
         let fm = FileManager.default
-        guard let data = try? Data(contentsOf: fileURL),
-              let text = String(data: data, encoding: .utf8) else {
+        let data: Data
+        do {
+            data = try readData(fileURL, root: root)
+        } catch {
             summary.errors += 1
-            activity("\(rel) is not readable UTF-8; not pushed")
+            activity("\(rel) is not readable: \(error.localizedDescription); not pushed")
             return
         }
-        let localHash = sha256Hex(data)
+        guard let textWithIdentity = String(data: data, encoding: .utf8) else {
+            summary.errors += 1
+            activity("\(rel) is not UTF-8; not pushed")
+            return
+        }
+        let localHash = MarkdownIdentityCodec.syncHash(for: data)
         if rejectedContent[rel] == localHash { return }
+        let text = MarkdownIdentityCodec.strip(from: textWithIdentity)
 
         // A file in notes/ without a kind is a note, and so on: the folder it
         // sits in wins when the frontmatter is silent. (Blog is the server's
@@ -597,24 +878,46 @@ final class SyncEngine {
                 return
             }
             // The server's slug names the file from here on.
-            let newRel = "\(folder.path)/\(item.slug).md"
+            let newRel = WorkspaceLayout.relativePath(
+                for: descriptor(for: item),
+                in: descriptor(for: folder),
+                workspace: workspace
+            )
             var target = fileURL
+            var indexedRel = rel
             if newRel != rel {
                 target = root.appendingPathComponent(newRel)
                 if fm.fileExists(atPath: target.path) { preserveAsConflictedCopy(target) }
-                try? fm.moveItem(at: fileURL, to: target)
+                do {
+                    try moveItem(at: fileURL, to: target, root: root)
+                    indexedRel = newRel
+                } catch {
+                    summary.errors += 1
+                    activity("Could not move \(rel) to \(newRel): \(error.localizedDescription)")
+                    target = fileURL
+                }
             }
             // Converge on the server's canonical render (it adds schema,
             // canonical URL, and normalized frontmatter).
-            if let written = download(id, to: target, client: client) {
-                index.entries[id] = IndexEntry(hash: written, relativePath: newRel,
-                                               fileMtime: fileMtime(target))
+            if let written = download(id, to: target, client: client, folderId: folder.id, kind: item.kind) {
+                index.entries[id] = IndexEntry(
+                    hash: written,
+                    relativePath: indexedRel,
+                    fileMtime: fileMtime(target),
+                    folderId: folder.id,
+                    kind: item.kind
+                )
             } else {
-                index.entries[id] = IndexEntry(hash: item.hash, relativePath: newRel,
-                                               fileMtime: fileMtime(target))
+                index.entries[id] = IndexEntry(
+                    hash: item.hash,
+                    relativePath: indexedRel,
+                    fileMtime: fileMtime(target),
+                    folderId: folder.id,
+                    kind: item.kind
+                )
             }
             summary.pushed += 1
-            activity("Published \(newRel) as \(item.status)")
+            activity("Published \(indexedRel) as \(item.status)")
         case .success(.rejected(let message)):
             rejectedContent[rel] = localHash
             summary.errors += 1
@@ -630,13 +933,23 @@ final class SyncEngine {
     // MARK: Helpers
 
     private func materializeFolders(
-        _ folders: [WorkspaceFolder], root: URL, summary: inout SyncSummary
+        _ folders: [WorkspaceFolder], workspace: WorkspaceDescriptor, root: URL, summary: inout SyncSummary
     ) {
         let fm = FileManager.default
         for folder in folders {
-            let dir = root.appendingPathComponent(folder.path, isDirectory: true)
+            let dir = root.appendingPathComponent(
+                WorkspaceLayout.directoryRelativePath(for: descriptor(for: folder), workspace: workspace),
+                isDirectory: true
+            )
             do {
                 try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                if folder.mode == "blog", folder.path.hasPrefix("blog/") {
+                    let child = String(folder.path.dropFirst("blog/".count))
+                    try fm.createDirectory(
+                        at: root.appendingPathComponent("Drafts/\(child)", isDirectory: true),
+                        withIntermediateDirectories: true
+                    )
+                }
             } catch {
                 summary.errors += 1
                 activity("Could not create local folder \(folder.path): \(error.localizedDescription)")
@@ -694,7 +1007,7 @@ final class SyncEngine {
             n += 1
         }
         do {
-            try fm.moveItem(at: url, to: candidate)
+            try moveItem(at: url, to: candidate, root: syncRootProvider())
             return candidate
         } catch {
             return nil
@@ -702,36 +1015,292 @@ final class SyncEngine {
     }
 
     private func isConflictedCopy(_ url: URL) -> Bool {
-        url.lastPathComponent.contains(" (conflicted copy ")
+        let name = url.lastPathComponent
+        return name.contains(" (conflicted copy ") || name.contains(" (legacy copy")
     }
 
     /// Fetch the server's render of a post and write it (atomically) to url.
     /// Returns the sha256 of the bytes written, so the caller's index entry
     /// always matches the file that is actually on disk.
-    private func download(_ postId: String, to url: URL, client: ServerClient) -> String? {
+    private func download(
+        _ postId: String,
+        to url: URL,
+        client: SyncClient,
+        folderId: String? = nil,
+        kind: String? = nil
+    ) -> String? {
         switch client.fileText(postId: postId) {
         case .failure:
             return nil
         case .success(let (text, _)):
-            let data = Data(text.utf8)
+            let localText = MarkdownIdentityCodec.inject(into: text, itemId: postId, folderId: folderId, kind: kind)
+            let data = Data(localText.utf8)
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try data.write(to: url, options: .atomic)
+                try writeData(data, to: url)
             } catch {
+                activity("Could not write \(url.lastPathComponent): \(error.localizedDescription)")
                 return nil
             }
-            return sha256Hex(data)
+            return MarkdownIdentityCodec.syncHash(for: data)
         }
     }
 
+    private func loadIndex(root: URL) -> SyncIndex {
+        store.loadIndex()
+    }
+
+    private func saveIndex(_ index: SyncIndex) {
+        store.saveIndex(index)
+    }
+
+    private func reconcileIndexedMoves(root: URL, index: inout SyncIndex, summary: inout SyncSummary) -> IdentityScan? {
+        let fm = FileManager.default
+        let missingIds = index.entries.compactMap { postId, entry -> String? in
+            fm.fileExists(atPath: root.appendingPathComponent(entry.relativePath).path) ? nil : postId
+        }
+        guard !missingIds.isEmpty else { return nil }
+        let scan = scanIdentityFiles(root: root, index: index)
+        for postId in missingIds {
+            guard let diskEntry = scan.index.entries[postId] else { continue }
+            guard var entry = index.entries[postId],
+                  entry.relativePath != diskEntry.relativePath else { continue }
+            let previous = entry.relativePath
+            entry.relativePath = diskEntry.relativePath
+            entry.fileMtime = diskEntry.fileMtime
+            entry.folderId = diskEntry.folderId ?? entry.folderId
+            entry.kind = diskEntry.kind ?? entry.kind
+            let url = root.appendingPathComponent(diskEntry.relativePath)
+            if ensureFrontmatterReflectsPath(url: url, relativePath: diskEntry.relativePath) {
+                entry.fileMtime = fileMtime(url)
+            }
+            index.entries[postId] = entry
+            activity("Detected moved file \(previous) to \(diskEntry.relativePath)")
+            summary.pushed += 1
+        }
+        return scan
+    }
+
+    private func scanIdentityFiles(root: URL, index: SyncIndex) -> IdentityScan {
+        let preferred = Dictionary(uniqueKeysWithValues: index.entries.map { ($0.key, $0.value.relativePath) })
+        var unreadable: [String] = []
+        let rebuilt = WorkspaceIndexStore.rebuild(
+            root: root,
+            preferredPaths: preferred,
+            includeSkippedDirectories: true,
+            readData: { url in
+                try self.readData(url, root: root)
+            },
+            onUnreadable: { url, _ in
+                if let rel = WorkspaceLayout.relativePath(for: url, under: root) {
+                    unreadable.append(rel)
+                }
+            }
+        )
+        return IdentityScan(index: rebuilt, unreadableRelativePaths: unreadable)
+    }
+
+    private func ensureFrontmatterReflectsPath(url: URL, relativePath: String) -> Bool {
+        guard let data = try? readData(url, root: syncRootProvider()),
+              var text = String(data: data, encoding: .utf8) else { return false }
+        var changed = false
+        let slug = url.deletingPathExtension().lastPathComponent
+        if replaceFrontmatterValue(key: "slug", value: slug, text: &text) {
+            changed = true
+        }
+        if relativePath == url.lastPathComponent || relativePath.hasPrefix("Drafts/") {
+            if replaceFrontmatterValue(key: "status", value: "draft", text: &text) {
+                changed = true
+            }
+        }
+        guard changed else { return false }
+        do {
+            try writeData(Data(text.utf8), to: url)
+            return true
+        } catch {
+            activity("Could not update front matter for \(relativePath): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func replaceFrontmatterValue(key: String, value: String, text: inout String) -> Bool {
+        guard text.hasPrefix("---\n") || text.hasPrefix("---\r\n"),
+              let firstBreak = text.firstIndex(of: "\n") else { return false }
+        var cursor = text.index(after: firstBreak)
+        while cursor < text.endIndex {
+            let lineStart = cursor
+            let nextBreak = text[cursor...].firstIndex(of: "\n") ?? text.endIndex
+            let rawLine = text[lineStart..<nextBreak]
+            let line = rawLine.last == "\r" ? rawLine.dropLast() : rawLine[...]
+            if line.trimmingCharacters(in: .whitespaces) == "---" { break }
+            if line.hasPrefix("\(key):") {
+                let replacement = "\(key): \(jsonString(value))"
+                if line == replacement { return false }
+                text.replaceSubrange(lineStart..<nextBreak, with: replacement)
+                return true
+            }
+            cursor = nextBreak == text.endIndex ? text.endIndex : text.index(after: nextBreak)
+        }
+        return false
+    }
+
     /// The workspace folder a relative path lives in (longest path prefix).
-    private func folderPath(of relativePath: String, in folders: [WorkspaceFolder]) -> WorkspaceFolder? {
+    private func folderPath(
+        of relativePath: String,
+        in folders: [WorkspaceFolder],
+        workspace: WorkspaceDescriptor
+    ) -> WorkspaceFolder? {
+        if let classification = WorkspaceLayout.classify(relativePath: relativePath, workspace: workspace) {
+            return folders.first { $0.id == classification.folder.id }
+        }
         var best: WorkspaceFolder?
         for folder in folders where relativePath.hasPrefix(folder.path + "/") {
             if best == nil || folder.path.count > (best?.path.count ?? 0) { best = folder }
         }
         return best
+    }
+
+    private func shouldPreserveNonCanonicalLocalPath(
+        _ relativePath: String,
+        expectedRel: String,
+        folder: WorkspaceFolder,
+        workspace: WorkspaceDescriptor
+    ) -> Bool {
+        guard (relativePath as NSString).lastPathComponent == (expectedRel as NSString).lastPathComponent else {
+            return false
+        }
+        guard relativePath.hasPrefix("Drafts/") == expectedRel.hasPrefix("Drafts/") else { return false }
+        guard !isLegacyMirrorRelativePath(relativePath) else { return false }
+        guard relativePathContainsSkippedDirectory(relativePath) else { return false }
+        guard let classification = WorkspaceLayout.classify(relativePath: relativePath, workspace: workspace) else {
+            return false
+        }
+        return classification.folder.id == folder.id
+    }
+
+    private func migratedLegacyCandidate(
+        for legacyRel: String,
+        expectedRel: String,
+        item: ManifestItem,
+        workspace: WorkspaceDescriptor,
+        root: URL
+    ) -> URL? {
+        guard isLegacyMirrorRelativePath(legacyRel) else { return nil }
+        let parts = legacyRel.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard let first = parts.first else { return nil }
+        let remainder = Array(parts.dropFirst())
+        var candidates: [String] = []
+
+        switch first {
+        case "blog":
+            if item.status == "draft" {
+                candidates.append(join(["Drafts"] + remainder))
+            }
+            let handle = workspace.blog.handle.isEmpty ? "default" : workspace.blog.handle
+            candidates.append(join(["Blogs", safePathComponent(handle), "Posts"] + remainder))
+        case "notes":
+            candidates.append(join(["Notes"] + remainder))
+        case "bookmarks":
+            candidates.append(expectedRel)
+            let bookmarksRoot = root.appendingPathComponent("Bookmarks", isDirectory: true)
+            for child in directoryContents(bookmarksRoot) where isDirectory(child) {
+                candidates.append(join(["Bookmarks", child.lastPathComponent] + remainder))
+            }
+        case "drafts":
+            candidates.append(join(["Drafts"] + remainder))
+        default:
+            break
+        }
+
+        let existing = unique(candidates).map { root.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        return existing.count == 1 ? existing[0] : nil
+    }
+
+    private func localCandidateForRemoteItem(
+        _ item: ManifestItem,
+        folder: WorkspaceFolder,
+        expectedRel: String,
+        workspace: WorkspaceDescriptor,
+        root: URL
+    ) -> URL? {
+        let expectedName = (expectedRel as NSString).lastPathComponent
+        for url in WorkspaceLayout.markdownFiles(
+            at: root,
+            includeSkippedDirectories: true,
+            includeHiddenFiles: true
+        ) {
+            guard url.lastPathComponent == expectedName,
+                  let rel = WorkspaceLayout.relativePath(for: url, under: root),
+                  rel != expectedRel,
+                  !WorkspaceLayout.isInternal(relativePath: rel),
+                  !isConflictedCopy(url),
+                  candidate(rel, belongsTo: folder, workspace: workspace) else {
+                continue
+            }
+            if let data = try? readData(url, root: root),
+               MarkdownIdentityCodec.syncHash(for: data) == item.hash {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private func urlsReferToSameExistingFile(_ lhs: URL, _ rhs: URL) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: lhs.path), fm.fileExists(atPath: rhs.path),
+              let left = try? fm.attributesOfItem(atPath: lhs.path),
+              let right = try? fm.attributesOfItem(atPath: rhs.path),
+              let leftFile = left[.systemFileNumber] as? NSNumber,
+              let rightFile = right[.systemFileNumber] as? NSNumber,
+              let leftVolume = left[.systemNumber] as? NSNumber,
+              let rightVolume = right[.systemNumber] as? NSNumber else {
+            return false
+        }
+        return leftFile == rightFile && leftVolume == rightVolume
+    }
+
+    private func relativePathContainsSkippedDirectory(_ relativePath: String) -> Bool {
+        let directories = relativePath.split(separator: "/", omittingEmptySubsequences: true).dropLast()
+        return directories.contains { component in
+            String(component).caseInsensitiveCompare("media") == .orderedSame || component.hasPrefix(".")
+        }
+    }
+
+    private func isLegacyMirrorRelativePath(_ relativePath: String) -> Bool {
+        relativePath.hasPrefix("blog/")
+            || relativePath.hasPrefix("notes/")
+            || relativePath.hasPrefix("bookmarks/")
+            || relativePath.hasPrefix("drafts/")
+    }
+
+    private func indexContainsLegacyMirrorPaths(_ index: SyncIndex) -> Bool {
+        index.entries.values.contains { isLegacyMirrorRelativePath($0.relativePath) }
+    }
+
+    private func unique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    private func candidate(
+        _ relativePath: String,
+        belongsTo folder: WorkspaceFolder,
+        workspace: WorkspaceDescriptor
+    ) -> Bool {
+        if let classification = WorkspaceLayout.classify(relativePath: relativePath, workspace: workspace) {
+            return classification.folder.id == folder.id
+        }
+        let lower = relativePath.lowercased()
+        switch folder.mode.lowercased() {
+        case "notes":
+            return lower.hasPrefix("notes/")
+        case "bookmarks":
+            return lower.hasPrefix("bookmarks/")
+        default:
+            return lower.hasPrefix("blog/") || lower.hasPrefix("blogs/")
+        }
     }
 
     private func directoryContents(_ dir: URL) -> [URL] {
@@ -750,6 +1319,15 @@ final class SyncEngine {
 
     private func childFolderPath(parentPath: String, name: String) -> String {
         parentPath.isEmpty ? name : "\(parentPath)/\(name)"
+    }
+
+    private func join(_ parts: [String]) -> String {
+        parts.flatMap { $0.split(separator: "/", omittingEmptySubsequences: true).map(String.init) }
+            .joined(separator: "/")
+    }
+
+    private func safePathComponent(_ value: String) -> String {
+        value.replacingOccurrences(of: "/", with: "-")
     }
 
     private func lastSegment(of path: String) -> String {
@@ -777,20 +1355,90 @@ final class SyncEngine {
                 }
                 return "\(target.lastPathComponent) already exists"
             }
-            try fm.moveItem(at: source, to: target)
+            try moveItem(at: source, to: target, root: syncRootProvider())
             return nil
         } catch {
             return error.localizedDescription
         }
     }
 
+    private func moveItem(at source: URL, to target: URL, root: URL) throws {
+        try coordinator(for: root).moveItem(at: source, to: target)
+    }
+
     private func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func fileHash(_ url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return sha256Hex(data)
+    private func descriptor(for workspace: Workspace) -> WorkspaceDescriptor {
+        WorkspaceDescriptor(
+            blog: WorkspaceBlogDescriptor(handle: workspace.blog.handle, name: workspace.blog.name),
+            folders: workspace.folders.map(descriptor(for:))
+        )
+    }
+
+    private func descriptor(for folder: WorkspaceFolder) -> WorkspaceFolderDescriptor {
+        WorkspaceFolderDescriptor(
+            id: folder.id,
+            name: folder.name,
+            path: folder.path,
+            mode: folder.mode,
+            parentId: folder.parentId
+        )
+    }
+
+    private func descriptor(for item: ManifestItem) -> WorkspaceItemDescriptor {
+        WorkspaceItemDescriptor(
+            id: item.id,
+            kind: item.kind,
+            slug: item.slug,
+            status: item.status,
+            date: item.date,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt
+        )
+    }
+
+    private func coordinator(for root: URL) -> WorkspaceFileCoordinator {
+        if let fileCoordinator, fileCoordinator.rootURL.standardizedFileURL.path == root.standardizedFileURL.path {
+            return fileCoordinator
+        }
+        let next = WorkspaceFileCoordinator(rootURL: root)
+        next.onPresentedItemChange = { [weak self] in
+            self?.enqueue(.pushOnly)
+        }
+        fileCoordinator = next
+        return next
+    }
+
+    private func readData(_ url: URL, root: URL) throws -> Data {
+        try coordinator(for: root).readData(at: url)
+    }
+
+    private func writeData(_ data: Data, to url: URL) throws {
+        let root = syncRootProvider()
+        try coordinator(for: root).writeData(data, to: url)
+    }
+
+    private func jsonString(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let text = String(data: data, encoding: .utf8) else {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+        return text
+    }
+
+    private func localFileHash(_ url: URL, root: URL) -> LocalFileHash {
+        let existedBeforeRead = FileManager.default.fileExists(atPath: url.path)
+        do {
+            let data = try readData(url, root: root)
+            return .readable(MarkdownIdentityCodec.syncHash(for: data))
+        } catch {
+            if existedBeforeRead || FileManager.default.fileExists(atPath: url.path) {
+                return .unreadable(error)
+            }
+            return .missing
+        }
     }
 
     private func fileMtime(_ url: URL) -> Double? {

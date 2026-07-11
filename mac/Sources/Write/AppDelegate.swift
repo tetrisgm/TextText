@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import WriteWorkspaceCore
 
 /// Regular Dock app + a menu-bar status item (menu rebuilt on open, the
 /// partyparty shape; SwiftUI MenuBarExtra is deliberately avoided). The app
@@ -7,6 +8,7 @@ import ServiceManagement
 /// signed out; only sync waits for a link.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let syncRootKey = "WriteSyncRootPath"
+    private static let workspaceMigrationAppliedKey = "WriteWorkspaceICloudPhase1MigrationApplied"
     private static let loginItemAppliedKey = "WriteLoginItemDefaultApplied"
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
@@ -24,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var webWindow: WebAppWindowController?
     private var activityLog: [String] = []
     private var wasBusy = false
+    private let workspaceLocationLock = NSLock()
+    private var workspaceLocation: WorkspaceLocation?
 
     // MARK: Lifecycle
 
@@ -46,6 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = buildMainMenu()
 
         linkController = LinkController(store: store)
+        setWorkspaceLocation(syncRootLocation())
+        migrateLegacySyncFolderIfNeeded()
+        if let workspaceLocation = currentWorkspaceLocation(), !workspaceLocation.iCloudAvailable {
+            appendActivity(workspaceLocation.statusMessage)
+        }
         engine = SyncEngine(store: store)
         engine.makeClient = { [weak self] in
             guard let self, let credentials = self.store.loadCredentials() else { return nil }
@@ -53,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                 token: credentials.token)
         }
         engine.syncRootProvider = { [weak self] in self?.syncRoot() ?? Self.defaultSyncRoot() }
+        engine.workspaceLocationProvider = { [weak self] in self?.currentWorkspaceLocation() ?? self?.syncRootLocation() }
         engine.onActivity = { [weak self] message in self?.appendActivity(message) }
         engine.onStateChange = { [weak self] in self?.syncStateChanged() }
         engine.onServerAppVersion = { [weak self] version in self?.serverAdvertisedAppVersion(version) }
@@ -191,16 +201,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Sync root
 
     static func defaultSyncRoot() -> URL {
-        // ~/Write, never Desktop/Documents/Downloads: those are TCC-gated
-        // folders and would prompt; the home root is not.
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write", isDirectory: true)
+        WorkspaceRootResolver().resolve().url
+    }
+
+    private func syncRootLocation() -> WorkspaceLocation {
+        if let path = UserDefaults.standard.string(forKey: Self.syncRootKey), !path.isEmpty {
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+            return WorkspaceRootResolver(overrideRoot: url).resolve()
+        }
+        return WorkspaceRootResolver().resolve()
     }
 
     private func syncRoot() -> URL {
-        if let path = UserDefaults.standard.string(forKey: Self.syncRootKey), !path.isEmpty {
-            return URL(fileURLWithPath: path, isDirectory: true)
+        if let location = currentWorkspaceLocation() {
+            return location.url
         }
-        return Self.defaultSyncRoot()
+        let location = syncRootLocation()
+        setWorkspaceLocation(location)
+        return location.url
+    }
+
+    private func currentWorkspaceLocation() -> WorkspaceLocation? {
+        workspaceLocationLock.lock()
+        defer { workspaceLocationLock.unlock() }
+        return workspaceLocation
+    }
+
+    private func setWorkspaceLocation(_ location: WorkspaceLocation?) {
+        workspaceLocationLock.lock()
+        workspaceLocation = location
+        workspaceLocationLock.unlock()
+    }
+
+    private func migrateLegacySyncFolderIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.workspaceMigrationAppliedKey) else { return }
+        if let custom = defaults.string(forKey: Self.syncRootKey), !custom.isEmpty {
+            defaults.set(true, forKey: Self.workspaceMigrationAppliedKey)
+            appendActivity("Keeping custom sync folder \(custom)")
+            return
+        }
+        let destinationLocation = currentWorkspaceLocation() ?? syncRootLocation()
+        guard destinationLocation.kind != .documentsFallback else {
+            return
+        }
+        let destination = destinationLocation.url
+        let legacy = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write", isDirectory: true)
+        if legacy.standardizedFileURL.path == destination.standardizedFileURL.path {
+            return
+        }
+        let summary = WorkspaceMigrator.migrateLegacyMirror(
+            from: legacy,
+            to: destination,
+            workspace: store.cachedWorkspace().map(descriptor(for:))
+        )
+        if summary.errors.isEmpty {
+            defaults.set(true, forKey: Self.workspaceMigrationAppliedKey)
+        }
+        if summary.moved + summary.adopted + summary.conflicts > 0 {
+            appendActivity("Adopted legacy sync folder into \(destination.path)")
+        }
+        for message in summary.errors.prefix(3) {
+            appendActivity("Workspace migration issue: \(message)")
+        }
+    }
+
+    private func descriptor(for workspace: Workspace) -> WorkspaceDescriptor {
+        WorkspaceDescriptor(
+            blog: WorkspaceBlogDescriptor(handle: workspace.blog.handle, name: workspace.blog.name),
+            folders: workspace.folders.map {
+                WorkspaceFolderDescriptor(
+                    id: $0.id,
+                    name: $0.name,
+                    path: $0.path,
+                    mode: $0.mode,
+                    parentId: $0.parentId
+                )
+            }
+        )
     }
 
     private func changeSyncFolder() {
@@ -215,6 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         UserDefaults.standard.set(url.path, forKey: Self.syncRootKey)
+        setWorkspaceLocation(WorkspaceRootResolver(overrideRoot: url).resolve())
         appendActivity("Sync folder is now \(url.path)")
         engine.resetForNewRoot()
         refreshUI()
@@ -610,6 +689,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             linkFailed: linkFailed,
             waitingApproval: waitingApproval,
             folderPath: syncRoot().path,
+            folderStatus: currentWorkspaceLocation()?.statusMessage,
             lastSyncLine: lastSyncLine(),
             busy: engine.isSyncing,
             activity: activityLog

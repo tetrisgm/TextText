@@ -1,4 +1,5 @@
 import Foundation
+import WriteWorkspaceCore
 
 /// WRITE_HEADLESS=1: no UI, one real sync pass through the exact engine the
 /// app runs, a one-line JSON summary on stdout, exit 0/1. This is the CI
@@ -24,6 +25,12 @@ enum Headless {
         engine.makeClient = { ServerClient(origin: origin, token: token) }
         engine.syncRootProvider = {
             URL(fileURLWithPath: (rootPath as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        engine.workspaceLocationProvider = {
+            WorkspaceRootResolver(overrideRoot: URL(
+                fileURLWithPath: (rootPath as NSString).expandingTildeInPath,
+                isDirectory: true
+            )).resolve()
         }
         engine.callbackQueue = nil // no runloop here; deliver inline
         engine.onActivity = { message in
