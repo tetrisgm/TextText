@@ -13,7 +13,9 @@ let package = Package(
     products: [
         .library(name: "WriteFileProviderCore", targets: ["WriteFileProviderCore"]),
         .library(name: "WriteWorkspaceCore", targets: ["WriteWorkspaceCore"]),
-        .library(name: "WriteEditor", targets: ["WriteEditor"])
+        .library(name: "WriteEditor", targets: ["WriteEditor"]),
+        .library(name: "WriteAppIntents", targets: ["WriteAppIntents"]),
+        .library(name: "WriteSpotlight", targets: ["WriteSpotlight"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -33,15 +35,38 @@ let package = Package(
             dependencies: ["WriteWorkspaceCore"],
             path: "Sources/WriteEditor"
         ),
+        .target(
+            name: "WriteCapabilitySpec",
+            path: "Sources/WriteCapabilitySpec"
+        ),
+        .target(
+            name: "WriteAppIntents",
+            dependencies: ["WriteWorkspaceCore"],
+            path: "Sources/WriteAppIntents"
+        ),
+        .target(
+            name: "WriteSpotlight",
+            dependencies: ["WriteWorkspaceCore"],
+            path: "Sources/WriteSpotlight"
+        ),
         .executableTarget(
             name: "Write",
             dependencies: [
                 "WriteEditor",
                 "WriteWorkspaceCore",
+                "WriteAppIntents",
+                "WriteSpotlight",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "libwebp", package: "libwebp-Xcode")
             ],
             path: "Sources/Write"
+        ),
+        .executableTarget(
+            // Depends only on the standalone spec module so a manifest edit
+            // can always regenerate, even when generated code is stale.
+            name: "capability-generator",
+            dependencies: ["WriteCapabilitySpec"],
+            path: "Tools/CapabilityGenerator"
         ),
         .testTarget(
             name: "WriteFileProviderCoreTests",
@@ -57,6 +82,16 @@ let package = Package(
             name: "WriteEditorTests",
             dependencies: ["WriteEditor"],
             path: "Tests/WriteEditorTests"
+        ),
+        .testTarget(
+            name: "WriteAppIntentsTests",
+            dependencies: ["WriteAppIntents", "WriteCapabilitySpec"],
+            path: "Tests/WriteAppIntentsTests"
+        ),
+        .testTarget(
+            name: "WriteSpotlightTests",
+            dependencies: ["WriteSpotlight"],
+            path: "Tests/WriteSpotlightTests"
         ),
         .testTarget(
             name: "WriteTests",

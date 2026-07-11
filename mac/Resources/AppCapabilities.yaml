@@ -1,0 +1,173 @@
+version: 1
+entities:
+  - id: Document
+    displayName: Document
+    doc: Local markdown document in the Write workspace.
+  - id: Folder
+    displayName: Folder
+    doc: Local folder in the Write workspace.
+  - id: Blog
+    displayName: Blog
+    doc: Local blog folder in the Write workspace.
+  - id: Publication
+    displayName: Publication
+    doc: Published state for a local markdown document.
+  - id: Bookmark
+    displayName: Bookmark
+    doc: Local markdown bookmark in the Write workspace.
+intents:
+  - id: createDocument
+    displayName: Create document
+    implementation: CreateDocumentIntent
+    availability: macOS 13.0+
+    result: Document
+    doc: Create a local markdown document in the workspace.
+    parameters:
+      - id: title
+        type: String
+        displayName: Title
+        required: true
+        doc: Title for the new document.
+      - id: body
+        type: String
+        displayName: Body
+        required: false
+        doc: Initial markdown body.
+      - id: folderPath
+        type: String
+        displayName: Folder path
+        required: false
+        doc: Workspace folder path, defaulting to Notes.
+  - id: openDocument
+    displayName: Open document
+    implementation: OpenDocumentIntent
+    availability: macOS 13.0+
+    result: URL
+    doc: Return the local deep link for a workspace document.
+    parameters:
+      - id: document
+        type: Document
+        displayName: Document
+        required: true
+        doc: Document to open.
+  - id: appendTextToDocument
+    displayName: Append text to document
+    implementation: AppendTextToDocumentIntent
+    availability: macOS 13.0+
+    result: Document
+    doc: Append markdown text to a local workspace document.
+    parameters:
+      - id: document
+        type: Document
+        displayName: Document
+        required: true
+        doc: Document to update.
+      - id: text
+        type: String
+        displayName: Text
+        required: true
+        doc: Markdown text to append.
+  - id: searchDocuments
+    displayName: Search documents
+    implementation: SearchDocumentsIntent
+    availability: macOS 13.0+
+    result: DocumentList
+    doc: Search local workspace documents by title and body.
+    parameters:
+      - id: query
+        type: String
+        displayName: Query
+        required: true
+        doc: Text to search for.
+      - id: limit
+        type: Int
+        displayName: Limit
+        required: false
+        doc: Maximum number of results.
+  - id: createFolder
+    displayName: Create folder
+    implementation: CreateFolderIntent
+    availability: macOS 13.0+
+    result: Folder
+    doc: Create a local workspace folder.
+    parameters:
+      - id: name
+        type: String
+        displayName: Name
+        required: true
+        doc: New folder name.
+      - id: parentPath
+        type: String
+        displayName: Parent path
+        required: false
+        doc: Parent workspace folder, defaulting to Notes.
+  - id: moveDocument
+    displayName: Move document
+    implementation: MoveDocumentIntent
+    availability: macOS 13.0+
+    result: Document
+    doc: Move a local workspace document to another folder.
+    parameters:
+      - id: document
+        type: Document
+        displayName: Document
+        required: true
+        doc: Document to move.
+      - id: folderPath
+        type: String
+        displayName: Folder path
+        required: true
+        doc: Destination workspace folder.
+  - id: createBookmarkFromURL
+    displayName: Create bookmark from URL
+    implementation: CreateBookmarkFromURLIntent
+    availability: macOS 13.0+
+    result: Bookmark
+    doc: Create a local markdown bookmark from a URL.
+    parameters:
+      - id: url
+        type: URL
+        displayName: URL
+        required: true
+        doc: URL to save.
+      - id: title
+        type: String
+        displayName: Title
+        required: false
+        doc: Optional bookmark title.
+  - id: publishDocument
+    displayName: Publish document
+    implementation: PublishDocumentIntent
+    availability: macOS 13.0+
+    result: Publication
+    doc: Mark a local workspace document as published.
+    parameters:
+      - id: document
+        type: Document
+        displayName: Document
+        required: true
+        doc: Document to publish.
+  - id: unpublishDocument
+    displayName: Unpublish document
+    implementation: UnpublishDocumentIntent
+    availability: macOS 13.0+
+    result: Document
+    doc: Mark a local workspace document as draft.
+    parameters:
+      - id: document
+        type: Document
+        displayName: Document
+        required: true
+        doc: Document to unpublish.
+  - id: getRecentDocuments
+    displayName: Get recent documents
+    implementation: GetRecentDocumentsIntent
+    availability: macOS 13.0+
+    result: DocumentList
+    doc: Return recently modified local workspace documents.
+    parameters:
+      - id: limit
+        type: Int
+        displayName: Limit
+        required: false
+        doc: Maximum number of results.
