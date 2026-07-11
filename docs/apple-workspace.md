@@ -195,17 +195,28 @@ interpreted, all content HTML-escaped, and zero external resources (local
 images show as a labeled placeholder since a sandboxed preview cannot read
 sibling `Media/` files).
 
-The extension code, the inbox contract, and the preview renderer are merged
-and covered by tests (`WriteShareCore`, `WriteShareExtensionCore`,
-`WriteQuickLookCore`). Embedding the two `.appex` bundles into the shipped
-app is OWNER-GATED and not yet wired into `mac/scripts/build-app.sh`, for a
-real reason: an app group between a Developer-ID main app and its sandboxed
-extensions is a restricted entitlement. It is honored at runtime only when
-the App Group is registered in the Apple Developer portal and a matching
-provisioning profile is embedded; without that,
-`FileManager.containerURL(forSecurityApplicationGroupIdentifier:)` returns
-nil and the hand-off silently fails. Shipping the appex without that setup
-would ship a broken Share feature.
+The extensions ship embedded as of v0.28. `mac/scripts/build-app.sh` calls
+`mac/scripts/embed-extensions.sh`, which links each `.appex` executable from
+the SwiftPM sources with an `_NSExtensionMain` entry point, embeds the
+Developer ID provisioning profile that authorizes the app group
+(`group.net.writeapp.write`), and signs each inside-out with hardened runtime
+and its sandbox + app-group entitlements before the main app is signed. It is
+a no-op unless the two profiles are present in `mac/profiles/` and a real
+Developer ID identity is in use, so profile-less and ad-hoc builds still
+succeed.
+
+The main app is non-sandboxed and carries no app-group entitlement. It finds
+the container by scanning `~/Library/Group Containers` for the team-prefixed
+directory (`52WM463HR2.group.net.writeapp.write`) the sandboxed extension
+creates; `containerURL(forSecurityApplicationGroupIdentifier:)` is useless
+here because on a non-entitled process it returns a naive bare-id path that
+never matches the real container. When no container exists yet, the app
+watches the Group Containers root so the first shared item is filed without a
+restart.
+
+Regenerating the profiles (they last until 2044) or changing the group id
+means re-running the Developer portal steps below and dropping fresh
+`.provisionprofile` files in `mac/profiles/`.
 
 Owner steps to embed the extensions:
 
