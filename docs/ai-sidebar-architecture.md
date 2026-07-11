@@ -39,12 +39,32 @@ attachment ids
 The sidebar context chip is only a summary of that envelope. Item IDs, not
 titles or routes, remain authoritative while content is renamed or moved.
 
-## Providers
+## Providers: the ladder
 
-Provider configuration belongs in workspace settings. A provider adapter
-supplies authentication, model selection, streaming, and tool-call transport.
-Initial adapters can support OpenAI and Anthropic APIs. An external MCP client
-is a separate connection path and does not replace the in-app provider.
+Default to the most private, cheapest layer available and let the user climb:
+
+1. **Apple on-device (default inside the Mac app, later iPhone).** The
+   FoundationModels framework (macOS 26+) through the `nativeAI` WKWebView
+   bridge: free inference, private, offline. Owns the instant utility ops:
+   title, tags, excerpt, summarize, rewrite, categorize, plus Vision OCR on
+   any macOS. Availability is a runtime probe (device eligibility, Apple
+   Intelligence toggle, model readiness); when unavailable the ladder falls
+   through.
+2. **Bring-your-own cloud (workspace settings).** OpenAI or Anthropic key,
+   server-managed secrets, AI SDK adapter. Long-context work, web research,
+   and anything beyond the small on-device model. Augments, never replaces,
+   the local layer.
+3. **External agents via MCP** (the connector surface): the user's own
+   ChatGPT/Claude/Cursor acting on the workspace from outside.
+
+WWDC26 note: Apple opened the FoundationModels framework to third-party
+providers (any model conforming to their language-model protocol, session
+339) and added image input. That protocol is the NATIVE home for layer 2 on
+Apple platforms eventually (one Swift API, user-visible model switching),
+but it needs the macOS 27 SDK (Xcode 27); the machine builds with Xcode 26.x
+today, so the web-side provider adapter stays the layer-2 implementation for
+now and the bridge contract already leaves room (`generate` is provider-
+agnostic).
 
 No provider secret is written into a Markdown folder. The web app stores
 server-managed credentials; the native app can use Keychain-backed secrets.
@@ -212,6 +232,29 @@ the place to surface per-client names/logos later.
   set grows; the MCP registration in src/lib/mcp/tools.ts is the source of
   truth), and a Security section.
 - Regression gate unchanged: scripts/test-oauth-mcp-loop.py must pass.
+
+## Shipped 2026-07-11: Apple on-device AI bridge (Claude session)
+
+Layer 1 of the provider ladder is in the Mac app and verified with real
+on-device inference on this machine (availability available; title ~4.4s
+cold including model load, tags ~1.1s warm):
+
+- `mac/Sources/Write/NativeAI.swift`: the `nativeAI` script-message bridge.
+  Ops: capabilities, generate, title, tags, excerpt, summarize, rewrite,
+  categorize (FoundationModels, gated `#available(macOS 26.0, *)` with
+  graceful capability reasons on older systems) and ocr (Vision, any macOS).
+  Stateless one-shot sessions, ~12k-char input trim to respect the small
+  context window, list/quote cleanup on single-line outputs.
+- `mac/Sources/Write/WebAppWindowController.swift`: registers the handler and
+  injects the promise-correlated JS shim at document start, origin-gated the
+  same way as the app flags (never exists on third-party OAuth pages).
+- `src/lib/ai/native.ts`: the typed web-side client. `hasNativeAI()` +
+  `nativeAICapabilities()` for the probe; `nativeTitle/Tags/Excerpt/
+  Summarize/Rewrite/Categorize/Generate/Ocr` for the ops. On the plain web it
+  reports unavailable; the assistant falls through the ladder.
+- Deferred to the macOS 27 SDK: image understanding (`altText` and
+  `describeImage` return a clear unsupported error today) and the
+  third-party-provider protocol.
 
 ## Extracted to the stack repo (2026-07-11)
 

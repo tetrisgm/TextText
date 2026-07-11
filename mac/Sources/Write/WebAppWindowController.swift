@@ -27,6 +27,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var webView: WKWebView!
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
+    /// On-device AI over the `nativeAI` bridge; owned here, weak-proxied into
+    /// the user content controller like the `writeApp` handler.
+    private let aiBridge = NativeAIBridge()
 
     static let cacheWebView = true
 
@@ -83,6 +86,17 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // On-device AI: same origin gate as the flags above, so the bridge
+        // never exists in third-party OAuth page contexts.
+        ucc.addUserScript(WKUserScript(
+            source: """
+            (function () {
+              var h = location.hostname, base = "\(origin.host ?? "")";
+              if (base && h !== base && !h.endsWith("." + base)) return;
+              \(NativeAIBridge.shimScript)
+            })();
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         // Silent link: on an unlinked Mac, the first signed-in page mints a
         // token and posts it back. On /signin (401) it no-ops and retries on
         // the next navigation; the sessionStorage guard mints at most once.
@@ -111,6 +125,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         // Registered AFTER super.init so self is available; the weak proxy
         // keeps the retain cycle from pinning the window open.
         ucc.add(WeakScriptHandler(self), name: "writeApp")
+        aiBridge.webView = webView
+        ucc.add(WeakScriptHandler(aiBridge), name: NativeAIBridge.handlerName)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         // Tag every request as coming from the app BEFORE the first load, so
