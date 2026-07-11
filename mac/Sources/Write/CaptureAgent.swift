@@ -6,6 +6,19 @@ import UniformTypeIdentifiers
 import WebKit
 import libwebp
 
+@_silgen_name("WebPEncodeRGBA")
+private func writeWebPEncodeRGBA(
+    _ rgba: UnsafePointer<UInt8>,
+    _ width: Int32,
+    _ height: Int32,
+    _ stride: Int32,
+    _ qualityFactor: Float,
+    _ output: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>
+) -> Int
+
+@_silgen_name("WebPFree")
+private func writeWebPFree(_ pointer: UnsafeMutableRawPointer?)
+
 /// Bookmark capture agent: drains GET /api/sync/v1/captures on this Mac,
 /// loading each pending URL in an offscreen WKWebView to produce the
 /// readable extraction, locally stored article images, and tiled screenshots, then
@@ -881,7 +894,7 @@ final class CaptureAgent {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         var output: UnsafeMutablePointer<UInt8>?
-        let encodedSize = WebPEncodeRGBA(
+        let encodedSize = writeWebPEncodeRGBA(
             data.assumingMemoryBound(to: UInt8.self),
             Int32(width),
             Int32(height),
@@ -891,7 +904,7 @@ final class CaptureAgent {
         )
         defer {
             if let output {
-                WebPFree(output)
+                writeWebPFree(UnsafeMutableRawPointer(output))
             }
         }
         guard encodedSize > 0, let output else { return nil }

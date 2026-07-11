@@ -1,20 +1,5 @@
 import Foundation
-
-/// One sync index entry: what the local file and the server agreed on at the
-/// last successful exchange. `hash` is the sha256 hex of the server-rendered
-/// file (also the local file's content right after a pull/push converged).
-struct IndexEntry: Codable {
-    var hash: String
-    var relativePath: String
-    var fileMtime: Double?
-}
-
-/// The persisted sync state: postId -> entry, plus each folder's cached
-/// manifest ETag so unchanged folders cost one 304.
-struct SyncIndex: Codable {
-    var entries: [String: IndexEntry] = [:]
-    var folderETags: [String: String] = [:]
-}
+import WriteWorkspaceCore
 
 /// All on-disk app state, partyparty-faithful:
 ///   ~/Library/Application Support/Write/   (0700)
@@ -102,6 +87,7 @@ final class StateStore {
 
     func saveIndex(_ index: SyncIndex) {
         guard let data = try? encoder.encode(index) else { return }
+        if let existing = try? Data(contentsOf: indexURL), existing == data { return }
         try? data.write(to: indexURL, options: .atomic)
     }
 
@@ -112,7 +98,7 @@ final class StateStore {
     /// Move a file into the state trash under a timestamped name; never lose
     /// user bytes to a server-side delete.
     @discardableResult
-    func moveToTrash(_ url: URL) -> URL? {
+    func moveToTrash(_ url: URL, mover: ((URL, URL) throws -> Void)? = nil) -> URL? {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return nil }
         let df = DateFormatter()
@@ -126,7 +112,11 @@ final class StateStore {
             n += 1
         }
         do {
-            try fm.moveItem(at: url, to: target)
+            if let mover {
+                try mover(url, target)
+            } else {
+                try fm.moveItem(at: url, to: target)
+            }
             return target
         } catch {
             return nil
