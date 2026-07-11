@@ -2,20 +2,26 @@
 
 import { useEffect, useRef } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
+import type { AssistantSkill } from "@/lib/ai/skills";
 import type { NativeAICapabilities } from "@/lib/ai/native";
 import styles from "./AssistantConversation.module.css";
 
 // The transcript inside the assistant sidebar: user and assistant turns,
 // lightweight progress rows while the on-device model drives tools, and an
-// empty state that says where the answers come from.
+// empty state that says where the answers come from and which writing
+// skills are active.
 export function AssistantConversation({
   capabilities,
   messages,
+  skills,
   submitting,
+  onToggleSkill,
 }: {
   capabilities: NativeAICapabilities | null;
   messages: AssistantMessage[];
+  skills?: Array<AssistantSkill & { enabled: boolean }>;
   submitting: boolean;
+  onToggleSkill?: (skillId: string, enabled: boolean) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -41,6 +47,29 @@ export function AssistantConversation({
           <li>Summarize this article</li>
           <li>Create three draft posts about...</li>
         </ul>
+        {skills && skills.length > 0 && (
+          <div className={styles.skills}>
+            <p className={styles.skillsHeading}>Skills</p>
+            {skills.map((skill) => (
+              <label className={styles.skillRow} key={skill.id}>
+                <input
+                  type="checkbox"
+                  checked={skill.enabled}
+                  disabled={!onToggleSkill}
+                  onChange={(event) =>
+                    onToggleSkill?.(skill.id, event.currentTarget.checked)
+                  }
+                />
+                <span className={styles.skillCopy}>
+                  <span className={styles.skillName}>{skill.name}</span>
+                  <span className={styles.skillDescription}>
+                    {skill.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

@@ -26,6 +26,11 @@ import {
   type NativeAICapabilities,
 } from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
+import {
+  composeInstructions,
+  setSkillEnabled,
+  skillStates,
+} from "@/lib/ai/skills";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 
 export type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
@@ -220,8 +225,11 @@ export function useNativeAssistant({
           appendToThread(thread, "assistant", unavailableExplanation(current));
           return;
         }
+        const context = tools.describeContext(getViewRef.current());
+        const { instructions } = composeInstructions(handle, prompt, context);
         const reply = await nativeAgent(prompt, {
-          context: tools.describeContext(getViewRef.current()),
+          context,
+          instructions,
           onEvent: (event) => {
             if (event.type === "tool") {
               appendToThread(
@@ -245,8 +253,25 @@ export function useNativeAssistant({
         setThreadBusy(thread, false);
       }
     },
-    [threadKey, tools],
+    [handle, threadKey, tools],
   );
 
-  return { capabilities, messages, submit, submitting };
+  // Skill toggles for the sidebar; a plain version counter re-reads
+  // localStorage-backed state after each change.
+  const [skillsVersion, setSkillsVersion] = useState(0);
+  const skills = useMemo(
+    () => skillStates(handle),
+    // skillsVersion invalidates the memo after a toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [handle, skillsVersion],
+  );
+  const toggleSkill = useCallback(
+    (skillId: string, enabled: boolean) => {
+      setSkillEnabled(handle, skillId, enabled);
+      setSkillsVersion((current) => current + 1);
+    },
+    [handle],
+  );
+
+  return { capabilities, messages, skills, submit, submitting, toggleSkill };
 }

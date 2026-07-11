@@ -4394,7 +4394,9 @@ function LocalWorkspaceShell({
         <AssistantConversation
           capabilities={assistant.capabilities}
           messages={assistant.messages}
+          skills={assistant.skills}
           submitting={assistant.submitting}
+          onToggleSkill={assistant.toggleSkill}
         />
       </AssistantSidebar>
       <ConfirmationDialog

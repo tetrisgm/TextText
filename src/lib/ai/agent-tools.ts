@@ -83,6 +83,25 @@ function str(args: ToolArgs, key: string): string {
   return value.trim();
 }
 
+// Small on-device models occasionally emit glitched argument tokens (for
+// example a folder of "blog}<ctrl45>..."). Folder values are a closed set,
+// so recover the intended path instead of failing the whole request.
+function normalizeFolderPath(
+  raw: string,
+  folders: Array<{ path: string }>,
+): string {
+  const exact = folders.find((folder) => folder.path === raw);
+  if (exact) return raw;
+  const cleaned = raw.toLowerCase().match(/^[a-z0-9/_-]+/)?.[0] ?? "";
+  const cleanedMatch = folders.find((folder) => folder.path === cleaned);
+  if (cleanedMatch) return cleaned;
+  const prefix = folders.find(
+    (folder) =>
+      cleaned.startsWith(folder.path) || folder.path.startsWith(cleaned),
+  );
+  return prefix?.path ?? raw;
+}
+
 function optionalStr(args: ToolArgs, key: string): string | undefined {
   const value = args[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -225,7 +244,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       }
 
       case "list_items": {
-        const folder = str(args, "folder");
+        const folder = normalizeFolderPath(str(args, "folder"), pool().folders);
         const items = poolPostsForFolder(pool(), folder).slice(0, 40);
         return {
           items: items.map((item) => ({
@@ -252,7 +271,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       }
 
       case "create_item": {
-        const folder = str(args, "folder");
+        const folder = normalizeFolderPath(str(args, "folder"), pool().folders);
         const title = str(args, "title");
         const body = optionalStr(args, "body");
         const dedupeKey = `${folder}::${title.toLowerCase()}`;
@@ -316,7 +335,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
 
       case "move_item": {
         const id = str(args, "id");
-        const folderPath = str(args, "folder");
+        const folderPath = normalizeFolderPath(str(args, "folder"), pool().folders);
         const post = requirePost(id);
         const folder = pool().folders.find(
           (candidate) => candidate.path === folderPath,

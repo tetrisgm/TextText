@@ -1,0 +1,135 @@
+"use client";
+
+// Skills: short, composable instruction files for the writing assistant,
+// modeled on agent skill files. Each skill teaches the model one craft
+// (what a blog post is, how notes read, how titles work). Skills are
+// toggleable per workspace and selected per request by trigger keywords or
+// the current context, then composed with the base instructions and sent
+// with the agent request.
+//
+// The on-device model has a small context window (about 4k tokens), so the
+// base stays under ~150 words, each skill under ~180, and at most two
+// skills ride along per request.
+//
+// Roadmap (owner-approved direction): skills as markdown items in the
+// workspace itself, so they sync, are editable in-app like any note, and
+// can be installed or shared; a settings page manages them. This module is
+// the engine that stays; the catalog becomes data.
+
+export type AssistantSkill = {
+  id: string;
+  name: string;
+  description: string;
+  /** Lowercase keywords that select this skill from the prompt. */
+  triggers: string[];
+  /** Substrings of the context description that select this skill. */
+  contextTriggers: string[];
+  instructions: string;
+};
+
+export const BASE_ASSISTANT_INSTRUCTIONS = `You are the assistant inside Write, an app for blogs, notes, and bookmarks. The Blog folder holds real blog posts for readers; Notes are private working notes; Bookmarks are saved links.
+
+Perform the user's request with the tools, acting on their workspace directly. Prefer acting over asking: when a reasonable interpretation exists, proceed with it instead of asking a question. Only list or read existing items when the request is about existing items.
+
+When asked to write something, the item body must be the complete finished piece in markdown. Never put a one-line answer where the piece should be, never add meta commentary, and never mention being an AI.
+
+Handle every item the user names: each named item gets its own tool call, and you are not done until all of them are handled. Never delete or publish unless the user explicitly asked. When everything is done, reply with one short sentence about what you did.`;
+
+export const BUILTIN_SKILLS: AssistantSkill[] = [
+  {
+    id: "blog-post",
+    name: "Blog posts",
+    description: "Structure and voice for real, readable blog posts.",
+    triggers: ["blog", "post", "article", "publish"],
+    contextTriggers: ["blog", "post", "article"],
+    instructions: `Writing a blog post: it is a complete article a stranger would enjoy reading, never a bare answer. Open with a hook sentence that frames why the topic matters. Develop the idea in 3 to 5 short sections; use ## markdown headings when the piece runs long. Take a clear position and support it with specifics (examples, details, comparisons). Close with a takeaway. Aim for 300 to 600 words unless the user asks for a length. Give it a specific sentence-case title under nine words.`,
+  },
+  {
+    id: "notes",
+    name: "Notes",
+    description: "Concise capture style for private notes.",
+    triggers: ["note", "notes", "remember", "capture", "meeting", "idea"],
+    contextTriggers: ["notes folder", "note"],
+    instructions: `Writing a note: notes are private working material, so favor density over polish. Lead with the core fact or decision on the first line. Use short markdown bullets for details, next steps, and open questions. Keep the user's own wording where it carries meaning. No filler, no introductions, no conclusions.`,
+  },
+  {
+    id: "titles",
+    name: "Titles and excerpts",
+    description: "Sharper titles and excerpts for existing items.",
+    triggers: ["title", "headline", "excerpt", "rename", "summary line"],
+    contextTriggers: [],
+    instructions: `Crafting titles: specific beats clever; name the actual subject, sentence case, no quotes, under nine words. Crafting excerpts: one or two sentences, at most 240 characters, that make someone want to read the piece; plain prose, no hashtags, never a repeat of the title.`,
+  },
+];
+
+const DISABLED_KEY_PREFIX = "write:ai-skills-disabled:";
+
+function disabledSet(handle: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(`${DISABLED_KEY_PREFIX}${handle}`);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function skillStates(
+  handle: string,
+): Array<AssistantSkill & { enabled: boolean }> {
+  const disabled = disabledSet(handle);
+  return BUILTIN_SKILLS.map((skill) => ({
+    ...skill,
+    enabled: !disabled.has(skill.id),
+  }));
+}
+
+export function setSkillEnabled(
+  handle: string,
+  skillId: string,
+  enabled: boolean,
+) {
+  const disabled = disabledSet(handle);
+  if (enabled) disabled.delete(skillId);
+  else disabled.add(skillId);
+  try {
+    localStorage.setItem(
+      `${DISABLED_KEY_PREFIX}${handle}`,
+      JSON.stringify([...disabled]),
+    );
+  } catch {
+    // Best effort; in-memory defaults still apply next session.
+  }
+}
+
+/**
+ * Compose the instruction string for one request: base + up to two enabled
+ * skills selected by prompt keywords or the context description. Returns the
+ * applied skill names so the UI can show what shaped the answer.
+ */
+export function composeInstructions(
+  handle: string,
+  prompt: string,
+  contextDescription: string,
+): { instructions: string; appliedSkills: string[] } {
+  const loweredPrompt = prompt.toLowerCase();
+  const loweredContext = contextDescription.toLowerCase();
+  const selected = skillStates(handle)
+    .filter((skill) => skill.enabled)
+    .filter(
+      (skill) =>
+        skill.triggers.some((trigger) => loweredPrompt.includes(trigger)) ||
+        skill.contextTriggers.some((trigger) =>
+          loweredContext.includes(trigger),
+        ),
+    )
+    .slice(0, 2);
+  const sections = [
+    BASE_ASSISTANT_INSTRUCTIONS,
+    ...selected.map((skill) => skill.instructions),
+  ];
+  return {
+    instructions: sections.join("\n\n"),
+    appliedSkills: selected.map((skill) => skill.name),
+  };
+}
