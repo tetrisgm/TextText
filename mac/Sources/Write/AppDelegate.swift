@@ -361,10 +361,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func shareInboxContainerURL() -> URL? {
         guard let groupIdentifier = Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
-              !groupIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              !groupIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              groupIdentifier != "WRITE_APP_GROUP" else {
             return nil
         }
-        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
+        // The clean path when the app itself carries the app-group entitlement
+        // and a matching provisioning profile.
+        if let entitled = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: groupIdentifier) {
+            return entitled
+        }
+        // The app ships non-sandboxed and without an app-group profile, so the
+        // entitlement API returns nil. The sandboxed Share extension still owns
+        // the app-group entitlement and creates the group container; a
+        // non-sandboxed app running as the same user can read it directly.
+        // Scan for it (the on-disk directory name is either the bare group id
+        // or "<team>.<group id>" depending on registration, so match by suffix).
+        let groupsRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers", isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: groupsRoot, includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]) else {
+            return nil
+        }
+        return entries.first { entry in
+            let name = entry.lastPathComponent
+            return name == groupIdentifier || name.hasSuffix(".\(groupIdentifier)")
+        }
     }
 
     private func scheduleShareInboxDrain(containerURL: URL, delay: TimeInterval = 0.5) {

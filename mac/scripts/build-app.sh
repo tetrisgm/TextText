@@ -75,6 +75,13 @@ STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $WRITE_BUNDLE_ID" "$STAGED"
 "$PB" -c "Set :SUFeedURL ${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
 "$PB" -c "Set :SUPublicEDKey $WRITE_SPARKLE_PUBLIC_KEY" "$STAGED"
+# The app locates the share inbox by this group id (scan-based; the app itself
+# needs no app-group entitlement). Empty leaves the WRITE_APP_GROUP placeholder,
+# which the resolver ignores.
+if [ -n "${WRITE_APP_GROUP:-}" ]; then
+  "$PB" -c "Set :WriteAppGroupIdentifier $WRITE_APP_GROUP" "$STAGED" 2>/dev/null \
+    || "$PB" -c "Add :WriteAppGroupIdentifier string $WRITE_APP_GROUP" "$STAGED"
+fi
 if [ -n "${APP_VERSION:-}" ]; then
   [[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || {
     echo "APP_VERSION must be dotted numeric, got: $APP_VERSION" >&2
@@ -127,6 +134,13 @@ else
   codesign_one "$SPK"
 fi
 codesign_one "$APP/Contents/MacOS/Write" "$ENT"
+# Extensions are assembled and signed here, inside-out, so the main app's
+# signature (next line) seals them. No-op unless mac/profiles/ holds the
+# provisioning profiles and a real Developer ID identity is in use.
+"$MAC/scripts/embed-extensions.sh" "$APP" "$SIGN_ID" "${WRITE_APP_GROUP:-}" \
+  "$WRITE_BUNDLE_ID" \
+  "$("$PB" -c 'Print :CFBundleShortVersionString' "$STAGED")" \
+  "$("$PB" -c 'Print :CFBundleVersion' "$STAGED")"
 codesign_one "$APP" "$ENT"
 
 echo ">> verify"
