@@ -11,7 +11,8 @@ let package = Package(
     name: "Write",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "WriteFileProviderCore", targets: ["WriteFileProviderCore"])
+        .library(name: "WriteFileProviderCore", targets: ["WriteFileProviderCore"]),
+        .library(name: "WriteWorkspaceCore", targets: ["WriteWorkspaceCore"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -22,9 +23,14 @@ let package = Package(
             name: "WriteFileProviderCore",
             path: "Sources/WriteFileProviderCore"
         ),
+        .target(
+            name: "WriteWorkspaceCore",
+            path: "Sources/WriteWorkspaceCore"
+        ),
         .executableTarget(
             name: "Write",
             dependencies: [
+                "WriteWorkspaceCore",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "libwebp", package: "libwebp-Xcode")
             ],
@@ -34,6 +40,16 @@ let package = Package(
             name: "WriteFileProviderCoreTests",
             dependencies: ["WriteFileProviderCore"],
             path: "Tests/WriteFileProviderCoreTests"
+        ),
+        .testTarget(
+            name: "WriteWorkspaceCoreTests",
+            dependencies: ["WriteWorkspaceCore"],
+            path: "Tests/WriteWorkspaceCoreTests"
+        ),
+        .testTarget(
+            name: "WriteTests",
+            dependencies: ["Write"],
+            path: "Tests/WriteTests"
         )
     ]
 )
