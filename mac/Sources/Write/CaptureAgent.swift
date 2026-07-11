@@ -8,9 +8,9 @@ import libwebp
 
 /// Bookmark capture agent: drains GET /api/sync/v1/captures on this Mac,
 /// loading each pending URL in an offscreen WKWebView to produce the
-/// readable extraction, the original page artifact, and a bounded screenshot, then
+/// readable extraction, locally stored article images, and tiled screenshots, then
 /// PUTs partial results to /api/sync/v1/captures/{id} as multipart/form-data
-/// (fields: meta JSON, readable text, screenshot image, html/original file).
+/// (fields: meta JSON, readable text, screenshot images, and readable assets).
 final class CaptureAgent {
     private let store: StateStore
     private let queue = DispatchQueue(label: "write.capture-agent", qos: .utility)
@@ -21,7 +21,6 @@ final class CaptureAgent {
 
     private let maxUploadBodyBytes = 4 * 1024 * 1024
     private let maxScreenshotBytes = 3 * 1024 * 1024
-    private let maxOriginalArtifactBytes = 1_536 * 1024
     private let maxReadableAssetBytes = 3 * 1024 * 1024
     private let maxReadableAssetDownloadBytes = 16 * 1024 * 1024
     private let maxReadableAssetCount = 200
@@ -366,12 +365,7 @@ final class CaptureAgent {
             siteName: nil,
             description: nil,
             readable: pdfMarkdown(text: cleaned(document.string), url: finalURL, title: title),
-            screenshots: screenshot.map { [$0] } ?? [],
-            original: CaptureArtifact(
-                data: data,
-                filename: pdfFilename(url: finalURL),
-                contentType: "application/pdf"
-            )
+            screenshots: screenshot.map { [$0] } ?? []
         )
         return .success(page)
     }
@@ -482,15 +476,6 @@ final class CaptureAgent {
         return cleaned(url.deletingPathExtension().lastPathComponent.removingPercentEncoding)
     }
 
-    private func pdfFilename(url: URL) -> String {
-        let candidate = url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
-        let cleanedName = cleaned(candidate) ?? "document.pdf"
-        if cleanedName.lowercased().hasSuffix(".pdf") {
-            return cleanedName
-        }
-        return cleanedName + ".pdf"
-    }
-
     private func pdfMarkdown(text: String?, url: URL, title: String?) -> String {
         let host = url.host ?? url.absoluteString
         var parts = ["[\(host)](\(url.absoluteString))"]
@@ -505,14 +490,12 @@ final class CaptureAgent {
 
     private func prepare(page: PageCapture) -> Result<PreparedPageCapture, CaptureAgentError> {
         let readable = page.readable.flatMap { cleaned(truncateReadable($0)) }
-        let original = page.original.flatMap { fitOriginalArtifact($0) }
         guard readable != nil || !page.screenshots.isEmpty else {
             return .failure(CaptureAgentError("no readable text or screenshot captured"))
         }
         return .success(PreparedPageCapture(
             readable: readable,
-            screenshots: page.screenshots,
-            original: original
+            screenshots: page.screenshots
         ))
     }
 
@@ -549,21 +532,6 @@ final class CaptureAgent {
 
     private func maxScreenshotHeightForWidth(_ width: CGFloat) -> CGFloat {
         min(maxSnapshotHeight, floor(maxSnapshotPixels / max(1, width)))
-    }
-
-    private func fitOriginalArtifact(_ artifact: CaptureArtifact) -> CaptureArtifact? {
-        guard artifact.data.count > maxOriginalArtifactBytes else { return artifact }
-        guard artifact.contentType.lowercased().contains("text/html"),
-              let html = String(data: artifact.data, encoding: .utf8) else {
-            return nil
-        }
-
-        let note = "\n<!-- Captured HTML truncated by Write because it exceeded the 1.5 MB upload limit. -->\n"
-        let truncated = truncateUTF8(html, maxBytes: maxOriginalArtifactBytes, note: note)
-        guard let data = truncated.data(using: .utf8), data.count <= maxOriginalArtifactBytes else {
-            return nil
-        }
-        return CaptureArtifact(data: data, filename: artifact.filename, contentType: artifact.contentType)
     }
 
     private func remoteMarkdownImageURLs(from markdown: String) -> [String] {
@@ -1037,19 +1005,6 @@ final class CaptureAgent {
             }
         }
 
-        if storedContent, let original = prepared.original {
-            switch uploadPartial(capture: capture, origin: origin, token: token, meta: meta, original: original) {
-            case .success:
-                break
-            case .transient(let reason):
-                activity("capture original skipped \(host(for: page.finalURL)): \(reason)")
-                requiredArtifactFailure = .transient(reason)
-            case .terminal(let reason):
-                activity("capture original skipped \(host(for: page.finalURL)): \(reason)")
-                requiredArtifactFailure = .terminal(reason)
-            }
-        }
-
         if storedContent {
             if let requiredArtifactFailure { return requiredArtifactFailure }
             var finalMeta = meta
@@ -1068,14 +1023,13 @@ final class CaptureAgent {
 
     private func uploadPartial(
         capture: PendingCapture, origin: URL, token: String, meta: CaptureMeta,
-        readable: String? = nil, screenshot: CaptureArtifact? = nil, original: CaptureArtifact? = nil,
+        readable: String? = nil, screenshot: CaptureArtifact? = nil,
         assets: [CaptureReadableAsset] = []
     ) -> CaptureUploadResult {
         guard let body = multipartBody(
             meta: meta,
             readable: readable,
             screenshot: screenshot,
-            original: original,
             assets: assets
         ) else {
             return .terminal(CaptureAgentError("could not encode upload"))
@@ -1253,7 +1207,7 @@ final class CaptureAgent {
 
     private func multipartBody(
         meta: CaptureMeta, readable: String? = nil, screenshot: CaptureArtifact? = nil,
-        original: CaptureArtifact? = nil, assets: [CaptureReadableAsset] = []
+        assets: [CaptureReadableAsset] = []
     ) -> MultipartBody? {
         guard let metaData = try? JSONEncoder().encode(meta),
               let metaJSON = String(data: metaData, encoding: .utf8) else {
@@ -1271,10 +1225,6 @@ final class CaptureAgent {
         if let screenshot {
             appendFile(name: "screenshot", filename: screenshot.filename, contentType: screenshot.contentType,
                        fileData: screenshot.data, to: &data, boundary: boundary)
-        }
-        if let original {
-            appendFile(name: "html", filename: original.filename, contentType: original.contentType,
-                       fileData: original.data, to: &data, boundary: boundary)
         }
         if !assets.isEmpty {
             let manifest = assets.map {
@@ -1523,19 +1473,18 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         guard let webView, !completed else { return }
         webView.evaluateJavaScript(readableExtractionScript) { value, error in
             if let error {
-                self.takeScreenshot(readable: nil, html: nil, fallbackReason: error.localizedDescription)
+                self.takeScreenshot(readable: nil, fallbackReason: error.localizedDescription)
                 return
             }
             guard let json = value as? String,
                   let data = json.data(using: .utf8),
                   let extracted = try? JSONDecoder().decode(ReadableExtraction.self, from: data) else {
-                self.takeScreenshot(readable: nil, html: nil, fallbackReason: "readable extraction failed")
+                self.takeScreenshot(readable: nil, fallbackReason: "readable extraction failed")
                 return
             }
             if let ok = extracted.ok, !ok {
                 self.takeScreenshot(
                     readable: nil,
-                    html: nil,
                     fallbackReason: extracted.error ?? "readable extraction failed"
                 )
                 return
@@ -1549,33 +1498,19 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                 }
                 return
             }
-            self.extractHTML(readable: extracted)
+            self.takeScreenshot(
+                readable: extracted,
+                fallbackReason: "screenshot failed"
+            )
         }
     }
 
-    private func extractHTML(readable: ReadableExtraction) {
-        guard let webView, !completed else { return }
-        webView.evaluateJavaScript("document.documentElement ? document.documentElement.outerHTML : ''") { value, error in
-            if let error {
-                self.takeScreenshot(readable: readable, html: nil, fallbackReason: error.localizedDescription)
-                return
-            }
-            guard let html = value as? String, !html.isEmpty,
-                  let htmlData = html.data(using: .utf8) else {
-                self.takeScreenshot(readable: readable, html: nil, fallbackReason: "HTML extraction failed")
-                return
-            }
-            self.takeScreenshot(readable: readable, html: htmlData, fallbackReason: "screenshot failed")
-        }
-    }
-
-    private func takeScreenshot(readable: ReadableExtraction?, html: Data?, fallbackReason: String) {
+    private func takeScreenshot(readable: ReadableExtraction?, fallbackReason: String) {
         guard let webView, !completed else { return }
         webView.evaluateJavaScript(snapshotSizeScript) { value, error in
             if let error {
                 self.finishPage(
                     readable: readable,
-                    html: html,
                     screenshots: [],
                     fallbackReason: error.localizedDescription
                 )
@@ -1584,7 +1519,6 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             let size = self.pageSize(from: value)
             self.takeScreenshotTiles(
                 readable: readable,
-                html: html,
                 pageHeight: size.height,
                 fallbackReason: fallbackReason
             )
@@ -1592,7 +1526,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     }
 
     private func takeScreenshotTiles(
-        readable: ReadableExtraction?, html: Data?, pageHeight: CGFloat, fallbackReason: String
+        readable: ReadableExtraction?, pageHeight: CGFloat, fallbackReason: String
     ) {
         let tileCount = min(
             maxSnapshotTileCount,
@@ -1604,7 +1538,6 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             pageHeight: pageHeight,
             screenshots: [],
             readable: readable,
-            html: html,
             fallbackReason: fallbackReason
         )
     }
@@ -1615,14 +1548,12 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
         pageHeight: CGFloat,
         screenshots: [Data],
         readable: ReadableExtraction?,
-        html: Data?,
         fallbackReason: String
     ) {
         guard let webView, !completed else { return }
         guard index < tileCount else {
             finishPage(
                 readable: readable,
-                html: html,
                 screenshots: screenshots,
                 fallbackReason: fallbackReason
             )
@@ -1645,7 +1576,6 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                     guard error == nil, let image, let png = self.pngData(from: image) else {
                         self.finishPage(
                             readable: readable,
-                            html: html,
                             screenshots: screenshots,
                             fallbackReason: error?.localizedDescription ?? fallbackReason
                         )
@@ -1657,7 +1587,6 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                         pageHeight: pageHeight,
                         screenshots: screenshots + [png],
                         readable: readable,
-                        html: html,
                         fallbackReason: fallbackReason
                     )
                 }
@@ -1672,7 +1601,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     }
 
     private func finishPage(
-        readable: ReadableExtraction?, html: Data?, screenshots: [Data], fallbackReason: String
+        readable: ReadableExtraction?, screenshots: [Data], fallbackReason: String
     ) {
         let title = self.cleaned(readable?.title) ?? self.cleaned(self.fallbackTitle)
         let readableMarkdown = readable.map { self.markdown(from: $0, title: title) }
@@ -1680,21 +1609,13 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             self.fail(url: self.currentURL, reason: fallbackReason)
             return
         }
-        let original = html.map {
-            CaptureArtifact(
-                data: $0,
-                filename: "page.html",
-                contentType: "text/html; charset=utf-8"
-            )
-        }
         let page = PageCapture(
             finalURL: self.currentURL,
             title: title,
             siteName: self.cleaned(readable?.siteName),
             description: self.cleaned(readable?.description),
             readable: readableMarkdown,
-            screenshots: screenshots,
-            original: original
+            screenshots: screenshots
         )
         self.finish(.success(page))
     }
@@ -2483,7 +2404,6 @@ private struct PageCapture {
     let description: String?
     let readable: String?
     let screenshots: [Data]
-    let original: CaptureArtifact?
 }
 
 private struct PageCaptureFailure: Error {
@@ -2564,7 +2484,6 @@ private struct CaptureAssetManifestEntry: Encodable {
 private struct PreparedPageCapture {
     let readable: String?
     let screenshots: [Data]
-    let original: CaptureArtifact?
 }
 
 private enum ScreenshotCodec {

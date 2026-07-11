@@ -208,6 +208,21 @@ function cleanBody(value: unknown): string {
   return value.replace(/\u0000/g, "");
 }
 
+function assertCurrentEditBase(input: unknown, existing: Post) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return;
+  const value = (input as Record<string, unknown>).baseUpdatedAt;
+  if (value == null || value === "") return;
+  if (typeof value !== "string") throw new Error("Invalid edit version");
+  const baseTime = Date.parse(value);
+  const existingTime = Date.parse(existing.updatedAt ?? "");
+  if (!Number.isFinite(baseTime) || !Number.isFinite(existingTime)) return;
+  if (existingTime > baseTime) {
+    throw new Error(
+      "This item changed elsewhere. Your local draft is still available.",
+    );
+  }
+}
+
 function cleanAccent(value: unknown): string | undefined {
   if (value == null) return undefined;
   if (typeof value !== "string") throw new Error("Accent must be a hex color");
@@ -745,6 +760,7 @@ export async function createArticleDraftPathAction(
 export async function saveEditablePostAction(
   handleOrInput: unknown,
   maybeInput?: unknown,
+  options: { revalidate?: boolean } = {},
 ): Promise<Post> {
   const handle =
     maybeInput === undefined
@@ -760,6 +776,7 @@ export async function saveEditablePostAction(
   const access = await getBlogEditAccess(handle);
   const existing = await getPostById(handle, id);
   if (!existing) throw new Error("Post not found");
+  assertCurrentEditBase(input, existing);
 
   if (!access.canEdit) {
     const user = await getCurrentUser();
@@ -779,7 +796,9 @@ export async function saveEditablePostAction(
       targetId: saved.id,
       inputSummary: saved.title,
     });
-    await revalidateBlog(handle, [existing.slug]);
+    if (options.revalidate !== false) {
+      await revalidateBlog(handle, [existing.slug]);
+    }
     return saved;
   }
 
@@ -790,7 +809,9 @@ export async function saveEditablePostAction(
     pinned: existing.pinned,
   });
   await auditEdit(access, "save_post", "item", saved.id, saved.title);
-  await revalidateBlog(handle, [existing.slug, saved.slug]);
+  if (options.revalidate !== false) {
+    await revalidateBlog(handle, [existing.slug, saved.slug]);
+  }
   return saved;
 }
 

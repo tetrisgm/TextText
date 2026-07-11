@@ -177,6 +177,10 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     const onChangeRef = useRef(onChange);
     const collabRef = useRef(collab);
     const onPresenceRef = useRef(onPresence);
+    const presencePostIdRef = useRef<string | null>(null);
+    const presenceClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
     const onNavigateFieldRef = useRef(onNavigateField);
     const insertMediaRef = useRef<(file: File) => void>(() => {});
     const initialValueRef = useRef(value);
@@ -312,11 +316,23 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         !initialCollab ||
         initialCollab.postId !== collabPostId
       ) {
+        if (presenceClearTimerRef.current) {
+          clearTimeout(presenceClearTimerRef.current);
+          presenceClearTimerRef.current = null;
+        }
+        presencePostIdRef.current = null;
         onPresenceRef.current?.([]);
         return;
       }
       let cancelled = false;
-      onPresenceRef.current?.([]);
+      if (presenceClearTimerRef.current) {
+        clearTimeout(presenceClearTimerRef.current);
+        presenceClearTimerRef.current = null;
+      }
+      if (presencePostIdRef.current !== collabPostId) {
+        onPresenceRef.current?.([]);
+        presencePostIdRef.current = collabPostId;
+      }
       const currentCollab = () => {
         const next = collabRef.current;
         return next?.postId === collabPostId ? next : initialCollab;
@@ -336,8 +352,8 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
           if (!cancelled) onPresenceRef.current?.(list);
         },
       });
-      void provider.start().then(() => {
-        if (cancelled) return;
+      void provider.start().then((sync) => {
+        if (cancelled || !sync.authoritative || !sync.remoteEmpty) return;
         // Seed only when this client caught up to an EMPTY document and is
         // allowed to write. Owner-edits-first-then-shares means history is
         // normally already present by the time a second editor joins.
@@ -352,8 +368,17 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       });
       return () => {
         cancelled = true;
-        onPresenceRef.current?.([]);
         provider.destroy();
+        // React can replace this effect for the same post during a transient
+        // remount. Let that replacement retain the last known peer snapshot;
+        // a real disconnect still clears it on the next task.
+        presenceClearTimerRef.current = setTimeout(() => {
+          presenceClearTimerRef.current = null;
+          if (presencePostIdRef.current === collabPostId) {
+            presencePostIdRef.current = null;
+            onPresenceRef.current?.([]);
+          }
+        }, 0);
       };
     }, [editor, ydoc, collabPostId]);
 

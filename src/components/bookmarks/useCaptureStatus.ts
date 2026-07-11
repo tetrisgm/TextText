@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CaptureStatus } from "@/lib/content";
+import type { BookmarkCapture, CaptureStatus } from "@/lib/content";
 
 const FIRST_POLL_MS = 3_000;
 const MAX_POLL_MS = 12_000;
@@ -9,8 +9,12 @@ const MAX_POLL_DURATION_MS = 3 * 60 * 1_000;
 
 type TerminalCaptureStatus = Exclude<CaptureStatus, "pending">;
 
-type CaptureStatusResponse = {
+export type CaptureStatusResponse = {
   captureStatus?: CaptureStatus | null;
+  capture?: BookmarkCapture | null;
+  cover?: string | null;
+  updatedAt?: string | null;
+  wordCount?: number | null;
 };
 
 function cleanCaptureStatus(value: unknown): CaptureStatus | undefined {
@@ -28,10 +32,23 @@ export function useCaptureStatus(
   itemId: string | undefined,
   initialStatus: CaptureStatus | undefined,
   options?: {
-    onResolved?: (status: TerminalCaptureStatus) => void;
+    onResolved?: (
+      status: TerminalCaptureStatus,
+      response: CaptureStatusResponse,
+    ) => void;
   },
 ): CaptureStatus | undefined {
-  const [captureStatus, setCaptureStatus] = useState(initialStatus);
+  const [resolvedStatus, setResolvedStatus] = useState<{
+    initialStatus: CaptureStatus | undefined;
+    itemId: string | undefined;
+    status: CaptureStatus;
+  } | null>(null);
+  const captureStatus =
+    resolvedStatus &&
+    resolvedStatus.itemId === itemId &&
+    resolvedStatus.initialStatus === initialStatus
+      ? resolvedStatus.status
+      : initialStatus;
   const onResolvedRef = useRef(options?.onResolved);
 
   useEffect(() => {
@@ -39,7 +56,6 @@ export function useCaptureStatus(
   }, [options?.onResolved]);
 
   useEffect(() => {
-    setCaptureStatus(initialStatus);
     if (!itemId || initialStatus !== "pending") return;
 
     let cancelled = false;
@@ -63,9 +79,9 @@ export function useCaptureStatus(
           const data = (await response.json()) as CaptureStatusResponse;
           const nextStatus = cleanCaptureStatus(data.captureStatus);
           if (nextStatus) {
-            setCaptureStatus(nextStatus);
+            setResolvedStatus({ itemId, initialStatus, status: nextStatus });
             if (nextStatus !== "pending") {
-              onResolvedRef.current?.(nextStatus);
+              onResolvedRef.current?.(nextStatus, data);
               return;
             }
           }

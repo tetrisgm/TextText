@@ -1,0 +1,566 @@
+.root {
+  --assistant-sidebar-width: 360px;
+  --assistant-sidebar-min-width: 280px;
+  --assistant-sidebar-max-width: 600px;
+  --assistant-sidebar-rail-width: 44px;
+
+  z-index: 60;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  color: var(--ac-label, #1d1d1f);
+  font-family: var(
+    --ac-font-text,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif
+  );
+  letter-spacing: 0;
+  isolation: isolate;
+}
+
+.root,
+.root * {
+  box-sizing: border-box;
+}
+
+.root[data-layout="auto"][data-state="pinned"],
+.root[data-layout="inline"]:not([data-state="hidden"]) {
+  position: relative;
+  width: min(var(--assistant-sidebar-width), 100%);
+  max-width: 100%;
+  flex: 0 0 auto;
+}
+
+.root[data-layout="inline"][data-state="hidden"] {
+  position: relative;
+  width: var(--assistant-sidebar-rail-width);
+  flex: 0 0 var(--assistant-sidebar-rail-width);
+}
+
+.root[data-layout="auto"]:not([data-state="pinned"]),
+.root[data-layout="overlay"] {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: min(var(--assistant-sidebar-width), 100%);
+  max-width: 100%;
+  pointer-events: none;
+}
+
+.panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  background: var(--ac-mat-bg, rgba(246, 246, 246, 0.96));
+  color: var(--ac-label, #1d1d1f);
+  -webkit-backdrop-filter: var(--ac-mat-blur, blur(30px) saturate(180%));
+  backdrop-filter: var(--ac-mat-blur, blur(30px) saturate(180%));
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+  visibility: visible;
+  transition:
+    transform 180ms ease,
+    opacity 140ms ease,
+    visibility 0s linear 0s;
+}
+
+.root[data-layout="inline"][data-state="hidden"] .panel {
+  width: min(var(--assistant-sidebar-width), 100vw);
+}
+
+.root[data-layout="auto"][data-state="open"] .panel,
+.root[data-layout="overlay"] .panel {
+  box-shadow: -18px 0 44px -34px rgba(0, 0, 0, 0.58);
+}
+
+.root[data-state="hidden"] .panel {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 12px));
+  visibility: hidden;
+  transition:
+    transform 180ms ease,
+    opacity 140ms ease,
+    visibility 0s linear 180ms;
+}
+
+.launcher {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  border-radius: var(--ac-radius-control, 6px);
+  background: var(--ac-mat-bg, rgba(246, 246, 246, 0.96));
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  -webkit-backdrop-filter: var(--ac-mat-blur, blur(20px) saturate(160%));
+  backdrop-filter: var(--ac-mat-blur, blur(20px) saturate(160%));
+  box-shadow: 0 8px 22px -14px rgba(0, 0, 0, 0.48);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.root[data-layout="inline"][data-state="hidden"] .launcher {
+  right: 4px;
+}
+
+.launcher:hover {
+  background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
+  color: var(--ac-label, #1d1d1f);
+}
+
+.launcher:focus-visible,
+.iconButton:focus-visible,
+.removeAttachmentButton:focus-visible,
+.composerButton:focus-visible,
+.textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
+}
+
+.launcher svg,
+.iconButton svg,
+.composerButton svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.resizer {
+  position: absolute;
+  inset: 0 auto 0 -5px;
+  z-index: 4;
+  width: 10px;
+  outline: none;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  transition:
+    width 120ms ease,
+    background-color 120ms ease;
+}
+
+.resizer:hover::before,
+.resizer:focus-visible::before,
+.root[data-resizing="true"] .resizer::before {
+  width: 3px;
+  background: var(--ac-accent, #007aff);
+}
+
+.header {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  background: color-mix(
+    in srgb,
+    var(--ac-mat-bg, rgba(246, 246, 246, 0.96)) 90%,
+    transparent
+  );
+}
+
+.titleRow {
+  min-width: 0;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  margin: 0;
+  color: var(--ac-label, #1d1d1f);
+  font: 650 var(--ac-fs-subheadline, 15px) / 1.2 var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.iconButton,
+.composerButton,
+.removeAttachmentButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.iconButton {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ac-radius-control, 6px);
+}
+
+.iconButton:hover,
+.composerButton:hover,
+.removeAttachmentButton:hover {
+  background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
+  color: var(--ac-label, #1d1d1f);
+}
+
+.iconButton[aria-pressed="true"] {
+  background: var(--ac-tinted-fill, rgba(0, 122, 255, 0.15));
+  color: var(--ac-accent, #007aff);
+}
+
+.contextChip {
+  min-width: 0;
+  max-width: 100%;
+  width: fit-content;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  border-radius: var(--ac-radius-control, 6px);
+  padding: 0 8px;
+  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+}
+
+.contextIcon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--ac-accent, #007aff);
+}
+
+.contextIcon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.contextLabel,
+.contextDetail {
+  min-width: 0;
+  overflow: hidden;
+  font: 550 var(--ac-fs-caption1, 12px) / 1 var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextLabel {
+  flex: 0 1 auto;
+  color: var(--ac-label, #1d1d1f);
+}
+
+.contextDetail {
+  flex: 1 1 auto;
+  border-left: 1px solid var(--ac-separator, rgba(60, 60, 67, 0.29));
+  padding-left: 6px;
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+}
+
+.content {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.composer {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  background: color-mix(
+    in srgb,
+    var(--ac-mat-bg, rgba(246, 246, 246, 0.96)) 94%,
+    transparent
+  );
+}
+
+.attachmentList {
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0;
+  padding: 1px;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.attachmentChip {
+  min-width: 0;
+  max-width: min(240px, calc(100vw - 40px));
+  height: 34px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.12));
+  border-radius: var(--ac-radius-control, 6px);
+  padding: 0 4px 0 8px;
+  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
+  color: var(--ac-label, #1d1d1f);
+}
+
+.attachmentIcon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--ac-accent, #007aff);
+}
+
+.attachmentIcon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.attachmentCopy {
+  min-width: 0;
+  display: grid;
+  flex: 1 1 auto;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.attachmentName,
+.attachmentSize {
+  min-width: 0;
+  overflow: hidden;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentName {
+  color: var(--ac-label, #1d1d1f);
+  font: 550 var(--ac-fs-caption1, 12px) / 1.05 var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
+}
+
+.attachmentSize {
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+  font: 400 var(--ac-fs-caption2, 11px) / 1 var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
+}
+
+.removeAttachmentButton {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ac-radius-control, 6px);
+}
+
+.removeAttachmentButton svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.composerField {
+  min-width: 0;
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--ac-separator, rgba(60, 60, 67, 0.29));
+  border-radius: 8px;
+  background: var(--ac-bg, #fff);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.composerField:focus-within {
+  border-color: color-mix(
+    in srgb,
+    var(--ac-accent, #007aff) 72%,
+    transparent
+  );
+  box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
+}
+
+.textarea {
+  width: 100%;
+  min-height: 44px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 0;
+  padding: 10px 10px 4px;
+  background: transparent;
+  color: var(--ac-label, #1d1d1f);
+  font: 400 var(--ac-fs-subheadline, 15px) / 1.35 var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
+  letter-spacing: 0;
+  resize: none;
+  field-sizing: content;
+}
+
+.textarea::placeholder {
+  color: var(--ac-placeholder, rgba(60, 60, 67, 0.38));
+  opacity: 1;
+}
+
+.textarea:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.textarea:focus-visible {
+  box-shadow: none;
+}
+
+.composerToolbar {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 5px 5px;
+}
+
+.composerButton {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ac-radius-control, 6px);
+}
+
+.submitButton {
+  background: var(--ac-accent, #007aff);
+  color: var(--ac-on-accent, #fff);
+}
+
+.submitButton:hover {
+  background: color-mix(in srgb, var(--ac-accent, #007aff) 88%, #000);
+  color: var(--ac-on-accent, #fff);
+}
+
+.iconButton:disabled,
+.removeAttachmentButton:disabled,
+.composerButton:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.iconButton:disabled:hover,
+.removeAttachmentButton:disabled:hover,
+.composerButton:disabled:hover {
+  background: transparent;
+  color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
+}
+
+.submitButton:disabled,
+.submitButton:disabled:hover {
+  background: var(--ac-fill-2, rgba(120, 120, 128, 0.16));
+  color: var(--ac-label-3, rgba(60, 60, 67, 0.3));
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .panel,
+  .launcher {
+    background: var(--ac-mat-fallback, #f6f6f6);
+  }
+}
+
+@media (hover: none) {
+  .resizer {
+    left: -7px;
+    width: 14px;
+  }
+
+  .resizer::before {
+    left: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .launcher,
+  .resizer::before,
+  .iconButton,
+  .removeAttachmentButton,
+  .composerButton,
+  .composerField {
+    transition: none;
+  }
+}

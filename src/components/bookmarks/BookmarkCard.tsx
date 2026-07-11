@@ -160,8 +160,16 @@ export function BookmarkCard({
 }) {
   const router = useRouter();
   const captureStatus = useCaptureStatus(post.id, post.captureStatus, {
-    onResolved: () => {
-      if (onCaptureResolved) onCaptureResolved(post);
+    onResolved: (status, snapshot) => {
+      const resolvedPost: Post = {
+        ...post,
+        captureStatus: status,
+        capture: snapshot.capture ?? post.capture,
+        cover: snapshot.cover ?? post.cover,
+        updatedAt: snapshot.updatedAt ?? post.updatedAt,
+        wordCount: snapshot.wordCount ?? post.wordCount,
+      };
+      if (onCaptureResolved) onCaptureResolved(resolvedPost);
       else router.refresh();
     },
   });

@@ -154,6 +154,11 @@ function createCommand(kind: CreatePostKind): AppCommand {
       const pool = ctx.pool;
       if (!workspace || !pool || !workspace.canCreate) return;
 
+      if (workspace.createItem) {
+        workspace.createItem(kind);
+        return;
+      }
+
       const temp = optimisticPost(ctx, kind);
       if (temp) {
         addPost(temp);

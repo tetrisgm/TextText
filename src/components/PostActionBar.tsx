@@ -67,13 +67,18 @@ type EditProps = CommonProps & {
 };
 
 type Props = ReadProps | EditProps;
-export type BookmarkContentMode = "readable" | "capture" | "saved" | "original";
+export type BookmarkContentMode = "readable" | "capture" | "original";
 type ReadState = {
-  source: Post;
+  sourceVersion: string;
+  dirty: boolean;
   draft: DraftState;
   saveState: SaveState;
   error: string | null;
 };
+
+function postSourceVersion(post: Post): string {
+  return `${post.id ?? ""}:${post.slug}:${post.updatedAt ?? ""}`;
+}
 
 const POST_TYPE_OPTIONS: Array<{
   type: PostType;
@@ -369,6 +374,9 @@ export function PostActionBar(props: Props) {
   const typeWrapRef = useRef<HTMLDivElement>(null);
   const settingsWrapRef = useRef<HTMLDivElement>(null);
   const copiedTimerRef = useRef<number | null>(null);
+  const readSaveSequenceRef = useRef(0);
+  const readSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const readBaseUpdatedAtRef = useRef(props.post.updatedAt);
   const [shareOpen, setShareOpen] = useState(false);
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -379,8 +387,10 @@ export function PostActionBar(props: Props) {
     getServerOrigin,
   );
   const [copied, setCopied] = useState(false);
+  const incomingSourceVersion = postSourceVersion(props.post);
   const [readState, setReadState] = useState<ReadState>(() => ({
-    source: props.post,
+    sourceVersion: incomingSourceVersion,
+    dirty: false,
     draft: initialDraft(props.post),
     saveState: "saved",
     error: null,
@@ -395,21 +405,26 @@ export function PostActionBar(props: Props) {
   useDismissPopover(typeOpen, typeWrapRef, closeType);
   useDismissPopover(settingsOpen, settingsWrapRef, closeSettings);
 
-  let readDraft = readState.draft;
-  let readSaveState = readState.saveState;
-  let readError = readState.error;
-  if (props.mode === "read" && readState.source !== props.post) {
-    const nextReadState = {
-      source: props.post,
-      draft: initialDraft(props.post),
-      saveState: "saved" as const,
-      error: null,
-    };
-    setReadState(nextReadState);
-    readDraft = nextReadState.draft;
-    readSaveState = nextReadState.saveState;
-    readError = nextReadState.error;
-  }
+  const readDraft = readState.draft;
+  const readSaveState = readState.saveState;
+  const readError = readState.error;
+
+  useEffect(() => {
+    if (props.mode !== "read") return;
+    setReadState((current) => {
+      if (current.dirty || current.sourceVersion === incomingSourceVersion) {
+        return current;
+      }
+      readBaseUpdatedAtRef.current = props.post.updatedAt;
+      return {
+        sourceVersion: incomingSourceVersion,
+        dirty: false,
+        draft: initialDraft(props.post),
+        saveState: "saved",
+        error: null,
+      };
+    });
+  }, [incomingSourceVersion, props.mode, props.post, readState.dirty]);
 
   useEffect(() => {
     const closePopovers = () => {
@@ -449,9 +464,12 @@ export function PostActionBar(props: Props) {
 
   const readSave = useCallback(
     async (nextDraft: DraftState) => {
+      const sequence = readSaveSequenceRef.current + 1;
+      readSaveSequenceRef.current = sequence;
       if (!props.post.id) {
         setReadState((current) => ({
           ...current,
+          dirty: true,
           saveState: "error",
           error: "Post cannot be edited",
         }));
@@ -460,16 +478,37 @@ export function PostActionBar(props: Props) {
 
       setReadState((current) => ({
         ...current,
+        dirty: true,
         draft: nextDraft,
         saveState: "saving",
         error: null,
       }));
 
+      const queued = readSaveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (readSaveSequenceRef.current !== sequence) return null;
+          const payload = payloadFor(
+            props.post.id!,
+            nextDraft,
+            props.post.slug,
+            readBaseUpdatedAtRef.current,
+          );
+          const saved = await saveEditablePostAction(props.blog.handle, payload);
+          readBaseUpdatedAtRef.current = saved.updatedAt;
+          return saved;
+        });
+      readSaveQueueRef.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+
       try {
-        const payload = payloadFor(props.post.id, nextDraft, props.post.slug);
-        const saved = await saveEditablePostAction(props.blog.handle, payload);
+        const saved = await queued;
+        if (!saved || readSaveSequenceRef.current !== sequence) return;
         setReadState({
-          source: props.post,
+          sourceVersion: incomingSourceVersion,
+          dirty: false,
           draft: initialDraft(saved),
           saveState: "saved",
           error: null,
@@ -481,8 +520,10 @@ export function PostActionBar(props: Props) {
           });
         }
       } catch (saveError) {
+        if (readSaveSequenceRef.current !== sequence) return;
         setReadState((current) => ({
           ...current,
+          dirty: true,
           saveState: "error",
           error:
             saveError instanceof Error && saveError.message
@@ -491,7 +532,7 @@ export function PostActionBar(props: Props) {
         }));
       }
     },
-    [props.blog.handle, props.post, router],
+    [incomingSourceVersion, props.blog.handle, props.post, router],
   );
 
   const updateSlugInput = useCallback(
@@ -503,6 +544,7 @@ export function PostActionBar(props: Props) {
 
       setReadState((current) => ({
         ...current,
+        dirty: true,
         draft: { ...current.draft, slug: slugify(value, "") },
       }));
     },
@@ -628,7 +670,9 @@ export function PostActionBar(props: Props) {
             <span className="post-action-button-icon">
               <PencilIcon />
             </span>
-            Edit
+            <span className="shortcut-label">
+              <span className="shortcut-letter">E</span>dit
+            </span>
           </button>
         ) : (
           <Link
@@ -641,7 +685,9 @@ export function PostActionBar(props: Props) {
             <span className="post-action-button-icon">
               <PencilIcon />
             </span>
-            Edit
+            <span className="shortcut-label">
+              <span className="shortcut-letter">E</span>dit
+            </span>
           </Link>
         )}
       </ShortcutTooltip>
@@ -673,25 +719,12 @@ export function PostActionBar(props: Props) {
       ? safePostUrl(props.post.capture?.screenshotTiles?.[0]?.url) ||
         safePostUrl(props.post.capture?.screenshotUrl)
       : "";
-  const bookmarkSavedUrl =
-    props.mode === "read" && props.post.type === "bookmark"
-      ? safePostUrl(props.post.capture?.htmlUrl)
-      : "";
   const bookmarkControls =
     props.mode === "read" &&
     props.post.type === "bookmark" &&
     props.onBookmarkContentModeChange &&
-    (bookmarkCaptureUrl || bookmarkSavedUrl || bookmarkOriginalUrl) ? (
+    (bookmarkCaptureUrl || bookmarkOriginalUrl) ? (
       <div className="post-bookmark-action-group" aria-label="Bookmark views">
-        {bookmarkMode !== "readable" && (
-          <button
-            type="button"
-            className="post-bookmark-view-button ac-btn ac-btn-gray"
-            onClick={() => props.onBookmarkContentModeChange?.("readable")}
-          >
-            Back
-          </button>
-        )}
         {bookmarkCaptureUrl && (
           <button
             type="button"
@@ -699,21 +732,13 @@ export function PostActionBar(props: Props) {
               bookmarkMode === "capture" ? " is-active" : ""
             }`}
             aria-pressed={bookmarkMode === "capture"}
-            onClick={() => props.onBookmarkContentModeChange?.("capture")}
+            onClick={() =>
+              props.onBookmarkContentModeChange?.(
+                bookmarkMode === "capture" ? "readable" : "capture",
+              )
+            }
           >
-            Full capture
-          </button>
-        )}
-        {bookmarkSavedUrl && (
-          <button
-            type="button"
-            className={`post-bookmark-view-button ac-btn ac-btn-gray${
-              bookmarkMode === "saved" ? " is-active" : ""
-            }`}
-            aria-pressed={bookmarkMode === "saved"}
-            onClick={() => props.onBookmarkContentModeChange?.("saved")}
-          >
-            Saved page
+            Show full capture
           </button>
         )}
         {bookmarkOriginalUrl && (
@@ -724,7 +749,11 @@ export function PostActionBar(props: Props) {
             }`}
             aria-pressed={bookmarkMode === "original"}
             title={bookmarkOriginalUrl}
-            onClick={() => props.onBookmarkContentModeChange?.("original")}
+            onClick={() =>
+              props.onBookmarkContentModeChange?.(
+                bookmarkMode === "original" ? "readable" : "original",
+              )
+            }
           >
             <span>Original</span>
             <span className="post-bookmark-original-url">
@@ -870,9 +899,7 @@ export function PostActionBar(props: Props) {
       </nav>
       {showTopActionBar && (
         <div
-          className={`post-top-action-bar applecms is-${props.mode}${
-            bookmarkControls ? " has-bookmark-actions" : ""
-          }`}
+          className={`post-top-action-bar applecms is-${props.mode}`}
           aria-label="Post controls"
         >
           <div className="post-action-toolbar ac-chrome">

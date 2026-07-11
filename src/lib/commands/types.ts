@@ -58,6 +58,7 @@ export type CommandWorkspaceSurface = {
   scrollReaderEdge: (edge: "top" | "bottom") => void;
   readerTapG: () => void;
   openAdjacentPost: (direction: 1 | -1) => void;
+  createItem?: (kind: CreatePostKind) => void;
   openCreatedPost?: (post: WorkspacePoolPost) => void;
   reconcileCreatedPost?: (
     temporaryPostId: string,

@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import type { CaptureStatus } from "@/lib/content";
+import type { BookmarkCapture, CaptureStatus } from "@/lib/content";
 import { db } from "@/lib/db/client";
 import { blogs, posts } from "@/lib/db/schema";
 import { isUuid, resolveItemAccess } from "@/lib/permissions";
@@ -29,6 +29,10 @@ export async function GET(
     .select({
       handle: blogs.handle,
       captureStatus: posts.captureStatus,
+      capture: posts.capture,
+      cover: posts.cover,
+      updatedAt: posts.updatedAt,
+      wordCount: posts.wordCount,
     })
     .from(posts)
     .innerJoin(blogs, eq(posts.blogId, blogs.id))
@@ -53,5 +57,9 @@ export async function GET(
 
   return Response.json({
     captureStatus: cleanCaptureStatus(item.captureStatus),
+    capture: item.capture as BookmarkCapture | null,
+    cover: item.cover,
+    updatedAt: item.updatedAt.toISOString(),
+    wordCount: item.wordCount,
   });
 }

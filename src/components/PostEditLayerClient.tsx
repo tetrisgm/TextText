@@ -10,10 +10,7 @@ import {
   useState,
 } from "react";
 import type {
-  CSSProperties,
-  DragEvent,
   KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -62,6 +59,10 @@ import {
   EditReaderPreview,
   EditTalkReaderPreview,
 } from "@/components/editor/EditReaderPreview";
+import {
+  EditableCover,
+  randomCover,
+} from "@/components/editor/EditableCover";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
 import { COVER_PILE } from "@/lib/cover-pile";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
@@ -80,10 +81,6 @@ type DraftSnapshot = {
 };
 
 const editSessions = new Map<string, EditSession>();
-
-const COVER_HEIGHT_MIN = 220;
-const COVER_HEIGHT_MAX = 760;
-const COVER_HEIGHT_STEP = 24;
 
 function autoGrow(node: HTMLTextAreaElement | null) {
   if (!node) return;
@@ -166,218 +163,6 @@ function uploadErrorMessage(error: unknown): string {
   return error instanceof MediaUploadError
     ? error.message
     : errorMessage(error, "Upload failed.");
-}
-
-function randomPileCover(currentCover: string): string {
-  const available = COVER_PILE.filter((cover) => cover !== currentCover);
-  const pile = available.length > 0 ? available : COVER_PILE;
-  return pile[Math.floor(Math.random() * pile.length)] ?? COVER_PILE[0] ?? "";
-}
-
-function clampCoverHeight(value: number): number {
-  return Math.min(COVER_HEIGHT_MAX, Math.max(COVER_HEIGHT_MIN, Math.round(value)));
-}
-
-function EditableCover({
-  title,
-  cover,
-  coverHeight,
-  mediaEnabled,
-  uploading,
-  error,
-  onChangeCover,
-  onCoverHeightChange,
-  onUploadFile,
-  onRemoveCover,
-}: {
-  title: string;
-  cover: string;
-  coverHeight: number | null;
-  mediaEnabled: boolean;
-  uploading: boolean;
-  error: string | null;
-  onChangeCover: () => void;
-  onCoverHeightChange: (height: number) => void;
-  onUploadFile: (file: File) => void;
-  onRemoveCover: () => void;
-}) {
-  const figureRef = useRef<HTMLElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [draggingCover, setDraggingCover] = useState(false);
-  const [resizingCover, setResizingCover] = useState(false);
-  const chooseFile = (files: FileList | null) => {
-    if (!mediaEnabled) return;
-    const file = files
-      ? Array.from(files).find((item) => item.type.startsWith("image/"))
-      : undefined;
-    if (file) onUploadFile(file);
-  };
-  const hasCoverDrop = (event: DragEvent<HTMLElement>) =>
-    Array.from(event.dataTransfer.types).includes("Files");
-  const onCoverDrag = (event: DragEvent<HTMLElement>) => {
-    if (!mediaEnabled) return;
-    if (!hasCoverDrop(event)) return;
-    event.preventDefault();
-    if (uploading) return;
-    event.dataTransfer.dropEffect = "copy";
-    setDraggingCover(true);
-  };
-  const onCoverDragLeave = (event: DragEvent<HTMLElement>) => {
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
-      return;
-    }
-    setDraggingCover(false);
-  };
-  const onCoverDrop = (event: DragEvent<HTMLElement>) => {
-    if (!mediaEnabled) return;
-    if (!hasCoverDrop(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setDraggingCover(false);
-    if (uploading) return;
-    chooseFile(event.dataTransfer.files);
-  };
-  const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    const media = figureRef.current?.querySelector<HTMLElement>(".edit-cover-media");
-    if (!media) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-
-    const startY = event.clientY;
-    const startHeight = media.getBoundingClientRect().height;
-    setResizingCover(true);
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      moveEvent.preventDefault();
-      onCoverHeightChange(clampCoverHeight(startHeight + moveEvent.clientY - startY));
-    };
-    const onPointerUp = () => {
-      setResizingCover(false);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp, { once: true });
-    window.addEventListener("pointercancel", onPointerUp, { once: true });
-  };
-  const onResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const currentHeight =
-      coverHeight ?? figureRef.current?.querySelector<HTMLElement>(".edit-cover-media")
-        ?.getBoundingClientRect().height ?? 420;
-    const step = event.shiftKey ? COVER_HEIGHT_STEP * 2 : COVER_HEIGHT_STEP;
-
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      onCoverHeightChange(clampCoverHeight(currentHeight - step));
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      onCoverHeightChange(clampCoverHeight(currentHeight + step));
-      return;
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      onCoverHeightChange(COVER_HEIGHT_MIN);
-      return;
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      onCoverHeightChange(COVER_HEIGHT_MAX);
-    }
-  };
-  const coverStyle = coverHeight
-    ? ({ "--reader-cover-height": `${coverHeight}px` } as CSSProperties)
-    : undefined;
-
-  return (
-    <figure
-      ref={figureRef}
-      className={`reader-cover edit-cover applecms${
-        draggingCover ? " is-dragging-cover" : ""
-      }${uploading ? " is-uploading-cover" : ""}${
-        resizingCover ? " is-resizing-cover" : ""
-      }`}
-      style={coverStyle}
-      onDragEnter={onCoverDrag}
-      onDragOver={onCoverDrag}
-      onDragLeave={onCoverDragLeave}
-      onDrop={onCoverDrop}
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(event) => {
-          chooseFile(event.currentTarget.files);
-          event.currentTarget.value = "";
-        }}
-      />
-      <div className="edit-cover-media">
-        {isVideoFile(cover) ? (
-          <video src={cover} controls playsInline preload="metadata" />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt={title} />
-        )}
-        <div className="edit-cover-drop-hint" aria-hidden="true">
-          {mediaEnabled ? "Drop to replace image" : "Choose a local image"}
-        </div>
-        <div className="edit-cover-toolbar">
-          <button
-            type="button"
-            className="edit-cover-action"
-            disabled={uploading}
-            onClick={onChangeCover}
-          >
-            Change image
-          </button>
-          <button
-            type="button"
-            className="edit-cover-action"
-            disabled={uploading || !mediaEnabled}
-            onClick={() => inputRef.current?.click()}
-          >
-            {uploading ? "Uploading" : "Upload image"}
-          </button>
-          <button
-            type="button"
-            className="edit-cover-action"
-            disabled={uploading}
-            onClick={onRemoveCover}
-          >
-            Remove
-          </button>
-        </div>
-        <div
-          role="slider"
-          tabIndex={0}
-          className="edit-cover-resize-handle"
-          aria-label="Resize header image"
-          aria-orientation="vertical"
-          aria-valuemin={COVER_HEIGHT_MIN}
-          aria-valuemax={COVER_HEIGHT_MAX}
-          aria-valuenow={Math.round(coverHeight ?? 420)}
-          onPointerDown={onResizePointerDown}
-          onKeyDown={onResizeKeyDown}
-        >
-          <span aria-hidden="true" />
-        </div>
-      </div>
-      {error && (
-        <span className="edit-cover-error" role="alert">
-          {error}
-        </span>
-      )}
-    </figure>
-  );
 }
 
 function EditableTalkStage({
@@ -699,6 +484,7 @@ export function PostEditLayer({
     draft: initialSession.draft,
   }));
   const draft = draftSnapshot.draft;
+  const draftRef = useRef(draft);
   const [saveState, setSaveState] = useState<SaveState>(() =>
     post.id ? "saved" : "error",
   );
@@ -719,10 +505,15 @@ export function PostEditLayer({
   const excerptRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<BodyEditorHandle>(null);
   const currentSlugRef = useRef(initialSession.currentSlug);
+  const baseUpdatedAtRef = useRef(post.updatedAt);
   const autoSlugAllowedRef = useRef(initialSession.autoSlugAllowed);
   const latestKeyRef = useRef(initialSession.lastSavedKey);
   const lastSavedKeyRef = useRef(initialSession.lastSavedKey);
   const saveTimerRef = useRef<number | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const draftRevisionRef = useRef(0);
+  const editorMountedRef = useRef(true);
+  const coverRevisionRef = useRef(0);
   const leavingEditRef = useRef(false);
   const postId = post.id;
   const uploadEndpoint = mediaUploadEndpointForHandle(blog.handle);
@@ -744,10 +535,6 @@ export function PostEditLayer({
   }, []);
 
   useEffect(() => {
-    if (!collab) setPresencePeers([]);
-  }, [collab]);
-
-  useEffect(() => {
     autoGrow(titleRef.current);
   }, [draft.title, draft.type]);
 
@@ -766,6 +553,7 @@ export function PostEditLayer({
   }, [post.id, shouldAutoFocusTitle]);
 
   useLayoutEffect(() => {
+    draftRef.current = draft;
     if (draftSnapshot.postId !== postId) return;
     patchEditSession(postId, {
       draft,
@@ -776,20 +564,70 @@ export function PostEditLayer({
   }, [draft, draftSnapshot.postId, postId]);
 
   useEffect(() => {
+    editorMountedRef.current = true;
     return () => {
+      editorMountedRef.current = false;
+      coverRevisionRef.current += 1;
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
     };
   }, []);
 
+  const enqueueSave = useCallback(
+    (
+      nextDraft: DraftState,
+      options: { onlyIfCurrent?: boolean; revalidate?: boolean } = {},
+    ) => {
+      if (!postId) return Promise.resolve(null);
+      const requestedKey = payloadKey(
+        payloadFor(postId, nextDraft, currentSlugRef.current),
+      );
+      const requestedRevision = draftRevisionRef.current;
+      const queued = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (
+            options.onlyIfCurrent &&
+            (latestKeyRef.current !== requestedKey ||
+              draftRevisionRef.current !== requestedRevision)
+          ) {
+            return null;
+          }
+          if (lastSavedKeyRef.current === requestedKey) return null;
+          const payload = payloadFor(
+            postId,
+            nextDraft,
+            currentSlugRef.current,
+            baseUpdatedAtRef.current,
+          );
+          const saved = await saveEditablePostAction(blog.handle, payload, {
+            revalidate: options.revalidate,
+          });
+          // Advance the server revision even when this response has already
+          // been superseded. The response itself never replaces a newer draft.
+          baseUpdatedAtRef.current = saved.updatedAt;
+          return { requestedKey, requestedRevision, saved };
+        });
+      saveQueueRef.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
+    },
+    [blog.handle, postId],
+  );
+
   useEffect(() => {
     if (!postId) return;
 
     if (draftSnapshot.postId !== postId) return;
 
-    const payload = payloadFor(postId, draft, currentSlugRef.current);
-    const key = payloadKey(payload);
+    const key = payloadKey(payloadFor(
+      postId,
+      draft,
+      currentSlugRef.current,
+    ));
     latestKeyRef.current = key;
     patchEditSession(postId, {
       draft,
@@ -811,15 +649,23 @@ export function PostEditLayer({
 
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null;
-      const sentKey = key;
-      const sentSlug = payload.slug;
 
       startTransition(() => {
-        void saveEditablePostAction(blog.handle, payload)
-          .then((saved) => {
-            if (latestKeyRef.current !== sentKey) return;
-            lastSavedKeyRef.current = sentKey;
-            patchEditSession(postId, { lastSavedKey: sentKey });
+        void enqueueSave(draft, {
+          onlyIfCurrent: true,
+          revalidate: false,
+        })
+          .then((result) => {
+            if (
+              !result ||
+              latestKeyRef.current !== result.requestedKey ||
+              draftRevisionRef.current !== result.requestedRevision
+            ) {
+              return;
+            }
+            const { saved } = result;
+            lastSavedKeyRef.current = result.requestedKey;
+            patchEditSession(postId, { lastSavedKey: result.requestedKey });
             setSaveState("saved");
             setError(null);
 
@@ -833,7 +679,8 @@ export function PostEditLayer({
               }
             }
 
-            if (saved.slug !== sentSlug) {
+            if (saved.slug !== draftRef.current.slug) {
+              draftRef.current = { ...draftRef.current, slug: saved.slug };
               setDraftSnapshot((current) => ({
                 ...current,
                 draft: { ...current.draft, slug: saved.slug },
@@ -841,7 +688,7 @@ export function PostEditLayer({
             }
           })
           .catch((saveError) => {
-            if (latestKeyRef.current !== sentKey) return;
+            if (latestKeyRef.current !== key) return;
             setSaveState("error");
             setError(errorMessage(saveError, "Could not save"));
           });
@@ -854,23 +701,33 @@ export function PostEditLayer({
         saveTimerRef.current = null;
       }
     };
-  }, [blog, draft, draftSnapshot.postId, postId, router]);
+  }, [blog, draft, draftSnapshot.postId, enqueueSave, postId, router]);
 
   const updateDraft = useCallback((patch: Partial<DraftState>) => {
-    setDraftSnapshot((current) => ({
-      ...current,
-      draft: { ...current.draft, ...patch },
-    }));
-  }, []);
+    const nextDraft = { ...draftRef.current, ...patch };
+    draftRef.current = nextDraft;
+    draftRevisionRef.current += 1;
+    if (postId) {
+      latestKeyRef.current = payloadKey(
+        payloadFor(postId, nextDraft, currentSlugRef.current),
+      );
+    }
+    setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
+  }, [postId]);
 
   const updateDraftFrom = useCallback(
     (updater: (draft: DraftState) => DraftState) => {
-      setDraftSnapshot((current) => ({
-        ...current,
-        draft: updater(current.draft),
-      }));
+      const nextDraft = updater(draftRef.current);
+      draftRef.current = nextDraft;
+      draftRevisionRef.current += 1;
+      if (postId) {
+        latestKeyRef.current = payloadKey(
+          payloadFor(postId, nextDraft, currentSlugRef.current),
+        );
+      }
+      setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
     },
-    [],
+    [postId],
   );
   const containingFolderPath = useMemo(() => {
     const folder = post.folderId
@@ -899,22 +756,19 @@ export function PostEditLayer({
         saveTimerRef.current = null;
       }
 
-      const nextDraft = { ...draft, ...patch };
+      const nextDraft = { ...draftRef.current, ...patch };
+      if (Object.keys(patch).length > 0) {
+        draftRef.current = nextDraft;
+        draftRevisionRef.current += 1;
+        setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
+      }
       const leavingEdit = Boolean(options.exitEdit || options.navigatePath);
       if (leavingEdit) leavingEditRef.current = true;
-      const payload = payloadFor(postId, nextDraft, currentSlugRef.current);
-      const key = payloadKey(payload);
-      latestKeyRef.current = key;
-      patchEditSession(postId, {
-        draft: nextDraft,
-        currentSlug: currentSlugRef.current,
-        autoSlugAllowed: autoSlugAllowedRef.current,
-      });
 
-      const navigateAfterSave = (slug: string) => {
+      const navigateAfterSave = (slug: string, savedDraft: DraftState) => {
         if (leavingEdit && postId) {
-          // The server copy is now authoritative; a kept session would
-          // resurrect this draft over later edits from another tab or agent.
+          // The newest local snapshot has been acknowledged, so the transient
+          // session can be discarded without resurrecting an older draft.
           editSessions.delete(postId);
         }
         if (options.navigatePath) {
@@ -923,7 +777,7 @@ export function PostEditLayer({
         }
         if (options.exitEdit) {
           router.replace(
-            isEmptyDraft(nextDraft)
+            isEmptyDraft(savedDraft)
               ? containingFolderHref
               : blogPostPath(blog, { slug }),
             { scroll: false },
@@ -931,43 +785,70 @@ export function PostEditLayer({
         }
       };
 
-      if (key === lastSavedKeyRef.current) {
-        navigateAfterSave(currentSlugRef.current);
-        return;
-      }
-
       setSaveState("saving");
       setError(null);
 
       try {
-        const sentSlug = payload.slug;
-        const previousSlug = currentSlugRef.current;
-        const saved = await saveEditablePostAction(blog.handle, payload);
-        lastSavedKeyRef.current = key;
-        patchEditSession(postId, { lastSavedKey: key });
-        setSaveState("saved");
-        setError(null);
+        while (true) {
+          const targetDraft = draftRef.current;
+          const targetRevision = draftRevisionRef.current;
+          const targetKey = payloadKey(
+            payloadFor(postId, targetDraft, currentSlugRef.current),
+          );
+          latestKeyRef.current = targetKey;
+          patchEditSession(postId, {
+            draft: targetDraft,
+            currentSlug: currentSlugRef.current,
+            autoSlugAllowed: autoSlugAllowedRef.current,
+          });
 
-        if (saved.slug !== previousSlug) {
-          currentSlugRef.current = saved.slug;
-          patchEditSession(postId, { currentSlug: saved.slug });
+          if (targetKey === lastSavedKeyRef.current) {
+            setSaveState("saved");
+            setError(null);
+            navigateAfterSave(currentSlugRef.current, targetDraft);
+            return;
+          }
+
+          const result = await enqueueSave(targetDraft, { revalidate: true });
+          if (
+            !result ||
+            draftRevisionRef.current !== targetRevision ||
+            latestKeyRef.current !== targetKey
+          ) {
+            continue;
+          }
+
+          const { saved } = result;
+          lastSavedKeyRef.current = targetKey;
+          patchEditSession(postId, { lastSavedKey: targetKey });
+          setSaveState("saved");
+          setError(null);
+
+          if (saved.slug !== currentSlugRef.current) {
+            currentSlugRef.current = saved.slug;
+            patchEditSession(postId, { currentSlug: saved.slug });
+          }
+
+          let savedDraft = targetDraft;
+          if (saved.slug !== targetDraft.slug) {
+            savedDraft = { ...targetDraft, slug: saved.slug };
+            draftRef.current = savedDraft;
+            setDraftSnapshot((current) => ({
+              ...current,
+              draft: savedDraft,
+            }));
+          }
+
+          navigateAfterSave(saved.slug, savedDraft);
+          return;
         }
-
-        if (saved.slug !== sentSlug) {
-          setDraftSnapshot((current) => ({
-            ...current,
-            draft: { ...current.draft, slug: saved.slug },
-          }));
-        }
-
-        navigateAfterSave(saved.slug);
       } catch (saveError) {
         if (leavingEdit) leavingEditRef.current = false;
         setSaveState("error");
         setError(errorMessage(saveError, "Could not save"));
       }
     },
-    [blog, containingFolderHref, draft, postId, router],
+    [blog, containingFolderHref, enqueueSave, postId, router],
   );
 
   useEffect(() => {
@@ -1022,30 +903,50 @@ export function PostEditLayer({
         setCoverUploadError(ANONYMOUS_MEDIA_UPLOAD_COPY);
         return;
       }
+      const uploadRevision = coverRevisionRef.current + 1;
+      coverRevisionRef.current = uploadRevision;
       setCoverUploading(true);
       setCoverUploadError(null);
       try {
         const url = await uploadMedia(file, { endpoint: uploadEndpoint });
-        updateDraft({ cover: url, coverCaption: "" });
+        if (
+          editorMountedRef.current &&
+          coverRevisionRef.current === uploadRevision
+        ) {
+          coverRevisionRef.current += 1;
+          updateDraft({ cover: url, coverCaption: "" });
+        }
       } catch (uploadError) {
         setCoverUploadError(uploadErrorMessage(uploadError));
       } finally {
-        setCoverUploading(false);
+        if (editorMountedRef.current) setCoverUploading(false);
       }
     },
     [mediaEnabled, updateDraft, uploadEndpoint],
   );
 
   const shufflePileCover = useCallback(() => {
-    const cover = randomPileCover(
+    const cover = randomCover(
+      COVER_PILE,
       isNoCoverValue(draft.cover) ? "" : draft.cover.trim(),
     );
     if (!cover) return;
+    coverRevisionRef.current += 1;
     setCoverUploadError(null);
     updateDraft({ cover, coverCaption: "" });
   }, [draft.cover, updateDraft]);
 
+  const selectPileCover = useCallback(
+    (cover: string) => {
+      coverRevisionRef.current += 1;
+      setCoverUploadError(null);
+      updateDraft({ cover, coverCaption: "" });
+    },
+    [updateDraft],
+  );
+
   const removeCover = useCallback(() => {
+    coverRevisionRef.current += 1;
     setCoverUploadError(null);
     updateDraft({
       cover: draft.type === "article" ? NO_COVER_VALUE : "",
@@ -1089,21 +990,17 @@ export function PostEditLayer({
       const title = titleValue.trim();
       if (isUnsetTitle(title)) return;
 
-      setDraftSnapshot((current) => {
-        if (!autoSlugAllowedRef.current) return current;
-        if (!isPlaceholderSlug(current.draft.slug)) {
-          autoSlugAllowedRef.current = false;
-          return { ...current };
-        }
-
-        const nextSlug = uniqueSlug(slugify(title, "post"), usedSlugs);
+      const current = draftRef.current;
+      if (!isPlaceholderSlug(current.slug)) {
         autoSlugAllowedRef.current = false;
-        return nextSlug === current.draft.slug
-          ? { ...current }
-          : { ...current, draft: { ...current.draft, slug: nextSlug } };
-      });
+        return;
+      }
+
+      const nextSlug = uniqueSlug(slugify(title, "post"), usedSlugs);
+      autoSlugAllowedRef.current = false;
+      if (nextSlug !== current.slug) updateDraft({ slug: nextSlug });
     },
-    [usedSlugs],
+    [updateDraft, usedSlugs],
   );
 
   useEffect(() => {
@@ -1286,11 +1183,12 @@ export function PostEditLayer({
       <EditableCover
         title={titleText}
         cover={resolvedHeaderCover}
+        covers={COVER_PILE}
         coverHeight={draft.coverHeight}
         mediaEnabled={mediaEnabled}
         uploading={coverUploading}
         error={coverUploadError}
-        onChangeCover={shufflePileCover}
+        onSelectCover={selectPileCover}
         onCoverHeightChange={(coverHeight) => updateDraft({ coverHeight })}
         onUploadFile={uploadCover}
         onRemoveCover={removeCover}
@@ -1420,7 +1318,7 @@ export function PostEditLayer({
           adjacent={adjacent}
           homePath={homePath}
           postPath={renderedPostPath}
-          presencePeers={presencePeers}
+          presencePeers={collab ? presencePeers : []}
           draft={draft}
           deleting={deleting}
           hasHeaderImage={hasArticleHeaderImage}

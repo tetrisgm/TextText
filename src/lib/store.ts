@@ -98,7 +98,6 @@ type PostListRow = Pick<
   captureTitle: string | null;
   captureDescription: string | null;
   captureScreenshotUrl: string | null;
-  captureHtmlUrl: string | null;
   linkLabel: string | null;
   linkHref: string | null;
 };
@@ -199,7 +198,6 @@ function compactCapture(row: PostListRow): BookmarkCapture | undefined {
     title: row.captureTitle ?? undefined,
     description: row.captureDescription ?? undefined,
     screenshotUrl: row.captureScreenshotUrl ?? undefined,
-    htmlUrl: row.captureHtmlUrl ?? undefined,
   };
   return Object.values(capture).some(Boolean)
     ? (capture as BookmarkCapture)
@@ -289,7 +287,6 @@ function postListSelection() {
     captureTitle: sql<string | null>`${posts.capture}->>'title'`,
     captureDescription: sql<string | null>`${posts.capture}->>'description'`,
     captureScreenshotUrl: sql<string | null>`${posts.capture}->>'screenshotUrl'`,
-    captureHtmlUrl: sql<string | null>`${posts.capture}->>'htmlUrl'`,
     linkLabel: sql<string | null>`${posts.links}->0->>'label'`,
     linkHref: sql<string | null>`${posts.links}->0->>'href'`,
   };
@@ -743,7 +740,7 @@ export async function saveBookmarkCapture(
     /**
      * The server's cheap title/description fetch sets this: it fills capture
      * metadata but leaves the status pending so the full capture agent (the
-     * Mac app, with screenshot and original HTML) still claims the bookmark.
+     * Mac app, with screenshots and readable assets) still claims the bookmark.
      */
     keepPending?: boolean;
   } = {},
@@ -812,11 +809,31 @@ export async function saveBookmarkCapture(
   return updated[0] ? mapPost(updated[0]) : null;
 }
 
-function mergeBookmarkCapture(
+type LegacyBookmarkCapture = BookmarkCapture & { htmlUrl?: unknown };
+
+export function legacyBookmarkHtmlUrl(
+  capture: BookmarkCapture | null | undefined,
+): string | undefined {
+  const value = (capture as LegacyBookmarkCapture | null | undefined)?.htmlUrl;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function stripLegacyBookmarkHtmlUrl(
+  capture: BookmarkCapture,
+): BookmarkCapture {
+  const sanitized: LegacyBookmarkCapture = { ...capture };
+  delete sanitized.htmlUrl;
+  return sanitized;
+}
+
+export function mergeBookmarkCapture(
   existing: BookmarkCapture | null | undefined,
   incoming: BookmarkCapture,
 ): BookmarkCapture {
-  const merged: BookmarkCapture = { ...(existing ?? {}), ...incoming };
+  const merged = stripLegacyBookmarkHtmlUrl({
+    ...(existing ?? {}),
+    ...incoming,
+  });
   const assets = mergeBookmarkCaptureAssets(existing?.assets, incoming.assets);
   if (assets.length > 0) merged.assets = assets;
   const screenshotTiles = mergeBookmarkCaptureScreenshotTiles(
@@ -926,10 +943,7 @@ export async function markCapturePending(
   const row = existing[0];
   if (!row) return null;
 
-  const capture: BookmarkCapture = {
-    ...(row.capture ?? {}),
-    url,
-  };
+  const capture = stripLegacyBookmarkHtmlUrl({ ...(row.capture ?? {}), url });
   delete capture.error;
 
   const updated = await db

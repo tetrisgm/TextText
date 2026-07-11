@@ -6,7 +6,6 @@
 //     readable   optional text field: readable extraction as markdown; lands
 //                in the post body only when the body is empty
 //     screenshot     optional image file -> Blob
-//     html           optional original page HTML or PDF file -> Blob
 //     assetManifest  optional JSON [{field, originalUrl, filename?, contentType?}]
 //     asset files    optional image files named by assetManifest.field -> Blob
 //
@@ -19,6 +18,7 @@ import { resolveItemAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   getPostById,
+  legacyBookmarkHtmlUrl,
   markCapturePending,
   saveBookmarkCapture,
 } from "@/lib/store";
@@ -29,7 +29,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_SCREENSHOT_BYTES = 3 * 1024 * 1024;
-const MAX_ORIGINAL_BYTES = 1_536 * 1024;
 const MAX_ASSET_BYTES = 3 * 1024 * 1024;
 const MAX_ASSETS_PER_UPLOAD = 4;
 const MAX_READABLE_ASSETS_PER_CAPTURE = 200;
@@ -37,6 +36,25 @@ const MAX_READABLE_ASSETS_PER_CAPTURE = 200;
 // under this. Cap it so an oversized text field cannot bloat the row or the
 // markdown round-trip.
 const MAX_READABLE_BYTES = 2 * 1024 * 1024;
+
+async function deleteLegacyBookmarkHtmlBlob(
+  htmlUrl: string | undefined,
+  token: string | undefined = process.env.BLOB_READ_WRITE_TOKEN,
+): Promise<void> {
+  if (!htmlUrl) return;
+  if (!token) {
+    console.warn(
+      "legacy bookmark HTML blob not deleted: BLOB_READ_WRITE_TOKEN is not configured",
+    );
+    return;
+  }
+  try {
+    const { del } = await import("@vercel/blob");
+    await del(htmlUrl, { token });
+  } catch (error) {
+    console.warn("legacy bookmark HTML blob deletion failed", error);
+  }
+}
 
 function formFile(form: FormData, name: string): File | null {
   const value = form.get(name);
@@ -75,11 +93,6 @@ function fileType(file: File, fallback: string): string {
   return typeof file.type === "string" && file.type.trim()
     ? file.type
     : fallback;
-}
-
-function isPDFFile(file: File): boolean {
-  return fileType(file, "").toLowerCase().split(";")[0] === "application/pdf" ||
-    file.name.toLowerCase().endsWith(".pdf");
 }
 
 function screenshotContentType(file: File): string {
@@ -317,6 +330,7 @@ export async function PUT(
   if (!existingPost || existingPost.type !== "bookmark") {
     return syncError(404, "Bookmark not found");
   }
+  const legacyHtmlUrl = legacyBookmarkHtmlUrl(existingPost.capture);
 
   let form: FormData;
   try {
@@ -347,7 +361,6 @@ export async function PUT(
   ) {
     return syncError(400, "Screenshot tile metadata is invalid");
   }
-  const original = formFile(form, "html");
   const assetManifest = parseAssetManifest(form.get("assetManifest"));
   if (assetManifest.error) return syncError(400, assetManifest.error);
   const readableValue = form.get("readable");
@@ -396,7 +409,6 @@ export async function PUT(
   const error =
     metaError ??
     oversizedFileError(screenshot, "Screenshot", MAX_SCREENSHOT_BYTES) ??
-    oversizedFileError(original, "Original capture", MAX_ORIGINAL_BYTES) ??
     oversizedReadableError(readableMarkdown);
 
   const capture: BookmarkCapture = {
@@ -417,7 +429,6 @@ export async function PUT(
   if (!error && blobToken) {
     if (
       screenshot ||
-      original ||
       assetFiles.length > 0 ||
       readableAssetUrls.length > 0
     ) {
@@ -532,23 +543,6 @@ export async function PUT(
           if (screenshotIndex === 0) capture.screenshotUrl = blob.url;
         }
       }
-      if (original) {
-        const isPDF = isPDFFile(original);
-        const contentType = isPDF
-          ? "application/pdf"
-          : fileType(original, "text/html; charset=utf-8");
-        const blob = await put(
-          `captures/${blog.handle}/${postId}/${isPDF ? "original.pdf" : "page.html"}`,
-          original,
-          {
-            access: "public",
-            addRandomSuffix: true,
-            contentType,
-            token: blobToken,
-          },
-        );
-        capture.htmlUrl = blob.url;
-      }
     }
   }
 
@@ -556,8 +550,7 @@ export async function PUT(
   const legacyAssetOnlyPartial =
     Boolean(capture.assets?.length) &&
     !readableMarkdown &&
-    !screenshot &&
-    !original;
+    !screenshot;
   const saved = await saveBookmarkCapture(blog.handle, postId, capture, {
     readableMarkdown: error ? undefined : readableMarkdown,
     failed: Boolean(error),
@@ -566,6 +559,7 @@ export async function PUT(
       (usesFinalizationProtocol ? meta.isFinal !== true : legacyAssetOnlyPartial),
   });
   if (!saved) return syncError(404, "No such bookmark");
+  await deleteLegacyBookmarkHtmlBlob(legacyHtmlUrl);
 
   await recordAction({
     actorUserId: userId,
@@ -602,12 +596,14 @@ export async function POST(
   if (!post || post.type !== "bookmark") {
     return syncError(404, "Bookmark not found");
   }
+  const legacyHtmlUrl = legacyBookmarkHtmlUrl(post.capture);
   const url = post.links?.[0]?.href?.trim() || post.capture?.url?.trim() || "";
   if (!/^https?:\/\//i.test(url)) {
     return syncError(400, "Bookmark has no capture URL");
   }
   const pending = await markCapturePending(blog.handle, postId, url);
   if (!pending) return syncError(404, "Bookmark not found");
+  await deleteLegacyBookmarkHtmlBlob(legacyHtmlUrl);
   await recordAction({
     actorUserId: userId,
     actorType: "external_agent",

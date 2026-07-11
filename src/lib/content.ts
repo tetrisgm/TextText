@@ -90,8 +90,6 @@ export type BookmarkCapture = {
   screenshotUrl?: string;
   /** Ordered full-page screenshot tiles for pages taller than one safe image. */
   screenshotTiles?: BookmarkCaptureScreenshotTile[];
-  /** Blob URL of the original page HTML */
-  htmlUrl?: string;
   /** locally stored inline assets from the readable extraction */
   assets?: BookmarkCaptureAsset[];
   /** ISO timestamp of the capture */

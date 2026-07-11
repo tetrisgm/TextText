@@ -39,8 +39,8 @@ export function ShortcutTooltip({
     if (!visible || !wrapRef.current || !tipRef.current) return;
     const anchor = wrapRef.current.getBoundingClientRect();
     const tip = tipRef.current.getBoundingClientRect();
-    const gutter = 8;
-    const viewportPadding = 8;
+    const gutter = 16;
+    const viewportPadding = 12;
     const desiredLeft = anchor.left + anchor.width / 2 - tip.width / 2;
     const left = Math.min(
       window.innerWidth - tip.width - viewportPadding,

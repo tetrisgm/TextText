@@ -464,6 +464,13 @@ function FolderTitleEditor({
   const [, startTransition] = useTransition();
   const cleanName = name.trim().replace(/\s+/g, " ");
 
+  const cancelEditing = useCallback(() => {
+    setName(folder.name);
+    setEditing(false);
+    setError(null);
+  }, [folder.name]);
+  useEscapeLayer(editing, "Rename folder", cancelEditing);
+
   useEffect(() => {
     const beginEditing = (event: Event) => {
       if (!canEdit || !isFolderUiEvent(event, folder.id)) return;
@@ -525,9 +532,8 @@ function FolderTitleEditor({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            setName(folder.name);
-            setEditing(false);
-            setError(null);
+            event.stopPropagation();
+            cancelEditing();
           }
         }}
       />

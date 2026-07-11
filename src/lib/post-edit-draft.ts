@@ -28,7 +28,10 @@ export function isUnsetTitle(value: string): boolean {
 export function initialDraft(post: Post): DraftState {
   return {
     type: post.type,
-    title: isUnsetTitle(post.title) ? "" : post.title,
+    title:
+      isUnsetTitle(post.title) && isPlaceholderSlug(post.slug)
+        ? ""
+        : post.title,
     excerpt: post.excerpt ?? "",
     cover: post.cover ?? "",
     coverCaption: post.coverCaption ?? "",
@@ -84,7 +87,12 @@ export function postPath(handle: string, slug: string): string {
   return `/t/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}`;
 }
 
-export function payloadFor(id: string, draft: DraftState, fallbackSlug: string) {
+export function payloadFor(
+  id: string,
+  draft: DraftState,
+  fallbackSlug: string,
+  baseUpdatedAt?: string,
+) {
   return {
     id,
     type: draft.type,
@@ -102,9 +110,12 @@ export function payloadFor(id: string, draft: DraftState, fallbackSlug: string) 
     venue: draft.venue || null,
     duration: draft.duration || null,
     date: draft.date || null,
+    baseUpdatedAt: baseUpdatedAt || null,
   };
 }
 
 export function payloadKey(payload: ReturnType<typeof payloadFor>): string {
-  return JSON.stringify(payload);
+  const { baseUpdatedAt, ...content } = payload;
+  void baseUpdatedAt;
+  return JSON.stringify(content);
 }

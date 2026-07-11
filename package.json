@@ -16,6 +16,7 @@
     "lint": "eslint",
     "ship": "release/ship.sh",
     "test": "vitest run",
+    "db:cleanup-bookmark-html": "node scripts/cleanup-bookmark-html.mjs",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/lib/db/seed.ts"
   },

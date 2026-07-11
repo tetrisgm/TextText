@@ -8,7 +8,12 @@
 // as present.
 
 import { getCurrentUser } from "@/lib/session";
-import { collabAccess, upsertPresence } from "@/lib/collab";
+import {
+  activePresence,
+  collabAccess,
+  removePresence,
+  upsertPresence,
+} from "@/lib/collab";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +28,12 @@ export async function POST(
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
 
-  let body: { clientId?: unknown; userName?: unknown; color?: unknown };
+  let body: {
+    clientId?: unknown;
+    userName?: unknown;
+    color?: unknown;
+    leave?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -32,6 +42,10 @@ export async function POST(
   const clientId = typeof body.clientId === "string" ? body.clientId.slice(0, 64) : "";
   if (!clientId) {
     return Response.json({ error: "clientId is required" }, { status: 400 });
+  }
+  if (body.leave === true) {
+    await removePresence(postId, clientId);
+    return Response.json({ presence: await activePresence(postId) });
   }
   const userName =
     (typeof body.userName === "string" ? body.userName.trim() : "").slice(0, 60) ||

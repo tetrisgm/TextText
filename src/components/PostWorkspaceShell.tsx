@@ -11,8 +11,11 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { ReactNode } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   createFolderItemAction,
@@ -49,12 +52,26 @@ import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
 import { EditReaderPreview } from "@/components/editor/EditReaderPreview";
+import {
+  EditableCover as WorkspaceEditableCover,
+  randomCover,
+} from "@/components/editor/EditableCover";
 import { LocalWorkspaceBodyEditor } from "@/components/LocalWorkspaceBodyEditor";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
+import {
+  ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
+  ASSISTANT_SIDEBAR_MAX_WIDTH,
+  ASSISTANT_SIDEBAR_MIN_WIDTH,
+  AssistantSidebar,
+  type AssistantAttachment,
+  type AssistantSidebarState,
+} from "@/components/workspace/assistant";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import { isVideoFile } from "@/lib/content";
+import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
+import { COVER_PILE } from "@/lib/cover-pile";
 import {
   adjacentPublishedPostsForPool,
   findPoolPostById,
@@ -66,7 +83,10 @@ import {
 } from "@/lib/pool/selectors";
 import {
   addPost,
+  acknowledgePost,
+  acknowledgePostBody,
   getWorkspacePost,
+  markPostDirty,
   moveFolderToTrash,
   movePostToTrash,
   removeTrashedFolder,
@@ -113,7 +133,11 @@ import {
   SHARED_FOLDER_PATH,
   TRASH_FOLDER_PATH,
 } from "@/lib/workspace-paths";
-import { mediaUploadEndpointForHandle } from "@/lib/upload";
+import {
+  MediaUploadError,
+  mediaUploadEndpointForHandle,
+  uploadMedia,
+} from "@/lib/upload";
 
 /** A folder's workspace-unique path segment, e.g. "blog" or "notes". */
 export type SidebarFolderId = string;
@@ -146,6 +170,22 @@ function finishEditTransition(postId: string) {
 
 let sidebarCollapsedMemory: boolean | null = null;
 const sidebarCollapsedListeners = new Set<() => void>();
+let sidebarWidthMemory: number | null = null;
+const sidebarWidthListeners = new Set<() => void>();
+
+const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = "write:workspace-sidebar-width";
+const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 280;
+const WORKSPACE_SIDEBAR_MIN_WIDTH = 220;
+const WORKSPACE_SIDEBAR_MAX_WIDTH = 420;
+const localWorkspaceDraftSessions = new Map<string, DraftState>();
+const localWorkspacePendingSaveIds = new Set<string>();
+const localWorkspaceDraftRevisions = new Map<string, number>();
+const localWorkspaceServerRevisions = new Map<string, string>();
+const WORKSPACE_ASSISTANT_STATE_KEY = "write:workspace-assistant-state";
+const WORKSPACE_ASSISTANT_WIDTH_KEY = "write:workspace-assistant-width";
+let assistantStateMemory: AssistantSidebarState | null = null;
+let assistantWidthMemory: number | null = null;
+const assistantPreferenceListeners = new Set<() => void>();
 
 // One quiet line per folder mode; folder rows show it under the name.
 
@@ -165,6 +205,22 @@ const FALLBACK_FOLDERS: Folder[] = [
 
 const ROOT_SECTION_MODES: FolderMode[] = ["blog", "notes", "bookmarks"];
 const STOP_LOCAL_EDITING_EVENT = "write:stop-local-editing";
+
+function localDraftRevision(postId: string): number {
+  return localWorkspaceDraftRevisions.get(postId) ?? 0;
+}
+
+function bumpLocalDraftRevision(postId: string): number {
+  const revision = localDraftRevision(postId) + 1;
+  localWorkspaceDraftRevisions.set(postId, revision);
+  return revision;
+}
+
+function transferLocalDraftRevision(previousId: string, postId: string) {
+  const revision = localDraftRevision(previousId);
+  localWorkspaceDraftRevisions.delete(previousId);
+  if (revision > 0) localWorkspaceDraftRevisions.set(postId, revision);
+}
 
 /** Client-safe mirror of store.ts folderPathForPostType. */
 export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
@@ -259,6 +315,35 @@ function mergeSavedWorkspacePost(
     excerpt: localDraft.excerpt || saved.excerpt,
     updatedAt: localDraft.updatedAt ?? saved.updatedAt,
   };
+}
+
+function mergeDraftIntoWorkspacePost(
+  post: WorkspacePoolPost,
+  draft: DraftState,
+): WorkspacePoolPost {
+  return {
+    ...post,
+    type: draft.type,
+    title: draft.title,
+    excerpt: draft.excerpt || undefined,
+    slug: slugify(draft.slug, post.slug),
+    status: draft.status,
+    cover: draft.cover || undefined,
+    coverCaption: draft.coverCaption || undefined,
+    coverHeight: draft.coverHeight ?? undefined,
+    accent: draft.accent || undefined,
+    gallery: draft.gallery,
+    videoUrl: draft.videoUrl || undefined,
+    venue: draft.venue || undefined,
+    duration: draft.duration || undefined,
+    date: draft.date || undefined,
+  };
+}
+
+function applySavedWorkspacePost(saved: Post, blogId: string) {
+  const savedPoolPost = narrowPostFromPost(saved, blogId);
+  if (!savedPoolPost?.id) return;
+  updatePost(savedPoolPost.id, savedPoolPost);
 }
 
 function folderWorkspaceHref(homePath: string, folder: SidebarFolderId): string {
@@ -474,6 +559,139 @@ export function useWorkspaceSidebarCollapsed(initialCollapsed = false) {
   }, [initialCollapsed, setCollapsed]);
 
   return { sidebarCollapsed, setSidebarCollapsed: setCollapsed, toggleSidebarCollapsed };
+}
+
+function clampSidebarWidth(value: number): number {
+  return Math.min(
+    WORKSPACE_SIDEBAR_MAX_WIDTH,
+    Math.max(WORKSPACE_SIDEBAR_MIN_WIDTH, Math.round(value)),
+  );
+}
+
+function readSidebarWidth(): number {
+  if (sidebarWidthMemory !== null) return sidebarWidthMemory;
+  if (typeof window === "undefined") return WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
+  const stored = Number(
+    window.localStorage.getItem(WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY),
+  );
+  sidebarWidthMemory = Number.isFinite(stored) && stored > 0
+    ? clampSidebarWidth(stored)
+    : WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
+  return sidebarWidthMemory;
+}
+
+function subscribeSidebarWidth(listener: () => void): () => void {
+  sidebarWidthListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY) return;
+    sidebarWidthMemory = null;
+    for (const current of sidebarWidthListeners) current();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    sidebarWidthListeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function setWorkspaceSidebarWidth(next: number) {
+  sidebarWidthMemory = clampSidebarWidth(next);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(
+      WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY,
+      String(sidebarWidthMemory),
+    );
+  }
+  for (const listener of sidebarWidthListeners) listener();
+}
+
+function useWorkspaceSidebarWidth() {
+  const width = useSyncExternalStore(
+    subscribeSidebarWidth,
+    readSidebarWidth,
+    () => WORKSPACE_SIDEBAR_DEFAULT_WIDTH,
+  );
+  return { width, setWidth: setWorkspaceSidebarWidth };
+}
+
+function readAssistantState(): AssistantSidebarState {
+  if (assistantStateMemory) return assistantStateMemory;
+  if (typeof window === "undefined") return "hidden";
+  const saved = window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_KEY);
+  assistantStateMemory =
+    saved === "open" || saved === "pinned" ? saved : "hidden";
+  return assistantStateMemory;
+}
+
+function readAssistantWidth(): number {
+  if (assistantWidthMemory !== null) return assistantWidthMemory;
+  if (typeof window === "undefined") return ASSISTANT_SIDEBAR_DEFAULT_WIDTH;
+  const saved = Number(window.localStorage.getItem(WORKSPACE_ASSISTANT_WIDTH_KEY));
+  assistantWidthMemory = clampAssistantWidth(saved);
+  return assistantWidthMemory;
+}
+
+function clampAssistantWidth(value: number): number {
+  const resolved = Number.isFinite(value)
+    ? value
+    : ASSISTANT_SIDEBAR_DEFAULT_WIDTH;
+  return Math.min(
+    ASSISTANT_SIDEBAR_MAX_WIDTH,
+    Math.max(ASSISTANT_SIDEBAR_MIN_WIDTH, Math.round(resolved)),
+  );
+}
+
+function subscribeAssistantPreferences(listener: () => void): () => void {
+  assistantPreferenceListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (
+      event.key !== WORKSPACE_ASSISTANT_STATE_KEY &&
+      event.key !== WORKSPACE_ASSISTANT_WIDTH_KEY
+    ) {
+      return;
+    }
+    assistantStateMemory = null;
+    assistantWidthMemory = null;
+    for (const current of assistantPreferenceListeners) current();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    assistantPreferenceListeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function emitAssistantPreferences() {
+  for (const listener of assistantPreferenceListeners) listener();
+}
+
+function setWorkspaceAssistantState(next: AssistantSidebarState) {
+  assistantStateMemory = next;
+  window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_KEY, next);
+  emitAssistantPreferences();
+}
+
+function setWorkspaceAssistantWidth(next: number) {
+  assistantWidthMemory = clampAssistantWidth(next);
+  window.localStorage.setItem(
+    WORKSPACE_ASSISTANT_WIDTH_KEY,
+    String(assistantWidthMemory),
+  );
+  emitAssistantPreferences();
+}
+
+function useWorkspaceAssistantPreferences() {
+  const state = useSyncExternalStore(
+    subscribeAssistantPreferences,
+    readAssistantState,
+    () => "hidden" as AssistantSidebarState,
+  );
+  const width = useSyncExternalStore(
+    subscribeAssistantPreferences,
+    readAssistantWidth,
+    () => ASSISTANT_SIDEBAR_DEFAULT_WIDTH,
+  );
+  return { state, width };
 }
 
 function FolderIcon() {
@@ -1355,41 +1573,113 @@ export function WorkspaceSidebarChrome({
   trashCount?: number;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { width: sidebarWidth, setWidth: setSidebarWidth } =
+    useWorkspaceSidebarWidth();
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty(
+      "--workspace-sidebar-width",
+      `${sidebarWidth}px`,
+    );
+  }, [sidebarWidth]);
   const showPreview = useCallback(() => {
-    if (collapsed) setPreviewOpen(true);
+    if (
+      collapsed &&
+      !window.matchMedia("(max-width: 680px)").matches
+    ) {
+      setPreviewOpen(true);
+    }
   }, [collapsed]);
   const hidePreview = useCallback(() => {
     setPreviewOpen(false);
   }, []);
   const selectFolder = useCallback(
     (folder: SidebarFolderId) => {
-      // Selecting from the hover preview should also dismiss the overlay.
       setPreviewOpen(false);
+      setMobileOpen(false);
       onSelectFolder(folder);
     },
     [onSelectFolder],
   );
   const selectRoot = useCallback(() => {
     setPreviewOpen(false);
+    setMobileOpen(false);
     onSelectRoot?.();
   }, [onSelectRoot]);
   const closeSidebar = useCallback(() => {
     setPreviewOpen(false);
-    if (!collapsed) onToggleCollapsed();
-  }, [collapsed, onToggleCollapsed]);
+    setMobileOpen(false);
+  }, []);
   const openSidebar = useCallback(() => {
     setPreviewOpen(false);
+    if (window.matchMedia("(max-width: 680px)").matches) {
+      setMobileOpen(true);
+      return;
+    }
     if (collapsed) onToggleCollapsed();
   }, [collapsed, onToggleCollapsed]);
   const toggleSidebar = useCallback(() => {
     setPreviewOpen(false);
+    if (window.matchMedia("(max-width: 680px)").matches) {
+      setMobileOpen(false);
+      return;
+    }
     onToggleCollapsed();
   }, [onToggleCollapsed]);
 
+  const beginResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+      const onPointerMove = (moveEvent: PointerEvent) => {
+        const viewportLimit = Math.max(
+          WORKSPACE_SIDEBAR_MIN_WIDTH,
+          window.innerWidth - 360,
+        );
+        setSidebarWidth(
+          Math.min(viewportLimit, startWidth + moveEvent.clientX - startX),
+        );
+      };
+      const finish = () => {
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", finish);
+      };
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", finish, { once: true });
+      window.addEventListener("pointercancel", finish, { once: true });
+    },
+    [setSidebarWidth, sidebarWidth],
+  );
+
+  const resizeWithKeyboard = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 32 : 12;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setSidebarWidth(sidebarWidth - step);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setSidebarWidth(sidebarWidth + step);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setSidebarWidth(WORKSPACE_SIDEBAR_MIN_WIDTH);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setSidebarWidth(WORKSPACE_SIDEBAR_MAX_WIDTH);
+      }
+    },
+    [setSidebarWidth, sidebarWidth],
+  );
+
   useEscapeLayer(
-    escapeToCollapse && previewOpen,
+    escapeToCollapse && (previewOpen || mobileOpen),
     "Sidebar preview",
-    hidePreview,
+    closeSidebar,
   );
 
   return (
@@ -1397,25 +1687,30 @@ export function WorkspaceSidebarChrome({
       <div
         className={`post-workspace-sidebar-region${
           collapsed ? " is-collapsed" : ""
-        }${previewOpen ? " is-preview-open" : ""}`}
+        }${previewOpen ? " is-preview-open" : ""}${
+          mobileOpen ? " is-mobile-open" : ""
+        }`}
+        style={
+          {
+            "--workspace-sidebar-width": `${sidebarWidth}px`,
+          } as CSSProperties
+        }
         onMouseEnter={showPreview}
         onMouseLeave={hidePreview}
       >
-        {collapsed && (
-          <button
-            type="button"
-            className="post-sidebar-reveal-button"
-            aria-label="Show sidebar"
-            aria-expanded={previewOpen}
-            onClick={openSidebar}
-          >
-            <SidebarRevealIcon />
-          </button>
-        )}
+        <button
+          type="button"
+          className="post-sidebar-reveal-button"
+          aria-label="Show sidebar"
+          aria-expanded={previewOpen || mobileOpen || !collapsed}
+          onClick={openSidebar}
+        >
+          <SidebarRevealIcon />
+        </button>
         <PostFolderSidebar
           blog={blog}
           activeFolder={activeFolder}
-          collapsed={collapsed}
+          collapsed={collapsed && !mobileOpen}
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
           counts={counts}
@@ -1426,18 +1721,34 @@ export function WorkspaceSidebarChrome({
           onOpenDocument={onOpenDocument}
           onSelectRoot={selectRoot}
           prefetchFolders={prefetchFolders}
-          previewOpen={previewOpen}
+          previewOpen={previewOpen || mobileOpen}
           onToggleCollapsed={toggleSidebar}
           sharedCount={sharedCount}
           showGuestSignIn={showGuestSignIn}
           trashCount={trashCount}
         />
+        {(!collapsed || previewOpen) && (
+          <div
+            className="post-sidebar-resize-handle"
+            role="separator"
+            tabIndex={0}
+            aria-label="Resize sidebar"
+            aria-orientation="vertical"
+            aria-valuemin={WORKSPACE_SIDEBAR_MIN_WIDTH}
+            aria-valuemax={WORKSPACE_SIDEBAR_MAX_WIDTH}
+            aria-valuenow={sidebarWidth}
+            onPointerDown={beginResize}
+            onKeyDown={resizeWithKeyboard}
+          />
+        )}
       </div>
       <button
         type="button"
-        className="post-sidebar-backdrop"
+        className={`post-sidebar-backdrop${
+          mobileOpen ? " is-open" : ""
+        }`}
         aria-label="Hide sidebar"
-        tabIndex={collapsed ? -1 : 0}
+        tabIndex={mobileOpen ? 0 : -1}
         onClick={closeSidebar}
       />
     </>
@@ -1898,52 +2209,6 @@ function safeBookmarkViewUrl(value: string | undefined): string {
   return "";
 }
 
-function BookmarkHtmlFrame({ title, url }: { title: string; url: string }) {
-  const [frameState, setFrameState] = useState<{
-    fetchFailed: boolean;
-    srcDoc: string | null;
-    url: string;
-  }>({ fetchFailed: false, srcDoc: null, url: "" });
-  const activeFrame =
-    frameState.url === url
-      ? frameState
-      : { fetchFailed: false, srcDoc: null, url };
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch(url)
-      .then((response) => {
-        if (!response.ok) throw new Error("Saved page unavailable");
-        return response.text();
-      })
-      .then((html) => {
-        if (!cancelled) {
-          setFrameState({ fetchFailed: false, srcDoc: html, url });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setFrameState({ fetchFailed: true, srcDoc: null, url });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  return (
-    <iframe
-      className="bookmark-reader-frame"
-      src={activeFrame.fetchFailed ? url : undefined}
-      srcDoc={activeFrame.srcDoc ?? undefined}
-      title={title}
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
-    />
-  );
-}
-
 function BookmarkViewBody({
   mode,
   post,
@@ -1957,7 +2222,6 @@ function BookmarkViewBody({
     .map((tile) => ({ ...tile, url: safeBookmarkViewUrl(tile.url) }))
     .filter((tile) => tile.url)
     .sort((a, b) => a.index - b.index);
-  const savedUrl = safeBookmarkViewUrl(post.capture?.htmlUrl);
   const originalUrl =
     safeBookmarkViewUrl(post.capture?.url) ||
     safeBookmarkViewUrl(post.links?.[0]?.href);
@@ -1982,17 +2246,9 @@ function BookmarkViewBody({
     );
   }
 
-  const url = mode === "saved" ? savedUrl : originalUrl;
+  const url = originalUrl;
   if (!url) {
     return <ErrorBody message="This bookmark view is not available yet." />;
-  }
-
-  if (mode === "saved") {
-    return (
-      <section className="bookmark-reader-view is-saved">
-        <BookmarkHtmlFrame title={`Saved page for ${title}`} url={url} />
-      </section>
-    );
   }
 
   return (
@@ -2101,7 +2357,9 @@ function WorkspacePostReader({
         bookmarkContentMode={bookmarkContentMode}
         canEditPost
         canManagePost={canManagePost}
-        onNavigate={onNavigate}
+        onNavigate={async (path) => {
+          await onNavigate(path);
+        }}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
       <ReaderComponent blog={blog} post={post} slots={slots} />
@@ -2144,21 +2402,41 @@ function LocalWorkspacePostEditor({
     () => postFromPoolPost(poolPost, cachedBody),
     [cachedBody, poolPost],
   );
-  const [draft, setDraft] = useState<DraftState>(() => initialDraft(post));
+  const [draft, setDraft] = useState<DraftState>(() => {
+    return localWorkspaceDraftSessions.get(poolPost.id) ?? initialDraft(post);
+  });
+  const draftRef = useRef(draft);
+  const baseUpdatedAtRef = useRef(
+    localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt,
+  );
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
   const bodyLoadedPostIdRef = useRef<string | null>(
-    entry.status === "ready" ? poolPost.id : null,
+    entry.status === "ready" && !stale ? poolPost.id : null,
   );
   const saveTimerRef = useRef<number | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const editorMountedRef = useRef(true);
+  const coverRevisionRef = useRef(0);
   const initialPayloadKey = payloadKey(
-    payloadFor(poolPost.id, initialDraft(post), post.slug),
+    payloadFor(
+      poolPost.id,
+      initialDraft(post),
+      post.slug,
+      poolPost.updatedAt,
+    ),
   );
-  const lastSavedKeyRef = useRef(initialPayloadKey);
+  const lastSavedKeyRef = useRef(
+    localWorkspacePendingSaveIds.has(poolPost.id)
+      ? `pending:${poolPost.id}`
+      : initialPayloadKey,
+  );
   const latestKeyRef = useRef(initialPayloadKey);
   const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLElement | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const usedSlugs = useMemo(
     () =>
       pool.posts
@@ -2171,15 +2449,63 @@ function LocalWorkspacePostEditor({
     if (entry.status !== "ready") return;
     if (bodyLoadedPostIdRef.current === poolPost.id) return;
     bodyLoadedPostIdRef.current = poolPost.id;
-    setDraft((current) => {
-      if (current.body.trim()) return current;
-      const next = { ...current, body: entry.body.body };
-      const key = payloadKey(payloadFor(poolPost.id, next, post.slug));
+    if (localWorkspaceDraftSessions.has(poolPost.id)) return;
+    const current = draftRef.current;
+    const next = { ...current, body: entry.body.body };
+    draftRef.current = next;
+    baseUpdatedAtRef.current =
+      localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt;
+    const key = payloadKey(
+      payloadFor(
+        poolPost.id,
+        next,
+        post.slug,
+        baseUpdatedAtRef.current,
+      ),
+    );
+    latestKeyRef.current = key;
+    if (!localWorkspacePendingSaveIds.has(poolPost.id)) {
       lastSavedKeyRef.current = key;
-      latestKeyRef.current = key;
-      return next;
-    });
-  }, [entry, poolPost.id, post.slug]);
+    }
+    setDraft(next);
+  }, [entry, poolPost.id, poolPost.updatedAt, post.slug]);
+
+  useEffect(() => {
+    if (
+      localWorkspaceDraftSessions.has(poolPost.id) ||
+      localWorkspacePendingSaveIds.has(poolPost.id)
+    ) {
+      return;
+    }
+    const next = initialDraft(post);
+    if (entry.status !== "ready" || stale) {
+      next.body = draftRef.current.body;
+    } else {
+      baseUpdatedAtRef.current =
+        localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt;
+    }
+    const nextKey = payloadKey(
+      payloadFor(
+        poolPost.id,
+        next,
+        post.slug,
+        baseUpdatedAtRef.current,
+      ),
+    );
+    const currentKey = payloadKey(
+      payloadFor(
+        poolPost.id,
+        draftRef.current,
+        post.slug,
+        baseUpdatedAtRef.current,
+      ),
+    );
+    if (nextKey === currentKey) return;
+    draftRef.current = next;
+    latestKeyRef.current = nextKey;
+    lastSavedKeyRef.current = nextKey;
+    setDraft(next);
+  }, [entry.status, poolPost.id, poolPost.updatedAt, post, stale]);
 
   useEffect(() => {
     if (!active) return;
@@ -2204,7 +2530,10 @@ function LocalWorkspacePostEditor({
   }, [draft.excerpt]);
 
   useEffect(() => {
+    editorMountedRef.current = true;
     return () => {
+      editorMountedRef.current = false;
+      coverRevisionRef.current += 1;
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
@@ -2213,9 +2542,72 @@ function LocalWorkspacePostEditor({
 
   const updateDraft = useCallback(
     (patch: Partial<DraftState>) => {
-      setDraft((current) => ({ ...current, ...patch }));
+      const next = { ...draftRef.current, ...patch };
+      draftRef.current = next;
+      latestKeyRef.current = payloadKey(
+        payloadFor(
+          poolPost.id,
+          next,
+          post.slug,
+          baseUpdatedAtRef.current,
+        ),
+      );
+      localWorkspaceDraftSessions.set(poolPost.id, next);
+      markPostDirty(poolPost.id);
+      bumpLocalDraftRevision(poolPost.id);
+      setDraft(next);
     },
-    [],
+    [poolPost.id, post.slug],
+  );
+
+  const enqueueSave = useCallback(
+    (
+      nextDraft: DraftState,
+      options: { onlyIfCurrent?: boolean; revalidate?: boolean } = {},
+    ) => {
+      const requestedKey = payloadKey(
+        payloadFor(poolPost.id, nextDraft, post.slug),
+      );
+      const requestedRevision = localDraftRevision(poolPost.id);
+      const queued = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (
+            options.onlyIfCurrent &&
+            (latestKeyRef.current !== requestedKey ||
+              localDraftRevision(poolPost.id) !== requestedRevision)
+          ) {
+            return null;
+          }
+          if (lastSavedKeyRef.current === requestedKey) return null;
+
+          const payload = payloadFor(
+            poolPost.id,
+            nextDraft,
+            post.slug,
+            localWorkspaceServerRevisions.get(poolPost.id) ??
+              baseUpdatedAtRef.current,
+          );
+          const saved = await saveEditablePostAction(
+            blog.handle,
+            payload,
+            { revalidate: options.revalidate },
+          );
+          // A superseded response must advance the revision used by the queued
+          // draft, but it must never replace that newer local draft.
+          baseUpdatedAtRef.current = saved.updatedAt;
+          if (saved.updatedAt) {
+            localWorkspaceServerRevisions.set(poolPost.id, saved.updatedAt);
+          }
+          return { requestedKey, requestedRevision, saved };
+        });
+      saveQueueRef.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
+    },
+    [blog.handle, poolPost.id, post.slug],
   );
 
   const deriveSlugFromTitle = useCallback(
@@ -2230,61 +2622,86 @@ function LocalWorkspacePostEditor({
   );
 
   const saveDraftNow = useCallback(
-    async (
-      patch: Partial<DraftState> = {},
-      options: { navigatePath?: string } = {},
-    ) => {
-      const nextDraft = { ...draft, ...patch };
-      updatePost(poolPost.id, {
-        title: nextDraft.title,
-        excerpt: nextDraft.excerpt || undefined,
-        slug: nextDraft.slug,
-        status: nextDraft.status,
-        updatedAt: new Date().toISOString(),
-      });
-      updatePostBody(pool.blogId, poolPost.id, nextDraft.body);
+    async (patch: Partial<DraftState> = {}) => {
+      const nextDraft = { ...draftRef.current, ...patch };
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+      const requestedKey = payloadKey(
+        payloadFor(poolPost.id, nextDraft, post.slug),
+      );
+      latestKeyRef.current = requestedKey;
+      const hasLocalChanges = requestedKey !== lastSavedKeyRef.current;
 
-      if (options.navigatePath) {
-        await onNavigate(options.navigatePath);
+      if (hasLocalChanges) {
+        localWorkspaceDraftSessions.set(poolPost.id, nextDraft);
+        markPostDirty(poolPost.id);
+        bumpLocalDraftRevision(poolPost.id);
+        updatePost(poolPost.id, {
+          ...mergeDraftIntoWorkspacePost(poolPost, nextDraft),
+          updatedAt: new Date().toISOString(),
+        });
+        updatePostBody(pool.blogId, poolPost.id, nextDraft.body);
       }
-
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
 
       if (!isOptimisticPostId(poolPost.id)) {
-        const payload = payloadFor(poolPost.id, nextDraft, post.slug);
-        const sentKey = payloadKey(payload);
-        latestKeyRef.current = sentKey;
-        const saved = await saveEditablePostAction(blog.handle, payload);
-        if (latestKeyRef.current === sentKey) {
-          lastSavedKeyRef.current = sentKey;
-          updatePost(poolPost.id, {
-            slug: saved.slug,
-            title: saved.title,
-            excerpt: saved.excerpt,
-            status: saved.status,
-            cover: saved.cover,
-            coverCaption: saved.coverCaption,
-            coverHeight: saved.coverHeight,
-            updatedAt: saved.updatedAt,
-          });
-          updatePostBody(pool.blogId, poolPost.id, saved.body);
+        let targetDraft = nextDraft;
+        while (true) {
+          const targetKey = payloadKey(
+            payloadFor(poolPost.id, targetDraft, post.slug),
+          );
+          const targetRevision = localDraftRevision(poolPost.id);
+          latestKeyRef.current = targetKey;
+          const result = await enqueueSave(targetDraft, { revalidate: true });
+          if (
+            localDraftRevision(poolPost.id) !== targetRevision ||
+            latestKeyRef.current !== targetKey
+          ) {
+            targetDraft = draftRef.current;
+            continue;
+          }
+
+          localWorkspacePendingSaveIds.delete(poolPost.id);
+          localWorkspaceDraftSessions.delete(poolPost.id);
+          acknowledgePost(poolPost.id);
+          if (result) {
+            lastSavedKeyRef.current = result.requestedKey;
+            applySavedWorkspacePost(result.saved, pool.blogId);
+            acknowledgePostBody(
+              pool.blogId,
+              poolPost.id,
+              result.saved.body,
+              result.saved.updatedAt,
+            );
+          } else if (lastSavedKeyRef.current === targetKey) {
+            acknowledgePostBody(
+              pool.blogId,
+              poolPost.id,
+              targetDraft.body,
+              baseUpdatedAtRef.current,
+            );
+          }
+          break;
         }
       }
 
     },
-    [blog.handle, draft, onNavigate, pool.blogId, poolPost.id, post.slug],
+    [enqueueSave, pool.blogId, poolPost, post.slug],
   );
 
   useEffect(() => {
     if (isOptimisticPostId(poolPost.id)) return;
 
-    const payload = payloadFor(poolPost.id, draft, post.slug);
-    const key = payloadKey(payload);
-    latestKeyRef.current = key;
-    if (key === lastSavedKeyRef.current) return;
+    const requestedKey = payloadKey(payloadFor(
+      poolPost.id,
+      draft,
+      post.slug,
+    ));
+    latestKeyRef.current = requestedKey;
+    if (requestedKey === lastSavedKeyRef.current) return;
 
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
@@ -2292,19 +2709,29 @@ function LocalWorkspacePostEditor({
 
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null;
-      const sentKey = key;
-      void saveEditablePostAction(blog.handle, payload)
-        .then((saved) => {
-          if (latestKeyRef.current !== sentKey) return;
-          lastSavedKeyRef.current = sentKey;
-          updatePost(poolPost.id, {
-            slug: saved.slug,
-            title: saved.title,
-            excerpt: saved.excerpt,
-            status: saved.status,
-            updatedAt: saved.updatedAt,
-          });
-          updatePostBody(pool.blogId, poolPost.id, saved.body);
+      void enqueueSave(draft, {
+        onlyIfCurrent: true,
+        revalidate: false,
+      })
+        .then((result) => {
+          if (
+            !result ||
+            latestKeyRef.current !== result.requestedKey ||
+            localDraftRevision(poolPost.id) !== result.requestedRevision
+          ) {
+            return;
+          }
+          lastSavedKeyRef.current = result.requestedKey;
+          localWorkspacePendingSaveIds.delete(poolPost.id);
+          localWorkspaceDraftSessions.delete(poolPost.id);
+          applySavedWorkspacePost(result.saved, pool.blogId);
+          acknowledgePost(poolPost.id);
+          acknowledgePostBody(
+            pool.blogId,
+            poolPost.id,
+            result.saved.body,
+            result.saved.updatedAt,
+          );
         })
         .catch(() => {
           // Keep the local draft in place. A later edit will retry the save.
@@ -2317,7 +2744,7 @@ function LocalWorkspacePostEditor({
         saveTimerRef.current = null;
       }
     };
-  }, [blog.handle, draft, pool.blogId, poolPost.id, post.slug]);
+  }, [draft, enqueueSave, pool.blogId, poolPost.id, post.slug]);
 
   useEffect(() => {
     if (!active) return;
@@ -2328,18 +2755,67 @@ function LocalWorkspacePostEditor({
     return () => window.removeEventListener(STOP_LOCAL_EDITING_EVENT, stop);
   }, [active, saveDraftNow]);
 
-  const displayPost = useMemo<Post>(
-    () => ({
-      ...post,
-      title: draft.title,
-      excerpt: draft.excerpt || undefined,
-      body: draft.body,
-      status: draft.status,
-      slug: draft.slug || post.slug,
-      date: draft.date || undefined,
-    }),
-    [draft, post],
+  const displayPost = useMemo(
+    () =>
+      postFromPoolPost(
+        mergeDraftIntoWorkspacePost(poolPost, draft),
+        draft.body,
+      ),
+    [draft, poolPost],
   );
+  const resolvedHeaderCover = resolveCover(displayPost);
+  const hasArticleHeaderImage =
+    displayPost.type === "article" &&
+    !isNoCoverValue(draft.cover) &&
+    Boolean(resolvedHeaderCover);
+  const selectCover = useCallback(
+    (cover: string) => {
+      coverRevisionRef.current += 1;
+      setCoverUploadError(null);
+      updateDraft({ cover, coverCaption: "" });
+    },
+    [updateDraft],
+  );
+  const shuffleCover = useCallback(() => {
+    const cover = randomCover(
+      COVER_PILE,
+      isNoCoverValue(draftRef.current.cover) ? "" : draftRef.current.cover,
+    );
+    if (cover) selectCover(cover);
+  }, [selectCover]);
+  const uploadCover = useCallback(
+    async (file: File) => {
+      const uploadRevision = coverRevisionRef.current + 1;
+      coverRevisionRef.current = uploadRevision;
+      setCoverUploading(true);
+      setCoverUploadError(null);
+      try {
+        const cover = await uploadMedia(file, {
+          endpoint: mediaUploadEndpointForHandle(blog.handle),
+        });
+        if (
+          editorMountedRef.current &&
+          coverRevisionRef.current === uploadRevision
+        ) {
+          selectCover(cover);
+        }
+      } catch (error) {
+        setCoverUploadError(
+          error instanceof MediaUploadError
+            ? error.message
+            : "Header image could not be uploaded.",
+        );
+      } finally {
+        if (editorMountedRef.current) setCoverUploading(false);
+      }
+    },
+    [blog.handle, selectCover],
+  );
+  const removeCover = useCallback(() => {
+    coverRevisionRef.current += 1;
+    setCoverUploadError(null);
+    updateDraft({ cover: NO_COVER_VALUE, coverCaption: "" });
+  }, [updateDraft]);
 
   const containingFolderPath = folderPathForPoolPost(pool, poolPost);
   const containingFolderHref = folderWorkspaceHref(homePath, containingFolderPath);
@@ -2377,12 +2853,16 @@ function LocalWorkspacePostEditor({
         postPath={renderedPostPath}
         draft={draft}
         deleting={deleting}
-        hasHeaderImage
+        hasHeaderImage={hasArticleHeaderImage}
         folders={pool.folders}
         onDelete={deletePost}
-        onDone={() => saveDraftNow({}, { navigatePath: renderedPostPath })}
-        onAddHeaderImage={() => {}}
-        onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
+        onDone={async () => {
+          await onNavigate(renderedPostPath);
+        }}
+        onAddHeaderImage={shuffleCover}
+        onNavigate={async (path) => {
+          await onNavigate(path);
+        }}
         onSlugBlur={() => {
           updateDraft({ slug: slugify(draft.slug, post.slug) });
         }}
@@ -2395,6 +2875,27 @@ function LocalWorkspacePostEditor({
           blog={blog}
           post={displayPost}
           slots={{
+            ...(displayPost.type === "article"
+              ? {
+                  cover: hasArticleHeaderImage ? (
+                    <WorkspaceEditableCover
+                      title={displayPost.title.trim() || "Untitled"}
+                      cover={resolvedHeaderCover}
+                      covers={COVER_PILE}
+                      coverHeight={draft.coverHeight}
+                      mediaEnabled
+                      uploading={coverUploading}
+                      error={coverUploadError}
+                      onSelectCover={selectCover}
+                      onCoverHeightChange={(coverHeight) =>
+                        updateDraft({ coverHeight })
+                      }
+                      onUploadFile={uploadCover}
+                      onRemoveCover={removeCover}
+                    />
+                  ) : null,
+                }
+              : {}),
             title: (
               <textarea
                 ref={titleRef}
@@ -2707,13 +3208,28 @@ function LocalWorkspaceShell({
   showGuestSignIn: boolean;
 }) {
   const { pool } = useWorkspacePool();
-  const displayPool = pool?.blogId === initialPool.blogId ? pool : initialPool;
+  const [view, setView] = useState<LocalWorkspaceView>(initialView);
+  const sourcePool = pool?.blogId === initialPool.blogId ? pool : initialPool;
+  const displayPool = useMemo(
+    () =>
+      localWorkspaceDraftSessions.size === 0
+        ? sourcePool
+        : {
+            ...sourcePool,
+            posts: sourcePool.posts.map((post) => {
+              const localDraft = localWorkspaceDraftSessions.get(post.id);
+              return localDraft
+                ? mergeDraftIntoWorkspacePost(post, localDraft)
+                : post;
+            }),
+          },
+    [sourcePool],
+  );
   const displayPoolRef = useRef(displayPool);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const cancelledOptimisticPostIdsRef = useRef(new Set<string>());
   const gTapRef = useRef(0);
   const mounted = typeof window !== "undefined";
-  const [view, setView] = useState<LocalWorkspaceView>(initialView);
   const viewRef = useRef(view);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(
     selectedPostIdForView(initialPool, initialView),
@@ -2728,8 +3244,23 @@ function LocalWorkspaceShell({
   const [editFolderRequestKey, setEditFolderRequestKey] = useState(0);
   const [pendingDeletePostId, setPendingDeletePostId] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState(false);
+  const { state: assistantState, width: assistantWidth } =
+    useWorkspaceAssistantPreferences();
+  const [assistantComposer, setAssistantComposer] = useState("");
+  const [assistantAttachments, setAssistantAttachments] = useState<
+    AssistantAttachment[]
+  >([]);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
+
+  const changeAssistantState = useCallback(
+    (next: AssistantSidebarState) => setWorkspaceAssistantState(next),
+    [],
+  );
+  const changeAssistantWidth = useCallback(
+    (next: number) => setWorkspaceAssistantWidth(next),
+    [],
+  );
 
   useEffect(() => {
     displayPoolRef.current = displayPool;
@@ -2753,6 +3284,12 @@ function LocalWorkspaceShell({
       } = {},
     ) => {
       const previousView = viewRef.current;
+      if (
+        previousView.level === "edit" &&
+        (nextView.level !== "edit" || nextView.postId !== previousView.postId)
+      ) {
+        window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
+      }
       window.history.pushState(null, "", href);
       viewRef.current = nextView;
       setView(nextView);
@@ -2906,17 +3443,23 @@ function LocalWorkspaceShell({
   const reconcileCreatedPost = useCallback(
     (temporaryPostId: string, savedPost: WorkspacePoolPost) => {
       const current = viewRef.current;
-      if (current.level !== "edit" || current.postId !== temporaryPostId) {
+      if (
+        (current.level !== "edit" && current.level !== "post") ||
+        current.postId !== temporaryPostId
+      ) {
         return;
       }
       const nextView: LocalWorkspaceView = {
-        level: "edit",
+        level: current.level,
         postId: savedPost.id,
         folderPath: folderPathForPoolPost(displayPoolRef.current, savedPost),
       };
       replaceWithView(
         nextView,
-        blogPostEditPath(displayPoolRef.current.blog, savedPost),
+        current.level === "edit"
+          ? blogPostEditPath(displayPoolRef.current.blog, savedPost)
+          : blogPostPath(displayPoolRef.current.blog, savedPost),
+        { selectedPostId: savedPost.id },
       );
     },
     [replaceWithView],
@@ -2939,18 +3482,13 @@ function LocalWorkspaceShell({
           setSelectedPostId(temp.id);
         }
       } else {
-        if (
-          viewRef.current.level !== "section" ||
-          viewRef.current.folderPath !== request.folderPath
-        ) {
-          navigateSection(request.folderPath, temp.id);
-        } else {
-          setSelectedPostId(temp.id);
-        }
+        openPoolPost(temp, request.folderPath, "edit");
       }
 
       void (async () => {
-        try {
+        let attempt = 0;
+        while (getWorkspacePost(temp.id)) {
+          try {
           const saved =
             request.type === "bookmark"
               ? await createFolderItemAction(pool.blog.handle, "bookmarks", {
@@ -2969,8 +3507,7 @@ function LocalWorkspaceShell({
                   );
           const poolPost = narrowPostFromPost(saved, pool.blogId);
           if (!poolPost) {
-            removePost(temp.id);
-            return;
+            throw new Error("Created item did not include an id");
           }
           if (cancelledOptimisticPostIdsRef.current.has(temp.id)) {
             cancelledOptimisticPostIdsRef.current.delete(temp.id);
@@ -2979,31 +3516,98 @@ function LocalWorkspaceShell({
             );
             return;
           }
+          if (poolPost.updatedAt) {
+            localWorkspaceServerRevisions.set(poolPost.id, poolPost.updatedAt);
+          }
           const reconciled = mergeSavedWorkspacePost(
             poolPost,
             getWorkspacePost(temp.id),
           );
-          replacePost(temp.id, reconciled);
+          const liveDraft = localWorkspaceDraftSessions.get(temp.id);
+          const merged = liveDraft
+            ? mergeDraftIntoWorkspacePost(reconciled, liveDraft)
+            : reconciled;
+          if (liveDraft) {
+            localWorkspacePendingSaveIds.add(merged.id);
+            localWorkspaceDraftSessions.set(merged.id, liveDraft);
+            localWorkspaceDraftSessions.delete(temp.id);
+            transferLocalDraftRevision(temp.id, merged.id);
+            updatePostBody(pool.blogId, merged.id, liveDraft.body);
+          }
+          replacePost(temp.id, merged);
           if (request.type === "bookmark") {
             setSelectedPostId((current) =>
-              current === temp.id ? reconciled.id : current,
+              current === temp.id ? merged.id : current,
             );
           } else {
-            openPoolPost(reconciled, request.folderPath, "edit");
+            reconcileCreatedPost(temp.id, merged);
           }
-        } catch (error) {
-          removePost(temp.id);
-          if (
-            viewRef.current.level === "edit" &&
-            viewRef.current.postId === temp.id
-          ) {
-            navigateSection(request.folderPath);
+          if (liveDraft) {
+            const transferredRevision = localDraftRevision(merged.id);
+            const transferredPayload = payloadFor(
+              merged.id,
+              liveDraft,
+              merged.slug,
+              merged.updatedAt,
+            );
+            const transferredKey = payloadKey(transferredPayload);
+            void saveEditablePostAction(pool.blog.handle, transferredPayload, {
+              revalidate: false,
+            })
+              .then((savedDraft) => {
+                if (savedDraft.updatedAt) {
+                  localWorkspaceServerRevisions.set(
+                    merged.id,
+                    savedDraft.updatedAt,
+                  );
+                }
+                if (!localWorkspacePendingSaveIds.has(merged.id)) return;
+                if (localDraftRevision(merged.id) !== transferredRevision) return;
+                const currentDraft = localWorkspaceDraftSessions.get(merged.id);
+                if (
+                  currentDraft &&
+                  payloadKey(
+                    payloadFor(merged.id, currentDraft, merged.slug),
+                  ) !== transferredKey
+                ) {
+                  return;
+                }
+                localWorkspacePendingSaveIds.delete(merged.id);
+                localWorkspaceDraftSessions.delete(merged.id);
+                applySavedWorkspacePost(savedDraft, pool.blogId);
+                acknowledgePost(merged.id);
+                acknowledgePostBody(
+                  pool.blogId,
+                  merged.id,
+                  savedDraft.body,
+                  savedDraft.updatedAt,
+                );
+              })
+              .catch(() => {
+                // The remounted editor retains the draft and retries autosave.
+              });
           }
-          console.warn("workspace item create failed", error);
+          return;
+          } catch (error) {
+            if (
+              cancelledOptimisticPostIdsRef.current.has(temp.id) ||
+              !getWorkspacePost(temp.id)
+            ) {
+              return;
+            }
+            attempt += 1;
+            console.warn("workspace item create will retry", error);
+            await new Promise<void>((resolve) => {
+              window.setTimeout(
+                resolve,
+                Math.min(30_000, 1_000 * 2 ** Math.min(attempt - 1, 5)),
+              );
+            });
+          }
         }
       })();
     },
-    [canManageFolders, navigateSection, openPoolPost],
+    [canManageFolders, navigateSection, openPoolPost, reconcileCreatedPost],
   );
 
   const deleteWorkspaceItem = useCallback<FolderDeleteItem>(
@@ -3017,6 +3621,10 @@ function LocalWorkspaceShell({
       const folderPath = folderPathForPoolPost(pool, poolPost);
       if (isOptimisticPostId(post.id)) {
         cancelledOptimisticPostIdsRef.current.add(post.id);
+        localWorkspacePendingSaveIds.delete(post.id);
+        localWorkspaceDraftSessions.delete(post.id);
+        localWorkspaceDraftRevisions.delete(post.id);
+        localWorkspaceServerRevisions.delete(post.id);
         removePost(post.id);
         setSelectedPostId((current) => (current === post.id ? null : current));
         const currentView = viewRef.current;
@@ -3028,6 +3636,10 @@ function LocalWorkspaceShell({
         }
         return;
       }
+      localWorkspacePendingSaveIds.delete(post.id);
+      localWorkspaceDraftSessions.delete(post.id);
+      localWorkspaceDraftRevisions.delete(post.id);
+      localWorkspaceServerRevisions.delete(post.id);
       movePostToTrash(post.id);
       setSelectedPostId((current) => (current === post.id ? null : current));
       const currentView = viewRef.current;
@@ -3092,10 +3704,15 @@ function LocalWorkspaceShell({
       .finally(() => setDeletingTarget(false));
   }, [deleteWorkspaceItem, deletingTarget, pendingDeletePostId]);
 
-  const refreshCaptureForPost = useCallback<FolderCaptureResolved>((post) => {
+  const applyResolvedCapture = useCallback<FolderCaptureResolved>((post) => {
     if (!post.id) return;
-    const pool = displayPoolRef.current;
-    void refreshWorkspacePool(pool.blog.handle, pool.blogId);
+    updatePost(post.id, {
+      captureStatus: post.captureStatus,
+      capture: post.capture,
+      cover: post.cover,
+      updatedAt: post.updatedAt,
+      wordCount: post.wordCount,
+    });
   }, []);
 
   const openPost = useCallback(
@@ -3324,7 +3941,6 @@ function LocalWorkspaceShell({
   const stopEditing = useCallback(() => {
     const current = viewRef.current;
     if (current.level !== "edit") return;
-    window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
     const post = findPoolPostById(displayPoolRef.current, current.postId);
     if (!post) {
       navigateSection(current.folderPath, current.postId);
@@ -3399,6 +4015,14 @@ function LocalWorkspaceShell({
   useEffect(() => {
     const onPopState = () => {
       const nextView = currentLocalView(displayPool, homePath);
+      const previousView = viewRef.current;
+      if (
+        previousView.level === "edit" &&
+        (nextView.level !== "edit" || nextView.postId !== previousView.postId)
+      ) {
+        window.dispatchEvent(new Event(STOP_LOCAL_EDITING_EVENT));
+      }
+      viewRef.current = nextView;
       setView(nextView);
       setSelectedPostId((current) =>
         selectedPostIdForView(displayPool, nextView, current),
@@ -3455,6 +4079,40 @@ function LocalWorkspaceShell({
     }
     gTapRef.current = now;
   }, [scrollReaderEdge]);
+
+  const createItemFromCommand = useCallback(
+    (kind: "article" | "note" | "bookmark") => {
+      const desiredMode: FolderMode =
+        kind === "note" ? "notes" : kind === "bookmark" ? "bookmarks" : "blog";
+      const current = viewRef.current;
+      const currentFolder =
+        current.level === "root"
+          ? null
+          : displayPoolRef.current.folders.find(
+              (folder) => folder.path === current.folderPath,
+            ) ?? null;
+      const targetFolder =
+        (currentFolder?.mode === desiredMode ? currentFolder : null) ??
+        displayPoolRef.current.folders.find(
+          (folder) => folder.mode === desiredMode,
+        );
+      const folderPath = targetFolder?.path ?? sidebarFolderPathForPostType(kind);
+
+      if (kind === "bookmark") {
+        if (
+          current.level !== "section" ||
+          current.folderPath !== folderPath
+        ) {
+          navigateSection(folderPath);
+        }
+        setCreateBookmarkRequestKey((value) => value + 1);
+        return;
+      }
+
+      createWorkspaceItem({ type: kind, folderPath });
+    },
+    [createWorkspaceItem, navigateSection],
+  );
 
   const commandSurface = useMemo(
     () => ({
@@ -3514,6 +4172,7 @@ function LocalWorkspaceShell({
       scrollReaderEdge,
       readerTapG,
       openAdjacentPost: (direction: 1 | -1) => selectRelativePost(direction),
+      createItem: createItemFromCommand,
       openCreatedPost,
       reconcileCreatedPost,
       openFolder: navigateSection,
@@ -3537,6 +4196,7 @@ function LocalWorkspaceShell({
     }),
     [
       canManageFolders,
+      createItemFromCommand,
       displayPool,
       editCurrent,
       homePath,
@@ -3577,7 +4237,7 @@ function LocalWorkspaceShell({
       handle={displayPool.blog.handle}
       homePath={homePath}
       onNavigate={navigatePath}
-      onCaptureResolved={refreshCaptureForPost}
+      onCaptureResolved={applyResolvedCapture}
       onCreateItem={createWorkspaceItem}
       onDeleteItem={deleteWorkspaceItem}
       onDeleteFolder={deleteWorkspaceFolder}
@@ -3598,12 +4258,35 @@ function LocalWorkspaceShell({
 
   const atRoot = view.level === "root";
   const effectiveSidebarCollapsed = sidebarCollapsed;
+  const assistantContext = useMemo(() => {
+    if (view.level === "post" || view.level === "edit") {
+      const post = findPoolPostById(displayPool, view.postId);
+      return {
+        label: post?.title.trim() || "Untitled",
+        detail: view.level === "edit" ? "Editing" : "Post",
+      };
+    }
+    if (view.level === "section") {
+      const folder = displayPool.folders.find(
+        (candidate) => candidate.path === view.folderPath,
+      );
+      return { label: folder?.name ?? view.folderPath, detail: "Folder" };
+    }
+    if (view.level === "trash") return { label: "Trash" };
+    if (view.level === "shared") return { label: "Shared with me" };
+    return { label: displayPool.blog.name, detail: "Workspace" };
+  }, [displayPool, view]);
 
   return (
     <div
       className={`post-editor-shell applecms has-sidebar ${className}${
         effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
-      }`}
+      }${assistantState === "pinned" ? " has-assistant-pinned" : ""}`}
+      style={
+        {
+          "--workspace-assistant-width": `${assistantWidth}px`,
+        } as CSSProperties
+      }
     >
       <WorkspaceSidebarChrome
         blog={displayPool.blog ?? blog}
@@ -3636,6 +4319,36 @@ function LocalWorkspaceShell({
       >
         {content}
       </div>
+      <AssistantSidebar
+        className="workspace-assistant-shell"
+        state={assistantState}
+        onStateChange={changeAssistantState}
+        width={assistantWidth}
+        onWidthChange={changeAssistantWidth}
+        layout="overlay"
+        context={assistantContext}
+        composerValue={assistantComposer}
+        onComposerChange={setAssistantComposer}
+        attachments={assistantAttachments}
+        onFilesSelected={(files) => {
+          setAssistantAttachments((current) => [
+            ...current,
+            ...files.map((file) => ({
+              id: `${file.name}:${file.size}:${file.lastModified}`,
+              name: file.name,
+              size: file.size,
+            })),
+          ]);
+        }}
+        onRemoveAttachment={(attachment) =>
+          setAssistantAttachments((current) =>
+            current.filter((candidate) => candidate.id !== attachment.id),
+          )
+        }
+        onSubmit={() => {}}
+        submitDisabled
+        accept="image/*,.pdf,.txt,.md"
+      />
       <ConfirmationDialog
         open={Boolean(pendingDeletePostId)}
         title="Move this item to Trash?"

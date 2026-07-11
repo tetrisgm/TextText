@@ -8,6 +8,9 @@ import * as Y from "yjs";
 
 const REMOTE_ORIGIN = "collab-remote";
 const CLIENT_ID_STORAGE_PREFIX = "write:collab:client:";
+const PUSH_DEBOUNCE_MS = 250;
+const PUSH_RETRY_MS = 1500;
+const MAX_PUSH_BATCH = 64;
 
 function u8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -24,6 +27,10 @@ function base64ToU8(b64: string): Uint8Array {
 
 export type PresencePeer = { clientId: string; userName: string; color: string };
 
+export type CollabStartResult =
+  | { authoritative: true; remoteEmpty: boolean }
+  | { authoritative: false; remoteEmpty: false };
+
 export type CollabProviderOptions = {
   postId: string;
   userName: string;
@@ -32,6 +39,91 @@ export type CollabProviderOptions = {
   onPresence?: (peers: PresencePeer[]) => void;
   onError?: (message: string) => void;
 };
+
+type Outbox = {
+  base: string;
+  flushing: boolean;
+  pending: Uint8Array[];
+  subscribers: Map<symbol, CollabProviderOptions["onError"]>;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+
+// A provider is tied to a mounted editor, but unsent edits are tied to the
+// post. Keeping the queue and its retry timer here lets teardown stop polling
+// and presence without dropping edits that still need to reach the relay.
+const outboxes = new Map<string, Outbox>();
+
+function outboxFor(postId: string, base: string): Outbox {
+  const existing = outboxes.get(postId);
+  if (existing) return existing;
+  const created: Outbox = {
+    base,
+    flushing: false,
+    pending: [],
+    subscribers: new Map(),
+    timer: null,
+  };
+  outboxes.set(postId, created);
+  return created;
+}
+
+function releaseOutbox(postId: string, outbox: Outbox) {
+  if (
+    outbox.pending.length === 0 &&
+    !outbox.flushing &&
+    !outbox.timer &&
+    outbox.subscribers.size === 0 &&
+    outboxes.get(postId) === outbox
+  ) {
+    outboxes.delete(postId);
+  }
+}
+
+function scheduleOutbox(postId: string, outbox: Outbox, delay: number) {
+  if (outbox.timer || outbox.flushing || outbox.pending.length === 0) return;
+  outbox.timer = setTimeout(() => {
+    outbox.timer = null;
+    void flushOutbox(postId, outbox);
+  }, delay);
+}
+
+async function flushOutbox(postId: string, outbox: Outbox) {
+  if (outbox.flushing || outbox.pending.length === 0) {
+    releaseOutbox(postId, outbox);
+    return;
+  }
+
+  outbox.flushing = true;
+  const batch = outbox.pending.slice(0, MAX_PUSH_BATCH);
+  let nextDelay = PUSH_DEBOUNCE_MS;
+  try {
+    const res = await fetch(outbox.base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: batch.map(u8ToBase64) }),
+    });
+    if (!res.ok) throw new Error(`push ${res.status}`);
+    outbox.pending.splice(0, batch.length);
+  } catch (error) {
+    nextDelay = PUSH_RETRY_MS;
+    const message =
+      error instanceof Error ? error.message : "collab push failed";
+    for (const onError of outbox.subscribers.values()) {
+      try {
+        onError?.(message);
+      } catch {
+        // A reporting callback must not interrupt delivery retries.
+      }
+    }
+  } finally {
+    outbox.flushing = false;
+    if (outbox.pending.length > 0) {
+      scheduleOutbox(postId, outbox, nextDelay);
+    } else {
+      releaseOutbox(postId, outbox);
+    }
+  }
+}
 
 function createClientId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -57,11 +149,13 @@ export class CollabProvider {
   readonly clientId: string;
   private lastSeq = 0;
   private stopped = false;
-  private flushing = false;
-  private pending: Uint8Array[] = [];
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private started = false;
+  private startPromise: Promise<CollabStartResult> | null = null;
+  private capturedLocalUpdate = false;
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
   private readonly base: string;
+  private readonly outboxSubscriber = Symbol("collab-provider");
+  private outbox: Outbox | null = null;
 
   constructor(
     private readonly doc: Y.Doc,
@@ -72,24 +166,54 @@ export class CollabProvider {
     this.onDocUpdate = this.onDocUpdate.bind(this);
   }
 
-  /** Resolves once the initial history has been applied (doc is caught up). */
-  async start(): Promise<void> {
-    await this.catchUp();
-    this.doc.on("update", this.onDocUpdate);
-    void this.pollLoop();
-    if (this.opts.canPush) {
-      this.heartbeat();
-      this.presenceTimer = setInterval(() => this.heartbeat(), 8000);
+  /** Reports whether an authoritative initial history was applied. */
+  start(): Promise<CollabStartResult> {
+    if (this.startPromise) return this.startPromise;
+    if (this.stopped) {
+      return Promise.resolve({ authoritative: false, remoteEmpty: false });
     }
+
+    // Subscribe before the first network await. TipTap can emit edits while
+    // initial history is in flight, and those edits must enter the outbox.
+    this.started = true;
+    this.doc.on("update", this.onDocUpdate);
+
+    const outbox = outboxFor(this.opts.postId, this.base);
+    this.outbox = outbox;
+    outbox.subscribers.set(this.outboxSubscriber, this.opts.onError);
+    const hadPendingUpdates = outbox.pending.length > 0;
+
+    // A remounted editor gets the still-local Yjs operations immediately.
+    // Applying them with the remote origin is idempotent and avoids requeueing.
+    for (const update of outbox.pending) {
+      try {
+        Y.applyUpdate(this.doc, update, REMOTE_ORIGIN);
+      } catch {
+        // Locally generated Yjs updates should always decode. Keep any bad
+        // entry queued so it is never silently discarded.
+      }
+    }
+    scheduleOutbox(this.opts.postId, outbox, 0);
+
+    this.startPromise = this.finishStart(hadPendingUpdates);
+    return this.startPromise;
   }
 
   destroy(): void {
+    if (this.stopped) return;
     this.stopped = true;
-    this.doc.off("update", this.onDocUpdate);
-    if (this.flushTimer) clearTimeout(this.flushTimer);
+    if (this.started) this.doc.off("update", this.onDocUpdate);
     if (this.presenceTimer) clearInterval(this.presenceTimer);
+    if (this.outbox) {
+      this.outbox.subscribers.delete(this.outboxSubscriber);
+      releaseOutbox(this.opts.postId, this.outbox);
+    }
     // Best-effort leave so peers drop us promptly.
-    if (this.opts.canPush && navigator.sendBeacon) {
+    if (
+      this.opts.canPush &&
+      typeof navigator !== "undefined" &&
+      typeof navigator.sendBeacon === "function"
+    ) {
       navigator.sendBeacon(
         `${this.base}/presence`,
         JSON.stringify({ clientId: this.clientId, userName: this.opts.userName, color: this.opts.color, leave: true }),
@@ -100,61 +224,101 @@ export class CollabProvider {
   private onDocUpdate(update: Uint8Array, origin: unknown) {
     if (origin === REMOTE_ORIGIN) return; // do not echo what we just applied
     if (!this.opts.canPush) return; // viewers never write
-    this.pending.push(update);
-    if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => void this.flush(), 250);
-    }
+    this.capturedLocalUpdate = true;
+    const outbox = this.outbox ?? outboxFor(this.opts.postId, this.base);
+    this.outbox = outbox;
+    outbox.pending.push(update.slice());
+    scheduleOutbox(this.opts.postId, outbox, PUSH_DEBOUNCE_MS);
   }
 
-  private async flush() {
-    this.flushTimer = null;
-    if (this.flushing || this.pending.length === 0) return;
-    this.flushing = true;
-    const batch = this.pending;
-    this.pending = [];
-    try {
-      const res = await fetch(this.base, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates: batch.map(u8ToBase64) }),
-      });
-      if (!res.ok) throw new Error(`push ${res.status}`);
-    } catch (error) {
-      // Requeue and retry on the next tick so a transient failure never drops
-      // a local edit.
-      this.pending.unshift(...batch);
-      this.opts.onError?.(error instanceof Error ? error.message : "collab push failed");
-      if (!this.flushTimer) this.flushTimer = setTimeout(() => void this.flush(), 1500);
-    } finally {
-      this.flushing = false;
-      if (this.pending.length > 0 && !this.flushTimer) {
-        this.flushTimer = setTimeout(() => void this.flush(), 250);
-      }
+  private async finishStart(
+    hadPendingUpdates: boolean,
+  ): Promise<CollabStartResult> {
+    const caughtUp = await this.catchUp();
+    const result: CollabStartResult = caughtUp.authoritative
+      ? {
+          authoritative: true,
+          // Existing or newly captured local operations mean this is not a
+          // pristine document that BodyEditor may safely initialize.
+          remoteEmpty:
+            caughtUp.remoteEmpty &&
+            !hadPendingUpdates &&
+            !this.capturedLocalUpdate,
+        }
+      : caughtUp;
+
+    if (this.stopped) return result;
+    void this.pollLoop();
+    if (this.opts.canPush) {
+      void this.heartbeat();
+      this.presenceTimer = setInterval(() => void this.heartbeat(), 8000);
     }
+    return result;
   }
 
   // Apply a remote row, but ALWAYS advance past it even if the update fails
   // to decode. Otherwise a single bad row (which the server now rejects, but
   // defense in depth) would be re-fetched every poll forever, permanently
   // stalling convergence.
-  private applyRow(row: { seq: number; update: string }) {
+  private applyRow(row: { seq: number; update: string }): boolean {
     try {
       Y.applyUpdate(this.doc, base64ToU8(row.update), REMOTE_ORIGIN);
     } catch {
       // skip a corrupt update rather than replay it forever
+      this.lastSeq = Math.max(this.lastSeq, row.seq);
+      return false;
     }
     this.lastSeq = Math.max(this.lastSeq, row.seq);
+    return true;
   }
 
-  private async catchUp() {
+  private async catchUp(): Promise<CollabStartResult> {
+    let sawRemoteUpdate = false;
     try {
-      const res = await fetch(`${this.base}?since=0&wait=0`);
-      if (!res.ok) return;
-      const data = (await res.json()) as { updates: Array<{ seq: number; update: string }>; seq: number };
-      for (const row of data.updates) this.applyRow(row);
+      while (!this.stopped) {
+        const previousSeq = this.lastSeq;
+        const res = await fetch(`${this.base}?since=${previousSeq}&wait=0`);
+        if (!res.ok) {
+          return { authoritative: false, remoteEmpty: false };
+        }
+        const data = (await res.json()) as {
+          updates?: unknown;
+          seq?: unknown;
+        };
+        if (!Array.isArray(data.updates) || !Number.isSafeInteger(data.seq)) {
+          return { authoritative: false, remoteEmpty: false };
+        }
+        if (data.updates.length === 0) {
+          return {
+            authoritative: true,
+            remoteEmpty:
+              !sawRemoteUpdate && previousSeq === 0 && data.seq === 0,
+          };
+        }
+
+        let appliedEveryRow = true;
+        for (const candidate of data.updates) {
+          if (
+            !candidate ||
+            typeof candidate !== "object" ||
+            !Number.isSafeInteger((candidate as { seq?: unknown }).seq) ||
+            typeof (candidate as { update?: unknown }).update !== "string"
+          ) {
+            return { authoritative: false, remoteEmpty: false };
+          }
+          sawRemoteUpdate = true;
+          if (!this.applyRow(candidate as { seq: number; update: string })) {
+            appliedEveryRow = false;
+          }
+        }
+        if (!appliedEveryRow || this.lastSeq <= previousSeq) {
+          return { authoritative: false, remoteEmpty: false };
+        }
+      }
     } catch {
-      // Offline start: the editor still works locally; the poll loop retries.
+      // Offline start: the editor still works locally; polling retries.
     }
+    return { authoritative: false, remoteEmpty: false };
   }
 
   private async pollLoop() {
