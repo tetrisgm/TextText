@@ -620,10 +620,14 @@ function useWorkspaceSidebarWidth() {
 
 function readAssistantState(): AssistantSidebarState {
   if (assistantStateMemory) return assistantStateMemory;
-  if (typeof window === "undefined") return "hidden";
+  if (typeof window === "undefined") return "pinned";
   const saved = window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_KEY);
+  // Default to pinned (open, pushing the page); respect any explicit choice the
+  // user made, including a deliberate hide.
   assistantStateMemory =
-    saved === "open" || saved === "pinned" ? saved : "hidden";
+    saved === "open" || saved === "pinned" || saved === "hidden"
+      ? (saved as AssistantSidebarState)
+      : "pinned";
   return assistantStateMemory;
 }
 
@@ -688,7 +692,7 @@ function useWorkspaceAssistantPreferences() {
   const state = useSyncExternalStore(
     subscribeAssistantPreferences,
     readAssistantState,
-    () => "hidden" as AssistantSidebarState,
+    () => "pinned" as AssistantSidebarState,
   );
   const width = useSyncExternalStore(
     subscribeAssistantPreferences,
