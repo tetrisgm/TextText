@@ -1,5 +1,8 @@
 import Foundation
 import Security
+import os.log
+
+private let handoffLog = Logger(subsystem: "net.writeapp.write", category: "fileprovider-handoff")
 
 /// Stores the File Provider credential handoff in a shared keychain access group
 /// so the non-sandboxed app can write it and the sandboxed extension can read it.
@@ -35,6 +38,11 @@ public enum FileProviderHandoffStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: group,
+            // The data-protection keychain (iOS-style) shares items across apps
+            // in the access group WITHOUT per-app ACL prompts. The default macOS
+            // file-based keychain uses SecACLs that prompt other apps, which a
+            // File Provider extension cannot answer, so it must be forced on.
+            kSecUseDataProtectionKeychain as String: true,
         ]
     }
 
@@ -42,7 +50,10 @@ public enum FileProviderHandoffStore {
     /// or the keychain rejected the item.
     @discardableResult
     public static func save(_ handoff: FileProviderHandoff) -> Bool {
-        guard let group = accessGroup(), let data = handoff.encoded() else { return false }
+        guard let group = accessGroup(), let data = handoff.encoded() else {
+            handoffLog.error("save: no access group or encode failed")
+            return false
+        }
         let base = baseQuery(group)
         SecItemDelete(base as CFDictionary)
         var add = base
@@ -50,21 +61,29 @@ public enum FileProviderHandoffStore {
         // Available in the background without an interactive unlock, which the
         // extension needs; still device-only (not synced to iCloud keychain).
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+        let status = SecItemAdd(add as CFDictionary, nil)
+        handoffLog.log("save: group=\(group, privacy: .public) status=\(status, privacy: .public) handle=\(handoff.handle, privacy: .public)")
+        return status == errSecSuccess
     }
 
     /// Read the handoff, or nil if not signed in / not present.
     public static func load() -> FileProviderHandoff? {
-        guard let group = accessGroup() else { return nil }
+        guard let group = accessGroup() else {
+            handoffLog.error("load: no access group")
+            return nil
+        }
         var query = baseQuery(group)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data else {
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        guard status == errSecSuccess, let data = out as? Data else {
+            handoffLog.log("load: group=\(group, privacy: .public) status=\(status, privacy: .public) -> not signed in")
             return nil
         }
-        return FileProviderHandoff.decode(data)
+        let handoff = FileProviderHandoff.decode(data)
+        handoffLog.log("load: ok handle=\(handoff?.handle ?? "?", privacy: .public)")
+        return handoff
     }
 
     /// Remove the handoff (sign-out).

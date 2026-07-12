@@ -142,8 +142,13 @@ APP_PROFILE="$MAC/profiles/Write_App_Developer_ID.provisionprofile"
 MAIN_ENT="$(mktemp -t write-main-ent)"
 if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${WRITE_APP_GROUP:-}" ]; then
   cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
-  /usr/bin/sed "s/WRITE_APP_GROUP/${WRITE_APP_GROUP}/g" "$ENT" > "$MAIN_ENT"
-  echo ">> main app: app-group entitlement + embedded profile"
+  # codesign does NOT expand $(AppIdentifierPrefix); substitute the resolved
+  # team-prefixed keychain group (computed above) just like the app group.
+  /usr/bin/sed \
+    -e "s/WRITE_APP_GROUP/${WRITE_APP_GROUP}/g" \
+    -e "s/WRITE_KEYCHAIN_GROUP/${KC_GROUP:-}/g" \
+    "$ENT" > "$MAIN_ENT"
+  echo ">> main app: app-group + keychain entitlement + embedded profile"
 else
   printf '%s\n' \
     '<?xml version="1.0" encoding="UTF-8"?>' \

@@ -96,7 +96,10 @@ embed_appex() { # returns nonzero on failure
   # Entitlements from the template, with the real group substituted. This file
   # must live OUTSIDE the bundle, or codesign signs it as a nested component.
   local ent; ent="$(mktemp -t write-appex-ent)"
-  /usr/bin/sed "s/WRITE_APP_GROUP/$APP_GROUP/g" "$MAC/Extensions/$srcdir/$ent_tmpl" > "$ent"
+  /usr/bin/sed \
+    -e "s/WRITE_APP_GROUP/$APP_GROUP/g" \
+    -e "s/WRITE_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
+    "$MAC/Extensions/$srcdir/$ent_tmpl" > "$ent"
 
   echo "   signing $name"
   codesign --force --options runtime --timestamp \
