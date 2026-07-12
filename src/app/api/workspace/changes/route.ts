@@ -20,6 +20,13 @@ export const maxDuration = 30;
 const MAX_WAIT_SECONDS = 25;
 const POLL_INTERVAL_MS = 2000;
 
+// A value that changes on every deployment, so a long-running client can
+// notice it is on stale code and reload itself (no more manual Cmd-R).
+const BUILD =
+  process.env.VERCEL_DEPLOYMENT_ID ??
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  "dev";
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function jsonError(message: string, status: number) {
@@ -47,7 +54,7 @@ export async function GET(request: Request) {
   let cursor = await workspaceChangeCursor(handle);
   if (!since || wait === 0) {
     return Response.json(
-      { cursor, changed: since ? cursor !== since : false },
+      { cursor, changed: since ? cursor !== since : false, build: BUILD },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   }
@@ -59,7 +66,7 @@ export async function GET(request: Request) {
     cursor = await workspaceChangeCursor(handle);
   }
   return Response.json(
-    { cursor, changed: cursor !== since },
+    { cursor, changed: cursor !== since, build: BUILD },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }
