@@ -105,6 +105,7 @@ import {
   useWorkspacePostBody,
 } from "@/lib/pool/store";
 import { WorkspaceProvider } from "@/lib/pool/WorkspaceProvider";
+import { useWorkspaceLiveSync } from "@/lib/pool/useWorkspaceLiveSync";
 import type {
   WorkspaceInitialBody,
   WorkspacePoolPayload,
@@ -3249,6 +3250,9 @@ function LocalWorkspaceShell({
   showGuestSignIn: boolean;
 }) {
   const { pool } = useWorkspacePool();
+  // Keep the list live with the server: the native sync engine, a shared item,
+  // another device, or an MCP edit can change content underneath this view.
+  useWorkspaceLiveSync(blog.handle, initialPool.blogId);
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
   const sourcePool = pool?.blogId === initialPool.blogId ? pool : initialPool;
   const displayPool = useMemo(
