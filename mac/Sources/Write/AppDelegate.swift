@@ -701,7 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         registeredFileProviderDomain = nil
-        if let container = shareInboxContainerURL() {
+        if let container = fileProviderContainerURL() {
             try? FileManager.default.removeItem(
                 at: container.appendingPathComponent(FileProviderHandoff.filename))
         }
@@ -714,11 +714,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { _ in }
     }
 
-    /// Non-sandboxed writer: resolve the real (team-prefixed) group container by
-    /// scanning (same as the Share inbox) and drop the handoff JSON at its root,
-    /// 0600. A sibling of the Share `Inbox/`, so the inbox drain never sees it.
+    /// The shared app-group identifier (env override, else the app's Info.plist).
+    private func fileProviderGroupIdentifier() -> String? {
+        let envGroup = ProcessInfo.processInfo.environment["WRITE_APP_GROUP"]
+        guard let group = envGroup
+            ?? Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
+              !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              group != "WRITE_APP_GROUP" else {
+            return nil
+        }
+        return group
+    }
+
+    /// The shared app-group container the File Provider extension reads. The app
+    /// carries the app-group entitlement (release builds), so this resolves to
+    /// the exact same directory the sandboxed extension sees, which the Share
+    /// inbox scan cannot guarantee.
+    private func fileProviderContainerURL() -> URL? {
+        guard let group = fileProviderGroupIdentifier() else { return nil }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
+    }
+
+    /// Write the credential handoff into the shared container, 0600. Requires
+    /// the app-group entitlement (a plain non-entitled app is blocked from
+    /// writing here, which is why the extension used to see nothing).
     private func writeFileProviderHandoff(_ handoff: FileProviderHandoff) {
-        guard let container = shareInboxContainerURL() else { return } // not provisioned yet
+        guard let container = fileProviderContainerURL() else { return }
+        try? FileManager.default.createDirectory(
+            at: container, withIntermediateDirectories: true)
         let url = container.appendingPathComponent(FileProviderHandoff.filename)
         guard let data = handoff.encoded() else { return }
         try? data.write(to: url, options: .atomic)

@@ -120,6 +120,27 @@ codesign_one() { # $1=path  $2=entitlements (optional)
   codesign "${args[@]}" "$path"
 }
 
+# The main app carries the app-group entitlement so it can write the File
+# Provider credential handoff into the shared container the sandboxed extension
+# reads. That is a restricted entitlement: it needs an embedded Developer ID
+# provisioning profile authorizing the group. With the profile present (and a
+# real identity + WRITE_APP_GROUP), sign with the app-group entitlement; without
+# it, sign with empty entitlements so dev/ad-hoc builds still succeed (the File
+# Provider just cannot authenticate).
+APP_PROFILE="$MAC/profiles/Write_App_Developer_ID.provisionprofile"
+MAIN_ENT="$(mktemp -t write-main-ent)"
+if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${WRITE_APP_GROUP:-}" ]; then
+  cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  /usr/bin/sed "s/WRITE_APP_GROUP/${WRITE_APP_GROUP}/g" "$ENT" > "$MAIN_ENT"
+  echo ">> main app: app-group entitlement + embedded profile"
+else
+  printf '%s\n' \
+    '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0"><dict/></plist>' > "$MAIN_ENT"
+  echo ">> main app: no app-group profile; signing without the app-group entitlement"
+fi
+
 echo ">> codesigning inside-out ($SIGN_ID)"
 SPK="$APP/Contents/Frameworks/Sparkle.framework"
 if [ "$SIGN_ID" = "-" ]; then
@@ -133,7 +154,7 @@ else
   done
   codesign_one "$SPK"
 fi
-codesign_one "$APP/Contents/MacOS/Write" "$ENT"
+codesign_one "$APP/Contents/MacOS/Write" "$MAIN_ENT"
 # Extensions are assembled and signed here, inside-out, so the main app's
 # signature (next line) seals them. No-op unless mac/profiles/ holds the
 # provisioning profiles and a real Developer ID identity is in use.
@@ -141,7 +162,8 @@ codesign_one "$APP/Contents/MacOS/Write" "$ENT"
   "$WRITE_BUNDLE_ID" \
   "$("$PB" -c 'Print :CFBundleShortVersionString' "$STAGED")" \
   "$("$PB" -c 'Print :CFBundleVersion' "$STAGED")"
-codesign_one "$APP" "$ENT"
+codesign_one "$APP" "$MAIN_ENT"
+rm -f "$MAIN_ENT"
 
 echo ">> verify"
 codesign --verify --strict --verbose=2 "$APP"
