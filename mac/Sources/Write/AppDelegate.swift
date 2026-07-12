@@ -1058,7 +1058,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 reopenApproval: { [weak self] in self?.linkController.reopenApproval() },
                 changeFolder: { [weak self] in self?.changeSyncFolder() },
                 openFolder: { [weak self] in self?.openFolderAction() },
-                syncNow: { [weak self] in self?.engine.syncNow() }
+                syncNow: { [weak self] in self?.engine.syncNow() },
+                makeDefaultMarkdown: { [weak self] in self?.makeWriteDefaultForMarkdown() }
             ))
         }
         refreshUI()
@@ -1124,8 +1125,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             folderStatus: currentWorkspaceLocation()?.statusMessage,
             lastSyncLine: lastSyncLine(),
             busy: engine.isSyncing,
-            activity: activityLog
+            activity: activityLog,
+            isDefaultForMarkdown: MarkdownDefaultHandler.isDefault()
         ))
+    }
+
+    /// Make Write the system default for .md files (from the status window). No
+    /// prompt: Launch Services just updates the binding, like a browser claiming
+    /// the default. Reflect success/failure in the activity log + button state.
+    private func makeWriteDefaultForMarkdown() {
+        MarkdownDefaultHandler.makeDefault { [weak self] error in
+            DispatchQueue.main.async {
+                if let error {
+                    self?.appendActivity("Could not set Write as the .md default: \(error.localizedDescription)")
+                } else {
+                    self?.appendActivity("Write is now the default app for .md files")
+                }
+                self?.refreshUI()
+            }
+        }
     }
 
     // MARK: Main menu (Cmd+W / Cmd+Q / copy-paste for the window)

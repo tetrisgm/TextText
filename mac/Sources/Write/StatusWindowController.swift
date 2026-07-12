@@ -15,6 +15,7 @@ struct StatusModel {
     var lastSyncLine: String
     var busy: Bool
     var activity: [String]
+    var isDefaultForMarkdown: Bool
 }
 
 /// A small native status window: link state (with the device-link code when
@@ -29,6 +30,7 @@ final class StatusWindowController: NSWindowController {
         var changeFolder: () -> Void = {}
         var openFolder: () -> Void = {}
         var syncNow: () -> Void = {}
+        var makeDefaultMarkdown: () -> Void = {}
     }
 
     private let actions: Actions
@@ -45,6 +47,8 @@ final class StatusWindowController: NSWindowController {
     private let openButton = NSButton(title: "Open", target: nil, action: nil)
     private let syncLabel = NSTextField(labelWithString: "")
     private let syncButton = NSButton(title: "Sync Now", target: nil, action: nil)
+    private let markdownLabel = NSTextField(labelWithString: "Open .md files with Write")
+    private let markdownButton = NSButton(title: "Use Write", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
     private let activityView = NSTextView()
 
@@ -105,6 +109,9 @@ final class StatusWindowController: NSWindowController {
         syncLabel.textColor = .secondaryLabelColor
         syncButton.target = self
         syncButton.action = #selector(syncNowAction)
+        markdownLabel.font = .systemFont(ofSize: 12)
+        markdownButton.target = self
+        markdownButton.action = #selector(markdownAction)
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
@@ -131,10 +138,14 @@ final class StatusWindowController: NSWindowController {
         let syncRow = NSStackView(views: [syncLabel, spinner, NSView(), syncButton])
         syncRow.orientation = .horizontal
 
+        let markdownRow = NSStackView(views: [markdownLabel, NSView(), markdownButton])
+        markdownRow.orientation = .horizontal
+
         let stack = NSStackView(views: [
             accountRow, accountDetailLabel, codeLabel, linkHintLabel,
             separator(), folderTitle, folderRow, folderStatusLabel,
             separator(), sectionTitle("Sync"), syncRow,
+            separator(), sectionTitle("Files"), markdownRow,
             separator(), sectionTitle("Recent activity"), scroll,
         ])
         stack.orientation = .vertical
@@ -152,6 +163,7 @@ final class StatusWindowController: NSWindowController {
             accountRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             folderRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             syncRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
+            markdownRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             codeLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             linkHintLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
@@ -208,6 +220,16 @@ final class StatusWindowController: NSWindowController {
         syncButton.isEnabled = model.linked && !model.busy
         if model.busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
 
+        if model.isDefaultForMarkdown {
+            markdownLabel.stringValue = "Write opens .md files"
+            markdownButton.title = "Default"
+            markdownButton.isEnabled = false
+        } else {
+            markdownLabel.stringValue = "Open .md files with Write"
+            markdownButton.title = "Use Write"
+            markdownButton.isEnabled = true
+        }
+
         let text = model.activity.joined(separator: "\n")
         if activityView.string != text {
             activityView.string = text
@@ -229,4 +251,5 @@ final class StatusWindowController: NSWindowController {
     @objc private func changeFolderAction() { actions.changeFolder() }
     @objc private func openFolderAction() { actions.openFolder() }
     @objc private func syncNowAction() { actions.syncNow() }
+    @objc private func markdownAction() { actions.makeDefaultMarkdown() }
 }
