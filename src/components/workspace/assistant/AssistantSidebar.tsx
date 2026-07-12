@@ -150,9 +150,15 @@ export function AssistantSidebar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const previousStateRef = useRef(state);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const [resizing, setResizing] = useState(false);
+  // Hover-peek: approaching the collapsed right rail reveals the panel as an
+  // interactive overlay (mirrors the left sidebar's is-collapsed:hover). It
+  // retracts when the pointer leaves, unless focus moved inside, in which case
+  // it promotes to a persistent "open" so a mouse-out mid-edit is not jarring.
+  const [peeking, setPeeking] = useState(false);
 
   const resolvedMinWidth = Math.round(
     positiveNumber(minWidth, ASSISTANT_SIDEBAR_MIN_WIDTH),
@@ -171,6 +177,10 @@ export function AssistantSidebar({
   const resolvedResizeStep = positiveNumber(resizeStep, 16);
   const visible = state !== "hidden";
   const pinned = state === "pinned";
+  // Revealed = actually usable: the persistent open/pinned states, or a
+  // transient hover-peek of the hidden rail.
+  const peekingHidden = state === "hidden" && peeking;
+  const revealed = visible || peekingHidden;
   const canSubmit =
     !disabled &&
     !submitDisabled &&
@@ -196,6 +206,25 @@ export function AssistantSidebar({
       launcherRef.current?.focus();
     }
   }, [state, visible]);
+
+  useEffect(() => {
+    // A peek only exists while hidden; any explicit state change clears it.
+    if (state !== "hidden" && peeking) setPeeking(false);
+  }, [state, peeking]);
+
+  const handleRootPointerEnter = () => {
+    if (state === "hidden") setPeeking(true);
+  };
+  const handleRootPointerLeave = () => {
+    if (state !== "hidden") return;
+    // Keep the panel up if the pointer left while focus is inside it (e.g. the
+    // user clicked into the composer): promote to a persistent open instead of
+    // yanking it away mid-interaction.
+    if (panelRef.current?.contains(document.activeElement)) {
+      onStateChange("open");
+    }
+    setPeeking(false);
+  };
 
   const requestWidth = (nextWidth: number) => {
     onWidthChange(
@@ -298,7 +327,10 @@ export function AssistantSidebar({
       data-layout={layout}
       data-resizing={resizing ? "true" : undefined}
       data-state={state}
+      data-peeking={peekingHidden ? "true" : undefined}
       style={rootStyle}
+      onPointerEnter={handleRootPointerEnter}
+      onPointerLeave={handleRootPointerLeave}
     >
       {state === "hidden" && (
         <button
@@ -321,12 +353,13 @@ export function AssistantSidebar({
       )}
 
       <aside
+        ref={panelRef}
         id={panelId}
         className={styles.panel}
-        aria-hidden={!visible}
+        aria-hidden={!revealed}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : titleId}
-        inert={visible ? undefined : true}
+        inert={revealed ? undefined : true}
         onKeyDown={handlePanelKeyDown}
       >
         <div

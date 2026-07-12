@@ -94,6 +94,20 @@
     visibility 0s linear 180ms;
 }
 
+/* Hover-peek: the collapsed right rail reveals the panel as an interactive
+   overlay, the mirror of the left sidebar's is-collapsed:hover. */
+.root[data-state="hidden"][data-peeking="true"] .panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+  visibility: visible;
+  box-shadow: -18px 0 44px -34px rgba(0, 0, 0, 0.58);
+  transition:
+    transform 180ms ease,
+    opacity 140ms ease,
+    visibility 0s linear 0s;
+}
+
 .launcher {
   position: absolute;
   top: 8px;

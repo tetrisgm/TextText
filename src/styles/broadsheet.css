@@ -2173,7 +2173,18 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-assistant-shell[data-state="hidden"] button[aria-label="Open assistant"] {
   top: 62px;
 }
-@media (min-width: 1100px) {
+/* Hover-peek: approaching the collapsed rail widens the fixed shell so the
+   revealed panel fills it and overlays the page (it does not push, matching the
+   left sidebar's is-collapsed:hover). The launcher fades out under the panel. */
+.workspace-assistant-shell[data-state="hidden"][data-peeking="true"] {
+  width: min(var(--workspace-assistant-width, 360px), 100vw) !important;
+}
+.workspace-assistant-shell[data-state="hidden"][data-peeking="true"]
+  button[aria-label^="Open assistant"] {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (min-width: 681px) {
   .post-editor-shell.has-assistant-pinned .post-editor-content {
     margin-right: var(--workspace-assistant-width, 360px);
   }
