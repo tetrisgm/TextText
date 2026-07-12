@@ -19,7 +19,8 @@ let package = Package(
         .library(name: "WriteShareExtensionCore", targets: ["WriteShareExtensionCore"]),
         .library(name: "WriteQuickLookCore", targets: ["WriteQuickLookCore"]),
         .library(name: "WriteFileProviderKit", targets: ["WriteFileProviderKit"]),
-        .library(name: "WriteFileProviderBridge", targets: ["WriteFileProviderBridge"])
+        .library(name: "WriteFileProviderBridge", targets: ["WriteFileProviderBridge"]),
+        .library(name: "WriteFileProviderExtensionCore", targets: ["WriteFileProviderExtensionCore"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -74,6 +75,15 @@ let package = Package(
             dependencies: ["WriteFileProviderKit"],
             path: "Sources/WriteFileProviderBridge"
         ),
+        .target(
+            // The replicated File Provider extension's Swift sources, compiled
+            // as a library so `swift test` can exercise them. The .appex itself
+            // is linked separately by mac/scripts/embed-extensions.sh.
+            name: "WriteFileProviderExtensionCore",
+            dependencies: ["WriteFileProviderBridge"],
+            path: "Extensions/WriteFileProviderExtension",
+            exclude: ["Info.plist", "WriteFileProviderExtension.entitlements.template"]
+        ),
         .executableTarget(
             name: "Write",
             dependencies: [
@@ -82,6 +92,7 @@ let package = Package(
                 "WriteWorkspaceCore",
                 "WriteAppIntents",
                 "WriteSpotlight",
+                "WriteFileProviderKit",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "libwebp", package: "libwebp-Xcode")
             ],
@@ -138,6 +149,15 @@ let package = Package(
             name: "WriteFileProviderBridgeTests",
             dependencies: ["WriteFileProviderBridge", "WriteFileProviderKit"],
             path: "Tests/WriteFileProviderBridgeTests"
+        ),
+        .testTarget(
+            name: "WriteFileProviderExtensionCoreTests",
+            dependencies: [
+                "WriteFileProviderExtensionCore",
+                "WriteFileProviderBridge",
+                "WriteFileProviderKit"
+            ],
+            path: "Tests/WriteFileProviderExtensionCoreTests"
         )
     ]
 )

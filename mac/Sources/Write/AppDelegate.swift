@@ -1,7 +1,9 @@
 import AppKit
 import CoreSpotlight
+import FileProvider
 import ServiceManagement
 import WriteEditor
+import WriteFileProviderKit
 import WriteShareCore
 import WriteSpotlight
 import WriteWorkspaceCore
@@ -46,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wasBusy = false
     private let workspaceLocationLock = NSLock()
     private var workspaceLocation: WorkspaceLocation?
+    // The one File Provider domain registered for the signed-in workspace, if any.
+    private var registeredFileProviderDomain: NSFileProviderDomain?
 
     // MARK: Lifecycle
 
@@ -100,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine.start()
         configureSpotlightIndexing()
         configureShareInbox()
+        syncFileProviderDomain()
 
         // Near-instant remote sync: a change on the web (edit, delete, new
         // bookmark) triggers a pass within seconds; the engine's 60s timer
@@ -110,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         changeListener.onRemoteChange = { [weak self] in
             self?.engine.syncNow()
             self?.captureAgent.poke()
+            self?.signalFileProviderChange()
         }
         changeListener.start()
         captureAgent.start()
@@ -237,6 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if wasBusy && !busy { scheduleSpotlightReindex() }
         wasBusy = busy
         refreshUI()
+        // The workspace handle only becomes known after the first sync caches it,
+        // so this is the natural place to reconcile the File Provider domain.
+        syncFileProviderDomain()
     }
 
     // MARK: Sync root
@@ -389,7 +398,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             includeUbiquitousItems: false
         ) { [weak self] in
             guard let self, self.shareInboxContainerURL() != nil else { return }
-            DispatchQueue.main.async { self.configureShareInbox() }
+            DispatchQueue.main.async {
+                self.configureShareInbox()
+                // The container now exists: (re)publish the handoff so the
+                // File Provider extension can read the token.
+                self.syncFileProviderDomain()
+            }
         }
     }
 
@@ -622,8 +636,94 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // yet; degrade gracefully. The folder and its files stay put.
         store.deleteCredentials()
         engine.resetForSignOut()
+        removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
         refreshUI()
+    }
+
+    // MARK: File Provider domain
+
+    /// Reconcile the registered File Provider domain with sign-in + cached
+    /// workspace state, and (re)publish the credential handoff for the extension.
+    /// Idempotent: at most one domain, keyed by the workspace handle.
+    private func syncFileProviderDomain() {
+        guard let credentials = store.loadCredentials(),
+              let blog = store.cachedWorkspace()?.blog,
+              !blog.handle.isEmpty else {
+            removeFileProviderDomain()
+            return
+        }
+        let origin = resolveServerOrigin(credentials: credentials).absoluteString
+        writeFileProviderHandoff(
+            FileProviderHandoff(origin: origin, token: credentials.token, handle: blog.handle))
+
+        let identifier = NSFileProviderDomainIdentifier(rawValue: "workspace-\(blog.handle)")
+        NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Drop any stale domain for a different workspace.
+                for domain in domains where
+                    domain.identifier.rawValue.hasPrefix("workspace-")
+                    && domain.identifier != identifier {
+                    NSFileProviderManager.remove(domain) { _ in }
+                }
+                if let existing = domains.first(where: { $0.identifier == identifier }) {
+                    self.registeredFileProviderDomain = existing
+                    return
+                }
+                let domain = NSFileProviderDomain(identifier: identifier, displayName: "Write")
+                NSFileProviderManager.add(domain) { error in
+                    DispatchQueue.main.async {
+                        if let error, (error as NSError).code != NSFileWriteFileExistsError {
+                            self.appendActivity(
+                                "File Provider register failed: \(error.localizedDescription)")
+                            return
+                        }
+                        self.registeredFileProviderDomain = domain
+                        // The extension may have launched before the handoff
+                        // landed; re-publish and nudge it to enumerate.
+                        self.writeFileProviderHandoff(FileProviderHandoff(
+                            origin: origin, token: credentials.token, handle: blog.handle))
+                        if let manager = NSFileProviderManager(for: domain) {
+                            manager.signalEnumerator(for: .workingSet) { _ in }
+                            manager.signalEnumerator(for: .rootContainer) { _ in }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func removeFileProviderDomain() {
+        NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
+            for domain in domains where domain.identifier.rawValue.hasPrefix("workspace-") {
+                NSFileProviderManager.remove(domain) { _ in }
+            }
+        }
+        registeredFileProviderDomain = nil
+        if let container = shareInboxContainerURL() {
+            try? FileManager.default.removeItem(
+                at: container.appendingPathComponent(FileProviderHandoff.filename))
+        }
+    }
+
+    /// Signal the registered domain that the workspace changed. Called from the
+    /// app's existing long-poll; the long-poll lives here, not in the extension.
+    private func signalFileProviderChange() {
+        guard let domain = registeredFileProviderDomain else { return }
+        NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { _ in }
+    }
+
+    /// Non-sandboxed writer: resolve the real (team-prefixed) group container by
+    /// scanning (same as the Share inbox) and drop the handoff JSON at its root,
+    /// 0600. A sibling of the Share `Inbox/`, so the inbox drain never sees it.
+    private func writeFileProviderHandoff(_ handoff: FileProviderHandoff) {
+        guard let container = shareInboxContainerURL() else { return } // not provisioned yet
+        let url = container.appendingPathComponent(FileProviderHandoff.filename)
+        guard let data = handoff.encoded() else { return }
+        try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     // MARK: Self-install (move to /Applications), copied from partyparty

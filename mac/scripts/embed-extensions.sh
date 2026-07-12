@@ -18,7 +18,8 @@ APP="$1"; SIGN_ID="$2"; APP_GROUP="$3"; BUNDLE_ID="$4"; VERSION="$5"; BUILD="$6"
 
 SHARE_PROFILE="$MAC/profiles/Write_Share_Developer_ID.provisionprofile"
 QL_PROFILE="$MAC/profiles/Write_QuickLook_Developer_ID.provisionprofile"
-if [ ! -f "$SHARE_PROFILE" ] || [ ! -f "$QL_PROFILE" ]; then
+FP_PROFILE="$MAC/profiles/Write_FileProvider_Developer_ID.provisionprofile"
+if [ ! -f "$SHARE_PROFILE" ] || [ ! -f "$QL_PROFILE" ] || [ ! -f "$FP_PROFILE" ]; then
   echo ">> extensions: no provisioning profiles in mac/profiles; skipping embed"
   exit 0
 fi
@@ -33,11 +34,20 @@ TARGET_TRIPLE="arm64-apple-macosx14.0"
 PLUGINS="$APP/Contents/PlugIns"
 mkdir -p "$PLUGINS"
 
-# WriteShareCore (Foundation only) is the sole library dependency of both
-# extensions; collect its release objects once.
+# WriteShareCore (Foundation only) is the sole library dependency of the Share
+# and Quick Look extensions; collect its release objects once.
 CORE_OBJS=()
 while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(find "$BIN/WriteShareCore.build" -name '*.o')
 [ "${#CORE_OBJS[@]}" -gt 0 ] || { echo "no WriteShareCore objects; run swift build -c release first" >&2; exit 1; }
+
+# The File Provider extension depends instead on the FP Kit + Bridge (not
+# WriteShareCore); collect their release objects for its dedicated link. The
+# extension's own two sources are compiled fresh by embed_appex below, so do NOT
+# also link WriteFileProviderExtensionCore objects (that would double symbols).
+FP_OBJS=()
+while IFS= read -r f; do FP_OBJS+=("$f"); done < <(find \
+  "$BIN/WriteFileProviderKit.build" "$BIN/WriteFileProviderBridge.build" -name '*.o')
+[ "${#FP_OBJS[@]}" -gt 0 ] || { echo "no File Provider objects; run swift build -c release first" >&2; exit 1; }
 
 # $1=appex-name $2=source-dir $3=principal-suffix $4=profile $5=entitlements-template
 #   plus extra swiftc framework flags in $6
@@ -55,7 +65,7 @@ embed_appex() { # returns nonzero on failure
   swiftc -parse-as-library -O \
     -module-name "$name" -target "$TARGET_TRIPLE" -sdk "$SDK" \
     -I "$BIN/Modules" \
-    "${srcs[@]}" "${CORE_OBJS[@]}" \
+    "${srcs[@]}" "${LINK_OBJS[@]}" \
     "${extra_frameworks[@]}" \
     -Xlinker -e -Xlinker _NSExtensionMain \
     -o "$exe"
@@ -89,14 +99,22 @@ embed_appex() { # returns nonzero on failure
 }
 
 echo ">> embedding Share extension"
+LINK_OBJS=("${CORE_OBJS[@]}")
 embed_appex "WriteShareExtension" "WriteShareExtension" \
   "$SHARE_PROFILE" "WriteShareExtension.entitlements.template" \
   -framework Foundation -framework AppKit -framework UniformTypeIdentifiers
 
 echo ">> embedding Quick Look extension"
+LINK_OBJS=("${CORE_OBJS[@]}")
 embed_appex "WriteQuickLookPreview" "WriteQuickLookPreview" \
   "$QL_PROFILE" "WriteQuickLookPreview.entitlements.template" \
   -framework Foundation -framework AppKit -framework CoreGraphics \
   -framework QuickLookUI -framework UniformTypeIdentifiers
+
+echo ">> embedding File Provider extension"
+LINK_OBJS=("${FP_OBJS[@]}")
+embed_appex "WriteFileProviderExtension" "WriteFileProviderExtension" \
+  "$FP_PROFILE" "WriteFileProviderExtension.entitlements.template" \
+  -framework Foundation -framework FileProvider -framework UniformTypeIdentifiers
 
 echo ">> extensions embedded and signed"
