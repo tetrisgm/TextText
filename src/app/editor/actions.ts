@@ -555,11 +555,15 @@ export async function savePostAction(post: Post): Promise<Post> {
     const existing = await getPostById(handle, post.id);
     if (!existing) throw new Error("Post not found");
     const patch = editableInput(post, existing, existing.slug);
-    const saved = await savePost(handle, {
-      ...existing,
-      ...patch,
-      pinned: existing.pinned,
-    });
+    const saved = await savePost(
+      handle,
+      {
+        ...existing,
+        ...patch,
+        pinned: existing.pinned,
+      },
+      { expectedRevision: existing.revision },
+    );
     await auditEdit(access, "save_post", "item", saved.id, saved.title);
     await revalidateBlog(handle, [existing.slug, saved.slug]);
     return saved;
@@ -795,7 +799,9 @@ export async function saveEditablePostAction(
     });
     if (!itemAccess.canEditContent) throw new Error("You cannot edit this post");
     const patch = collaboratorContentPatch(input, existing);
-    const saved = await savePostContentPatch(handle, existing, patch);
+    const saved = await savePostContentPatch(handle, existing, patch, {
+      expectedRevision: existing.revision,
+    });
     await recordAction({
       actorUserId: itemAccess.userId ?? (user ? await getUserIdBySub(user.sub) : null),
       actorType: "human",
@@ -811,11 +817,18 @@ export async function saveEditablePostAction(
   }
 
   const patch = editableInput(input, existing, existing.slug);
-  const saved = await savePost(handle, {
-    ...existing,
-    ...patch,
-    pinned: existing.pinned,
-  });
+  const saved = await savePost(
+    handle,
+    {
+      ...existing,
+      ...patch,
+      pinned: existing.pinned,
+    },
+    // The editor's assertCurrentEditBase above is a check-then-write; the
+    // revision compare-and-swap makes the save atomic so a concurrent write
+    // (another tab, the Mac app, an agent) conflicts instead of being clobbered.
+    { expectedRevision: existing.revision },
+  );
   await auditEdit(access, "save_post", "item", saved.id, saved.title);
   if (options.revalidate !== false) {
     await revalidateBlog(handle, [existing.slug, saved.slug]);
@@ -1137,7 +1150,11 @@ export async function setEditablePostStatusAction(
   const status = isUnlistedPostType(existing.type)
     ? ("draft" as const)
     : cleanStatus(statusInput);
-  const saved = await savePost(handle, { ...existing, status });
+  const saved = await savePost(
+    handle,
+    { ...existing, status },
+    { expectedRevision: existing.revision },
+  );
   await auditEdit(
     access,
     status === "published" ? "publish_post" : "unpublish_post",

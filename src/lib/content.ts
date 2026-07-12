@@ -169,6 +169,13 @@ export interface Post {
   /** full ISO timestamps for sync/conflict detection; absent on demo content */
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * Monotonic per-mutation version from the DB `write_change_seq` sequence.
+   * The sync layer uses it as the compare-and-swap token: a write carries the
+   * revision it read, and the store only lands if the row still holds it.
+   * Absent for demo/seed content (no database).
+   */
+  revision?: number;
 }
 
 /**

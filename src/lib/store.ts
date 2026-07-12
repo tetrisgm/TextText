@@ -12,6 +12,7 @@ import {
   isNotNull,
   isNull,
   like,
+  lt,
   ne,
   or,
   sql,
@@ -47,6 +48,7 @@ import {
   collabPresence,
   collabUpdates,
   folders,
+  idempotencyKeys,
   posts,
   users,
 } from "./db/schema";
@@ -189,6 +191,7 @@ function mapPost(row: PostRow): Post {
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    revision: row.revision ?? undefined,
   };
 }
 
@@ -585,7 +588,12 @@ function excludePrivateTypesFromBlogBucket<T extends { type: PostType }>(
   return items.filter((item) => !isPrivatePostType(item.type));
 }
 
-function mapFolder(row: typeof folders.$inferSelect): Folder {
+function mapFolder(
+  row: Pick<
+    typeof folders.$inferSelect,
+    "id" | "name" | "path" | "mode" | "position" | "parentId"
+  >,
+): Folder {
   return {
     id: row.id,
     name: row.name,
@@ -1011,6 +1019,108 @@ export async function setPostFolder(
   return updated[0] ? mapPost(updated[0]) : null;
 }
 
+/**
+ * Move (change folder) and/or rename (change slug) a post in ONE update that
+ * touches only folder_id and slug, never the body. The sync PATCH route maps a
+ * File Provider reparent/rename here; keeping the update to those two columns
+ * means a content PUT that lands concurrently can never be clobbered by a stale
+ * full-row save (which re-sending the whole `post` would do). Returns the
+ * updated Post, or null if the post no longer exists. Throws on an unknown or
+ * mode-mismatched target folder, or a slug collision, which the route maps to
+ * 404/400.
+ */
+export async function movePostFile(
+  handle: string,
+  postId: string,
+  changes: { folderPath?: string; slug?: string; expectedRevision?: number },
+): Promise<Post | null> {
+  if (!db) return null;
+  const blogId = await blogIdFor(handle);
+  const existing = await db
+    .select()
+    .from(posts)
+    .where(
+      and(eq(posts.id, postId), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+    )
+    .limit(1);
+  const row = existing[0];
+  if (!row) return null;
+
+  const set: {
+    updatedAt: Date;
+    folderId?: string;
+    slug?: string;
+  } = {
+    updatedAt: new Date(),
+  };
+
+  if (changes.folderPath !== undefined) {
+    const target = await db
+      .select()
+      .from(folders)
+      .where(
+        and(
+          eq(folders.blogId, blogId),
+          eq(folders.path, changes.folderPath),
+          isNull(folders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const folder = target[0];
+    if (!folder) throw new Error(`unknown folder "${changes.folderPath}"`);
+    // The mode-match invariant keeps notes/bookmarks unlisted: a note can never
+    // move into a blog folder, no matter which writer requests it.
+    if (cleanFolderMode(folder.mode) !== folderModeForPostType(row.type)) {
+      throw new Error(`A ${row.type} cannot move into the ${folder.mode} folder.`);
+    }
+    // Only a real move counts: setting folder_id to the folder it is already in
+    // would still run the update and bump the revision, making a same-folder
+    // PATCH look like a change to every client.
+    if (folder.id !== row.folderId) set.folderId = folder.id;
+  }
+
+  if (changes.slug !== undefined && changes.slug !== row.slug) {
+    set.slug = changes.slug;
+  }
+
+  // Nothing actually changes (same folder, same slug): return the current row
+  // untouched rather than bump the revision and spuriously advance the change
+  // cursor, which would make a no-op PATCH look like a real edit to every client.
+  if (set.folderId === undefined && set.slug === undefined) {
+    return mapPost(row);
+  }
+
+  // The revision guard makes the move atomic: if a concurrent writer committed
+  // between the select above and this update, the revision no longer matches and
+  // we conflict instead of overwriting their metadata change.
+  const guard =
+    changes.expectedRevision !== undefined
+      ? [eq(posts.revision, changes.expectedRevision)]
+      : [];
+  try {
+    const updated = await db
+      .update(posts)
+      .set(set)
+      .where(
+        and(
+          eq(posts.id, row.id),
+          eq(posts.blogId, blogId),
+          isNull(posts.deletedAt),
+          ...guard,
+        ),
+      )
+      .returning();
+    if (updated[0]) return mapPost(updated[0]);
+    // Guarded and matched nothing: the row moved under us (the select saw it,
+    // the guarded update did not). A conflict, not a silent no-op.
+    if (changes.expectedRevision !== undefined) throw new PostConflictError();
+    return null;
+  } catch (error) {
+    if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
+    throw error;
+  }
+}
+
 /** One folder by its full path, or null. */
 export async function getFolderByPath(
   handle: string,
@@ -1409,6 +1519,7 @@ async function getFolderPostFilesUncached(
   handle: string,
   folderPath: string,
   publishedOnly: boolean,
+  exact: boolean,
 ): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
@@ -1422,13 +1533,19 @@ async function getFolderPostFilesUncached(
     );
   }
 
+  // The blog root normally absorbs its descendants (the public blog view lists
+  // every article, wherever it is filed). The sync manifest asks for `exact`:
+  // a File Provider tree must place each post in exactly one container, so the
+  // root returns only its direct children and each subfolder lists its own.
   const inFolder =
     folderPath === DEFAULT_FOLDER_PATH
-      ? or(
-          isNull(posts.folderId),
-          eq(folders.path, folderPath),
-          like(folders.path, `${folderPath}/%`),
-        )
+      ? exact
+        ? or(isNull(posts.folderId), eq(folders.path, folderPath))
+        : or(
+            isNull(posts.folderId),
+            eq(folders.path, folderPath),
+            like(folders.path, `${folderPath}/%`),
+          )
       : eq(folders.path, folderPath);
   const rows = await db
     .select()
@@ -1464,12 +1581,13 @@ const getFolderPostFilesCached = cache(getFolderPostFilesUncached);
 export async function getFolderPostFiles(
   handle: string,
   folderPath: string,
-  opts: { publishedOnly?: boolean } = {},
+  opts: { publishedOnly?: boolean; exact?: boolean } = {},
 ): Promise<Post[]> {
   return getFolderPostFilesCached(
     handle,
     folderPath,
     opts.publishedOnly ?? false,
+    opts.exact ?? false,
   );
 }
 
@@ -1567,7 +1685,7 @@ export async function getAccessibleFolderPostFiles(
   handle: string,
   folderPath: string,
   user: AccessUser | null,
-  opts: { publishedOnly?: boolean } = {},
+  opts: { publishedOnly?: boolean; exact?: boolean } = {},
 ): Promise<Post[]> {
   if (!db || !user) return [];
   const folderPosts = excludePrivateTypesFromBlogBucket(
@@ -1733,6 +1851,159 @@ export async function deletePost(handle: string, id: string): Promise<void> {
         eq(posts.id, id),
         eq(posts.blogId, blogId),
         isNull(posts.deletedAt),
+      ),
+    );
+}
+
+/**
+ * Delete a post for a sync client, guarding on the revision the client last saw.
+ * The delete only lands if the row still carries `expectedRevision`, so an edit
+ * that arrived after the client last read the file is never silently discarded
+ * by a stale delete: the guarded UPDATE matches nothing and we raise a conflict.
+ * A row that is already gone is treated as done (delete is idempotent). Done as
+ * one guarded statement so the check and the delete cannot race.
+ */
+export async function deletePostAtomic(
+  handle: string,
+  id: string,
+  expectedRevision: number,
+): Promise<void> {
+  if (!db) throw new Error("deletePostAtomic requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const deleted = await db
+    .update(posts)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+        eq(posts.revision, expectedRevision),
+      ),
+    )
+    .returning({ id: posts.id });
+  if (deleted[0]) return;
+  // Nothing matched: either the post is already gone (idempotent success) or it
+  // is still live at a newer revision (a concurrent edit) which must not be
+  // silently deleted.
+  const live = await db
+    .select({ revision: posts.revision })
+    .from(posts)
+    .where(
+      and(eq(posts.id, id), eq(posts.blogId, blogId), isNull(posts.deletedAt)),
+    )
+    .limit(1);
+  if (live[0]) throw new PostConflictError();
+}
+
+// MARK: idempotent creates
+//
+// A sync create carries a client-generated Idempotency-Key so an ambiguous
+// response (the create committed but the reply was lost) can be retried without
+// duplicating the item. The caller claims the key first, does the create, then
+// resolves the key with the created id; a retry sees the resolved key and
+// returns the same item. Claiming is a single INSERT ... ON CONFLICT DO NOTHING,
+// so even two concurrent retries with one key produce exactly one item.
+
+export type IdempotencyClaim =
+  | { status: "claimed" }
+  | { status: "done"; kind: "post" | "folder"; id: string }
+  | { status: "inflight" };
+
+/** An unresolved claim older than this is treated as abandoned (its request
+ * died before recording a result), so a retry can re-claim instead of being
+ * locked out forever. Comfortably longer than any real create round-trip. */
+const IDEMPOTENCY_CLAIM_STALE_MS = 30_000;
+
+export async function claimIdempotencyKey(
+  handle: string,
+  key: string,
+): Promise<IdempotencyClaim> {
+  if (!db) return { status: "claimed" };
+  const blogId = await blogIdFor(handle);
+  const claimed = await db
+    .insert(idempotencyKeys)
+    .values({ blogId, key })
+    .onConflictDoNothing({
+      target: [idempotencyKeys.blogId, idempotencyKeys.key],
+    })
+    .returning({ key: idempotencyKeys.key });
+  if (claimed[0]) return { status: "claimed" };
+  // Already claimed by an earlier attempt: report its result, or that the first
+  // attempt is still running (result not recorded yet).
+  const existing = await db
+    .select({
+      resultKind: idempotencyKeys.resultKind,
+      resultId: idempotencyKeys.resultId,
+    })
+    .from(idempotencyKeys)
+    .where(and(eq(idempotencyKeys.blogId, blogId), eq(idempotencyKeys.key, key)))
+    .limit(1);
+  const row = existing[0];
+  if (
+    row?.resultId &&
+    (row.resultKind === "post" || row.resultKind === "folder")
+  ) {
+    return { status: "done", kind: row.resultKind, id: row.resultId };
+  }
+  // Unresolved. If the claiming request died (stale), reclaim it so a retry is
+  // not locked out forever; the guarded delete + re-insert lets exactly one
+  // racer win. Otherwise the first attempt is genuinely still in flight.
+  const staleCutoff = new Date(Date.now() - IDEMPOTENCY_CLAIM_STALE_MS);
+  const reclaimed = await db
+    .delete(idempotencyKeys)
+    .where(
+      and(
+        eq(idempotencyKeys.blogId, blogId),
+        eq(idempotencyKeys.key, key),
+        isNull(idempotencyKeys.resultId),
+        lt(idempotencyKeys.createdAt, staleCutoff),
+      ),
+    )
+    .returning({ key: idempotencyKeys.key });
+  if (reclaimed[0]) {
+    const retry = await db
+      .insert(idempotencyKeys)
+      .values({ blogId, key })
+      .onConflictDoNothing({
+        target: [idempotencyKeys.blogId, idempotencyKeys.key],
+      })
+      .returning({ key: idempotencyKeys.key });
+    if (retry[0]) return { status: "claimed" };
+  }
+  return { status: "inflight" };
+}
+
+export async function resolveIdempotencyKey(
+  handle: string,
+  key: string,
+  kind: "post" | "folder",
+  id: string,
+): Promise<void> {
+  if (!db) return;
+  const blogId = await blogIdFor(handle);
+  await db
+    .update(idempotencyKeys)
+    .set({ resultKind: kind, resultId: id })
+    .where(and(eq(idempotencyKeys.blogId, blogId), eq(idempotencyKeys.key, key)));
+}
+
+/** Release a claim whose create ultimately failed, so a retry can start fresh
+ * rather than be told a nonexistent item was created. Only unresolved claims
+ * are released; a resolved key is permanent. */
+export async function releaseIdempotencyKey(
+  handle: string,
+  key: string,
+): Promise<void> {
+  if (!db) return;
+  const blogId = await blogIdFor(handle);
+  await db
+    .delete(idempotencyKeys)
+    .where(
+      and(
+        eq(idempotencyKeys.blogId, blogId),
+        eq(idempotencyKeys.key, key),
+        isNull(idempotencyKeys.resultId),
       ),
     );
 }
@@ -2051,8 +2322,32 @@ function hasOwnContentKey<K extends keyof PostContentPatch>(
 // follows the editor's Date field (or is stamped now on first publish); a draft
 // leaves any existing published_at untouched, so unpublish then republish keeps
 // the original date.
+/**
+ * Thrown by a guarded save (`expectedUpdatedAt`) when the row moved out from
+ * under the caller: the base version no longer matches, or the row was deleted.
+ * The sync PUT route maps this to 412, so the client refetches and merges rather
+ * than silently losing the concurrent write.
+ */
+export class PostConflictError extends Error {
+  constructor() {
+    super("The post changed since it was fetched");
+    this.name = "PostConflictError";
+  }
+}
+
 type SavePostOptions = {
   preservePublishedAt?: boolean;
+  /**
+   * Optimistic-lock token: the `revision` the caller's edit is based on. When
+   * set, the UPDATE only lands if the row still carries that exact revision, and
+   * a zero-row result throws `PostConflictError` instead of falling through to
+   * an insert. This makes a check-then-write a true compare-and-swap: every
+   * mutation assigns a fresh `nextval('write_change_seq')`, so a concurrent
+   * writer that commits first changes the revision (even within the same
+   * millisecond) and the second save conflicts instead of clobbering it. A
+   * stale save can likewise never resurrect a deleted post.
+   */
+  expectedRevision?: number;
 };
 
 export async function savePost(
@@ -2091,6 +2386,8 @@ export async function savePost(
     status,
     pinned: post.pinned ?? false,
     updatedAt: new Date(),
+    // revision is assigned by the posts_bump_revision trigger (updates) and the
+    // column default (inserts); no mutation path has to remember to bump it.
   };
   const publishedAt =
     options.preservePublishedAt || status !== "published"
@@ -2103,6 +2400,14 @@ export async function savePost(
 
   try {
     if (post.id) {
+      // Optional compare-and-swap: the guard only lets the UPDATE land if the
+      // row still carries the exact revision the caller fetched. Every mutation
+      // assigns a fresh nextval, so a concurrent writer that committed first
+      // changed the revision and this save then matches zero rows.
+      const guard =
+        options.expectedRevision !== undefined
+          ? [eq(posts.revision, options.expectedRevision)]
+          : [];
       const updated = await db
         .update(posts)
         .set({ ...set, slug: post.slug })
@@ -2111,10 +2416,16 @@ export async function savePost(
             eq(posts.id, post.id),
             eq(posts.blogId, blogId),
             isNull(posts.deletedAt),
+            ...guard,
           ),
         )
         .returning();
       if (updated[0]) return mapPost(updated[0]);
+      // A guarded save that matched nothing is a conflict, never an insert:
+      // the base moved (someone else wrote) or the row is gone (deleted). Both
+      // must surface as 412, not silently resurrect the post or upsert onto
+      // whatever row happens to share this slug.
+      if (options.expectedRevision !== undefined) throw new PostConflictError();
       if (options.preservePublishedAt) throw new Error("Post not found");
     }
 
@@ -2151,6 +2462,7 @@ export async function savePostContentPatch(
   handle: string,
   existing: Post,
   patch: PostContentPatch,
+  options: { expectedRevision?: number } = {},
 ): Promise<Post> {
   const next: Post = {
     ...existing,
@@ -2178,7 +2490,10 @@ export async function savePostContentPatch(
     next.coverHeight = patch.coverHeight;
   }
 
-  return savePost(handle, next, { preservePublishedAt: true });
+  return savePost(handle, next, {
+    preservePublishedAt: true,
+    expectedRevision: options.expectedRevision,
+  });
 }
 
 // Create an empty draft and return it (with its new id), for the editor's

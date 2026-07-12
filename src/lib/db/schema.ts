@@ -4,6 +4,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   index,
@@ -102,6 +103,16 @@ export const blogs = pgTable(
     ownerId: uuid("owner_id").references(() => users.id),
     /** SHA-256 hash of the anonymous editor token; null after claim */
     editTokenHash: text("edit_token_hash"),
+    /**
+     * Durable workspace change high-water-mark: the largest `revision` ever
+     * assigned to any of this blog's posts or folders, bumped by an AFTER trigger
+     * on every insert/update. It is the sync change cursor. Unlike `max(revision)`
+     * over surviving rows, it never falls when a trashed row is hard-deleted, so a
+     * soft-delete the client has not yet seen can never be erased from the cursor
+     * (which would otherwise leave a permanent client ghost). See
+     * scripts/migrate-add-revision.mjs.
+     */
+    changeSeq: bigint("change_seq", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
   },
@@ -202,6 +213,19 @@ export const folders = pgTable(
     parentId: uuid("parent_id"),
     mode: text("mode").notNull().default("blog"),
     position: integer("position").notNull().default(0),
+    /**
+     * Monotonic per-mutation version from the shared `write_change_seq`
+     * sequence: the compare-and-swap token for optimistic locking and the source
+     * of the workspace change cursor (max revision). Globally unique and strictly
+     * increasing, so same-millisecond writes get distinct revisions and a value
+     * is never reused (a cursor string can never alias a different state). The
+     * column default assigns it on insert; a BEFORE UPDATE trigger bumps it on
+     * every update, so no mutation path can forget to advance it. DDL and trigger
+     * live in scripts/migrate-add-revision.mjs.
+     */
+    revision: bigint("revision", { mode: "number" })
+      .notNull()
+      .default(sql`nextval('write_change_seq')`),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
@@ -277,6 +301,15 @@ export const posts = pgTable(
     status: postStatus("status").notNull().default("draft"),
     pinned: boolean("pinned").notNull().default(false),
     publishedAt: timestamp("published_at"),
+    /**
+     * Monotonic per-mutation version from the shared `write_change_seq`
+     * sequence; the optimistic-lock (compare-and-swap) token and the source of
+     * the workspace change cursor. See the folders.revision note and
+     * scripts/migrate-add-revision.mjs.
+     */
+    revision: bigint("revision", { mode: "number" })
+      .notNull()
+      .default(sql`nextval('write_change_seq')`),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
@@ -297,6 +330,33 @@ export const posts = pgTable(
     index("posts_blog_workspace_order_idx")
       .on(t.blogId, t.pinned.desc(), t.updatedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
+// Idempotency for sync creates: a create carries a client-generated
+// Idempotency-Key so an ambiguous response (the POST committed but the reply was
+// lost) can be retried without duplicating the post or folder. The row is
+// claimed first (resultId null) and updated with the created id, so even
+// concurrent retries with the same key produce exactly one item. Keyed per
+// workspace so keys never collide across tenants.
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id),
+    key: text("key").notNull(),
+    /** "post" | "folder" once known */
+    resultKind: text("result_kind"),
+    /** the created item's id; null while the create is still in flight */
+    resultId: uuid("result_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({
+      name: "idempotency_keys_pk",
+      columns: [t.blogId, t.key],
+    }),
   ],
 );
 

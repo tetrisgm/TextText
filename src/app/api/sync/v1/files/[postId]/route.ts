@@ -3,14 +3,15 @@ import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import type { EffectiveAccess } from "@/lib/permissions";
 import { resolveItemAccess } from "@/lib/permissions";
 import {
-  deletePost,
+  deletePostAtomic,
   folderPathForPostType,
   getFolderById,
   getPostById,
   markCapturePending,
+  movePostFile,
+  PostConflictError,
   savePost,
   savePostContentPatch,
-  setPostFolder,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
 import { recordAction } from "@/lib/audit";
@@ -99,6 +100,11 @@ export async function PUT(request: Request, { params }: Props) {
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
   }
+  // The If-Match check above is fast but check-then-write: two PUTs on the same
+  // base both pass it before either commits. The base revision is carried into
+  // the save as a compare-and-swap so the store only writes if the row is still
+  // the exact version we just hashed. A loser gets PostConflictError -> 412.
+  const expectedRevision = post.revision;
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
   try {
@@ -123,20 +129,29 @@ export async function PUT(request: Request, { params }: Props) {
     // collaborator save is routed through the content-only store helper so the
     // mapped date string cannot overwrite published_at.
     const saved = access.isOwner
-      ? await savePost(blog.handle, {
-          ...post,
-          ...parsed.fields,
-          date: parsed.fields.date,
-          slug: parsed.fields.slug ?? post.slug,
-          body: parsed.body,
-        })
-      : await savePostContentPatch(blog.handle, post, {
-          title: parsed.fields.title ?? post.title,
-          cover: parsed.fields.cover ?? post.cover,
-          coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
-          coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
-          body: parsed.body,
-        });
+      ? await savePost(
+          blog.handle,
+          {
+            ...post,
+            ...parsed.fields,
+            date: parsed.fields.date,
+            slug: parsed.fields.slug ?? post.slug,
+            body: parsed.body,
+          },
+          { expectedRevision },
+        )
+      : await savePostContentPatch(
+          blog.handle,
+          post,
+          {
+            title: parsed.fields.title ?? post.title,
+            cover: parsed.fields.cover ?? post.cover,
+            coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
+            coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+            body: parsed.body,
+          },
+          { expectedRevision },
+        );
     await enqueueBookmarkCaptureIfNeeded(blog.handle, saved, post);
     await recordAction({
       actorUserId: userId,
@@ -151,6 +166,11 @@ export async function PUT(request: Request, { params }: Props) {
     // index without refetching the file it just wrote.
     return Response.json({ item: syncManifestItem(blog, saved) });
   } catch (error) {
+    // Lost the compare-and-swap: another writer committed between our hash
+    // check and the save. Same signal as a stale If-Match, so 412.
+    if (error instanceof PostConflictError) {
+      return syncError(412, "The post changed since this file was fetched");
+    }
     const message = clientSaveError(error);
     if (message) return syncError(400, message);
     throw error; // internal failure: surface as 500, never a false 400
@@ -165,7 +185,36 @@ export async function DELETE(request: Request, { params }: Props) {
     return syncError(403, "Only the owner can delete files");
   }
 
-  await deletePost(blog.handle, postId);
+  // A stale delete is a conflict too: when the client supplies If-Match it must
+  // match the version the server holds now, or 412, so a delete based on an old
+  // view never discards an edit the client has not seen. It is validated but not
+  // required, because the File Provider legitimately lacks a base hash for an
+  // item whose content version is empty; the revision guard below is atomic and
+  // always active, so the delete is protected against the post-resolution race
+  // regardless.
+  const ifMatch = request.headers.get("if-match");
+  if (ifMatch) {
+    const current = renderSyncFile(blog, post);
+    if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
+      return syncError(412, "The post changed since this file was fetched");
+    }
+  }
+
+  // Even without If-Match, the delete is guarded on the revision we just
+  // resolved and runs as a single statement, so an edit that commits between the
+  // resolve and the delete is not silently lost: the guarded delete matches
+  // nothing and deletePostAtomic raises a conflict.
+  if (post.revision === undefined) {
+    return syncError(409, "This item has no version and cannot be safely deleted");
+  }
+  try {
+    await deletePostAtomic(blog.handle, postId, post.revision);
+  } catch (error) {
+    if (error instanceof PostConflictError) {
+      return syncError(412, "The post changed since this file was fetched");
+    }
+    throw error;
+  }
   await recordAction({
     actorUserId: userId,
     actorType: "external_agent",
@@ -202,20 +251,39 @@ export async function PATCH(request: Request, { params }: Props) {
     return syncError(400, "Provide a folder to move into or a slug to rename to");
   }
 
+  // If-Match, when supplied, rejects a client that was already stale before it
+  // asked: a rename based on a version the server has since moved past is a 412,
+  // like PUT. Validated but not required (the File Provider can lack a base hash
+  // for an empty content version). The revision guard below is atomic and always
+  // active, so a change landing after this check is also caught.
+  const ifMatch = request.headers.get("if-match");
+  if (ifMatch) {
+    const current = renderSyncFile(blog, post);
+    if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
+      return syncError(412, "The post changed since this file was fetched");
+    }
+  }
+
+  // Resolve the target folder to a path up front so a bad id is a clean 404
+  // before any write, and so the move+rename below is a single atomic update.
+  let folderPath: string | undefined;
+  if (folderId) {
+    const folder = await getFolderById(blog.handle, folderId);
+    if (!folder) return syncError(404, "Folder not found");
+    folderPath = folder.path;
+  }
+
   try {
-    let current = post;
-    if (folderId) {
-      const folder = await getFolderById(blog.handle, folderId);
-      if (!folder) return syncError(404, "Folder not found");
-      // setPostFolder enforces the mode-match invariant (a note cannot move
-      // into a blog folder), which keeps notes/bookmarks unlisted.
-      const moved = await setPostFolder(blog.handle, postId, folder.path);
-      if (!moved) return syncError(404, "Post not found");
-      current = moved;
-    }
-    if (slug && slug !== current.slug) {
-      current = await savePost(blog.handle, { ...current, slug });
-    }
+    // One update touching only folder_id and slug: never the body, so a content
+    // PUT racing this move/rename cannot be clobbered by a stale full-row save.
+    // The base revision guards the update so a concurrent metadata change
+    // conflicts (412) instead of being overwritten.
+    const current = await movePostFile(blog.handle, postId, {
+      folderPath,
+      slug: slug || undefined,
+      expectedRevision: post.revision,
+    });
+    if (!current) return syncError(404, "Post not found");
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",
@@ -227,6 +295,10 @@ export async function PATCH(request: Request, { params }: Props) {
     revalidateBlogPaths(blog, [post.slug, current.slug]);
     return Response.json({ item: syncManifestItem(blog, current) });
   } catch (error) {
+    // Lost the move/rename compare-and-swap: another writer committed first.
+    if (error instanceof PostConflictError) {
+      return syncError(412, "The post changed since this file was fetched");
+    }
     const message = clientSaveError(error);
     if (message) return syncError(400, message);
     throw error;

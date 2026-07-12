@@ -1,14 +1,17 @@
-// The workspace change cursor behind GET /api/sync/v1/changes: the newest
-// touch timestamp across everything the sync tree mirrors (posts and
-// folders, including soft-deletes, which SET deleted_at and therefore always
-// advance the cursor). No schema or bump-site is needed: any mutation path,
-// present or future, moves updated_at/deleted_at or it did not change the
-// row at all.
+// The workspace change cursor behind GET /api/sync/v1/changes: `blogs.change_seq`,
+// a durable per-workspace high-water-mark. An AFTER trigger on posts and folders
+// bumps it to the row's `revision` on every insert or update, and `revision`
+// comes from the shared `write_change_seq` sequence, so the cursor moves on EVERY
+// mutation (present or future), values are globally unique and strictly
+// increasing, and two changes in the same millisecond are distinct.
 //
-// The cursor is an opaque string to clients (ISO timestamp with ms). Clients
-// long-poll with their last cursor; a strictly newer server cursor means
-// "run a sync pass". Millisecond ties are resolved by the next poll cycle,
-// worst case one wait interval late, never missed forever.
+// Why a stored counter and not max(revision): max over surviving rows can FALL
+// when a trashed row is hard-deleted (emptying Trash), so a soft-delete the
+// client has not yet polled could be erased from the cursor and leave a
+// permanent ghost. change_seq only ever increases, so a deletion the client has
+// not seen always keeps the cursor ahead of the client and forces a resync.
+//
+// The cursor is opaque to clients; compare only by inequality.
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
@@ -16,17 +19,13 @@ import { db } from "@/lib/db/client";
 export async function workspaceChangeCursor(handle: string): Promise<string> {
   if (!db) return "0";
   const rows = await db.execute<{ cursor: string | null }>(sql`
-    select greatest(
-      (select max(greatest(p.updated_at, coalesce(p.deleted_at, p.updated_at)))
-         from posts p join blogs b on p.blog_id = b.id
-        where b.handle = ${handle} and b.deleted_at is null),
-      (select max(greatest(f.updated_at, coalesce(f.deleted_at, f.updated_at)))
-         from folders f join blogs b on f.blog_id = b.id
-        where b.handle = ${handle} and b.deleted_at is null)
-    ) as cursor
+    select change_seq as cursor
+      from blogs
+     where handle = ${handle} and deleted_at is null
+     limit 1
   `);
   const raw: unknown = rows.rows?.[0]?.cursor;
-  if (!raw) return "0";
-  const date = raw instanceof Date ? raw : new Date(String(raw));
-  return Number.isNaN(date.getTime()) ? "0" : date.toISOString();
+  if (raw === null || raw === undefined) return "0";
+  // pg returns bigint as a string; keep it a decimal string end to end.
+  return String(raw);
 }

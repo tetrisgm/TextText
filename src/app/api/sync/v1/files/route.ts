@@ -1,10 +1,14 @@
 import type { Post } from "@/lib/content";
 import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import {
+  claimIdempotencyKey,
   createDraft,
   createDraftInFolder,
   deletePost,
+  getPostById,
   markCapturePending,
+  releaseIdempotencyKey,
+  resolveIdempotencyKey,
   savePost,
 } from "@/lib/store";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
@@ -29,6 +33,28 @@ export async function POST(request: Request) {
     parsed = parsePostMarkdownFile(await request.text());
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
+  }
+
+  // Idempotency: a client that retries an ambiguous create (committed server
+  // side, reply lost) sends the same Idempotency-Key. A resolved key returns the
+  // original item; a still-running first attempt is asked to retry shortly.
+  const idempotencyKey = request.headers.get("idempotency-key")?.trim();
+  if (idempotencyKey) {
+    const claim = await claimIdempotencyKey(blog.handle, idempotencyKey);
+    if (claim.status === "done") {
+      if (claim.kind !== "post") {
+        return syncError(409, "This Idempotency-Key was used for a different resource");
+      }
+      const existing = await getPostById(blog.handle, claim.id);
+      if (existing) {
+        return Response.json({ item: syncManifestItem(blog, existing) }, { status: 201 });
+      }
+      // The item this key created was since deleted. The key is spent: do not
+      // recreate, which two concurrent retries would each do (a second race).
+      return syncError(409, "The item created for this Idempotency-Key was deleted");
+    } else if (claim.status === "inflight") {
+      return syncError(409, "A create with this Idempotency-Key is in progress; retry shortly");
+    }
   }
 
   // A File Provider create knows its target folder (?folder=<id>); a plain
@@ -62,6 +88,9 @@ export async function POST(request: Request) {
       body: parsed.body,
     });
     await enqueueBookmarkCaptureIfNeeded(blog.handle, saved);
+    if (idempotencyKey && saved.id) {
+      await resolveIdempotencyKey(blog.handle, idempotencyKey, "post", saved.id);
+    }
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",
@@ -73,6 +102,9 @@ export async function POST(request: Request) {
     revalidateBlogPaths(blog, [saved.slug]);
     return Response.json({ item: syncManifestItem(blog, saved) }, { status: 201 });
   } catch (error) {
+    // A failed create must free the claim so a retry starts fresh instead of
+    // being told a nonexistent item already exists.
+    if (idempotencyKey) await releaseIdempotencyKey(blog.handle, idempotencyKey).catch(() => {});
     // Best effort: never strand the placeholder draft behind a failed save
     // (e.g. the file's slug is already used).
     if (created.id) await deletePost(blog.handle, created.id).catch(() => {});

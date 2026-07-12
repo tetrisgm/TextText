@@ -23,6 +23,7 @@ import {
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
   getPostById,
+  PostConflictError,
   savePost,
   savePostContentPatch,
 } from "@/lib/store";
@@ -473,18 +474,32 @@ export function registerWriteTools(server: McpServer): void {
               date: parsed.fields.date,
               slug: parsed.fields.slug ?? post.slug,
               body: parsed.body,
-            })
-          : await savePostContentPatch(blog.handle, post, {
-              title: parsed.fields.title ?? post.title,
-              cover: parsed.fields.cover ?? post.cover,
-              coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
-              coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
-              body: parsed.body,
-            });
+            },
+            // Compare-and-swap on the version we just hashed: if another writer
+            // committed between the read and here, conflict instead of clobber.
+            { expectedRevision: post.revision })
+          : await savePostContentPatch(
+              blog.handle,
+              post,
+              {
+                title: parsed.fields.title ?? post.title,
+                cover: parsed.fields.cover ?? post.cover,
+                coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
+                coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+                body: parsed.body,
+              },
+              { expectedRevision: post.revision },
+            );
         await auditMcp(extra, "mcp.update_item", saved.id, saved.title);
         revalidateBlogPaths(blog, [post.slug, saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
       } catch (error) {
+        if (error instanceof PostConflictError) {
+          return errorResult(
+            `Conflict: "${post.title || post.slug}" changed since it was read. ` +
+              "Fetch the latest with read_item, merge, then retry.",
+          );
+        }
         return saveErrorResult(error);
       }
     },
@@ -518,16 +533,28 @@ export function registerWriteTools(server: McpServer): void {
 
       try {
         // date stays undefined: post.date is derived (publishedAt), and
-        // passing it back would turn it into an authored publish date.
-        const saved = await savePost(blog.handle, {
-          ...post,
-          date: undefined,
-          body,
-        });
+        // passing it back would turn it into an authored publish date. The
+        // revision guard makes this read-modify-write atomic so a concurrent
+        // edit is not clobbered by the appended copy.
+        const saved = await savePost(
+          blog.handle,
+          {
+            ...post,
+            date: undefined,
+            body,
+          },
+          { expectedRevision: post.revision },
+        );
         await auditMcp(extra, "mcp.append_to_item", saved.id, saved.title);
         revalidateBlogPaths(blog, [saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
       } catch (error) {
+        if (error instanceof PostConflictError) {
+          return errorResult(
+            `Conflict: "${post.title || post.slug}" changed since it was read. ` +
+              "Fetch the latest with read_item, then retry the append.",
+          );
+        }
         return saveErrorResult(error);
       }
     },

@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     },
     folders: folders.map((folder) => ({
       id: folder.id,
+      parentId: folder.parentId ?? null,
       name: folder.name,
       path: folder.path,
       mode: folder.mode,

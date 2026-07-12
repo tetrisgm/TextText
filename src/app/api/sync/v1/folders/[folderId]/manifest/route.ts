@@ -29,11 +29,14 @@ export async function GET(request: Request, { params }: Props) {
   if (!folder) return syncError(404, "Folder not found");
 
   // Drafts included: the manifest is the owner's machine view of the whole
-  // folder, unlike the public folder.json. getFolderPosts scopes to THIS
-  // folder; a post without a folderId (not yet backfilled) counts as living
-  // in the default "blog" folder.
+  // folder, unlike the public folder.json. `exact` scopes to THIS folder's
+  // direct children only, so a post filed in a subfolder is listed by that
+  // subfolder's manifest and never double-listed under the blog root. A post
+  // without a folderId (not yet backfilled) counts as living in the blog root.
   const posts = (
-    await getAccessibleFolderPostFiles(blog.handle, folder.path, workspace)
+    await getAccessibleFolderPostFiles(blog.handle, folder.path, workspace, {
+      exact: true,
+    })
   ).filter((post) => Boolean(post.id));
   const manifest = renderFolderManifest(
     blog,
