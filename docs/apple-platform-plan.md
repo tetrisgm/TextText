@@ -100,9 +100,11 @@ Do not introduce in the first implementation.
 
 ## 6. File Provider
 
-Deferred. The workspace lives in iCloud Drive; Finder already exposes it
-and displays sync state. A Write File Provider would only matter for
-server-hosted workspaces that do not exist in iCloud Drive.
+Adopted as its own effort (this section previously deferred it). The workspace
+now surfaces through a File Provider that makes Write a first-class Finder
+sidebar location, under Locations, backed directly by the server. It replaces
+the iCloud Drive/Write folder as the canonical local surface. See
+`docs/file-provider-plan.md` for the plan and current status.
 
 ## 7. macOS-only scope
 
@@ -238,11 +240,17 @@ local editing.
 
 ## 18. Explicit non-goals
 
-iPhone/iPad apps, File Provider, Apple Notes integration,
-provider-specific Dropbox/Drive/OneDrive integrations, CloudKit document
-storage, a second file sync system, editor mode redesign, block editor,
-proprietary document format, Live Activities, PencilKit, Vision, real-time
-collaboration, complex merge infrastructure.
+iPhone/iPad apps, Apple Notes integration, provider-specific
+Dropbox/Drive/OneDrive integrations, CloudKit document storage, a second file
+sync system, editor mode redesign, block editor, proprietary document format,
+Live Activities, PencilKit, Vision, real-time collaboration, complex merge
+infrastructure.
+
+File Provider is no longer a non-goal: it has been adopted as its own effort
+(see `docs/file-provider-plan.md`). CloudKit as the content backend stays a
+genuine non-goal (the server is the backend). The File Provider replaces the
+polling folder mirror rather than adding a second sync system; the native
+mirror is retired at the cutover, not run alongside permanently.
 
 ## 19. First execution task (Phase 1, current)
 

@@ -64,34 +64,82 @@ files). No file is ever moved or deleted as part of the switch.
 
 ## 6. Phases
 
-### Phase 1: WriteFileProviderKit (pure Swift, headless-testable)
-The server client (reuse the sync API contract), the item model
-(NSFileProviderItemIdentifier <-> server ids, folders, item kinds,
-capabilities, content types), the enumeration + change-cursor logic, and the
-metadata mapping. No extension yet. Fully unit-tested against a fake server.
+Owner's call on sequencing: build writes first and ship Phase 2+3 together as
+one editable release, then retire the native SyncEngine mirror at the cutover
+(once writes are proven against a throwaway workspace). Until that proven
+cutover, the File Provider coexists with the existing native mirror.
 
-### Phase 2: Read-only extension
-The `NSFileProviderReplicatedExtension` wrapping the kit: enumerate the
-workspace and folders, expose items, and materialize content by fetching file
-bodies from the server. Register the domain from the container app on sign-in.
-Files appear in the Finder sidebar and open read-only. Verify with a real
-domain against a throwaway test workspace.
+Status legend below: DONE means built and unit-tested; BUILT means built and
+unit-tested but pending on-device verification; pending means not started.
 
-### Phase 3: Writes and conflicts
-Create, modify, delete, and rename map to server POST/PUT/DELETE with
-If-Match. Honor the privacy invariants (notes and bookmarks stay unlisted,
-soft-delete semantics). Conflict resolution via the existing hash model, with
-the framework's conflict surfaces.
+### Phase 1: WriteFileProviderKit (pure Swift, headless-testable) - DONE
+`mac/Sources/WriteFileProviderKit`: a pure-Swift, framework-free core. The
+server client (`WriteSyncAPI` protocol + `LiveWriteSyncAPI`, an async
+URLSession client on the `wsk_` bearer), the item model (`WriteItemIdentifier`
+round-tripping through raw strings, with the three reserved cases pinned to
+Apple's literal constant values so bridging is free; `WriteItem` /
+`WriteItemMapper` carrying kind, capabilities, content type, hash, and
+timestamps), the `WorkspaceEnumerator` (root -> top-level folders, folder ->
+subfolders + files, working set, change cursor), and `FileProviderHandoff`
+(the {origin, token, handle} JSON the app writes into the shared app-group
+container and the extension reads). No extension yet. Fully unit-tested
+against a fake server.
 
-### Phase 4: Native polish
+### Phase 2: Read-only replicated extension + domain registration - DONE
+`mac/Sources/WriteFileProviderBridge` adapts the kit to the FileProvider
+framework (`WriteFileProviderItem: NSFileProviderItem`, identifier and
+capability bridges; note Apple aliases the capability bits, so
+`.allowsReading == .allowsContentEnumerating` and
+`.allowsWriting == .allowsAddingSubItems`).
+`mac/Extensions/WriteFileProviderExtension` is the
+`NSFileProviderReplicatedExtension` principal class `FileProviderExtension`
+(a class conforming to that protocol is what makes the extension replicated;
+extension point `com.apple.fileprovider-nonui`) plus `WriteEnumeratorAdapter`
+(`NSFileProviderEnumerator`): it enumerates the workspace and folders, exposes
+items, and materializes content on demand via `fetchContents`. The container
+app registers one `NSFileProviderDomain` (displayName "Write") per workspace
+on sign-in and removes it on sign-out via `NSFileProviderManager.add` /
+`remove` (the 2-arg init is the replicated variant), publishes the handoff,
+and signals the enumerator on remote change (reusing the app's existing
+long-poll, which stays in the app, not the extension). The appex is embedded
+and signed by `mac/scripts/embed-extensions.sh` with the Developer ID profile
+at `mac/profiles/Write_FileProvider_Developer_ID.provisionprofile`
+(App ID `net.writeapp.write.mac.fileprovider`), sandboxed with the app group
+and `com.apple.security.network.client` entitlements. Files appear under
+Locations in the Finder sidebar. Unit-tested; on-device verification against a
+throwaway workspace is still pending.
+
+### Phase 3: Writes and conflicts - BUILT (unit-tested; on-device verification pending)
+The File Provider is an editable Finder surface. New server `/api/sync/v1`
+endpoints back the write path:
+
+- `POST /files?folder=<id>` files a new item directly into a folder; the
+  folder's mode dictates the kind, keeping notes and bookmarks unlisted.
+- `PATCH /files/{id} {folder?, slug?}` moves and/or renames without re-sending
+  the body.
+- `PATCH /folders/{id} {name}` renames a folder.
+
+PUT (content edit, If-Match) and DELETE already existed. The extension maps
+each Finder mutation onto these: edit -> PUT, create -> folder-scoped POST then
+a slug rename to the Finder name, delete -> DELETE, rename -> PATCH slug,
+move -> PATCH folder, folder rename -> renameFolder. Folder delete and folder
+move are deferred (not advertised as capabilities). The privacy invariant is
+preserved: notes and bookmarks stay unlisted, server-enforced via folder mode.
+Verified by unit tests (part of the 61 File Provider tests, 143 total mac
+tests, all green); on-device end-to-end verification against a throwaway
+workspace is still pending.
+
+### Phase 4: Native polish - pending
 Cloud badges, on-demand eviction (remove download), offline availability, sync
-progress, and Finder context-menu actions. Wire the change cursor to
-`signalEnumerator` for near-instant updates.
+progress, precise per-item change deltas (the current remote signal is
+coarse), and Finder context-menu actions.
 
-### Phase 5: Retire the old path
-Once the File Provider is proven on the real workspace, retire the native
-folder SyncEngine and offer to clean up the old `iCloud Drive/Write` folder.
-Ship as the default.
+### Phase 5: Retire the old path - pending (gated on writes being proven)
+Once the File Provider writes are verified on-device against a throwaway
+workspace, retire the native folder SyncEngine so the File Provider is the
+single writer, and offer to clean up the old `iCloud Drive/Write` folder
+(never auto-deleting user files). Ship as the default. Explicitly gated: this
+phase does not start until Phase 3 writes are proven.
 
 ## 7. Risks
 

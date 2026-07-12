@@ -4,7 +4,11 @@
 
 Write's Mac app currently mirrors the server workspace into a normal folder, usually `~/Write`, by polling `/api/sync/v1` every 60 seconds, listening to the same API through a long poll, and watching local disk changes with FSEvents. The requested native integration is a different product surface: Finder should treat Write as a cloud storage provider, with standard cloud badges, on-demand downloads, eviction, pinning, and context actions.
 
-This document is design only. It does not change app code.
+This document began as design only. Since then the File Provider has been
+built along these lines (kit + bridge + replicated extension + read + write);
+`docs/file-provider-plan.md` is the live plan and status of record. This
+document is kept for the design rationale and for the accurate readout of the
+native SyncEngine, which still ships as the mirror until the cutover.
 
 ## Current Implementation Readout
 
@@ -26,8 +30,11 @@ Current server API pieces:
 - `GET /api/sync/v1/files/{postId}`: rendered markdown file plus ETag based on the markdown content hash.
 - `PUT /api/sync/v1/files/{postId}`: parse markdown, require `If-Match`, reject stale writes with `412`, reject client-fixable parse or save errors with `400`, return the new manifest item.
 - `POST /api/sync/v1/files`: parse markdown, create a draft, save it, return the created manifest item.
+- `POST /api/sync/v1/files?folder=<id>`: folder-scoped create; files a new item directly into a folder so the folder's mode dictates the kind, keeping notes and bookmarks unlisted (added for the File Provider write path).
+- `PATCH /api/sync/v1/files/{postId}`: move and/or rename (`{folder?, slug?}`) without re-sending the body (added for the File Provider write path).
 - `DELETE /api/sync/v1/files/{postId}`: delete a post.
 - `POST /api/sync/v1/folders`: create a subfolder under a parent path.
+- `PATCH /api/sync/v1/folders/{folderId}`: rename a folder (`{name}`) (added for the File Provider write path).
 - `GET /api/sync/v1/changes`: coarse workspace cursor for posts and folders.
 - `src/lib/markdown-files.ts`: renders and parses the markdown file vocabulary. The server hash is the currency for sync.
 
@@ -35,20 +42,18 @@ The important behavior to preserve is not the local path polling. It is the serv
 
 ## Recommendation
 
-Do not start by replacing the current sync engine wholesale. Do a focused File Provider spike first, then decide whether to fund the full rewrite.
+Superseded by what shipped. The original recommendation here was to spike the File Provider first, then decide whether to fund the rewrite. That decision has been made and executed: the File Provider is built and is the chosen direction. `docs/file-provider-plan.md` is the live plan and status of record.
 
-Do now:
+What exists now:
 
-- Keep the existing polling mirror as the shipping implementation.
-- Build a 1 to 2 week native spike that proves a signed Developer ID app can ship a `NSFileProviderReplicatedExtension`, register a domain, show a root in Finder, enumerate a tiny fake tree, fetch one file on open, and survive app relaunch and Sparkle-style update packaging.
-- Refactor only enough sync policy into a shared module to let the spike reuse `Credentials`, `ServerClient` request shapes, markdown hashes, and conflict rules without carrying the old path scanner into the extension.
+- `mac/Sources/WriteFileProviderKit`: the pure-Swift, framework-free core (server client, item model, `WorkspaceEnumerator`, change cursor, and the `FileProviderHandoff` app-group token handoff), fully unit-tested against a fake server.
+- `mac/Sources/WriteFileProviderBridge`: the FileProvider-framework adapter (`WriteFileProviderItem: NSFileProviderItem`, identifier and capability bridges).
+- `mac/Extensions/WriteFileProviderExtension`: the `NSFileProviderReplicatedExtension` principal class (enumerate, materialize file bodies on demand, and write back), embedded and signed by `mac/scripts/embed-extensions.sh`. The container app registers one `NSFileProviderDomain` ("Write") per workspace on sign-in.
+- Read and write are both implemented. Finder edits, creates, deletes, renames, and moves map onto `/api/sync/v1` (see the endpoint list above, including the folder-scoped create and the move/rename `PATCH` added for this path). Notes and bookmarks stay unlisted, server-enforced via folder mode.
 
-Later:
+Still open: on-device end-to-end verification against a throwaway workspace, and the actual retirement of the native mirror (deferred to the proven cutover).
 
-- Replace the mirror loop with File Provider only after read-only enumeration, content fetch, write-back, domain registration, and Developer ID notarization are proven on real Macs.
-- Add custom decorations and File Provider UI after the native system badges are already correct.
-
-Reasoning: File Provider is the right primary target for the requested Finder behavior, but it is a large native subsystem with packaging, entitlement, concurrency, and OS integration risks. The existing mirror is simple, recoverable, and already protects user data. A rushed replacement would create the highest risk exactly where users expect Dropbox-level reliability.
+The reasoning below still holds and is why the cutover is staged rather than a flag-day switch: File Provider is the right primary target for the requested Finder behavior, but it is a large native subsystem with packaging, entitlement, concurrency, and OS integration risks. The existing mirror is simple, recoverable, and already protects user data. So the native SyncEngine in the readout above keeps shipping as the mirror until the File Provider writes are proven, at which point it is retired and the app offers to clean up the old `iCloud Drive/Write` folder (never auto-deleting). A rushed replacement would create the highest risk exactly where users expect Dropbox-level reliability.
 
 ## macOS Primary Target: File Provider
 

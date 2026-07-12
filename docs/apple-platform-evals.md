@@ -84,8 +84,48 @@ is wired; the test run confirms it behaves.
 | p4.inbox / p4.quicklook / p4.appex-sources | Inbox contract, Quick Look renderer, extension sources |
 | p5.ifmatch / p5.offline | If-Match conflict rules, mass-delete breaker so backend failure never mutates local files |
 | inv.unlisted / inv.bookmark-links / inv.eviction | Publishing refuses unlisted kinds, bookmark URL in `links:`, eviction never deletes |
-| nongoal.fileprovider / nongoal.cloudkit | File Provider removed, no CloudKit document storage |
+| fp.kit / fp.bridge | File Provider kit present, `NSFileProviderItem` bridge present |
+| fp.replicated / fp.point-id | Principal class conforms to `NSFileProviderReplicatedExtension`, non-UI extension point |
+| fp.network / fp.embed | Sandboxed appex has network-client access, appex embedded and signed in the release build |
+| fp.domain / fp.handoff | App registers/removes an `NSFileProviderDomain`, token handoff carries only the `wsk_` bearer via the app group |
+| fp.writes / fp.unlisted | Write path maps Finder edits to the sync API, folder-scoped create keeps the folder kind so notes/bookmarks stay unlisted |
+| nongoal.cloudkit | No CloudKit document storage |
 | style.no-em-dash | No em dashes in the Apple docs |
+
+## File Provider coverage
+
+The File Provider (docs/file-provider-plan.md) is exercised by the same runner,
+consistent with the three layers above: named suites pin its behavior, and
+structural `fp.*` rows confirm the phase is wired.
+
+Suites (behavioral):
+
+- `WorkspaceEnumeratorTests`: enumeration and change-cursor evals.
+- `WriteItemMapperTests`: item model and capability evals.
+- `BridgeTests`: `NSFileProviderItem` bridging evals.
+- `EnumeratorAdapterTests`: enumerator adapter evals.
+- `FileProviderExtensionTests`: read/write mapping evals (edit to PUT, create to
+  a folder-scoped POST, delete, rename, move).
+
+Structural `fp.*` rows (the phase is wired):
+
+- `fp.kit` / `fp.bridge`: the pure-Swift kit and the `NSFileProviderItem` bridge
+  are present.
+- `fp.replicated` / `fp.point-id`: the principal class conforms to
+  `NSFileProviderReplicatedExtension`, and the extension uses the non-UI
+  (`com.apple.fileprovider-nonui`) extension point.
+- `fp.network` / `fp.embed`: the sandboxed appex is granted network-client
+  access and is embedded and signed in the release build.
+- `fp.domain` / `fp.handoff`: the app registers and removes an
+  `NSFileProviderDomain`, and the token handoff carries only the `wsk_` bearer
+  through the app group.
+- `fp.writes` / `fp.unlisted`: the write path maps Finder edits to the sync API,
+  and a folder-scoped create keeps the folder's kind so notes and bookmarks stay
+  unlisted.
+
+The full acceptance matrix currently reports 41 passed, 0 failed. Like every
+other row, these checks are hermetic: no network, no real File Provider domain,
+no real workspace.
 
 ## What the evals have already caught
 
