@@ -1,43 +1,48 @@
 import AppKit
-import CoreServices
 import UniformTypeIdentifiers
 
 /// Making Write the default app for Markdown files. The bundle declares it can
 /// open `net.daringfireball.markdown` (Info.plist), so the user can flip the
-/// system default to Write from the status window with one click, the way a
-/// browser offers to become the default browser.
+/// system default to Write from the status window with one click.
 ///
-/// Uses the Launch Services role-handler API. It is marked deprecated in favour
-/// of NSWorkspace.setDefaultApplication, but that async replacement's Swift
-/// overloads resolve inconsistently across SDKs; this call is synchronous,
-/// prompt-free, and stable.
+/// On modern macOS the Launch Services role-handler set is a silent no-op
+/// (returns success but does not change the binding); the sanctioned
+/// `NSWorkspace.setDefaultApplication` is required. It shows the system's
+/// confirmation prompt, which is the intended flow (macOS requires user consent
+/// to change a default handler). The completion fires once the user responds.
 enum MarkdownDefaultHandler {
-    /// The identifier of the type `.md` files resolve to (net.daringfireball.markdown
-    /// once the bundle's imported UTI is registered), with sane fallbacks.
-    static var contentTypeIdentifier: String {
-        (UTType(filenameExtension: "md")
+    /// The type `.md` files resolve to (net.daringfireball.markdown once the
+    /// bundle's imported UTI is registered), with sane fallbacks.
+    static var contentType: UTType {
+        UTType(filenameExtension: "md")
             ?? UTType("net.daringfireball.markdown")
-            ?? .plainText).identifier
+            ?? .plainText
     }
 
     /// True when Write is already the default handler for Markdown.
     static func isDefault() -> Bool {
-        guard let bundleID = Bundle.main.bundleIdentifier else { return false }
-        let current = LSCopyDefaultRoleHandlerForContentType(
-            contentTypeIdentifier as CFString, .all)?.takeRetainedValue() as String?
-        return current?.caseInsensitiveCompare(bundleID) == .orderedSame
+        guard let current = NSWorkspace.shared.urlForApplication(toOpen: contentType),
+              let id = Bundle(url: current)?.bundleIdentifier else {
+            return false
+        }
+        return id == Bundle.main.bundleIdentifier
     }
 
-    /// Set Write as the default handler for Markdown. No prompt: Launch Services
-    /// just updates the binding.
+    /// Ask the system to make Write the default for Markdown. macOS shows its
+    /// own confirmation prompt; `completion` fires when the user responds (nil =
+    /// now default, error = declined or failed).
     static func makeDefault(completion: @escaping (Error?) -> Void) {
-        guard let bundleID = Bundle.main.bundleIdentifier else {
-            completion(NSError(domain: NSCocoaErrorDomain, code: -1))
-            return
+        let type = contentType
+        Task {
+            do {
+                // The Swift name of `setDefaultApplicationAtURL:toOpenContentType:`
+                // is `setDefaultApplication(at:toOpen:)` with a UTType argument.
+                try await NSWorkspace.shared.setDefaultApplication(
+                    at: Bundle.main.bundleURL, toOpen: type)
+                await MainActor.run { completion(nil) }
+            } catch {
+                await MainActor.run { completion(error) }
+            }
         }
-        let status = LSSetDefaultRoleHandlerForContentType(
-            contentTypeIdentifier as CFString, .all, bundleID as CFString)
-        completion(status == noErr ? nil : NSError(
-            domain: NSOSStatusErrorDomain, code: Int(status)))
     }
 }
