@@ -46,7 +46,12 @@ for suite in \
   "WorkspaceSpotlightIndexerTests:Phase 3 Spotlight mapping + eviction evals" \
   "SyncEngineRegressionTests:Phase 1/5 sync data-safety evals" \
   "WriteShareCoreTests:Phase 4 share inbox + Quick Look evals" \
-  "EditorDocumentTests:Phase 2 editor round-trip + conflict evals"; do
+  "EditorDocumentTests:Phase 2 editor round-trip + conflict evals" \
+  "WorkspaceEnumeratorTests:File Provider enumeration + change-cursor evals" \
+  "WriteItemMapperTests:File Provider item model + capability evals" \
+  "BridgeTests:File Provider NSFileProviderItem bridging evals" \
+  "EnumeratorAdapterTests:File Provider enumerator adapter evals" \
+  "FileProviderExtensionTests:File Provider read/write mapping evals"; do
   name="${suite%%:*}"; desc="${suite#*:}"
   check "suite:$name" "$desc" "grep -rq 'class $name' '$MAC/Tests'"
 done
@@ -97,15 +102,35 @@ check "inv.bookmark-links" "Invariant: bookmarks store the URL in the links list
 check "inv.eviction" "Invariant: evicted iCloud files never become server deletes" \
   "grep -q 'icloud' '$MAC/Sources/Write/SyncEngine.swift'"
 
-# --- Explicit non-goals (section 18) stay absent ---
-check "nongoal.fileprovider" "Non-goal: File Provider removed" \
-  "! test -d '$MAC/Sources/WriteFileProviderCore'"
+# --- File Provider (Write as a Finder sidebar location; see docs/file-provider-plan.md) ---
+check "fp.kit" "File Provider: pure-Swift kit (enumerator + item model + sync client) present" \
+  "test -f '$MAC/Sources/WriteFileProviderKit/WorkspaceEnumerator.swift' && test -f '$MAC/Sources/WriteFileProviderKit/LiveWriteSyncAPI.swift'"
+check "fp.bridge" "File Provider: NSFileProviderItem bridge present" \
+  "test -f '$MAC/Sources/WriteFileProviderBridge/WriteFileProviderItem.swift'"
+check "fp.replicated" "File Provider: principal class conforms to NSFileProviderReplicatedExtension" \
+  "grep -q 'NSFileProviderReplicatedExtension' '$MAC/Extensions/WriteFileProviderExtension/FileProviderExtension.swift'"
+check "fp.point-id" "File Provider: non-UI file provider extension point" \
+  "grep -q 'com.apple.fileprovider-nonui' '$MAC/Extensions/WriteFileProviderExtension/Info.plist'"
+check "fp.network" "File Provider: sandboxed appex is granted network client access" \
+  "grep -q 'network.client' '$MAC/Extensions/WriteFileProviderExtension/WriteFileProviderExtension.entitlements.template'"
+check "fp.embed" "File Provider: appex is embedded/signed in the release build" \
+  "grep -q 'WriteFileProviderExtension' '$MAC/scripts/embed-extensions.sh'"
+check "fp.domain" "File Provider: app registers/removes an NSFileProviderDomain" \
+  "grep -q 'NSFileProviderManager.add' '$MAC/Sources/Write/AppDelegate.swift'"
+check "fp.handoff" "File Provider: token handoff carries only the wsk_ bearer via the app group" \
+  "test -f '$MAC/Sources/WriteFileProviderKit/FileProviderHandoff.swift'"
+check "fp.writes" "File Provider Phase 3: write path maps Finder edits to the sync API" \
+  "grep -q 'func modifyItem' '$MAC/Extensions/WriteFileProviderExtension/FileProviderExtension.swift' && grep -q 'patchFile' '$MAC/Sources/WriteFileProviderKit/LiveWriteSyncAPI.swift'"
+check "fp.unlisted" "Invariant: folder-scoped create keeps the folder's kind (notes/bookmarks stay unlisted)" \
+  "grep -q 'defaultPostTypeForFolderMode' '$ROOT/src/lib/store.ts'"
+
+# --- Explicit non-goals stay absent ---
 check "nongoal.cloudkit" "Non-goal: no CloudKit document storage" \
   "! grep -rqi 'import CloudKit' '$MAC/Sources'"
 
-# --- House rule: no em dashes in the Apple docs ---
-check "style.no-em-dash" "Style: no em dashes in Apple platform docs" \
-  "! grep -lq $'\\u2014' '$ROOT/docs/apple-platform-plan.md' '$ROOT/docs/apple-workspace.md' '$ROOT/docs/apple-platform-evals.md' 2>/dev/null"
+# --- House rule: no em dashes in the Apple / File Provider docs ---
+check "style.no-em-dash" "Style: no em dashes in Apple platform + File Provider docs" \
+  "! grep -lq $'\\u2014' '$ROOT/docs/apple-platform-plan.md' '$ROOT/docs/apple-workspace.md' '$ROOT/docs/apple-platform-evals.md' '$ROOT/docs/file-provider-plan.md' '$ROOT/docs/file-provider-portal-step.md' 2>/dev/null"
 
 echo
 echo "=== Apple platform plan acceptance matrix ==="
