@@ -57,23 +57,35 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
         for observer: any NSFileProviderChangeObserver,
         from syncAnchor: NSFileProviderSyncAnchor
     ) {
-        let container = self.container
+        // The /changes cursor tells us THAT the workspace moved, not which items,
+        // so we cannot emit a precise per-anchor delta. Re-listing survivors via
+        // didUpdate would never report DELETIONS: a post removed on the web would
+        // linger as a Finder ghost, and editing it PUTs to a dead id in a retry
+        // loop. So when something HAS changed we expire the anchor, which makes
+        // the system throw its state away and call enumerateItems for a full
+        // reconcile that drops the deleted item cleanly.
+        //
+        // But the system probes for changes on every idle tick. Expiring
+        // unconditionally forces a full re-enumeration each time, even when
+        // nothing moved. So first compare the supplied anchor to the current
+        // cursor: if they match, finish with no changes; only expire when they
+        // differ. The workspace is small, so the full re-list on a real change
+        // is cheap.
         let core = self.core
         Task {
-            let anchorResult = await core.currentCursor()
-            switch await core.children(of: container) {
-            case .success(let items):
-                // The /changes cursor tells us THAT the workspace moved and the
-                // new cursor, not which items. We re-list the container as
-                // updates; the system diffs against what it holds to surface
-                // renames and (on folder re-enumeration) deletions. A precise
-                // per-anchor delta is later (Phase 4) work.
-                observer.didUpdate(items.map(WriteFileProviderItem.init))
-                let anchor = (try? anchorResult.get())
-                    .map { NSFileProviderSyncAnchor(Data($0.utf8)) } ?? syncAnchor
-                observer.finishEnumeratingChanges(upTo: anchor, moreComing: false)
-            case .failure(let error):
-                observer.finishEnumeratingWithError(Self.bridge(error))
+            let expired = NSError(
+                domain: NSFileProviderErrorDomain,
+                code: NSFileProviderError.syncAnchorExpired.rawValue)
+            switch await core.currentCursor() {
+            case .success(let cursor):
+                if syncAnchor.rawValue == Data(cursor.utf8) {
+                    observer.finishEnumeratingChanges(upTo: syncAnchor, moreComing: false)
+                } else {
+                    observer.finishEnumeratingWithError(expired)
+                }
+            case .failure:
+                // Cursor unknown: fall back to the deletion-correct full reconcile.
+                observer.finishEnumeratingWithError(expired)
             }
         }
     }
@@ -84,9 +96,11 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
         case .notFound:
             return fp(.noSuchItem)
         case .conflict:
-            // The base version was stale (412). The framework re-reads and
-            // retries the edit against the current version.
-            return fp(.serverUnreachable)
+            // The base version was stale (412). versionNoLongerAvailable tells
+            // the framework to re-read the current version and re-apply, instead
+            // of retrying the same stale base hash forever (serverUnreachable
+            // would loop).
+            return fp(.versionNoLongerAvailable)
         case .rejected(let message):
             // The bytes themselves are the problem (400); retrying is futile, so
             // do not use a transient FP error that would loop.

@@ -51,6 +51,11 @@ final class SyncEngine {
     private struct IdentityScan {
         var index: SyncIndex
         var unreadableRelativePaths: [String]
+        /// Posts whose move PATCH did not land this pass. Their local file sits
+        /// at a new path but the server still has the old folder, so the push
+        /// pass must neither adopt the new path (which would settle the move and
+        /// stop it retrying) nor re-POST the file as new.
+        var failedMovePatchIds: Set<String> = []
     }
 
     /// Dot-prefixed so the new-file scan never sees it; its absence next to a
@@ -117,12 +122,25 @@ final class SyncEngine {
     private let queue = DispatchQueue(label: "com.example.write.mac.sync", qos: .utility)
     private let store: StateStore
 
+    /// Sentinel index hash meaning "the local file is not known to match the
+    /// server render; the next pull MUST re-download it before any push acts".
+    /// A real content hash is a non-empty hex string, so this never collides
+    /// with one: `guard item.hash != entry.hash` in the pull always proceeds,
+    /// and the push edits loop skips it.
+    static let needsPullHash = ""
+
     /// nil when not linked; rebuilt each pass so sign in/out needs no plumbing.
     var makeClient: () -> SyncClient? = { nil }
     var syncRootProvider: () -> URL = {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write", isDirectory: true)
     }
     var workspaceLocationProvider: () -> WorkspaceLocation? = { nil }
+
+    /// Test seam: when set and it returns true for a moved file's relative path,
+    /// the post-move convergence read is treated as if the local file were
+    /// unreadable (localHash nil), to exercise the "needs pull" sentinel path.
+    /// nil in production, so the real read runs.
+    var convergenceReadShouldFail: ((String) -> Bool)?
 
     /// UI hooks. Delivered on `callbackQueue` (main by default); headless
     /// sets it nil to get inline delivery, since no runloop spins there.
@@ -347,7 +365,9 @@ final class SyncEngine {
         }
 
         materializeFolders(workspace.folders, workspace: workspaceDescriptor, root: root, summary: &summary)
-        let identityScan = reconcileIndexedMoves(root: root, index: &index, summary: &summary)
+        let identityScan = reconcileIndexedMoves(
+            root: root, client: client, workspace: workspaceDescriptor,
+            index: &index, summary: &summary)
 
         if kind == .full {
             for folder in workspace.folders {
@@ -466,7 +486,11 @@ final class SyncEngine {
                     )
                     return
                 }
-                preserveAsConflictedCopy(expectedURL)
+                if preserveAsConflictedCopy(expectedURL).blocksOverwrite {
+                    summary.errors += 1
+                    activity("Could not set aside your local \(expectedRel); leaving it untouched and retrying")
+                    return // never download over an edit we failed to preserve
+                }
                 summary.conflicts += 1
             case .unreadable(let error):
                 summary.errors += 1
@@ -514,8 +538,12 @@ final class SyncEngine {
                 } else {
                     try? fm.createDirectory(at: expectedURL.deletingLastPathComponent(),
                                             withIntermediateDirectories: true)
-                    if fm.fileExists(atPath: expectedURL.path) {
-                        preserveAsConflictedCopy(expectedURL) // never overwrite a stranger
+                    if fm.fileExists(atPath: expectedURL.path),
+                       preserveAsConflictedCopy(expectedURL).blocksOverwrite {
+                        // Could not set the stranger aside: do not clobber it.
+                        summary.errors += 1
+                        activity("Could not set aside the file at \(expectedRel); not renaming \(entry.relativePath) over it")
+                        return
                     }
                     do {
                         try moveItem(at: oldURL, to: expectedURL, root: root)
@@ -603,8 +631,17 @@ final class SyncEngine {
 
         // Both sides changed: the server copy wins the canonical name, the
         // local edit survives as a conflicted copy that is never auto-pushed.
-        if let kept = preserveAsConflictedCopy(activeURL) {
+        // If it cannot be preserved, leave the canonical file untouched and
+        // retry next pass rather than overwrite the unsynced local edit.
+        switch preserveAsConflictedCopy(activeURL) {
+        case .preserved(let kept):
             activity("Conflict on \(activeRel); your edit is \(kept.lastPathComponent)")
+        case .nothingToPreserve:
+            break
+        case .failed:
+            summary.errors += 1
+            activity("Conflict on \(activeRel) but could not preserve your edit; leaving it and retrying")
+            return
         }
         if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
             entry.hash = written
@@ -645,20 +682,36 @@ final class SyncEngine {
         }) {
             identityScan = scanIdentityFiles(root: root, index: index)
         }
-        // Circuit breaker: a pass that would erase most of the workspace is
-        // far more likely to be looking at an evicted, half-materialized, or
-        // wrong root than at a person who deleted nearly everything at once.
-        // Stand down on deletes; every other sync direction still runs.
-        let missingCount = index.entries.values.filter {
-            !fm.fileExists(atPath: root.appendingPathComponent($0.relativePath).path)
-        }.count
-        let deletesPaused = missingCount >= 10 && missingCount * 2 >= index.entries.count
-        if deletesPaused {
-            activity("Sync paused server deletes: \(missingCount) of \(index.entries.count) indexed files are missing locally. If this is intentional, delete the items in the app; if not, restore the files and sync will recover.")
-        }
-        for (postId, entry) in index.entries where !deletesPaused {
+        // Deletion safety is two layers. Primary: a two-strike rule. A local
+        // deletion only propagates on the SECOND consecutive completed scan that
+        // finds the file gone, so a transient disappearance (eviction, a slow
+        // coordinator read, a half-materialized mirror on one pass) never erases
+        // the server on first sight of absence, at ANY workspace size (1/1 and
+        // 2/3 included). A genuine delete still lands on the next scan. Backstop:
+        // a high-fraction breaker for a catastrophic majority loss of a large
+        // workspace. It pauses on the FIRST such scan but STILL advances the
+        // two-strike memory, so a SUSTAINED large deletion (the same big set
+        // still gone next scan) is allowed through on the second scan while a
+        // transient half-materialized mirror that recovers clears the memory.
+        let total = index.entries.count
+        let previouslyMissing = index.previouslyMissing ?? []
+
+        // Pass 1: classify every indexed file absent at its recorded path.
+        // Reconcile moves in place (not deletions) and gather the set CONFIRMED
+        // gone past the move/legacy/unreadable/parent-readable guards. Only this
+        // set drives the two-strike deletes and the high-fraction backstop.
+        var confirmedMissing = Set<String>()
+        for (postId, entry) in Array(index.entries) {
             let url = root.appendingPathComponent(entry.relativePath)
             guard !fm.fileExists(atPath: url.path) else { continue }
+            if identityScan?.failedMovePatchIds.contains(postId) == true {
+                // Its move PATCH failed this pass: the file sits at a new path
+                // but the server keeps the old folder. Leave the index at the old
+                // path (do NOT adopt the move, do NOT read it as a deletion) so
+                // the next scan retries the PATCH.
+                activity("Move of \(entry.relativePath) is not on the server yet; will retry next sync")
+                continue
+            }
             if let found = identityScan?.index.entries[postId] {
                 var moved = entry
                 moved.relativePath = found.relativePath
@@ -681,20 +734,62 @@ final class SyncEngine {
                 activity("Cannot confirm \(entry.relativePath) was deleted (unreadable parent?); skipping server delete")
                 continue
             }
-            switch client.deleteFile(postId: postId) {
-            case .success:
-                index.entries.removeValue(forKey: postId)
-                summary.pushed += 1
-                activity("Deleted \(entry.relativePath) on the server")
-            case .failure(let error):
-                summary.errors += 1
-                activity("Could not delete \(entry.relativePath): \(error)")
+            confirmedMissing.insert(postId)
+        }
+
+        // High-fraction backstop. A large majority loss is suspect on first
+        // sight, so pause, but only when the SAME set was not already confirmed
+        // last scan: a sustained loss (identical set still gone) proceeds, a
+        // transient one that recovers or shifts pauses again. Small workspaces
+        // (1/1, 2/3) never trip this and stay on the plain two-strike rule.
+        let massLossThreshold = 10
+        let highFraction = confirmedMissing.count >= massLossThreshold
+            && confirmedMissing.count * 2 >= total
+        let sustainedLargeDelete = highFraction && confirmedMissing.isSubset(of: previouslyMissing)
+        let deletesPaused = highFraction && !sustainedLargeDelete
+        if deletesPaused {
+            activity("Sync paused server deletes: \(confirmedMissing.count) of \(total) indexed files are missing locally. If this is intentional and they are still gone at the next sync, the deletion will go through; if not, restore the files and sync will recover.")
+        }
+
+        // Pass 2: the two-strike deletes. A post deletes only if it was ALSO
+        // confirmed gone last completed scan.
+        var missingThisScan = Set<String>()
+        if !deletesPaused {
+            for postId in confirmedMissing {
+                guard let entry = index.entries[postId] else { continue }
+                missingThisScan.insert(postId)
+                guard previouslyMissing.contains(postId) else {
+                    activity("Noticed \(entry.relativePath) is gone; will delete on the server if it is still gone next sync")
+                    continue
+                }
+                switch client.deleteFile(postId: postId, ifMatch: entry.hash) {
+                case .success:
+                    index.entries.removeValue(forKey: postId)
+                    missingThisScan.remove(postId) // gone for good; nothing to carry
+                    summary.pushed += 1
+                    activity("Deleted \(entry.relativePath) on the server")
+                case .failure(let error):
+                    summary.errors += 1
+                    activity("Could not delete \(entry.relativePath): \(error)")
+                }
             }
         }
+        // Carry the confirmed-missing set forward. A paused high-fraction scan
+        // records the FULL confirmed set (so a sustained loss is recognized and
+        // allowed next scan); an unpaused scan carries what is still gone after
+        // its deletes.
+        index.previouslyMissing = deletesPaused
+            ? (confirmedMissing.isEmpty ? nil : confirmedMissing)
+            : (missingThisScan.isEmpty ? nil : missingThisScan)
 
         // 2. Local edits: file hash moved off the indexed hash.
         for (postId, entry) in index.entries {
             var entry = entry
+            // A "needs pull" sentinel means a prior move could not converge the
+            // local file with the server render. Skip it so no stale-If-Match
+            // PUT (or rename-reverting old-slug PUT) is emitted before the pull
+            // phase has re-downloaded and reconciled it.
+            guard entry.hash != Self.needsPullHash else { continue }
             let url = root.appendingPathComponent(entry.relativePath)
             guard let data = try? readData(url, root: root) else { continue }
             let localHash = MarkdownIdentityCodec.syncHash(for: data)
@@ -731,14 +826,21 @@ final class SyncEngine {
                 var fileURL = url
                 if newRel != entry.relativePath {
                     let target = root.appendingPathComponent(newRel)
-                    if fm.fileExists(atPath: target.path) { preserveAsConflictedCopy(target) }
-                    do {
-                        try moveItem(at: fileURL, to: target, root: root)
-                        fileURL = target
-                        entry.relativePath = newRel
-                    } catch {
+                    if fm.fileExists(atPath: target.path),
+                       preserveAsConflictedCopy(target).blocksOverwrite {
+                        // Could not set the stranger aside: keep our file where it
+                        // is (canonicalization below still converges on it).
                         summary.errors += 1
-                        activity("Could not move \(entry.relativePath) to \(newRel): \(error.localizedDescription)")
+                        activity("Could not set aside the file at \(newRel); leaving \(entry.relativePath) in place")
+                    } else {
+                        do {
+                            try moveItem(at: fileURL, to: target, root: root)
+                            fileURL = target
+                            entry.relativePath = newRel
+                        } catch {
+                            summary.errors += 1
+                            activity("Could not move \(entry.relativePath) to \(newRel): \(error.localizedDescription)")
+                        }
                     }
                 }
                 // Converge canonicalization: rewrite the local file only when
@@ -760,9 +862,18 @@ final class SyncEngine {
                 activity("Pushed \(entry.relativePath)")
             case .success(.conflict):
                 // 412: the post changed underneath us. Same resolution as the
-                // pull-side conflict.
-                if let kept = preserveAsConflictedCopy(url) {
+                // pull-side conflict. If the local edit cannot be preserved,
+                // leave the file and its old index hash so the next pass retries,
+                // rather than overwrite the unsynced edit with the server copy.
+                switch preserveAsConflictedCopy(url) {
+                case .preserved(let kept):
                     activity("Conflict on \(entry.relativePath); your edit is \(kept.lastPathComponent)")
+                case .nothingToPreserve:
+                    break
+                case .failed:
+                    summary.errors += 1
+                    activity("Conflict on \(entry.relativePath) but could not preserve your edit; leaving it and retrying")
+                    continue
                 }
                 if let written = download(postId, to: url, client: client, folderId: entry.folderId, kind: entry.kind) {
                     entry.hash = written
@@ -814,6 +925,7 @@ final class SyncEngine {
         // 4. New local files: .md files in the visible workspace with no
         // index row.
         let indexedPaths = Set(index.entries.values.map { $0.relativePath })
+        let indexedIds = Set(index.entries.keys)
         for fileURL in WorkspaceLayout.markdownFiles(at: root) {
             guard !isDirectory(fileURL) else { continue }
             let name = fileURL.lastPathComponent
@@ -821,6 +933,20 @@ final class SyncEngine {
             guard !isConflictedCopy(fileURL) else { continue } // never auto-pushed
             guard let rel = WorkspaceLayout.relativePath(for: fileURL, under: root) else { continue }
             guard !indexedPaths.contains(rel) else { continue }
+            // A file that already carries an injected item id present in the index
+            // is a KNOWN post (a copy, or one whose move PATCH has not landed and
+            // whose old path a pull may have restored), never a new file. POSTing
+            // it would duplicate the post, so never treat it as new: leave it for
+            // reconcileIndexedMoves to route as a move (or drop it if it is a
+            // stray copy). Reading the candidate here is cheap; step 4 only
+            // reaches files that are not already indexed by path.
+            if let data = try? readData(fileURL, root: root),
+               let text = String(data: data, encoding: .utf8),
+               let identity = MarkdownIdentityCodec.extract(from: text),
+               indexedIds.contains(identity.itemId) {
+                activity("Skipping new-file publish for \(rel); it carries a known item id and will be reconciled as a move")
+                continue
+            }
             guard let classification = WorkspaceLayout.classify(relativePath: rel, workspace: workspaceDescriptor),
                   let folder = folderById[classification.folder.id] else { continue }
             pushNewFile(fileURL, rel: rel, folder: folder, workspace: workspaceDescriptor, client: client,
@@ -835,7 +961,9 @@ final class SyncEngine {
     ) -> WorkspaceFolder? {
         let localName = dir.lastPathComponent
         let localPath = childFolderPath(parentPath: parent.path, name: localName)
-        switch client.createFolder(parentPath: parent.path, name: localName) {
+        // The folder's workspace-relative path is stable across retries, so a
+        // lost create response does not spawn a duplicate folder on retry.
+        switch client.createFolder(parentPath: parent.path, name: localName, idempotencyKey: "folder:\(localPath)") {
         case .failure(let error):
             summary.errors += 1
             activity("Could not create folder \(localPath): \(error)")
@@ -880,6 +1008,18 @@ final class SyncEngine {
         }
         let localHash = MarkdownIdentityCodec.syncHash(for: data)
         if rejectedContent[rel] == localHash { return }
+
+        // Authoritative known-id guard, on THIS read (no TOCTOU with the outer
+        // step-4 scan, whose read may have transiently failed or whose index
+        // snapshot may be stale). A file already carrying an item id present in
+        // the index is a KNOWN post (a copy, or one whose move has not landed),
+        // never a new file: POSTing it would duplicate the post. Leave it for
+        // move reconciliation.
+        let injectedId = MarkdownIdentityCodec.extract(from: textWithIdentity)?.itemId
+        if let injectedId, index.entries[injectedId] != nil {
+            activity("Skipping new-file publish for \(rel); it carries a known item id and will be reconciled as a move")
+            return
+        }
         let text = MarkdownIdentityCodec.strip(from: textWithIdentity)
 
         // A file in notes/ without a kind is a note, and so on: the folder it
@@ -887,7 +1027,13 @@ final class SyncEngine {
         // default already, so blog-mode files go up as-is.)
         let body = bodyEnsuringKind(text, folderMode: folder.mode)
 
-        switch client.postFile(body: body) {
+        // A stable key per logical create: an already-injected item id if the
+        // file carries one, else its workspace-relative path. A lost POST
+        // response then returns the original item on retry instead of
+        // publishing the post twice.
+        let idempotencyKey = injectedId ?? "post:\(rel)"
+
+        switch client.postFile(body: body, folderId: folder.id, idempotencyKey: idempotencyKey) {
         case .success(.saved(let item)):
             rejectedContent.removeValue(forKey: rel)
             guard let id = item.id else {
@@ -904,15 +1050,22 @@ final class SyncEngine {
             var target = fileURL
             var indexedRel = rel
             if newRel != rel {
-                target = root.appendingPathComponent(newRel)
-                if fm.fileExists(atPath: target.path) { preserveAsConflictedCopy(target) }
-                do {
-                    try moveItem(at: fileURL, to: target, root: root)
-                    indexedRel = newRel
-                } catch {
+                let destination = root.appendingPathComponent(newRel)
+                if fm.fileExists(atPath: destination.path),
+                   preserveAsConflictedCopy(destination).blocksOverwrite {
+                    // Could not set the stranger aside: keep our file at its
+                    // current path (canonicalization below converges on it).
                     summary.errors += 1
-                    activity("Could not move \(rel) to \(newRel): \(error.localizedDescription)")
-                    target = fileURL
+                    activity("Could not set aside the file at \(newRel); leaving \(rel) in place")
+                } else {
+                    do {
+                        try moveItem(at: fileURL, to: destination, root: root)
+                        target = destination
+                        indexedRel = newRel
+                    } catch {
+                        summary.errors += 1
+                        activity("Could not move \(rel) to \(newRel): \(error.localizedDescription)")
+                    }
                 }
             }
             // Converge on the server's canonical render (it adds schema,
@@ -1006,11 +1159,27 @@ final class SyncEngine {
         return "---\nkind: \(kind)\n---\n\n" + text
     }
 
-    /// "<slug> (conflicted copy 2026-07-06 1423).md" next to the original.
-    @discardableResult
-    private func preserveAsConflictedCopy(_ url: URL) -> URL? {
+    /// The outcome of trying to move a local file aside before the server copy
+    /// overwrites the canonical path. The caller MUST distinguish these: a `nil`
+    /// that lumped "nothing was there" together with "the move failed" let a
+    /// failed preservation fall through to a destructive download, losing the
+    /// local edit. `.failed` blocks the overwrite; the other two allow it.
+    enum ConflictPreservation {
+        case preserved(URL)     // the local file is safe at this new path
+        case nothingToPreserve  // no file at the path; writing over it is safe
+        case failed             // a file was there but could not be moved: DO NOT overwrite
+
+        /// True only when a real file could not be set aside, so replacing the
+        /// canonical path now would destroy unsynced local content.
+        var blocksOverwrite: Bool {
+            if case .failed = self { return true }
+            return false
+        }
+    }
+
+    private func preserveAsConflictedCopy(_ url: URL) -> ConflictPreservation {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path) else { return nil }
+        guard fm.fileExists(atPath: url.path) else { return .nothingToPreserve }
         let stem = url.deletingPathExtension().lastPathComponent
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
@@ -1026,9 +1195,9 @@ final class SyncEngine {
         }
         do {
             try moveItem(at: url, to: candidate, root: syncRootProvider())
-            return candidate
+            return .preserved(candidate)
         } catch {
-            return nil
+            return .failed
         }
     }
 
@@ -1073,18 +1242,24 @@ final class SyncEngine {
         store.saveIndex(index)
     }
 
-    private func reconcileIndexedMoves(root: URL, index: inout SyncIndex, summary: inout SyncSummary) -> IdentityScan? {
+    private func reconcileIndexedMoves(
+        root: URL, client: SyncClient, workspace: WorkspaceDescriptor,
+        index: inout SyncIndex, summary: inout SyncSummary
+    ) -> IdentityScan? {
         let fm = FileManager.default
         let missingIds = index.entries.compactMap { postId, entry -> String? in
             fm.fileExists(atPath: root.appendingPathComponent(entry.relativePath).path) ? nil : postId
         }
         guard !missingIds.isEmpty else { return nil }
-        let scan = scanIdentityFiles(root: root, index: index)
+        var scan = scanIdentityFiles(root: root, index: index)
         for postId in missingIds {
             guard let diskEntry = scan.index.entries[postId] else { continue }
             guard var entry = index.entries[postId],
                   entry.relativePath != diskEntry.relativePath else { continue }
             let previous = entry.relativePath
+            let oldFolderId = WorkspaceLayout.classify(relativePath: previous, workspace: workspace)?.folder.id
+                ?? entry.folderId
+            let newFolderId = WorkspaceLayout.classify(relativePath: diskEntry.relativePath, workspace: workspace)?.folder.id
             entry.relativePath = diskEntry.relativePath
             entry.fileMtime = diskEntry.fileMtime
             entry.folderId = diskEntry.folderId ?? entry.folderId
@@ -1093,9 +1268,78 @@ final class SyncEngine {
             if ensureFrontmatterReflectsPath(url: url, relativePath: diskEntry.relativePath) {
                 entry.fileMtime = fileMtime(url)
             }
-            index.entries[postId] = entry
-            activity("Detected moved file \(previous) to \(diskEntry.relativePath)")
-            summary.pushed += 1
+            // A move BETWEEN folders leaves the bytes (and their hash) unchanged,
+            // so the push-side PUT never fires and the server keeps the file in
+            // its old folder: the next pull would rename it straight back. Tell
+            // the server the new folder now, guarded by the base hash as If-Match
+            // so a stale move is rejected (412 -> conflict). ONLY commit the
+            // local index change and count it as pushed when the PATCH succeeds:
+            // adopting the new folder/path on a failed PATCH would block a clean
+            // retry and let the file snap back while looking synced. On failure
+            // the index is left as-is (the old folder/path), so the next scan
+            // retries, or the pull reverts the local move.
+            if let newFolderId, newFolderId != oldFolderId {
+                let newSlug = url.deletingPathExtension().lastPathComponent
+                switch client.patchFile(postId: postId, folderId: newFolderId, slug: newSlug, ifMatch: entry.hash) {
+                case .success(.saved(let item)):
+                    entry.folderId = newFolderId
+                    entry.kind = item.kind
+                    // A move+rename changes the server slug and thus its rendered
+                    // hash, and the local slug frontmatter was rewritten above.
+                    // We must converge on the server's post-rename render.
+                    let localHash: String?
+                    if convergenceReadShouldFail?(diskEntry.relativePath) == true {
+                        localHash = nil
+                    } else {
+                        localHash = (try? readData(url, root: root))
+                            .map { MarkdownIdentityCodec.syncHash(for: $0) }
+                    }
+                    if item.hash == localHash {
+                        // The local file already byte-matches the server render.
+                        entry.hash = item.hash
+                    } else if let written = download(postId, to: url, client: client,
+                                                     folderId: newFolderId, kind: item.kind) {
+                        // Downloaded the server render onto the moved path.
+                        entry.hash = written
+                        entry.fileMtime = fileMtime(url)
+                    } else {
+                        // The convergence download FAILED (the GET failed, or the
+                        // local file is unreadable so we cannot compare). Trusting
+                        // EITHER hash is wrong: the local hash lets a later push
+                        // carry a stale If-Match, and item.hash makes the next
+                        // pull exit early (item.hash == entry.hash) so a push can
+                        // revert the rename with pre-rename local bytes. Mark the
+                        // entry "needs pull": the next full pass's pull (which runs
+                        // before push) re-downloads the server render and converges
+                        // authoritatively, and the push edits loop skips the entry
+                        // until then. A genuine unsynced local edit is set aside as
+                        // a conflicted copy by the pull before the render lands, so
+                        // no edit is lost and the rename is never reverted.
+                        entry.hash = Self.needsPullHash
+                    }
+                    index.entries[postId] = entry
+                    summary.pushed += 1
+                    activity("Moved \(previous) to \(diskEntry.relativePath) on the server")
+                case .success(.conflict):
+                    summary.conflicts += 1
+                    scan.failedMovePatchIds.insert(postId)
+                    activity("Could not move \(diskEntry.relativePath) on the server: it changed underneath us; will retry")
+                case .success(.rejected(let message)):
+                    summary.errors += 1
+                    scan.failedMovePatchIds.insert(postId)
+                    activity("Server rejected the move of \(diskEntry.relativePath): \(message)")
+                case .failure(let error):
+                    summary.errors += 1
+                    scan.failedMovePatchIds.insert(postId)
+                    activity("Could not move \(diskEntry.relativePath) on the server: \(error)")
+                }
+            } else {
+                // Same-folder rename: no PATCH needed (the slug frontmatter
+                // rewrite rides the PUT path). Commit the new local path.
+                index.entries[postId] = entry
+                summary.pushed += 1
+                activity("Detected moved file \(previous) to \(diskEntry.relativePath)")
+            }
         }
         return scan
     }

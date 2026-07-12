@@ -96,6 +96,19 @@ public struct WriteItem: Equatable, Sendable {
     // file, so markdown is correct for notes and bookmarks too.
     public static let folderTypeIdentifier = "public.folder"
     public static let markdownTypeIdentifier = "net.daringfireball.markdown"
+
+    /// A copy carrying a specific content hash, used when materialized bytes
+    /// come from a GET whose ETag may differ from the enumeration-time manifest
+    /// hash. The returned item's version must describe the bytes it accompanies.
+    public func withContentHash(_ hash: String?) -> WriteItem {
+        WriteItem(
+            identifier: identifier, parentIdentifier: parentIdentifier,
+            filename: filename, isFolder: isFolder, kind: kind,
+            typeIdentifier: typeIdentifier, serverId: serverId,
+            contentHash: hash ?? contentHash, documentSize: documentSize,
+            creationDate: creationDate, contentModificationDate: contentModificationDate,
+            capabilities: capabilities)
+    }
 }
 
 // MARK: Mapping from wire types

@@ -26,11 +26,11 @@ private final class FakeAPI: WriteSyncAPI, @unchecked Sendable {
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError> {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
     }
-    func createFile(body: String, folderId: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
-    func patchFile(postId: String, folderId: String?, slug: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
-    func deleteFile(postId: String) async -> Result<Void, WriteSyncError> { .success(()) }
-    func createFolder(parentPath: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
+    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> { .success(()) }
+    func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
     func renameFolder(folderId: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
 }
 
@@ -129,14 +129,39 @@ final class EnumeratorAdapterTests: XCTestCase {
         XCTAssertEqual(anchor.map { String(decoding: $0.rawValue, as: UTF8.self) }, "c42")
     }
 
-    func testEnumerateChangesRelistsAndFinishesAtFreshAnchor() {
+    func testEnumerateChangesExpiresAnchorWhenCursorMoved() {
+        // When the supplied anchor differs from the current cursor the workspace
+        // HAS moved, but the /changes cursor cannot produce a precise per-anchor
+        // delta, so re-listing survivors would never report deletions (a
+        // web-deleted post would linger as a ghost). Expiring the anchor makes
+        // the system throw its state away and call enumerateItems for a clean
+        // full reconcile.
         let api = standardAPI(); api.cursor = "c7"
         let exp = expectation(description: "changes")
         let obs = ChangeObserver(exp)
         adapter(.folder("blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("old".utf8)))
         wait(for: [exp], timeout: 5)
-        XCTAssertEqual(Set(obs.updated.map { $0.itemIdentifier.rawValue }), ["folder:drafts", "file:p1", "file:p2"])
-        XCTAssertEqual(obs.anchor.map { String(decoding: $0.rawValue, as: UTF8.self) }, "c7")
+        XCTAssertTrue(obs.updated.isEmpty, "must not emit stale survivor updates")
+        XCTAssertNil(obs.anchor, "must not finish at a fresh anchor")
+        XCTAssertEqual((obs.error as NSError?)?.domain, NSFileProviderErrorDomain)
+        XCTAssertEqual((obs.error as NSError?)?.code, NSFileProviderError.syncAnchorExpired.rawValue)
+    }
+
+    func testEnumerateChangesFinishesQuietlyWhenAnchorMatchesCursor() {
+        // The system probes for changes on every idle tick. When the supplied
+        // anchor already equals the current cursor, nothing moved, so the
+        // enumerator must finish with no changes and no error rather than expire
+        // the anchor and trigger a needless full re-enumeration.
+        let api = standardAPI(); api.cursor = "c9"
+        let exp = expectation(description: "changes")
+        let obs = ChangeObserver(exp)
+        adapter(.folder("blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("c9".utf8)))
+        wait(for: [exp], timeout: 5)
+        XCTAssertNil(obs.error, "a matching anchor must not error")
+        XCTAssertTrue(obs.updated.isEmpty)
+        XCTAssertTrue(obs.deleted.isEmpty)
+        XCTAssertEqual(obs.anchor.map { String(decoding: $0.rawValue, as: UTF8.self) }, "c9",
+                       "must finish at the same anchor")
     }
 
     // MARK: error bridging

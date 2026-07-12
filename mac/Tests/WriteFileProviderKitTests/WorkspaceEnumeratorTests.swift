@@ -109,6 +109,34 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         XCTAssertEqual(item.kind, .article)
     }
 
+    func testDuplicatedIdAcrossManifestsDedupesToCurrentParent() async {
+        // A post that moved between the sequential fetches of its old and new
+        // folder can land in BOTH manifests. The working set must list it once,
+        // and single-item lookup must report the CURRENT parent (the folder
+        // fetched later, since the move happened after the earlier fetch).
+        let api = Fixtures.standardWorkspace()
+        // p1 is already listed under "blog" (fetched before "notes"); also list
+        // it under "notes" as the newer, current parent.
+        api.manifests["notes"] = (api.manifests["notes"] ?? []) + [
+            Fixtures.entry(id: "p1", file: "hello.md", kind: "note", title: "Hello")
+        ]
+        let e = WorkspaceEnumerator(api: api)
+
+        guard case .success(let items) = await e.children(of: .workingSet) else {
+            return XCTFail("working set enumeration failed")
+        }
+        XCTAssertEqual(items.filter { $0.identifier == .file("p1") }.count, 1,
+                       "a duplicated id must appear only once")
+        XCTAssertEqual(items.first(where: { $0.identifier == .file("p1") })?.parentIdentifier,
+                       .folder("notes"), "the current (later-fetched) folder wins")
+
+        guard case .success(let item) = await e.item(for: .file("p1")) else {
+            return XCTFail("single-item lookup failed")
+        }
+        XCTAssertEqual(item.parentIdentifier, .folder("notes"),
+                       "findFile must prefer the current parent, not the first match")
+    }
+
     func testItemForMissingFileIsNotFound() async {
         let api = Fixtures.standardWorkspace()
         let e = WorkspaceEnumerator(api: api)

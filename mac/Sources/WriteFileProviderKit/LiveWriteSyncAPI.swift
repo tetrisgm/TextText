@@ -70,15 +70,13 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     // MARK: Writes (Phase 3 wires these into the extension)
 
     public func createFile(
-        body: String, folderId: String?
+        body: String, folderId: String?, idempotencyKey: String?
     ) async -> Result<WriteManifestItem, WriteSyncError> {
         var path = "/api/sync/v1/files"
         if let folderId, !folderId.isEmpty { path += "?folder=\(escape(folderId))" }
-        switch await send(
-            "POST", path,
-            headers: ["Content-Type": "text/markdown; charset=utf-8"],
-            body: Data(body.utf8)
-        ) {
+        var headers = ["Content-Type": "text/markdown; charset=utf-8"]
+        if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
+        switch await send("POST", path, headers: headers, body: Data(body.utf8)) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             if reply.status == 400 { return .failure(.rejected(reply.errorMessage)) }
@@ -88,7 +86,7 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     }
 
     public func patchFile(
-        postId: String, folderId: String?, slug: String?
+        postId: String, folderId: String?, slug: String?, ifMatch hash: String?
     ) async -> Result<WriteManifestItem, WriteSyncError> {
         var json: [String: Any] = [:]
         if let folderId, !folderId.isEmpty { json["folder"] = folderId }
@@ -96,12 +94,15 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         guard let body = try? JSONSerialization.data(withJSONObject: json) else {
             return .failure(.decode("could not encode request body"))
         }
+        var headers = ["Content-Type": "application/json"]
+        if let hash { headers["If-Match"] = "\"\(hash)\"" }
         switch await send(
             "PATCH", "/api/sync/v1/files/\(escape(postId))",
-            headers: ["Content-Type": "application/json"], body: body
+            headers: headers, body: body
         ) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
+            if reply.status == 412 { return .failure(.conflict) }
             if reply.status == 404 { return .failure(.notFound) }
             if reply.status == 400 { return .failure(.rejected(reply.errorMessage)) }
             guard reply.status == 200 else { return .failure(reply.httpError) }
@@ -123,32 +124,38 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             if reply.status == 412 { return .failure(.conflict) }
+            if reply.status == 404 { return .failure(.notFound) }
             if reply.status == 400 { return .failure(.rejected(reply.errorMessage)) }
             guard reply.status == 200 else { return .failure(reply.httpError) }
             return decode(ItemEnvelope.self, reply.data).map { $0.item }
         }
     }
 
-    public func deleteFile(postId: String) async -> Result<Void, WriteSyncError> {
-        switch await send("DELETE", "/api/sync/v1/files/\(escape(postId))") {
+    public func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> {
+        var headers: [String: String] = [:]
+        if let hash { headers["If-Match"] = "\"\(hash)\"" }
+        switch await send("DELETE", "/api/sync/v1/files/\(escape(postId))", headers: headers) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
+            // 412: the row moved on underneath us. Surface it as a conflict (the
+            // adapter maps that to versionNoLongerAvailable) instead of a generic
+            // HTTP error that would read as serverUnreachable and loop.
+            if reply.status == 412 { return .failure(.conflict) }
             if reply.status == 204 || reply.status == 404 { return .success(()) }
             return .failure(reply.httpError)
         }
     }
 
     public func createFolder(
-        parentPath: String, name: String
+        parentPath: String, name: String, idempotencyKey: String?
     ) async -> Result<WriteWorkspaceFolder, WriteSyncError> {
         let json: [String: Any] = ["parent_path": parentPath, "name": name]
         guard let body = try? JSONSerialization.data(withJSONObject: json) else {
             return .failure(.decode("could not encode request body"))
         }
-        switch await send(
-            "POST", "/api/sync/v1/folders",
-            headers: ["Content-Type": "application/json"], body: body
-        ) {
+        var headers = ["Content-Type": "application/json"]
+        if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
+        switch await send("POST", "/api/sync/v1/folders", headers: headers, body: body) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             guard reply.status == 201 else { return .failure(reply.httpError) }

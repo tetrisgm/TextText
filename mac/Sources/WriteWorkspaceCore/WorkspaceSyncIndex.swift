@@ -31,14 +31,23 @@ public struct SyncIndex: Codable, Equatable {
     /// example after an iCloud sign-out re-mirrored into the local fallback),
     /// the index is dropped instead of driving server deletes.
     public var mirrorId: String?
+    /// Post ids that were confirmed locally missing in the PREVIOUS completed
+    /// healthy scan. A local deletion only propagates to the server on the
+    /// second consecutive scan that finds it gone (a two-strike guard), so a
+    /// transient disappearance (eviction, a half-materialized mirror, a slow
+    /// coordinator read) never erases the server on the first sight of absence.
+    /// Optional so an index written before this field decodes cleanly.
+    public var previouslyMissing: Set<String>?
 
     public init(
         entries: [String: IndexEntry] = [:],
         folderETags: [String: String] = [:],
-        mirrorId: String? = nil
+        mirrorId: String? = nil,
+        previouslyMissing: Set<String>? = nil
     ) {
         self.entries = entries
         self.folderETags = folderETags
         self.mirrorId = mirrorId
+        self.previouslyMissing = previouslyMissing
     }
 }

@@ -145,17 +145,31 @@ public struct WorkspaceEnumerator: Sendable {
         case .failure(let e): return .failure(e)
         case .success(let value): ws = value
         }
-        var items = ws.folders.map { WriteItemMapper.item(for: $0, readOnly: readOnly) }
+        let items = ws.folders.map { WriteItemMapper.item(for: $0, readOnly: readOnly) }
+        // Folders are fetched sequentially, so a post that moved between two of
+        // them can surface under BOTH its old and new parent. Dedupe by id and
+        // keep the LATER occurrence: since the move happened after the earlier
+        // folder was fetched, the later fetch reflects the current server
+        // folder. This stops an item appearing under two parents in Finder.
+        var indexById: [WriteItemIdentifier: Int] = [:]
+        var files: [WriteItem] = []
         for folder in ws.folders {
             switch await api.manifest(folderId: folder.id) {
             case .failure(let e): return .failure(e)
             case .success(let entries):
-                items += entries.compactMap {
-                    WriteItemMapper.item(for: $0, inFolder: folder.id, readOnly: readOnly)
+                for entry in entries {
+                    guard let item = WriteItemMapper.item(
+                        for: entry, inFolder: folder.id, readOnly: readOnly) else { continue }
+                    if let existing = indexById[item.identifier] {
+                        files[existing] = item // current parent wins over the stale one
+                    } else {
+                        indexById[item.identifier] = files.count
+                        files.append(item)
+                    }
                 }
             }
         }
-        return .success(items)
+        return .success(items + files)
     }
 
     private func findFile(postId: String) async -> Result<WriteItem, WriteSyncError> {
@@ -164,6 +178,11 @@ public struct WorkspaceEnumerator: Sendable {
         case .failure(let e): return .failure(e)
         case .success(let value): ws = value
         }
+        // Keep scanning every folder rather than returning the first hit: a post
+        // that moved can still linger in its old folder's manifest alongside the
+        // new one. The LATER occurrence (a folder fetched after the move) is the
+        // current parent, so the last match wins.
+        var found: WriteItem?
         for folder in ws.folders {
             switch await api.manifest(folderId: folder.id) {
             case .failure(let e): return .failure(e)
@@ -171,10 +190,11 @@ public struct WorkspaceEnumerator: Sendable {
                 if let entry = entries.first(where: { $0.id == postId }),
                    let item = WriteItemMapper.item(
                        for: entry, inFolder: folder.id, readOnly: readOnly) {
-                    return .success(item)
+                    found = item
                 }
             }
         }
+        if let found { return .success(found) }
         return .failure(.notFound)
     }
 }

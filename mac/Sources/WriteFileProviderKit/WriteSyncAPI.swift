@@ -41,20 +41,25 @@ public protocol WriteSyncAPI: Sendable {
 
     // Write paths (Phase 3).
     /// POST /api/sync/v1/files[?folder=<id>]. A folder id files the new item
-    /// directly into that folder (its mode dictates the kind).
-    func createFile(body: String, folderId: String?) async
+    /// directly into that folder (its mode dictates the kind). A stable
+    /// `idempotencyKey` (sent as Idempotency-Key) makes a lost-response retry
+    /// return the original item instead of creating a duplicate.
+    func createFile(body: String, folderId: String?, idempotencyKey: String?) async
         -> Result<WriteManifestItem, WriteSyncError>
     /// PUT /api/sync/v1/files/{id} with If-Match: a content edit.
     func putFile(postId: String, body: String, ifMatch hash: String) async
         -> Result<WriteManifestItem, WriteSyncError>
     /// PATCH /api/sync/v1/files/{id}: move (folderId) and/or rename (slug)
-    /// without re-sending the body.
-    func patchFile(postId: String, folderId: String?, slug: String?) async
+    /// without re-sending the body. `ifMatch`, when present, guards the change
+    /// against a concurrent metadata edit (412 on mismatch).
+    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async
         -> Result<WriteManifestItem, WriteSyncError>
-    /// DELETE /api/sync/v1/files/{id}.
-    func deleteFile(postId: String) async -> Result<Void, WriteSyncError>
-    /// POST /api/sync/v1/folders: create a subfolder.
-    func createFolder(parentPath: String, name: String) async
+    /// DELETE /api/sync/v1/files/{id}. `ifMatch`, when present, gives
+    /// stale-delete protection (412 when the row moved on underneath us).
+    func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError>
+    /// POST /api/sync/v1/folders: create a subfolder. A stable `idempotencyKey`
+    /// makes a lost-response retry return the original folder.
+    func createFolder(parentPath: String, name: String, idempotencyKey: String?) async
         -> Result<WriteWorkspaceFolder, WriteSyncError>
     /// PATCH /api/sync/v1/folders/{id}: rename a folder.
     func renameFolder(folderId: String, name: String) async

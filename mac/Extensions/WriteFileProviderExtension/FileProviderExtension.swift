@@ -91,7 +91,14 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 let destination = dir.appendingPathComponent(UUID().uuidString)
                 do { try Data(content.text.utf8).write(to: destination) }
                 catch { completionHandler(nil, nil, error); return }
-                let item = (try? itemResult.get()).map(WriteFileProviderItem.init)
+                // The returned item's version MUST match the bytes just written,
+                // not the (possibly newer) manifest hash: the GET body and its
+                // ETag are one consistent snapshot. Labeling these bytes with a
+                // stale manifest hash makes the next edit send a wrong If-Match
+                // and falsely conflict.
+                let item = (try? itemResult.get())
+                    .map { $0.withContentHash(content.hash) }
+                    .map(WriteFileProviderItem.init)
                 completionHandler(destination, item, nil)
             }
             progress.completedUnitCount = 1
@@ -135,12 +142,16 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         guard let api = apiFactory() else { done(nil, Self.fpError(.notAuthenticated)); return progress }
         let isFolder = itemTemplate.contentType?.conforms(to: .folder) ?? false
         let filename = itemTemplate.filename
+        // The template's itemIdentifier is stable across the framework's retries
+        // of THIS create, so it is the right Idempotency-Key: a lost response
+        // plus retry returns the original item instead of a duplicate.
+        let idempotencyKey = itemTemplate.itemIdentifier.rawValue
         Task {
             if isFolder {
                 guard let parentPath = await folderPath(of: parentId, api: api) else {
                     done(nil, Self.fpError(.noSuchItem)); return
                 }
-                switch await api.createFolder(parentPath: parentPath, name: filename) {
+                switch await api.createFolder(parentPath: parentPath, name: filename, idempotencyKey: idempotencyKey) {
                 case .success(let folder):
                     done(WriteFileProviderItem(
                         WriteItemMapper.item(for: folder, readOnly: false)), nil)
@@ -148,7 +159,7 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 }
             } else {
                 let body = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-                switch await api.createFile(body: body, folderId: parentId) {
+                switch await api.createFile(body: body, folderId: parentId, idempotencyKey: idempotencyKey) {
                 case .failure(let error): done(nil, Self.nsError(from: error))
                 case .success(let created):
                     // Give the new post the Finder-chosen name when the server's
@@ -157,7 +168,7 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                     guard let id = created.id, !wanted.isEmpty, created.slug != wanted else {
                         done(Self.fileItem(created, parentId: parentId), nil); return
                     }
-                    switch await api.patchFile(postId: id, folderId: nil, slug: wanted) {
+                    switch await api.patchFile(postId: id, folderId: nil, slug: wanted, ifMatch: created.hash) {
                     case .success(let renamed): done(Self.fileItem(renamed, parentId: parentId), nil)
                     case .failure: done(Self.fileItem(created, parentId: parentId), nil) // keep the create
                     }
@@ -202,13 +213,24 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         guard let api = apiFactory() else { done(nil, Self.fpError(.notAuthenticated)); return progress }
         let core = makeEnumeratorCore(api)
         Task {
-            var lastError: WriteSyncError?
-            // 1) Content edit: PUT with the base version's hash as If-Match.
+            // 1) Content edit: PUT with the base version's hash as If-Match. If
+            // this fails, STOP: do not go on to rename/move, or a stale-content
+            // conflict would still rename the file on the server while the edit
+            // is lost. A 412 must surface as versionNoLongerAvailable so the
+            // framework re-reads the current version and re-applies, rather than
+            // looping on the same stale base hash.
+            //
+            // The rename/move PATCH must build on the bytes the PUT just wrote,
+            // not the original base version: use the PUT's returned hash as the
+            // PATCH If-Match so a concurrent metadata change slipping in between
+            // the two requests conflicts (412) instead of being overwritten.
+            let baseHash = String(decoding: version.contentVersion, as: UTF8.self)
+            var patchBaseHash: String? = baseHash.isEmpty ? nil : baseHash
             if changedFields.contains(.contents) {
                 let body = newContents.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-                let hash = String(decoding: version.contentVersion, as: UTF8.self)
-                if case .failure(let e) = await api.putFile(postId: postId, body: body, ifMatch: hash) {
-                    lastError = e
+                switch await api.putFile(postId: postId, body: body, ifMatch: baseHash) {
+                case .failure(let e): done(nil, Self.nsError(from: e)); return
+                case .success(let saved): patchBaseHash = saved.hash
                 }
             }
             // 2) Move and/or rename in one PATCH.
@@ -219,11 +241,10 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 ? Self.slug(fromFilename: item.filename) : nil
             if newFolderId != nil || (newSlug != nil && !(newSlug!.isEmpty)) {
                 if case .failure(let e) = await api.patchFile(
-                    postId: postId, folderId: newFolderId, slug: newSlug) {
-                    lastError = e
+                    postId: postId, folderId: newFolderId, slug: newSlug, ifMatch: patchBaseHash) {
+                    done(nil, Self.nsError(from: e)); return
                 }
             }
-            if let error = lastError { done(nil, Self.nsError(from: error)); return }
             // Return the item's current server state.
             switch await core.item(for: .file(postId)) {
             case .success(let updated): done(WriteFileProviderItem(updated), nil)
@@ -251,8 +272,13 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             done(Self.readOnlyError()); return progress
         }
         guard let api = apiFactory() else { done(Self.fpError(.notAuthenticated)); return progress }
+        // The base version's contentVersion IS the item's content hash bytes.
+        // Sending it as If-Match gives stale-delete protection: the server 412s
+        // if the row moved on underneath the deleting client.
+        let hash = String(decoding: version.contentVersion, as: UTF8.self)
+        let ifMatch = hash.isEmpty ? nil : hash
         Task {
-            switch await api.deleteFile(postId: postId) {
+            switch await api.deleteFile(postId: postId, ifMatch: ifMatch) {
             case .success: done(nil)
             case .failure(let error): done(Self.nsError(from: error))
             }

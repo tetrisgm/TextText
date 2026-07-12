@@ -97,11 +97,12 @@ enum SaveReply {
 protocol SyncClient {
     func workspace() -> Result<(Workspace, Data), ClientFailure>
     func manifest(folderId: String, etag: String?) -> Result<ManifestReply, ClientFailure>
-    func createFolder(parentPath: String, name: String) -> Result<WorkspaceFolder, ClientFailure>
+    func createFolder(parentPath: String, name: String, idempotencyKey: String?) -> Result<WorkspaceFolder, ClientFailure>
     func fileText(postId: String) -> Result<(text: String, hash: String?), ClientFailure>
     func putFile(postId: String, body: String, ifMatch hash: String) -> Result<SaveReply, ClientFailure>
-    func postFile(body: String) -> Result<SaveReply, ClientFailure>
-    func deleteFile(postId: String) -> Result<Void, ClientFailure>
+    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) -> Result<SaveReply, ClientFailure>
+    func postFile(body: String, folderId: String?, idempotencyKey: String?) -> Result<SaveReply, ClientFailure>
+    func deleteFile(postId: String, ifMatch hash: String?) -> Result<Void, ClientFailure>
     func advertisedAppVersion() -> String?
 }
 
@@ -164,13 +165,16 @@ final class ServerClient: SyncClient {
         }
     }
 
-    func createFolder(parentPath: String, name: String) -> Result<WorkspaceFolder, ClientFailure> {
+    func createFolder(parentPath: String, name: String, idempotencyKey: String?) -> Result<WorkspaceFolder, ClientFailure> {
         let json: [String: Any] = ["parent_path": parentPath, "name": name]
         guard let body = try? JSONSerialization.data(withJSONObject: json) else {
             return .failure(.badResponse("could not encode request body"))
         }
-        switch send("POST", "/api/sync/v1/folders",
-                    headers: ["Content-Type": "application/json"], body: body) {
+        // A stable Idempotency-Key makes a lost-response retry return the
+        // ORIGINAL 201 instead of creating a duplicate folder.
+        var headers = ["Content-Type": "application/json"]
+        if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
+        switch send("POST", "/api/sync/v1/folders", headers: headers, body: body) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             guard reply.status == 201 else { return .failure(httpFailure(reply)) }
@@ -217,9 +221,23 @@ final class ServerClient: SyncClient {
         }
     }
 
-    func postFile(body: String) -> Result<SaveReply, ClientFailure> {
-        let headers = ["Content-Type": "text/markdown; charset=utf-8"]
-        switch send("POST", "/api/sync/v1/files", headers: headers, body: Data(body.utf8)) {
+    func postFile(body: String, folderId: String?, idempotencyKey: String?) -> Result<SaveReply, ClientFailure> {
+        var headers = ["Content-Type": "text/markdown; charset=utf-8"]
+        // A stable Idempotency-Key makes a lost-response retry return the
+        // ORIGINAL 201 instead of publishing the post twice.
+        if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
+        // The target folder makes the server's mode authoritative: a file in the
+        // Notes/Bookmarks mirror is created as a note/bookmark and stays unlisted,
+        // and a file in a subfolder lands there instead of the system root. Without
+        // ?folder=, the server trusts the frontmatter type and could publish a
+        // note filed under Notes (the privacy invariant leak this closes).
+        var path = "/api/sync/v1/files"
+        if let folderId, !folderId.isEmpty {
+            let escaped = folderId.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed) ?? folderId
+            path += "?folder=\(escaped)"
+        }
+        switch send("POST", path, headers: headers, body: Data(body.utf8)) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             if reply.status == 400 { return .success(.rejected(reply.errorMessage)) }
@@ -231,9 +249,41 @@ final class ServerClient: SyncClient {
         }
     }
 
-    /// DELETE; a 404 counts as done (already gone).
-    func deleteFile(postId: String) -> Result<Void, ClientFailure> {
-        switch send("DELETE", "/api/sync/v1/files/\(postId)") {
+    /// PATCH the folder and/or slug without re-sending the body. Used when a
+    /// local move (folder change, hash unchanged) is detected: the server's
+    /// folder is updated so the next pull does not snap the file back. When
+    /// present, the base hash rides as If-Match so a stale move (the row moved
+    /// on underneath us) is rejected with 412 (mapped to a conflict).
+    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) -> Result<SaveReply, ClientFailure> {
+        var json: [String: Any] = [:]
+        if let folderId, !folderId.isEmpty { json["folder"] = folderId }
+        if let slug, !slug.isEmpty { json["slug"] = slug }
+        guard let body = try? JSONSerialization.data(withJSONObject: json) else {
+            return .failure(.badResponse("could not encode request body"))
+        }
+        var headers = ["Content-Type": "application/json"]
+        if let hash { headers["If-Match"] = "\"\(hash)\"" }
+        switch send("PATCH", "/api/sync/v1/files/\(postId)", headers: headers, body: body) {
+        case .failure(let e): return .failure(e)
+        case .success(let reply):
+            if reply.status == 412 { return .success(.conflict) }
+            if reply.status == 400 { return .success(.rejected(reply.errorMessage)) }
+            guard reply.status == 200 else { return .failure(httpFailure(reply)) }
+            guard let envelope = try? JSONDecoder().decode(ItemEnvelope.self, from: reply.data) else {
+                return .failure(.badResponse("PATCH reply did not decode"))
+            }
+            return .success(.saved(envelope.item))
+        }
+    }
+
+    /// DELETE; a 404 counts as done (already gone). Sending If-Match with the
+    /// indexed hash gives stale-delete protection: the server returns 412 when
+    /// the row moved on underneath us, so a delete based on an out-of-date view
+    /// does not silently succeed.
+    func deleteFile(postId: String, ifMatch hash: String?) -> Result<Void, ClientFailure> {
+        var headers: [String: String] = [:]
+        if let hash { headers["If-Match"] = "\"\(hash)\"" }
+        switch send("DELETE", "/api/sync/v1/files/\(postId)", headers: headers) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             if reply.status == 204 || reply.status == 404 { return .success(()) }

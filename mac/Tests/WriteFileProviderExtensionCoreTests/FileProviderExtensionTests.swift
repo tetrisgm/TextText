@@ -63,6 +63,9 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.createFileCalls.count, 1)
         XCTAssertEqual(api.createFileCalls.first?.folderId, "notes")
         XCTAssertEqual(api.createFileCalls.first?.body, "hello")
+        // The template's stable identifier is the idempotency key, so a retried
+        // create returns the original item instead of a duplicate.
+        XCTAssertEqual(api.createFileCalls.first?.idempotencyKey, "file:tmp")
     }
 
     func testCreateFolderCallsCreateFolderWithParentPath() {
@@ -78,6 +81,7 @@ final class FileProviderExtensionTests: XCTestCase {
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(api.createFolderCalls.first?.parentPath, "Blog")
         XCTAssertEqual(api.createFolderCalls.first?.name, "Ideas")
+        XCTAssertEqual(api.createFolderCalls.first?.idempotencyKey, "folder:tmp")
     }
 
     // MARK: modify
@@ -95,6 +99,28 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.putCalls.first?.postId, "p1")
         XCTAssertEqual(api.putCalls.first?.body, "new body")
         XCTAssertEqual(api.putCalls.first?.hash, "basehash")
+    }
+
+    func testCompoundModifyPatchesWithPutReturnedHash() {
+        // A content edit plus a rename must be atomic against a concurrent
+        // metadata change: the rename PATCH must build on the hash the PUT just
+        // returned, not the original base version, so a change slipping in
+        // between conflicts (412) instead of being silently overwritten.
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.putResult = .success(WriteManifestItem(
+            file: "a.md", kind: "note", slug: "a", title: "a", status: "draft",
+            hash: "puthash", id: "p1", date: nil, createdAt: nil, updatedAt: nil, url: nil))
+        let item = fileItem(id: "p1", file: "Renamed.md", folder: "notes")
+        let exp = expectation(description: "compound")
+        _ = ext(api).modifyItem(
+            item, baseVersion: version("basehash"), changedFields: [.contents, .filename],
+            contents: tempFile("new body"), options: [], request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+        XCTAssertEqual(api.putCalls.first?.hash, "basehash", "the PUT still uses the base version")
+        XCTAssertEqual(api.patchCalls.first?.ifMatch, "puthash",
+                       "the PATCH must guard on the bytes the PUT just wrote")
+        XCTAssertEqual(api.patchCalls.first?.slug, "renamed")
     }
 
     func testRenameFileCallsPatchWithSlug() {
@@ -150,6 +176,9 @@ final class FileProviderExtensionTests: XCTestCase {
         ) { _ in exp.fulfill() }
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(api.deleteCalls, ["p1"])
+        // The base version's content hash rides along as If-Match for
+        // stale-delete protection.
+        XCTAssertEqual(api.deleteIfMatchCalls, ["h"])
     }
 
     func testDeleteFolderIsRejected() {

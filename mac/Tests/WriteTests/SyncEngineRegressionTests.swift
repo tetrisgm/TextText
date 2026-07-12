@@ -70,7 +70,11 @@ final class SyncEngineRegressionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Bookmarks/2025/link.md").path))
     }
 
-    func testCopyWithSameWriteIdDoesNotRenameOriginalPost() throws {
+    func testCopyWithSameWriteIdIsNotPostedAsDuplicateNorRenamesOriginal() throws {
+        // A Finder copy carries the source's injected item id. That id is already
+        // in the index, so the copy must NOT be POSTed as a new post (which would
+        // duplicate p1 on the server), and the original must not be renamed. The
+        // stray copy is left for move reconciliation, never published as new.
         let root = try temporaryDirectory()
         let state = try temporaryDirectory()
         let originalRel = "Blogs/demo/Posts/foo.md"
@@ -87,10 +91,6 @@ final class SyncEngineRegressionTests: XCTestCase {
         fake.manifestReplies["blog"] = .manifest([
             item(id: "p1", kind: "article", slug: "foo", status: "published", hash: hash)
         ], etag: nil)
-        fake.fileTexts["p2"] = markdown(title: "Foo Copy", slug: "foo2", body: "body")
-        fake.postHandler = { _ in
-            .saved(self.item(id: "p2", kind: "article", slug: "foo2", status: "published", hash: hash))
-        }
 
         let (store, summary) = try runEngine(root: root, state: state, client: fake) {
             $0.saveIndex(SyncIndex(entries: [
@@ -100,7 +100,7 @@ final class SyncEngineRegressionTests: XCTestCase {
 
         XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
         XCTAssertEqual(fake.puts.map(\.postId), [])
-        XCTAssertEqual(fake.posts.count, 1)
+        XCTAssertEqual(fake.posts, [], "a file carrying a known item id must never be POSTed as new")
         XCTAssertEqual(store.loadIndex().entries["p1"]?.relativePath, originalRel)
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(originalRel).path))
     }
@@ -443,9 +443,12 @@ final class SyncEngineRegressionTests: XCTestCase {
         )
     }
 
-    func testSingleMissingFileStillDeletesOnServer() throws {
-        // The breaker must not swallow ordinary deletions: one file removed
-        // out of a healthy workspace still propagates to the server.
+    func testSingleMissingFileStillDeletesOnServerAfterTwoScans() throws {
+        // The two-strike rule must not swallow ordinary deletions: one file
+        // removed out of a healthy workspace does not delete on first sight
+        // (it could be a transient read), but the SECOND consecutive scan that
+        // still finds it gone propagates the delete, carrying the indexed hash
+        // as If-Match for stale-delete protection.
         let root = try temporaryDirectory()
         let state = try temporaryDirectory()
         let fake = FakeSyncClient()
@@ -457,7 +460,7 @@ final class SyncEngineRegressionTests: XCTestCase {
         try write(keptText, to: root.appendingPathComponent("Notes/kept.md"))
         try write("marker\nmirror-id: era-s\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
 
-        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+        let (_, first) = try runEngine(root: root, state: state, client: fake) {
             $0.saveIndex(SyncIndex(
                 entries: [
                     "keep": IndexEntry(
@@ -470,9 +473,514 @@ final class SyncEngineRegressionTests: XCTestCase {
                 mirrorId: "era-s"
             ))
         }
+        XCTAssertEqual(first.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, [], "a first missing sighting must not delete")
+
+        // Second scan (no re-seed): the file is still gone, so it deletes now.
+        let (_, second) = try runEngine(root: root, state: state, client: fake)
+
+        XCTAssertEqual(second.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, ["gone"])
+        XCTAssertEqual(fake.deleteIfMatches, ["h-gone"], "delete must carry the indexed hash as If-Match")
+    }
+
+    func testSingleWorkspaceMissingFileDoesNotDeleteOnFirstScan() throws {
+        // A one-post workspace whose only file transiently vanishes must NOT
+        // wipe the server on the first scan (the 1/1 gap the old breaker left).
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        try write("marker\nmirror-id: era-1\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "only": IndexEntry(hash: "h-only", relativePath: "Notes/only.md",
+                                       folderId: "notes", kind: "note"),
+                ],
+                mirrorId: "era-1"
+            ))
+        }
 
         XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
-        XCTAssertEqual(fake.deletedIds, ["gone"])
+        XCTAssertEqual(fake.deletedIds, [], "a 1/1 transient disappearance must not delete on the first scan")
+    }
+
+    func testTwoOfThreeMissingDoesNotDeleteOnFirstScan() throws {
+        // Two of three files missing is under the mass-loss backstop, so the
+        // two-strike rule (not the breaker) governs: nothing deletes on the
+        // first scan.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        let keptText = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Kept", body: "kept"),
+            itemId: "keep", folderId: "notes", kind: "note")
+        try write(keptText, to: root.appendingPathComponent("Notes/kept.md"))
+        try write("marker\nmirror-id: era-3\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "keep": IndexEntry(
+                        hash: MarkdownIdentityCodec.syncHash(for: keptText),
+                        relativePath: "Notes/kept.md", folderId: "notes", kind: "note"),
+                    "gone1": IndexEntry(hash: "h1", relativePath: "Notes/gone1.md",
+                                        folderId: "notes", kind: "note"),
+                    "gone2": IndexEntry(hash: "h2", relativePath: "Notes/gone2.md",
+                                        folderId: "notes", kind: "note"),
+                ],
+                mirrorId: "era-3"
+            ))
+        }
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, [], "2 of 3 missing must not delete on the first scan")
+    }
+
+    func testFileReappearingOnSecondScanIsNotDeleted() throws {
+        // A file gone on scan one (a first strike) but restored before scan two
+        // must NOT be deleted: the second strike never lands.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        try write("marker\nmirror-id: era-r\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        let backText = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Back", body: "restored"),
+            itemId: "flap", folderId: "notes", kind: "note")
+
+        let (_, first) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "flap": IndexEntry(hash: MarkdownIdentityCodec.syncHash(for: backText),
+                                       relativePath: "Notes/flap.md", folderId: "notes", kind: "note"),
+                ],
+                mirrorId: "era-r"
+            ))
+        }
+        XCTAssertEqual(first.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, [])
+
+        // The file comes back before the second scan.
+        try write(backText, to: root.appendingPathComponent("Notes/flap.md"))
+        let (_, second) = try runEngine(root: root, state: state, client: fake)
+
+        XCTAssertEqual(second.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, [], "a file restored before the second scan must not be deleted")
+    }
+
+    func testDetectedFolderMovePatchesServerToPreventSnapBack() throws {
+        // A file moved between folders keeps its bytes (and hash), so the PUT
+        // path never fires. Without a PATCH the server keeps the old folder and
+        // the next pull snaps the file back. The engine must PATCH the new
+        // folder when it detects the move.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+        // The file physically lives in the Blog mirror now, but its injected
+        // identity still records the old notes folder (a move does not rewrite
+        // the frontmatter).
+        let movedText = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Moved", slug: "moved", body: "body"),
+            itemId: "m1", folderId: "notes", kind: "note")
+        try write(movedText, to: root.appendingPathComponent("Blogs/demo/Posts/moved.md"))
+        try write("marker\nmirror-id: era-mv\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+        fake.patchHandler = { postId, folderId, slug in
+            .saved(self.item(id: postId, kind: "article", slug: slug ?? "moved", status: "draft",
+                             hash: MarkdownIdentityCodec.syncHash(for: movedText)))
+        }
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "m1": IndexEntry(hash: MarkdownIdentityCodec.syncHash(for: movedText),
+                                     relativePath: "Notes/moved.md", folderId: "notes", kind: "note"),
+                ],
+                mirrorId: "era-mv"
+            ))
+        }
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.deletedIds, [], "a move must never look like a delete")
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertEqual(fake.patches.first?.postId, "m1")
+        XCTAssertEqual(fake.patches.first?.folderId, "blog", "the server must learn the new folder")
+        XCTAssertEqual(fake.patches.first?.ifMatch, MarkdownIdentityCodec.syncHash(for: movedText),
+                       "the move PATCH must carry the base hash as If-Match")
+    }
+
+    func testFailedMovePatchIsNotAdoptedAndRetriesNextScan() throws {
+        // If the move PATCH is rejected (the row changed underneath us), the
+        // engine must NOT count it as pushed and must NOT adopt the new
+        // folder/path into the index: neither the reconcile step nor the push
+        // pass may settle the file at its new location. The file must not be
+        // re-POSTed as new either. The move is retried on the next scan.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+        let movedText = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Moved", slug: "moved", body: "body"),
+            itemId: "m1", folderId: "notes", kind: "note")
+        try write(movedText, to: root.appendingPathComponent("Blogs/demo/Posts/moved.md"))
+        try write("marker\nmirror-id: era-mvf\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+        let baseHash = MarkdownIdentityCodec.syncHash(for: movedText)
+        fake.patchHandler = { _, _, _ in .conflict } // the server keeps rejecting the stale move
+
+        let (store, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: [
+                    "m1": IndexEntry(hash: baseHash, relativePath: "Notes/moved.md",
+                                     folderId: "notes", kind: "note"),
+                ],
+                mirrorId: "era-mvf"
+            ))
+        }
+
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertEqual(fake.patches.first?.ifMatch, baseHash, "the PATCH must be guarded by the base hash")
+        XCTAssertEqual(summary.pushed, 0, "a rejected move must not count as pushed")
+        XCTAssertEqual(summary.conflicts, 1)
+        XCTAssertEqual(store.loadIndex().entries["m1"]?.folderId, "notes",
+                       "a rejected move must not adopt the new folder")
+        XCTAssertEqual(store.loadIndex().entries["m1"]?.relativePath, "Notes/moved.md",
+                       "a rejected move must not adopt the new path")
+        XCTAssertEqual(fake.deletedIds, [], "a rejected move must never look like a delete")
+        XCTAssertEqual(fake.posts, [], "a moved file with an indexed id must not be re-POSTed as new")
+
+        // Next scan: the file is still at the new path, so the move is retried
+        // (a second PATCH), not silently settled.
+        let (_, second) = try runEngine(root: root, state: state, client: fake)
+        XCTAssertEqual(fake.patches.count, 2, "the failed move must be retried on the next scan")
+        XCTAssertEqual(second.pushed, 0)
+        XCTAssertEqual(fake.posts, [], "still no false new-file POST on retry")
+    }
+
+    func testSuccessfulMoveRenameConvergesIndexHashSoNextPushHasNoFalseConflict() throws {
+        // A successful move+rename changes the server slug and thus the rendered
+        // hash. The index must record the server's NEW render hash (converging on
+        // it), not the stale pre-move hash: otherwise the next push sees a
+        // phantom diff and PUTs with a now-invalid If-Match, a false 412.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+
+        // Pre-move state: a note in Notes with slug "old".
+        let preMove = markdown(title: "Renamed", slug: "old", body: "body")
+        let preMoveHash = MarkdownIdentityCodec.syncHash(for: preMove)
+        // The user moved AND renamed it: it now sits in the Blog mirror as
+        // new.md, still carrying its old injected identity and slug.
+        let localMoved = MarkdownIdentityCodec.inject(into: preMove, itemId: "m1", folderId: "notes", kind: "note")
+        try write(localMoved, to: root.appendingPathComponent("Blogs/demo/Posts/new.md"))
+        try write("marker\nmirror-id: era-mr\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        // The server renders the renamed post canonically (a different hash than
+        // the local file), so the engine must converge by downloading it.
+        let serverRender = "---\n"
+            + "title: \"Renamed\"\n"
+            + "status: \"draft\"\n"
+            + "slug: \"new\"\n"
+            + "canonical: \"https://example.com/@demo/new\"\n"
+            + "---\n\nbody\n"
+        let serverHash = MarkdownIdentityCodec.syncHash(for: serverRender)
+        fake.fileTexts["m1"] = serverRender
+        fake.patchHandler = { postId, _, slug in
+            .saved(self.item(id: postId, kind: "article", slug: slug ?? "new", status: "draft", hash: serverHash))
+        }
+
+        let (store, first) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: ["m1": IndexEntry(hash: preMoveHash, relativePath: "Notes/old.md",
+                                           folderId: "notes", kind: "note")],
+                mirrorId: "era-mr"
+            ))
+        }
+
+        XCTAssertEqual(first.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertEqual(fake.patches.first?.folderId, "blog")
+        XCTAssertEqual(fake.patches.first?.ifMatch, preMoveHash, "the move must be guarded by the pre-move base hash")
+        XCTAssertEqual(store.loadIndex().entries["m1"]?.hash, serverHash,
+                       "the index must record the server's post-rename render hash, not the stale pre-move hash")
+        XCTAssertTrue(fake.puts.isEmpty, "a successful move+rename must not itself PUT")
+
+        // The next push pass must NOT emit a PUT or a conflict for the file.
+        let (_, second) = try runEngine(root: root, state: state, client: fake)
+        XCTAssertEqual(second.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(second.conflicts, 0, "no false 412 after a successful move+rename")
+        XCTAssertEqual(fake.puts.map(\.postId), [], "no PUT for a file already converged with the server")
+    }
+
+    func testMovedFileWithRestoredOldPathIsNotPostedAsDuplicate() throws {
+        // The GENERAL invariant, beyond the per-pass failed-move set: after a
+        // move-PATCH 412, a later full pull can restore the OLD indexed path.
+        // Now the moved copy sits at a NEW path while the old path exists again,
+        // so reconcileIndexedMoves no longer sees the id as missing and the
+        // per-pass failed set is empty. The moved copy must STILL never be POSTed
+        // as a new file (which would duplicate the post on the server).
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        let text = markdown(title: "Note", slug: "note", body: "body")
+        let hash = MarkdownIdentityCodec.syncHash(for: text)
+        let localText = MarkdownIdentityCodec.inject(into: text, itemId: "p1", folderId: "notes", kind: "note")
+        // Old indexed path (restored by a prior pull) and the user's moved copy.
+        try write(localText, to: root.appendingPathComponent("Notes/note.md"))
+        try write(localText, to: root.appendingPathComponent("Blogs/demo/Posts/note.md"))
+        try write("marker\nmirror-id: era-rp\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+        // The server still lists it in notes (the earlier move never landed).
+        fake.manifestReplies["notes"] = .manifest([
+            item(id: "p1", kind: "note", slug: "note", status: "draft", hash: hash)
+        ], etag: nil)
+        fake.fileTexts["p1"] = text
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: ["p1": IndexEntry(hash: hash, relativePath: "Notes/note.md", folderId: "notes", kind: "note")],
+                mirrorId: "era-rp"
+            ))
+        }
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.posts, [], "a moved copy carrying a known item id must not be POSTed as a duplicate")
+        XCTAssertEqual(fake.deletedIds, [])
+    }
+
+    func testFailedConvergenceGetAfterMoveDoesNotCauseRedundantPut() throws {
+        // #2: when the post-move canonical GET fails, the engine must record the
+        // local file's ACTUAL hash, not the server's item.hash, so the next push
+        // does not see a phantom diff against known-different local bytes and PUT
+        // redundantly.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+        let preMove = markdown(title: "R", slug: "old", body: "body")
+        let preMoveHash = MarkdownIdentityCodec.syncHash(for: preMove)
+        let localMoved = MarkdownIdentityCodec.inject(into: preMove, itemId: "m1", folderId: "notes", kind: "note")
+        try write(localMoved, to: root.appendingPathComponent("Blogs/demo/Posts/new.md"))
+        try write("marker\nmirror-id: era-mg\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+        // The server render hash differs from the local file, but its canonical
+        // GET is unavailable (no fileText), so the convergence download fails.
+        fake.patchHandler = { postId, _, slug in
+            .saved(self.item(id: postId, kind: "article", slug: slug ?? "new", status: "draft", hash: "server-render-hash"))
+        }
+
+        let (_, first) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: ["m1": IndexEntry(hash: preMoveHash, relativePath: "Notes/old.md", folderId: "notes", kind: "note")],
+                mirrorId: "era-mg"
+            ))
+        }
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertTrue(fake.puts.isEmpty, "a failed convergence GET must not leave a phantom diff to PUT")
+        _ = first
+
+        // A subsequent pass must also not emit a redundant PUT.
+        let (_, _) = try runEngine(root: root, state: state, client: fake)
+        XCTAssertEqual(fake.puts.map(\.postId), [], "no redundant PUT after a failed convergence GET")
+    }
+
+    func testPushNewFileRefusesKnownIdEvenWhenOuterGuardDidNotPreSkip() throws {
+        // #1 (no TOCTOU): the known-id guard must also hold INSIDE pushNewFile,
+        // on its own single read, so a duplicate is impossible even if the outer
+        // step-4 scan did not pre-skip the file. Two files carry the SAME
+        // injected id with an EMPTY starting index, so the outer indexedIds
+        // snapshot (taken before this pass POSTs the first one and learns the id)
+        // cannot pre-skip the second: only pushNewFile's live check stops it.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        let body = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Dup", slug: "dup", body: "body"),
+            itemId: "dup", folderId: "notes", kind: "note")
+        try write(body, to: root.appendingPathComponent("Notes/one.md"))
+        try write(body, to: root.appendingPathComponent("Notes/two.md"))
+        try writeLocalMarker(root: root)
+        fake.postHandler = { _ in
+            .saved(self.item(id: "dup", kind: "note", slug: "dup", status: "draft",
+                             hash: MarkdownIdentityCodec.syncHash(for: body)))
+        }
+
+        let (store, summary) = try runEngine(root: root, state: state, client: fake)
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.posts.count, 1, "two files sharing a known id must yield at most one POST")
+        XCTAssertNotNil(store.loadIndex().entries["dup"])
+    }
+
+    func testConvergenceGetFailureNeverLeavesStaleHashForAPush() throws {
+        // #2: a failed post-move convergence GET must never leave the stale
+        // PRE-MOVE hash in the index. Otherwise a later pass whose pull does not
+        // re-list the item (a cached .notModified manifest, or a push-only pass)
+        // would PUT with a now-invalid If-Match and hit a false 412. The recorded
+        // hash must be a valid basis for a future push.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+        let preMove = markdown(title: "R", slug: "old", body: "body")
+        let preMoveHash = MarkdownIdentityCodec.syncHash(for: preMove)
+        let localMoved = MarkdownIdentityCodec.inject(into: preMove, itemId: "m1", folderId: "notes", kind: "note")
+        try write(localMoved, to: root.appendingPathComponent("Blogs/demo/Posts/new.md"))
+        try write("marker\nmirror-id: era-cg\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+        // The convergence GET is unavailable (no fileText), so the download fails.
+        fake.patchHandler = { postId, _, slug in
+            .saved(self.item(id: postId, kind: "article", slug: slug ?? "new", status: "draft", hash: "server-render-hash"))
+        }
+
+        let (store, _) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(
+                entries: ["m1": IndexEntry(hash: preMoveHash, relativePath: "Notes/old.md", folderId: "notes", kind: "note")],
+                mirrorId: "era-cg"
+            ))
+        }
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertNotEqual(store.loadIndex().entries["m1"]?.hash, preMoveHash,
+                          "the stale pre-move hash must not survive a failed convergence GET")
+
+        // A later pass whose pull does not re-list the item must not PUT with the
+        // stale pre-move If-Match.
+        let (_, _) = try runEngine(root: root, state: state, client: fake)
+        XCTAssertFalse(fake.puts.contains { $0.ifMatch == preMoveHash },
+                       "no push may carry the stale pre-move If-Match after a failed convergence")
+    }
+
+    func testUnreadableConvergenceMarksNeedsPullThenNextPassPullsTheRender() throws {
+        // The unreadable branch: a move+rename PATCH succeeds but the convergence
+        // read fails (local file unreadable at that moment) AND the GET is
+        // unavailable, so neither hash may be trusted. The entry is marked "needs
+        // pull": no push emits stale/old-slug bytes (which would revert the
+        // rename), and the NEXT full pass's pull re-downloads the server render
+        // and converges authoritatively.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+
+        // Pre-move: a published post with slug "old"; the moved file carries it.
+        // Published (not draft) so it stays in the Posts area, not routed to Drafts.
+        let preMove = markdown(title: "R", slug: "old", status: "published", body: "body")
+        let preMoveHash = MarkdownIdentityCodec.syncHash(for: preMove)
+        let localMoved = MarkdownIdentityCodec.inject(into: preMove, itemId: "m1", folderId: "notes", kind: "note")
+        try write(localMoved, to: root.appendingPathComponent("Blogs/demo/Posts/new.md"))
+        try write("marker\nmirror-id: era-un\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        // The server's post-rename render (slug "new").
+        let serverRender = "---\ntitle: \"R\"\nstatus: \"published\"\nslug: \"new\"\n---\n\nbody\n"
+        let serverHash = MarkdownIdentityCodec.syncHash(for: serverRender)
+        fake.patchHandler = { postId, _, slug in
+            .saved(self.item(id: postId, kind: "article", slug: slug ?? "new", status: "published", hash: serverHash))
+        }
+
+        // Pass 1: force the convergence read to fail (unreadable branch); the GET
+        // is unavailable (no fileText) so the download fails too; the pull cannot
+        // converge yet (blog manifest .notModified), so the sentinel persists.
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+        let (store, first) = try runEngine(
+            root: root, state: state, client: fake,
+            configure: { $0.convergenceReadShouldFail = { rel in rel == "Blogs/demo/Posts/new.md" } },
+            seed: {
+                $0.saveIndex(SyncIndex(
+                    entries: ["m1": IndexEntry(hash: preMoveHash, relativePath: "Notes/old.md", folderId: "notes", kind: "note")],
+                    mirrorId: "era-un"
+                ))
+            })
+        _ = first
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertEqual(fake.patches.first?.folderId, "blog")
+        XCTAssertTrue(fake.puts.isEmpty, "no push may emit stale/old-slug bytes for a not-yet-converged move")
+        XCTAssertEqual(store.loadIndex().entries["m1"]?.hash, SyncEngine.needsPullHash,
+                       "the entry must be marked needs-pull (sentinel)")
+
+        // Pass 2: the GET is available and the server lists the moved post, so the
+        // pull re-downloads the server render and converges. No stale PUT ever.
+        fake.fileTexts["m1"] = serverRender
+        fake.manifestReplies["blog"] = .manifest([
+            item(id: "m1", kind: "article", slug: "new", status: "published", hash: serverHash)
+        ], etag: nil)
+        let (store2, _) = try runEngine(root: root, state: state, client: fake)
+        XCTAssertTrue(fake.puts.isEmpty, "the move converged by PULL, never a stale-If-Match PUT")
+        XCTAssertEqual(store2.loadIndex().entries["m1"]?.hash, serverHash,
+                       "the next pull converged the server render")
+        let converged = try readWorkspaceText(root: root, relativePath: "Blogs/demo/Posts/new.md")
+        XCTAssertTrue(converged.contains("slug: \"new\""), "the server's renamed render landed on disk")
+    }
+
+    func testSustainedLargeDeletionSyncsOnSecondScan() throws {
+        // A legitimate large (>=10) bulk deletion must not be paused forever: the
+        // first high-fraction scan pauses and warns, but if the SAME set is still
+        // gone on the next scan (two consecutive confirmations), it propagates.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        try write("marker\nmirror-id: era-big\n", to: root.appendingPathComponent(".write-local.nosync/state/sync-marker.txt"))
+
+        var entries: [String: IndexEntry] = [:]
+        for i in 1...10 {
+            entries["p\(i)"] = IndexEntry(
+                hash: "h\(i)", relativePath: "Notes/gone-\(i).md",
+                folderId: "notes", kind: "note")
+        }
+        let (_, first) = try runEngine(root: root, state: state, client: fake) {
+            $0.saveIndex(SyncIndex(entries: entries, mirrorId: "era-big"))
+        }
+        XCTAssertEqual(fake.deletedIds, [], "the first high-fraction scan must pause")
+        XCTAssertTrue(
+            fake.activities.contains { $0.contains("paused server deletes") },
+            fake.activities.joined(separator: " | "))
+        _ = first
+
+        // The same large set is still gone on the second scan: it now propagates.
+        let (_, second) = try runEngine(root: root, state: state, client: fake)
+
+        XCTAssertEqual(second.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(Set(fake.deletedIds), Set(entries.keys),
+                       "a sustained large deletion must sync on the second scan")
+    }
+
+    func testNewFileCreateSendsStableIdempotencyKey() throws {
+        // A new local file must POST with a stable Idempotency-Key so a lost
+        // response plus retry does not publish the post twice.
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        try write(markdown(title: "Fresh", body: "brand new"), to: root.appendingPathComponent("Notes/fresh.md"))
+        try writeLocalMarker(root: root)
+
+        let (_, summary) = try runEngine(root: root, state: state, client: fake)
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.posts.count, 1)
+        XCTAssertEqual(fake.postIdempotencyKeys, ["post:Notes/fresh.md"],
+                       "a new create must carry a stable idempotency key")
     }
 
     func testEvictedICloudPlaceholderBlocksServerDelete() throws {
@@ -567,6 +1075,7 @@ final class SyncEngineRegressionTests: XCTestCase {
         root: URL,
         state: URL,
         client: FakeSyncClient,
+        configure: ((SyncEngine) -> Void)? = nil,
         seed: ((StateStore) -> Void)? = nil
     ) throws -> (StateStore, SyncSummary) {
         setenv("WRITE_STATE_DIR", state.path, 1)
@@ -581,6 +1090,7 @@ final class SyncEngineRegressionTests: XCTestCase {
             WorkspaceLocation(url: root, kind: .injected, iCloudAvailable: false, statusMessage: "test")
         }
         engine.onActivity = { client.activities.append($0) }
+        configure?(engine)
         return (store, engine.runOnePassBlocking())
     }
 
@@ -697,9 +1207,15 @@ private final class FakeSyncClient: SyncClient {
     var fileTexts: [String: String] = [:]
     var postHandler: ((String) -> SaveReply)?
     var putHandler: ((String, String, String) -> SaveReply)?
+    var patchHandler: ((String, String?, String?) -> SaveReply)?
     var deletedIds: [String] = []
+    var deleteIfMatches: [String?] = []
     var posts: [String] = []
+    var postFolderIds: [String?] = []
+    var postIdempotencyKeys: [String?] = []
+    var folderIdempotencyKeys: [String?] = []
     var puts: [(postId: String, body: String, ifMatch: String)] = []
+    var patches: [(postId: String, folderId: String?, slug: String?, ifMatch: String?)] = []
     var activities: [String] = []
     var unreachable = false
 
@@ -713,8 +1229,9 @@ private final class FakeSyncClient: SyncClient {
         .success(manifestReplies[folderId] ?? .manifest([], etag: nil))
     }
 
-    func createFolder(parentPath: String, name: String) -> Result<WorkspaceFolder, ClientFailure> {
-        .success(WorkspaceFolder(id: "\(parentPath)/\(name)", name: name, path: "\(parentPath)/\(name)", mode: "notes", parentId: nil))
+    func createFolder(parentPath: String, name: String, idempotencyKey: String?) -> Result<WorkspaceFolder, ClientFailure> {
+        folderIdempotencyKeys.append(idempotencyKey)
+        return .success(WorkspaceFolder(id: "\(parentPath)/\(name)", name: name, path: "\(parentPath)/\(name)", mode: "notes", parentId: nil))
     }
 
     func fileText(postId: String) -> Result<(text: String, hash: String?), ClientFailure> {
@@ -729,13 +1246,21 @@ private final class FakeSyncClient: SyncClient {
         return .success(putHandler?(postId, body, hash) ?? .saved(defaultItem(id: postId, body: body)))
     }
 
-    func postFile(body: String) -> Result<SaveReply, ClientFailure> {
+    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) -> Result<SaveReply, ClientFailure> {
+        patches.append((postId, folderId, slug, hash))
+        return .success(patchHandler?(postId, folderId, slug) ?? .saved(defaultItem(id: postId, body: "")))
+    }
+
+    func postFile(body: String, folderId: String?, idempotencyKey: String?) -> Result<SaveReply, ClientFailure> {
         posts.append(body)
+        postFolderIds.append(folderId)
+        postIdempotencyKeys.append(idempotencyKey)
         return .success(postHandler?(body) ?? .saved(defaultItem(id: "new-\(posts.count)", body: body)))
     }
 
-    func deleteFile(postId: String) -> Result<Void, ClientFailure> {
+    func deleteFile(postId: String, ifMatch hash: String?) -> Result<Void, ClientFailure> {
         deletedIds.append(postId)
+        deleteIfMatches.append(hash)
         return .success(())
     }
 
