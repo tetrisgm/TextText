@@ -135,7 +135,6 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         guard let api = apiFactory() else { done(nil, Self.fpError(.notAuthenticated)); return progress }
         let isFolder = itemTemplate.contentType?.conforms(to: .folder) ?? false
         let filename = itemTemplate.filename
-        let core = makeEnumeratorCore(api)
         Task {
             if isFolder {
                 guard let parentPath = await folderPath(of: parentId, api: api) else {
