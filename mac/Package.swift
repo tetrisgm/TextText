@@ -17,7 +17,8 @@ let package = Package(
         .library(name: "WriteAppIntents", targets: ["WriteAppIntents"]),
         .library(name: "WriteSpotlight", targets: ["WriteSpotlight"]),
         .library(name: "WriteShareExtensionCore", targets: ["WriteShareExtensionCore"]),
-        .library(name: "WriteQuickLookCore", targets: ["WriteQuickLookCore"])
+        .library(name: "WriteQuickLookCore", targets: ["WriteQuickLookCore"]),
+        .library(name: "WriteFileProviderKit", targets: ["WriteFileProviderKit"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -62,6 +63,10 @@ let package = Package(
             dependencies: ["WriteShareCore"],
             path: "Extensions/WriteQuickLookPreview",
             exclude: ["Info.plist", "WriteQuickLookPreview.entitlements.template"]
+        ),
+        .target(
+            name: "WriteFileProviderKit",
+            path: "Sources/WriteFileProviderKit"
         ),
         .executableTarget(
             name: "Write",
@@ -117,6 +122,11 @@ let package = Package(
             name: "WriteTests",
             dependencies: ["Write"],
             path: "Tests/WriteTests"
+        ),
+        .testTarget(
+            name: "WriteFileProviderKitTests",
+            dependencies: ["WriteFileProviderKit"],
+            path: "Tests/WriteFileProviderKitTests"
         )
     ]
 )
