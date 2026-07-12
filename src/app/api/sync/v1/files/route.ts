@@ -1,6 +1,12 @@
 import type { Post } from "@/lib/content";
 import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
-import { createDraft, deletePost, markCapturePending, savePost } from "@/lib/store";
+import {
+  createDraft,
+  createDraftInFolder,
+  deletePost,
+  markCapturePending,
+  savePost,
+} from "@/lib/store";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { resolveSyncWorkspace } from "../auth";
 import { recordAction } from "@/lib/audit";
@@ -25,7 +31,22 @@ export async function POST(request: Request) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
 
-  const created = await createDraft(blog.handle, parsed.fields.type ?? "article");
+  // A File Provider create knows its target folder (?folder=<id>); a plain
+  // client create derives the folder from the file's type. When a folder is
+  // named, its mode dictates the kind, so a file made inside Notes is a note.
+  const folderId = new URL(request.url).searchParams.get("folder");
+  let created: Post;
+  let forcedType: Post["type"] | undefined;
+  try {
+    if (folderId) {
+      created = await createDraftInFolder(blog.handle, folderId);
+      forcedType = created.type; // the folder's kind wins over any frontmatter
+    } else {
+      created = await createDraft(blog.handle, parsed.fields.type ?? "article");
+    }
+  } catch (error) {
+    return syncError(400, errorMessage(error, "Could not create the file"));
+  }
   try {
     // date comes from the file alone: created.date is the placeholder's
     // derived createdAt, and letting it through would backdate a publish to
@@ -33,6 +54,9 @@ export async function POST(request: Request) {
     const saved = await savePost(blog.handle, {
       ...created,
       ...parsed.fields,
+      // The target folder's kind is authoritative for a folder-scoped create;
+      // it must not be overridden by a stray `type:` in the file's frontmatter.
+      ...(forcedType ? { type: forcedType } : {}),
       date: parsed.fields.date,
       slug: slugForNewFile(parsed.fields, created.slug),
       body: parsed.body,

@@ -5,10 +5,12 @@ import { resolveItemAccess } from "@/lib/permissions";
 import {
   deletePost,
   folderPathForPostType,
+  getFolderById,
   getPostById,
   markCapturePending,
   savePost,
   savePostContentPatch,
+  setPostFolder,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
 import { recordAction } from "@/lib/audit";
@@ -174,6 +176,61 @@ export async function DELETE(request: Request, { params }: Props) {
   });
   revalidateBlogPaths(blog, [post.slug]);
   return new Response(null, { status: 204 });
+}
+
+// Move (change folder) and/or rename (change slug) without re-sending the body.
+// A File Provider reparent or Finder rename maps here; content edits stay on PUT.
+//
+//   PATCH /api/sync/v1/files/{postId}  {"folder": "<folderId>", "slug": "new-name"}
+export async function PATCH(request: Request, { params }: Props) {
+  const resolved = await resolveWorkspacePost(request, params);
+  if (resolved instanceof Response) return resolved;
+  const { blog, post, postId, userId, access } = resolved;
+  if (!access.isOwner) {
+    return syncError(403, "Only the owner can move or rename files");
+  }
+
+  let body: { folder?: unknown; slug?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return syncError(400, "Send a JSON body");
+  }
+  const folderId = typeof body.folder === "string" ? body.folder.trim() : "";
+  const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+  if (!folderId && !slug) {
+    return syncError(400, "Provide a folder to move into or a slug to rename to");
+  }
+
+  try {
+    let current = post;
+    if (folderId) {
+      const folder = await getFolderById(blog.handle, folderId);
+      if (!folder) return syncError(404, "Folder not found");
+      // setPostFolder enforces the mode-match invariant (a note cannot move
+      // into a blog folder), which keeps notes/bookmarks unlisted.
+      const moved = await setPostFolder(blog.handle, postId, folder.path);
+      if (!moved) return syncError(404, "Post not found");
+      current = moved;
+    }
+    if (slug && slug !== current.slug) {
+      current = await savePost(blog.handle, { ...current, slug });
+    }
+    await recordAction({
+      actorUserId: userId,
+      actorType: "external_agent",
+      actionName: "sync.patch_file",
+      targetType: "item",
+      targetId: postId,
+      inputSummary: current.title,
+    });
+    revalidateBlogPaths(blog, [post.slug, current.slug]);
+    return Response.json({ item: syncManifestItem(blog, current) });
+  } catch (error) {
+    const message = clientSaveError(error);
+    if (message) return syncError(400, message);
+    throw error;
+  }
 }
 
 function errorMessage(error: unknown, fallback: string): string {

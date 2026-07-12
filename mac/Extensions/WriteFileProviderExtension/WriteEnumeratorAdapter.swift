@@ -80,15 +80,27 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
 
     /// Map a sync error onto the File Provider error the system expects.
     static func bridge(_ error: WriteSyncError) -> NSError {
-        let code: NSFileProviderError.Code
         switch error {
         case .notFound:
-            code = .noSuchItem
+            return fp(.noSuchItem)
+        case .conflict:
+            // The base version was stale (412). The framework re-reads and
+            // retries the edit against the current version.
+            return fp(.serverUnreachable)
+        case .rejected(let message):
+            // The bytes themselves are the problem (400); retrying is futile, so
+            // do not use a transient FP error that would loop.
+            return NSError(
+                domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError,
+                userInfo: [NSLocalizedDescriptionKey: message])
         case .http(let status, _) where status == 401 || status == 403:
-            code = .notAuthenticated
+            return fp(.notAuthenticated)
         default:
-            code = .serverUnreachable // transient; the system backs off and retries
+            return fp(.serverUnreachable) // transient; the system backs off and retries
         }
-        return NSError(domain: NSFileProviderErrorDomain, code: code.rawValue)
+    }
+
+    private static func fp(_ code: NSFileProviderError.Code) -> NSError {
+        NSError(domain: NSFileProviderErrorDomain, code: code.rawValue)
     }
 }

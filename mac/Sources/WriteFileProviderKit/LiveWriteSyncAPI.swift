@@ -70,10 +70,12 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     // MARK: Writes (Phase 3 wires these into the extension)
 
     public func createFile(
-        body: String
+        body: String, folderId: String?
     ) async -> Result<WriteManifestItem, WriteSyncError> {
+        var path = "/api/sync/v1/files"
+        if let folderId, !folderId.isEmpty { path += "?folder=\(escape(folderId))" }
         switch await send(
-            "POST", "/api/sync/v1/files",
+            "POST", path,
             headers: ["Content-Type": "text/markdown; charset=utf-8"],
             body: Data(body.utf8)
         ) {
@@ -81,6 +83,28 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         case .success(let reply):
             if reply.status == 400 { return .failure(.rejected(reply.errorMessage)) }
             guard reply.status == 201 else { return .failure(reply.httpError) }
+            return decode(ItemEnvelope.self, reply.data).map { $0.item }
+        }
+    }
+
+    public func patchFile(
+        postId: String, folderId: String?, slug: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        var json: [String: Any] = [:]
+        if let folderId, !folderId.isEmpty { json["folder"] = folderId }
+        if let slug, !slug.isEmpty { json["slug"] = slug }
+        guard let body = try? JSONSerialization.data(withJSONObject: json) else {
+            return .failure(.decode("could not encode request body"))
+        }
+        switch await send(
+            "PATCH", "/api/sync/v1/files/\(escape(postId))",
+            headers: ["Content-Type": "application/json"], body: body
+        ) {
+        case .failure(let e): return .failure(e)
+        case .success(let reply):
+            if reply.status == 404 { return .failure(.notFound) }
+            if reply.status == 400 { return .failure(.rejected(reply.errorMessage)) }
+            guard reply.status == 200 else { return .failure(reply.httpError) }
             return decode(ItemEnvelope.self, reply.data).map { $0.item }
         }
     }
@@ -128,6 +152,24 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             guard reply.status == 201 else { return .failure(reply.httpError) }
+            return decode(FolderEnvelope.self, reply.data).map { $0.folder }
+        }
+    }
+
+    public func renameFolder(
+        folderId: String, name: String
+    ) async -> Result<WriteWorkspaceFolder, WriteSyncError> {
+        guard let body = try? JSONSerialization.data(withJSONObject: ["name": name]) else {
+            return .failure(.decode("could not encode request body"))
+        }
+        switch await send(
+            "PATCH", "/api/sync/v1/folders/\(escape(folderId))",
+            headers: ["Content-Type": "application/json"], body: body
+        ) {
+        case .failure(let e): return .failure(e)
+        case .success(let reply):
+            if reply.status == 404 { return .failure(.notFound) }
+            guard reply.status == 200 else { return .failure(reply.httpError) }
             return decode(FolderEnvelope.self, reply.data).map { $0.folder }
         }
     }

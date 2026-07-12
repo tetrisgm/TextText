@@ -1034,6 +1034,74 @@ export async function getFolderByPath(
   return rows[0] ? mapFolder(rows[0]) : null;
 }
 
+/** One folder by its id within the blog, or null. */
+export async function getFolderById(
+  handle: string,
+  folderId: string,
+): Promise<Folder | null> {
+  if (!db) {
+    return DEMO_FOLDERS.find((folder) => folder.id === folderId) ?? null;
+  }
+  const blogId = await blogIdFor(handle);
+  const rows = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.id, folderId),
+        eq(folders.blogId, blogId),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  return rows[0] ? mapFolder(rows[0]) : null;
+}
+
+/** The public post kind a folder mode files new items as. */
+export function defaultPostTypeForFolderMode(mode: FolderMode): PostType {
+  switch (mode) {
+    case "notes":
+      return "note";
+    case "bookmarks":
+      return "bookmark";
+    default:
+      return "article";
+  }
+}
+
+/**
+ * Create an empty draft directly inside a specific folder (a File Provider
+ * create knows the target folder, unlike the type-derived createDraft). The
+ * new post's kind follows the folder's mode, keeping the notes/bookmarks
+ * unlisted invariant intact.
+ */
+export async function createDraftInFolder(
+  handle: string,
+  folderId: string,
+): Promise<Post> {
+  if (!db) throw new Error("createDraftInFolder requires DATABASE_URL");
+  const folder = await getFolderById(handle, folderId);
+  if (!folder) throw new Error("Folder not found");
+  const type = defaultPostTypeForFolderMode(folder.mode);
+  const blogId = await blogIdFor(handle);
+  const slug = `untitled-${Date.now().toString(36)}`;
+  const inserted = await db
+    .insert(posts)
+    .values({
+      blogId,
+      folderId: folder.id,
+      type,
+      slug,
+      title: "",
+      excerpt: "",
+      body: "",
+      wordCount: 0,
+      status: "draft",
+    })
+    .returning();
+  return mapPost(inserted[0]);
+}
+
 function cleanFolderMode(value: string | null): FolderMode {
   if (value === "notes" || value === "bookmarks") return value;
   return "blog";

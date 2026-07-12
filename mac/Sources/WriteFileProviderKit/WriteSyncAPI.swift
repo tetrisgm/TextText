@@ -39,11 +39,24 @@ public protocol WriteSyncAPI: Sendable {
     /// current cursor immediately; a cursor with `wait > 0` long-polls.
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError>
 
-    // Write paths (wired in Phase 3).
-    func createFile(body: String) async -> Result<WriteManifestItem, WriteSyncError>
+    // Write paths (Phase 3).
+    /// POST /api/sync/v1/files[?folder=<id>]. A folder id files the new item
+    /// directly into that folder (its mode dictates the kind).
+    func createFile(body: String, folderId: String?) async
+        -> Result<WriteManifestItem, WriteSyncError>
+    /// PUT /api/sync/v1/files/{id} with If-Match: a content edit.
     func putFile(postId: String, body: String, ifMatch hash: String) async
         -> Result<WriteManifestItem, WriteSyncError>
+    /// PATCH /api/sync/v1/files/{id}: move (folderId) and/or rename (slug)
+    /// without re-sending the body.
+    func patchFile(postId: String, folderId: String?, slug: String?) async
+        -> Result<WriteManifestItem, WriteSyncError>
+    /// DELETE /api/sync/v1/files/{id}.
     func deleteFile(postId: String) async -> Result<Void, WriteSyncError>
+    /// POST /api/sync/v1/folders: create a subfolder.
     func createFolder(parentPath: String, name: String) async
+        -> Result<WriteWorkspaceFolder, WriteSyncError>
+    /// PATCH /api/sync/v1/folders/{id}: rename a folder.
+    func renameFolder(folderId: String, name: String) async
         -> Result<WriteWorkspaceFolder, WriteSyncError>
 }

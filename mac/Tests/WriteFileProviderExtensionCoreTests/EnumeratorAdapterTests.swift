@@ -26,10 +26,12 @@ private final class FakeAPI: WriteSyncAPI, @unchecked Sendable {
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError> {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
     }
-    func createFile(body: String) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func createFile(body: String, folderId: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func patchFile(postId: String, folderId: String?, slug: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func deleteFile(postId: String) async -> Result<Void, WriteSyncError> { .success(()) }
     func createFolder(parentPath: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
+    func renameFolder(folderId: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
 }
 
 private func standardAPI() -> FakeAPI {

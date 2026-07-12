@@ -117,9 +117,12 @@ public enum WriteItemMapper {
     public static func item(for folder: WriteWorkspaceFolder, readOnly: Bool) -> WriteItem {
         let parent: WriteItemIdentifier =
             folder.parentId.map { .folder($0) } ?? .rootContainer
+        // Writable folders can be renamed and gain items; folder delete and
+        // folder move are deferred (their server semantics for contained posts
+        // need care), so those bits are not advertised and Finder won't offer them.
         let caps: WriteItemCapabilities = readOnly
             ? .readOnlyFolder
-            : [.contentEnumerating, .addingSubItems, .renaming, .deleting, .reparenting]
+            : [.contentEnumerating, .addingSubItems, .renaming]
         return WriteItem(
             identifier: .folder(folder.id),
             parentIdentifier: parent,

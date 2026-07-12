@@ -55,18 +55,26 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         return .success(WriteChangeReply(cursor: self.cursor, changed: changed))
     }
 
-    // Write paths: minimal, enough for Phase 3 tests later.
-    func createFile(body: String) async -> Result<WriteManifestItem, WriteSyncError> {
+    // Write paths: minimal, enough for the read-path tests here.
+    func createFile(body: String, folderId: String?) async -> Result<WriteManifestItem, WriteSyncError> {
         .failure(.rejected("not implemented in fake"))
     }
     func putFile(postId: String, body: String, ifMatch hash: String) async
         -> Result<WriteManifestItem, WriteSyncError> {
         .failure(.conflict)
     }
+    func patchFile(postId: String, folderId: String?, slug: String?) async
+        -> Result<WriteManifestItem, WriteSyncError> {
+        .failure(.rejected("not implemented in fake"))
+    }
     func deleteFile(postId: String) async -> Result<Void, WriteSyncError> {
         .success(())
     }
     func createFolder(parentPath: String, name: String) async
+        -> Result<WriteWorkspaceFolder, WriteSyncError> {
+        .failure(.rejected("not implemented in fake"))
+    }
+    func renameFolder(folderId: String, name: String) async
         -> Result<WriteWorkspaceFolder, WriteSyncError> {
         .failure(.rejected("not implemented in fake"))
     }
