@@ -33,5 +33,7 @@
 	</dict>
 	<key>WriteAppGroupIdentifier</key>
 	<string>WRITE_APP_GROUP</string>
+	<key>WriteKeychainAccessGroup</key>
+	<string>WRITE_KEYCHAIN_GROUP</string>
 </dict>
 </plist>

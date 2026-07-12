@@ -16,6 +16,12 @@ PB=/usr/libexec/PlistBuddy
 
 APP="$1"; SIGN_ID="$2"; APP_GROUP="$3"; BUNDLE_ID="$4"; VERSION="$5"; BUILD="$6"
 
+# The File Provider extension shares a keychain access group with the app to read
+# the sync token (<TeamID>.net.writeapp.write.fp). Resolve the team from the
+# signing identity so the Info.plist carries the same string the app does.
+TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
+KEYCHAIN_GROUP="${TEAM:+$TEAM.net.writeapp.write.fp}"
+
 SHARE_PROFILE="$MAC/profiles/Write_Share_Developer_ID.provisionprofile"
 QL_PROFILE="$MAC/profiles/Write_QuickLook_Developer_ID.provisionprofile"
 FP_PROFILE="$MAC/profiles/Write_FileProvider_Developer_ID.provisionprofile"
@@ -79,6 +85,7 @@ embed_appex() { # returns nonzero on failure
     -e "s/\$(DEVELOPMENT_LANGUAGE)/en/g" \
     -e "s/WRITE_BUNDLE_ID/$BUNDLE_ID/g" \
     -e "s/WRITE_APP_GROUP/$APP_GROUP/g" \
+    -e "s/WRITE_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
     "$plist"
   "$PB" -c "Set :CFBundleShortVersionString $VERSION" "$plist"
   "$PB" -c "Set :CFBundleVersion $BUILD" "$plist"

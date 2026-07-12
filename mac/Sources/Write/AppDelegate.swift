@@ -701,10 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         registeredFileProviderDomain = nil
-        if let container = fileProviderContainerURL() {
-            try? FileManager.default.removeItem(
-                at: container.appendingPathComponent(FileProviderHandoff.filename))
-        }
+        FileProviderHandoffStore.clear()
     }
 
     /// Signal the registered domain that the workspace changed. Called from the
@@ -714,39 +711,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { _ in }
     }
 
-    /// The shared app-group identifier (env override, else the app's Info.plist).
-    private func fileProviderGroupIdentifier() -> String? {
-        let envGroup = ProcessInfo.processInfo.environment["WRITE_APP_GROUP"]
-        guard let group = envGroup
-            ?? Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
-              !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              group != "WRITE_APP_GROUP" else {
-            return nil
-        }
-        return group
-    }
-
-    /// The shared app-group container the File Provider extension reads. The app
-    /// carries the app-group entitlement (release builds), so this resolves to
-    /// the exact same directory the sandboxed extension sees, which the Share
-    /// inbox scan cannot guarantee.
-    private func fileProviderContainerURL() -> URL? {
-        guard let group = fileProviderGroupIdentifier() else { return nil }
-        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
-    }
-
-    /// Write the credential handoff into the shared container, 0600. Requires
-    /// the app-group entitlement (a plain non-entitled app is blocked from
-    /// writing here, which is why the extension used to see nothing).
+    /// Publish the credential handoff to the shared keychain group the File
+    /// Provider extension reads. Keychain, not the app-group container: a
+    /// non-sandboxed app is blocked from writing a Group Container even when
+    /// entitled (that write is sandbox-gated, EPERM), but the keychain is not.
     private func writeFileProviderHandoff(_ handoff: FileProviderHandoff) {
-        guard let container = fileProviderContainerURL() else { return }
-        try? FileManager.default.createDirectory(
-            at: container, withIntermediateDirectories: true)
-        let url = container.appendingPathComponent(FileProviderHandoff.filename)
-        guard let data = handoff.encoded() else { return }
-        try? data.write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: url.path)
+        FileProviderHandoffStore.save(handoff)
     }
 
     // MARK: Self-install (move to /Applications), copied from partyparty

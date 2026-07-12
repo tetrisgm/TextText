@@ -17,7 +17,7 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
     private let apiFactory: () -> WriteSyncAPI?
 
     public required convenience init(domain: NSFileProviderDomain) {
-        self.init(domain: domain, apiFactory: { FileProviderExtension.containerAPI() })
+        self.init(domain: domain, apiFactory: { FileProviderExtension.handoffAPI() })
     }
 
     /// Test seam: inject the API instead of reading the app-group container.
@@ -262,18 +262,11 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
 
     // MARK: Helpers
 
-    /// Read the handoff freshly and build the live client. nil = not signed in.
-    static func containerAPI() -> WriteSyncAPI? {
-        guard
-            let group = Bundle.main.object(forInfoDictionaryKey: "WriteAppGroupIdentifier") as? String,
-            !group.isEmpty, group != "WRITE_APP_GROUP",
-            let container = FileManager.default
-                .containerURL(forSecurityApplicationGroupIdentifier: group),
-            let data = try? Data(
-                contentsOf: container.appendingPathComponent(FileProviderHandoff.filename)),
-            let handoff = FileProviderHandoff.decode(data),
-            let origin = URL(string: handoff.origin)
-        else { return nil }
+    /// Read the handoff from the shared keychain group and build the live client.
+    /// nil = not signed in (the app has not published a token yet).
+    static func handoffAPI() -> WriteSyncAPI? {
+        guard let handoff = FileProviderHandoffStore.load(),
+              let origin = URL(string: handoff.origin) else { return nil }
         return LiveWriteSyncAPI(origin: origin, token: handoff.token)
     }
 

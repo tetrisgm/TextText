@@ -1,21 +1,25 @@
-# File Provider "signed out" fix: the main app needs the app group
+# File Provider "signed out" fix: main-app profile + keychain handoff
 
 ## What went wrong
 
 In v0.29 the File Provider registered fine (Write appears in Finder under
-Locations), but it showed "signed out" and never loaded. The cause: the
-extension reads the workspace token from the shared app-group container, and the
-main app is the one that must write it there. A non-sandboxed app without the
-app-group entitlement is **allowed to read** a Group Container but **blocked from
-writing** to it ("Operation not permitted"), so the token never landed and the
-extension had nothing to authenticate with.
+Locations), but it showed "signed out" and never loaded. The extension reads the
+workspace token from the app, and the app could not get it across:
 
-The fix is to give the **main app** the app-group entitlement so it can write the
-handoff into the exact container the extension reads. That entitlement is
-restricted, so it needs an embedded Developer ID provisioning profile that
-authorizes the group. This is the one thing only you can do (Apple Developer
-account), and it is the same shape as the File Provider portal step you already
-did.
+- The app-group **container** does not work: a non-sandboxed app is **blocked
+  from writing** a Group Container even with the app-group entitlement (the write
+  is sandbox-gated, "Operation not permitted"). Verified on device.
+- A shared **keychain** access group DOES work (it is not sandbox-gated):
+  verified end to end that a non-sandboxed writer and a sandboxed reader with
+  different bundle ids share an item via `<TeamID>.net.writeapp.write.fp`.
+
+So the handoff goes through the keychain. Both the app and the extension carry a
+`keychain-access-groups` entitlement, which only requires that the bundle carry
+an embedded provisioning profile (the team-scoped keychain group is
+self-authorized). That is why the main app still needs its own Developer ID
+profile, the one portal step below. (Creating the App ID with App Groups is what
+lets you generate that Developer ID profile; the profile is the load-bearing
+part.)
 
 ## What you are creating
 

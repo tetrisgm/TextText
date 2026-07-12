@@ -82,6 +82,17 @@ if [ -n "${WRITE_APP_GROUP:-}" ]; then
   "$PB" -c "Set :WriteAppGroupIdentifier $WRITE_APP_GROUP" "$STAGED" 2>/dev/null \
     || "$PB" -c "Add :WriteAppGroupIdentifier string $WRITE_APP_GROUP" "$STAGED"
 fi
+# The app and the File Provider extension share a keychain access group to hand
+# the sync token across: the app cannot write the app-group container (that write
+# is sandbox-gated), but the keychain is not. The group is
+# <TeamID>.net.writeapp.write.fp; stamp the resolved value so both bundles read
+# the same string at runtime (Info.plist WriteKeychainAccessGroup).
+TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
+if [ -n "$TEAM" ]; then
+  KC_GROUP="$TEAM.net.writeapp.write.fp"
+  "$PB" -c "Set :WriteKeychainAccessGroup $KC_GROUP" "$STAGED" 2>/dev/null \
+    || "$PB" -c "Add :WriteKeychainAccessGroup string $KC_GROUP" "$STAGED"
+fi
 if [ -n "${APP_VERSION:-}" ]; then
   [[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || {
     echo "APP_VERSION must be dotted numeric, got: $APP_VERSION" >&2

@@ -17,4 +17,20 @@ final class FileProviderHandoffTests: XCTestCase {
         // Both app (writer) and extension (reader) hardcode this; it must not drift.
         XCTAssertEqual(FileProviderHandoff.filename, "fileprovider-credentials.json")
     }
+
+    func testStoreAccessGroupReadsEnvOverride() {
+        setenv("WRITE_KEYCHAIN_GROUP", "TEAMID123.net.writeapp.write.fp", 1)
+        defer { unsetenv("WRITE_KEYCHAIN_GROUP") }
+        XCTAssertEqual(FileProviderHandoffStore.accessGroup(), "TEAMID123.net.writeapp.write.fp")
+    }
+
+    func testStoreSaveFailsWithoutAccessGroup() {
+        // No env override and no Info.plist key in the test bundle -> no group ->
+        // the store cannot write, and reports it rather than silently succeeding.
+        unsetenv("WRITE_KEYCHAIN_GROUP")
+        XCTAssertNil(FileProviderHandoffStore.accessGroup())
+        XCTAssertFalse(FileProviderHandoffStore.save(
+            FileProviderHandoff(origin: "https://x", token: "wsk_x", handle: "h")))
+        XCTAssertNil(FileProviderHandoffStore.load())
+    }
 }
