@@ -19,26 +19,32 @@ did.
 
 ## What you are creating
 
-- The **App Groups** capability on the EXISTING App ID `net.writeapp.write.mac`
-  (the main app), using the existing group `group.net.writeapp.write`.
-- A **Developer ID** provisioning profile for `net.writeapp.write.mac`, saved into
+There is no `net.writeapp.write.mac` App ID yet (your portal has `net.writeapp.write`
+plus the three `net.writeapp.write.mac.*` extensions; the main app never needed
+its own App ID until now). So this is a NEW App ID.
+
+- A NEW explicit **App ID** `net.writeapp.write.mac` (the main app) with the
+  **App Groups** capability using the existing group `group.net.writeapp.write`.
+- A **Developer ID** provisioning profile for it, saved into
   `mac/profiles/Write_App_Developer_ID.provisionprofile`.
 
 ## Steps
 
-1. Go to https://developer.apple.com/account/resources/identifiers/list and click
-   the App ID **`net.writeapp.write.mac`** (Description likely "Write" or
-   "Write Mac").
-2. In its capabilities, tick **App Groups** (if not already), make sure
-   `group.net.writeapp.write` is the assigned group, then **Save**.
-3. Go to Profiles: https://developer.apple.com/account/resources/profiles/list
+1. Identifiers -> blue **+** -> **App IDs** -> **Continue** -> **App** ->
+   **Continue**.
+2. Description: `Write Mac`. Bundle ID: **Explicit**, `net.writeapp.write.mac`
+   (exactly, no `.fileprovider`).
+3. In Capabilities, tick **App Groups**. Click the **Edit/Configure** next to it
+   and check the existing group `group.net.writeapp.write` (do NOT make a new
+   group). Then **Continue** -> **Register**.
+4. Go to Profiles: https://developer.apple.com/account/resources/profiles/list
    Click **+**.
-4. Under **Distribution**, choose **Developer ID** -> **Continue** (the same
+5. Under **Distribution**, choose **Developer ID** -> **Continue** (the same
    choice you made for the Share / Quick Look / File Provider profiles).
-5. Select the App ID **`net.writeapp.write.mac`** -> **Continue**.
-6. Select your **Developer ID Application** certificate -> **Continue**.
-7. Name it `Write App Developer ID` -> **Generate** -> **Download**.
-8. Move the downloaded `.provisionprofile` to exactly:
+6. Select the App ID **`net.writeapp.write.mac`** -> **Continue**.
+7. Select your **Developer ID Application** certificate -> **Continue**.
+8. Name it `Write App Developer ID` -> **Generate** -> **Download**.
+9. Move the downloaded `.provisionprofile` to exactly:
    `mac/profiles/Write_App_Developer_ID.provisionprofile`
 
 That is all. Once the file is in `mac/profiles/`, the release build embeds it and
