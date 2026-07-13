@@ -212,20 +212,29 @@ final class MountBridge {
             }
 
             if didPull {
-                await pull(post: post, manager: manager)
+                await pull(post: post, handle: ctx.handle, manager: manager)
             }
             baseline[post.postId] = Baseline(title: newTitle, body: newBody)
         }
     }
 
-    /// Pull a server edit into the mount. The `downloadLazilyAndEvictOnRemoteUpdate`
-    /// content policy makes the SYSTEM evict a remotely-updated file itself, so we
-    /// do not evict manually (a manual evict fought the old keep-downloaded policy
-    /// and left files stale). We just nudge: re-enumerate so the system notices the
-    /// new version (and applies the new title-derived name), and re-materialize so
-    /// the freshly-evicted file re-downloads instead of lingering dataless. Safe:
-    /// this only runs when the axis found the mount unchanged vs the baseline.
-    private func pull(post: ServerPost, manager: NSFileProviderManager) async {
+    /// Pull a server edit into the mount: evict the stale local copy so the File
+    /// Provider drops the old bytes and re-fetches. This is needed because a file
+    /// that is already downloaded-but-stale has no other trigger to refresh (the
+    /// evict-on-update policy only fires on a NEW server update, and re-materialize
+    /// only re-downloads DATALESS files). Evicting is now conflict-free: the item's
+    /// `downloadLazilyAndEvictOnRemoteUpdate` policy does not insist on keeping the
+    /// old bytes (unlike the previous keep-downloaded policy, which fought the
+    /// evict and left files stale with a "?" badge). Then re-enumerate (so the new
+    /// title-derived name applies) and re-materialize (so it re-downloads instead
+    /// of lingering dataless). Safe: only runs when the axis found the mount
+    /// unchanged vs the baseline (no un-pushed local edit to lose).
+    private func pull(post: ServerPost, handle: String, manager: NSFileProviderManager) async {
+        let identifier = NSFileProviderItemIdentifier(
+            rawValue: WriteItemIdentifier.file(handle: handle, id: post.postId).rawValue)
+        await withCheckedContinuation { continuation in
+            manager.evictItem(identifier: identifier) { _ in continuation.resume() }
+        }
         manager.signalEnumerator(for: .workingSet) { _ in }
         onRefresh?()
         onActivity?("Updated \(post.title) from the app")
