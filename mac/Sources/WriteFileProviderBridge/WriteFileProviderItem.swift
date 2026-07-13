@@ -62,12 +62,15 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
             contentVersion: content, metadataVersion: metadata)
     }
 
-    /// Keep the whole workspace downloaded, not on demand: the system fetches
-    /// every item's content proactively and holds onto it (folders propagate the
-    /// policy to their children), so the files read like an ordinary local
-    /// folder instead of dataless cloud placeholders.
+    /// Evict a file the moment the server updates it, so a change made in the app
+    /// is pulled into the local file cleanly (the system drops the stale copy and
+    /// re-fetches). The app re-materializes on every change signal, so files stay
+    /// downloaded in practice. This deliberately does NOT use
+    /// `downloadEagerlyAndKeepDownloaded`: that policy insists on keeping the old
+    /// bytes and fights any eviction, leaving a remotely-updated file stale with a
+    /// "?" cloud badge.
     @available(macOS 14.0, *)
     public var contentPolicy: NSFileProviderContentPolicy {
-        .downloadEagerlyAndKeepDownloaded
+        .downloadLazilyAndEvictOnRemoteUpdate
     }
 }
