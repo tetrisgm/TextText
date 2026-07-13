@@ -1,7 +1,7 @@
 # Sync races, slug recovery, and portable Finder names
 
-Status: IMPLEMENTED, VERIFICATION IN PROGRESS. Reviewed 2026-07-13 against the
-v0.55 implementation. The next native release is expected to be v0.56.
+Status: SHIPPED AND VERIFIED. Reviewed 2026-07-13 against the v0.55
+implementation and released in v0.57 (build 60).
 
 ## Problem
 
@@ -126,3 +126,16 @@ scratch rows in `finally`.
    website, running app, and automatic update preference all match.
 
 No MCP or OAuth surface is changed by this work.
+
+## Shipped verification
+
+- Vitest: 23 files and 243 tests passed.
+- Swift: 239 tests passed, including portable names, collisions, overlong
+  components, Finder/app races, and File Provider reconciliation.
+- Production sync probe: 15 checks passed against `write.ramine.net`, including
+  concurrent compare-and-swap writes, stale and wildcard rejection, metadata
+  ETag changes, `Question??` title preservation, slug-history redirects, and a
+  durable change cursor.
+- The installed app, public update feed, website marker, and immutable ZIP all
+  advertise v0.57 build 60. The feed has an EdDSA signature, the app is
+  notarized, automatic updates are enabled, and the installed app is running.

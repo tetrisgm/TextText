@@ -267,7 +267,7 @@ async function main() {
     check(
       "old visible slug redirects 307 to the canonical safe slug",
       historical.status === 307
-        && historical.headers.get("location")?.endsWith(`/t/${HANDLE}/question`) === true,
+        && historical.headers.get("location")?.endsWith(`/@${HANDLE}/question`) === true,
       `status ${historical.status}, location ${historical.headers.get("location")}`,
     );
 
