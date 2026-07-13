@@ -4,15 +4,21 @@ import Foundation
 import WriteFileProviderKit
 import WriteWorkspaceCore
 
-/// Pushes local Finder edits on the File Provider mount to the server the moment
-/// they happen, instead of waiting on macOS's own (slow, deprioritized) File
-/// Provider upload scheduler. Strictly ONE-WAY (mount -> server): it watches the
-/// mount and, on any change, re-derives the diff against FRESHLY fetched server
-/// truth and pushes it (title rename, folder rename, content edit, move). It
-/// NEVER writes the mount (the File Provider owns server -> mount) and NEVER
-/// deletes. Because every pass diffs against live server state, it cannot fight
-/// the File Provider's own writes or loop: once mount == server there is no diff,
-/// so a change the File Provider itself materialized is never re-pushed.
+/// Keeps the File Provider mount and the server in sync FAST in BOTH directions,
+/// because macOS does it on its own slow, deprioritized schedule. It watches the
+/// mount and, on any local or remote change, reconciles each post:
+///  - a local Finder edit (rename / body edit / move) is PUSHED to the server
+///    (PATCH title, PUT content, PATCH folder);
+///  - a server edit (made in the app) is PULLED into the mount by evicting the
+///    stale local copy so the File Provider re-downloads it fresh.
+///
+/// Direction is decided by a per-post BASELINE: the (hash, filename) both sides
+/// last agreed on. If only the mount moved off the baseline it is a local edit
+/// (push); if only the server moved it is a remote edit (pull); if both moved it
+/// is a conflict, resolved by pulling the server (the File Provider keeps a
+/// conflict copy of the local version). This is what makes it safe: it never
+/// pushes a stale mount over an app edit, and never evicts an un-pushed local
+/// edit. It never deletes and never creates (the File Provider still owns those).
 final class MountBridge {
     struct Context { let api: WriteSyncAPI; let handle: String; let workspaceName: String }
     /// Rebuilt per pass, so a sign in/out needs no plumbing here.
@@ -26,12 +32,14 @@ final class MountBridge {
     private var manager: NSFileProviderManager?
     private var inFlight = false
     private var pending = false
-    /// Content hashes the server rejected (400): don't hot-loop re-pushing a bad
-    /// file until its bytes change.
+    /// postId -> the (server hash, filename) the mount and server last agreed on.
+    /// In-memory: on launch the first pass just seeds it (acts on the next change).
+    private var baseline: [String: Baseline] = [:]
+    /// Content the server rejected (400): don't hot-loop re-pushing it.
     private var rejected: [String: String] = [:]
 
-    /// Begin watching the mount root. Idempotent: re-starting on the same root is
-    /// a no-op, so it is safe to call from every materialize pass.
+    private struct Baseline { var hash: String; var name: String }
+
     func start(mountRoot root: URL, manager: NSFileProviderManager) {
         queue.async { [weak self] in
             guard let self else { return }
@@ -39,9 +47,6 @@ final class MountBridge {
             self.mountRoot = root
             self.manager = manager
             self.watcher?.stop()
-            // 0.3s FSEvents latency + a 0.4s debounce ~= sub-second push, vs the
-            // OS's seconds-to-minutes. includeUbiquitousItems: false because the
-            // NSMetadataQuery is for iCloud items and is noise over CloudStorage.
             self.watcher = WorkspaceFolderWatcher(
                 path: root.path, queue: self.queue,
                 includeUbiquitousItems: false, latency: 0.3
@@ -59,8 +64,9 @@ final class MountBridge {
         }
     }
 
-    /// External poke (e.g. after a materialize). Harmless: a remote-driven
-    /// materialize yields mount == server, so it pushes nothing.
+    /// Poke a pass. Wired to the app's remote-change signal so a server edit is
+    /// pulled into the mount promptly (the mount itself does not fire FSEvents
+    /// when only the server changed).
     func nudge() { queue.async { [weak self] in self?.scheduleOnQueue() } }
 
     private func scheduleOnQueue() {
@@ -90,23 +96,19 @@ final class MountBridge {
 
     private func reconcile(root: URL, manager: NSFileProviderManager, ctx: Context) async {
         let api = ctx.api
-        // Fresh server truth: slug -> post, and folder id -> name.
         guard case .success(let ws) = await api.workspace() else { return }
         var bySlug: [String: ServerPost] = [:]
         var folderName: [String: String] = [:]
         for folder in ws.folders {
             folderName[folder.id] = folder.name
             if case .success(let items) = await api.manifest(folderId: folder.id) {
-                for item in items {
-                    if let id = item.id, !id.isEmpty {
-                        bySlug[item.slug] = ServerPost(
-                            postId: id, folderId: folder.id, title: item.title, hash: item.hash)
-                    }
+                for item in items where (item.id ?? "").isEmpty == false {
+                    bySlug[item.slug] = ServerPost(
+                        postId: item.id!, folderId: folder.id, title: item.title, hash: item.hash)
                 }
             }
         }
 
-        // Walk the mount.
         let fm = FileManager.default
         var dirs: [URL] = []
         var files: [URL] = []
@@ -118,7 +120,9 @@ final class MountBridge {
             }
         }
 
-        // FOLDER RENAME: a mount folder whose name no longer matches the server.
+        // FOLDER RENAME (push only; the FP handles a server-side folder rename by
+        // re-enumeration). A folder keeps its posts across a rename, so a
+        // majority vote of the contained posts resolves its id.
         for dir in dirs {
             guard let fid = folderId(for: dir, bySlug: bySlug) else { continue }
             let name = dir.lastPathComponent
@@ -129,79 +133,102 @@ final class MountBridge {
             }
         }
 
-        // FILE axes: title rename, move, content edit.
         for file in files {
-            if Self.isDataless(file) { continue } // no local edit; don't force a fetch
+            if Self.isDataless(file) { continue }
             guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             guard let slug = MountFrontmatter.value(text, "slug"), !slug.isEmpty,
-                  let post = bySlug[slug] else { continue } // new/foreign file -> the FP owns creates
+                  let post = bySlug[slug] else { continue }
 
-            let filenameTitle = WriteFilename.titleFromFilename(file.lastPathComponent)
-            // Compare against the server title's DISPLAY leaf so a sanitized or
-            // disambiguated filename ("Foo (2).md") is not seen as a rename.
-            let needTitle = !filenameTitle.isEmpty
-                && filenameTitle != WriteFilename.displayLeaf(title: post.title, slug: slug)
-
-            var newFolderId: String?
-            if let parentId = folderId(
-                for: file.deletingLastPathComponent(),
-                bySlug: bySlug, excluding: post.postId), parentId != post.folderId {
-                newFolderId = parentId
-            }
-            let needMove = newFolderId != nil
-
-            // Content: cheap whole-file check first (matches the manifest hash when
-            // in sync); only on a difference fetch the server file and compare with
-            // the TITLE line stripped, so the frontmatter-title lag window (server
-            // retitled, mount not yet re-materialized) is not mistaken for a body
-            // edit that would revert the title. This is the loop-critical bit.
-            var needContent = false
+            let name = file.lastPathComponent
             let mountHash = Self.sha256(text)
-            if mountHash != post.hash, case .success(let server) = await api.fileText(postId: post.postId) {
-                needContent = Self.sha256(MountFrontmatter.stripTitle(text))
-                    != Self.sha256(MountFrontmatter.stripTitle(server.text))
+            let serverName = WriteFilename.filename(title: post.title, slug: slug)
+            let base = baseline[post.postId]
+
+            // Steady state: agreed. (Re)seed the baseline and move on.
+            if mountHash == post.hash, name == serverName {
+                baseline[post.postId] = Baseline(hash: post.hash, name: name)
+                continue
+            }
+            // First sight of a divergence with no baseline: cannot tell direction
+            // safely, so seed and let the next change act (the FP is the backstop).
+            guard let base else {
+                baseline[post.postId] = Baseline(hash: post.hash, name: name)
+                continue
             }
 
-            if needContent {
-                if rejected[post.postId] == mountHash { continue }
-                // A content PUT carries the title too: the intended title is the
-                // filename's when renamed, else the server's (a body edit must not
-                // change the title).
-                let title = needTitle ? filenameTitle : post.title
-                let body = MountFrontmatter.setTitle(text, title)
-                switch await api.putFile(postId: post.postId, body: body, ifMatch: post.hash) {
-                case .success(let saved):
-                    onActivity?("Synced edits to \(title)")
-                    if let nf = newFolderId {
-                        _ = await api.patchFile(
-                            postId: post.postId, folderId: nf, slug: nil, title: nil, ifMatch: saved.hash)
-                    }
-                case .failure(.rejected):
-                    rejected[post.postId] = mountHash // don't re-push until it changes
-                case .failure:
-                    break // conflict/transient: the next pass reconciles against fresh truth
-                }
-            } else if needTitle || needMove {
-                if case .success = await api.patchFile(
-                    postId: post.postId,
-                    folderId: needMove ? newFolderId : nil,
-                    slug: nil,
-                    title: needTitle ? filenameTitle : nil,
-                    ifMatch: post.hash) {
-                    if needTitle { onActivity?("Renamed to \(filenameTitle)") }
-                }
+            let localEdit = mountHash != base.hash || name != base.name
+            let serverEdit = post.hash != base.hash || serverName != base.name
+
+            if localEdit && !serverEdit {
+                await push(file: file, text: text, name: name, post: post, slug: slug, api: api, mountHash: mountHash)
+            } else if serverEdit && !localEdit {
+                await pull(post: post, slug: slug, handle: ctx.handle, manager: manager)
+            } else if localEdit && serverEdit {
+                // Conflict: prefer the server (the FP keeps a conflict copy of the
+                // local edit); losing a server edit would be worse.
+                await pull(post: post, slug: slug, handle: ctx.handle, manager: manager)
             }
         }
     }
 
-    /// The server folder id for a mount directory, by a majority vote of the
-    /// server folder ids of the `.md` files directly inside it. A folder keeps
-    /// the same posts across a rename, so the vote survives a rename. Returns nil
-    /// for a folder with no resolvable posts (e.g. an empty folder) -> that pass
-    /// skips it and the File Provider's own scheduler handles it eventually.
-    private func folderId(
-        for dir: URL, bySlug: [String: ServerPost], excluding: String? = nil
-    ) -> String? {
+    /// Push a local mount edit to the server.
+    private func push(
+        file: URL, text: String, name: String, post: ServerPost, slug: String,
+        api: WriteSyncAPI, mountHash: String
+    ) async {
+        let filenameTitle = WriteFilename.titleFromFilename(name)
+        let needTitle = !filenameTitle.isEmpty
+            && filenameTitle != WriteFilename.displayLeaf(title: post.title, slug: slug)
+
+        // Content: only a real BODY difference (title-stripped) is a content edit;
+        // a title-only difference is the filename axis above.
+        var needContent = false
+        if mountHash != post.hash, case .success(let server) = await api.fileText(postId: post.postId) {
+            needContent = Self.sha256(MountFrontmatter.stripTitle(text))
+                != Self.sha256(MountFrontmatter.stripTitle(server.text))
+        }
+
+        if needContent {
+            if rejected[post.postId] == mountHash { return }
+            let title = needTitle ? filenameTitle : post.title
+            let body = MountFrontmatter.setTitle(text, title)
+            switch await api.putFile(postId: post.postId, body: body, ifMatch: post.hash) {
+            case .success(let saved):
+                onActivity?("Synced edits to \(title)")
+                baseline[post.postId] = Baseline(hash: saved.hash, name: name)
+            case .failure(.rejected):
+                rejected[post.postId] = mountHash
+            case .failure:
+                break // transient/conflict: next pass reconciles against fresh truth
+            }
+        } else if needTitle {
+            if case .success(let saved) = await api.patchFile(
+                postId: post.postId, folderId: nil, slug: nil, title: filenameTitle, ifMatch: post.hash) {
+                onActivity?("Renamed to \(filenameTitle)")
+                baseline[post.postId] = Baseline(hash: saved.hash, name: name)
+            }
+        }
+    }
+
+    /// Pull a server edit into the mount: evict the stale local copy so the File
+    /// Provider re-downloads it fresh (updated content + the title-derived name).
+    /// Eviction is safe here because this path only runs when the mount is clean
+    /// relative to the baseline (no un-pushed local edit to lose).
+    private func pull(post: ServerPost, slug: String, handle: String, manager: NSFileProviderManager) async {
+        let identifier = NSFileProviderItemIdentifier(
+            rawValue: WriteItemIdentifier.file(handle: handle, id: post.postId).rawValue)
+        await withCheckedContinuation { continuation in
+            manager.evictItem(identifier: identifier) { _ in continuation.resume() }
+        }
+        // A dataless file re-materializes on read; signal the enumerator so the
+        // system re-fetches (and applies the new title-derived name) promptly.
+        manager.signalEnumerator(for: .workingSet) { _ in }
+        onActivity?("Updated \(WriteFilename.filename(title: post.title, slug: slug)) from the app")
+        baseline[post.postId] = Baseline(
+            hash: post.hash, name: WriteFilename.filename(title: post.title, slug: slug))
+    }
+
+    private func folderId(for dir: URL, bySlug: [String: ServerPost], excluding: String? = nil) -> String? {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil) else { return nil }
         var votes: [String: Int] = [:]

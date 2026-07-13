@@ -119,6 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.engine.syncNow()
             self?.captureAgent.poke()
             self?.signalFileProviderChange()
+            // A server edit does not move the mount, so nudge the bridge to pull
+            // it into the local files promptly (evict + re-download).
+            self?.mountBridge.nudge()
         }
         changeListener.start()
         captureAgent.start()
