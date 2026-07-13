@@ -728,6 +728,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     manager.signalEnumerator(for: .workingSet) { _ in }
                     manager.signalEnumerator(for: .rootContainer) { _ in }
                 }
+                // Download the whole workspace so it is present locally by default,
+                // after a moment for the first enumeration to populate the tree.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    self?.materializeWorkspace()
+                }
             }
         }
     }
@@ -749,7 +754,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func signalFileProviderChange() {
         guard let domain = registeredFileProviderDomain else { return }
         NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { _ in }
+        // A remote change can add files; keep the workspace fully downloaded.
+        materializeWorkspace()
     }
+
+    /// Keep the workspace materialized on disk instead of dataless cloud
+    /// placeholders: read every file so the system downloads its content (a
+    /// dataless File Provider file materializes on read). The item's eager
+    /// content policy is best-effort; this makes "always downloaded" reliable.
+    /// Off the main thread, coalesced, safe to call repeatedly (already-downloaded
+    /// files re-read from the local replica).
+    private func materializeWorkspace() {
+        guard let domain = registeredFileProviderDomain,
+              let manager = NSFileProviderManager(for: domain) else { return }
+        if isMaterializing { return }
+        isMaterializing = true
+        manager.getUserVisibleURL(for: .rootContainer) { [weak self] rootURL, _ in
+            guard let self else { return }
+            guard let root = rootURL else { self.isMaterializing = false; return }
+            DispatchQueue.global(qos: .utility).async {
+                let scoped = root.startAccessingSecurityScopedResource()
+                defer {
+                    if scoped { root.stopAccessingSecurityScopedResource() }
+                    DispatchQueue.main.async { self.isMaterializing = false }
+                }
+                let coordinator = NSFileCoordinator()
+                guard let walker = FileManager.default.enumerator(
+                    at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+                for case let fileURL as URL in walker where fileURL.pathExtension == "md" {
+                    var err: NSError?
+                    coordinator.coordinate(readingItemAt: fileURL, options: [], error: &err) { u in
+                        _ = try? Data(contentsOf: u) // reading a dataless file downloads it
+                    }
+                }
+            }
+        }
+    }
+    private var isMaterializing = false
 
     /// Publish the credential handoff to the shared keychain group the File
     /// Provider extension reads. Keychain, not the app-group container: a
