@@ -19,6 +19,7 @@ private struct StubAPI: WriteSyncAPI {
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> { .success(()) }
     func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
     func renameFolder(folderId: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
+    func renameWorkspace(name: String) async -> Result<WriteWorkspaceBlog, WriteSyncError> { .failure(.conflict) }
 }
 
 final class BridgeTests: XCTestCase {

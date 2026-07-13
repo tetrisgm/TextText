@@ -78,6 +78,11 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         -> Result<WriteWorkspaceFolder, WriteSyncError> {
         .failure(.rejected("not implemented in fake"))
     }
+
+    func renameWorkspace(name: String) async
+        -> Result<WriteWorkspaceBlog, WriteSyncError> {
+        .failure(.rejected("not implemented in fake"))
+    }
 }
 
 // MARK: Fixtures

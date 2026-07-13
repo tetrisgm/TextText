@@ -57,6 +57,63 @@ paths:
           $ref: "#/components/responses/WorkspaceNotFound"
         default:
           $ref: "#/components/responses/UnexpectedError"
+    patch:
+      tags:
+        - Workspace
+      operationId: renameWorkspace
+      summary: Rename the workspace
+      description: |
+        Renames the workspace (its display name). This is the same field the
+        in-app settings edit; the handle/URL is unchanged. Owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: The new workspace display name.
+            examples:
+              rename:
+                summary: Rename to Studio
+                value:
+                  name: Studio
+      responses:
+        "200":
+          description: The renamed workspace's blog metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blog:
+                    type: object
+                    properties:
+                      handle:
+                        type: string
+                      username:
+                        type: string
+                        nullable: true
+                      name:
+                        type: string
+                      homeLayout:
+                        type: string
+                      cardStyle:
+                        type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkspaceNotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
 
   /folders:
     post:

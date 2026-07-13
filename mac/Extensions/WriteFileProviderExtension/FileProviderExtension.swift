@@ -252,6 +252,26 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 }
                 return progress
             }
+            // Renaming the workspace container renames the workspace itself (its
+            // display name). The name is a plain label, NOT a post title/slug, so
+            // it is sent verbatim (no WriteFilename derivation).
+            if case .workspace(let handle)? = WriteItemIdentifier(item.itemIdentifier),
+               changedFields.contains(.filename), let api = apiFactory(handle) {
+                Task {
+                    switch await api.renameWorkspace(name: item.filename) {
+                    case .success(let blog):
+                        // Write the fresh name back into the shared handoff so a
+                        // later domain re-registration reads it (not the app's
+                        // lagging cache); the anchor now includes the name, so the
+                        // app's next authoritative republish still converges.
+                        FileProviderHandoffStore.updateWorkspaceName(handle: handle, name: blog.name)
+                        done(WriteFileProviderItem(WriteItemMapper.workspaceItem(
+                            handle: handle, name: blog.name, readOnly: false)), nil)
+                    case .failure(let error): done(nil, Self.nsError(from: error))
+                    }
+                }
+                return progress
+            }
             done(nil, Self.readOnlyError()); return progress
         }
         guard let api = apiFactory(handle) else { done(nil, Self.fpError(.notAuthenticated)); return progress }

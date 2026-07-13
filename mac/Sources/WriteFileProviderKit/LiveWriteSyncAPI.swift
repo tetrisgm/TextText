@@ -182,11 +182,30 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         }
     }
 
+    public func renameWorkspace(
+        name: String
+    ) async -> Result<WriteWorkspaceBlog, WriteSyncError> {
+        guard let body = try? JSONSerialization.data(withJSONObject: ["name": name]) else {
+            return .failure(.decode("could not encode request body"))
+        }
+        switch await send(
+            "PATCH", "/api/sync/v1/workspace",
+            headers: ["Content-Type": "application/json"], body: body
+        ) {
+        case .failure(let e): return .failure(e)
+        case .success(let reply):
+            if reply.status == 404 { return .failure(.notFound) }
+            guard reply.status == 200 else { return .failure(reply.httpError) }
+            return decode(BlogEnvelope.self, reply.data).map { $0.blog }
+        }
+    }
+
     // MARK: Envelopes
 
     private struct ManifestEnvelope: Codable { let items: [WriteManifestItem] }
     private struct ItemEnvelope: Codable { let item: WriteManifestItem }
     private struct FolderEnvelope: Codable { let folder: WriteWorkspaceFolder }
+    private struct BlogEnvelope: Codable { let blog: WriteWorkspaceBlog }
 
     // MARK: Plumbing
 

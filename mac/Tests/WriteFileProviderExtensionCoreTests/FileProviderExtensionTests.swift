@@ -189,6 +189,19 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.renameFolderCalls.first?.name, "Writing")
     }
 
+    func testRenameWorkspaceCallsRenameWorkspace() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let item = WriteFileProviderItem(
+            WriteItemMapper.workspaceItem(handle: "demo", name: "Studio", readOnly: false))
+        let exp = expectation(description: "renameWorkspace")
+        _ = ext(api).modifyItem(
+            item, baseVersion: version("h"), changedFields: [.filename],
+            contents: nil, options: [], request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+        XCTAssertEqual(api.renameWorkspaceCalls.first?.name, "Studio")
+    }
+
     // MARK: delete
 
     func testDeleteFileCallsDelete() {

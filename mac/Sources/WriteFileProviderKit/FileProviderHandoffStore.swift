@@ -86,6 +86,23 @@ public enum FileProviderHandoffStore {
         return handoff
     }
 
+    /// Update just one workspace's display name in the shared handoff. The File
+    /// Provider extension calls this after a Finder-side workspace rename so that
+    /// a subsequent domain re-registration (e.g. a Sparkle build change) reads the
+    /// FRESH name from the handoff instead of the app's lagging cached one, which
+    /// would otherwise briefly revert the folder name. The app remains the
+    /// authoritative writer (it republishes from server truth on each sync pass);
+    /// this is a best-effort hint that its next republish converges over.
+    /// Returns false if there is no access group or the workspace is absent.
+    @discardableResult
+    public static func updateWorkspaceName(handle: String, name: String) -> Bool {
+        guard var handoff = load(),
+              let index = handoff.workspaces.firstIndex(where: { $0.handle == handle })
+        else { return false }
+        handoff.workspaces[index].name = name
+        return save(handoff)
+    }
+
     /// Remove the handoff (sign-out).
     public static func clear() {
         guard let group = accessGroup() else { return }

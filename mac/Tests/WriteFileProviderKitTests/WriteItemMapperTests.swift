@@ -26,6 +26,9 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertTrue(item.isFolder)
         // New items are created inside the system folders, never at this level.
         XCTAssertFalse(item.capabilities.contains(.addingSubItems))
+        // Renamable: renaming the folder renames the workspace, and without this
+        // the framework would stamp the folder immutable (the Finder lock badge).
+        XCTAssertTrue(item.capabilities.contains(.renaming))
     }
 
     func testWorkspaceItemFallsBackToHandleWhenNameEmpty() {

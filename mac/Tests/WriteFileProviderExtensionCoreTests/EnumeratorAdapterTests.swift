@@ -32,6 +32,7 @@ private final class FakeAPI: WriteSyncAPI, @unchecked Sendable {
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> { .success(()) }
     func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
     func renameFolder(folderId: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
+    func renameWorkspace(name: String) async -> Result<WriteWorkspaceBlog, WriteSyncError> { .failure(.conflict) }
 }
 
 private func standardAPI() -> FakeAPI {
@@ -117,6 +118,47 @@ final class EnumeratorAdapterTests: XCTestCase {
         wait(for: [exp], timeout: 5)
         let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
         XCTAssertEqual(ids, ["folder:demo:drafts", "file:demo:p1", "file:demo:p2"])
+    }
+
+    // MARK: Root list anchor (workspace rename must expire it)
+
+    func testWorkspaceRenameExpiresRootAnchor() {
+        let handle = "demo"
+        let old = WorkspaceListEnumerator(descriptors: [
+            FileProviderWorkspace(name: "Old Name", handle: handle, origin: "o", token: "t")])
+        let renamed = WorkspaceListEnumerator(descriptors: [
+            FileProviderWorkspace(name: "New Name", handle: handle, origin: "o", token: "t")])
+
+        // The anchor must change when only the NAME changes (handle is stable), or
+        // enumerateChanges would report "no changes" and Finder would keep the old
+        // folder name after a rename.
+        let anchorExp = expectation(description: "anchor")
+        var oldAnchor: NSFileProviderSyncAnchor?
+        old.currentSyncAnchor { oldAnchor = $0; anchorExp.fulfill() }
+        wait(for: [anchorExp], timeout: 5)
+        let anchor = try! XCTUnwrap(oldAnchor)
+
+        // Same descriptors -> same anchor -> "no changes" (no error).
+        let sameExp = expectation(description: "same")
+        let sameObs = ChangeObserver(sameExp)
+        old.enumerateChanges(for: sameObs, from: anchor)
+        wait(for: [sameExp], timeout: 5)
+        XCTAssertNil(sameObs.error)
+
+        // Renamed descriptors -> anchor differs -> expired, forcing a full re-list.
+        let expiredExp = expectation(description: "expired")
+        let expiredObs = ChangeObserver(expiredExp)
+        renamed.enumerateChanges(for: expiredObs, from: anchor)
+        wait(for: [expiredExp], timeout: 5)
+        XCTAssertEqual((expiredObs.error as NSError?)?.code,
+                       NSFileProviderError.syncAnchorExpired.rawValue)
+
+        // And the re-list carries the new name.
+        let listExp = expectation(description: "list")
+        let listObs = EnumObserver(listExp)
+        renamed.enumerateItems(for: listObs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [listExp], timeout: 5)
+        XCTAssertEqual(listObs.items.first?.filename, "New Name")
     }
 
     func testEnumerationErrorFinishesWithError() {

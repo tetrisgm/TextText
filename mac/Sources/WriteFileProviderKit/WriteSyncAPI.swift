@@ -66,4 +66,8 @@ public protocol WriteSyncAPI: Sendable {
     /// PATCH /api/sync/v1/folders/{id}: rename a folder.
     func renameFolder(folderId: String, name: String) async
         -> Result<WriteWorkspaceFolder, WriteSyncError>
+    /// PATCH /api/sync/v1/workspace: rename the workspace this token belongs to
+    /// (its display name). Renaming the workspace folder in Finder maps here.
+    func renameWorkspace(name: String) async
+        -> Result<WriteWorkspaceBlog, WriteSyncError>
 }

@@ -148,7 +148,13 @@ public enum WriteItemMapper {
 
     /// The synthetic container for one workspace, a child of the domain root.
     /// New items are never created at this level (they go inside the system
-    /// folders), so it only advertises content enumeration.
+    /// folders), so it does NOT advertise adding sub-items. It DOES advertise
+    /// renaming: renaming this folder in Finder renames the workspace (its
+    /// display name), and, just as important, without `.renaming` the framework
+    /// materializes the folder as immutable (the `uchg` flag, which Finder draws
+    /// as a lock badge) — an odd, broken-looking wart on the one folder the user
+    /// most expects to own. Deleting a workspace is not a Finder gesture, so
+    /// `.deleting` stays off.
     public static func workspaceItem(handle: String, name: String, readOnly: Bool) -> WriteItem {
         WriteItem(
             identifier: .workspace(handle),
@@ -162,7 +168,7 @@ public enum WriteItemMapper {
             documentSize: nil,
             creationDate: nil,
             contentModificationDate: nil,
-            capabilities: .readOnlyFolder
+            capabilities: readOnly ? .readOnlyFolder : [.contentEnumerating, .renaming]
         )
     }
 

@@ -7,7 +7,11 @@ import WriteFileProviderBridge
 /// root is the only container that spans workspaces, so it lives in the
 /// extension (the kit's per-workspace core never sees more than one). Membership
 /// rarely changes, so change tracking is coarse: the anchor is a hash of the
-/// handle set, and any difference expires it for a clean root re-list.
+/// handle+name set, and any difference expires it for a clean root re-list. The
+/// name MUST be in the anchor: renaming a workspace keeps its handle, so a
+/// name-only anchor would report "no changes" on signalEnumerator and the Finder
+/// folder would keep the old name until a full domain re-registration (which, if
+/// it read a still-stale handoff, would then strand the old name permanently).
 final class WorkspaceListEnumerator: NSObject, NSFileProviderEnumerator {
     private let descriptors: [FileProviderWorkspace]
 
@@ -45,7 +49,9 @@ final class WorkspaceListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     private static func anchor(_ descriptors: [FileProviderWorkspace]) -> Data {
-        Data(descriptors.map(\.handle).sorted().joined(separator: "\n").utf8)
+        // handle AND name: a rename keeps the handle but must expire the anchor so
+        // the root re-lists with the new folder name (see the type doc comment).
+        Data(descriptors.map { "\($0.handle)=\($0.name)" }.sorted().joined(separator: "\n").utf8)
     }
 }
 

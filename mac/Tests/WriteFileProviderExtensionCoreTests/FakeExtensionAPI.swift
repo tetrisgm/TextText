@@ -16,6 +16,7 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     struct PutCall: Equatable { let postId: String; let body: String; let hash: String }
     struct CreateFolderCall: Equatable { let parentPath: String; let name: String; let idempotencyKey: String? }
     struct RenameFolderCall: Equatable { let folderId: String; let name: String }
+    struct RenameWorkspaceCall: Equatable { let name: String }
     private(set) var createFileCalls: [CreateFileCall] = []
     private(set) var patchCalls: [PatchCall] = []
     private(set) var putCalls: [PutCall] = []
@@ -23,6 +24,7 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     private(set) var deleteIfMatchCalls: [String?] = []
     private(set) var createFolderCalls: [CreateFolderCall] = []
     private(set) var renameFolderCalls: [RenameFolderCall] = []
+    private(set) var renameWorkspaceCalls: [RenameWorkspaceCall] = []
 
     // What the write calls return.
     var createFileResult: Result<WriteManifestItem, WriteSyncError>?
@@ -31,6 +33,7 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var deleteResult: Result<Void, WriteSyncError> = .success(())
     var createFolderResult: Result<WriteWorkspaceFolder, WriteSyncError>?
     var renameFolderResult: Result<WriteWorkspaceFolder, WriteSyncError>?
+    var renameWorkspaceResult: Result<WriteWorkspaceBlog, WriteSyncError>?
 
     init(workspace: WriteWorkspace, manifests: [String: [WriteManifestItem]] = [:], cursor: String = "c0") {
         self.workspaceValue = workspace
@@ -73,6 +76,12 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         renameFolderCalls.append(RenameFolderCall(folderId: folderId, name: name))
         return renameFolderResult ?? .success(
             WriteWorkspaceFolder(id: folderId, name: name, path: name, mode: "blog", parentId: nil))
+    }
+
+    func renameWorkspace(name: String) async -> Result<WriteWorkspaceBlog, WriteSyncError> {
+        renameWorkspaceCalls.append(RenameWorkspaceCall(name: name))
+        return renameWorkspaceResult ?? .success(
+            WriteWorkspaceBlog(handle: "demo", name: name, username: "demo"))
     }
 }
 
