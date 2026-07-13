@@ -96,20 +96,22 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                     fpLog.error("fetchContents \(postId, privacy: .public): no temp dir")
                     completionHandler(nil, nil, Self.fpError(.serverUnreachable)); return
                 }
+                let bytes = Data(content.text.utf8)
                 let destination = dir.appendingPathComponent(UUID().uuidString)
-                do { try Data(content.text.utf8).write(to: destination) }
+                do { try bytes.write(to: destination) }
                 catch {
                     fpLog.error("fetchContents \(postId, privacy: .public) write failed: \(String(describing: error), privacy: .public)")
                     completionHandler(nil, nil, error); return
                 }
-                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(content.text.utf8.count) bytes")
-                // The returned item's version MUST match the bytes just written,
-                // not the (possibly newer) manifest hash: the GET body and its
-                // ETag are one consistent snapshot. Labeling these bytes with a
-                // stale manifest hash makes the next edit send a wrong If-Match
-                // and falsely conflict.
+                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(bytes.count) bytes")
+                // The returned item MUST describe the bytes just written: its hash
+                // (the GET body and its ETag are one consistent snapshot; a stale
+                // manifest hash would make the next edit send a wrong If-Match and
+                // falsely conflict) AND its size (the system uses documentSize as
+                // the content length, so the enumeration-time nil would materialize
+                // a zero-byte file even though these bytes are real).
                 let item = (try? itemResult.get())
-                    .map { $0.withContentHash(content.hash) }
+                    .map { $0.withContent(hash: content.hash, size: bytes.count) }
                     .map(WriteFileProviderItem.init)
                 completionHandler(destination, item, nil)
             }

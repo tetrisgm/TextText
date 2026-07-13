@@ -101,11 +101,20 @@ public struct WriteItem: Equatable, Sendable {
     /// come from a GET whose ETag may differ from the enumeration-time manifest
     /// hash. The returned item's version must describe the bytes it accompanies.
     public func withContentHash(_ hash: String?) -> WriteItem {
+        withContent(hash: hash, size: documentSize)
+    }
+
+    /// A copy describing exactly the bytes just fetched: its hash AND its size.
+    /// fetchContents MUST set the size, because the File Provider system uses the
+    /// returned item's documentSize as the authoritative content length. Left at
+    /// the enumeration-time nil, a fetched file materializes as ZERO bytes even
+    /// though the delivered temporary file holds the real content.
+    public func withContent(hash: String?, size: Int?) -> WriteItem {
         WriteItem(
             identifier: identifier, parentIdentifier: parentIdentifier,
             filename: filename, isFolder: isFolder, kind: kind,
             typeIdentifier: typeIdentifier, serverId: serverId,
-            contentHash: hash ?? contentHash, documentSize: documentSize,
+            contentHash: hash ?? contentHash, documentSize: size ?? documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
             capabilities: capabilities)
     }

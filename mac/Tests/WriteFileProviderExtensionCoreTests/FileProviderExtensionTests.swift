@@ -48,6 +48,7 @@ final class FileProviderExtensionTests: XCTestCase {
             try ext(nil).enumerator(for: .rootContainer, request: NSFileProviderRequest()))
     }
 
+
     // MARK: create
 
     func testCreateFileCallsCreateFileInParentFolder() {

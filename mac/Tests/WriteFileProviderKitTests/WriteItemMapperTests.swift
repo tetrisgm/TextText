@@ -53,6 +53,18 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertEqual(item?.contentHash, "deadbeef")
     }
 
+    func testWithContentCarriesHashAndSize() {
+        // fetchContents stamps the fetched bytes' hash AND size onto the returned
+        // item. The size is load-bearing: the File Provider uses documentSize as
+        // the content length, so an enumeration-time nil materializes zero bytes.
+        let entry = Fixtures.entry(id: "p1", file: "a.md", kind: "note", title: "A")
+        let base = WriteItemMapper.item(for: entry, inFolder: "notes", readOnly: false)!
+        XCTAssertNil(base.documentSize) // enumeration does not know the size
+        let materialized = base.withContent(hash: "newhash", size: 334)
+        XCTAssertEqual(materialized.contentHash, "newhash")
+        XCTAssertEqual(materialized.documentSize, 334)
+    }
+
     func testTimestampsParse() {
         let entry = Fixtures.entry(
             id: "p1", file: "a.md", kind: "article", title: "A",
