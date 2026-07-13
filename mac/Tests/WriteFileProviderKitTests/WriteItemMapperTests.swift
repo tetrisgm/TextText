@@ -53,6 +53,18 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertEqual(item?.contentHash, "deadbeef")
     }
 
+    func testDocumentSizeComesFromManifestSize() {
+        // The File Provider sizes the dataless placeholder from documentSize, so
+        // enumeration must carry the manifest's byte size (a note fetched later
+        // would otherwise materialize as zero bytes).
+        let entry = WriteManifestItem(
+            file: "posts/a.md", kind: "note", slug: "a", title: "A", status: "draft",
+            hash: "h", id: "p1", date: nil, createdAt: nil, updatedAt: nil, url: nil,
+            size: 4096)
+        let item = WriteItemMapper.item(for: entry, inFolder: "notes", readOnly: false)
+        XCTAssertEqual(item?.documentSize, 4096)
+    }
+
     func testWithContentCarriesHashAndSize() {
         // fetchContents stamps the fetched bytes' hash AND size onto the returned
         // item. The size is load-bearing: the File Provider uses documentSize as

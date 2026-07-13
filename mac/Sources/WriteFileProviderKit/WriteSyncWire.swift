@@ -63,11 +63,15 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let createdAt: String?
     public let updatedAt: String?
     public let url: String?
+    /// UTF-8 byte length of the rendered file, when the server sends it. Used to
+    /// set the File Provider item's documentSize at enumeration; optional so an
+    /// older server (no `size`) still decodes.
+    public let size: Int?
 
     public init(
         file: String, kind: String, slug: String, title: String, status: String,
         hash: String, id: String?, date: String?, createdAt: String?,
-        updatedAt: String?, url: String?
+        updatedAt: String?, url: String?, size: Int? = nil
     ) {
         self.file = file
         self.kind = kind
@@ -80,6 +84,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.url = url
+        self.size = size
     }
 }
 

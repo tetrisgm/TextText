@@ -328,10 +328,20 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
     }
 
     private func sweepStaleTemporaries() {
+        // Only orphans from a previous run. A fresh extension instance can be
+        // created while another is mid fetchContents; deleting ALL temp files
+        // (the old behavior) could remove a just-written body before the system
+        // consumes it, materializing a zero-byte file. Keep anything recent.
         guard let dir = fpTemporaryDirectory(),
               let entries = try? FileManager.default.contentsOfDirectory(
-                  at: dir, includingPropertiesForKeys: nil) else { return }
-        for entry in entries { try? FileManager.default.removeItem(at: entry) }
+                  at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let cutoff = Date().addingTimeInterval(-600) // 10 minutes
+        for entry in entries {
+            let mtime = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+            if let mtime, mtime > cutoff { continue }
+            try? FileManager.default.removeItem(at: entry)
+        }
     }
 
     private static func fileItem(_ entry: WriteManifestItem, parentId: String) -> NSFileProviderItem? {

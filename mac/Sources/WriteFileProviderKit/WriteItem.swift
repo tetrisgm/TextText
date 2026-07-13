@@ -184,7 +184,10 @@ public enum WriteItemMapper {
             typeIdentifier: WriteItem.markdownTypeIdentifier,
             serverId: id,
             contentHash: entry.hash,
-            documentSize: nil,
+            // The File Provider sizes the dataless placeholder from this, so it
+            // must be the real byte length (the server sends it in the manifest),
+            // or the file materializes as zero bytes even after a successful fetch.
+            documentSize: entry.size,
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps
