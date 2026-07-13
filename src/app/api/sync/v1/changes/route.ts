@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_WAIT_SECONDS = 25;
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 750;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

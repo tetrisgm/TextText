@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 const MAX_WAIT_SECONDS = 25;
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 750;
 
 // A value that changes on every deployment, so a long-running client can
 // notice it is on stale code and reload itself (no more manual Cmd-R).
