@@ -50,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var workspaceLocation: WorkspaceLocation?
     // The one File Provider domain registered for the signed-in workspace, if any.
     private var registeredFileProviderDomain: NSFileProviderDomain?
+    // Pushes local Finder edits on the FP mount to the server instantly (the OS
+    // uploads them on its own slow schedule otherwise).
+    private let mountBridge = MountBridge()
 
     // MARK: Lifecycle
 
@@ -119,6 +122,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         changeListener.start()
         captureAgent.start()
+
+        // Instant folder -> server: watch the File Provider mount and push local
+        // Finder edits (rename, folder rename, content edit, move) immediately,
+        // rather than waiting on the OS's File Provider upload scheduler. Started
+        // from materializeWorkspace once the mount root is known.
+        mountBridge.makeContext = { [weak self] in
+            guard let self, let credentials = self.store.loadCredentials(),
+                  let blog = self.store.cachedWorkspace()?.blog, !blog.handle.isEmpty else { return nil }
+            let api = LiveWriteSyncAPI(
+                origin: resolveServerOrigin(credentials: credentials), token: credentials.token)
+            return MountBridge.Context(
+                api: api, handle: blog.handle,
+                workspaceName: blog.name.isEmpty ? blog.handle : blog.name)
+        }
+        mountBridge.onActivity = { [weak self] message in self?.appendActivity(message) }
 
         showMainWindow() // open the workspace window on launch
     }
@@ -756,6 +774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         registeredFileProviderDomain = nil
+        mountBridge.stop()
         UserDefaults.standard.removeObject(forKey: Self.fpDomainBuildKey)
         UserDefaults.standard.removeObject(forKey: Self.fpDomainNameKey)
         FileProviderHandoffStore.clear()
@@ -790,6 +809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         manager.getUserVisibleURL(for: .rootContainer) { [weak self] rootURL, _ in
             guard let self else { return }
             guard let root = rootURL else { self.isMaterializing = false; return }
+            // The mount root is known now: start the instant-push watcher (idempotent).
+            self.mountBridge.start(mountRoot: root, manager: manager)
             DispatchQueue.global(qos: .utility).async {
                 let scoped = root.startAccessingSecurityScopedResource()
                 let incomplete = Self.warmAndMaterialize(root)

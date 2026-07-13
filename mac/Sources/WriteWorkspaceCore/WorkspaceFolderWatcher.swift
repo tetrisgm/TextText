@@ -10,7 +10,7 @@ public final class WorkspaceFolderWatcher {
     private let rootPath: String
     public private(set) var fseventsStarted = false
 
-    public init?(path: String, queue: DispatchQueue, includeUbiquitousItems: Bool = true, onChange: @escaping () -> Void) {
+    public init?(path: String, queue: DispatchQueue, includeUbiquitousItems: Bool = true, latency: CFTimeInterval = 1.0, onChange: @escaping () -> Void) {
         self.queue = queue
         self.onChange = onChange
         self.rootPath = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
@@ -41,7 +41,7 @@ public final class WorkspaceFolderWatcher {
             &context,
             [self.rootPath] as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            1.0,
+            latency,
             FSEventStreamCreateFlags(
                 kFSEventStreamCreateFlagNoDefer
                     | kFSEventStreamCreateFlagFileEvents
