@@ -771,12 +771,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Keep the workspace materialized on disk instead of dataless cloud
-    /// placeholders: read every file so the system downloads its content (a
-    /// dataless File Provider file materializes on read). The item's eager
-    /// content policy is best-effort; this makes "always downloaded" reliable.
-    /// Off the main thread, coalesced, safe to call repeatedly. Re-runs a few
-    /// times on a delay because a single pass can transiently miss a file that is
-    /// mid-write or whose read hiccups; only files still dataless are re-read.
+    /// placeholders: walk every folder (root -> workspace -> system folders ->
+    /// posts) and read each file so the system downloads it (a dataless File
+    /// Provider file materializes on read). Off the main thread, coalesced, and
+    /// retried on a delay: a COLD first enumeration right after a domain
+    /// (re)register can time out and cache a folder as empty, so we re-drive the
+    /// walk until the tree lists fully and no file is still dataless. We descend
+    /// with contentsOfDirectory (which forces each folder's enumeration) rather
+    /// than a lazy deep enumerator, so a folder that failed to list is retried
+    /// even when it exposed no files to notice.
     private func materializeWorkspace(attempt: Int = 0) {
         guard let domain = registeredFileProviderDomain,
               let manager = NSFileProviderManager(for: domain) else { return }
@@ -789,24 +792,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let root = rootURL else { self.isMaterializing = false; return }
             DispatchQueue.global(qos: .utility).async {
                 let scoped = root.startAccessingSecurityScopedResource()
-                let coordinator = NSFileCoordinator()
-                var remaining = 0
-                if let walker = FileManager.default.enumerator(
-                    at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
-                    for case let fileURL as URL in walker where fileURL.pathExtension == "md" {
-                        if Self.isDataless(fileURL) {
-                            var err: NSError?
-                            coordinator.coordinate(readingItemAt: fileURL, options: [], error: &err) { u in
-                                _ = try? Data(contentsOf: u) // reading downloads it
-                            }
-                            if Self.isDataless(fileURL) { remaining += 1 }
-                        }
-                    }
-                }
+                let incomplete = Self.warmAndMaterialize(root)
                 if scoped { root.stopAccessingSecurityScopedResource() }
                 DispatchQueue.main.async {
-                    // Retry the stragglers a couple of times, then release the lock.
-                    if remaining > 0 && attempt < 3 {
+                    if incomplete && attempt < 5 {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
                             self?.materializeWorkspace(attempt: attempt + 1)
                         }
@@ -818,6 +807,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     private var isMaterializing = false
+
+    /// Recursively list every folder under `root` (forcing enumeration) and read
+    /// each `.md` file so it downloads. Returns true if the tree still looks cold:
+    /// a directory failed to list (a timed-out cold enumeration), or a file is
+    /// still dataless after the read. The caller retries on that signal.
+    private static func warmAndMaterialize(_ root: URL) -> Bool {
+        let fm = FileManager.default
+        let coordinator = NSFileCoordinator()
+        var incomplete = false
+        func listing(of url: URL) -> [URL] {
+            do {
+                return try fm.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [])
+            } catch {
+                incomplete = true // a cold folder enumeration failed; retry later
+                return []
+            }
+        }
+        var stack = listing(of: root)
+        var files: [URL] = []
+        while let entry = stack.popLast() {
+            let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDir {
+                stack.append(contentsOf: listing(of: entry))
+            } else if entry.pathExtension == "md" {
+                files.append(entry)
+            }
+        }
+        for fileURL in files where isDataless(fileURL) {
+            var err: NSError?
+            coordinator.coordinate(readingItemAt: fileURL, options: [], error: &err) { u in
+                _ = try? Data(contentsOf: u) // reading downloads it
+            }
+            if isDataless(fileURL) { incomplete = true }
+        }
+        return incomplete
+    }
 
     /// Whether a File Provider file is still a dataless placeholder (SF_DATALESS
     /// in st_flags), i.e. its content has not been downloaded yet.
