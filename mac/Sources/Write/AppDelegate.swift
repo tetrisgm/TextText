@@ -791,8 +791,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Signal the registered domain that the workspace changed. Called from the
     /// app's existing long-poll; the long-poll lives here, not in the extension.
     private func signalFileProviderChange() {
-        guard let domain = registeredFileProviderDomain else { return }
-        NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { _ in }
+        guard let domain = registeredFileProviderDomain,
+              let manager = NSFileProviderManager(for: domain) else { return }
+        manager.signalEnumerator(for: .rootContainer) { _ in }
+        manager.signalEnumerator(for: .workingSet) { _ in }
+        if let workspace = store.cachedWorkspace() {
+            let handle = workspace.blog.handle
+            manager.signalEnumerator(
+                for: NSFileProviderItemIdentifier(
+                    rawValue: WriteItemIdentifier.workspace(handle).rawValue)
+            ) { _ in }
+            for folder in workspace.folders {
+                manager.signalEnumerator(
+                    for: NSFileProviderItemIdentifier(
+                        rawValue: WriteItemIdentifier.folder(
+                            handle: handle, id: folder.id
+                        ).rawValue)
+                ) { _ in }
+            }
+        }
         // A remote change can add files; keep the workspace fully downloaded.
         materializeWorkspace()
     }

@@ -79,7 +79,7 @@ final class WorkspaceEnumeratorTests: XCTestCase {
 
     // MARK: Working set / trash
 
-    func testWorkingSetIncludesEveryFolderAndFile() async {
+    func testWorkingSetIncludesFilesButDoesNotRepublishFolders() async {
         let api = Fixtures.standardWorkspace()
         let e = enumr(api)
         guard case .success(let items) = await e.children(of: .workingSet) else {
@@ -87,9 +87,10 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         }
         let ids = Set(items.map(\.identifier))
         XCTAssertTrue(ids.isSuperset(of: [
-            F("blog"), F("notes"), F("bookmarks"), F("drafts"),
             FI("p1"), FI("p2"), FI("p3"), FI("n1"), FI("b1"),
         ]))
+        XCTAssertTrue(items.allSatisfy { !$0.isFolder },
+                      "post changes must not republish unchanged folder objects")
     }
 
     func testTrashIsEmpty() async {
@@ -123,6 +124,22 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         XCTAssertEqual(item.filename, "WIP.md") // the TITLE, not the slug
         XCTAssertEqual(item.parentIdentifier, F("drafts"))
         XCTAssertEqual(item.kind, .article)
+    }
+
+    func testSingleItemLookupUsesSameCollisionNameAsEnumeration() async {
+        let api = Fixtures.standardWorkspace()
+        api.manifests["blog"] = [
+            Fixtures.entry(id: "post-a", file: "custom-a.md", kind: "article", title: "Same"),
+            Fixtures.entry(id: "post-b", file: "custom-b.md", kind: "article", title: "Same"),
+        ]
+        let e = enumr(api)
+        guard case .success(let children) = await e.children(of: F("blog")),
+              case .success(let direct) = await e.item(for: FI("post-a")) else {
+            return XCTFail("enumeration and lookup must both succeed")
+        }
+        let listed = children.first(where: { $0.identifier == FI("post-a") })
+        XCTAssertEqual(listed?.filename, "Same [post-a].md")
+        XCTAssertEqual(direct.filename, listed?.filename)
     }
 
     func testDuplicatedIdAcrossManifestsDedupesToCurrentParent() async {
@@ -214,6 +231,29 @@ final class WorkspaceEnumeratorTests: XCTestCase {
             XCTAssertTrue(moved.changed)
             XCTAssertEqual(moved.cursor, "c2")
         } else { XCTFail() }
+    }
+
+    func testContainerAnchorChangesOnlyForMappedChildren() async {
+        let api = Fixtures.standardWorkspace()
+        let e = enumr(api)
+        guard case .success(let blogBefore) = await e.containerAnchor(for: F("blog")),
+              case .success(let notesBefore) = await e.containerAnchor(for: F("notes")),
+              case .success(let workspaceBefore) = await e.containerAnchor(for: .workspace("demo"))
+        else { return XCTFail("initial anchors") }
+
+        api.manifests["notes"] = [
+            Fixtures.entry(id: "n1", file: "idea.md", kind: "note",
+                           title: "Idea", hash: "changed")
+        ]
+
+        guard case .success(let blogAfter) = await e.containerAnchor(for: F("blog")),
+              case .success(let notesAfter) = await e.containerAnchor(for: F("notes")),
+              case .success(let workspaceAfter) = await e.containerAnchor(for: .workspace("demo"))
+        else { return XCTFail("updated anchors") }
+        XCTAssertEqual(blogBefore, blogAfter)
+        XCTAssertNotEqual(notesBefore, notesAfter)
+        XCTAssertEqual(workspaceBefore, workspaceAfter)
+        XCTAssertEqual(notesAfter.count, 32)
     }
 
     // MARK: Error propagation

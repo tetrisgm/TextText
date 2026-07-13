@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
@@ -20,8 +20,9 @@ import {
   getTrashedPosts,
   getPost,
   getPostById,
+  resolvePostSlug,
 } from "@/lib/store";
-import type { Post } from "@/lib/content";
+import type { Blog, Post } from "@/lib/content";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
@@ -37,6 +38,7 @@ import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
+import { tenantFromHost } from "@/lib/tenants";
 
 interface Props {
   params: Promise<{ handle: string; slug: string }>;
@@ -50,6 +52,27 @@ function queryValue(value: string | string[] | undefined): string | undefined {
 
 function postTitle(title: string): string {
   return title.trim() || "Untitled";
+}
+
+function postPathForRequest(
+  blog: Blog,
+  post: Pick<Post, "slug">,
+  tenantHandle: string | null,
+): string {
+  return tenantHandle === blog.handle
+    ? `/${encodeURIComponent(post.slug)}`
+    : blogPostPath(blog, post);
+}
+
+function postEditPathForRequest(
+  blog: Blog,
+  post: Pick<Post, "id" | "slug">,
+  tenantHandle: string | null,
+): string {
+  if (tenantHandle !== blog.handle) return blogPostEditPath(blog, post);
+  const params = new URLSearchParams({ edit: "1" });
+  if (post.id) params.set("id", post.id);
+  return `/${encodeURIComponent(post.slug)}?${params.toString()}`;
 }
 
 // Notes and bookmarks are unlisted forever: they exist only inside the
@@ -105,25 +128,31 @@ export async function PostPageForHandle({
 }) {
   const queryPromise: Promise<PostPageQuery> =
     searchParams ?? Promise.resolve({});
-  const [blog, postBySlug, access, query, cookieStore] = await Promise.all([
-    getBlog(handle),
-    getPost(handle, slug),
-    getBlogEditAccess(handle),
-    queryPromise,
-    cookies(),
-  ]);
+  const [blog, slugResolution, access, query, cookieStore, headerStore] =
+    await Promise.all([
+      getBlog(handle),
+      resolvePostSlug(handle, slug),
+      getBlogEditAccess(handle),
+      queryPromise,
+      cookies(),
+      headers(),
+    ]);
   if (!blog) notFound();
+  const tenantHandle = tenantFromHost(headerStore.get("host"));
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(
     cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value,
   );
   const canEdit = access.canEdit;
   const editRequested = queryValue(query.edit) === "1";
   const editId = queryValue(query.id);
-  let post = postBySlug;
+  let post =
+    slugResolution.kind === "exact" || slugResolution.kind === "history"
+      ? slugResolution.post
+      : null;
 
   if (!post && canEdit && editRequested && editId) {
     post = await getPostById(handle, editId);
-    if (post) redirect(blogPostEditPath(blog, post));
+    if (post) redirect(postEditPathForRequest(blog, post, tenantHandle));
   }
 
   if (!post) notFound();
@@ -140,7 +169,17 @@ export async function PostPageForHandle({
   if (isPrivatePost && !canEdit && !itemAccess?.canView) notFound();
   const canEditPost = canEdit || Boolean(itemAccess?.canEditContent);
   const editMode = canEditPost && editRequested;
-  if (redirectClaimed && blog.username) {
+  if (slugResolution.kind === "history") {
+    const path = postPathForRequest(blog, post, tenantHandle);
+    redirect(
+      editMode
+        ? postEditPathForRequest(blog, post, tenantHandle)
+        : editRequested
+          ? `${path}?edit=1`
+          : path,
+    );
+  }
+  if (redirectClaimed && blog.username && tenantHandle !== blog.handle) {
     const path = blogPostPath(blog, post);
     redirect(
       editMode
@@ -151,17 +190,17 @@ export async function PostPageForHandle({
     );
   }
 
-  const currentPostPath = blogPostPath(blog, post);
-  const homePath = blogHomePath(blog);
+  const currentPostPath = postPathForRequest(blog, post, tenantHandle);
+  const homePath = tenantHandle === blog.handle ? "/" : blogHomePath(blog);
   const showGuestSignIn =
     canEdit && access.isUnclaimed && access.isTokenEditor && isAuthConfigured;
 
   if (editMode && post.id && editId !== post.id) {
-    redirect(blogPostEditPath(blog, post));
+    redirect(postEditPathForRequest(blog, post, tenantHandle));
   }
 
   if (canEdit && !editMode && isEmptyOwnedPost(post)) {
-    redirect(blogPostEditPath(blog, post));
+    redirect(postEditPathForRequest(blog, post, tenantHandle));
   }
 
   const adjacentPromise = getAdjacentPublishedPosts(handle, post.slug);

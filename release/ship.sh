@@ -119,6 +119,9 @@ if [ "$NO_PUBLISH" = "1" ]; then
   exit 0
 fi
 
+echo ">> migrate database"
+node "$ROOT/scripts/migrate-add-slug-history.mjs"
+
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'
 import pkg from "@next/env";

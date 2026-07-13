@@ -1,31 +1,60 @@
+import CryptoKit
 import Foundation
 
-/// Derives the Finder-facing filename for a post from its TITLE (not its slug),
-/// and the reverse (a Finder rename -> a new title). Slugs like "untitled-abc123"
-/// are the URL identity, not something a person should ever see in Finder, so the
-/// leaf shown is the human title with a ".md" extension.
-///
-/// Framework-free so the kit stays testable. Two layers of uniqueness: a
-/// per-item name that reads the server's own "<slug>-N" de-dup suffix (so two
-/// posts titled "Foo" show "Foo.md" and "Foo (2).md" with no sibling context),
-/// and a sibling-aware pass in the enumerator (`disambiguate`) as a safety net
-/// for the rare case of two same-title posts whose slugs were set by hand.
+/// Fixed-size deterministic digests shared by the pure kit and its File Provider
+/// adapters. File Provider version fields have a hard 128-byte ceiling, so raw
+/// filenames, paths, and cursors must never be used as metadata versions.
+public enum WriteStableDigest {
+    public static func sha256(_ data: Data) -> Data {
+        Data(SHA256.hash(data: data))
+    }
+
+    public static func sha256(_ value: String) -> Data {
+        sha256(Data(value.utf8))
+    }
+}
+
+/// The reversible, portable mapping between Write titles and Finder path
+/// components. Unsafe bytes are escaped as `~HH`; `~` itself is always escaped,
+/// which makes decoding unambiguous. This preserves the actual title instead of
+/// replacing punctuation with `-` or silently dropping it.
 public enum WriteFilename {
-    /// Mirror of the server slugify (src/lib/markdown-files.ts): lowercase, every
-    /// run of non-`[a-z0-9]` to a single "-", trim leading/trailing "-", cap 80,
-    /// trim trailing "-" again. Used only to recognize the server's de-dup suffix
-    /// so the displayed name can carry " (N)".
+    public static let maximumComponentUTF8Length = 255
+
+    private static let escapeMarker: UnicodeScalar = "~"
+    private static let hex = Array("0123456789ABCDEF".utf8)
+    private static let markdownExtension = ".md"
+    // `~` is always escaped in user input, so this can never be confused with
+    // an exactly reversible component emitted by the normal codec.
+    private static let boundedMarker = "~L"
+    private static let maximumCollisionIdentityUTF8Length = 96
+    // Square brackets are portable on disk but reserved by this codec for the
+    // stable collision suffix. Escaping them in user input keeps that suffix
+    // namespace unambiguous without changing its existing public spelling.
+    private static let reservedScalars = CharacterSet(charactersIn: "<>:\"/\\|?*[]")
+    private static let windowsDeviceNames: Set<String> = {
+        var names: Set<String> = ["CON", "PRN", "AUX", "NUL"]
+        for number in 1...9 {
+            names.insert("COM\(number)")
+            names.insert("LPT\(number)")
+        }
+        return names
+    }()
+
+    /// Mirror of the server slugify (src/lib/post-slug.ts). Slugs remain URL
+    /// identity only; this helper is retained for callers and migration tests.
     public static func slugify(_ value: String) -> String {
         let lowered = value.lowercased()
         var out = ""
         var lastDash = false
         for scalar in lowered.unicodeScalars {
-            // Only ASCII a-z and 0-9 survive, exactly like the server regex.
             if (scalar.value >= 97 && scalar.value <= 122)
                 || (scalar.value >= 48 && scalar.value <= 57) {
-                out.unicodeScalars.append(scalar); lastDash = false
+                out.unicodeScalars.append(scalar)
+                lastDash = false
             } else if !lastDash {
-                out.append("-"); lastDash = true
+                out.append("-")
+                lastDash = true
             }
         }
         let dash = CharacterSet(charactersIn: "-")
@@ -34,98 +63,271 @@ public enum WriteFilename {
         return out.trimmingCharacters(in: dash)
     }
 
-    /// Make a title safe as a single Finder path component: "/" is illegal in a
-    /// leaf (it would split the item and materialize zero bytes) and ":" is shown
-    /// as "/" by Finder, so both become "-". Control characters are stripped,
-    /// whitespace runs collapse to a single space, and the result is capped so
-    /// leaf + suffix + ".md" stays well under the 255-byte filesystem limit.
-    public static func sanitize(_ value: String) -> String {
-        var out = ""
-        var lastSpace = false
-        for scalar in value.unicodeScalars {
-            if scalar == "/" || scalar == ":" {
-                out.append("-"); lastSpace = false
-            } else if CharacterSet.controlCharacters.contains(scalar) {
-                continue
-            } else if CharacterSet.whitespaces.contains(scalar) {
-                if !lastSpace { out.append(" "); lastSpace = true }
+    /// Encode one title or folder name as a portable path component. The result
+    /// avoids Windows/macOS reserved punctuation, controls, leading dots,
+    /// trailing dots/spaces, reserved DOS device names, and the escape marker.
+    /// Canonically equivalent Unicode input maps to one stable NFC spelling. A
+    /// normal-length value round-trips exactly. An overlong value keeps a stable
+    /// readable prefix plus a digest marker so the on-disk component remains at
+    /// most 255 UTF-8 bytes; the server item retains the full title/name.
+    public static func encodeComponent(_ value: String) -> String {
+        let normalized = value.precomposedStringWithCanonicalMapping
+        return bounded(
+            encodedComponent(normalized), source: normalized,
+            maximumUTF8Length: maximumComponentUTF8Length)
+    }
+
+    private static func encodedComponent(_ normalized: String) -> String {
+        let scalars = Array(normalized.unicodeScalars)
+        guard !scalars.isEmpty else { return "" }
+
+        var leadingDotEnd = 0
+        while leadingDotEnd < scalars.count, scalars[leadingDotEnd] == "." {
+            leadingDotEnd += 1
+        }
+        var trailingUnsafeStart = scalars.count
+        while trailingUnsafeStart > 0 {
+            let scalar = scalars[trailingUnsafeStart - 1]
+            guard scalar == "." || scalar == " " else { break }
+            trailingUnsafeStart -= 1
+        }
+
+        let firstSegment = normalized.split(separator: ".", maxSplits: 1,
+                                            omittingEmptySubsequences: false).first
+        let escapesDeviceName = firstSegment.map {
+            windowsDeviceNames.contains(String($0).uppercased())
+        } ?? false
+
+        var output = ""
+        for (index, scalar) in scalars.enumerated() {
+            let value = scalar.value
+            let mustEscape = scalar == escapeMarker
+                || reservedScalars.contains(scalar)
+                || value <= 0x1F
+                || value == 0x7F
+                || index < leadingDotEnd
+                || index >= trailingUnsafeStart
+                || (index == 0 && escapesDeviceName)
+
+            if mustEscape {
+                appendEscaped(Array(String(scalar).utf8), to: &output)
             } else {
-                out.unicodeScalars.append(scalar); lastSpace = false
+                output.unicodeScalars.append(scalar)
             }
         }
-        out = out.trimmingCharacters(in: .whitespaces)
-        // Leading dots make a hidden file; drop them.
-        while out.hasPrefix(".") { out.removeFirst() }
-        while out.utf8.count > 240, !out.isEmpty { out.removeLast() }
-        return out.trimmingCharacters(in: .whitespaces)
+        return output
     }
 
-    /// The base leaf (no extension) for a post: its sanitized title, falling back
-    /// to the slug, then "untitled". When the slug is the server's de-dup form
-    /// `slugify(title)-N`, the leaf carries a matching " (N)" so two same-title
-    /// posts read distinctly without needing their siblings.
+    /// Decode a component emitted by `encodeComponent`. Unknown or incomplete
+    /// `~` sequences are preserved, which makes hand-authored Finder names safe
+    /// to import as titles instead of corrupting them.
+    public static func decodeComponent(_ value: String) -> String {
+        var bytes = Data()
+        var index = value.startIndex
+        while index < value.endIndex {
+            let next = value.index(after: index)
+            if value[index] == "~",
+               next < value.endIndex {
+                let second = value.index(after: next)
+                if second < value.endIndex,
+                   let high = hexValue(value[next]),
+                   let low = hexValue(value[second]) {
+                    bytes.append((high << 4) | low)
+                    index = value.index(after: second)
+                    continue
+                }
+            }
+            bytes.append(contentsOf: value[index..<next].utf8)
+            index = next
+        }
+        guard let decoded = String(data: bytes, encoding: .utf8) else {
+            return value.precomposedStringWithCanonicalMapping
+        }
+        return decoded.precomposedStringWithCanonicalMapping
+    }
+
+    /// Compatibility name for older callers. Unlike the old implementation,
+    /// this is reversible and does not trim, collapse, replace, or drop content.
+    public static func sanitize(_ value: String) -> String {
+        encodeComponent(value)
+    }
+
+    /// The encoded leaf (without extension). A titleless item falls back to its
+    /// slug, then `untitled`. Server slug de-dup suffixes are intentionally not
+    /// reflected here: sibling-aware disambiguation uses stable item identity and
+    /// can therefore round-trip the original title exactly.
     public static func displayLeaf(title: String, slug: String) -> String {
-        let clean = sanitize(title)
-        let base = !clean.isEmpty ? clean : (!slug.isEmpty ? slug : "untitled")
-        guard !clean.isEmpty else { return base }
-        let stem = slugify(title)
-        if !stem.isEmpty, slug != stem, slug.hasPrefix(stem + "-") {
-            let tail = slug.dropFirst(stem.count + 1)
-            if !tail.isEmpty, tail.allSatisfy({ $0.isNumber }) {
-                return base + " (\(tail))"
+        let source = !title.isEmpty ? title : (!slug.isEmpty ? slug : "untitled")
+        return encodeComponent(source)
+    }
+
+    public static func filename(title: String, slug: String) -> String {
+        let source = !title.isEmpty ? title : (!slug.isEmpty ? slug : "untitled")
+        let normalized = source.precomposedStringWithCanonicalMapping
+        let leaf = bounded(
+            encodedComponent(normalized), source: normalized,
+            maximumUTF8Length: maximumComponentUTF8Length - markdownExtension.utf8.count)
+        return leaf + markdownExtension
+    }
+
+    /// The exact filename forms the mapper may publish for a server title. The
+    /// collision form is accepted even when this item currently has no sibling
+    /// collision because a concurrent enumeration can briefly retain that stable
+    /// spelling.
+    public static func isCanonicalFilename(
+        _ candidate: String, title: String, slug: String, stableId: String
+    ) -> Bool {
+        candidate == filename(title: title, slug: slug)
+            || candidate == collisionFilename(title: title, slug: slug, stableId: stableId)
+    }
+
+    public static func collisionFilename(
+        title: String, slug: String, stableId: String
+    ) -> String {
+        insert(collisionSuffix(stableId), into: filename(title: title, slug: slug),
+               isFolder: false)
+    }
+
+    public static func isCanonicalComponent(
+        _ candidate: String, value: String, stableId: String
+    ) -> Bool {
+        candidate == encodeComponent(value)
+            || candidate == collisionComponent(value, stableId: stableId)
+    }
+
+    public static func collisionComponent(_ value: String, stableId: String) -> String {
+        insert(collisionSuffix(stableId), into: encodeComponent(value), isFolder: true)
+    }
+
+    /// Reverse a Finder filename to a Write title. Only the actual `.md`
+    /// extension is removed; a title like `example.com` remains intact. When a
+    /// stable id is supplied, the exact collision suffix for that item is also
+    /// removed before decoding.
+    public static func titleFromFilename(_ filename: String, stableId: String? = nil) -> String {
+        var base = filename
+        if base.lowercased().hasSuffix(".md") {
+            base.removeLast(3)
+        }
+        if let stableId {
+            let suffix = collisionSuffix(stableId)
+            if base.hasSuffix(suffix) {
+                base.removeLast(suffix.count)
             }
         }
-        return base
+        return decodeComponent(base)
     }
 
-    /// The Finder filename for a post: its display leaf plus ".md".
-    public static func filename(title: String, slug: String) -> String {
-        displayLeaf(title: title, slug: slug) + ".md"
-    }
-
-    /// The title implied by a Finder filename (the reverse of `filename`): strip a
-    /// trailing all-letter extension (".md") and trim. Taken verbatim as the new
-    /// title, so a rename to "My Great Note.md" retitles the post to
-    /// "My Great Note" (the slug/URL is left to the server).
-    public static func titleFromFilename(_ filename: String) -> String {
-        var base = filename
-        if let dot = base.lastIndex(of: "."),
-           base[base.index(after: dot)...].allSatisfy({ $0.isLetter }),
-           dot != base.startIndex {
-            base = String(base[..<dot])
-        }
-        return base.trimmingCharacters(in: .whitespaces)
-    }
-
-    /// Break residual same-name collisions WITHIN a parent folder (the rare case
-    /// of two posts whose titles match but whose slugs were set by hand, so the
-    /// per-item " (N)" layer cannot separate them). Compares case-insensitively
-    /// (the default macOS filesystem is case-insensitive) and appends a short,
-    /// stable id suffix to EVERY member of a collision group, so the result does
-    /// not depend on enumeration order.
+    /// Give every colliding sibling a deterministic identity suffix. The full
+    /// server id is used rather than a short prefix, so distinct items cannot
+    /// collapse to the same Finder path. Folder/file collisions are included.
     public static func disambiguate(_ items: [WriteItem]) -> [WriteItem] {
         var counts: [String: Int] = [:]
-        for item in items where !item.isFolder {
+        for item in items {
             counts[key(item), default: 0] += 1
         }
         guard counts.values.contains(where: { $0 > 1 }) else { return items }
         return items.map { item in
-            guard !item.isFolder, (counts[key(item)] ?? 0) > 1,
-                  let id = item.serverId else { return item }
-            return item.withFilename(insert("-" + String(id.prefix(6)), into: item.filename))
+            guard (counts[key(item)] ?? 0) > 1,
+                  let id = stableId(item), !id.isEmpty else { return item }
+            return item.withFilename(insert(collisionSuffix(id), into: item.filename,
+                                            isFolder: item.isFolder))
         }
+    }
+
+    public static func collisionSuffix(_ stableId: String) -> String {
+        let normalized = stableId.precomposedStringWithCanonicalMapping
+        let encoded = encodedComponent(normalized)
+        let identity: String
+        if encoded.utf8.count <= maximumCollisionIdentityUTF8Length {
+            identity = encoded
+        } else {
+            identity = boundedMarker + digestHex(normalized)
+        }
+        return " [\(identity)]"
     }
 
     private static func key(_ item: WriteItem) -> String {
-        item.parentIdentifier.rawValue + "\n" + item.filename.lowercased()
+        let filename = item.filename.precomposedStringWithCanonicalMapping
+            .folding(options: .caseInsensitive,
+                     locale: Locale(identifier: "en_US_POSIX"))
+        return item.parentIdentifier.rawValue + "\n" + filename
     }
 
-    /// Insert a disambiguating suffix before the ".md" extension (or at the end
-    /// when there is none).
-    private static func insert(_ suffix: String, into name: String) -> String {
-        if name.hasSuffix(".md") {
-            return String(name.dropLast(3)) + suffix + ".md"
+    private static func stableId(_ item: WriteItem) -> String? {
+        if let serverId = item.serverId, !serverId.isEmpty { return serverId }
+        if case .workspace(let handle) = item.identifier { return handle }
+        return nil
+    }
+
+    private static func insert(_ suffix: String, into name: String, isFolder: Bool) -> String {
+        let ext = !isFolder && name.lowercased().hasSuffix(markdownExtension)
+            ? markdownExtension : ""
+        let stem = ext.isEmpty ? name : String(name.dropLast(markdownExtension.count))
+        let budget = maximumComponentUTF8Length - suffix.utf8.count - ext.utf8.count
+        let boundedStem = bounded(
+            stem, source: "collision\u{0}" + stem,
+            maximumUTF8Length: max(0, budget))
+        return boundedStem + suffix + ext
+    }
+
+    private static func bounded(
+        _ encoded: String, source: String, maximumUTF8Length: Int
+    ) -> String {
+        guard encoded.utf8.count > maximumUTF8Length else { return encoded }
+        let marker = boundedMarker + digestHex(source)
+        guard maximumUTF8Length > marker.utf8.count else {
+            return String(marker.prefix(maximumUTF8Length))
         }
-        return name + suffix
+
+        let prefixBudget = maximumUTF8Length - marker.utf8.count
+        var prefix = ""
+        var used = 0
+        var index = encoded.startIndex
+        while index < encoded.endIndex {
+            let tokenEnd: String.Index
+            let next = encoded.index(after: index)
+            if encoded[index] == "~", next < encoded.endIndex {
+                let second = encoded.index(after: next)
+                if second < encoded.endIndex,
+                   hexValue(encoded[next]) != nil,
+                   hexValue(encoded[second]) != nil {
+                    tokenEnd = encoded.index(after: second)
+                } else {
+                    tokenEnd = next
+                }
+            } else {
+                tokenEnd = next
+            }
+            let token = encoded[index..<tokenEnd]
+            let count = token.utf8.count
+            if used + count > prefixBudget { break }
+            prefix.append(contentsOf: token)
+            used += count
+            index = tokenEnd
+        }
+        return prefix + marker
+    }
+
+    private static func digestHex(_ value: String) -> String {
+        WriteStableDigest.sha256(value).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func appendEscaped(_ bytes: [UInt8], to output: inout String) {
+        for byte in bytes {
+            output.append("~")
+            output.append(Character(UnicodeScalar(hex[Int(byte >> 4)])))
+            output.append(Character(UnicodeScalar(hex[Int(byte & 0x0F)])))
+        }
+    }
+
+    private static func hexValue(_ character: Character) -> UInt8? {
+        guard character.unicodeScalars.count == 1,
+              let scalar = character.unicodeScalars.first else { return nil }
+        switch scalar.value {
+        case 48...57: return UInt8(scalar.value - 48)
+        case 65...70: return UInt8(scalar.value - 55)
+        case 97...102: return UInt8(scalar.value - 87)
+        default: return nil
+        }
     }
 }

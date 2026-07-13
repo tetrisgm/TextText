@@ -130,6 +130,17 @@ public struct WriteItem: Equatable, Sendable {
             creationDate: creationDate, contentModificationDate: contentModificationDate,
             capabilities: capabilities)
     }
+
+    /// A copy with the destination parent File Provider supplied for a move.
+    public func withParentIdentifier(_ newParent: WriteItemIdentifier) -> WriteItem {
+        WriteItem(
+            identifier: identifier, parentIdentifier: newParent,
+            filename: filename, isFolder: isFolder, kind: kind,
+            typeIdentifier: typeIdentifier, serverId: serverId,
+            contentHash: contentHash, documentSize: documentSize,
+            creationDate: creationDate, contentModificationDate: contentModificationDate,
+            capabilities: capabilities)
+    }
 }
 
 // MARK: Mapping from wire types
@@ -156,10 +167,11 @@ public enum WriteItemMapper {
     /// most expects to own. Deleting a workspace is not a Finder gesture, so
     /// `.deleting` stays off.
     public static func workspaceItem(handle: String, name: String, readOnly: Bool) -> WriteItem {
-        WriteItem(
+        let displayName = name.isEmpty ? handle : name
+        return WriteItem(
             identifier: .workspace(handle),
             parentIdentifier: .rootContainer,
-            filename: name.isEmpty ? handle : name,
+            filename: WriteFilename.encodeComponent(displayName),
             isFolder: true,
             kind: .folder,
             typeIdentifier: WriteItem.folderTypeIdentifier,
@@ -189,7 +201,7 @@ public enum WriteItemMapper {
         return WriteItem(
             identifier: .folder(handle: handle, id: folder.id),
             parentIdentifier: parent,
-            filename: folder.name,
+            filename: WriteFilename.encodeComponent(folder.name),
             isFolder: true,
             kind: .folder,
             typeIdentifier: WriteItem.folderTypeIdentifier,

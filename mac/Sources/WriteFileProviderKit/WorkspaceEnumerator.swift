@@ -56,8 +56,9 @@ public struct WorkspaceEnumerator: Sendable {
 
     /// The children of a container. Root -> this workspace container; a workspace
     /// -> its top-level folders; a folder -> its subfolders then its content
-    /// files. The working set -> everything. Trash -> empty for now. A file id is
-    /// not a container and yields an empty list.
+    /// files. The working set -> every document, excluding unchanged container
+    /// objects. Trash -> empty for now. A file id is not a container and yields
+    /// an empty list.
     public func children(
         of container: WriteItemIdentifier
     ) async -> Result<[WriteItem], WriteSyncError> {
@@ -95,7 +96,20 @@ public struct WorkspaceEnumerator: Sendable {
                 guard let folder = ws.folders.first(where: { $0.id == id }) else {
                     return .failure(.notFound)
                 }
-                return .success(WriteItemMapper.item(for: folder, handle: handle, readOnly: readOnly))
+                let siblings: Result<[WriteItem], WriteSyncError>
+                if let parentId = folder.parentId {
+                    siblings = await folderChildren(folderId: parentId)
+                } else {
+                    siblings = await topLevelFolders()
+                }
+                switch siblings {
+                case .failure(let error): return .failure(error)
+                case .success(let items):
+                    guard let item = items.first(where: { $0.identifier == identifier }) else {
+                        return .failure(.notFound)
+                    }
+                    return .success(item)
+                }
             }
         case .file(_, let id):
             return await findFile(postId: id)
@@ -118,6 +132,55 @@ public struct WorkspaceEnumerator: Sendable {
         await api.changes(since: cursor, wait: wait)
     }
 
+    /// A fixed-size anchor for the actual children mapped into one container.
+    /// The global server cursor is intentionally not used here: a post edit in
+    /// Notes must not invalidate Blog, the workspace root, or unchanged folders.
+    public func containerAnchor(
+        for container: WriteItemIdentifier
+    ) async -> Result<Data, WriteSyncError> {
+        switch await children(of: container) {
+        case .failure(let error): return .failure(error)
+        case .success(let items): return .success(Self.fingerprint(items))
+        }
+    }
+
+    /// Canonical item-set fingerprint shared by per-workspace and aggregate
+    /// enumerators. It is always 32 bytes, below File Provider's anchor limit.
+    public static func fingerprint(_ items: [WriteItem]) -> Data {
+        var canonical = Data()
+        let sorted = items.sorted {
+            if $0.identifier.rawValue != $1.identifier.rawValue {
+                return $0.identifier.rawValue < $1.identifier.rawValue
+            }
+            if $0.parentIdentifier.rawValue != $1.parentIdentifier.rawValue {
+                return $0.parentIdentifier.rawValue < $1.parentIdentifier.rawValue
+            }
+            return $0.filename < $1.filename
+        }
+        for item in sorted {
+            let fields = [
+                item.identifier.rawValue,
+                item.parentIdentifier.rawValue,
+                item.filename.precomposedStringWithCanonicalMapping,
+                item.isFolder ? "folder" : "file",
+                item.typeIdentifier,
+                item.serverId ?? "",
+                item.contentHash ?? "",
+                item.documentSize.map(String.init) ?? "",
+                item.creationDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "",
+                item.contentModificationDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "",
+                String(item.capabilities.rawValue),
+            ]
+            for field in fields {
+                let data = Data(field.utf8)
+                canonical.append(contentsOf: "\(data.count):".utf8)
+                canonical.append(data)
+            }
+            canonical.append(0x0A)
+        }
+        return WriteStableDigest.sha256(canonical)
+    }
+
     // MARK: - internals
 
     private func topLevelFolders() async -> Result<[WriteItem], WriteSyncError> {
@@ -127,7 +190,7 @@ public struct WorkspaceEnumerator: Sendable {
             let items = ws.folders
                 .filter { $0.parentId == nil }
                 .map { WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
-            return .success(items)
+            return .success(WriteFilename.disambiguate(items))
         }
     }
 
@@ -161,8 +224,8 @@ public struct WorkspaceEnumerator: Sendable {
             let files = entries.compactMap {
                 WriteItemMapper.item(for: $0, inFolder: folderId, handle: handle, readOnly: readOnly)
             }
-            // Break any residual same-title collisions within this folder.
-            return .success(subfolders + WriteFilename.disambiguate(files))
+            // Files and subfolders occupy the same Finder namespace.
+            return .success(WriteFilename.disambiguate(subfolders + files))
         }
     }
 
@@ -199,9 +262,13 @@ public struct WorkspaceEnumerator: Sendable {
                 }
             }
         }
-        // disambiguate groups by parent, so cross-folder same-names are left
-        // alone and only genuine intra-folder collisions get a suffix.
-        return .success(folderItems + WriteFilename.disambiguate(files))
+        // A working set represents documents, not containers. Including every
+        // folder made an ordinary post edit republish unchanged folder metadata.
+        // Disambiguate against the full tree so file names still match normal
+        // folder enumeration, then expose files only.
+        return .success(
+            WriteFilename.disambiguate(folderItems + files).filter { !$0.isFolder }
+        )
     }
 
     private func findFile(postId: String) async -> Result<WriteItem, WriteSyncError> {
@@ -219,9 +286,17 @@ public struct WorkspaceEnumerator: Sendable {
             switch await api.manifest(folderId: folder.id) {
             case .failure(let e): return .failure(e)
             case .success(let entries):
-                if let entry = entries.first(where: { $0.id == postId }),
-                   let item = WriteItemMapper.item(
-                       for: entry, inFolder: folder.id, handle: handle, readOnly: readOnly) {
+                let subfolders = ws.folders
+                    .filter { $0.parentId == folder.id }
+                    .map { WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
+                let files = entries.compactMap {
+                    WriteItemMapper.item(
+                        for: $0, inFolder: folder.id, handle: handle, readOnly: readOnly)
+                }
+                let siblings = WriteFilename.disambiguate(subfolders + files)
+                if let item = siblings.first(where: {
+                    $0.identifier == .file(handle: handle, id: postId)
+                }) {
                     found = item
                 }
             }

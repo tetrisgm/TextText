@@ -6,9 +6,9 @@ import WriteFileProviderBridge
 /// Wraps the pure-Swift `WorkspaceEnumerator` as an `NSFileProviderEnumerator`.
 /// One adapter per container. The workspace is small, so every container is
 /// enumerated in a single page. Change tracking re-lists the container and
-/// finishes at the fresh server cursor; the long-poll that decides WHEN to
+/// fingerprints its actual mapped children; the long-poll that decides WHEN to
 /// re-enumerate lives in the container app (ChangeListener -> signalEnumerator),
-/// not here, so these methods always return promptly.
+/// not here.
 final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
     private let container: WriteItemIdentifier
     private let core: WorkspaceEnumerator
@@ -42,11 +42,12 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
     func currentSyncAnchor(
         completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void
     ) {
+        let container = self.container
         let core = self.core
         Task {
-            switch await core.currentCursor() {
-            case .success(let cursor):
-                completionHandler(NSFileProviderSyncAnchor(Data(cursor.utf8)))
+            switch await core.containerAnchor(for: container) {
+            case .success(let anchor):
+                completionHandler(NSFileProviderSyncAnchor(anchor))
             case .failure:
                 completionHandler(nil) // the system retries
             }
@@ -57,28 +58,18 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
         for observer: any NSFileProviderChangeObserver,
         from syncAnchor: NSFileProviderSyncAnchor
     ) {
-        // The /changes cursor tells us THAT the workspace moved, not which items,
-        // so we cannot emit a precise per-anchor delta. Re-listing survivors via
-        // didUpdate would never report DELETIONS: a post removed on the web would
-        // linger as a Finder ghost, and editing it PUTs to a dead id in a retry
-        // loop. So when something HAS changed we expire the anchor, which makes
-        // the system throw its state away and call enumerateItems for a full
-        // reconcile that drops the deleted item cleanly.
-        //
-        // But the system probes for changes on every idle tick. Expiring
-        // unconditionally forces a full re-enumeration each time, even when
-        // nothing moved. So first compare the supplied anchor to the current
-        // cursor: if they match, finish with no changes; only expire when they
-        // differ. The workspace is small, so the full re-list on a real change
-        // is cheap.
+        // Anchors fingerprint this container's actual mapped child set. A global
+        // workspace cursor made an unrelated edit expire every folder. We still
+        // expire on a real child-set difference so deletions reconcile cleanly.
+        let container = self.container
         let core = self.core
         Task {
             let expired = NSError(
                 domain: NSFileProviderErrorDomain,
                 code: NSFileProviderError.syncAnchorExpired.rawValue)
-            switch await core.currentCursor() {
-            case .success(let cursor):
-                if syncAnchor.rawValue == Data(cursor.utf8) {
+            switch await core.containerAnchor(for: container) {
+            case .success(let anchor):
+                if syncAnchor.rawValue == anchor {
                     observer.finishEnumeratingChanges(upTo: syncAnchor, moreComing: false)
                 } else {
                     observer.finishEnumeratingWithError(expired)
@@ -96,11 +87,11 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
         case .notFound:
             return fp(.noSuchItem)
         case .conflict:
-            // The base version was stale (412). versionNoLongerAvailable tells
-            // the framework to re-read the current version and re-apply, instead
-            // of retrying the same stale base hash forever (serverUnreachable
-            // would loop).
-            return fp(.versionNoLongerAvailable)
+            // Mutation entry points resolve 412s with current item metadata (or
+            // localVersionConflictingWithServer for an explicit fail-on-conflict
+            // request). This fallback is intentionally not
+            // versionNoLongerAvailable, which is reserved for strict fetches.
+            return fp(.cannotSynchronize)
         case .rejected(let message):
             // The bytes themselves are the problem (400); retrying is futile, so
             // do not use a transient FP error that would loop.

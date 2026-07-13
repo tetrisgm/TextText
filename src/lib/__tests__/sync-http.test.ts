@@ -16,7 +16,10 @@ import {
 } from "@/app/api/sync/v1/sync";
 import type { Blog, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
-import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import {
+  parsePostMarkdownFile,
+  renderPostMarkdownFile,
+} from "@/lib/markdown-files";
 
 const blog: Blog = {
   handle: "demo",
@@ -37,6 +40,8 @@ const post: Post = {
   status: "published",
   createdAt: "2026-06-30T08:00:00.000Z",
   updatedAt: "2026-07-01T09:30:00.000Z",
+  folderId: "31b53543-f5de-4a46-937f-c645bfcaa9c3",
+  revision: 42,
 };
 
 describe("ifMatchSatisfied", () => {
@@ -138,6 +143,31 @@ describe("renderSyncFile", () => {
     expect(parsed.fields.slug).toBe(post.slug);
     expect(parsed.fields.title).toBe(post.title);
     expect(parsed.body.trim()).toBe(post.body.trim());
+    expect(parsed.unknownKeys).not.toContain("syncRevision");
+  });
+
+  it("uses a sync-only revision field as metadata CAS currency", () => {
+    const before = renderSyncFile(blog, post);
+    const afterMove = renderSyncFile(blog, {
+      ...post,
+      folderId: "43625c1a-da74-45ac-8db0-790c1c22088e",
+      revision: 43,
+    });
+    const publicBefore = renderPostMarkdownFile({ blog, post });
+    const publicAfter = renderPostMarkdownFile({
+      blog,
+      post: {
+        ...post,
+        folderId: "43625c1a-da74-45ac-8db0-790c1c22088e",
+        revision: 43,
+      },
+    });
+
+    expect(before.text).toContain("syncRevision: 42");
+    expect(afterMove.text).toContain("syncRevision: 43");
+    expect(afterMove.hash).not.toBe(before.hash);
+    expect(publicAfter).toBe(publicBefore);
+    expect(publicBefore).not.toContain("syncRevision:");
   });
 });
 

@@ -56,8 +56,13 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     /// independent lets a rename settle the name once and a content change settle
     /// the body once, instead of each re-triggering the other.
     public var itemVersion: NSFileProviderItemVersion {
+        // Mutation code receives contentVersion back from File Provider and uses
+        // it as the server's If-Match value, so it must remain the exact bounded
+        // server hash. metadataVersion contains user-controlled path data and is
+        // therefore reduced to a fixed 32-byte digest.
         let content = Data((item.contentHash ?? "folder").utf8)
-        let metadata = Data("\(item.filename)|\(item.parentIdentifier.rawValue)".utf8)
+        let metadata = WriteStableDigest.sha256(
+            "metadata\u{0}\(item.filename)\u{0}\(item.parentIdentifier.rawValue)")
         return NSFileProviderItemVersion(
             contentVersion: content, metadataVersion: metadata)
     }

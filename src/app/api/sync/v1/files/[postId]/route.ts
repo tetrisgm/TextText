@@ -14,7 +14,8 @@ import {
   savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
-import { recordAction } from "@/lib/audit";
+import { recordAction, recordSlugChanged } from "@/lib/audit";
+import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   clientSaveError,
@@ -96,6 +97,9 @@ export async function PUT(request: Request, { params }: Props) {
   // the post changed underneath the client, which should refetch and merge.
   const ifMatch = request.headers.get("if-match");
   if (!ifMatch) return syncError(428, "If-Match header is required");
+  if (ifMatch.trim() === "*") {
+    return syncError(412, "A specific If-Match validator is required");
+  }
   const current = renderSyncFile(blog, post);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
@@ -153,6 +157,13 @@ export async function PUT(request: Request, { params }: Props) {
           { expectedRevision },
         );
     await enqueueBookmarkCaptureIfNeeded(blog.handle, saved, post);
+    await recordSlugChanged({
+      actorUserId: userId,
+      actorType: "external_agent",
+      targetId: saved.id,
+      oldSlug: post.slug,
+      newSlug: saved.slug,
+    });
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",
@@ -185,25 +196,22 @@ export async function DELETE(request: Request, { params }: Props) {
     return syncError(403, "Only the owner can delete files");
   }
 
-  // A stale delete is a conflict too: when the client supplies If-Match it must
-  // match the version the server holds now, or 412, so a delete based on an old
-  // view never discards an edit the client has not seen. It is validated but not
-  // required, because the File Provider legitimately lacks a base hash for an
-  // item whose content version is empty; the revision guard below is atomic and
-  // always active, so the delete is protected against the post-resolution race
-  // regardless.
+  // A delete must identify the complete file version it is based on. Requiring
+  // a specific validator prevents an old Finder view from discarding an edit it
+  // has not seen; the revision guard below closes the check-then-delete race.
   const ifMatch = request.headers.get("if-match");
-  if (ifMatch) {
-    const current = renderSyncFile(blog, post);
-    if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
-      return syncError(412, "The post changed since this file was fetched");
-    }
+  if (!ifMatch) return syncError(428, "If-Match header is required");
+  if (ifMatch.trim() === "*") {
+    return syncError(412, "A specific If-Match validator is required");
+  }
+  const current = renderSyncFile(blog, post);
+  if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
+    return syncError(412, "The post changed since this file was fetched");
   }
 
-  // Even without If-Match, the delete is guarded on the revision we just
-  // resolved and runs as a single statement, so an edit that commits between the
-  // resolve and the delete is not silently lost: the guarded delete matches
-  // nothing and deletePostAtomic raises a conflict.
+  // The delete is guarded on the revision we just resolved and runs as a single
+  // statement. An edit that commits after the hash check makes the guarded
+  // delete match nothing, and deletePostAtomic raises a conflict.
   if (post.revision === undefined) {
     return syncError(409, "This item has no version and cannot be safely deleted");
   }
@@ -246,34 +254,43 @@ export async function PATCH(request: Request, { params }: Props) {
     return syncError(400, "Send a JSON body");
   }
   const folderId = typeof body.folder === "string" ? body.folder.trim() : "";
-  const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+  const slug =
+    typeof body.slug === "string" && body.slug.trim()
+      ? sanitizePostSlug(body.slug, post.slug)
+      : undefined;
   // A File Provider rename retitles the post (the filename is the title, not the
   // slug); the slug/URL is left alone unless the caller explicitly sends one.
-  const title = typeof body.title === "string" ? body.title.trim() : "";
-  if (!folderId && !slug && !title) {
+  const title =
+    typeof body.title === "string" && body.title.trim()
+      ? body.title
+      : undefined;
+  if (!folderId && slug === undefined && title === undefined) {
     return syncError(400, "Provide a folder to move into, a slug, or a title");
   }
 
-  // If-Match, when supplied, rejects a client that was already stale before it
-  // asked: a rename based on a version the server has since moved past is a 412,
-  // like PUT. Validated but not required (the File Provider can lack a base hash
-  // for an empty content version). The revision guard below is atomic and always
-  // active, so a change landing after this check is also caught.
+  // A metadata mutation must prove which complete file version it is based on.
+  // Without If-Match, a client that was stale before this request could resolve
+  // the latest revision and then overwrite it with an old Finder filename.
   const ifMatch = request.headers.get("if-match");
-  if (ifMatch) {
-    const current = renderSyncFile(blog, post);
-    if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
-      return syncError(412, "The post changed since this file was fetched");
-    }
+  if (!ifMatch) return syncError(428, "If-Match header is required");
+  if (ifMatch.trim() === "*") {
+    return syncError(412, "A specific If-Match validator is required");
+  }
+  const baseFile = renderSyncFile(blog, post);
+  if (!ifMatchSatisfied(ifMatch, `"${baseFile.hash}"`)) {
+    return syncError(412, "The post changed since this file was fetched");
+  }
+  if (post.revision === undefined) {
+    return syncError(409, "This item has no version and cannot be safely changed");
   }
 
-  // Resolve the target folder to a path up front so a bad id is a clean 404
-  // before any write, and so the move+rename below is a single atomic update.
-  let folderPath: string | undefined;
+  // Validate the tenant-scoped identity up front so a foreign or unknown id is
+  // a clean 404, then carry that exact immutable id into the atomic update.
+  let targetFolderId: string | undefined;
   if (folderId) {
     const folder = await getFolderById(blog.handle, folderId);
     if (!folder) return syncError(404, "Folder not found");
-    folderPath = folder.path;
+    targetFolderId = folder.id;
   }
 
   try {
@@ -281,13 +298,24 @@ export async function PATCH(request: Request, { params }: Props) {
     // PUT racing this move/rename cannot be clobbered by a stale full-row save.
     // The base revision guards the update so a concurrent metadata change
     // conflicts (412) instead of being overwritten.
-    const current = await movePostFile(blog.handle, postId, {
-      folderPath,
-      slug: slug || undefined,
-      title: title || undefined,
+    const result = await movePostFile(blog.handle, postId, {
+      folderId: targetFolderId,
+      slug,
+      title,
       expectedRevision: post.revision,
     });
-    if (!current) return syncError(404, "Post not found");
+    if (!result) return syncError(404, "Post not found");
+    const current = result.post;
+    if (!result.changed) {
+      return Response.json({ item: syncManifestItem(blog, current) });
+    }
+    await recordSlugChanged({
+      actorUserId: userId,
+      actorType: "external_agent",
+      targetId: postId,
+      oldSlug: result.previousSlug,
+      newSlug: current.slug,
+    });
     await recordAction({
       actorUserId: userId,
       actorType: "external_agent",

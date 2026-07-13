@@ -36,6 +36,20 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertEqual(item.filename, h)
     }
 
+    func testWorkspaceAndFolderNamesUsePortableReversibleComponents() {
+        let workspace = WriteItemMapper.workspaceItem(
+            handle: h, name: ".Research?? ", readOnly: false)
+        XCTAssertEqual(WriteFilename.decodeComponent(workspace.filename), ".Research?? ")
+        XCTAssertFalse(workspace.filename.contains("?"))
+        XCTAssertFalse(workspace.filename.hasPrefix("."))
+
+        let folder = WriteItemMapper.item(
+            for: Fixtures.folder("f", "A/B: C"), handle: h, readOnly: false)
+        XCTAssertEqual(WriteFilename.decodeComponent(folder.filename), "A/B: C")
+        XCTAssertFalse(folder.filename.contains("/"))
+        XCTAssertFalse(folder.filename.contains(":"))
+    }
+
     func testKindMapping() {
         let cases: [(String, WriteItemKind)] = [
             ("article", .article), ("project", .project), ("talk", .talk),
@@ -79,6 +93,15 @@ final class WriteItemMapperTests: XCTestCase {
             date: nil, createdAt: nil, updatedAt: nil, url: nil)
         let item = WriteItemMapper.item(for: entry, inFolder: "notes", handle: h, readOnly: true)
         XCTAssertEqual(item?.filename, "untitled-abc.md")
+    }
+
+    func testQuestionMarksInTitleProduceSafeReversibleFilename() {
+        let entry = Fixtures.entry(
+            id: "p1", file: "why.md", kind: "article", title: "Why??")
+        let item = WriteItemMapper.item(
+            for: entry, inFolder: "blog", handle: h, readOnly: true)
+        XCTAssertEqual(item?.filename, "Why~3F~3F.md")
+        XCTAssertEqual(WriteFilename.titleFromFilename(item?.filename ?? ""), "Why??")
     }
 
     func testHashCarriesForConflictChecks() {

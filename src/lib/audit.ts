@@ -60,3 +60,21 @@ export async function recordAction(entry: AuditEntry): Promise<void> {
     }
   }
 }
+
+export async function recordSlugChanged(
+  entry: Pick<AuditEntry, "actorUserId" | "actorType" | "targetId"> & {
+    oldSlug: string;
+    newSlug: string;
+  },
+): Promise<void> {
+  if (entry.oldSlug === entry.newSlug) return;
+  await recordAction({
+    actorUserId: entry.actorUserId,
+    actorType: entry.actorType,
+    actionName: "post.slug_changed",
+    targetType: "item",
+    targetId: entry.targetId,
+    inputSummary: entry.oldSlug,
+    outputSummary: entry.newSlug,
+  });
+}

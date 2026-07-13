@@ -12,6 +12,7 @@ import type {
 import { isSafeLinkHref } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { isNoCoverValue } from "@/lib/cover";
+import { sanitizePostSlug } from "@/lib/post-slug";
 
 export const WRITE_FOLDER_SCHEMA = "write.folder.v1";
 export const WRITE_MARKDOWN_FILE_SCHEMA = "write.markdown-file.v1";
@@ -69,6 +70,8 @@ export type RenderFolderManifestOptions = {
   fileUrlFor?: (post: Post) => string;
   /** canonical public URL of the post, baked into each file's frontmatter */
   postUrlFor?: (post: Post) => string;
+  /** exact file representation whose bytes the manifest hashes and sizes */
+  renderFileFor?: (post: Post) => string;
 };
 
 export function itemKindForPostType(type: PostType): MarkdownItemKind {
@@ -125,11 +128,13 @@ export function renderFolderManifest(
       ...(folder ? { id: folder.id, path: folder.path } : {}),
     },
     items: posts.map((post) => {
-      const rendered = renderPostMarkdownFile({
-        blog,
-        canonicalUrl: options?.postUrlFor?.(post),
-        post,
-      });
+      const rendered =
+        options?.renderFileFor?.(post) ??
+        renderPostMarkdownFile({
+          blog,
+          canonicalUrl: options?.postUrlFor?.(post),
+          post,
+        });
       return {
         file: markdownFilePathForPost(post),
         kind: itemKindForPostType(post.type),
@@ -152,13 +157,17 @@ export function renderPostMarkdownFile({
   blog,
   canonicalUrl,
   post,
+  syncRevision,
 }: {
   blog: Blog;
   canonicalUrl?: string;
   post: Post;
+  /** reserved sync validator; omitted from every public Markdown surface */
+  syncRevision?: number;
 }): string {
   const frontmatter: Record<string, unknown> = {
     schema: WRITE_MARKDOWN_FILE_SCHEMA,
+    ...(typeof syncRevision === "number" ? { syncRevision } : {}),
     // The workspace's display name. (Was `folder: blog.handle` — the internal
     // three-word handle, which read as a wrong/meaningless "folder" in the file.
     // The post's actual folder is evident from the file's location in the tree,
@@ -247,6 +256,7 @@ const METADATA_KEYS = [
   "folderName",
   "mode",
   "canonical",
+  "syncRevision",
 ];
 
 const POST_TYPE_BY_VOCAB: Record<string, PostType> = {
@@ -297,7 +307,7 @@ export function parsePostMarkdownFile(fileText: string): ParsedPostMarkdownFile 
         break;
       }
       case "slug": {
-        const slug = slugify(fieldText(value, key));
+        const slug = sanitizePostSlug(fieldText(value, key), "");
         if (slug) fields.slug = slug;
         break;
       }
@@ -474,15 +484,6 @@ function fieldOptionalText(value: unknown, key: string): string | undefined {
   return fieldText(value, key) || undefined;
 }
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80)
-    .replace(/-+$/g, "");
-}
-
 /**
  * The slug for a newly created file: an explicit slug wins, else it derives
  * from the title, else the caller's fallback (the placeholder draft slug).
@@ -494,8 +495,9 @@ export function slugForNewFile(
   fallback: string,
 ): string {
   if (fields.slug) return fields.slug;
-  const fromTitle = fields.title ? slugify(fields.title) : "";
-  return fromTitle || fallback;
+  return fields.title
+    ? sanitizePostSlug(fields.title, fallback)
+    : sanitizePostSlug(fallback, "post");
 }
 
 function addOptional(

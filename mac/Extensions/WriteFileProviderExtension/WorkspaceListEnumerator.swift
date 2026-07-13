@@ -6,12 +6,8 @@ import WriteFileProviderBridge
 /// Enumerates the domain ROOT: one folder per workspace the app handed off. The
 /// root is the only container that spans workspaces, so it lives in the
 /// extension (the kit's per-workspace core never sees more than one). Membership
-/// rarely changes, so change tracking is coarse: the anchor is a hash of the
-/// handle+name set, and any difference expires it for a clean root re-list. The
-/// name MUST be in the anchor: renaming a workspace keeps its handle, so a
-/// name-only anchor would report "no changes" on signalEnumerator and the Finder
-/// folder would keep the old name until a full domain re-registration (which, if
-/// it read a still-stale handoff, would then strand the old name permanently).
+/// rarely changes, so change tracking fingerprints the actual mapped workspace
+/// child set. Any difference expires it for a clean root re-list.
 final class WorkspaceListEnumerator: NSObject, NSFileProviderEnumerator {
     private let descriptors: [FileProviderWorkspace]
 
@@ -23,11 +19,7 @@ final class WorkspaceListEnumerator: NSObject, NSFileProviderEnumerator {
         for observer: any NSFileProviderEnumerationObserver,
         startingAt page: NSFileProviderPage
     ) {
-        let items = descriptors.map {
-            WriteFileProviderItem(WriteItemMapper.workspaceItem(
-                handle: $0.handle, name: $0.name, readOnly: false))
-        }
-        observer.didEnumerate(items)
+        observer.didEnumerate(Self.items(descriptors).map(WriteFileProviderItem.init))
         observer.finishEnumerating(upTo: nil)
     }
 
@@ -49,16 +41,25 @@ final class WorkspaceListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     private static func anchor(_ descriptors: [FileProviderWorkspace]) -> Data {
-        // handle AND name: a rename keeps the handle but must expire the anchor so
-        // the root re-lists with the new folder name (see the type doc comment).
-        Data(descriptors.map { "\($0.handle)=\($0.name)" }.sorted().joined(separator: "\n").utf8)
+        WorkspaceEnumerator.fingerprint(items(descriptors))
+    }
+
+    static func item(
+        for handle: String, in descriptors: [FileProviderWorkspace]
+    ) -> WriteItem? {
+        items(descriptors).first { $0.identifier == .workspace(handle) }
+    }
+
+    static func items(_ descriptors: [FileProviderWorkspace]) -> [WriteItem] {
+        WriteFilename.disambiguate(descriptors.map {
+            WriteItemMapper.workspaceItem(handle: $0.handle, name: $0.name, readOnly: false)
+        })
     }
 }
 
 /// The working set across every workspace: the union of each workspace core's
-/// `everything()`. Identifiers are handle-scoped, so concatenation never
-/// collides. The anchor combines the per-workspace cursors and expires on any
-/// difference (the same deletion-correct full-reconcile the folder adapter uses).
+/// `workingSet`. Identifiers are handle-scoped, so concatenation never collides.
+/// The anchor fingerprints the actual mapped files, not global cursors.
 final class AggregateWorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
     private let descriptors: [FileProviderWorkspace]
     private let apiFactory: (String) -> WriteSyncAPI?
@@ -118,16 +119,16 @@ final class AggregateWorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
     private static func anchor(
         _ descriptors: [FileProviderWorkspace], _ apiFactory: (String) -> WriteSyncAPI?
     ) async -> Data {
-        var parts: [String] = []
+        var items: [WriteItem] = []
         for descriptor in descriptors {
             guard let api = apiFactory(descriptor.handle) else { continue }
             let core = WorkspaceEnumerator(
                 api: api, handle: descriptor.handle, workspaceName: descriptor.name, readOnly: false)
-            if case .success(let cursor) = await core.currentCursor() {
-                parts.append(descriptor.handle + "=" + cursor)
+            if case .success(let workspaceItems) = await core.children(of: .workingSet) {
+                items.append(contentsOf: workspaceItems)
             }
         }
-        return Data(parts.sorted().joined(separator: "\n").utf8)
+        return WorkspaceEnumerator.fingerprint(items)
     }
 }
 

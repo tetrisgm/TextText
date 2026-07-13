@@ -135,8 +135,15 @@ final class BridgeTests: XCTestCase {
             XCTAssertFalse(v.contentVersion.isEmpty)
             XCTAssertFalse(v.metadataVersion.isEmpty)
             XCTAssertLessThanOrEqual(v.contentVersion.count, 128)
-            XCTAssertLessThanOrEqual(v.metadataVersion.count, 128)
+            XCTAssertEqual(v.metadataVersion.count, 32)
         }
+    }
+
+    func testVeryLongFilenameStillHasFixedSizeMetadataVersion() {
+        let long = fileItem().withFilename(String(repeating: "Long title ", count: 100) + ".md")
+        let version = WriteFileProviderItem(long).itemVersion
+        XCTAssertEqual(version.metadataVersion.count, 32)
+        XCTAssertLessThanOrEqual(version.metadataVersion.count, 128)
     }
 
     func testRootItemBridges() {

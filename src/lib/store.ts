@@ -67,6 +67,11 @@ import {
   cleanUsername,
   slugifyUsername,
 } from "./public-paths";
+import {
+  classifySlugCandidates,
+  isSafePostSlug,
+  sanitizePostSlug,
+} from "./post-slug";
 import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
 
 type PostRow = typeof posts.$inferSelect;
@@ -490,7 +495,55 @@ export async function getPost(
   handle: string,
   slug: string,
 ): Promise<Post | null> {
+  if (!isSafePostSlug(slug)) return null;
   return getPostCached(handle, slug);
+}
+
+export type PostSlugResolution =
+  | { kind: "exact"; post: Post }
+  | { kind: "history"; post: Post }
+  | { kind: "tombstone" | "ambiguous" | "missing" };
+
+/**
+ * Resolve a current slug or historical alias from one tenant-scoped database
+ * snapshot. Exact current rows win; deleted exact rows reserve the URL; an
+ * ambiguous historical alias fails closed.
+ */
+export async function resolvePostSlug(
+  handle: string,
+  slug: string,
+): Promise<PostSlugResolution> {
+  if (!isSafePostSlug(slug)) return { kind: "missing" };
+  if (!db) {
+    const post =
+      handle === DEMO_BLOG.handle
+        ? DEMO_POSTS.find((candidate) => candidate.slug === slug)
+        : undefined;
+    return post ? { kind: "exact", post } : { kind: "missing" };
+  }
+
+  const rows = await db
+    .select({ post: posts })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        or(
+          eq(posts.slug, slug),
+          sql`${posts.slugHistory} @> ARRAY[${slug}]::text[]`,
+        ),
+      ),
+    );
+  const resolution = classifySlugCandidates(
+    slug,
+    rows.map(({ post }) => post),
+  );
+  if (resolution.kind === "exact" || resolution.kind === "history") {
+    return { kind: resolution.kind, post: mapPost(resolution.row) };
+  }
+  return { kind: resolution.kind };
 }
 
 async function blogIdFor(handle: string): Promise<string> {
@@ -1041,21 +1094,24 @@ export async function setPostFolder(
  * touches only folder_id and slug, never the body. The sync PATCH route maps a
  * File Provider reparent/rename here; keeping the update to those two columns
  * means a content PUT that lands concurrently can never be clobbered by a stale
- * full-row save (which re-sending the whole `post` would do). Returns the
- * updated Post, or null if the post no longer exists. Throws on an unknown or
- * mode-mismatched target folder, or a slug collision, which the route maps to
- * 404/400.
+ * full-row save (which re-sending the whole `post` would do). Returns the post,
+ * whether a write occurred, and the prior slug; null means the post no longer
+ * exists. Throws on an unknown or mode-mismatched target folder, a stale base,
+ * or a slug collision.
  */
 export async function movePostFile(
   handle: string,
   postId: string,
   changes: {
-    folderPath?: string;
+    folderId?: string;
     slug?: string;
     title?: string;
     expectedRevision?: number;
   },
-): Promise<Post | null> {
+): Promise<
+  | { post: Post; changed: boolean; previousSlug: string }
+  | null
+> {
   if (!db) return null;
   const blogId = await blogIdFor(handle);
   const existing = await db
@@ -1067,6 +1123,12 @@ export async function movePostFile(
     .limit(1);
   const row = existing[0];
   if (!row) return null;
+  if (
+    changes.expectedRevision !== undefined &&
+    row.revision !== changes.expectedRevision
+  ) {
+    throw new PostConflictError();
+  }
 
   const set: {
     updatedAt: Date;
@@ -1077,20 +1139,20 @@ export async function movePostFile(
     updatedAt: new Date(),
   };
 
-  if (changes.folderPath !== undefined) {
+  if (changes.folderId !== undefined) {
     const target = await db
       .select()
       .from(folders)
       .where(
         and(
           eq(folders.blogId, blogId),
-          eq(folders.path, changes.folderPath),
+          eq(folders.id, changes.folderId),
           isNull(folders.deletedAt),
         ),
       )
       .limit(1);
     const folder = target[0];
-    if (!folder) throw new Error(`unknown folder "${changes.folderPath}"`);
+    if (!folder) throw new Error(`unknown folder "${changes.folderId}"`);
     // The mode-match invariant keeps notes/bookmarks unlisted: a note can never
     // move into a blog folder, no matter which writer requests it.
     if (cleanFolderMode(folder.mode) !== folderModeForPostType(row.type)) {
@@ -1102,8 +1164,9 @@ export async function movePostFile(
     if (folder.id !== row.folderId) set.folderId = folder.id;
   }
 
-  if (changes.slug !== undefined && changes.slug !== row.slug) {
-    set.slug = changes.slug;
+  if (changes.slug !== undefined) {
+    const slug = sanitizePostSlug(changes.slug, row.slug);
+    if (slug !== row.slug) set.slug = slug;
   }
 
   // A Finder rename retitles the post (the filename is the title). Only a real
@@ -1121,7 +1184,7 @@ export async function movePostFile(
     set.slug === undefined &&
     set.title === undefined
   ) {
-    return mapPost(row);
+    return { post: mapPost(row), changed: false, previousSlug: row.slug };
   }
 
   // The revision guard makes the move atomic: if a concurrent writer committed
@@ -1144,7 +1207,13 @@ export async function movePostFile(
         ),
       )
       .returning();
-    if (updated[0]) return mapPost(updated[0]);
+    if (updated[0]) {
+      return {
+        post: mapPost(updated[0]),
+        changed: true,
+        previousSlug: row.slug,
+      };
+    }
     // Guarded and matched nothing: the row moved under us (the select saw it,
     // the guarded update did not). A conflict, not a silent no-op.
     if (changes.expectedRevision !== undefined) throw new PostConflictError();
@@ -2394,6 +2463,7 @@ export async function savePost(
     throw new Error("Cannot preserve published_at without an existing post");
   }
   const blogId = await blogIdFor(handle);
+  const slug = sanitizePostSlug(post.slug, "post");
   // Never taken from the client Post: an update keeps the stored folder and
   // an insert lands in the folder matching the post's type (moves are a
   // store-level concern).
@@ -2444,7 +2514,7 @@ export async function savePost(
           : [];
       const updated = await db
         .update(posts)
-        .set({ ...set, slug: post.slug })
+        .set({ ...set, slug })
         .where(
           and(
             eq(posts.id, post.id),
@@ -2468,7 +2538,7 @@ export async function savePost(
       .values({
         blogId,
         folderId: insertFolder.id,
-        slug: post.slug,
+        slug,
         ...base,
         publishedAt:
           status === "published"

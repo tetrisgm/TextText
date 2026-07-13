@@ -83,7 +83,8 @@ import {
   blogPostEditPath,
   tenantPostPath,
 } from "@/lib/public-paths";
-import { recordAction } from "@/lib/audit";
+import { recordAction, recordSlugChanged } from "@/lib/audit";
+import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
 
@@ -249,13 +250,7 @@ function cleanCoverHeight(value: unknown): number | undefined {
 
 function cleanSlug(value: unknown, fallback: string): string {
   if (typeof value !== "string") throw new Error("Slug must be text");
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80)
-    .replace(/-+$/g, "");
-  return slug || fallback;
+  return sanitizePostSlug(value, fallback);
 }
 
 function hasInputKey(values: Record<string, unknown>, key: string): boolean {
@@ -564,6 +559,13 @@ export async function savePostAction(post: Post): Promise<Post> {
       },
       { expectedRevision: existing.revision },
     );
+    await recordSlugChanged({
+      actorUserId: access.isOwner ? access.ownerId : null,
+      actorType: "human",
+      targetId: saved.id,
+      oldSlug: existing.slug,
+      newSlug: saved.slug,
+    });
     await auditEdit(access, "save_post", "item", saved.id, saved.title);
     await revalidateBlog(handle, [existing.slug, saved.slug]);
     return saved;
@@ -829,6 +831,13 @@ export async function saveEditablePostAction(
     // (another tab, the Mac app, an agent) conflicts instead of being clobbered.
     { expectedRevision: existing.revision },
   );
+  await recordSlugChanged({
+    actorUserId: access.isOwner ? access.ownerId : null,
+    actorType: "human",
+    targetId: saved.id,
+    oldSlug: existing.slug,
+    newSlug: saved.slug,
+  });
   await auditEdit(access, "save_post", "item", saved.id, saved.title);
   if (options.revalidate !== false) {
     await revalidateBlog(handle, [existing.slug, saved.slug]);

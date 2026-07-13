@@ -270,6 +270,11 @@ export const posts = pgTable(
     folderId: uuid("folder_id").references(() => folders.id),
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
+    /** previous public slugs, newest first; maintained atomically by a trigger */
+    slugHistory: text("slug_history")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     title: text("title").notNull(),
     /** short dek/standfirst */
     excerpt: text("excerpt"),
@@ -324,6 +329,7 @@ export const posts = pgTable(
     index("posts_folder_id_idx")
       .on(t.folderId)
       .where(sql`${t.deletedAt} is null`),
+    index("posts_slug_history_gin_full_idx").using("gin", t.slugHistory),
     index("posts_blog_public_order_idx")
       .on(t.blogId, t.status, t.pinned.desc(), t.publishedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),

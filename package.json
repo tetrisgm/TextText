@@ -17,7 +17,7 @@
     "ship": "release/ship.sh",
     "test": "vitest run",
     "db:cleanup-bookmark-html": "node scripts/cleanup-bookmark-html.mjs",
-    "db:push": "drizzle-kit push",
+    "db:push": "drizzle-kit push && node scripts/migrate-add-slug-history.mjs",
     "db:seed": "tsx src/lib/db/seed.ts"
   },
   "dependencies": {

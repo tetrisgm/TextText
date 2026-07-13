@@ -61,10 +61,105 @@ final class MountFrontmatterTests: XCTestCase {
                           "a real body edit must survive title-stripping")
     }
 
+    func testStripTitleIgnoresSyncRevisionMetadata() {
+        let first = sample.replacingOccurrences(
+            of: "status: \"draft\"", with: "status: \"draft\"\nsyncRevision: 41")
+        let second = first.replacingOccurrences(of: "syncRevision: 41", with: "syncRevision: 42")
+
+        XCTAssertEqual(MountFrontmatter.stripTitle(first), MountFrontmatter.stripTitle(second))
+    }
+
     func testNoFrontmatterIsLeftAlone() {
         let plain = "just text, no frontmatter"
         XCTAssertEqual(MountFrontmatter.setTitle(plain, "X"), plain)
         XCTAssertEqual(MountFrontmatter.stripTitle(plain), plain)
         XCTAssertNil(MountFrontmatter.value(plain, "slug"))
+    }
+}
+
+final class MountBridgeSyncPlanTests: XCTestCase {
+    private let base = (title: "Base", body: "base-body")
+
+    func testCrossAxisLocalTitleAndServerBodyPushesThenPulls() {
+        let plan = MountBridge.syncPlan(
+            baseline: base,
+            local: (title: "Local title", body: "base-body"),
+            server: (title: "Base", body: "server-body"),
+            canonicalNameMismatch: true)
+
+        XCTAssertTrue(plan.pushTitle)
+        XCTAssertFalse(plan.pushBody)
+        XCTAssertTrue(plan.pullAfterPushes)
+        XCTAssertFalse(plan.preserveConflict)
+        XCTAssertTrue(plan.localDirty)
+    }
+
+    func testCrossAxisLocalBodyAndServerTitlePushesThenPulls() {
+        let plan = MountBridge.syncPlan(
+            baseline: base,
+            local: (title: "Base", body: "local-body"),
+            server: (title: "Server title", body: "base-body"),
+            canonicalNameMismatch: true)
+
+        XCTAssertFalse(plan.pushTitle)
+        XCTAssertTrue(plan.pushBody)
+        XCTAssertTrue(plan.pullAfterPushes)
+        XCTAssertFalse(plan.preserveConflict)
+    }
+
+    func testSameAxisConflictNeverPushesOrPulls() {
+        let plan = MountBridge.syncPlan(
+            baseline: base,
+            local: (title: "Local title", body: "base-body"),
+            server: (title: "Server title", body: "base-body"),
+            canonicalNameMismatch: true)
+
+        XCTAssertFalse(plan.pushTitle)
+        XCTAssertFalse(plan.pushBody)
+        XCTAssertFalse(plan.pullAfterPushes)
+        XCTAssertTrue(plan.preserveConflict)
+        XCTAssertTrue(plan.localDirty)
+    }
+
+    func testSameAxisConvergenceIsNotAConflict() {
+        let converged = (title: "Same title", body: "same-body")
+        let plan = MountBridge.syncPlan(
+            baseline: base, local: converged, server: converged,
+            canonicalNameMismatch: false)
+
+        XCTAssertFalse(plan.pushTitle)
+        XCTAssertFalse(plan.pushBody)
+        XCTAssertFalse(plan.pullAfterPushes)
+        XCTAssertFalse(plan.preserveConflict)
+    }
+
+    func testCanonicalRenamePullsOnlyWhenNoLocalTitleIsDirty() {
+        let clean = MountBridge.syncPlan(
+            baseline: base, local: base, server: base,
+            canonicalNameMismatch: true)
+        XCTAssertTrue(clean.pullAfterPushes)
+
+        let dirty = MountBridge.syncPlan(
+            baseline: base,
+            local: (title: "Local title", body: "base-body"),
+            server: base,
+            canonicalNameMismatch: true)
+        XCTAssertFalse(dirty.pullAfterPushes)
+        XCTAssertTrue(dirty.pushTitle)
+    }
+
+    func testCanonicalFilenameDistinguishesRawUnsafeAndIdentitySuffixedNames() {
+        let canonical = "Why~3F~3F.md"
+        let collision = MountBridge.canonicalCollisionFilename(
+            serverTitle: "Why??", slug: "why", stableId: "p1")
+        let collisionTail = String(collision.dropFirst(canonical.dropLast(3).count))
+        XCTAssertTrue(MountBridge.needsCanonicalFilename(
+            "Why??.md", serverTitle: "Why??", slug: "why", stableId: "p1"))
+        XCTAssertFalse(MountBridge.needsCanonicalFilename(
+            canonical, serverTitle: "Why??", slug: "why", stableId: "p1"))
+        XCTAssertFalse(MountBridge.needsCanonicalFilename(
+            collision, serverTitle: "Why??", slug: "why", stableId: "p1"))
+        XCTAssertTrue(MountBridge.needsCanonicalFilename(
+            "Why??\(collisionTail)", serverTitle: "Why??", slug: "why", stableId: "p1"))
     }
 }

@@ -138,9 +138,9 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         switch await send("DELETE", "/api/sync/v1/files/\(escape(postId))", headers: headers) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
-            // 412: the row moved on underneath us. Surface it as a conflict (the
-            // adapter maps that to versionNoLongerAvailable) instead of a generic
-            // HTTP error that would read as serverUnreachable and loop.
+            // 412: the row moved on underneath us. Surface it as a conflict so
+            // mutation callers can return current state (modify) or a rejected
+            // deletion; versionNoLongerAvailable is reserved for strict fetches.
             if reply.status == 412 { return .failure(.conflict) }
             if reply.status == 204 || reply.status == 404 { return .success(()) }
             return .failure(reply.httpError)

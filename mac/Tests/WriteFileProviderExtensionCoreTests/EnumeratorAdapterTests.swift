@@ -1,5 +1,6 @@
 import XCTest
 import FileProvider
+import UniformTypeIdentifiers
 @testable import WriteFileProviderExtensionCore
 @testable import WriteFileProviderKit
 @testable import WriteFileProviderBridge
@@ -161,6 +162,21 @@ final class EnumeratorAdapterTests: XCTestCase {
         XCTAssertEqual(listObs.items.first?.filename, "New Name")
     }
 
+    func testDirectWorkspaceLookupUsesTheEnumeratedCollisionName() {
+        let descriptors = [
+            FileProviderWorkspace(name: "Shared", handle: "one", origin: "o", token: "t"),
+            FileProviderWorkspace(name: "Shared", handle: "two", origin: "o", token: "t"),
+        ]
+        let enumerated = WorkspaceListEnumerator.items(descriptors)
+        let direct = WorkspaceListEnumerator.item(for: "two", in: descriptors)
+
+        XCTAssertEqual(
+            direct?.filename,
+            enumerated.first { $0.identifier == .workspace("two") }?.filename
+        )
+        XCTAssertEqual(direct?.filename, "Shared [two]")
+    }
+
     func testEnumerationErrorFinishesWithError() {
         let api = standardAPI()
         api.failManifest = .network("offline")
@@ -173,13 +189,13 @@ final class EnumeratorAdapterTests: XCTestCase {
         XCTAssertEqual((obs.error as NSError?)?.code, NSFileProviderError.serverUnreachable.rawValue)
     }
 
-    func testSyncAnchorIsServerCursor() {
-        let api = standardAPI(); api.cursor = "c42"
+    func testSyncAnchorFingerprintsMappedChildren() {
+        let api = standardAPI()
         let exp = expectation(description: "anchor")
         var anchor: NSFileProviderSyncAnchor?
         adapter(.rootContainer, api).currentSyncAnchor { anchor = $0; exp.fulfill() }
         wait(for: [exp], timeout: 5)
-        XCTAssertEqual(anchor.map { String(decoding: $0.rawValue, as: UTF8.self) }, "c42")
+        XCTAssertEqual(anchor?.rawValue.count, 32)
     }
 
     func testEnumerateChangesExpiresAnchorWhenCursorMoved() {
@@ -200,21 +216,63 @@ final class EnumeratorAdapterTests: XCTestCase {
         XCTAssertEqual((obs.error as NSError?)?.code, NSFileProviderError.syncAnchorExpired.rawValue)
     }
 
-    func testEnumerateChangesFinishesQuietlyWhenAnchorMatchesCursor() {
+    func testEnumerateChangesFinishesQuietlyWhenChildSetMatches() {
         // The system probes for changes on every idle tick. When the supplied
         // anchor already equals the current cursor, nothing moved, so the
         // enumerator must finish with no changes and no error rather than expire
         // the anchor and trigger a needless full re-enumeration.
-        let api = standardAPI(); api.cursor = "c9"
-        let exp = expectation(description: "changes")
-        let obs = ChangeObserver(exp)
-        adapter(.folder(handle: "demo", id: "blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("c9".utf8)))
-        wait(for: [exp], timeout: 5)
+        let api = standardAPI()
+        let subject = adapter(.folder(handle: "demo", id: "blog"), api)
+        let anchorExp = expectation(description: "anchor")
+        var anchor: NSFileProviderSyncAnchor?
+        subject.currentSyncAnchor { anchor = $0; anchorExp.fulfill() }
+        wait(for: [anchorExp], timeout: 5)
+
+        let changesExp = expectation(description: "changes")
+        let obs = ChangeObserver(changesExp)
+        subject.enumerateChanges(for: obs, from: try! XCTUnwrap(anchor))
+        wait(for: [changesExp], timeout: 5)
         XCTAssertNil(obs.error, "a matching anchor must not error")
         XCTAssertTrue(obs.updated.isEmpty)
         XCTAssertTrue(obs.deleted.isEmpty)
-        XCTAssertEqual(obs.anchor.map { String(decoding: $0.rawValue, as: UTF8.self) }, "c9",
-                       "must finish at the same anchor")
+        XCTAssertEqual(obs.anchor, anchor, "must finish at the same anchor")
+    }
+
+    func testUnrelatedFolderEditDoesNotExpireContainerAnchor() {
+        let api = standardAPI()
+        let subject = adapter(.folder(handle: "demo", id: "blog"), api)
+        let anchorExp = expectation(description: "anchor")
+        var anchor: NSFileProviderSyncAnchor?
+        subject.currentSyncAnchor { anchor = $0; anchorExp.fulfill() }
+        wait(for: [anchorExp], timeout: 5)
+
+        api.manifests["notes"] = [
+            WriteManifestItem(file: "idea.md", kind: "note", slug: "idea", title: "Idea",
+                              status: "draft", hash: "changed", id: "n1", date: nil,
+                              createdAt: nil, updatedAt: nil, url: nil)
+        ]
+        api.cursor = "global-cursor-moved"
+
+        let changesExp = expectation(description: "changes")
+        let obs = ChangeObserver(changesExp)
+        subject.enumerateChanges(for: obs, from: try! XCTUnwrap(anchor))
+        wait(for: [changesExp], timeout: 5)
+        XCTAssertNil(obs.error)
+        XCTAssertEqual(obs.anchor, anchor)
+    }
+
+    func testAggregateWorkingSetEnumeratesFilesOnly() {
+        let api = standardAPI()
+        let subject = AggregateWorkingSetEnumerator(
+            descriptors: [FileProviderWorkspace(name: "Demo", handle: "demo", origin: "o", token: "t")],
+            apiFactory: { _ in api })
+        let exp = expectation(description: "working set")
+        let obs = EnumObserver(exp)
+        subject.enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        XCTAssertFalse(obs.items.isEmpty)
+        XCTAssertTrue(obs.items.allSatisfy { $0.contentType != .folder },
+                      "post changes must not republish unchanged folders")
     }
 
     // MARK: error bridging

@@ -9,6 +9,9 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var manifests: [String: [WriteManifestItem]]
     var cursor: String
     var failManifest: WriteSyncError?
+    var manifestResults: [String: [Result<[WriteManifestItem], WriteSyncError>]] = [:]
+    var fileTextResults: [Result<WriteFileContent, WriteSyncError>] = []
+    private(set) var fileTextCalls = 0
 
     // Recorded write calls.
     struct CreateFileCall: Equatable { let body: String; let folderId: String?; let idempotencyKey: String? }
@@ -37,17 +40,27 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
 
     init(workspace: WriteWorkspace, manifests: [String: [WriteManifestItem]] = [:], cursor: String = "c0") {
         self.workspaceValue = workspace
-        self.manifests = manifests
+        self.manifests = manifests.isEmpty
+            ? ["notes": [Fixtures.item(
+                id: "p1", file: "a.md", kind: "note", title: "a")]]
+            : manifests
         self.cursor = cursor
     }
 
     func workspace() async -> Result<WriteWorkspace, WriteSyncError> { .success(workspaceValue) }
     func manifest(folderId: String) async -> Result<[WriteManifestItem], WriteSyncError> {
         if let failManifest { return .failure(failManifest) }
+        if var queued = manifestResults[folderId], !queued.isEmpty {
+            let result = queued.removeFirst()
+            manifestResults[folderId] = queued
+            return result
+        }
         return .success(manifests[folderId] ?? [])
     }
     func fileText(postId: String) async -> Result<WriteFileContent, WriteSyncError> {
-        .success(WriteFileContent(text: "# body", hash: "h"))
+        fileTextCalls += 1
+        if !fileTextResults.isEmpty { return fileTextResults.removeFirst() }
+        return .success(WriteFileContent(text: "# body", hash: "h"))
     }
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError> {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
@@ -86,10 +99,13 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
 }
 
 enum Fixtures {
-    static func item(id: String, file: String, kind: String, slug: String? = nil, title: String? = nil) -> WriteManifestItem {
+    static func item(
+        id: String, file: String, kind: String, slug: String? = nil,
+        title: String? = nil, hash: String = "h"
+    ) -> WriteManifestItem {
         WriteManifestItem(
             file: file, kind: kind, slug: slug ?? file.replacingOccurrences(of: ".md", with: ""),
-            title: title ?? file, status: "draft", hash: "h", id: id, date: nil,
+            title: title ?? file, status: "draft", hash: hash, id: id, date: nil,
             createdAt: nil, updatedAt: nil, url: nil)
     }
 

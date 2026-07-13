@@ -93,6 +93,7 @@ export function renderSyncFile(
     blog,
     canonicalUrl: postUrl(blogBaseUrl(blog), post.slug),
     post,
+    syncRevision: post.revision,
   });
   return { text, hash: markdownFileHash(text) };
 }
@@ -106,6 +107,7 @@ export function syncManifestOptions(
     folder,
     fileUrlFor: (post) => syncFileUrl(post.id ?? post.slug),
     postUrlFor: (post) => postUrl(baseUrl, post.slug),
+    renderFileFor: (post) => renderSyncFile(blog, post).text,
   };
 }
 
