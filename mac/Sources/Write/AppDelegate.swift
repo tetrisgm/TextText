@@ -808,33 +808,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     private var isMaterializing = false
 
-    /// Recursively list every folder under `root` (forcing enumeration) and read
-    /// each `.md` file so it downloads. Returns true if the tree still looks cold:
-    /// a directory failed to list (a timed-out cold enumeration), or a file is
-    /// still dataless after the read. The caller retries on that signal.
+    /// Walk the whole tree (a deep enumerator's readdir traversal forces each
+    /// dataless folder to enumerate) and read every `.md` so it downloads.
+    /// Returns true if the tree still looks cold: nothing enumerated yet, or a
+    /// file is still dataless after the read. The caller retries on that signal,
+    /// which covers a cold first walk that reached only the top level before the
+    /// deeper folders had enumerated.
     private static func warmAndMaterialize(_ root: URL) -> Bool {
         let fm = FileManager.default
         let coordinator = NSFileCoordinator()
-        var incomplete = false
-        func listing(of url: URL) -> [URL] {
-            do {
-                return try fm.contentsOfDirectory(
-                    at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [])
-            } catch {
-                incomplete = true // a cold folder enumeration failed; retry later
-                return []
-            }
-        }
-        var stack = listing(of: root)
         var files: [URL] = []
-        while let entry = stack.popLast() {
-            let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-            if isDir {
-                stack.append(contentsOf: listing(of: entry))
-            } else if entry.pathExtension == "md" {
-                files.append(entry)
+        if let walker = fm.enumerator(
+            at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
+            for case let url as URL in walker where url.pathExtension == "md" {
+                files.append(url)
             }
         }
+        var incomplete = files.isEmpty // nothing enumerated yet -> retry
         for fileURL in files where isDataless(fileURL) {
             var err: NSError?
             coordinator.coordinate(readingItemAt: fileURL, options: [], error: &err) { u in

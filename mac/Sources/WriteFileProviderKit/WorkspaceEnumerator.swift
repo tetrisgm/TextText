@@ -135,9 +135,15 @@ public struct WorkspaceEnumerator: Sendable {
         folderId: String
     ) async -> Result<[WriteItem], WriteSyncError> {
         // Subfolders come from the workspace; files come from this folder's
-        // manifest. Both are needed for a complete listing.
+        // manifest. Fetch BOTH concurrently: a cold first enumeration (right
+        // after a domain register) that does two round-trips SEQUENTIALLY can
+        // exceed the system's enumeration timeout and get cached as an empty
+        // folder. One round-trip's worth of latency stays inside the window.
+        async let wsResult = api.workspace()
+        async let manifestResult = api.manifest(folderId: folderId)
+
         let ws: WriteWorkspace
-        switch await api.workspace() {
+        switch await wsResult {
         case .failure(let e): return .failure(e)
         case .success(let value): ws = value
         }
@@ -149,7 +155,7 @@ public struct WorkspaceEnumerator: Sendable {
             .filter { $0.parentId == folderId }
             .map { WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
 
-        switch await api.manifest(folderId: folderId) {
+        switch await manifestResult {
         case .failure(let e): return .failure(e)
         case .success(let entries):
             let files = entries.compactMap {
