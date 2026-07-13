@@ -1,8 +1,18 @@
 import CryptoKit
 import FileProvider
 import Foundation
+import os
 import WriteFileProviderKit
 import WriteWorkspaceCore
+
+/// Trace the two-way mount reconcile. Read on the owner's Mac with:
+///   /usr/bin/log show --last 10m --predicate 'subsystem == "net.writeapp.write"
+///     AND category == "mountbridge"' --info --style compact
+/// Every decision (push title / pull / push body / folder rename) logs the exact
+/// values it compared, so a sync loop or a rename that did not stick is legible
+/// without guessing. Titles are logged .public (the owner's own content, on the
+/// owner's machine) so the strings are not redacted.
+private let bridgeLog = Logger(subsystem: "net.writeapp.write", category: "mountbridge")
 
 /// Keeps the File Provider mount and the server in sync FAST in BOTH directions,
 /// because macOS does it on its own slow, deprioritized schedule. It watches the
@@ -123,15 +133,31 @@ final class MountBridge {
             }
         }
 
+        bridgeLog.info("reconcile: \(files.count, privacy: .public) files, \(dirs.count, privacy: .public) dirs, \(ws.folders.count, privacy: .public) server folders")
+
         // FOLDER RENAME (push only; the FP handles a server-side folder rename by
         // re-enumeration). A folder keeps its posts across a rename, so a
         // majority vote of the contained posts resolves its id.
         for dir in dirs {
-            guard let fid = folderId(for: dir, bySlug: bySlug) else { continue }
             let name = dir.lastPathComponent
-            if let serverName = folderName[fid], !name.isEmpty, serverName != name {
-                if case .success = await api.renameFolder(folderId: fid, name: name) {
+            guard let fid = folderId(for: dir, bySlug: bySlug) else {
+                // A dir whose posts' slugs can't be resolved (empty, or all
+                // dataless) can't be matched to a server folder -> a rename here
+                // is invisible to the push. Log it: this is a real blind spot.
+                if name != root.lastPathComponent {
+                    bridgeLog.info("folder '\(name, privacy: .public)': unresolved id (no votable posts) -> rename NOT pushable")
+                }
+                continue
+            }
+            let serverName = folderName[fid] ?? "?"
+            if !name.isEmpty, serverName != name {
+                let result = await api.renameFolder(folderId: fid, name: name)
+                switch result {
+                case .success:
+                    bridgeLog.info("folder-rename fid=\(fid, privacy: .public) '\(serverName, privacy: .public)' -> '\(name, privacy: .public)': OK")
                     onActivity?("Renamed folder to \(name)")
+                case .failure(let e):
+                    bridgeLog.error("folder-rename fid=\(fid, privacy: .public) '\(serverName, privacy: .public)' -> '\(name, privacy: .public)': FAILED \(String(describing: e), privacy: .public)")
                 }
             }
         }
@@ -162,7 +188,9 @@ final class MountBridge {
                    case .success(let server) = await api.fileText(postId: post.postId) {
                     staleContent = mountBody != Self.sha256(MountFrontmatter.stripTitle(server.text))
                 }
-                if name != serverName || staleContent {
+                let willPull = name != serverName || staleContent
+                bridgeLog.info("first-sight[\(slug, privacy: .public)] name='\(name, privacy: .public)' server='\(serverName, privacy: .public)' staleBody=\(staleContent, privacy: .public) -> \(willPull ? "PULL" : "seed", privacy: .public)")
+                if willPull {
                     await pull(post: post, handle: ctx.handle, manager: manager)
                 }
                 continue
@@ -178,12 +206,19 @@ final class MountBridge {
             } else {
                 let filenameMoved = filenameTitle != base.title // user renamed the file
                 let serverMoved = post.title != base.title       // app retitled the post
+                let decision = filenameMoved && !serverMoved ? "PUSH-title"
+                    : serverMoved ? "PULL(server retitled)"
+                    : "hold(neither moved off base)"
+                bridgeLog.info("title[\(slug, privacy: .public)] name='\(name, privacy: .public)' server='\(serverName, privacy: .public)' fileT='\(filenameTitle, privacy: .public)' srvT='\(post.title, privacy: .public)' base='\(base.title, privacy: .public)' fileMoved=\(filenameMoved, privacy: .public) srvMoved=\(serverMoved, privacy: .public) -> \(decision, privacy: .public)")
                 if filenameMoved && !serverMoved {
-                    if case .success = await api.patchFile(
+                    switch await api.patchFile(
                         postId: post.postId, folderId: nil, slug: nil,
                         title: filenameTitle, ifMatch: post.hash) {
+                    case .success:
                         onActivity?("Renamed to \(filenameTitle)")
                         newTitle = filenameTitle
+                    case .failure(let e):
+                        bridgeLog.error("title[\(slug, privacy: .public)] PUSH failed: \(String(describing: e), privacy: .public)")
                     }
                 } else if serverMoved {
                     // App retitled -> pull: the FP renames the mount file + refreshes
@@ -203,6 +238,7 @@ final class MountBridge {
                 } else {
                     let localMoved = mountBody != base.body
                     let serverBodyMoved = serverBody != base.body
+                    bridgeLog.info("content[\(slug, privacy: .public)] localMoved=\(localMoved, privacy: .public) srvMoved=\(serverBodyMoved, privacy: .public) -> \(localMoved && !serverBodyMoved ? "PUSH-body" : serverBodyMoved ? "PULL(server edited)" : "hold", privacy: .public)")
                     if localMoved && !serverBodyMoved {
                         if rejected[post.postId] != mountFull {
                             let pushTitle = (name != serverName && filenameTitle != base.title)
@@ -212,9 +248,14 @@ final class MountBridge {
                                 body: MountFrontmatter.setTitle(text, pushTitle),
                                 ifMatch: post.hash) {
                             case .success: onActivity?("Synced edits"); newBody = mountBody
-                            case .failure(.rejected): rejected[post.postId] = mountFull
-                            case .failure: break
+                            case .failure(.rejected):
+                                rejected[post.postId] = mountFull
+                                bridgeLog.error("content[\(slug, privacy: .public)] PUSH rejected (400), backing off")
+                            case .failure(let e):
+                                bridgeLog.error("content[\(slug, privacy: .public)] PUSH failed: \(String(describing: e), privacy: .public)")
                             }
+                        } else {
+                            bridgeLog.info("content[\(slug, privacy: .public)] skipped (already rejected)")
                         }
                     } else if serverBodyMoved {
                         didPull = true // app edited the body -> pull
@@ -245,6 +286,7 @@ final class MountBridge {
     private func pull(post: ServerPost, handle: String, manager: NSFileProviderManager) async {
         let identifier = NSFileProviderItemIdentifier(
             rawValue: WriteItemIdentifier.file(handle: handle, id: post.postId).rawValue)
+        bridgeLog.info("pull[\(post.postId, privacy: .public)] evict + re-materialize '\(post.title, privacy: .public)'")
         await withCheckedContinuation { continuation in
             manager.evictItem(identifier: identifier) { _ in continuation.resume() }
         }

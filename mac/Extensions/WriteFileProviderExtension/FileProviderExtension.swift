@@ -238,6 +238,12 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             completionHandler(item, [], false, error)
             progress.completedUnitCount = 1
         }
+        let fields = [
+            changedFields.contains(.filename) ? "name" : nil,
+            changedFields.contains(.parentItemIdentifier) ? "parent" : nil,
+            changedFields.contains(.contents) ? "contents" : nil,
+        ].compactMap { $0 }.joined(separator: "+")
+        fpLog.info("modifyItem \(item.itemIdentifier.rawValue, privacy: .public) fields=[\(fields, privacy: .public)] name='\(item.filename, privacy: .public)'")
         guard case .file(let handle, let postId)? = WriteItemIdentifier(item.itemIdentifier) else {
             // Folder rename is the only folder mutation supported.
             if case .folder(let handle, let folderId)? = WriteItemIdentifier(item.itemIdentifier),
@@ -245,6 +251,7 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 Task {
                     switch await api.renameFolder(folderId: folderId, name: item.filename) {
                     case .success(let folder):
+                        fpLog.info("modifyItem folder \(folderId, privacy: .public) renamed to '\(folder.name, privacy: .public)'")
                         done(WriteFileProviderItem(
                             WriteItemMapper.item(for: folder, handle: handle, readOnly: false)), nil)
                     case .failure(let error): done(nil, Self.nsError(from: error))
@@ -260,6 +267,7 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 Task {
                     switch await api.renameWorkspace(name: item.filename) {
                     case .success(let blog):
+                        fpLog.info("modifyItem workspace \(handle, privacy: .public) renamed to '\(blog.name, privacy: .public)'")
                         // Write the fresh name back into the shared handoff so a
                         // later domain re-registration reads it (not the app's
                         // lagging cache); the anchor now includes the name, so the

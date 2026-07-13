@@ -62,7 +62,13 @@ public enum FileProviderHandoffStore {
         // extension needs; still device-only (not synced to iCloud keychain).
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let status = SecItemAdd(add as CFDictionary, nil)
-        handoffLog.log("save: group=\(group, privacy: .public) status=\(status, privacy: .public) workspaces=\(handoff.workspaces.count, privacy: .public)")
+        // Fires on every republish (frequent) -> debug level, so it does not drown
+        // the --info sync trace. A real failure is surfaced at error level.
+        if status == errSecSuccess {
+            handoffLog.debug("save: group=\(group, privacy: .public) workspaces=\(handoff.workspaces.count, privacy: .public)")
+        } else {
+            handoffLog.error("save FAILED: group=\(group, privacy: .public) status=\(status, privacy: .public)")
+        }
         return status == errSecSuccess
     }
 
@@ -82,7 +88,8 @@ public enum FileProviderHandoffStore {
             return nil
         }
         let handoff = FileProviderHandoff.decode(data)
-        handoffLog.log("load: ok workspaces=\(handoff?.workspaces.count ?? 0, privacy: .public)")
+        // Fires on every enumerator/item call (very frequent) -> debug level.
+        handoffLog.debug("load: ok workspaces=\(handoff?.workspaces.count ?? 0, privacy: .public)")
         return handoff
     }
 
