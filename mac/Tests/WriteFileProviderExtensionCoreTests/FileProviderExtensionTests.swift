@@ -598,6 +598,90 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.renameWorkspaceCalls.first?.name, "Studio")
     }
 
+    func testWorkspaceModificationDateIsAcknowledgedWithoutServerRename() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let current = WriteItemMapper.workspaceItem(
+            handle: "demo", name: "Demo", readOnly: false)
+        let exp = expectation(description: "workspace-mtime")
+        var result: NSFileProviderItem?
+        var pending: NSFileProviderItemFields = [.contentModificationDate]
+        var err: NSError?
+        _ = ext(api).modifyItem(
+            WriteFileProviderItem(current), baseVersion: version(current),
+            changedFields: [.contentModificationDate], contents: nil,
+            options: [], request: NSFileProviderRequest()
+        ) { item, fields, _, error in
+            result = item; pending = fields; err = error as NSError?; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertTrue(pending.isEmpty)
+        XCTAssertEqual(result?.itemIdentifier.rawValue, "workspace:demo")
+        XCTAssertTrue(api.renameWorkspaceCalls.isEmpty)
+    }
+
+    func testFolderModificationDateIsAcknowledgedWithoutServerRename() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let folder = api.workspaceValue.folders.first { $0.id == "blog" }!
+        let current = WriteItemMapper.item(
+            for: folder, handle: "demo", readOnly: false)
+        let exp = expectation(description: "folder-mtime")
+        var result: NSFileProviderItem?
+        var pending: NSFileProviderItemFields = [.contentModificationDate]
+        var err: NSError?
+        _ = ext(api).modifyItem(
+            WriteFileProviderItem(current), baseVersion: version(current),
+            changedFields: [.contentModificationDate], contents: nil,
+            options: [], request: NSFileProviderRequest()
+        ) { item, fields, _, error in
+            result = item; pending = fields; err = error as NSError?; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertTrue(pending.isEmpty)
+        XCTAssertEqual(result?.itemIdentifier.rawValue, "folder:demo:blog")
+        XCTAssertTrue(api.renameFolderCalls.isEmpty)
+    }
+
+    func testWorkspaceRenameAndModificationDateStillRenamesWorkspace() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let current = WriteItemMapper.workspaceItem(
+            handle: "demo", name: "Demo", readOnly: false)
+        let local = WriteFileProviderItem(
+            current.withFilename(WriteFilename.encodeComponent("Studio")))
+        let exp = expectation(description: "workspace-rename-mtime")
+        var err: NSError?
+        _ = ext(api).modifyItem(
+            local, baseVersion: version(current),
+            changedFields: [.filename, .contentModificationDate], contents: nil,
+            options: [], request: NSFileProviderRequest()
+        ) { _, _, _, error in err = error as NSError?; exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertEqual(api.renameWorkspaceCalls.first?.name, "Studio")
+    }
+
+    func testWorkspaceMoveRemainsUnsupported() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let current = WriteItemMapper.workspaceItem(
+            handle: "demo", name: "Demo", readOnly: false)
+        let exp = expectation(description: "workspace-move")
+        var err: NSError?
+        _ = ext(api).modifyItem(
+            WriteFileProviderItem(current), baseVersion: version(current),
+            changedFields: [.parentItemIdentifier], contents: nil,
+            options: [], request: NSFileProviderRequest()
+        ) { _, _, _, error in err = error as NSError?; exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(err?.domain, NSCocoaErrorDomain)
+        XCTAssertEqual(err?.code, NSFeatureUnsupportedError)
+        XCTAssertTrue(api.renameWorkspaceCalls.isEmpty)
+    }
+
     func testStaleMountedFolderNameDoesNotOverwriteRemoteRename() {
         let original = Fixtures.workspace()
         let oldFolder = original.folders.first { $0.id == "blog" }!

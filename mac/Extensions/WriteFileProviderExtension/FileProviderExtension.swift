@@ -280,12 +280,24 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             changedFields.contains(.filename) ? "name" : nil,
             changedFields.contains(.parentItemIdentifier) ? "parent" : nil,
             changedFields.contains(.contents) ? "contents" : nil,
+            changedFields.contains(.contentModificationDate) ? "mtime" : nil,
+            changedFields.contains(.creationDate) ? "created" : nil,
+            changedFields.contains(.lastUsedDate) ? "lastUsed" : nil,
         ].compactMap { $0 }.joined(separator: "+")
         fpLog.info("modifyItem \(item.itemIdentifier.rawValue, privacy: .public) fields=[\(fields, privacy: .public)] name='\(item.filename, privacy: .public)'")
         guard case .file(let handle, let postId)? = WriteItemIdentifier(item.itemIdentifier) else {
-            // Folder rename is the only folder mutation supported.
+            // Finder changes a directory's local mtime when its children are
+            // materialized or edited. File Provider reports that as a metadata
+            // upload even though Write has no server-side directory mtime. It
+            // must be acknowledged, otherwise macOS retries it forever and
+            // draws a cloud error badge on an otherwise fully synced folder.
+            // Renames remain the only container field sent to the server;
+            // moves and content changes are still rejected below.
+            guard changedFields.subtracting(Self.supportedContainerFields).isEmpty else {
+                done(nil, Self.readOnlyError()); return progress
+            }
             if case .folder(let handle, let folderId)? = WriteItemIdentifier(item.itemIdentifier),
-               changedFields.contains(.filename), let api = apiFactory(handle) {
+               let api = apiFactory(handle) {
                 let identifier = WriteItemIdentifier.folder(handle: handle, id: folderId)
                 let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
                 Task {
@@ -293,6 +305,11 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                     switch await core.item(for: identifier) {
                     case .failure(let error): done(nil, Self.nsError(from: error)); return
                     case .success(let value): current = value
+                    }
+                    guard changedFields.contains(.filename) else {
+                        fpLog.info("modifyItem folder \(folderId, privacy: .public) acknowledged local metadata")
+                        done(WriteFileProviderItem(current), nil)
+                        return
                     }
                     guard Self.metadataBase(version, matches: current) else {
                         finishModifyConflict(
@@ -327,12 +344,17 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             // display name). Decode the portable Finder component before sending
             // the human label back to the server.
             if case .workspace(let handle)? = WriteItemIdentifier(item.itemIdentifier),
-               changedFields.contains(.filename), let api = apiFactory(handle) {
+               let api = apiFactory(handle) {
                 Task {
                     let current: WriteItem
                     switch await currentWorkspaceItem(handle: handle, api: api) {
                     case .failure(let error): done(nil, Self.nsError(from: error)); return
                     case .success(let value): current = value
+                    }
+                    guard changedFields.contains(.filename) else {
+                        fpLog.info("modifyItem workspace \(handle, privacy: .public) acknowledged local metadata")
+                        done(WriteFileProviderItem(current), nil)
+                        return
                     }
                     guard Self.metadataBase(version, matches: current) else {
                         finishModifyConflict(
@@ -619,6 +641,23 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         guard isUsableBaseComponent(version.metadataVersion) else { return false }
         return WriteFileProviderItem(current).itemVersion.metadataVersion
             == version.metadataVersion
+    }
+
+    /// Container fields Write can settle without losing an actual structural
+    /// edit. Finder owns the local-only metadata; `.filename` is the one field
+    /// persisted to the Write server. Parent and contents are intentionally
+    /// absent because folder/workspace moves and container bodies are unsupported.
+    private static var supportedContainerFields: NSFileProviderItemFields {
+        [
+            .filename,
+            .lastUsedDate,
+            .tagData,
+            .favoriteRank,
+            .creationDate,
+            .contentModificationDate,
+            .fileSystemFlags,
+            .extendedAttributes,
+        ]
     }
 
     private func resolveModifyConflict(
