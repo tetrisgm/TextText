@@ -47,11 +47,17 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     /// hash is exactly the server's change signal for a file; folders have no
     /// body, so their content version is a stable constant and only metadata
     /// (name/parent) drives change. Both fields must be non-empty and small.
+    ///
+    /// metadataVersion is name+parent ONLY, deliberately NOT the content hash:
+    /// coupling them made an ordinary body edit (hash changes, name does not)
+    /// look like a metadata change too, and — because the Finder filename derives
+    /// from the post title — a rename's frontmatter re-render then churned the
+    /// metadata channel in a reconciliation loop. Keeping the two versions
+    /// independent lets a rename settle the name once and a content change settle
+    /// the body once, instead of each re-triggering the other.
     public var itemVersion: NSFileProviderItemVersion {
         let content = Data((item.contentHash ?? "folder").utf8)
-        let metadata = Data(
-            "\(item.filename)|\(item.parentIdentifier.rawValue)|\(item.contentHash ?? "")".utf8
-        )
+        let metadata = Data("\(item.filename)|\(item.parentIdentifier.rawValue)".utf8)
         return NSFileProviderItemVersion(
             contentVersion: content, metadataVersion: metadata)
     }

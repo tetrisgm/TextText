@@ -285,8 +285,18 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             let newTitle: String? = changedFields.contains(.filename)
                 ? WriteFilename.titleFromFilename(item.filename) : nil
             if newFolderId != nil || (newTitle != nil && !(newTitle!.isEmpty)) {
-                if case .failure(let e) = await api.patchFile(
-                    postId: postId, folderId: newFolderId, slug: nil, title: newTitle, ifMatch: patchBaseHash) {
+                var result = await api.patchFile(
+                    postId: postId, folderId: newFolderId, slug: nil, title: newTitle, ifMatch: patchBaseHash)
+                // If the base hash was stale (a metadata change landed since this
+                // item was enumerated), the If-Match 412s. Re-fetch the current
+                // hash and retry ONCE without a stale guard so a rename is not
+                // wedged; the server's revision CAS still makes the write atomic.
+                if case .failure(.conflict) = result {
+                    let fresh = (try? await core.item(for: .file(handle: handle, id: postId)).get())?.contentHash
+                    result = await api.patchFile(
+                        postId: postId, folderId: newFolderId, slug: nil, title: newTitle, ifMatch: fresh)
+                }
+                if case .failure(let e) = result {
                     done(nil, Self.nsError(from: e)); return
                 }
             }
