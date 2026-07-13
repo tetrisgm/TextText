@@ -772,37 +772,54 @@ export async function saveBookmarkCapture(
   const body = shouldRefreshBookmarkReadable(row.body, readable, merged.assets)
     ? readable
     : row.body;
+  const clean = (value: string | undefined) =>
+    (value ?? "").replace(/\s+/g, " ").trim();
+  // The bookmark's host derived from its URL: both the placeholder title and the
+  // auto-excerpt fall back to it.
+  let urlHost = "";
+  const sourceUrl = clean(merged.url) || clean(row.links?.[0]?.href);
+  if (sourceUrl) {
+    try {
+      const url = new URL(sourceUrl);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        urlHost = url.hostname.replace(/^www\./, "");
+      }
+    } catch {
+      urlHost = "";
+    }
+  }
+
   let excerpt = row.excerpt;
   if (!row.excerpt?.trim()) {
-    const clean = (value: string | undefined) =>
-      (value ?? "").replace(/\s+/g, " ").trim();
     const truncate = (value: string) => {
       if (value.length <= 200) return value;
       const sliced = value.slice(0, 197).trimEnd();
       const wordBreak = sliced.lastIndexOf(" ");
       return `${wordBreak > 120 ? sliced.slice(0, wordBreak) : sliced}...`;
     };
-    let urlHost = "";
-    const sourceUrl = clean(merged.url) || clean(row.links?.[0]?.href);
-    if (sourceUrl) {
-      try {
-        const url = new URL(sourceUrl);
-        if (url.protocol === "http:" || url.protocol === "https:") {
-          urlHost = url.hostname.replace(/^www\./, "");
-        }
-      } catch {
-        urlHost = "";
-      }
-    }
     const autoExcerpt = truncate(
       clean(merged.description) || clean(merged.siteName) || urlHost,
     );
     if (autoExcerpt) excerpt = autoExcerpt;
   }
+
+  // Promote the fetched article title once, so the bookmark reads by its real
+  // title (and its file is named for it) instead of the bare host. Only while
+  // the title is still the auto-generated host placeholder: never overwrite a
+  // title the owner set (e.g. by renaming the file).
+  let title = row.title;
+  const capturedTitle = clean(merged.title);
+  const isHostPlaceholder =
+    !clean(row.title) ||
+    clean(row.title) === urlHost ||
+    clean(row.title) === `www.${urlHost}`;
+  if (capturedTitle && isHostPlaceholder) title = capturedTitle;
+
   const updated = await db
     .update(posts)
     .set({
       capture: merged,
+      title,
       captureStatus: opts.keepPending
         ? "pending"
         : opts.failed
