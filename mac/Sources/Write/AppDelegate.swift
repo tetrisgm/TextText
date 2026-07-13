@@ -667,28 +667,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     && domain.identifier != identifier {
                     NSFileProviderManager.remove(domain) { _ in }
                 }
+                let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+                let lastBuild = UserDefaults.standard.string(forKey: Self.fpDomainBuildKey)
                 if let existing = domains.first(where: { $0.identifier == identifier }) {
-                    self.registeredFileProviderDomain = existing
-                    return
-                }
-                let domain = NSFileProviderDomain(identifier: identifier, displayName: "Write")
-                NSFileProviderManager.add(domain) { error in
-                    DispatchQueue.main.async {
-                        if let error, (error as NSError).code != NSFileWriteFileExistsError {
-                            self.appendActivity(
-                                "File Provider register failed: \(error.localizedDescription)")
-                            return
-                        }
-                        self.registeredFileProviderDomain = domain
-                        // The extension may have launched before the handoff
-                        // landed; re-publish and nudge it to enumerate.
-                        self.writeFileProviderHandoff(FileProviderHandoff(
-                            origin: origin, token: credentials.token, handle: blog.handle))
-                        if let manager = NSFileProviderManager(for: domain) {
-                            manager.signalEnumerator(for: .workingSet) { _ in }
-                            manager.signalEnumerator(for: .rootContainer) { _ in }
+                    if lastBuild == build {
+                        self.registeredFileProviderDomain = existing
+                        return
+                    }
+                    // A new app build can enumerate the SAME workspace differently
+                    // (e.g. a filename-rendering fix) while the server change cursor
+                    // is unchanged, so nothing else would force a re-enumeration and
+                    // the system would keep serving stale cached items. Remove and
+                    // re-add the domain to discard that cache and enumerate fresh.
+                    NSFileProviderManager.remove(existing) { _ in
+                        DispatchQueue.main.async {
+                            self.addFileProviderDomain(
+                                identifier: identifier, origin: origin,
+                                token: credentials.token, handle: blog.handle, build: build)
                         }
                     }
+                    return
+                }
+                self.addFileProviderDomain(
+                    identifier: identifier, origin: origin,
+                    token: credentials.token, handle: blog.handle, build: build)
+            }
+        }
+    }
+
+    /// UserDefaults key for the app build that last registered the FP domain, so
+    /// a new build refreshes the domain (and the system's enumeration cache).
+    private static let fpDomainBuildKey = "fpDomainBuild"
+
+    private func addFileProviderDomain(
+        identifier: NSFileProviderDomainIdentifier, origin: String,
+        token: String, handle: String, build: String
+    ) {
+        let domain = NSFileProviderDomain(identifier: identifier, displayName: "Write")
+        NSFileProviderManager.add(domain) { error in
+            DispatchQueue.main.async {
+                if let error, (error as NSError).code != NSFileWriteFileExistsError {
+                    self.appendActivity(
+                        "File Provider register failed: \(error.localizedDescription)")
+                    return
+                }
+                self.registeredFileProviderDomain = domain
+                UserDefaults.standard.set(build, forKey: Self.fpDomainBuildKey)
+                // The extension may have launched before the handoff landed;
+                // re-publish and nudge it to enumerate.
+                self.writeFileProviderHandoff(FileProviderHandoff(
+                    origin: origin, token: token, handle: handle))
+                if let manager = NSFileProviderManager(for: domain) {
+                    manager.signalEnumerator(for: .workingSet) { _ in }
+                    manager.signalEnumerator(for: .rootContainer) { _ in }
                 }
             }
         }
@@ -701,6 +732,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         registeredFileProviderDomain = nil
+        UserDefaults.standard.removeObject(forKey: Self.fpDomainBuildKey)
         FileProviderHandoffStore.clear()
     }
 
