@@ -96,7 +96,10 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
             return .failure(.decode("could not encode request body"))
         }
         var headers = ["Content-Type": "application/json"]
-        if let hash { headers["If-Match"] = "\"\(hash)\"" }
+        // Vercel consumes standard If-Match on PATCH before the route runs.
+        // Use Write's scoped equivalent so the server can perform its own
+        // exact file-hash and database-revision compare-and-swap.
+        if let hash { headers["X-Write-If-Match"] = "\"\(hash)\"" }
         switch await send(
             "PATCH", "/api/sync/v1/files/\(escape(postId))",
             headers: headers, body: body

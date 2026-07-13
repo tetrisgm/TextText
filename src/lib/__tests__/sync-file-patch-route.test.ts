@@ -69,9 +69,10 @@ const post: Post = {
 function patchRequest(
   body: object,
   ifMatch: string | null = `"${renderSyncFile(blog, post).hash}"`,
+  header = "If-Match",
 ): Request {
   const headers = new Headers({ "Content-Type": "application/json" });
-  if (ifMatch) headers.set("If-Match", ifMatch);
+  if (ifMatch) headers.set(header, ifMatch);
   return new Request(`https://write.example/api/sync/v1/files/${postId}`, {
     method: "PATCH",
     headers,
@@ -121,6 +122,31 @@ describe("sync file PATCH", () => {
 
     expect(response.status).toBe(412);
     expect(mocks.movePostFile).not.toHaveBeenCalled();
+  });
+
+  it("accepts the scoped validator header used through Vercel", async () => {
+    mocks.movePostFile.mockResolvedValue({
+      post: { ...post, title: "Changed", revision: 43 },
+      changed: true,
+      previousSlug: post.slug,
+    });
+
+    const response = await PATCH(
+      patchRequest(
+        { title: "Changed" },
+        `"${renderSyncFile(blog, post).hash}"`,
+        "X-Write-If-Match",
+      ),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.movePostFile).toHaveBeenCalledWith(blog.handle, postId, {
+      folderId: undefined,
+      slug: undefined,
+      title: "Changed",
+      expectedRevision: post.revision,
+    });
   });
 
   it("rejects a wildcard content PUT instead of accepting an unknown base", async () => {

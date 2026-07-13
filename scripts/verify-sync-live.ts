@@ -144,7 +144,17 @@ async function main() {
       );
     }
     const metadataBase = await api(`/api/sync/v1/files/${metadataId}`);
-    const metadataBaseHash = metadataBase.headers.get("etag") || "";
+    const metadataGetEtag = metadataBase.headers.get("etag") || "";
+    const metadataCreatedHash = metadataCreated?.item?.hash || "";
+    const metadataBaseHash = metadataCreatedHash
+      ? `"${metadataCreatedHash}"`
+      : metadataGetEtag;
+    check(
+      "GET and manifest identify the same metadata base",
+      metadataCreatedHash.length > 0
+        && metadataGetEtag.replace(/^W\//, "").replaceAll('"', "") === metadataCreatedHash,
+      `${metadataGetEtag} / ${metadataCreatedHash}`,
+    );
     const folderCreate = await api("/api/sync/v1/folders", {
       method: "POST",
       headers: {
@@ -164,7 +174,7 @@ async function main() {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": metadataBaseHash,
+        "X-Write-If-Match": metadataBaseHash,
       },
       body: JSON.stringify({
         folder: targetFolderId,
@@ -172,7 +182,15 @@ async function main() {
         title: "Question??",
       }),
     });
-    const metadataPatched = await metadataPatch.json();
+    const metadataPatchText = await metadataPatch.text();
+    let metadataPatched: { item?: { hash?: string; title?: string; slug?: string } };
+    try {
+      metadataPatched = JSON.parse(metadataPatchText);
+    } catch {
+      throw new Error(
+        `metadata PATCH returned ${metadataPatch.status}: ${metadataPatchText || "<empty body>"}`,
+      );
+    }
     const metadataHash = metadataPatched?.item?.hash || "";
     check(
       "metadata move changes the exact sync-file ETag",
@@ -192,7 +210,7 @@ async function main() {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": metadataBaseHash,
+        "X-Write-If-Match": metadataBaseHash,
       },
       body: JSON.stringify({ title: "Stale rename" }),
     });
@@ -205,7 +223,7 @@ async function main() {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": "*",
+        "X-Write-If-Match": "*",
       },
       body: JSON.stringify({ title: "Wildcard rename" }),
     });

@@ -30,6 +30,12 @@ from a newer title, repeated conflict retries, and an old post URL becoming a
   revision change therefore changes the validator even when body text does not.
 - `PUT`, `PATCH`, and `DELETE` require a specific `If-Match` validator. Missing
   validators return 428 and `*` returns 412.
+- Hosted metadata `PATCH` requests carry that same validator in
+  `X-Write-If-Match`. Vercel consumes standard `If-Match` on `PATCH` before the
+  route runs; the scoped header lets Write perform the intended file-hash and
+  database-revision checks. The route still accepts standard `If-Match` for
+  direct and local clients. `PUT` and `DELETE` continue to use the standard
+  header.
 - Every mutation is also guarded by the database revision in the update or
   delete statement. A write that lands after the HTTP hash check still causes a
   conflict instead of being overwritten.

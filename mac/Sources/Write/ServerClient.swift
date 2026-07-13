@@ -252,8 +252,10 @@ final class ServerClient: SyncClient {
     /// PATCH the folder and/or slug without re-sending the body. Used when a
     /// local move (folder change, hash unchanged) is detected: the server's
     /// folder is updated so the next pull does not snap the file back. When
-    /// present, the base hash rides as If-Match so a stale move (the row moved
-    /// on underneath us) is rejected with 412 (mapped to a conflict).
+    /// present, the base hash rides as X-Write-If-Match so a stale move (the
+    /// row moved on underneath us) is rejected with 412 (mapped to a conflict).
+    /// The scoped header avoids Vercel consuming standard If-Match before the
+    /// PATCH route can compare the sync file's content hash.
     func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) -> Result<SaveReply, ClientFailure> {
         var json: [String: Any] = [:]
         if let folderId, !folderId.isEmpty { json["folder"] = folderId }
@@ -262,7 +264,7 @@ final class ServerClient: SyncClient {
             return .failure(.badResponse("could not encode request body"))
         }
         var headers = ["Content-Type": "application/json"]
-        if let hash { headers["If-Match"] = "\"\(hash)\"" }
+        if let hash { headers["X-Write-If-Match"] = "\"\(hash)\"" }
         switch send("PATCH", "/api/sync/v1/files/\(postId)", headers: headers, body: body) {
         case .failure(let e): return .failure(e)
         case .success(let reply):

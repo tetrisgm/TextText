@@ -271,7 +271,13 @@ export async function PATCH(request: Request, { params }: Props) {
   // A metadata mutation must prove which complete file version it is based on.
   // Without If-Match, a client that was stale before this request could resolve
   // the latest revision and then overwrite it with an old Finder filename.
-  const ifMatch = request.headers.get("if-match");
+  // Vercel evaluates the standard If-Match header on PATCH before invoking a
+  // route and compares it against the deployment response rather than this
+  // sync file's content hash. Native clients therefore use the product-scoped
+  // header; keep standard If-Match as a fallback for direct/local clients.
+  const ifMatch =
+    request.headers.get("x-write-if-match") ??
+    request.headers.get("if-match");
   if (!ifMatch) return syncError(428, "If-Match header is required");
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");

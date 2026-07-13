@@ -53,10 +53,13 @@ Mint the token by approving a device link (or via the link flow itself:
   clean local files; when both sides changed, the server copy takes the
   filename and your edit is preserved next to it as
   `name (conflicted copy yyyy-mm-dd hhmm).md` (never auto-pushed).
-- Push: local edits go up with `If-Match` so the server can refuse stale
-  writes (412 becomes the same conflicted-copy dance). New `.md` files are
-  created on the server; files deleted locally are deleted there. Files the
-  server deletes move to the state dir's `trash/`, never `rm`.
+- Push: local edits go up with a content-hash precondition so the server can
+  refuse stale writes (412 becomes the same conflicted-copy dance). `PUT` and
+  `DELETE` use `If-Match`; hosted metadata `PATCH` uses
+  `X-Write-If-Match` because Vercel otherwise consumes the standard header
+  before Write's route runs. New `.md` files are created on the server; files
+  deleted locally are deleted there. Files the server deletes move to the
+  state dir's `trash/`, never `rm`.
 - The server's slug is authoritative: renames on the server rename local
   files. A file dropped into `notes/` without a `kind` becomes a note, and
   so on per folder.
