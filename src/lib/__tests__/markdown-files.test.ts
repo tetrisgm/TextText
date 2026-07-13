@@ -338,6 +338,7 @@ describe("unknown keys", () => {
       [
         "---",
         'schema: "write.markdown-file.v1"',
+        'workspace: "The Demo Broadsheet"',
         'folder: "demo"',
         'folderName: "The Demo Broadsheet"',
         'mode: "blog"',

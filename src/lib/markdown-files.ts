@@ -159,8 +159,11 @@ export function renderPostMarkdownFile({
 }): string {
   const frontmatter: Record<string, unknown> = {
     schema: WRITE_MARKDOWN_FILE_SCHEMA,
-    folder: blog.handle,
-    folderName: blog.name,
+    // The workspace's display name. (Was `folder: blog.handle` — the internal
+    // three-word handle, which read as a wrong/meaningless "folder" in the file.
+    // The post's actual folder is evident from the file's location in the tree,
+    // and `mode` below distinguishes Blog/Notes/Bookmarks.)
+    workspace: blog.name,
     mode: folderModeForPostType(post.type),
     kind: itemKindForPostType(post.type),
     type: post.type,
@@ -235,7 +238,16 @@ export type ParsedPostMarkdownFile = {
 const FRONTMATTER_LINE_RE = /^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$/;
 
 // Keys render emits that carry no post state; recognized, never "unknown".
-const METADATA_KEYS = ["schema", "folder", "folderName", "mode", "canonical"];
+// `folder`/`folderName` are legacy (superseded by `workspace`), kept here so an
+// older file round-trips without flagging them as unknown.
+const METADATA_KEYS = [
+  "schema",
+  "workspace",
+  "folder",
+  "folderName",
+  "mode",
+  "canonical",
+];
 
 const POST_TYPE_BY_VOCAB: Record<string, PostType> = {
   article: "article",
