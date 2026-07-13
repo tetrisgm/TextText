@@ -195,8 +195,14 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         let response: HTTPURLResponse
 
         var bareETag: String? {
-            response.value(forHTTPHeaderField: "ETag")?
-                .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            // Reduce to the bare content hash: drop a weak `W/` prefix (Vercel
+            // adds it when it gzips the response) before AND after the quotes,
+            // so we never store or echo back a "W/hash" the server has to undo.
+            guard var tag = response.value(forHTTPHeaderField: "ETag") else { return nil }
+            if tag.hasPrefix("W/") { tag.removeFirst(2) }
+            tag = tag.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            if tag.hasPrefix("W/") { tag.removeFirst(2) }
+            return tag
         }
         var errorMessage: String {
             if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -311,9 +311,15 @@ final class ServerClient: SyncClient {
         let response: HTTPURLResponse
 
         var etag: String? { response.value(forHTTPHeaderField: "ETag") }
-        /// ETag with the surrounding quotes stripped (the server's hash).
+        /// ETag reduced to the server's bare content hash: the surrounding quotes
+        /// and any weak `W/` prefix (Vercel adds it on a gzipped response)
+        /// removed, so we never store or echo back a "W/hash".
         var bareETag: String? {
-            etag?.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            guard var tag = etag else { return nil }
+            if tag.hasPrefix("W/") { tag.removeFirst(2) }
+            tag = tag.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            if tag.hasPrefix("W/") { tag.removeFirst(2) }
+            return tag
         }
         var errorMessage: String {
             if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

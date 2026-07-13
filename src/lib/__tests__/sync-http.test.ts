@@ -58,12 +58,17 @@ describe("ifMatchSatisfied", () => {
     expect(ifMatchSatisfied("*", etag)).toBe(true);
   });
 
-  it("rejects a weak candidate (If-Match is a strong comparison)", () => {
-    expect(ifMatchSatisfied('W/"abc123"', etag)).toBe(false);
+  it("accepts a proxy-weakened validator (our etag is a content hash)", () => {
+    // Vercel weakens the ETag to W/"..." when it gzips the GET the client hashed
+    // against; that denotes the SAME content, so it must satisfy a later write.
+    expect(ifMatchSatisfied('W/"abc123"', etag)).toBe(true);
+    // A client that stripped the quotes before the weak prefix sends "W/hash".
+    expect(ifMatchSatisfied('"W/abc123"', etag)).toBe(true);
   });
 
   it("rejects a stale etag", () => {
     expect(ifMatchSatisfied('"old"', etag)).toBe(false);
+    expect(ifMatchSatisfied('W/"old"', etag)).toBe(false);
     expect(ifMatchSatisfied("", etag)).toBe(false);
   });
 });

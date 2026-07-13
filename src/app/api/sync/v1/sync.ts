@@ -46,11 +46,24 @@ export function clientSaveError(error: unknown): string | null {
 // is accepted too.
 export function ifMatchSatisfied(headerValue: string, etag: string): boolean {
   if (headerValue.trim() === "*") return true;
-  const bare = etag.replace(/^"|"$/g, "");
-  return headerValue.split(",").some((candidate) => {
-    const value = candidate.trim();
-    return value === etag || value === bare;
-  });
+  // Our ETag is a content HASH, so a proxy-weakened validator denotes the SAME
+  // content and must not fail a legitimate write. Normalize to the bare hash,
+  // tolerating the RFC weak form W/"hash" (Vercel emits this when it gzips the
+  // GET the client hashed against) AND "W/hash" (a client that stripped the
+  // quotes before the weak prefix). Without this, the File Provider's
+  // fetched-version If-Match spuriously conflicts on compressed reads.
+  const target = normalizeEtag(etag);
+  return headerValue.split(",").some((candidate) => normalizeEtag(candidate) === target);
+}
+
+/** Reduce an ETag / If-Match token to its bare content hash: drop surrounding
+ * quotes and any weak `W/` prefix, whichever side of the quotes it sits on. */
+function normalizeEtag(value: string): string {
+  return value
+    .trim()
+    .replace(/^W\//, "")
+    .replace(/^"(.*)"$/, "$1")
+    .replace(/^W\//, "");
 }
 
 // RFC 9110 13.1.2: If-None-Match uses the WEAK comparison, so a
