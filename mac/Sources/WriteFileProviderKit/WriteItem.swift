@@ -161,10 +161,15 @@ public enum WriteItemMapper {
         let caps: WriteItemCapabilities = readOnly
             ? .readOnlyFile
             : [.reading, .writing, .renaming, .deleting, .reparenting]
+        // The manifest `file` is a workspace-relative PATH ("posts/<slug>.md"),
+        // but a File Provider item's filename must be a bare name: a "/" makes
+        // the item malformed, so it materializes as zero bytes and will not open.
+        // The parent folder is already the item's container, so take the leaf.
+        let leafName = (entry.file as NSString).lastPathComponent
         return WriteItem(
             identifier: .file(id),
             parentIdentifier: .folder(folderId),
-            filename: entry.file,
+            filename: leafName.isEmpty ? entry.file : leafName,
             isFolder: false,
             kind: WriteItemKind(kindString: entry.kind),
             typeIdentifier: WriteItem.markdownTypeIdentifier,

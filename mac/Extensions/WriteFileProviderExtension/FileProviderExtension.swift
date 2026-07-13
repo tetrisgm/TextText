@@ -1,7 +1,13 @@
 import FileProvider
 import Foundation
+import os
 import WriteFileProviderKit
 import WriteFileProviderBridge
+
+/// Diagnostics for a subsystem that can only be observed through the unified log
+/// (the extension runs inside fileproviderd, not a window). Read with:
+///   log show --last 15m --predicate 'subsystem == "net.writeapp.write"'
+let fpLog = Logger(subsystem: "net.writeapp.write", category: "fileprovider")
 
 /// Write's replicated File Provider. It enumerates the workspace from the
 /// server, materializes file bodies on demand, and (Phase 3) writes edits,
@@ -83,14 +89,20 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             let itemResult = await core.item(for: .file(postId))
             switch await api.fileText(postId: postId) {
             case .failure(let error):
+                fpLog.error("fetchContents \(postId, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 completionHandler(nil, nil, Self.nsError(from: error))
             case .success(let content):
                 guard let dir = tempDir else {
+                    fpLog.error("fetchContents \(postId, privacy: .public): no temp dir")
                     completionHandler(nil, nil, Self.fpError(.serverUnreachable)); return
                 }
                 let destination = dir.appendingPathComponent(UUID().uuidString)
                 do { try Data(content.text.utf8).write(to: destination) }
-                catch { completionHandler(nil, nil, error); return }
+                catch {
+                    fpLog.error("fetchContents \(postId, privacy: .public) write failed: \(String(describing: error), privacy: .public)")
+                    completionHandler(nil, nil, error); return
+                }
+                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(content.text.utf8.count) bytes")
                 // The returned item's version MUST match the bytes just written,
                 // not the (possibly newer) manifest hash: the GET body and its
                 // ETag are one consistent snapshot. Labeling these bytes with a

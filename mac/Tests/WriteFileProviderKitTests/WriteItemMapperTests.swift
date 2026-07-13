@@ -36,6 +36,17 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertNil(WriteItemMapper.item(for: entry, inFolder: "notes", readOnly: true))
     }
 
+    func testFilenameIsTheLeafNotThePathFromManifest() {
+        // The manifest `file` is a workspace path ("posts/<slug>.md"); the File
+        // Provider filename must be the bare leaf, or a "/" makes the item
+        // malformed (materializes as zero bytes and will not open).
+        let entry = Fixtures.entry(
+            id: "p1", file: "posts/gamedeveloper-com.md", kind: "bookmark", title: "GD")
+        let item = WriteItemMapper.item(for: entry, inFolder: "bookmarks", readOnly: true)
+        XCTAssertEqual(item?.filename, "gamedeveloper-com.md")
+        XCTAssertFalse(item?.filename.contains("/") ?? true)
+    }
+
     func testHashCarriesForConflictChecks() {
         let entry = Fixtures.entry(id: "p1", file: "a.md", kind: "article", title: "A", hash: "deadbeef")
         let item = WriteItemMapper.item(for: entry, inFolder: "blog", readOnly: false)
