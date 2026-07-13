@@ -148,10 +148,23 @@ final class MountBridge {
             let mountBody = Self.sha256(MountFrontmatter.stripTitle(text))
             let mountFull = Self.sha256(text)
 
-            // First sight: seed from the current mount and act on the next change
-            // (the File Provider reconciles any pre-existing divergence).
+            // First sight: seed from the current mount. If it ALREADY diverges
+            // from the server, it is almost certainly a stale mount (the server
+            // changed while the app was closed) -> pull it current. The app is the
+            // primary editor, so a Finder edit made while the app was closed is
+            // rare, and the File Provider's own upload has usually pushed it by the
+            // time we get here. This is what refreshes a post edited on the web
+            // while the Mac app was closed (and unsticks a legacy stale file).
             guard let base = baseline[post.postId] else {
                 baseline[post.postId] = Baseline(title: filenameTitle, body: mountBody)
+                var staleContent = false
+                if mountFull != post.hash,
+                   case .success(let server) = await api.fileText(postId: post.postId) {
+                    staleContent = mountBody != Self.sha256(MountFrontmatter.stripTitle(server.text))
+                }
+                if name != serverName || staleContent {
+                    await pull(post: post, handle: ctx.handle, manager: manager)
+                }
                 continue
             }
 
