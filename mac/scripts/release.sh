@@ -42,6 +42,7 @@ require_release_env WRITE_NOTARY_PROFILE
 require_release_env WRITE_PRODUCT_ORIGIN
 require_release_env WRITE_SPARKLE_PUBLIC_KEY
 require_release_env WRITE_BUNDLE_ID
+require_release_env WRITE_APP_GROUP
 
 ORIGIN="${WRITE_PRODUCT_ORIGIN%/}"
 

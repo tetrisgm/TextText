@@ -33,6 +33,14 @@ if [ "$SIGN_ID" = "-" ]; then
   echo ">> extensions: app-group entitlements need a real Developer ID identity; skipping embed (ad-hoc build)"
   exit 0
 fi
+if [ -z "$APP_GROUP" ]; then
+  echo "Refusing: a signed extension build requires a non-empty app group." >&2
+  exit 1
+fi
+if ! [[ "$APP_GROUP" =~ ^group\.[A-Za-z0-9.-]+$ ]]; then
+  echo "Refusing: invalid extension app group: $APP_GROUP" >&2
+  exit 1
+fi
 
 BIN="$(swift build -c release --package-path "$MAC" --show-bin-path)"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
@@ -106,6 +114,29 @@ embed_appex() { # returns nonzero on failure
     --entitlements "$ent" --sign "$SIGN_ID" "$appex"
   rm -f "$ent"
   codesign --verify --strict "$appex"
+
+  local signed_entitlements signed_group plist_group document_group
+  if grep -q 'WRITE_APP_GROUP' "$MAC/Extensions/$srcdir/$ent_tmpl"; then
+    signed_entitlements="$(mktemp -t write-signed-ent)"
+    codesign -d --entitlements :- "$appex" > "$signed_entitlements" 2>/dev/null
+    signed_group="$($PB -c 'Print :com.apple.security.application-groups:0' "$signed_entitlements" 2>/dev/null || true)"
+    rm -f "$signed_entitlements"
+    if [ "$signed_group" != "$APP_GROUP" ]; then
+      echo "$name signed app group is '$signed_group', expected '$APP_GROUP'." >&2
+      exit 1
+    fi
+  fi
+
+  plist_group="$($PB -c 'Print :WriteAppGroupIdentifier' "$plist" 2>/dev/null || true)"
+  if [ -n "$plist_group" ] && [ "$plist_group" != "$APP_GROUP" ]; then
+    echo "$name plist app group is '$plist_group', expected '$APP_GROUP'." >&2
+    exit 1
+  fi
+  document_group="$($PB -c 'Print :NSExtension:NSExtensionFileProviderDocumentGroup' "$plist" 2>/dev/null || true)"
+  if [ "$name" = "WriteFileProviderExtension" ] && [ "$document_group" != "$APP_GROUP" ]; then
+    echo "$name document group is '$document_group', expected '$APP_GROUP'." >&2
+    exit 1
+  fi
 }
 
 echo ">> embedding Share extension"

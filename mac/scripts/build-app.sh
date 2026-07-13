@@ -40,6 +40,20 @@ if [ -z "$SIGN_ID" ]; then
   [ -z "$SIGN_ID" ] && SIGN_ID="-"
 fi
 
+if [ -n "${WRITE_APP_GROUP:-}" ] && ! [[ "$WRITE_APP_GROUP" =~ ^group\.[A-Za-z0-9.-]+$ ]]; then
+  echo "Refusing: WRITE_APP_GROUP is not a valid application group: $WRITE_APP_GROUP" >&2
+  exit 1
+fi
+
+# A signed release with extension profiles but no group produces an appex that
+# codesign accepts but File Provider cannot launch. Development ad-hoc builds
+# may omit the group; a Developer ID build may not.
+FP_PROFILE="$MAC/profiles/Write_FileProvider_Developer_ID.provisionprofile"
+if [ "$SIGN_ID" != "-" ] && [ -f "$FP_PROFILE" ] && [ -z "${WRITE_APP_GROUP:-}" ]; then
+  echo "Refusing: WRITE_APP_GROUP must be set for a signed File Provider build." >&2
+  exit 1
+fi
+
 echo ">> swift build (release)"
 swift build -c release --package-path "$MAC"
 BIN="$(swift build -c release --package-path "$MAC" --show-bin-path)"

@@ -21,6 +21,7 @@ PB=/usr/libexec/PlistBuddy
 # Keep it here so the owner-facing command is genuinely one command.
 export WRITE_NOTARY_PROFILE="${WRITE_NOTARY_PROFILE:-write-notary}"
 export WRITE_BUNDLE_ID="${WRITE_BUNDLE_ID:-net.writeapp.write.mac}"
+export WRITE_APP_GROUP="${WRITE_APP_GROUP:-group.net.writeapp.write}"
 export WRITE_PRODUCT_ORIGIN="${WRITE_PRODUCT_ORIGIN:-https://write.ramine.net}"
 export WRITE_SPARKLE_PUBLIC_KEY="${WRITE_SPARKLE_PUBLIC_KEY:-qFmaq5ijn3m2sbiadmkBVvGIjz8v9+piqE/T+YZ1/u0=}"
 
