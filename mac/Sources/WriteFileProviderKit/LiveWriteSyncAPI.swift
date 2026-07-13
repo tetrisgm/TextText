@@ -86,11 +86,12 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     }
 
     public func patchFile(
-        postId: String, folderId: String?, slug: String?, ifMatch hash: String?
+        postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?
     ) async -> Result<WriteManifestItem, WriteSyncError> {
         var json: [String: Any] = [:]
         if let folderId, !folderId.isEmpty { json["folder"] = folderId }
         if let slug, !slug.isEmpty { json["slug"] = slug }
+        if let title, !title.isEmpty { json["title"] = title }
         guard let body = try? JSONSerialization.data(withJSONObject: json) else {
             return .failure(.decode("could not encode request body"))
         }

@@ -118,6 +118,18 @@ public struct WriteItem: Equatable, Sendable {
             creationDate: creationDate, contentModificationDate: contentModificationDate,
             capabilities: capabilities)
     }
+
+    /// A copy with a different display filename, used by the enumerator's
+    /// sibling-aware de-dup pass; identity (the identifier) is untouched.
+    public func withFilename(_ newFilename: String) -> WriteItem {
+        WriteItem(
+            identifier: identifier, parentIdentifier: parentIdentifier,
+            filename: newFilename, isFolder: isFolder, kind: kind,
+            typeIdentifier: typeIdentifier, serverId: serverId,
+            contentHash: contentHash, documentSize: documentSize,
+            creationDate: creationDate, contentModificationDate: contentModificationDate,
+            capabilities: capabilities)
+    }
 }
 
 // MARK: Mapping from wire types
@@ -134,11 +146,34 @@ public enum WriteItemMapper {
         return withFraction.date(from: raw)
     }
 
+    /// The synthetic container for one workspace, a child of the domain root.
+    /// New items are never created at this level (they go inside the system
+    /// folders), so it only advertises content enumeration.
+    public static func workspaceItem(handle: String, name: String, readOnly: Bool) -> WriteItem {
+        WriteItem(
+            identifier: .workspace(handle),
+            parentIdentifier: .rootContainer,
+            filename: name.isEmpty ? handle : name,
+            isFolder: true,
+            kind: .folder,
+            typeIdentifier: WriteItem.folderTypeIdentifier,
+            serverId: nil,
+            contentHash: nil,
+            documentSize: nil,
+            creationDate: nil,
+            contentModificationDate: nil,
+            capabilities: .readOnlyFolder
+        )
+    }
+
     /// A workspace folder becomes a container item. Top-level folders parent to
-    /// the root; subfolders parent to their folder.
-    public static func item(for folder: WriteWorkspaceFolder, readOnly: Bool) -> WriteItem {
+    /// their workspace container; subfolders parent to their folder. Every
+    /// identifier is scoped by the workspace `handle`.
+    public static func item(
+        for folder: WriteWorkspaceFolder, handle: String, readOnly: Bool
+    ) -> WriteItem {
         let parent: WriteItemIdentifier =
-            folder.parentId.map { .folder($0) } ?? .rootContainer
+            folder.parentId.map { .folder(handle: handle, id: $0) } ?? .workspace(handle)
         // Writable folders can be renamed and gain items; folder delete and
         // folder move are deferred (their server semantics for contained posts
         // need care), so those bits are not advertised and Finder won't offer them.
@@ -146,7 +181,7 @@ public enum WriteItemMapper {
             ? .readOnlyFolder
             : [.contentEnumerating, .addingSubItems, .renaming]
         return WriteItem(
-            identifier: .folder(folder.id),
+            identifier: .folder(handle: handle, id: folder.id),
             parentIdentifier: parent,
             filename: folder.name,
             isFolder: true,
@@ -161,24 +196,23 @@ public enum WriteItemMapper {
         )
     }
 
-    /// A manifest entry becomes a file item parented to its folder. Entries
-    /// without a server id cannot be addressed and are skipped by the caller.
+    /// A manifest entry becomes a file item parented to its folder, scoped by the
+    /// workspace `handle`. Entries without a server id cannot be addressed and
+    /// are skipped by the caller.
     public static func item(
-        for entry: WriteManifestItem, inFolder folderId: String, readOnly: Bool
+        for entry: WriteManifestItem, inFolder folderId: String, handle: String, readOnly: Bool
     ) -> WriteItem? {
         guard let id = entry.id, !id.isEmpty else { return nil }
         let caps: WriteItemCapabilities = readOnly
             ? .readOnlyFile
             : [.reading, .writing, .renaming, .deleting, .reparenting]
-        // The manifest `file` is a workspace-relative PATH ("posts/<slug>.md"),
-        // but a File Provider item's filename must be a bare name: a "/" makes
-        // the item malformed, so it materializes as zero bytes and will not open.
-        // The parent folder is already the item's container, so take the leaf.
-        let leafName = (entry.file as NSString).lastPathComponent
+        // Finder shows the post's TITLE, not its slug ("untitled-abc123" is the
+        // URL identity, never a name a person should see). The identifier still
+        // anchors on the stable post id, so the title is pure display metadata.
         return WriteItem(
-            identifier: .file(id),
-            parentIdentifier: .folder(folderId),
-            filename: leafName.isEmpty ? entry.file : leafName,
+            identifier: .file(handle: handle, id: id),
+            parentIdentifier: .folder(handle: handle, id: folderId),
+            filename: WriteFilename.filename(title: entry.title, slug: entry.slug),
             isFolder: false,
             kind: WriteItemKind(kindString: entry.kind),
             typeIdentifier: WriteItem.markdownTypeIdentifier,

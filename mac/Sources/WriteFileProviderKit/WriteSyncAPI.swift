@@ -49,11 +49,13 @@ public protocol WriteSyncAPI: Sendable {
     /// PUT /api/sync/v1/files/{id} with If-Match: a content edit.
     func putFile(postId: String, body: String, ifMatch hash: String) async
         -> Result<WriteManifestItem, WriteSyncError>
-    /// PATCH /api/sync/v1/files/{id}: move (folderId) and/or rename (slug)
-    /// without re-sending the body. `ifMatch`, when present, guards the change
-    /// against a concurrent metadata edit (412 on mismatch).
-    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async
-        -> Result<WriteManifestItem, WriteSyncError>
+    /// PATCH /api/sync/v1/files/{id}: move (folderId), retitle (title), and/or
+    /// reslug (slug) without re-sending the body. A Finder rename retitles (the
+    /// filename is the post title, not the slug). `ifMatch`, when present, guards
+    /// the change against a concurrent metadata edit (412 on mismatch).
+    func patchFile(
+        postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError>
     /// DELETE /api/sync/v1/files/{id}. `ifMatch`, when present, gives
     /// stale-delete protection (412 when the row moved on underneath us).
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError>

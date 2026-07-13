@@ -62,7 +62,7 @@ public enum FileProviderHandoffStore {
         // extension needs; still device-only (not synced to iCloud keychain).
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let status = SecItemAdd(add as CFDictionary, nil)
-        handoffLog.log("save: group=\(group, privacy: .public) status=\(status, privacy: .public) handle=\(handoff.handle, privacy: .public)")
+        handoffLog.log("save: group=\(group, privacy: .public) status=\(status, privacy: .public) workspaces=\(handoff.workspaces.count, privacy: .public)")
         return status == errSecSuccess
     }
 
@@ -82,7 +82,7 @@ public enum FileProviderHandoffStore {
             return nil
         }
         let handoff = FileProviderHandoff.decode(data)
-        handoffLog.log("load: ok handle=\(handoff?.handle ?? "?", privacy: .public)")
+        handoffLog.log("load: ok workspaces=\(handoff?.workspaces.count ?? 0, privacy: .public)")
         return handoff
     }
 

@@ -643,9 +643,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: File Provider domain
 
-    /// Reconcile the registered File Provider domain with sign-in + cached
+    /// One stable "Write" File Provider domain now spans every workspace: the
+    /// root lists a folder per workspace, so the Finder Locations entry is a
+    /// single "Write" and the workspace name lives on the folder inside it.
+    private static let fileProviderDomainId = "write"
+    private static let fileProviderDomainName = "Write"
+
+    /// Reconcile the single "Write" File Provider domain with sign-in + cached
     /// workspace state, and (re)publish the credential handoff for the extension.
-    /// Idempotent: at most one domain, keyed by the workspace handle.
+    /// The app holds one workspace token today, so the handoff carries a
+    /// one-element workspace list; the extension already fans out per handle, so
+    /// joining more workspaces later just appends descriptors.
     private func syncFileProviderDomain() {
         guard let credentials = store.loadCredentials(),
               let blog = store.cachedWorkspace()?.blog,
@@ -654,62 +662,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let origin = resolveServerOrigin(credentials: credentials).absoluteString
-        writeFileProviderHandoff(
-            FileProviderHandoff(origin: origin, token: credentials.token, handle: blog.handle))
+        let handoff = FileProviderHandoff(version: 1, workspaces: [
+            WriteFileProviderKit.FileProviderWorkspace(
+                name: blog.name.isEmpty ? blog.handle : blog.name,
+                handle: blog.handle, origin: origin, token: credentials.token)
+        ])
+        writeFileProviderHandoff(handoff)
 
-        // The Finder sidebar label (and the CloudStorage mount folder) is the
-        // workspace's own name, not a generic "Write".
-        let displayName = blog.name.isEmpty ? blog.handle : blog.name
-        let identifier = NSFileProviderDomainIdentifier(rawValue: "workspace-\(blog.handle)")
+        let identifier = NSFileProviderDomainIdentifier(rawValue: Self.fileProviderDomainId)
         NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                // Drop any stale domain for a different workspace.
-                for domain in domains where
-                    domain.identifier.rawValue.hasPrefix("workspace-")
-                    && domain.identifier != identifier {
+                // Migrate + de-dup: exactly one "write" domain. Remove every other
+                // domain we own (the legacy per-workspace "workspace-<handle>"
+                // ones) so the upgrade does not leave a second Locations entry.
+                for domain in domains where domain.identifier != identifier {
                     NSFileProviderManager.remove(domain) { _ in }
                 }
                 let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
                 let lastBuild = UserDefaults.standard.string(forKey: Self.fpDomainBuildKey)
-                let lastName = UserDefaults.standard.string(forKey: Self.fpDomainNameKey)
                 if let existing = domains.first(where: { $0.identifier == identifier }) {
-                    // Keep the domain only if nothing that changes what the system
-                    // holds has moved. A new build can render enumeration
-                    // differently and a new displayName must relabel the mount, and
-                    // in both cases the server change cursor is unchanged, so only a
-                    // remove + re-add refreshes the system's cache / name.
-                    if lastBuild == build && lastName == displayName {
+                    // A new build can render enumeration differently (the system
+                    // holds a cache); refresh by remove + re-add. Otherwise keep
+                    // the domain but re-arm it: republish the handoff and signal,
+                    // so a relaunch reconnects with zero Finder clicks.
+                    if lastBuild == build {
                         self.registeredFileProviderDomain = existing
+                        self.writeFileProviderHandoff(handoff)
+                        if let manager = NSFileProviderManager(for: existing) {
+                            manager.signalEnumerator(for: .rootContainer) { _ in }
+                            manager.signalEnumerator(for: .workingSet) { _ in }
+                        }
+                        self.materializeWorkspace()
                         return
                     }
                     NSFileProviderManager.remove(existing) { _ in
                         DispatchQueue.main.async {
                             self.addFileProviderDomain(
-                                identifier: identifier, displayName: displayName, origin: origin,
-                                token: credentials.token, handle: blog.handle, build: build)
+                                identifier: identifier, handoff: handoff, build: build)
                         }
                     }
                     return
                 }
-                self.addFileProviderDomain(
-                    identifier: identifier, displayName: displayName, origin: origin,
-                    token: credentials.token, handle: blog.handle, build: build)
+                self.addFileProviderDomain(identifier: identifier, handoff: handoff, build: build)
             }
         }
     }
 
-    /// UserDefaults keys for the app build and workspace name that last registered
-    /// the FP domain, so a new build (enumeration cache) or a renamed workspace
-    /// (mount label) triggers a refreshing remove + re-add.
+    /// UserDefaults key for the app build that last registered the FP domain, so
+    /// a new build (enumeration cache) triggers a refreshing remove + re-add.
     private static let fpDomainBuildKey = "fpDomainBuild"
+    /// Legacy key (workspace name once labelled the mount); cleared on sign-out.
     private static let fpDomainNameKey = "fpDomainName"
 
     private func addFileProviderDomain(
-        identifier: NSFileProviderDomainIdentifier, displayName: String, origin: String,
-        token: String, handle: String, build: String
+        identifier: NSFileProviderDomainIdentifier, handoff: FileProviderHandoff, build: String
     ) {
-        let domain = NSFileProviderDomain(identifier: identifier, displayName: displayName)
+        let domain = NSFileProviderDomain(
+            identifier: identifier, displayName: Self.fileProviderDomainName)
         NSFileProviderManager.add(domain) { error in
             DispatchQueue.main.async {
                 if let error, (error as NSError).code != NSFileWriteFileExistsError {
@@ -719,14 +729,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 self.registeredFileProviderDomain = domain
                 UserDefaults.standard.set(build, forKey: Self.fpDomainBuildKey)
-                UserDefaults.standard.set(displayName, forKey: Self.fpDomainNameKey)
                 // The extension may have launched before the handoff landed;
                 // re-publish and nudge it to enumerate.
-                self.writeFileProviderHandoff(FileProviderHandoff(
-                    origin: origin, token: token, handle: handle))
+                self.writeFileProviderHandoff(handoff)
                 if let manager = NSFileProviderManager(for: domain) {
-                    manager.signalEnumerator(for: .workingSet) { _ in }
                     manager.signalEnumerator(for: .rootContainer) { _ in }
+                    manager.signalEnumerator(for: .workingSet) { _ in }
                 }
                 // Download the whole workspace so it is present locally by default,
                 // after a moment for the first enumeration to populate the tree.
@@ -739,7 +747,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func removeFileProviderDomain() {
         NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
-            for domain in domains where domain.identifier.rawValue.hasPrefix("workspace-") {
+            // Remove the current "write" domain AND any legacy per-workspace one,
+            // so sign-out never leaves an orphaned (empty) Locations entry.
+            for domain in domains where
+                domain.identifier.rawValue == Self.fileProviderDomainId
+                || domain.identifier.rawValue.hasPrefix("workspace-") {
                 NSFileProviderManager.remove(domain) { _ in }
             }
         }

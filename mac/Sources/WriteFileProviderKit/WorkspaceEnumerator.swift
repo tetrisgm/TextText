@@ -2,16 +2,27 @@ import Foundation
 
 /// Turns the workspace tree the sync API exposes into the flat, per-container
 /// item lists the File Provider enumerates, plus single-item lookup and the
-/// change cursor. Stateless: it holds only the API and the read/write posture,
-/// so it is trivially testable against a fake API.
+/// change cursor. Stateless: it holds only the API, the read/write posture, and
+/// the workspace it serves (handle + display name), so it is trivially testable
+/// against a fake API. One core serves ONE workspace; the extension builds a
+/// core per workspace and lists them under the domain root.
 public struct WorkspaceEnumerator: Sendable {
     private let api: WriteSyncAPI
     private let readOnly: Bool
+    /// The workspace handle every folder/file identifier is scoped by.
+    public let handle: String
+    /// The workspace's display name, used as the workspace container's filename.
+    public let workspaceName: String
     /// The domain's display name, used as the root container's filename.
     public let domainName: String
 
-    public init(api: WriteSyncAPI, readOnly: Bool = true, domainName: String = "Write") {
+    public init(
+        api: WriteSyncAPI, handle: String, workspaceName: String,
+        readOnly: Bool = true, domainName: String = "Write"
+    ) {
         self.api = api
+        self.handle = handle
+        self.workspaceName = workspaceName
         self.readOnly = readOnly
         self.domainName = domainName
     }
@@ -38,17 +49,24 @@ public struct WorkspaceEnumerator: Sendable {
         )
     }
 
-    /// The children of a container. Root -> top-level folders; a folder -> its
-    /// subfolders then its content files. The working set -> everything. Trash
-    /// -> empty for now (soft-deleted items surface in Phase 4). A file id is
+    /// This workspace's container item (a child of the domain root).
+    public func workspaceItem() -> WriteItem {
+        WriteItemMapper.workspaceItem(handle: handle, name: workspaceName, readOnly: readOnly)
+    }
+
+    /// The children of a container. Root -> this workspace container; a workspace
+    /// -> its top-level folders; a folder -> its subfolders then its content
+    /// files. The working set -> everything. Trash -> empty for now. A file id is
     /// not a container and yields an empty list.
     public func children(
         of container: WriteItemIdentifier
     ) async -> Result<[WriteItem], WriteSyncError> {
         switch container {
         case .rootContainer:
+            return .success([workspaceItem()])
+        case .workspace:
             return await topLevelFolders()
-        case .folder(let id):
+        case .folder(_, let id):
             return await folderChildren(folderId: id)
         case .workingSet:
             return await everything()
@@ -68,16 +86,18 @@ public struct WorkspaceEnumerator: Sendable {
         switch identifier {
         case .rootContainer, .workingSet, .trashContainer:
             return .success(rootItem())
-        case .folder(let id):
+        case .workspace:
+            return .success(workspaceItem())
+        case .folder(_, let id):
             switch await api.workspace() {
             case .failure(let e): return .failure(e)
             case .success(let ws):
                 guard let folder = ws.folders.first(where: { $0.id == id }) else {
                     return .failure(.notFound)
                 }
-                return .success(WriteItemMapper.item(for: folder, readOnly: readOnly))
+                return .success(WriteItemMapper.item(for: folder, handle: handle, readOnly: readOnly))
             }
-        case .file(let id):
+        case .file(_, let id):
             return await findFile(postId: id)
         }
     }
@@ -106,7 +126,7 @@ public struct WorkspaceEnumerator: Sendable {
         case .success(let ws):
             let items = ws.folders
                 .filter { $0.parentId == nil }
-                .map { WriteItemMapper.item(for: $0, readOnly: readOnly) }
+                .map { WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
             return .success(items)
         }
     }
@@ -127,15 +147,16 @@ public struct WorkspaceEnumerator: Sendable {
         }
         let subfolders = ws.folders
             .filter { $0.parentId == folderId }
-            .map { WriteItemMapper.item(for: $0, readOnly: readOnly) }
+            .map { WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
 
         switch await api.manifest(folderId: folderId) {
         case .failure(let e): return .failure(e)
         case .success(let entries):
             let files = entries.compactMap {
-                WriteItemMapper.item(for: $0, inFolder: folderId, readOnly: readOnly)
+                WriteItemMapper.item(for: $0, inFolder: folderId, handle: handle, readOnly: readOnly)
             }
-            return .success(subfolders + files)
+            // Break any residual same-title collisions within this folder.
+            return .success(subfolders + WriteFilename.disambiguate(files))
         }
     }
 
@@ -145,7 +166,9 @@ public struct WorkspaceEnumerator: Sendable {
         case .failure(let e): return .failure(e)
         case .success(let value): ws = value
         }
-        let items = ws.folders.map { WriteItemMapper.item(for: $0, readOnly: readOnly) }
+        let folderItems = ws.folders.map {
+            WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly)
+        }
         // Folders are fetched sequentially, so a post that moved between two of
         // them can surface under BOTH its old and new parent. Dedupe by id and
         // keep the LATER occurrence: since the move happened after the earlier
@@ -159,7 +182,8 @@ public struct WorkspaceEnumerator: Sendable {
             case .success(let entries):
                 for entry in entries {
                     guard let item = WriteItemMapper.item(
-                        for: entry, inFolder: folder.id, readOnly: readOnly) else { continue }
+                        for: entry, inFolder: folder.id, handle: handle, readOnly: readOnly)
+                    else { continue }
                     if let existing = indexById[item.identifier] {
                         files[existing] = item // current parent wins over the stale one
                     } else {
@@ -169,7 +193,9 @@ public struct WorkspaceEnumerator: Sendable {
                 }
             }
         }
-        return .success(items + files)
+        // disambiguate groups by parent, so cross-folder same-names are left
+        // alone and only genuine intra-folder collisions get a suffix.
+        return .success(folderItems + WriteFilename.disambiguate(files))
     }
 
     private func findFile(postId: String) async -> Result<WriteItem, WriteSyncError> {
@@ -189,7 +215,7 @@ public struct WorkspaceEnumerator: Sendable {
             case .success(let entries):
                 if let entry = entries.first(where: { $0.id == postId }),
                    let item = WriteItemMapper.item(
-                       for: entry, inFolder: folder.id, readOnly: readOnly) {
+                       for: entry, inFolder: folder.id, handle: handle, readOnly: readOnly) {
                     found = item
                 }
             }

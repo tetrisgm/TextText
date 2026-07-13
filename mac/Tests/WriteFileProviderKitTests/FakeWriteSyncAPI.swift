@@ -63,7 +63,7 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         -> Result<WriteManifestItem, WriteSyncError> {
         .failure(.conflict)
     }
-    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async
+    func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async
         -> Result<WriteManifestItem, WriteSyncError> {
         .failure(.rejected("not implemented in fake"))
     }

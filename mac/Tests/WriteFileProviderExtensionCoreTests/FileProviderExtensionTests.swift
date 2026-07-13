@@ -9,15 +9,18 @@ final class FileProviderExtensionTests: XCTestCase {
 
     private func ext(_ api: WriteSyncAPI?) -> FileProviderExtension {
         let domain = NSFileProviderDomain(
-            identifier: NSFileProviderDomainIdentifier(rawValue: "workspace-test"),
+            identifier: NSFileProviderDomainIdentifier(rawValue: "write"),
             displayName: "Write")
-        return FileProviderExtension(domain: domain, apiFactory: { api })
+        // Every handle resolves to the same injected API in these tests.
+        return FileProviderExtension(domain: domain, apiFactory: { _ in api })
     }
 
     private func fileItem(id: String, file: String, folder: String) -> WriteFileProviderItem {
-        WriteFileProviderItem(
-            WriteItemMapper.item(for: Fixtures.item(id: id, file: file, kind: "note"),
-                                 inFolder: folder, readOnly: false)!)
+        // `file` is the literal Finder filename the framework hands us (e.g. after
+        // a rename), so set it verbatim rather than re-deriving it from a title.
+        let base = WriteItemMapper.item(for: Fixtures.item(id: id, file: file, kind: "note"),
+                                        inFolder: folder, handle: "demo", readOnly: false)!
+        return WriteFileProviderItem(base.withFilename(file))
     }
 
     private func tempFile(_ body: String) -> URL {
@@ -36,18 +39,21 @@ final class FileProviderExtensionTests: XCTestCase {
         let exp = expectation(description: "item")
         var err: NSError?
         _ = ext(nil).item(
-            for: NSFileProviderItemIdentifier(rawValue: "file:p1"),
+            for: NSFileProviderItemIdentifier(rawValue: "file:demo:p1"),
             request: NSFileProviderRequest()
         ) { _, error in err = error as NSError?; exp.fulfill() }
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(err?.code, NSFileProviderError.notAuthenticated.rawValue)
     }
 
-    func testEnumeratorWithoutAuthThrows() {
+    func testFolderEnumeratorWithoutAuthThrows() {
+        // The root and working set list from the handoff (no API), so use a
+        // workspace-scoped folder to exercise the not-authenticated path.
         XCTAssertThrowsError(
-            try ext(nil).enumerator(for: .rootContainer, request: NSFileProviderRequest()))
+            try ext(nil).enumerator(
+                for: NSFileProviderItemIdentifier(rawValue: "folder:demo:blog"),
+                request: NSFileProviderRequest()))
     }
-
 
     // MARK: create
 
@@ -66,14 +72,28 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.createFileCalls.first?.body, "hello")
         // The template's stable identifier is the idempotency key, so a retried
         // create returns the original item instead of a duplicate.
-        XCTAssertEqual(api.createFileCalls.first?.idempotencyKey, "file:tmp")
+        XCTAssertEqual(api.createFileCalls.first?.idempotencyKey, "file:demo:tmp")
+    }
+
+    func testCreateFileTitlesTheNewPostFromTheFilename() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.createFileResult = .success(Fixtures.item(id: "n9", file: "untitled-x.md", kind: "note", slug: "untitled-x", title: ""))
+        let template = fileItem(id: "tmp", file: "My Great Note.md", folder: "notes")
+        let exp = expectation(description: "create")
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: tempFile(""), options: [],
+            request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+        // A Finder-created "My Great Note.md" retitles the fresh post (not reslug).
+        XCTAssertEqual(api.patchCalls.first?.title, "My Great Note")
+        XCTAssertNil(api.patchCalls.first?.slug)
     }
 
     func testCreateFolderCallsCreateFolderWithParentPath() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
-        // A folder template parented under "blog".
         let folder = WriteWorkspaceFolder(id: "tmp", name: "Ideas", path: "Blog/Ideas", mode: "blog", parentId: "blog")
-        let template = WriteFileProviderItem(WriteItemMapper.item(for: folder, readOnly: false))
+        let template = WriteFileProviderItem(WriteItemMapper.item(for: folder, handle: "demo", readOnly: false))
         let exp = expectation(description: "createFolder")
         _ = ext(api).createItem(
             basedOn: template, fields: [], contents: nil, options: [],
@@ -82,7 +102,7 @@ final class FileProviderExtensionTests: XCTestCase {
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(api.createFolderCalls.first?.parentPath, "Blog")
         XCTAssertEqual(api.createFolderCalls.first?.name, "Ideas")
-        XCTAssertEqual(api.createFolderCalls.first?.idempotencyKey, "folder:tmp")
+        XCTAssertEqual(api.createFolderCalls.first?.idempotencyKey, "folder:demo:tmp")
     }
 
     // MARK: modify
@@ -121,10 +141,12 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.putCalls.first?.hash, "basehash", "the PUT still uses the base version")
         XCTAssertEqual(api.patchCalls.first?.ifMatch, "puthash",
                        "the PATCH must guard on the bytes the PUT just wrote")
-        XCTAssertEqual(api.patchCalls.first?.slug, "renamed")
+        // A Finder rename retitles the post (the filename is the title, not the slug).
+        XCTAssertEqual(api.patchCalls.first?.title, "Renamed")
+        XCTAssertNil(api.patchCalls.first?.slug)
     }
 
-    func testRenameFileCallsPatchWithSlug() {
+    func testRenameFileCallsPatchWithTitle() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         let item = fileItem(id: "p1", file: "Renamed Title.md", folder: "notes")
         let exp = expectation(description: "rename")
@@ -134,7 +156,8 @@ final class FileProviderExtensionTests: XCTestCase {
         ) { _, _, _, _ in exp.fulfill() }
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(api.patchCalls.first?.postId, "p1")
-        XCTAssertEqual(api.patchCalls.first?.slug, "renamed-title")
+        XCTAssertEqual(api.patchCalls.first?.title, "Renamed Title")
+        XCTAssertNil(api.patchCalls.first?.slug)
         XCTAssertNil(api.patchCalls.first?.folderId)
     }
 
@@ -155,7 +178,7 @@ final class FileProviderExtensionTests: XCTestCase {
     func testRenameFolderCallsRenameFolder() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         let folder = WriteWorkspaceFolder(id: "blog", name: "Writing", path: "Writing", mode: "blog", parentId: nil)
-        let item = WriteFileProviderItem(WriteItemMapper.item(for: folder, readOnly: false))
+        let item = WriteFileProviderItem(WriteItemMapper.item(for: folder, handle: "demo", readOnly: false))
         let exp = expectation(description: "renameFolder")
         _ = ext(api).modifyItem(
             item, baseVersion: version("h"), changedFields: [.filename],
@@ -172,7 +195,7 @@ final class FileProviderExtensionTests: XCTestCase {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         let exp = expectation(description: "delete")
         _ = ext(api).deleteItem(
-            identifier: NSFileProviderItemIdentifier(rawValue: "file:p1"),
+            identifier: NSFileProviderItemIdentifier(rawValue: "file:demo:p1"),
             baseVersion: version("h"), options: [], request: NSFileProviderRequest()
         ) { _ in exp.fulfill() }
         wait(for: [exp], timeout: 5)
@@ -187,19 +210,11 @@ final class FileProviderExtensionTests: XCTestCase {
         let exp = expectation(description: "delete-folder")
         var err: NSError?
         _ = ext(api).deleteItem(
-            identifier: NSFileProviderItemIdentifier(rawValue: "folder:blog"),
+            identifier: NSFileProviderItemIdentifier(rawValue: "folder:demo:blog"),
             baseVersion: version("h"), options: [], request: NSFileProviderRequest()
         ) { error in err = error as NSError?; exp.fulfill() }
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(err?.code, NSFeatureUnsupportedError)
         XCTAssertTrue(api.deleteCalls.isEmpty)
-    }
-
-    // MARK: slug helper
-
-    func testSlugFromFilename() {
-        XCTAssertEqual(FileProviderExtension.slug(fromFilename: "My Note.md"), "my-note")
-        XCTAssertEqual(FileProviderExtension.slug(fromFilename: "Hello, World!.md"), "hello-world")
-        XCTAssertEqual(FileProviderExtension.slug(fromFilename: "already-slug"), "already-slug")
     }
 }

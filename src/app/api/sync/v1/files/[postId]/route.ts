@@ -239,7 +239,7 @@ export async function PATCH(request: Request, { params }: Props) {
     return syncError(403, "Only the owner can move or rename files");
   }
 
-  let body: { folder?: unknown; slug?: unknown };
+  let body: { folder?: unknown; slug?: unknown; title?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -247,8 +247,11 @@ export async function PATCH(request: Request, { params }: Props) {
   }
   const folderId = typeof body.folder === "string" ? body.folder.trim() : "";
   const slug = typeof body.slug === "string" ? body.slug.trim() : "";
-  if (!folderId && !slug) {
-    return syncError(400, "Provide a folder to move into or a slug to rename to");
+  // A File Provider rename retitles the post (the filename is the title, not the
+  // slug); the slug/URL is left alone unless the caller explicitly sends one.
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!folderId && !slug && !title) {
+    return syncError(400, "Provide a folder to move into, a slug, or a title");
   }
 
   // If-Match, when supplied, rejects a client that was already stale before it
@@ -281,6 +284,7 @@ export async function PATCH(request: Request, { params }: Props) {
     const current = await movePostFile(blog.handle, postId, {
       folderPath,
       slug: slug || undefined,
+      title: title || undefined,
       expectedRevision: post.revision,
     });
     if (!current) return syncError(404, "Post not found");

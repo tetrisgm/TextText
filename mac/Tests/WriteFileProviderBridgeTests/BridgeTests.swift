@@ -15,7 +15,7 @@ private struct StubAPI: WriteSyncAPI {
     }
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
-    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> { .success(()) }
     func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
     func renameFolder(folderId: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
@@ -33,13 +33,13 @@ final class BridgeTests: XCTestCase {
     }
 
     private func fileItem(readOnly: Bool = true, hash: String = "abc123") -> WriteItem {
-        WriteItemMapper.item(for: manifestEntry(hash: hash), inFolder: "blog", readOnly: readOnly)!
+        WriteItemMapper.item(for: manifestEntry(hash: hash), inFolder: "blog", handle: "demo", readOnly: readOnly)!
     }
 
     private func folderItem() -> WriteItem {
         let folder = WriteWorkspaceFolder(
             id: "blog", name: "Blog", path: "Blog", mode: "blog", parentId: nil)
-        return WriteItemMapper.item(for: folder, readOnly: true)
+        return WriteItemMapper.item(for: folder, handle: "demo", readOnly: true)
     }
 
     // MARK: Identifier bridging
@@ -51,7 +51,7 @@ final class BridgeTests: XCTestCase {
     }
 
     func testFolderAndFileIdentifierBridgeRoundTrip() {
-        for id in [WriteItemIdentifier.folder("blog"), .file("p1")] {
+        for id in [WriteItemIdentifier.folder(handle: "demo", id: "blog"), .file(handle: "demo", id: "p1")] {
             let ns = NSFileProviderItemIdentifier(id)
             XCTAssertEqual(WriteItemIdentifier(ns), id)
         }
@@ -106,9 +106,9 @@ final class BridgeTests: XCTestCase {
 
     func testFileItemMapsToNSFileProviderItem() {
         let item = WriteFileProviderItem(fileItem())
-        XCTAssertEqual(item.itemIdentifier, NSFileProviderItemIdentifier(rawValue: "file:p1"))
-        XCTAssertEqual(item.parentItemIdentifier, NSFileProviderItemIdentifier(rawValue: "folder:blog"))
-        XCTAssertEqual(item.filename, "hello.md")
+        XCTAssertEqual(item.itemIdentifier, NSFileProviderItemIdentifier(rawValue: "file:demo:p1"))
+        XCTAssertEqual(item.parentItemIdentifier, NSFileProviderItemIdentifier(rawValue: "folder:demo:blog"))
+        XCTAssertEqual(item.filename, "Hello.md") // the TITLE, not the slug
         XCTAssertEqual(item.contentType, UTType("net.daringfireball.markdown"))
         XCTAssertTrue(item.capabilities.contains(.allowsReading))
     }
@@ -139,7 +139,7 @@ final class BridgeTests: XCTestCase {
     }
 
     func testRootItemBridges() {
-        let e = WorkspaceEnumerator(api: StubAPI(), domainName: "Write")
+        let e = WorkspaceEnumerator(api: StubAPI(), handle: "demo", workspaceName: "Demo", domainName: "Write")
         let root = WriteFileProviderItem(e.rootItem())
         XCTAssertEqual(root.itemIdentifier, .rootContainer)
         XCTAssertEqual(root.parentItemIdentifier, .rootContainer)

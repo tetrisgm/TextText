@@ -2,18 +2,35 @@ import XCTest
 @testable import WriteFileProviderKit
 
 final class WriteItemMapperTests: XCTestCase {
-    func testTopLevelFolderParentsToRoot() {
+    private let h = "demo"
+
+    func testTopLevelFolderParentsToWorkspace() {
         let f = Fixtures.folder("blog", "Blog")
-        let item = WriteItemMapper.item(for: f, readOnly: true)
-        XCTAssertEqual(item.parentIdentifier, .rootContainer)
-        XCTAssertEqual(item.identifier, .folder("blog"))
+        let item = WriteItemMapper.item(for: f, handle: h, readOnly: true)
+        XCTAssertEqual(item.parentIdentifier, .workspace(h))
+        XCTAssertEqual(item.identifier, .folder(handle: h, id: "blog"))
         XCTAssertEqual(item.typeIdentifier, WriteItem.folderTypeIdentifier)
     }
 
     func testSubfolderParentsToItsFolder() {
         let f = Fixtures.folder("drafts", "Drafts", parent: "blog")
-        let item = WriteItemMapper.item(for: f, readOnly: true)
-        XCTAssertEqual(item.parentIdentifier, .folder("blog"))
+        let item = WriteItemMapper.item(for: f, handle: h, readOnly: true)
+        XCTAssertEqual(item.parentIdentifier, .folder(handle: h, id: "blog"))
+    }
+
+    func testWorkspaceItemIsAContainerNamedForTheWorkspace() {
+        let item = WriteItemMapper.workspaceItem(handle: h, name: "Shoku's Space", readOnly: false)
+        XCTAssertEqual(item.identifier, .workspace(h))
+        XCTAssertEqual(item.parentIdentifier, .rootContainer)
+        XCTAssertEqual(item.filename, "Shoku's Space")
+        XCTAssertTrue(item.isFolder)
+        // New items are created inside the system folders, never at this level.
+        XCTAssertFalse(item.capabilities.contains(.addingSubItems))
+    }
+
+    func testWorkspaceItemFallsBackToHandleWhenNameEmpty() {
+        let item = WriteItemMapper.workspaceItem(handle: h, name: "", readOnly: false)
+        XCTAssertEqual(item.filename, h)
     }
 
     func testKindMapping() {
@@ -23,9 +40,11 @@ final class WriteItemMapperTests: XCTestCase {
         ]
         for (raw, expected) in cases {
             let entry = Fixtures.entry(id: "x", file: "x.md", kind: raw, title: "X")
-            let item = WriteItemMapper.item(for: entry, inFolder: "blog", readOnly: true)
+            let item = WriteItemMapper.item(for: entry, inFolder: "blog", handle: h, readOnly: true)
             XCTAssertEqual(item?.kind, expected)
             XCTAssertEqual(item?.typeIdentifier, WriteItem.markdownTypeIdentifier)
+            XCTAssertEqual(item?.identifier, .file(handle: h, id: "x"))
+            XCTAssertEqual(item?.parentIdentifier, .folder(handle: h, id: "blog"))
         }
     }
 
@@ -33,23 +52,35 @@ final class WriteItemMapperTests: XCTestCase {
         let entry = WriteManifestItem(
             file: "x.md", kind: "note", slug: "x", title: "X", status: "draft",
             hash: "h", id: nil, date: nil, createdAt: nil, updatedAt: nil, url: nil)
-        XCTAssertNil(WriteItemMapper.item(for: entry, inFolder: "notes", readOnly: true))
+        XCTAssertNil(WriteItemMapper.item(for: entry, inFolder: "notes", handle: h, readOnly: true))
     }
 
-    func testFilenameIsTheLeafNotThePathFromManifest() {
-        // The manifest `file` is a workspace path ("posts/<slug>.md"); the File
-        // Provider filename must be the bare leaf, or a "/" makes the item
-        // malformed (materializes as zero bytes and will not open).
-        let entry = Fixtures.entry(
-            id: "p1", file: "posts/gamedeveloper-com.md", kind: "bookmark", title: "GD")
-        let item = WriteItemMapper.item(for: entry, inFolder: "bookmarks", readOnly: true)
-        XCTAssertEqual(item?.filename, "gamedeveloper-com.md")
+    func testFilenameIsTheTitleNotTheSlug() {
+        // The user's bug: a post titled "Madonna's Best Album" whose slug is a
+        // placeholder must show its TITLE in Finder, not "untitled-...".
+        let entry = WriteManifestItem(
+            file: "posts/untitled-mrfti1hc.md", kind: "article", slug: "untitled-mrfti1hc",
+            title: "Madonna's Best Album", status: "draft", hash: "h", id: "p1",
+            date: nil, createdAt: nil, updatedAt: nil, url: nil)
+        let item = WriteItemMapper.item(for: entry, inFolder: "blog", handle: h, readOnly: true)
+        XCTAssertEqual(item?.filename, "Madonna's Best Album.md")
         XCTAssertFalse(item?.filename.contains("/") ?? true)
+        // Identity still anchors on the stable post id, not the display name.
+        XCTAssertEqual(item?.identifier, .file(handle: h, id: "p1"))
+    }
+
+    func testTitlelessDraftFallsBackToSlug() {
+        let entry = WriteManifestItem(
+            file: "posts/untitled-abc.md", kind: "note", slug: "untitled-abc",
+            title: "", status: "draft", hash: "h", id: "n1",
+            date: nil, createdAt: nil, updatedAt: nil, url: nil)
+        let item = WriteItemMapper.item(for: entry, inFolder: "notes", handle: h, readOnly: true)
+        XCTAssertEqual(item?.filename, "untitled-abc.md")
     }
 
     func testHashCarriesForConflictChecks() {
         let entry = Fixtures.entry(id: "p1", file: "a.md", kind: "article", title: "A", hash: "deadbeef")
-        let item = WriteItemMapper.item(for: entry, inFolder: "blog", readOnly: false)
+        let item = WriteItemMapper.item(for: entry, inFolder: "blog", handle: h, readOnly: false)
         XCTAssertEqual(item?.contentHash, "deadbeef")
     }
 
@@ -61,16 +92,13 @@ final class WriteItemMapperTests: XCTestCase {
             file: "posts/a.md", kind: "note", slug: "a", title: "A", status: "draft",
             hash: "h", id: "p1", date: nil, createdAt: nil, updatedAt: nil, url: nil,
             size: 4096)
-        let item = WriteItemMapper.item(for: entry, inFolder: "notes", readOnly: false)
+        let item = WriteItemMapper.item(for: entry, inFolder: "notes", handle: h, readOnly: false)
         XCTAssertEqual(item?.documentSize, 4096)
     }
 
     func testWithContentCarriesHashAndSize() {
-        // fetchContents stamps the fetched bytes' hash AND size onto the returned
-        // item. The size is load-bearing: the File Provider uses documentSize as
-        // the content length, so an enumeration-time nil materializes zero bytes.
         let entry = Fixtures.entry(id: "p1", file: "a.md", kind: "note", title: "A")
-        let base = WriteItemMapper.item(for: entry, inFolder: "notes", readOnly: false)!
+        let base = WriteItemMapper.item(for: entry, inFolder: "notes", handle: h, readOnly: false)!
         XCTAssertNil(base.documentSize) // enumeration does not know the size
         let materialized = base.withContent(hash: "newhash", size: 334)
         XCTAssertEqual(materialized.contentHash, "newhash")
@@ -81,7 +109,7 @@ final class WriteItemMapperTests: XCTestCase {
         let entry = Fixtures.entry(
             id: "p1", file: "a.md", kind: "article", title: "A",
             updatedAt: "2026-07-11T10:00:00Z")
-        let item = WriteItemMapper.item(for: entry, inFolder: "blog", readOnly: true)
+        let item = WriteItemMapper.item(for: entry, inFolder: "blog", handle: h, readOnly: true)
         XCTAssertNotNil(item?.contentModificationDate)
     }
 
@@ -89,7 +117,7 @@ final class WriteItemMapperTests: XCTestCase {
         let entry = Fixtures.entry(
             id: "p1", file: "a.md", kind: "article", title: "A",
             updatedAt: "2026-07-11T10:00:00.123Z")
-        let item = WriteItemMapper.item(for: entry, inFolder: "blog", readOnly: true)
+        let item = WriteItemMapper.item(for: entry, inFolder: "blog", handle: h, readOnly: true)
         XCTAssertNotNil(item?.contentModificationDate)
     }
 }

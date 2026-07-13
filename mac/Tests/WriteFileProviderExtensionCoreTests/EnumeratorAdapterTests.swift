@@ -28,7 +28,7 @@ private final class FakeAPI: WriteSyncAPI, @unchecked Sendable {
     }
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
-    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> { .success(()) }
     func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
     func renameFolder(folderId: String, name: String) async -> Result<WriteWorkspaceFolder, WriteSyncError> { .failure(.conflict) }
@@ -86,26 +86,37 @@ private final class ChangeObserver: NSObject, NSFileProviderChangeObserver {
 final class EnumeratorAdapterTests: XCTestCase {
 
     private func adapter(_ container: WriteItemIdentifier, _ api: WriteSyncAPI) -> WriteEnumeratorAdapter {
-        WriteEnumeratorAdapter(container: container, core: WorkspaceEnumerator(api: api, readOnly: true))
+        WriteEnumeratorAdapter(
+            container: container,
+            core: WorkspaceEnumerator(api: api, handle: "demo", workspaceName: "Demo", readOnly: true))
     }
 
-    func testRootEnumeratesTopLevelFoldersOnly() {
+    func testRootEnumeratesTheWorkspace() {
         let exp = expectation(description: "enumerate")
         let obs = EnumObserver(exp)
         adapter(.rootContainer, standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
         wait(for: [exp], timeout: 5)
         XCTAssertTrue(obs.finished)
         let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
-        XCTAssertEqual(ids, ["folder:blog", "folder:notes"])
+        XCTAssertEqual(ids, ["workspace:demo"])
+    }
+
+    func testWorkspaceEnumeratesTopLevelFolders() {
+        let exp = expectation(description: "enumerate")
+        let obs = EnumObserver(exp)
+        adapter(.workspace("demo"), standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
+        XCTAssertEqual(ids, ["folder:demo:blog", "folder:demo:notes"])
     }
 
     func testFolderEnumeratesSubfoldersAndFiles() {
         let exp = expectation(description: "enumerate")
         let obs = EnumObserver(exp)
-        adapter(.folder("blog"), standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        adapter(.folder(handle: "demo", id: "blog"), standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
         wait(for: [exp], timeout: 5)
         let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
-        XCTAssertEqual(ids, ["folder:drafts", "file:p1", "file:p2"])
+        XCTAssertEqual(ids, ["folder:demo:drafts", "file:demo:p1", "file:demo:p2"])
     }
 
     func testEnumerationErrorFinishesWithError() {
@@ -113,7 +124,7 @@ final class EnumeratorAdapterTests: XCTestCase {
         api.failManifest = .network("offline")
         let exp = expectation(description: "enumerate")
         let obs = EnumObserver(exp)
-        adapter(.folder("blog"), api).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        adapter(.folder(handle: "demo", id: "blog"), api).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
         wait(for: [exp], timeout: 5)
         XCTAssertFalse(obs.finished)
         XCTAssertEqual((obs.error as NSError?)?.domain, NSFileProviderErrorDomain)
@@ -139,7 +150,7 @@ final class EnumeratorAdapterTests: XCTestCase {
         let api = standardAPI(); api.cursor = "c7"
         let exp = expectation(description: "changes")
         let obs = ChangeObserver(exp)
-        adapter(.folder("blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("old".utf8)))
+        adapter(.folder(handle: "demo", id: "blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("old".utf8)))
         wait(for: [exp], timeout: 5)
         XCTAssertTrue(obs.updated.isEmpty, "must not emit stale survivor updates")
         XCTAssertNil(obs.anchor, "must not finish at a fresh anchor")
@@ -155,7 +166,7 @@ final class EnumeratorAdapterTests: XCTestCase {
         let api = standardAPI(); api.cursor = "c9"
         let exp = expectation(description: "changes")
         let obs = ChangeObserver(exp)
-        adapter(.folder("blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("c9".utf8)))
+        adapter(.folder(handle: "demo", id: "blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("c9".utf8)))
         wait(for: [exp], timeout: 5)
         XCTAssertNil(obs.error, "a matching anchor must not error")
         XCTAssertTrue(obs.updated.isEmpty)

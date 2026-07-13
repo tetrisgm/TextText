@@ -9,25 +9,28 @@ import WriteFileProviderBridge
 ///   log show --last 15m --predicate 'subsystem == "net.writeapp.write"'
 let fpLog = Logger(subsystem: "net.writeapp.write", category: "fileprovider")
 
-/// Write's replicated File Provider. It enumerates the workspace from the
-/// server, materializes file bodies on demand, and (Phase 3) writes edits,
-/// creates, deletes, renames, and moves back through /api/sync/v1. The server
-/// (write.ramine.net) stays the source of truth.
+/// Write's replicated File Provider. A single "Write" domain spans every
+/// workspace the user has joined: the root lists one folder per workspace, and
+/// inside each are that workspace's system folders and posts. Every folder/file
+/// identifier is scoped by the workspace HANDLE, so the extension reads the
+/// handle out of the identifier and resolves that workspace's token from the
+/// handoff. The server (write.ramine.net) stays the source of truth.
 ///
-/// The API client is resolved per request from the shared app-group container
-/// (so a sign-in after launch is picked up without relaunch) via `apiFactory`,
-/// which tests override to inject a fake.
+/// The API client is resolved per request from the shared keychain handoff (so a
+/// sign-in after launch is picked up without relaunch) via `apiFactory`, which
+/// tests override to inject a fake.
 public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
 
     private let domain: NSFileProviderDomain
-    private let apiFactory: () -> WriteSyncAPI?
+    private let apiFactory: (String) -> WriteSyncAPI?
 
     public required convenience init(domain: NSFileProviderDomain) {
-        self.init(domain: domain, apiFactory: { FileProviderExtension.handoffAPI() })
+        self.init(domain: domain, apiFactory: { FileProviderExtension.handoffAPI(for: $0) })
     }
 
-    /// Test seam: inject the API instead of reading the app-group container.
-    init(domain: NSFileProviderDomain, apiFactory: @escaping () -> WriteSyncAPI?) {
+    /// Test seam: inject the API (keyed by workspace handle) instead of reading
+    /// the shared keychain handoff.
+    init(domain: NSFileProviderDomain, apiFactory: @escaping (String) -> WriteSyncAPI?) {
         self.domain = domain
         self.apiFactory = apiFactory
         super.init()
@@ -51,19 +54,31 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             completionHandler(nil, Self.fpError(.noSuchItem))
             return progress
         }
-        guard let api = apiFactory() else {
-            completionHandler(nil, Self.fpError(.notAuthenticated))
+        switch wid {
+        case .rootContainer, .workingSet, .trashContainer:
+            completionHandler(Self.syntheticRootItem(name: domain.displayName), nil)
+            return progress
+        case .workspace(let handle):
+            guard let descriptor = handoffDescriptors().first(where: { $0.handle == handle }) else {
+                completionHandler(nil, Self.fpError(.noSuchItem)); return progress
+            }
+            completionHandler(WriteFileProviderItem(WriteItemMapper.workspaceItem(
+                handle: handle, name: descriptor.name, readOnly: false)), nil)
+            return progress
+        case .folder(let handle, _), .file(let handle, _):
+            guard let api = apiFactory(handle) else {
+                completionHandler(nil, Self.fpError(.notAuthenticated)); return progress
+            }
+            let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
+            Task {
+                switch await core.item(for: wid) {
+                case .success(let item): completionHandler(WriteFileProviderItem(item), nil)
+                case .failure(let error): completionHandler(nil, Self.nsError(from: error))
+                }
+                progress.completedUnitCount = 1
+            }
             return progress
         }
-        let core = makeEnumeratorCore(api)
-        Task {
-            switch await core.item(for: wid) {
-            case .success(let item): completionHandler(WriteFileProviderItem(item), nil)
-            case .failure(let error): completionHandler(nil, Self.nsError(from: error))
-            }
-            progress.completedUnitCount = 1
-        }
-        return progress
     }
 
     // MARK: Content materialization
@@ -75,18 +90,18 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         completionHandler: @escaping (URL?, NSFileProviderItem?, (any Error)?) -> Void
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
-        guard case .file(let postId)? = WriteItemIdentifier(itemIdentifier) else {
+        guard case .file(let handle, let postId)? = WriteItemIdentifier(itemIdentifier) else {
             completionHandler(nil, nil, Self.fpError(.noSuchItem))
             return progress
         }
-        guard let api = apiFactory() else {
+        guard let api = apiFactory(handle) else {
             completionHandler(nil, nil, Self.fpError(.notAuthenticated))
             return progress
         }
-        let core = makeEnumeratorCore(api)
+        let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
         let tempDir = fpTemporaryDirectory()
         Task {
-            let itemResult = await core.item(for: .file(postId))
+            let itemResult = await core.item(for: .file(handle: handle, id: postId))
             switch await api.fileText(postId: postId) {
             case .failure(let error):
                 fpLog.error("fetchContents \(postId, privacy: .public) failed: \(String(describing: error), privacy: .public)")
@@ -129,8 +144,22 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         guard let wid = WriteItemIdentifier(containerItemIdentifier) else {
             throw Self.fpError(.noSuchItem)
         }
-        guard let api = apiFactory() else { throw Self.fpError(.notAuthenticated) }
-        return WriteEnumeratorAdapter(container: wid, core: makeEnumeratorCore(api))
+        switch wid {
+        case .rootContainer:
+            // The only cross-workspace container: one folder per workspace.
+            return WorkspaceListEnumerator(descriptors: handoffDescriptors())
+        case .workingSet:
+            return AggregateWorkingSetEnumerator(
+                descriptors: handoffDescriptors(), apiFactory: apiFactory)
+        case .trashContainer:
+            return EmptyEnumerator()
+        case .workspace(let handle), .folder(let handle, _):
+            guard let api = apiFactory(handle) else { throw Self.fpError(.notAuthenticated) }
+            return WriteEnumeratorAdapter(
+                container: wid, core: makeCore(api, handle: handle, name: descriptorName(for: handle)))
+        case .file:
+            throw Self.fpError(.noSuchItem)
+        }
     }
 
     // MARK: Create
@@ -148,12 +177,12 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             completionHandler(item, [], false, error)
             progress.completedUnitCount = 1
         }
-        guard case .folder(let parentId)? = WriteItemIdentifier(itemTemplate.parentItemIdentifier) else {
-            // New items must land inside a workspace folder (root holds only the
-            // system folders, which the app manages).
+        guard case .folder(let handle, let parentId)? = WriteItemIdentifier(itemTemplate.parentItemIdentifier) else {
+            // New items must land inside a workspace folder (the root holds the
+            // workspace containers, and a workspace holds only its system folders).
             done(nil, Self.readOnlyError()); return progress
         }
-        guard let api = apiFactory() else { done(nil, Self.fpError(.notAuthenticated)); return progress }
+        guard let api = apiFactory(handle) else { done(nil, Self.fpError(.notAuthenticated)); return progress }
         let isFolder = itemTemplate.contentType?.conforms(to: .folder) ?? false
         let filename = itemTemplate.filename
         // The template's itemIdentifier is stable across the framework's retries
@@ -168,7 +197,7 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 switch await api.createFolder(parentPath: parentPath, name: filename, idempotencyKey: idempotencyKey) {
                 case .success(let folder):
                     done(WriteFileProviderItem(
-                        WriteItemMapper.item(for: folder, readOnly: false)), nil)
+                        WriteItemMapper.item(for: folder, handle: handle, readOnly: false)), nil)
                 case .failure(let error): done(nil, Self.nsError(from: error))
                 }
             } else {
@@ -176,15 +205,16 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 switch await api.createFile(body: body, folderId: parentId, idempotencyKey: idempotencyKey) {
                 case .failure(let error): done(nil, Self.nsError(from: error))
                 case .success(let created):
-                    // Give the new post the Finder-chosen name when the server's
-                    // derived slug differs, so the file does not appear renamed.
-                    let wanted = Self.slug(fromFilename: filename)
-                    guard let id = created.id, !wanted.isEmpty, created.slug != wanted else {
-                        done(Self.fileItem(created, parentId: parentId), nil); return
+                    // Title the new post from the Finder filename (the filename IS
+                    // the title now, not the slug). Leave the slug/URL to the
+                    // server. Skip the PATCH when the title already matches.
+                    let title = WriteFilename.titleFromFilename(filename)
+                    guard let id = created.id, !title.isEmpty, created.title != title else {
+                        done(Self.fileItem(created, parentId: parentId, handle: handle), nil); return
                     }
-                    switch await api.patchFile(postId: id, folderId: nil, slug: wanted, ifMatch: created.hash) {
-                    case .success(let renamed): done(Self.fileItem(renamed, parentId: parentId), nil)
-                    case .failure: done(Self.fileItem(created, parentId: parentId), nil) // keep the create
+                    switch await api.patchFile(postId: id, folderId: nil, slug: nil, title: title, ifMatch: created.hash) {
+                    case .success(let renamed): done(Self.fileItem(renamed, parentId: parentId, handle: handle), nil)
+                    case .failure: done(Self.fileItem(created, parentId: parentId, handle: handle), nil) // keep the create
                     }
                 }
             }
@@ -208,15 +238,15 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             completionHandler(item, [], false, error)
             progress.completedUnitCount = 1
         }
-        guard case .file(let postId)? = WriteItemIdentifier(item.itemIdentifier) else {
+        guard case .file(let handle, let postId)? = WriteItemIdentifier(item.itemIdentifier) else {
             // Folder rename is the only folder mutation supported.
-            if case .folder(let folderId)? = WriteItemIdentifier(item.itemIdentifier),
-               changedFields.contains(.filename), let api = apiFactory() {
+            if case .folder(let handle, let folderId)? = WriteItemIdentifier(item.itemIdentifier),
+               changedFields.contains(.filename), let api = apiFactory(handle) {
                 Task {
                     switch await api.renameFolder(folderId: folderId, name: item.filename) {
                     case .success(let folder):
                         done(WriteFileProviderItem(
-                            WriteItemMapper.item(for: folder, readOnly: false)), nil)
+                            WriteItemMapper.item(for: folder, handle: handle, readOnly: false)), nil)
                     case .failure(let error): done(nil, Self.nsError(from: error))
                     }
                 }
@@ -224,8 +254,8 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             }
             done(nil, Self.readOnlyError()); return progress
         }
-        guard let api = apiFactory() else { done(nil, Self.fpError(.notAuthenticated)); return progress }
-        let core = makeEnumeratorCore(api)
+        guard let api = apiFactory(handle) else { done(nil, Self.fpError(.notAuthenticated)); return progress }
+        let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
         Task {
             // 1) Content edit: PUT with the base version's hash as If-Match. If
             // this fails, STOP: do not go on to rename/move, or a stale-content
@@ -247,20 +277,21 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
                 case .success(let saved): patchBaseHash = saved.hash
                 }
             }
-            // 2) Move and/or rename in one PATCH.
+            // 2) Move and/or retitle in one PATCH. A Finder rename changes the
+            // TITLE (the filename is the title), never the slug/URL.
             let newFolderId: String? = changedFields.contains(.parentItemIdentifier)
-                ? { if case .folder(let f)? = WriteItemIdentifier(item.parentItemIdentifier) { return f }; return nil }()
+                ? { if case .folder(_, let f)? = WriteItemIdentifier(item.parentItemIdentifier) { return f }; return nil }()
                 : nil
-            let newSlug: String? = changedFields.contains(.filename)
-                ? Self.slug(fromFilename: item.filename) : nil
-            if newFolderId != nil || (newSlug != nil && !(newSlug!.isEmpty)) {
+            let newTitle: String? = changedFields.contains(.filename)
+                ? WriteFilename.titleFromFilename(item.filename) : nil
+            if newFolderId != nil || (newTitle != nil && !(newTitle!.isEmpty)) {
                 if case .failure(let e) = await api.patchFile(
-                    postId: postId, folderId: newFolderId, slug: newSlug, ifMatch: patchBaseHash) {
+                    postId: postId, folderId: newFolderId, slug: nil, title: newTitle, ifMatch: patchBaseHash) {
                     done(nil, Self.nsError(from: e)); return
                 }
             }
             // Return the item's current server state.
-            switch await core.item(for: .file(postId)) {
+            switch await core.item(for: .file(handle: handle, id: postId)) {
             case .success(let updated):
                 fpLog.info("modifyItem \(postId, privacy: .public) saved to server")
                 done(WriteFileProviderItem(updated), nil)
@@ -284,10 +315,10 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             completionHandler(error); progress.completedUnitCount = 1
         }
         // Only files delete; folder delete is deferred (not advertised).
-        guard case .file(let postId)? = WriteItemIdentifier(identifier) else {
+        guard case .file(let handle, let postId)? = WriteItemIdentifier(identifier) else {
             done(Self.readOnlyError()); return progress
         }
-        guard let api = apiFactory() else { done(Self.fpError(.notAuthenticated)); return progress }
+        guard let api = apiFactory(handle) else { done(Self.fpError(.notAuthenticated)); return progress }
         // The base version's contentVersion IS the item's content hash bytes.
         // Sending it as If-Match gives stale-delete protection: the server 412s
         // if the row moved on underneath the deleting client.
@@ -304,16 +335,28 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
 
     // MARK: Helpers
 
-    /// Read the handoff from the shared keychain group and build the live client.
-    /// nil = not signed in (the app has not published a token yet).
-    static func handoffAPI() -> WriteSyncAPI? {
+    /// Build the live client for a workspace handle from the shared keychain
+    /// handoff. nil = not signed in for that workspace (or at all).
+    static func handoffAPI(for handle: String) -> WriteSyncAPI? {
         guard let handoff = FileProviderHandoffStore.load(),
-              let origin = URL(string: handoff.origin) else { return nil }
-        return LiveWriteSyncAPI(origin: origin, token: handoff.token)
+              let descriptor = handoff.descriptor(for: handle),
+              let origin = URL(string: descriptor.origin) else { return nil }
+        return LiveWriteSyncAPI(origin: origin, token: descriptor.token)
     }
 
-    private func makeEnumeratorCore(_ api: WriteSyncAPI) -> WorkspaceEnumerator {
-        WorkspaceEnumerator(api: api, readOnly: false, domainName: domain.displayName)
+    /// The workspaces the app has handed off (one folder each under the root).
+    private func handoffDescriptors() -> [FileProviderWorkspace] {
+        FileProviderHandoffStore.load()?.workspaces ?? []
+    }
+
+    private func descriptorName(for handle: String) -> String {
+        handoffDescriptors().first(where: { $0.handle == handle })?.name ?? handle
+    }
+
+    private func makeCore(_ api: WriteSyncAPI, handle: String, name: String) -> WorkspaceEnumerator {
+        WorkspaceEnumerator(
+            api: api, handle: handle, workspaceName: name,
+            readOnly: false, domainName: domain.displayName)
     }
 
     /// The path of a folder id (needed for createFolder, which takes a parent
@@ -346,28 +389,19 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
         }
     }
 
-    private static func fileItem(_ entry: WriteManifestItem, parentId: String) -> NSFileProviderItem? {
-        WriteItemMapper.item(for: entry, inFolder: parentId, readOnly: false)
+    private static func fileItem(_ entry: WriteManifestItem, parentId: String, handle: String) -> NSFileProviderItem? {
+        WriteItemMapper.item(for: entry, inFolder: parentId, handle: handle, readOnly: false)
             .map(WriteFileProviderItem.init)
     }
 
-    /// Derive a slug from a Finder filename ("My Note.md" -> "my-note").
-    static func slug(fromFilename filename: String) -> String {
-        var base = filename
-        if let dot = base.lastIndex(of: "."), base[base.index(after: dot)...].allSatisfy({ $0.isLetter }) {
-            base = String(base[..<dot])
-        }
-        let lowered = base.lowercased()
-        var out = ""
-        var lastDash = false
-        for scalar in lowered.unicodeScalars {
-            if CharacterSet.alphanumerics.contains(scalar) {
-                out.unicodeScalars.append(scalar); lastDash = false
-            } else if !lastDash {
-                out.append("-"); lastDash = true
-            }
-        }
-        return out.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    /// The synthetic domain-root item (its children are the workspace folders).
+    private static func syntheticRootItem(name: String) -> WriteFileProviderItem {
+        WriteFileProviderItem(WriteItem(
+            identifier: .rootContainer, parentIdentifier: .rootContainer,
+            filename: name, isFolder: true, kind: .folder,
+            typeIdentifier: WriteItem.folderTypeIdentifier, serverId: nil,
+            contentHash: nil, documentSize: nil, creationDate: nil,
+            contentModificationDate: nil, capabilities: .readOnlyFolder))
     }
 
     private static func nsError(from error: WriteSyncError) -> NSError {

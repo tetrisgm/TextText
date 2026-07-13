@@ -1032,7 +1032,12 @@ export async function setPostFolder(
 export async function movePostFile(
   handle: string,
   postId: string,
-  changes: { folderPath?: string; slug?: string; expectedRevision?: number },
+  changes: {
+    folderPath?: string;
+    slug?: string;
+    title?: string;
+    expectedRevision?: number;
+  },
 ): Promise<Post | null> {
   if (!db) return null;
   const blogId = await blogIdFor(handle);
@@ -1050,6 +1055,7 @@ export async function movePostFile(
     updatedAt: Date;
     folderId?: string;
     slug?: string;
+    title?: string;
   } = {
     updatedAt: new Date(),
   };
@@ -1083,10 +1089,21 @@ export async function movePostFile(
     set.slug = changes.slug;
   }
 
-  // Nothing actually changes (same folder, same slug): return the current row
-  // untouched rather than bump the revision and spuriously advance the change
-  // cursor, which would make a no-op PATCH look like a real edit to every client.
-  if (set.folderId === undefined && set.slug === undefined) {
+  // A Finder rename retitles the post (the filename is the title). Only a real
+  // change counts, so a rename to the same title is a no-op like a same-folder
+  // move. The slug/URL is deliberately left alone (rename != reslug).
+  if (changes.title !== undefined && changes.title !== row.title) {
+    set.title = changes.title;
+  }
+
+  // Nothing actually changes (same folder, same slug, same title): return the
+  // current row untouched rather than bump the revision and spuriously advance
+  // the change cursor, which would make a no-op PATCH look like a real edit.
+  if (
+    set.folderId === undefined &&
+    set.slug === undefined &&
+    set.title === undefined
+  ) {
     return mapPost(row);
   }
 

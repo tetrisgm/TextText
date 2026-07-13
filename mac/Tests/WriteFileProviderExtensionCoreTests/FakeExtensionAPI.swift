@@ -12,7 +12,7 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
 
     // Recorded write calls.
     struct CreateFileCall: Equatable { let body: String; let folderId: String?; let idempotencyKey: String? }
-    struct PatchCall: Equatable { let postId: String; let folderId: String?; let slug: String?; let ifMatch: String? }
+    struct PatchCall: Equatable { let postId: String; let folderId: String?; let slug: String?; let title: String?; let ifMatch: String? }
     struct PutCall: Equatable { let postId: String; let body: String; let hash: String }
     struct CreateFolderCall: Equatable { let parentPath: String; let name: String; let idempotencyKey: String? }
     struct RenameFolderCall: Equatable { let folderId: String; let name: String }
@@ -57,9 +57,9 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         putCalls.append(PutCall(postId: postId, body: body, hash: hash))
         return putResult
     }
-    func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> {
-        patchCalls.append(PatchCall(postId: postId, folderId: folderId, slug: slug, ifMatch: hash))
-        return patchResult ?? .success(Fixtures.item(id: postId, file: (slug ?? "x") + ".md", kind: "note"))
+    func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> {
+        patchCalls.append(PatchCall(postId: postId, folderId: folderId, slug: slug, title: title, ifMatch: hash))
+        return patchResult ?? .success(Fixtures.item(id: postId, file: (slug ?? "x") + ".md", kind: "note", title: title ?? "x"))
     }
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> {
         deleteCalls.append(postId); deleteIfMatchCalls.append(hash); return deleteResult
@@ -77,10 +77,10 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
 }
 
 enum Fixtures {
-    static func item(id: String, file: String, kind: String, slug: String? = nil) -> WriteManifestItem {
+    static func item(id: String, file: String, kind: String, slug: String? = nil, title: String? = nil) -> WriteManifestItem {
         WriteManifestItem(
             file: file, kind: kind, slug: slug ?? file.replacingOccurrences(of: ".md", with: ""),
-            title: file, status: "draft", hash: "h", id: id, date: nil,
+            title: title ?? file, status: "draft", hash: "h", id: id, date: nil,
             createdAt: nil, updatedAt: nil, url: nil)
     }
 
