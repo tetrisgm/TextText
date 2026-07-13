@@ -140,6 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 workspaceName: blog.name.isEmpty ? blog.handle : blog.name)
         }
         mountBridge.onActivity = { [weak self] message in self?.appendActivity(message) }
+        // After a pull evicts a stale file, re-download it so it does not linger
+        // as a dataless placeholder.
+        mountBridge.onRefresh = { [weak self] in
+            DispatchQueue.main.async { self?.materializeWorkspace() }
+        }
 
         showMainWindow() // open the workspace window on launch
     }
