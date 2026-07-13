@@ -55,4 +55,13 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
         return NSFileProviderItemVersion(
             contentVersion: content, metadataVersion: metadata)
     }
+
+    /// Keep the whole workspace downloaded, not on demand: the system fetches
+    /// every item's content proactively and holds onto it (folders propagate the
+    /// policy to their children), so the files read like an ordinary local
+    /// folder instead of dataless cloud placeholders.
+    @available(macOS 14.0, *)
+    public var contentPolicy: NSFileProviderContentPolicy {
+        .downloadEagerlyAndKeepDownloaded
+    }
 }
