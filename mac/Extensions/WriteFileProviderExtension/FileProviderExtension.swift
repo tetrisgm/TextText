@@ -261,7 +261,9 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
             }
             // Return the item's current server state.
             switch await core.item(for: .file(postId)) {
-            case .success(let updated): done(WriteFileProviderItem(updated), nil)
+            case .success(let updated):
+                fpLog.info("modifyItem \(postId, privacy: .public) saved to server")
+                done(WriteFileProviderItem(updated), nil)
             case .failure(let error): done(nil, Self.nsError(from: error))
             }
         }
@@ -369,7 +371,10 @@ public final class FileProviderExtension: NSObject, NSFileProviderReplicatedExte
     }
 
     private static func nsError(from error: WriteSyncError) -> NSError {
-        WriteEnumeratorAdapter.bridge(error)
+        // Every write failure (create/modify/delete) funnels through here; log it
+        // so a broken write path is visible in the unified log.
+        fpLog.error("sync write error: \(String(describing: error), privacy: .public)")
+        return WriteEnumeratorAdapter.bridge(error)
     }
 
     private static func fpError(_ code: NSFileProviderError.Code) -> NSError {

@@ -657,6 +657,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         writeFileProviderHandoff(
             FileProviderHandoff(origin: origin, token: credentials.token, handle: blog.handle))
 
+        // The Finder sidebar label (and the CloudStorage mount folder) is the
+        // workspace's own name, not a generic "Write".
+        let displayName = blog.name.isEmpty ? blog.handle : blog.name
         let identifier = NSFileProviderDomainIdentifier(rawValue: "workspace-\(blog.handle)")
         NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in
             DispatchQueue.main.async {
@@ -669,41 +672,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
                 let lastBuild = UserDefaults.standard.string(forKey: Self.fpDomainBuildKey)
+                let lastName = UserDefaults.standard.string(forKey: Self.fpDomainNameKey)
                 if let existing = domains.first(where: { $0.identifier == identifier }) {
-                    if lastBuild == build {
+                    // Keep the domain only if nothing that changes what the system
+                    // holds has moved. A new build can render enumeration
+                    // differently and a new displayName must relabel the mount, and
+                    // in both cases the server change cursor is unchanged, so only a
+                    // remove + re-add refreshes the system's cache / name.
+                    if lastBuild == build && lastName == displayName {
                         self.registeredFileProviderDomain = existing
                         return
                     }
-                    // A new app build can enumerate the SAME workspace differently
-                    // (e.g. a filename-rendering fix) while the server change cursor
-                    // is unchanged, so nothing else would force a re-enumeration and
-                    // the system would keep serving stale cached items. Remove and
-                    // re-add the domain to discard that cache and enumerate fresh.
                     NSFileProviderManager.remove(existing) { _ in
                         DispatchQueue.main.async {
                             self.addFileProviderDomain(
-                                identifier: identifier, origin: origin,
+                                identifier: identifier, displayName: displayName, origin: origin,
                                 token: credentials.token, handle: blog.handle, build: build)
                         }
                     }
                     return
                 }
                 self.addFileProviderDomain(
-                    identifier: identifier, origin: origin,
+                    identifier: identifier, displayName: displayName, origin: origin,
                     token: credentials.token, handle: blog.handle, build: build)
             }
         }
     }
 
-    /// UserDefaults key for the app build that last registered the FP domain, so
-    /// a new build refreshes the domain (and the system's enumeration cache).
+    /// UserDefaults keys for the app build and workspace name that last registered
+    /// the FP domain, so a new build (enumeration cache) or a renamed workspace
+    /// (mount label) triggers a refreshing remove + re-add.
     private static let fpDomainBuildKey = "fpDomainBuild"
+    private static let fpDomainNameKey = "fpDomainName"
 
     private func addFileProviderDomain(
-        identifier: NSFileProviderDomainIdentifier, origin: String,
+        identifier: NSFileProviderDomainIdentifier, displayName: String, origin: String,
         token: String, handle: String, build: String
     ) {
-        let domain = NSFileProviderDomain(identifier: identifier, displayName: "Write")
+        let domain = NSFileProviderDomain(identifier: identifier, displayName: displayName)
         NSFileProviderManager.add(domain) { error in
             DispatchQueue.main.async {
                 if let error, (error as NSError).code != NSFileWriteFileExistsError {
@@ -713,6 +719,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 self.registeredFileProviderDomain = domain
                 UserDefaults.standard.set(build, forKey: Self.fpDomainBuildKey)
+                UserDefaults.standard.set(displayName, forKey: Self.fpDomainNameKey)
                 // The extension may have launched before the handoff landed;
                 // re-publish and nudge it to enumerate.
                 self.writeFileProviderHandoff(FileProviderHandoff(
@@ -733,6 +740,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         registeredFileProviderDomain = nil
         UserDefaults.standard.removeObject(forKey: Self.fpDomainBuildKey)
+        UserDefaults.standard.removeObject(forKey: Self.fpDomainNameKey)
         FileProviderHandoffStore.clear()
     }
 
