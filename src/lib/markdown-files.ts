@@ -42,6 +42,10 @@ export type MarkdownFolderItem = {
   url?: string;
   /** sha256 hex of the rendered markdown file, for cheap change detection */
   hash: string;
+  /** UTF-8 byte length of the rendered markdown file. The File Provider needs it
+   * at enumeration time to set each item's documentSize, or the system sizes the
+   * dataless placeholder at zero and never grows it when the content is fetched. */
+  size: number;
 };
 
 export type MarkdownFolderManifest = {
@@ -120,25 +124,27 @@ export function renderFolderManifest(
       activeView: blog.homeLayout,
       ...(folder ? { id: folder.id, path: folder.path } : {}),
     },
-    items: posts.map((post) => ({
-      file: markdownFilePathForPost(post),
-      kind: itemKindForPostType(post.type),
-      slug: post.slug,
-      title: post.title,
-      status: post.status,
-      ...(post.id ? { id: post.id } : {}),
-      ...(post.date ? { date: post.date } : {}),
-      ...(post.createdAt ? { createdAt: post.createdAt } : {}),
-      ...(post.updatedAt ? { updatedAt: post.updatedAt } : {}),
-      ...(options?.fileUrlFor ? { url: options.fileUrlFor(post) } : {}),
-      hash: markdownFileHash(
-        renderPostMarkdownFile({
-          blog,
-          canonicalUrl: options?.postUrlFor?.(post),
-          post,
-        }),
-      ),
-    })),
+    items: posts.map((post) => {
+      const rendered = renderPostMarkdownFile({
+        blog,
+        canonicalUrl: options?.postUrlFor?.(post),
+        post,
+      });
+      return {
+        file: markdownFilePathForPost(post),
+        kind: itemKindForPostType(post.type),
+        slug: post.slug,
+        title: post.title,
+        status: post.status,
+        ...(post.id ? { id: post.id } : {}),
+        ...(post.date ? { date: post.date } : {}),
+        ...(post.createdAt ? { createdAt: post.createdAt } : {}),
+        ...(post.updatedAt ? { updatedAt: post.updatedAt } : {}),
+        ...(options?.fileUrlFor ? { url: options.fileUrlFor(post) } : {}),
+        hash: markdownFileHash(rendered),
+        size: new TextEncoder().encode(rendered).length,
+      };
+    }),
   };
 }
 
