@@ -21,6 +21,8 @@ type BodyCacheEntry =
   | { status: "ready"; body: WorkspacePostBodyPayload }
   | { status: "error"; error: string };
 
+const IDLE_BODY_ENTRY: BodyCacheEntry = { status: "idle" };
+
 type WorkspacePoolState = {
   pool: WorkspacePoolPayload | null;
   refreshing: boolean;
@@ -28,11 +30,13 @@ type WorkspacePoolState = {
   bodies: Record<string, BodyCacheEntry>;
 };
 
-const listeners = new Set<() => void>();
+const poolListeners = new Set<() => void>();
+const bodyListeners = new Map<string, Set<() => void>>();
 const bodyFetches = new Set<string>();
 const bodyMutationGenerations = new Map<string, number>();
 const locallyDirtyBodies = new Set<string>();
 const locallyDirtyPosts = new Set<string>();
+const optimisticPostPatches = new Map<string, Partial<WorkspacePoolPost>>();
 let poolMutationGeneration = 0;
 
 let state: WorkspacePoolState = {
@@ -60,20 +64,20 @@ function markPoolMutation() {
   poolMutationGeneration += 1;
 }
 
-function emit() {
-  for (const listener of listeners) listener();
+function emitPool() {
+  for (const listener of poolListeners) listener();
+}
+
+function emitBody(key: string) {
+  for (const listener of bodyListeners.get(key) ?? []) listener();
 }
 
 function setState(patch: Partial<WorkspacePoolState>) {
   state = { ...state, ...patch };
-  emit();
+  emitPool();
 }
 
-function setBodyEntry(
-  blogId: string,
-  postId: string,
-  entry: BodyCacheEntry,
-) {
+function setBodyEntry(blogId: string, postId: string, entry: BodyCacheEntry) {
   state = {
     ...state,
     bodies: {
@@ -81,12 +85,22 @@ function setBodyEntry(
       [bodyKey(blogId, postId)]: entry,
     },
   };
-  emit();
+  emitBody(bodyKey(blogId, postId));
 }
 
 function subscribe(listener: () => void): () => void {
+  poolListeners.add(listener);
+  return () => poolListeners.delete(listener);
+}
+
+function subscribeBody(key: string, listener: () => void): () => void {
+  const listeners = bodyListeners.get(key) ?? new Set<() => void>();
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  bodyListeners.set(key, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) bodyListeners.delete(key);
+  };
 }
 
 function getSnapshot(): WorkspacePoolState {
@@ -109,28 +123,62 @@ export function isWorkspacePostBodyStale(
   if (!bodyUpdatedAt) return true;
   const postTime = Date.parse(postUpdatedAt);
   const bodyTime = Date.parse(bodyUpdatedAt);
-  return Number.isFinite(postTime) && Number.isFinite(bodyTime) && postTime > bodyTime;
+  return (
+    Number.isFinite(postTime) &&
+    Number.isFinite(bodyTime) &&
+    postTime > bodyTime
+  );
 }
 
 function isOptimisticPost(post: WorkspacePoolPost): boolean {
   return post.id.startsWith("optimistic-");
 }
 
+function patchMatchesPost(
+  post: WorkspacePoolPost,
+  patch: Partial<WorkspacePoolPost>,
+): boolean {
+  return Object.entries(patch).every(([key, value]) => {
+    const current = post[key as keyof WorkspacePoolPost];
+    if (Object.is(current, value)) return true;
+    if (typeof current !== "object" || typeof value !== "object") return false;
+    return JSON.stringify(current) === JSON.stringify(value);
+  });
+}
+
 function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
   const current = state.pool;
   if (!current || current.blogId !== pool.blogId) return pool;
 
-  const incomingIds = new Set(pool.posts.map((post) => post.id));
+  const currentById = new Map(current.posts.map((post) => [post.id, post]));
+  const reconciledPosts = pool.posts.map((post) => {
+    const local = currentById.get(post.id);
+    const patch = optimisticPostPatches.get(post.id);
+    if (patch && patchMatchesPost(post, patch)) {
+      optimisticPostPatches.delete(post.id);
+    }
+    if (local && locallyDirtyPosts.has(post.id)) {
+      return { ...post, ...local, id: post.id };
+    }
+    const pendingPatch = optimisticPostPatches.get(post.id);
+    return pendingPatch ? { ...post, ...pendingPatch, id: post.id } : post;
+  });
+  const incomingIds = new Set(reconciledPosts.map((post) => post.id));
   const pendingPosts = current.posts.filter(
     (post) =>
       (isOptimisticPost(post) || locallyDirtyPosts.has(post.id)) &&
       !incomingIds.has(post.id),
   );
-  if (pendingPosts.length === 0) return pool;
+  if (
+    pendingPosts.length === 0 &&
+    reconciledPosts.every((post, index) => post === pool.posts[index])
+  ) {
+    return pool;
+  }
 
   return {
     ...pool,
-    posts: [...pendingPosts, ...pool.posts],
+    posts: [...pendingPosts, ...reconciledPosts],
   };
 }
 
@@ -138,15 +186,15 @@ export function seedWorkspacePool(
   pool: WorkspacePoolPayload,
   initialBody?: WorkspaceInitialBody | null,
 ) {
-  const nextPool = mergeIncomingPool(pool);
   const current = state.pool;
   const shouldReplace =
     !current ||
-    current.blogId !== nextPool.blogId ||
-    isNewer(nextPool.fetchedAt, current.fetchedAt);
+    current.blogId !== pool.blogId ||
+    isNewer(pool.fetchedAt, current.fetchedAt);
   if (shouldReplace) {
+    const nextPool = mergeIncomingPool(pool);
     state = { ...state, pool: nextPool, error: null };
-    emit();
+    emitPool();
     void persistPool(nextPool);
   }
 
@@ -278,10 +326,13 @@ export async function ensurePostBody(
       }
     }
 
-    const response = await fetch(`/api/post/${encodeURIComponent(postId)}/body`, {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
+    const response = await fetch(
+      `/api/post/${encodeURIComponent(postId)}/body`,
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
     if (!response.ok) throw new Error("Could not load the body");
     const body = (await response.json()) as WorkspacePostBodyPayload;
     if (body.blogId !== blogId || body.postId !== postId) {
@@ -323,7 +374,12 @@ export function useWorkspacePostBody(
   initialBody?: WorkspaceInitialBody | null,
 ) {
   const snapshot = useWorkspacePool();
-  const cachedEntry = snapshot.bodies[bodyKey(blogId, postId)];
+  const key = bodyKey(blogId, postId);
+  const cachedEntry = useSyncExternalStore(
+    useCallback((listener: () => void) => subscribeBody(key, listener), [key]),
+    useCallback(() => state.bodies[key] ?? IDLE_BODY_ENTRY, [key]),
+    useCallback(() => state.bodies[key] ?? IDLE_BODY_ENTRY, [key]),
+  );
   const initialPayload = initialBody
     ? {
         blogId,
@@ -335,23 +391,26 @@ export function useWorkspacePostBody(
     : null;
   const entry =
     initialPayload &&
-    !locallyDirtyBodies.has(bodyKey(blogId, postId)) &&
+    !locallyDirtyBodies.has(key) &&
     (cachedEntry?.status !== "ready" ||
       isWorkspacePostBodyStale(
         initialPayload.updatedAt,
         cachedEntry.body.updatedAt,
       ))
       ? ({ status: "ready", body: initialPayload } as const)
-      : (cachedEntry ?? ({ status: "idle" } as const));
+      : cachedEntry;
   const postUpdatedAt = snapshot.pool?.posts.find(
     (post) => post.id === postId,
   )?.updatedAt;
   const stale =
     entry.status === "ready" &&
     isWorkspacePostBodyStale(postUpdatedAt, entry.body.updatedAt);
-  const load = useCallback((force = stale) => {
-    void ensurePostBody(blogId, postId, { force });
-  }, [blogId, postId, stale]);
+  const load = useCallback(
+    (force = stale) => {
+      void ensurePostBody(blogId, postId, { force });
+    },
+    [blogId, postId, stale],
+  );
   return { entry, load, stale };
 }
 
@@ -373,7 +432,10 @@ export function addPost(post: WorkspacePoolPost) {
   setState({
     pool: {
       ...state.pool,
-      posts: [post, ...state.pool.posts.filter((entry) => entry.id !== post.id)],
+      posts: [
+        post,
+        ...state.pool.posts.filter((entry) => entry.id !== post.id),
+      ],
       fetchedAt: new Date().toISOString(),
     },
   });
@@ -386,6 +448,9 @@ export function replacePost(previousId: string, post: WorkspacePoolPost) {
   if (locallyDirtyPosts.delete(previousId)) {
     locallyDirtyPosts.add(post.id);
   }
+  const optimisticPatch = optimisticPostPatches.get(previousId);
+  optimisticPostPatches.delete(previousId);
+  if (optimisticPatch) optimisticPostPatches.set(post.id, optimisticPatch);
   setState({
     pool: {
       ...state.pool,
@@ -404,6 +469,10 @@ export function replacePost(previousId: string, post: WorkspacePoolPost) {
 export function updatePost(postId: string, patch: Partial<WorkspacePoolPost>) {
   if (!state.pool) return;
   markPoolMutation();
+  optimisticPostPatches.set(postId, {
+    ...(optimisticPostPatches.get(postId) ?? {}),
+    ...patch,
+  });
   const posts = state.pool.posts.map((post) =>
     post.id === postId ? { ...post, ...patch, id: post.id } : post,
   );
@@ -423,6 +492,7 @@ export function markPostDirty(postId: string) {
 
 export function acknowledgePost(postId: string) {
   locallyDirtyPosts.delete(postId);
+  optimisticPostPatches.delete(postId);
 }
 
 export function updateWorkspaceBlog(
@@ -479,6 +549,7 @@ export function removePost(postId: string) {
   if (!state.pool) return;
   markPoolMutation();
   locallyDirtyPosts.delete(postId);
+  optimisticPostPatches.delete(postId);
   locallyDirtyBodies.delete(bodyKey(state.pool.blogId, postId));
   setState({
     pool: {
@@ -496,6 +567,7 @@ export function movePostToTrash(postId: string): WorkspacePoolPost | null {
   if (!post) return null;
   markPoolMutation();
   locallyDirtyPosts.delete(postId);
+  optimisticPostPatches.delete(postId);
   locallyDirtyBodies.delete(bodyKey(state.pool.blogId, postId));
   setState({
     pool: {
@@ -503,7 +575,9 @@ export function movePostToTrash(postId: string): WorkspacePoolPost | null {
       posts: state.pool.posts.filter((entry) => entry.id !== postId),
       trashedPosts: [
         post,
-        ...(state.pool.trashedPosts ?? []).filter((entry) => entry.id !== postId),
+        ...(state.pool.trashedPosts ?? []).filter(
+          (entry) => entry.id !== postId,
+        ),
       ],
       fetchedAt: new Date().toISOString(),
     },
@@ -514,9 +588,9 @@ export function movePostToTrash(postId: string): WorkspacePoolPost | null {
 
 export function restorePostFromTrash(postId: string): WorkspacePoolPost | null {
   if (!state.pool) return null;
-  const post = (state.pool.trashedPosts ?? []).find(
-    (entry) => entry.id === postId,
-  ) ?? null;
+  const post =
+    (state.pool.trashedPosts ?? []).find((entry) => entry.id === postId) ??
+    null;
   if (!post) return null;
   markPoolMutation();
   setState({
@@ -558,14 +632,16 @@ export function moveFolderToTrash(folderId: string) {
       folder.path === target.path || folder.path.startsWith(`${target.path}/`),
   );
   const removedIds = new Set(removedFolders.map((folder) => folder.id));
-  const removedPosts = state.pool.posts.filter(
-    (post) => Boolean(post.folderId && removedIds.has(post.folderId)),
+  const removedPosts = state.pool.posts.filter((post) =>
+    Boolean(post.folderId && removedIds.has(post.folderId)),
   );
   const removedPostIds = new Set(removedPosts.map((post) => post.id));
   setState({
     pool: {
       ...state.pool,
-      folders: state.pool.folders.filter((folder) => !removedIds.has(folder.id)),
+      folders: state.pool.folders.filter(
+        (folder) => !removedIds.has(folder.id),
+      ),
       posts: state.pool.posts.filter((post) => !removedPostIds.has(post.id)),
       trashedFolders: [
         ...removedFolders,
@@ -597,8 +673,8 @@ export function restoreFolderFromTrash(folderId: string) {
       folder.path === target.path || folder.path.startsWith(`${target.path}/`),
   );
   const restoredIds = new Set(restoredFolders.map((folder) => folder.id));
-  const restoredPosts = (state.pool.trashedPosts ?? []).filter(
-    (post) => Boolean(post.folderId && restoredIds.has(post.folderId)),
+  const restoredPosts = (state.pool.trashedPosts ?? []).filter((post) =>
+    Boolean(post.folderId && restoredIds.has(post.folderId)),
   );
   const restoredPostIds = new Set(restoredPosts.map((post) => post.id));
   setState({
@@ -656,7 +732,9 @@ export function updateFolder(folderId: string, patch: Partial<Folder>) {
     pool: {
       ...state.pool,
       folders: state.pool.folders.map((folder) =>
-        folder.id === folderId ? { ...folder, ...patch, id: folder.id } : folder,
+        folder.id === folderId
+          ? { ...folder, ...patch, id: folder.id }
+          : folder,
       ),
       fetchedAt: new Date().toISOString(),
     },

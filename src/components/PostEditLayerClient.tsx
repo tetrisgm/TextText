@@ -9,9 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteEditablePostAction,
@@ -22,16 +20,13 @@ import { ProjectGallery } from "@/components/ProjectGallery";
 import {
   WorkspaceSidebarChrome,
   closeExpandedWorkspaceSidebar,
+  finishEditTransition,
   sidebarFolderPathForPostType,
   useWorkspaceSidebarCollapsed,
 } from "@/components/PostWorkspaceShell";
 import type { SidebarFolderId } from "@/components/PostWorkspaceShell";
 import type { Blog, Folder, GalleryItem, Post } from "@/lib/content";
-import {
-  isVideoFile,
-  isYouTube,
-  youtubeEmbedUrl,
-} from "@/lib/content";
+import { isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
 import {
   MediaUploadError,
   mediaUploadEndpointForHandle,
@@ -50,7 +45,10 @@ import {
 import type { DraftState, SaveState } from "@/lib/post-edit-draft";
 import { PostActionBar } from "@/components/PostActionBar";
 import { BodyEditor } from "@/components/BodyEditor";
-import type { BodyEditorHandle, BodyEditorCollab } from "@/components/BodyEditor";
+import type {
+  BodyEditorHandle,
+  BodyEditorCollab,
+} from "@/components/BodyEditor";
 import type { PresencePeer } from "@/lib/collab/provider";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { hasOpenEditMenu } from "@/components/PostShortcuts";
@@ -59,14 +57,16 @@ import {
   EditReaderPreview,
   EditTalkReaderPreview,
 } from "@/components/editor/EditReaderPreview";
-import {
-  EditableCover,
-  randomCover,
-} from "@/components/editor/EditableCover";
+import { EditableCover, randomCover } from "@/components/editor/EditableCover";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
 import { COVER_PILE } from "@/lib/cover-pile";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { ANONYMOUS_MEDIA_UPLOAD_COPY } from "@/lib/product-limits";
+import {
+  deletePersistedWorkspaceDraft,
+  persistWorkspaceDraft,
+  readPersistedWorkspaceDraft,
+} from "@/lib/pool/storage";
 
 type EditSession = {
   draft: DraftState;
@@ -81,6 +81,21 @@ type DraftSnapshot = {
 };
 
 const editSessions = new Map<string, EditSession>();
+
+function samePresencePeers(
+  current: readonly PresencePeer[],
+  next: readonly PresencePeer[],
+): boolean {
+  return (
+    current.length === next.length &&
+    current.every(
+      (peer, index) =>
+        peer.clientId === next[index]?.clientId &&
+        peer.userName === next[index]?.userName &&
+        peer.color === next[index]?.color,
+    )
+  );
+}
 
 function autoGrow(node: HTMLTextAreaElement | null) {
   if (!node) return;
@@ -310,7 +325,9 @@ function TalkMetaEditor({
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          onChange={(event) => onChange({ videoUrl: event.currentTarget.value })}
+          onChange={(event) =>
+            onChange({ videoUrl: event.currentTarget.value })
+          }
         />
       </label>
       <label className="talk-edit-field">
@@ -326,7 +343,9 @@ function TalkMetaEditor({
         <input
           value={duration}
           placeholder="Duration"
-          onChange={(event) => onChange({ duration: event.currentTarget.value })}
+          onChange={(event) =>
+            onChange({ duration: event.currentTarget.value })
+          }
         />
       </label>
     </div>
@@ -462,6 +481,7 @@ export type PostEditLayerProps = {
   usedSlugs?: string[];
   collab?: BodyEditorCollab | null;
   canManagePost?: boolean;
+  workspaceBlogId?: string;
 };
 
 export function PostEditLayer({
@@ -476,15 +496,23 @@ export function PostEditLayer({
   usedSlugs = [],
   collab = null,
   canManagePost = true,
+  workspaceBlogId,
 }: PostEditLayerProps) {
   const router = useRouter();
-  const initialSession = getEditSession(post);
+  const [initialSessionState] = useState(() => {
+    const fromMemory = Boolean(post.id && editSessions.has(post.id));
+    return { fromMemory, session: getEditSession(post) };
+  });
+  const initialSession = initialSessionState.session;
   const [draftSnapshot, setDraftSnapshot] = useState<DraftSnapshot>(() => ({
     postId: post.id,
     draft: initialSession.draft,
   }));
   const draft = draftSnapshot.draft;
   const draftRef = useRef(draft);
+  const [draftHydrated, setDraftHydrated] = useState(
+    () => !post.id || initialSessionState.fromMemory,
+  );
   const [saveState, setSaveState] = useState<SaveState>(() =>
     post.id ? "saved" : "error",
   );
@@ -496,8 +524,12 @@ export function PostEditLayer({
   const [coverUploading, setCoverUploading] = useState(false);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [galleryUploading, setGalleryUploading] = useState(false);
-  const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
-  const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [galleryUploadError, setGalleryUploadError] = useState<string | null>(
+    null,
+  );
+  const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(
+    null,
+  );
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
@@ -516,7 +548,42 @@ export function PostEditLayer({
   const coverRevisionRef = useRef(0);
   const leavingEditRef = useRef(false);
   const postId = post.id;
+  const draftBlogId = workspaceBlogId ?? blog.handle;
   const uploadEndpoint = mediaUploadEndpointForHandle(blog.handle);
+
+  useEffect(() => {
+    if (!postId || initialSessionState.fromMemory) return;
+
+    let cancelled = false;
+    const requestedRevision = draftRevisionRef.current;
+    void readPersistedWorkspaceDraft(draftBlogId, postId).then((persisted) => {
+      if (cancelled) return;
+      if (persisted && draftRevisionRef.current === requestedRevision) {
+        const nextDraft = persisted.draft;
+        draftRef.current = nextDraft;
+        baseUpdatedAtRef.current =
+          persisted.baseUpdatedAt ?? baseUpdatedAtRef.current;
+        latestKeyRef.current = persisted.key;
+        currentSlugRef.current = nextDraft.slug || currentSlugRef.current;
+        draftRevisionRef.current += 1;
+        patchEditSession(postId, {
+          draft: nextDraft,
+          currentSlug: currentSlugRef.current,
+          autoSlugAllowed: autoSlugAllowedRef.current,
+        });
+        setDraftSnapshot({ postId, draft: nextDraft });
+      }
+      setDraftHydrated(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftBlogId, initialSessionState.fromMemory, postId]);
+
+  useLayoutEffect(() => {
+    if (postId) finishEditTransition(postId);
+  }, [postId]);
 
   const focusTitle = useCallback(() => {
     focusTextareaEnd(titleRef.current);
@@ -531,7 +598,9 @@ export function PostEditLayer({
   }, []);
 
   const updatePresencePeers = useCallback((peers: PresencePeer[]) => {
-    setPresencePeers(peers);
+    setPresencePeers((current) =>
+      samePresencePeers(current, peers) ? current : peers,
+    );
   }, []);
 
   useEffect(() => {
@@ -620,14 +689,11 @@ export function PostEditLayer({
 
   useEffect(() => {
     if (!postId) return;
+    if (!draftHydrated) return;
 
     if (draftSnapshot.postId !== postId) return;
 
-    const key = payloadKey(payloadFor(
-      postId,
-      draft,
-      currentSlugRef.current,
-    ));
+    const key = payloadKey(payloadFor(postId, draft, currentSlugRef.current));
     latestKeyRef.current = key;
     patchEditSession(postId, {
       draft,
@@ -637,6 +703,7 @@ export function PostEditLayer({
 
     if (key === lastSavedKeyRef.current) {
       setSaveState("saved");
+      void deletePersistedWorkspaceDraft(draftBlogId, postId, key);
       return;
     }
 
@@ -666,6 +733,11 @@ export function PostEditLayer({
             const { saved } = result;
             lastSavedKeyRef.current = result.requestedKey;
             patchEditSession(postId, { lastSavedKey: result.requestedKey });
+            void deletePersistedWorkspaceDraft(
+              draftBlogId,
+              postId,
+              result.requestedKey,
+            );
             setSaveState("saved");
             setError(null);
 
@@ -701,19 +773,39 @@ export function PostEditLayer({
         saveTimerRef.current = null;
       }
     };
-  }, [blog, draft, draftSnapshot.postId, enqueueSave, postId, router]);
+  }, [
+    blog,
+    draft,
+    draftBlogId,
+    draftHydrated,
+    draftSnapshot.postId,
+    enqueueSave,
+    postId,
+    router,
+  ]);
 
-  const updateDraft = useCallback((patch: Partial<DraftState>) => {
-    const nextDraft = { ...draftRef.current, ...patch };
-    draftRef.current = nextDraft;
-    draftRevisionRef.current += 1;
-    if (postId) {
-      latestKeyRef.current = payloadKey(
-        payloadFor(postId, nextDraft, currentSlugRef.current),
-      );
-    }
-    setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
-  }, [postId]);
+  const updateDraft = useCallback(
+    (patch: Partial<DraftState>) => {
+      const nextDraft = { ...draftRef.current, ...patch };
+      draftRef.current = nextDraft;
+      draftRevisionRef.current += 1;
+      if (postId) {
+        latestKeyRef.current = payloadKey(
+          payloadFor(postId, nextDraft, currentSlugRef.current),
+        );
+        void persistWorkspaceDraft({
+          blogId: draftBlogId,
+          postId,
+          draft: nextDraft,
+          key: latestKeyRef.current,
+          baseUpdatedAt: baseUpdatedAtRef.current,
+          persistedAt: new Date().toISOString(),
+        });
+      }
+      setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
+    },
+    [draftBlogId, postId],
+  );
 
   const updateDraftFrom = useCallback(
     (updater: (draft: DraftState) => DraftState) => {
@@ -724,10 +816,18 @@ export function PostEditLayer({
         latestKeyRef.current = payloadKey(
           payloadFor(postId, nextDraft, currentSlugRef.current),
         );
+        void persistWorkspaceDraft({
+          blogId: draftBlogId,
+          postId,
+          draft: nextDraft,
+          key: latestKeyRef.current,
+          baseUpdatedAt: baseUpdatedAtRef.current,
+          persistedAt: new Date().toISOString(),
+        });
       }
       setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
     },
-    [postId],
+    [draftBlogId, postId],
   );
   const containingFolderPath = useMemo(() => {
     const folder = post.folderId
@@ -803,6 +903,7 @@ export function PostEditLayer({
           });
 
           if (targetKey === lastSavedKeyRef.current) {
+            await deletePersistedWorkspaceDraft(draftBlogId, postId, targetKey);
             setSaveState("saved");
             setError(null);
             navigateAfterSave(currentSlugRef.current, targetDraft);
@@ -821,6 +922,7 @@ export function PostEditLayer({
           const { saved } = result;
           lastSavedKeyRef.current = targetKey;
           patchEditSession(postId, { lastSavedKey: targetKey });
+          await deletePersistedWorkspaceDraft(draftBlogId, postId, targetKey);
           setSaveState("saved");
           setError(null);
 
@@ -848,7 +950,7 @@ export function PostEditLayer({
         setError(errorMessage(saveError, "Could not save"));
       }
     },
-    [blog, containingFolderHref, enqueueSave, postId, router],
+    [blog, containingFolderHref, draftBlogId, enqueueSave, postId, router],
   );
 
   useEffect(() => {
@@ -1098,13 +1200,19 @@ export function PostEditLayer({
         return;
       }
 
-      if (event.key === "ArrowDown" && textareaCaretOnLastLine(event.currentTarget)) {
+      if (
+        event.key === "ArrowDown" &&
+        textareaCaretOnLastLine(event.currentTarget)
+      ) {
         event.preventDefault();
         focusBody();
         return;
       }
 
-      if (event.key === "ArrowUp" && textareaCaretOnFirstLine(event.currentTarget)) {
+      if (
+        event.key === "ArrowUp" &&
+        textareaCaretOnFirstLine(event.currentTarget)
+      ) {
         event.preventDefault();
         focusTitle();
       }
@@ -1122,7 +1230,10 @@ export function PostEditLayer({
         return;
       }
 
-      if (event.key === "ArrowUp" && editableCaretOnFirstLine(event.currentTarget)) {
+      if (
+        event.key === "ArrowUp" &&
+        editableCaretOnFirstLine(event.currentTarget)
+      ) {
         event.preventDefault();
         focusExcerpt();
       }
@@ -1142,7 +1253,9 @@ export function PostEditLayer({
         rows={1}
         value={draft.title}
         onChange={(event) =>
-          updateDraft({ title: event.currentTarget.value.replace(/[\r\n]+/g, " ") })
+          updateDraft({
+            title: event.currentTarget.value.replace(/[\r\n]+/g, " "),
+          })
         }
         onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
         onKeyDown={onTitleKeyDown}
@@ -1156,16 +1269,15 @@ export function PostEditLayer({
         placeholder={excerptPlaceholder}
         rows={1}
         value={draft.excerpt}
-        onChange={(event) => updateDraft({ excerpt: event.currentTarget.value })}
+        onChange={(event) =>
+          updateDraft({ excerpt: event.currentTarget.value })
+        }
         onKeyDown={onExcerptKeyDown}
       />
     ),
     body: (
       <div onKeyDown={onBodyKeyDown}>
-        <div
-          ref={setBodyToolbarHost}
-          className="body-editor-toolbar-anchor"
-        />
+        <div ref={setBodyToolbarHost} className="body-editor-toolbar-anchor" />
         <BodyEditor
           ref={bodyRef}
           value={draft.body}
@@ -1201,7 +1313,9 @@ export function PostEditLayer({
           uploading: galleryUploading,
           uploadError: galleryUploadError,
           disabled: !mediaEnabled,
-          disabledReason: !mediaEnabled ? ANONYMOUS_MEDIA_UPLOAD_COPY : undefined,
+          disabledReason: !mediaEnabled
+            ? ANONYMOUS_MEDIA_UPLOAD_COPY
+            : undefined,
           onAddMedia: uploadGalleryMedia,
           onChange: (gallery) => updateDraft({ gallery }),
         }}
@@ -1263,7 +1377,8 @@ export function PostEditLayer({
     setError(null);
     startTransition(() => {
       void deleteEditablePostAction(blog.handle, postId)
-        .then(() => {
+        .then(async () => {
+          await deletePersistedWorkspaceDraft(draftBlogId, postId);
           setDeleteDialogOpen(false);
           editSessions.delete(postId);
           setDeleting(false);
@@ -1283,7 +1398,14 @@ export function PostEditLayer({
           setError(errorMessage(deleteError, "Could not delete"));
         });
     });
-  }, [blog.handle, containingFolderHref, deleting, postId, router]);
+  }, [
+    blog.handle,
+    containingFolderHref,
+    deleting,
+    draftBlogId,
+    postId,
+    router,
+  ]);
 
   const renderedPostPath = blogPostPath(blog, {
     slug: slugify(draft.slug, post.slug),
@@ -1291,6 +1413,11 @@ export function PostEditLayer({
 
   return (
     <div
+      data-write-edit-surface="true"
+      data-write-edit-post-id={postId}
+      data-write-draft-hydrated={draftHydrated ? "true" : "false"}
+      aria-busy={!draftHydrated}
+      style={draftHydrated ? undefined : { visibility: "hidden" }}
       className={`post-editor-shell applecms has-sidebar${
         sidebarCollapsed ? " is-sidebar-collapsed" : ""
       } is-edit-workspace-shell`}

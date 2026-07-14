@@ -541,7 +541,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 
 /* Tinted selection. */
 .reader ::selection {
-  background: color-mix(in srgb, var(--post-accent, var(--ink)) 22%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--post-accent, var(--ink)) 22%,
+    transparent
+  );
 }
 
 /* ---------- blog home (post cards) ---------- */
@@ -653,7 +657,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   display: grid;
   max-width: 980px;
   margin: 0 auto 20px;
-  --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
+  --ac-accent: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 68%,
+    var(--accent)
+  );
 }
 .blog-home.is-naming-ceremony {
   min-height: 0;
@@ -696,7 +704,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-bottom-color: color-mix(in srgb, var(--muted) 18%, transparent);
 }
 .blog-name-input:focus-visible {
-  border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 55%, var(--muted));
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 55%,
+    var(--muted)
+  );
 }
 .blog-name-form.is-ceremony {
   position: relative;
@@ -720,7 +732,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-bottom-color: color-mix(in srgb, var(--muted) 16%, transparent);
 }
 .blog-name-form.is-ceremony .blog-name-input:focus-visible {
-  border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 60%, var(--muted));
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 60%,
+    var(--muted)
+  );
 }
 .blog-name-ceremony-note {
   margin: 14px 0 0;
@@ -739,20 +755,22 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 999px;
   background: var(--ac-accent, #007aff);
   color: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    system-ui, sans-serif;
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0;
   box-shadow:
-    0 1px 1px rgba(0, 0, 0, 0.10),
+    0 1px 1px rgba(0, 0, 0, 0.1),
     inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
 }
 .blog-name-form .blog-name-confirm:focus-visible {
   outline: none;
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--ac-accent, #007aff) 36%, transparent),
-    0 1px 1px rgba(0, 0, 0, 0.10),
+    0 1px 1px rgba(0, 0, 0, 0.1),
     inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
 }
 .blog-name-form.is-flying {
@@ -784,7 +802,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   grid-column: 1 / -1;
   max-width: 260px;
   color: #d70015;
-  font: 600 12px/1.35 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 600 12px/1.35
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
 }
 [data-theme="dark"] .blog-home-control-error {
@@ -910,7 +935,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 5px;
   border-radius: 14px;
   box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.48);
-  --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
+  --ac-accent: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 68%,
+    var(--accent)
+  );
 }
 .blog-create-picker {
   position: relative;
@@ -998,7 +1027,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: color-mix(in srgb, var(--post-accent, var(--accent)) 52%, var(--ink));
 }
 .blog-timeline-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--post-accent, var(--accent)) 54%, transparent);
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--accent)) 54%, transparent);
   outline-offset: 4px;
 }
 .blog-timeline-copy {
@@ -1021,7 +1051,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--post-accent, var(--accent)) 48%, var(--muted));
+  color: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 48%,
+    var(--muted)
+  );
   font-size: 13px;
   font-weight: 700;
   line-height: 1.2;
@@ -1112,7 +1146,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: color-mix(in srgb, var(--post-accent, var(--accent)) 54%, var(--ink));
 }
 .blog-home-footer-link:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--post-accent, var(--accent)) 55%, transparent);
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--accent)) 55%, transparent);
   outline-offset: 3px;
 }
 
@@ -1992,7 +2027,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 5px;
   border-radius: 14px;
   box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.48);
-  --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
+  --ac-accent: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 68%,
+    var(--accent)
+  );
 }
 .post-action-owner-group {
   display: flex;
@@ -2117,8 +2156,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-detail-nav:focus-visible .post-detail-control-icon {
   box-shadow:
     0 0 0 2px var(--bg),
-    0 0 0 4px
-      color-mix(in srgb, var(--post-accent, var(--ink)) 55%, var(--ink));
+    0 0 0 4px color-mix(in srgb, var(--post-accent, var(--ink)) 55%, var(--ink));
 }
 .post-detail-control-icon svg {
   width: 18px;
@@ -2170,7 +2208,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-assistant-shell[data-state="hidden"] {
   width: 52px !important;
 }
-.workspace-assistant-shell[data-state="hidden"] button[aria-label="Open assistant"] {
+.workspace-assistant-shell[data-state="hidden"]
+  button[aria-label="Open assistant"] {
   top: 62px;
 }
 /* Hover-peek: approaching the collapsed rail widens the fixed shell so the
@@ -2188,8 +2227,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .post-editor-shell.has-assistant-pinned .post-editor-content {
     margin-right: var(--workspace-assistant-width, 360px);
   }
-  .post-editor-shell.has-sidebar.has-assistant-pinned
-    .post-top-action-bar,
+  .post-editor-shell.has-sidebar.has-assistant-pinned .post-top-action-bar,
   .post-editor-shell.has-sidebar.has-assistant-pinned
     .post-top-action-bar.is-edit {
     right: calc(var(--workspace-assistant-width, 360px) + 8px);
@@ -2655,9 +2693,35 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-editor-calendar-grid button.is-today {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent);
 }
+.post-editor-calendar-grid button[aria-pressed="true"] {
+  background: var(--accent);
+  color: white;
+}
 .post-editor-calendar-grid button:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
+}
+.post-editor-document-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.post-editor-document-controls > button {
+  min-height: 24px;
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--accent);
+  font: 600 11px/1 var(--font-body);
+  cursor: pointer;
+}
+.post-editor-document-controls > button:hover,
+.post-editor-document-controls > button:focus-visible {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  outline: none;
 }
 .post-editor-documents select {
   max-width: 116px;
@@ -2723,13 +2787,16 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-workspace-sidebar-region.is-collapsed:hover {
   width: var(--workspace-sidebar-width, 280px);
 }
-.post-workspace-sidebar-region.is-collapsed:hover .post-editor-sidebar.is-collapsed,
-.post-workspace-sidebar-region.is-preview-open .post-editor-sidebar.is-collapsed {
+.post-workspace-sidebar-region.is-collapsed:hover
+  .post-editor-sidebar.is-collapsed,
+.post-workspace-sidebar-region.is-preview-open
+  .post-editor-sidebar.is-collapsed {
   transform: translateX(0);
   pointer-events: auto;
   box-shadow: 16px 0 42px -34px rgba(0, 0, 0, 0.62);
 }
-.post-workspace-sidebar-region.is-collapsed:hover .post-editor-sidebar.is-collapsed {
+.post-workspace-sidebar-region.is-collapsed:hover
+  .post-editor-sidebar.is-collapsed {
   opacity: 0.95;
 }
 .post-workspace-sidebar-region.is-collapsed:hover .post-sidebar-reveal-button,
@@ -2796,7 +2863,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-sidebar-resize-handle:focus-visible {
   outline: none;
 }
-.post-editor-shell.has-sidebar:not(.is-sidebar-collapsed) .post-back-action-bar.is-read {
+.post-editor-shell.has-sidebar:not(.is-sidebar-collapsed)
+  .post-back-action-bar.is-read {
   left: calc(var(--workspace-sidebar-width, 280px) + 8px);
 }
 .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-back-action-bar {
@@ -2954,11 +3022,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .post-editor-shell.has-sidebar .post-back-action-bar.is-read {
     left: calc(var(--workspace-sidebar-width, 280px) + 8px);
   }
-  .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-back-action-bar.is-read {
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed
+    .post-back-action-bar.is-read {
     left: 56px;
   }
   .post-editor-shell.has-sidebar .post-top-action-bar.is-edit,
-  .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-top-action-bar.is-edit {
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed
+    .post-top-action-bar.is-edit {
     right: 8px;
     left: auto;
     max-width: calc(100vw - 16px);
@@ -3181,9 +3251,18 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   background: color-mix(in srgb, var(--ink) 5%, var(--bg));
 }
 .workspace-root-section.is-command-selected {
-  border-color: color-mix(in srgb, var(--ac-accent, var(--accent)) 42%, var(--hairline));
-  background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, var(--bg));
-  outline: 2px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  border-color: color-mix(
+    in srgb,
+    var(--ac-accent, var(--accent)) 42%,
+    var(--hairline)
+  );
+  background: color-mix(
+    in srgb,
+    var(--ac-accent, var(--accent)) 12%,
+    var(--bg)
+  );
+  outline: 2px solid
+    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
   outline-offset: -2px;
 }
 .workspace-root-section:focus-visible {
@@ -3326,7 +3405,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: color-mix(in srgb, var(--muted) 66%, transparent);
 }
 .post-folder-title-input:focus-visible {
-  border-bottom-color: color-mix(in srgb, var(--post-accent, var(--accent)) 55%, var(--muted));
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 55%,
+    var(--muted)
+  );
 }
 .post-folder-title-confirm {
   flex: 0 0 auto;
@@ -3604,8 +3687,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin-inline: -10px;
   padding-inline: 10px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--ac-accent, var(--accent)) 12%, transparent);
-  outline: 2px solid color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  background: color-mix(
+    in srgb,
+    var(--ac-accent, var(--accent)) 12%,
+    transparent
+  );
+  outline: 2px solid
+    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
   outline-offset: -2px;
 }
 .post-folder-row.is-bookmark {
@@ -3935,7 +4023,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 999px;
   color: var(--ac-label-2);
   box-shadow: 0 18px 46px -34px rgba(0, 0, 0, 0.48);
-  --ac-accent: color-mix(in srgb, var(--post-accent, var(--accent)) 68%, var(--accent));
+  --ac-accent: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 68%,
+    var(--accent)
+  );
 }
 .post-save-pill.is-saved {
   min-height: 32px;
@@ -4246,7 +4338,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   height: 30px;
   padding: 0 10px;
   border-radius: 999px;
-  font: 650 12px/1 var(--font-body, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif);
+  font: 650 12px/1
+    var(
+      --font-body,
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Text",
+      sans-serif
+    );
   letter-spacing: 0;
 }
 .body-editor-spinner {
@@ -4267,7 +4366,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 12px;
   background: rgba(255, 69, 58, 0.1);
   color: #b42318;
-  font: 650 12px/1.35 var(--font-body, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif);
+  font: 650 12px/1.35
+    var(
+      --font-body,
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Text",
+      sans-serif
+    );
   letter-spacing: 0;
 }
 [data-theme="dark"] .body-editor-upload-error {
@@ -4436,7 +4542,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 16px;
 }
 .body-editor-content .ProseMirror-selectednode {
-  outline: 2px solid color-mix(in srgb, var(--post-accent, var(--accent)) 45%, transparent);
+  outline: 2px solid
+    color-mix(in srgb, var(--post-accent, var(--accent)) 45%, transparent);
   outline-offset: 3px;
 }
 .project-prose .body-editor-content {
@@ -4547,10 +4654,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 0 12px;
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
-  font: 650 12px/1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 650 12px/1
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
   cursor: pointer;
-  transition: background 0.15s var(--ease), opacity 0.15s var(--ease);
+  transition:
+    background 0.15s var(--ease),
+    opacity 0.15s var(--ease);
 }
 .edit-cover-action:hover,
 .edit-cover-action:focus-visible {
@@ -4612,7 +4728,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .edit-cover-resize-handle:focus-visible span {
   opacity: 1;
-  box-shadow: var(--ac-focus), 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    var(--ac-focus),
+    0 4px 14px rgba(0, 0, 0, 0.28);
 }
 .edit-cover-drop-hint {
   position: absolute;
@@ -4623,7 +4741,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 24px;
   background: color-mix(in srgb, #000 26%, transparent);
   color: #fff;
-  font: 650 14px/1.2 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 650 14px/1.2
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
   opacity: 0;
   pointer-events: none;
@@ -4639,7 +4764,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 999px;
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: color-mix(in srgb, var(--muted) 60%, var(--ink));
-  font: 650 14px/1.2 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 650 14px/1.2
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
   cursor: pointer;
   transition:
@@ -4678,7 +4810,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   display: block;
   margin-top: 8px;
   color: #d70015;
-  font: 600 12px/1.35 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 600 12px/1.35
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
   text-align: center;
 }
@@ -4699,8 +4838,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   align-items: center;
   justify-content: center;
   padding: max(18px, env(safe-area-inset-top))
-    max(16px, env(safe-area-inset-right))
-    max(18px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom))
     max(16px, env(safe-area-inset-left));
   background: color-mix(in srgb, #000 26%, transparent);
 }
@@ -4730,7 +4868,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .cover-picker-header h2 {
   margin: 0;
   color: var(--ink);
-  font: 650 15px/1.2 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 650 15px/1.2
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
 }
 .cover-picker-actions {
@@ -4745,7 +4890,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 0 12px;
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: color-mix(in srgb, var(--muted) 55%, var(--ink));
-  font: 650 12px/1 var(--ac-font-text, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font: 650 12px/1
+    var(
+      --ac-font-text,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
   letter-spacing: 0;
   cursor: pointer;
 }
@@ -4779,7 +4931,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.18s var(--ease), filter 0.18s var(--ease);
+  transition:
+    transform 0.18s var(--ease),
+    filter 0.18s var(--ease);
 }
 .cover-picker-card:hover img,
 .cover-picker-card:focus-visible img {
@@ -4791,9 +4945,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   box-shadow: var(--ac-focus);
 }
 .cover-picker-card.is-selected {
-  border-color: color-mix(in srgb, var(--post-accent, var(--accent)) 58%, var(--ink));
+  border-color: color-mix(
+    in srgb,
+    var(--post-accent, var(--accent)) 58%,
+    var(--ink)
+  );
   box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--post-accent, var(--accent)) 20%, transparent),
+    0 0 0 2px
+      color-mix(in srgb, var(--post-accent, var(--accent)) 20%, transparent),
     0 8px 22px rgba(0, 0, 0, 0.14);
 }
 [data-theme="dark"] .cover-picker-sheet {

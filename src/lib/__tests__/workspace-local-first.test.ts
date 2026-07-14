@@ -78,6 +78,62 @@ describe("workspace local authority", () => {
     expect(store.getWorkspacePost("post-1")?.title).toBe("Local title");
   });
 
+  it("does not let a newer same-ID snapshot roll back a dirty local edit", async () => {
+    const store = await import("@/lib/pool/store");
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));
+    store.markPostDirty("post-1");
+    store.updatePost("post-1", {
+      title: "Newest local title",
+      excerpt: "Newest local excerpt",
+    });
+
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:01:00.000Z", [
+        {
+          ...post("Stale server title"),
+          excerpt: "Stale server excerpt",
+          updatedAt: "2026-07-10T10:01:00.000Z",
+        },
+      ]),
+    );
+
+    expect(store.getWorkspacePost("post-1")?.title).toBe("Newest local title");
+    expect(store.getWorkspacePost("post-1")?.excerpt).toBe(
+      "Newest local excerpt",
+    );
+  });
+
+  it("keeps an optimistic patch until the server acknowledges its values", async () => {
+    const store = await import("@/lib/pool/store");
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));
+    store.updatePost("post-1", { title: "Optimistic title" });
+
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:01:00.000Z", [post("Stale server title")]),
+    );
+    expect(store.getWorkspacePost("post-1")?.title).toBe("Optimistic title");
+
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:02:00.000Z", [post("Optimistic title")]),
+    );
+    expect(store.getWorkspacePost("post-1")?.title).toBe("Optimistic title");
+  });
+
+  it("does not acknowledge an optimistic patch from an ignored older seed", async () => {
+    const store = await import("@/lib/pool/store");
+    store.seedWorkspacePool(pool("2026-07-10T10:01:00.000Z", [post()]));
+    store.updatePost("post-1", { title: "Optimistic title" });
+
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:00:00.000Z", [post("Optimistic title")]),
+    );
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:02:00.000Z", [post("Stale server title")]),
+    );
+
+    expect(store.getWorkspacePost("post-1")?.title).toBe("Optimistic title");
+  });
+
   it("does not let a failed older body request replace a newer local body", async () => {
     const store = await import("@/lib/pool/store");
     store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));

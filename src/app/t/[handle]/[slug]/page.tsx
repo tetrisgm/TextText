@@ -32,7 +32,11 @@ import { PostEditLayer } from "@/components/PostEditLayer";
 import { PostReadWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { PostShortcuts } from "@/components/PostShortcuts";
 import { isNoCoverValue } from "@/lib/cover";
-import { blogHomePath, blogPostEditPath, blogPostPath } from "@/lib/public-paths";
+import {
+  blogHomePath,
+  blogPostEditPath,
+  blogPostPath,
+} from "@/lib/public-paths";
 import { workspacePoolFromParts } from "@/lib/pool/selectors";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
@@ -227,10 +231,7 @@ export async function PostPageForHandle({
   }
   const adjacent = await adjacentPromise;
   const [trashedFolders, trashedPosts] = canEdit
-    ? await Promise.all([
-        getTrashedFolders(handle),
-        getTrashedPosts(handle),
-      ])
+    ? await Promise.all([getTrashedFolders(handle), getTrashedPosts(handle)])
     : [[], []];
   const sharedEntries = canEdit ? await getSharedPostsForUser(viewer) : [];
   const initialPool =
@@ -275,9 +276,7 @@ export async function PostPageForHandle({
       collab = {
         postId: post.id,
         userName:
-          editorUser.name?.trim() ||
-          editorUser.email?.split("@")[0] ||
-          "You",
+          editorUser.name?.trim() || editorUser.email?.split("@")[0] || "You",
         color: colorForSub(editorUser.sub),
         canEdit: canEditPost,
       };
@@ -322,7 +321,9 @@ export async function PostPageForHandle({
               : undefined
           }
           nextPath={
-            adjacent.next ? blogPostPath(blog, { slug: adjacent.next.slug }) : undefined
+            adjacent.next
+              ? blogPostPath(blog, { slug: adjacent.next.slug })
+              : undefined
           }
           owner={canEdit}
           handle={handle}
@@ -340,6 +341,7 @@ export async function PostPageForHandle({
           usedSlugs={usedSlugs}
           collab={collab}
           canManagePost={canEdit}
+          workspaceBlogId={access.blogId ?? undefined}
         />
       </>
     );
@@ -396,7 +398,9 @@ export async function PostPageForHandle({
               : undefined
           }
           nextPath={
-            adjacent.next ? blogPostPath(blog, { slug: adjacent.next.slug }) : undefined
+            adjacent.next
+              ? blogPostPath(blog, { slug: adjacent.next.slug })
+              : undefined
           }
           owner={canEdit}
           handle={handle}

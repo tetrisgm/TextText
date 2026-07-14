@@ -1,0 +1,105 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type Cleanup = void | (() => void);
+
+function jsonResponse(value: unknown): Response {
+  return {
+    ok: true,
+    json: async () => value,
+  } as Response;
+}
+
+async function loadLiveSync(refreshWorkspacePool: ReturnType<typeof vi.fn>) {
+  let cleanup: Cleanup;
+  vi.doMock("react", () => ({
+    useEffect: (effect: () => Cleanup) => {
+      cleanup = effect();
+    },
+  }));
+  vi.doMock("@/lib/pool/store", () => ({ refreshWorkspacePool }));
+  const loadedModule = await import("@/lib/pool/useWorkspaceLiveSync");
+  return {
+    useWorkspaceLiveSync: loadedModule.useWorkspaceLiveSync,
+    cleanup: () => cleanup?.(),
+  };
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe("workspace live sync", () => {
+  it("does not reload or speculatively refresh when visibility returns", async () => {
+    const reload = vi.fn();
+    const addEventListener = vi.fn();
+    const refreshWorkspacePool = vi.fn();
+    let resolvePending: ((response: Response) => void) | undefined;
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ cursor: "1", changed: false, build: "old" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ cursor: "1", changed: false, build: "new" }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePending = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("window", { location: { reload } });
+    vi.stubGlobal("document", {
+      hidden: false,
+      addEventListener,
+      removeEventListener: vi.fn(),
+    });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("writer", "blog-1");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(addEventListener).not.toHaveBeenCalled();
+    expect(refreshWorkspacePool).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+
+    liveSync.cleanup();
+    resolvePending?.(jsonResponse({ cursor: "1", changed: false }));
+  });
+
+  it("refreshes exactly when the change cursor reports new workspace data", async () => {
+    const refreshWorkspacePool = vi.fn();
+    let resolvePending: ((response: Response) => void) | undefined;
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ cursor: "1", changed: false }))
+      .mockResolvedValueOnce(jsonResponse({ cursor: "2", changed: true }))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePending = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("document", { hidden: false });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("writer", "blog-1");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+
+    expect(refreshWorkspacePool).toHaveBeenCalledTimes(1);
+    expect(refreshWorkspacePool).toHaveBeenCalledWith("writer", "blog-1");
+
+    liveSync.cleanup();
+    resolvePending?.(jsonResponse({ cursor: "2", changed: false }));
+  });
+});

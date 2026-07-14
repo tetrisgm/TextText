@@ -133,15 +133,35 @@ import {
   WORKSPACE_SIDEBAR_STORAGE_KEY,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
-import {
-  SHARED_FOLDER_PATH,
-  TRASH_FOLDER_PATH,
-} from "@/lib/workspace-paths";
+import { SHARED_FOLDER_PATH, TRASH_FOLDER_PATH } from "@/lib/workspace-paths";
 import {
   MediaUploadError,
   mediaUploadEndpointForHandle,
   uploadMedia,
 } from "@/lib/upload";
+import {
+  beginMeasuredEditTransition,
+  finishMeasuredEditTransition,
+} from "@/lib/edit-transition";
+import {
+  deletePersistedWorkspaceDraft,
+  movePersistedWorkspaceDraft,
+  persistWorkspaceDraft,
+  readPersistedWorkspaceDraft,
+} from "@/lib/pool/storage";
+import { projectTrashView } from "@/lib/trash-view";
+import {
+  WORKSPACE_DOCUMENT_OPENED_EVENT,
+  calendarDocumentAction,
+  groupDocumentsByCreatedDate,
+  localDateKey,
+  readWorkspaceDocumentOpenHistory,
+  recordWorkspaceDocumentOpened,
+  sidebarDocumentTitle,
+  sortSidebarDocuments,
+  type SidebarDocumentSort,
+  type WorkspaceDocumentOpenHistory,
+} from "@/lib/workspace-activity";
 
 /** A folder's workspace-unique path segment, e.g. "blog" or "notes". */
 export type SidebarFolderId = string;
@@ -154,22 +174,26 @@ function upgradeHttpImageSrc(src: string | undefined): string {
 }
 
 function beginEditTransition(postId: string) {
-  if (typeof document === "undefined" || typeof performance === "undefined") return;
-  document.documentElement.dataset.writeEditStartId = postId;
-  document.documentElement.dataset.writeEditStart = String(performance.now());
+  if (typeof document === "undefined" || typeof performance === "undefined")
+    return;
+  beginMeasuredEditTransition(
+    document.documentElement.dataset,
+    postId,
+    performance.now(),
+  );
 }
 
-function finishEditTransition(postId: string) {
-  if (typeof document === "undefined" || typeof performance === "undefined") return;
+export function finishEditTransition(postId: string) {
+  if (typeof document === "undefined" || typeof performance === "undefined")
+    return;
   const root = document.documentElement;
-  if (root.dataset.writeEditStartId !== postId) return;
-  const startedAt = Number(root.dataset.writeEditStart);
-  if (Number.isFinite(startedAt)) {
-    root.dataset.writeEditReadyMs = (performance.now() - startedAt).toFixed(1);
-    root.dataset.writeEditReadyPostId = postId;
-  }
-  delete root.dataset.writeEditStart;
-  delete root.dataset.writeEditStartId;
+  const result = finishMeasuredEditTransition(
+    root.dataset,
+    postId,
+    performance.now(),
+  );
+  if (!result || typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("write:edit-ready", { detail: result }));
 }
 
 let sidebarCollapsedMemory: boolean | null = null;
@@ -226,6 +250,23 @@ function transferLocalDraftRevision(previousId: string, postId: string) {
   if (revision > 0) localWorkspaceDraftRevisions.set(postId, revision);
 }
 
+function persistLocalWorkspaceDraft(
+  blogId: string,
+  postId: string,
+  draft: DraftState,
+  key: string,
+  baseUpdatedAt?: string,
+) {
+  void persistWorkspaceDraft({
+    blogId,
+    postId,
+    draft,
+    key,
+    baseUpdatedAt,
+    persistedAt: new Date().toISOString(),
+  });
+}
+
 /** Client-safe mirror of store.ts folderPathForPostType. */
 export function sidebarFolderPathForPostType(type: PostType): SidebarFolderId {
   if (type === "note") return "notes";
@@ -239,7 +280,9 @@ function folderForCreateRequest(
 ): Folder | null {
   return (
     pool.folders.find((folder) => folder.path === request.folderPath) ??
-    pool.folders.find((folder) => folder.path === sidebarFolderPathForPostType(request.type)) ??
+    pool.folders.find(
+      (folder) => folder.path === sidebarFolderPathForPostType(request.type),
+    ) ??
     null
   );
 }
@@ -350,7 +393,10 @@ function applySavedWorkspacePost(saved: Post, blogId: string) {
   updatePost(savedPoolPost.id, savedPoolPost);
 }
 
-function folderWorkspaceHref(homePath: string, folder: SidebarFolderId): string {
+function folderWorkspaceHref(
+  homePath: string,
+  folder: SidebarFolderId,
+): string {
   return `${homePath}?folder=${encodeURIComponent(folder)}`;
 }
 
@@ -361,8 +407,7 @@ function workspaceRootHref(homePath: string): string {
 function rootSectionFolders(pool: WorkspacePoolPayload): Folder[] {
   const roots = pool.folders
     .filter(
-      (folder) =>
-        !folder.parentId && ROOT_SECTION_MODES.includes(folder.mode),
+      (folder) => !folder.parentId && ROOT_SECTION_MODES.includes(folder.mode),
     )
     .slice()
     .sort((a, b) => a.position - b.position);
@@ -391,7 +436,8 @@ function selectedPostIdForView(
   if (view.level === "post" || view.level === "edit") return view.postId;
   if (view.level === "trash") {
     const posts = pool.trashedPosts ?? [];
-    if (preferred && posts.some((post) => post.id === preferred)) return preferred;
+    if (preferred && posts.some((post) => post.id === preferred))
+      return preferred;
     return posts[0]?.id ?? null;
   }
   if (view.level !== "section") return null;
@@ -463,8 +509,7 @@ function readDocumentCookie(name: string): string | null {
   const parts = document.cookie ? document.cookie.split("; ") : [];
   for (const part of parts) {
     const separatorIndex = part.indexOf("=");
-    const key =
-      separatorIndex === -1 ? part : part.slice(0, separatorIndex);
+    const key = separatorIndex === -1 ? part : part.slice(0, separatorIndex);
     if (decodeURIComponent(key) !== name) continue;
     return separatorIndex === -1
       ? ""
@@ -509,7 +554,10 @@ function emitSidebarCollapsedChange() {
 export function setWorkspaceSidebarCollapsedPreference(next: boolean) {
   sidebarCollapsedMemory = next;
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(WORKSPACE_SIDEBAR_STORAGE_KEY, next ? "1" : "0");
+    window.localStorage.setItem(
+      WORKSPACE_SIDEBAR_STORAGE_KEY,
+      next ? "1" : "0",
+    );
   }
   writeSidebarCollapsedCookie(next);
   emitSidebarCollapsedChange();
@@ -562,7 +610,11 @@ export function useWorkspaceSidebarCollapsed(initialCollapsed = false) {
     setCollapsed(!readSidebarCollapsed(initialCollapsed));
   }, [initialCollapsed, setCollapsed]);
 
-  return { sidebarCollapsed, setSidebarCollapsed: setCollapsed, toggleSidebarCollapsed };
+  return {
+    sidebarCollapsed,
+    setSidebarCollapsed: setCollapsed,
+    toggleSidebarCollapsed,
+  };
 }
 
 function clampSidebarWidth(value: number): number {
@@ -578,9 +630,10 @@ function readSidebarWidth(): number {
   const stored = Number(
     window.localStorage.getItem(WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY),
   );
-  sidebarWidthMemory = Number.isFinite(stored) && stored > 0
-    ? clampSidebarWidth(stored)
-    : WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
+  sidebarWidthMemory =
+    Number.isFinite(stored) && stored > 0
+      ? clampSidebarWidth(stored)
+      : WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
   return sidebarWidthMemory;
 }
 
@@ -634,7 +687,9 @@ function readAssistantState(): AssistantSidebarState {
 function readAssistantWidth(): number {
   if (assistantWidthMemory !== null) return assistantWidthMemory;
   if (typeof window === "undefined") return ASSISTANT_SIDEBAR_DEFAULT_WIDTH;
-  const saved = Number(window.localStorage.getItem(WORKSPACE_ASSISTANT_WIDTH_KEY));
+  const saved = Number(
+    window.localStorage.getItem(WORKSPACE_ASSISTANT_WIDTH_KEY),
+  );
   assistantWidthMemory = clampAssistantWidth(saved);
   return assistantWidthMemory;
 }
@@ -800,7 +855,12 @@ function SearchIcon() {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <circle cx="8" cy="8" r="4.75" stroke="currentColor" strokeWidth="1.55" />
-      <path d="m11.6 11.6 3.1 3.1" stroke="currentColor" strokeLinecap="round" strokeWidth="1.55" />
+      <path
+        d="m11.6 11.6 3.1 3.1"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.55"
+      />
     </svg>
   );
 }
@@ -808,7 +868,13 @@ function SearchIcon() {
 function TrashIcon() {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M4.75 5.5h8.5l-.55 9h-7.4l-.55-9ZM3.5 5.5h11M7 3.5h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
+      <path
+        d="M4.75 5.5h8.5l-.55 9h-7.4l-.55-9ZM3.5 5.5h11M7 3.5h4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
     </svg>
   );
 }
@@ -817,32 +883,29 @@ function SharedIcon() {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <circle cx="7" cy="6" r="2.25" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="12.4" cy="7.2" r="1.7" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M3.6 14c.4-2.35 1.55-3.55 3.4-3.55S10 11.65 10.4 14M10.2 11c1.95-.35 3.35.55 3.85 2.55" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+      <circle
+        cx="12.4"
+        cy="7.2"
+        r="1.7"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M3.6 14c.4-2.35 1.55-3.55 3.4-3.55S10 11.65 10.4 14M10.2 11c1.95-.35 3.35.55 3.85 2.55"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.4"
+      />
     </svg>
   );
 }
 
-type SidebarDocumentSort = "recent" | "alphabetical" | "created" | "edited";
-
-function sidebarDocumentTitle(post: WorkspacePoolPost): string {
-  return post.title.trim() || "Untitled";
-}
-
-function dateKey(value: string | undefined): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) return null;
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function SidebarActivity({
+  workspaceId,
   documents,
   onOpenDocument,
 }: {
+  workspaceId: string;
   documents: WorkspacePoolPost[];
   onOpenDocument?: (postId: string) => void;
 }) {
@@ -851,32 +914,46 @@ function SidebarActivity({
     () => new Date(now.getFullYear(), now.getMonth(), 1),
   );
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
-  const datedDocuments = useMemo(() => {
-    const byDate = new Map<string, WorkspacePoolPost[]>();
-    for (const post of documents) {
-      const key = dateKey(post.createdAt ?? post.date);
-      if (!key) continue;
-      const list = byDate.get(key) ?? [];
-      list.push(post);
-      byDate.set(key, list);
-    }
-    return byDate;
-  }, [documents]);
-  const sorted = useMemo(() => {
-    const next = [...documents];
-    if (sort === "alphabetical") {
-      return next.sort((a, b) =>
-        sidebarDocumentTitle(a).localeCompare(sidebarDocumentTitle(b), undefined, {
-          numeric: true,
-          sensitivity: "base",
-        }),
-      );
-    }
-    const field = sort === "created" ? "createdAt" : "updatedAt";
-    return next.sort((a, b) =>
-      (b[field] ?? b.date ?? "").localeCompare(a[field] ?? a.date ?? ""),
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [openHistory, setOpenHistory] = useState<WorkspaceDocumentOpenHistory>(
+    () =>
+      readWorkspaceDocumentOpenHistory(
+        workspaceId,
+        typeof window === "undefined" ? null : window.localStorage,
+      ),
+  );
+  const datedDocuments = useMemo(
+    () => groupDocumentsByCreatedDate(documents),
+    [documents],
+  );
+  const sorted = useMemo(
+    () => sortSidebarDocuments(documents, sort, openHistory),
+    [documents, openHistory, sort],
+  );
+  const effectiveSelectedDate =
+    selectedDate && datedDocuments.has(selectedDate) ? selectedDate : null;
+  const visibleDocuments = useMemo(() => {
+    if (!effectiveSelectedDate) return sorted;
+    const matchingIds = new Set(
+      (datedDocuments.get(effectiveSelectedDate) ?? []).map((post) => post.id),
     );
-  }, [documents, sort]);
+    return sorted.filter((post) => matchingIds.has(post.id));
+  }, [datedDocuments, effectiveSelectedDate, sorted]);
+  useEffect(() => {
+    const onDocumentOpened = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: string }>).detail;
+      if (detail?.workspaceId !== workspaceId) return;
+      setOpenHistory(
+        readWorkspaceDocumentOpenHistory(workspaceId, window.localStorage),
+      );
+    };
+    window.addEventListener(WORKSPACE_DOCUMENT_OPENED_EVENT, onDocumentOpened);
+    return () =>
+      window.removeEventListener(
+        WORKSPACE_DOCUMENT_OPENED_EVENT,
+        onDocumentOpened,
+      );
+  }, [workspaceId]);
   const calendarDays = useMemo(() => {
     const first = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
     const start = new Date(first);
@@ -892,7 +969,13 @@ function SidebarActivity({
     month: "long",
     year: "numeric",
   }).format(monthStart);
-  const todayKey = dateKey(new Date().toISOString());
+  const selectedDateLabel = effectiveSelectedDate
+    ? new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+      }).format(new Date(`${effectiveSelectedDate}T12:00:00`))
+    : null;
+  const todayKey = localDateKey(new Date().toISOString());
 
   return (
     <div className="post-editor-sidebar-activity">
@@ -927,13 +1010,13 @@ function SidebarActivity({
           </span>
         </header>
         <div className="post-editor-calendar-weekdays" aria-hidden="true">
-          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => (
+          {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
             <span key={`${day}-${index}`}>{day}</span>
           ))}
         </div>
         <div className="post-editor-calendar-grid">
           {calendarDays.map((day) => {
-            const key = dateKey(day.toISOString()) ?? "";
+            const key = localDateKey(day.toISOString()) ?? "";
             const posts = datedDocuments.get(key) ?? [];
             const outside = day.getMonth() !== monthStart.getMonth();
             return (
@@ -946,8 +1029,18 @@ function SidebarActivity({
                 aria-label={`${day.toLocaleDateString()}${
                   posts.length > 0 ? `, ${posts.length} documents` : ""
                 }`}
+                aria-pressed={effectiveSelectedDate === key}
                 disabled={posts.length === 0}
-                onClick={() => posts[0]?.id && onOpenDocument?.(posts[0].id)}
+                onClick={() => {
+                  if (effectiveSelectedDate === key) {
+                    setSelectedDate(null);
+                    return;
+                  }
+                  const action = calendarDocumentAction(key, posts);
+                  if (action.kind === "open") onOpenDocument?.(action.postId);
+                  else if (action.kind === "filter")
+                    setSelectedDate(action.dateKey);
+                }}
               >
                 {day.getDate()}
               </button>
@@ -957,20 +1050,38 @@ function SidebarActivity({
       </section>
       <section className="post-editor-documents" aria-label="Documents">
         <header>
-          <strong>Documents</strong>
-          <select
-            value={sort}
-            aria-label="Sort documents"
-            onChange={(event) => setSort(event.currentTarget.value as SidebarDocumentSort)}
-          >
-            <option value="recent">Recent</option>
-            <option value="alphabetical">Alphabetical</option>
-            <option value="created">Date created</option>
-            <option value="edited">Last edited</option>
-          </select>
+          <strong>
+            {selectedDateLabel
+              ? `Documents, ${selectedDateLabel}`
+              : "Documents"}
+          </strong>
+          <span className="post-editor-document-controls">
+            {effectiveSelectedDate && (
+              <button
+                type="button"
+                aria-label="Show documents from every date"
+                title="Clear date"
+                onClick={() => setSelectedDate(null)}
+              >
+                Clear
+              </button>
+            )}
+            <select
+              value={sort}
+              aria-label="Sort documents"
+              onChange={(event) =>
+                setSort(event.currentTarget.value as SidebarDocumentSort)
+              }
+            >
+              <option value="recent">Recent</option>
+              <option value="alphabetical">Alphabetical</option>
+              <option value="created">Date created</option>
+              <option value="edited">Last edited</option>
+            </select>
+          </span>
         </header>
         <div className="post-editor-document-list">
-          {sorted.slice(0, 30).map((post) => (
+          {visibleDocuments.slice(0, 30).map((post) => (
             <button
               key={post.id}
               type="button"
@@ -1267,7 +1378,10 @@ function FolderTreeNav({
               <DisclosureIcon open={isExpanded} />
             </button>
           ) : (
-            <span className="post-editor-folder-disclosure is-empty" aria-hidden="true" />
+            <span
+              className="post-editor-folder-disclosure is-empty"
+              aria-hidden="true"
+            />
           )}
           <button
             type="button"
@@ -1466,7 +1580,9 @@ export function PostFolderSidebar({
             <button
               type="button"
               className="post-editor-folder-main post-editor-special-main"
-              aria-current={activeFolder === SHARED_FOLDER_PATH ? "true" : undefined}
+              aria-current={
+                activeFolder === SHARED_FOLDER_PATH ? "true" : undefined
+              }
               title={collapsed ? "Shared with me" : undefined}
               onClick={() => onSelectFolder(SHARED_FOLDER_PATH)}
             >
@@ -1489,7 +1605,9 @@ export function PostFolderSidebar({
             <button
               type="button"
               className="post-editor-folder-main post-editor-special-main"
-              aria-current={activeFolder === TRASH_FOLDER_PATH ? "true" : undefined}
+              aria-current={
+                activeFolder === TRASH_FOLDER_PATH ? "true" : undefined
+              }
               title={collapsed ? "Trash" : undefined}
               onClick={() => onSelectFolder(TRASH_FOLDER_PATH)}
             >
@@ -1509,6 +1627,8 @@ export function PostFolderSidebar({
 
       {(!collapsed || previewOpen) && (
         <SidebarActivity
+          key={blog.handle}
+          workspaceId={blog.handle}
           documents={documents}
           onOpenDocument={onOpenDocument}
         />
@@ -1519,7 +1639,10 @@ export function PostFolderSidebar({
           <p className="post-editor-guest-note">
             Demo workspace, saved in this browser.
           </p>
-          <a className="post-editor-guest-keep ac-btn ac-btn-gray" href="/start?to=home">
+          <a
+            className="post-editor-guest-keep ac-btn ac-btn-gray"
+            href="/start?to=home"
+          >
             Sign in to keep it
           </a>
         </div>
@@ -1591,10 +1714,7 @@ export function WorkspaceSidebarChrome({
     );
   }, [sidebarWidth]);
   const showPreview = useCallback(() => {
-    if (
-      collapsed &&
-      !window.matchMedia("(max-width: 680px)").matches
-    ) {
+    if (collapsed && !window.matchMedia("(max-width: 680px)").matches) {
       setPreviewOpen(true);
     }
   }, [collapsed]);
@@ -1752,9 +1872,7 @@ export function WorkspaceSidebarChrome({
       </div>
       <button
         type="button"
-        className={`post-sidebar-backdrop${
-          mobileOpen ? " is-open" : ""
-        }`}
+        className={`post-sidebar-backdrop${mobileOpen ? " is-open" : ""}`}
         aria-label="Hide sidebar"
         tabIndex={mobileOpen ? 0 : -1}
         onClick={closeSidebar}
@@ -1791,7 +1909,8 @@ function viewFromUrl(
     trimTrailingSlash(encodedTenantHomePath(pool.blog)),
   ];
   const matchingHome = homePaths.find(
-    (candidate) => pathname === candidate || pathname.startsWith(`${candidate}/`),
+    (candidate) =>
+      pathname === candidate || pathname.startsWith(`${candidate}/`),
   );
   if (!matchingHome) return { level: "root" };
 
@@ -1803,7 +1922,10 @@ function viewFromUrl(
     if (folderPath === SHARED_FOLDER_PATH) {
       return { level: "shared", folderPath: SHARED_FOLDER_PATH };
     }
-    if (folderPath && pool.folders.some((folder) => folder.path === folderPath)) {
+    if (
+      folderPath &&
+      pool.folders.some((folder) => folder.path === folderPath)
+    ) {
       return { level: "section", folderPath };
     }
     return { level: "root" };
@@ -1817,7 +1939,7 @@ function viewFromUrl(
   const editId = url.searchParams.get("id");
   const post =
     editRequested && editId
-      ? findPoolPostById(pool, editId) ?? findPoolPostBySlug(pool, slug)
+      ? (findPoolPostById(pool, editId) ?? findPoolPostBySlug(pool, slug))
       : findPoolPostBySlug(pool, slug);
   if (!post) return { level: "root" };
   return {
@@ -1837,13 +1959,19 @@ function currentLocalView(
 
 function localWorkspaceViewDepth(view: LocalWorkspaceView): number {
   if (view.level === "root") return 0;
-  if (view.level === "section" || view.level === "trash" || view.level === "shared") {
+  if (
+    view.level === "section" ||
+    view.level === "trash" ||
+    view.level === "shared"
+  ) {
     return 1;
   }
   return 2;
 }
 
-function localViewActiveFolder(view: LocalWorkspaceView): SidebarFolderId | null {
+function localViewActiveFolder(
+  view: LocalWorkspaceView,
+): SidebarFolderId | null {
   return view.level === "root" ? null : view.folderPath;
 }
 
@@ -1851,10 +1979,7 @@ function isOptimisticPostId(postId: string): boolean {
   return postId.startsWith("optimistic-");
 }
 
-function workspaceActionErrorMessage(
-  error: unknown,
-  fallback: string,
-): string {
+function workspaceActionErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim()
     ? error.message
     : fallback;
@@ -1884,7 +2009,10 @@ function WorkspaceRootLanding({
     : undefined;
 
   return (
-    <main className="workspace-root-page" aria-labelledby="workspace-root-title">
+    <main
+      className="workspace-root-page"
+      aria-labelledby="workspace-root-title"
+    >
       <div className="workspace-root-inner">
         <h1 id="workspace-root-title">Folders</h1>
         <div
@@ -1912,7 +2040,10 @@ function WorkspaceRootLanding({
                 onMouseEnter={() => onSelectSection(folder.path)}
                 onClick={() => onOpenSection(folder.path)}
               >
-                <span className="workspace-root-section-icon" aria-hidden="true">
+                <span
+                  className="workspace-root-section-icon"
+                  aria-hidden="true"
+                >
                   <SidebarFolderIcon mode={folder.mode} />
                 </span>
                 <span className="workspace-root-section-copy">
@@ -1948,15 +2079,15 @@ function TrashPage({
   onSelectPost: (postId: string) => void;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<TrashDeleteTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TrashDeleteTarget | null>(
+    null,
+  );
   const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trashedFolders = pool.trashedFolders ?? [];
   const trashedPosts = pool.trashedPosts ?? [];
-  const trashedFolderIds = new Set(trashedFolders.map((folder) => folder.id));
-  const rootTrashedFolders = trashedFolders.filter(
-    (folder) => !folder.parentId || !trashedFolderIds.has(folder.parentId),
-  );
+  const { rootFolders: rootTrashedFolders, visiblePosts: visibleTrashedPosts } =
+    projectTrashView(trashedFolders, trashedPosts);
 
   const restoreItem = useCallback(
     (postId: string) => {
@@ -1967,7 +2098,9 @@ function TrashPage({
       void restoreEditablePostAction(handle, postId)
         .catch((restoreError) => {
           movePostToTrash(postId);
-          setError(workspaceActionErrorMessage(restoreError, "Could not restore item"));
+          setError(
+            workspaceActionErrorMessage(restoreError, "Could not restore item"),
+          );
         })
         .finally(() => setBusyId(null));
     },
@@ -1983,7 +2116,12 @@ function TrashPage({
       void restoreFolderAction(handle, folderId)
         .catch((restoreError) => {
           moveFolderToTrash(folderId);
-          setError(workspaceActionErrorMessage(restoreError, "Could not restore folder"));
+          setError(
+            workspaceActionErrorMessage(
+              restoreError,
+              "Could not restore folder",
+            ),
+          );
         })
         .finally(() => setBusyId(null));
     },
@@ -2004,7 +2142,12 @@ function TrashPage({
     void request
       .then(() => setDeleteTarget(null))
       .catch((deleteError) => {
-        setError(workspaceActionErrorMessage(deleteError, "Could not delete permanently"));
+        setError(
+          workspaceActionErrorMessage(
+            deleteError,
+            "Could not delete permanently",
+          ),
+        );
         void refreshWorkspacePool(handle, pool.blogId);
       })
       .finally(() => setBusyId(null));
@@ -2019,7 +2162,9 @@ function TrashPage({
     void emptyTrashAction(handle)
       .then(() => setEmptyTrashOpen(false))
       .catch((emptyError) => {
-        setError(workspaceActionErrorMessage(emptyError, "Could not empty Trash"));
+        setError(
+          workspaceActionErrorMessage(emptyError, "Could not empty Trash"),
+        );
       })
       .finally(() => {
         void refreshWorkspacePool(handle, pool.blogId);
@@ -2042,8 +2187,12 @@ function TrashPage({
           </button>
         )}
       </header>
-      {error && <p className="post-folder-error" role="alert">{error}</p>}
-      {rootTrashedFolders.length === 0 && trashedPosts.length === 0 ? (
+      {error && (
+        <p className="post-folder-error" role="alert">
+          {error}
+        </p>
+      )}
+      {rootTrashedFolders.length === 0 && visibleTrashedPosts.length === 0 ? (
         <p className="workspace-collection-empty">Trash is empty.</p>
       ) : (
         <div className="workspace-trash-list">
@@ -2067,7 +2216,11 @@ function TrashPage({
                   className="ac-btn ac-btn-gray is-danger"
                   disabled={busyId === folder.id}
                   onClick={() =>
-                    setDeleteTarget({ kind: "folder", id: folder.id, label: folder.name })
+                    setDeleteTarget({
+                      kind: "folder",
+                      id: folder.id,
+                      label: folder.name,
+                    })
                   }
                 >
                   Delete permanently
@@ -2075,7 +2228,7 @@ function TrashPage({
               </div>
             </article>
           ))}
-          {trashedPosts.map((post) => {
+          {visibleTrashedPosts.map((post) => {
             const selected = post.id === selectedPostId;
             return (
               <article
@@ -2153,7 +2306,9 @@ function SharedPage({ pool }: { pool: WorkspacePoolPayload }) {
       {entries.length > 0 ? (
         <SharedWithMe entries={entries} />
       ) : (
-        <p className="workspace-collection-empty">Nothing has been shared with you yet.</p>
+        <p className="workspace-collection-empty">
+          Nothing has been shared with you yet.
+        </p>
       )}
     </main>
   );
@@ -2172,8 +2327,7 @@ function LoadingBody() {
           key={width}
           aria-hidden="true"
           style={{
-            background:
-              "color-mix(in srgb, var(--muted) 18%, transparent)",
+            background: "color-mix(in srgb, var(--muted) 18%, transparent)",
             borderRadius: 999,
             display: "block",
             height: 12,
@@ -2352,8 +2506,7 @@ function WorkspacePostReader({
     if (entry.status === "idle" || stale) load(stale);
   }, [entry.status, load, stale]);
 
-  const body =
-    entry.status === "ready" ? entry.body.body : "";
+  const body = entry.status === "ready" ? entry.body.body : "";
   const post = postFromPoolPost(poolPost, body);
   const bodyImageReplacements = new Map(
     (post.capture?.assets ?? [])
@@ -2452,6 +2605,7 @@ function LocalWorkspacePostEditor({
     return localWorkspaceDraftSessions.get(poolPost.id) ?? initialDraft(post);
   });
   const draftRef = useRef(draft);
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const baseUpdatedAtRef = useRef(
     localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt,
   );
@@ -2466,12 +2620,7 @@ function LocalWorkspacePostEditor({
   const editorMountedRef = useRef(true);
   const coverRevisionRef = useRef(0);
   const initialPayloadKey = payloadKey(
-    payloadFor(
-      poolPost.id,
-      initialDraft(post),
-      post.slug,
-      poolPost.updatedAt,
-    ),
+    payloadFor(poolPost.id, initialDraft(post), post.slug, poolPost.updatedAt),
   );
   const lastSavedKeyRef = useRef(
     localWorkspacePendingSaveIds.has(poolPost.id)
@@ -2479,7 +2628,9 @@ function LocalWorkspacePostEditor({
       : initialPayloadKey,
   );
   const latestKeyRef = useRef(initialPayloadKey);
-  const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLElement | null>(null);
+  const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLElement | null>(
+    null,
+  );
   const [deleting, setDeleting] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
@@ -2492,6 +2643,39 @@ function LocalWorkspacePostEditor({
   );
 
   useEffect(() => {
+    let cancelled = false;
+    const requestedRevision = localDraftRevision(poolPost.id);
+    void readPersistedWorkspaceDraft(pool.blogId, poolPost.id).then(
+      (persisted) => {
+        if (cancelled) return;
+        const hasNewerSession =
+          localDraftRevision(poolPost.id) !== requestedRevision ||
+          localWorkspaceDraftSessions.has(poolPost.id);
+        if (persisted && !hasNewerSession) {
+          baseUpdatedAtRef.current =
+            persisted.baseUpdatedAt ?? baseUpdatedAtRef.current;
+          draftRef.current = persisted.draft;
+          latestKeyRef.current = persisted.key;
+          localWorkspaceDraftSessions.set(poolPost.id, persisted.draft);
+          markPostDirty(poolPost.id);
+          bumpLocalDraftRevision(poolPost.id);
+          updatePost(poolPost.id, {
+            ...mergeDraftIntoWorkspacePost(poolPost, persisted.draft),
+            updatedAt: persisted.persistedAt,
+          });
+          updatePostBody(pool.blogId, poolPost.id, persisted.draft.body);
+          setDraft(persisted.draft);
+        }
+        setDraftHydrated(true);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [pool.blogId, poolPost]);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
     if (entry.status !== "ready") return;
     if (bodyLoadedPostIdRef.current === poolPost.id) return;
     bodyLoadedPostIdRef.current = poolPost.id;
@@ -2502,21 +2686,17 @@ function LocalWorkspacePostEditor({
     baseUpdatedAtRef.current =
       localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt;
     const key = payloadKey(
-      payloadFor(
-        poolPost.id,
-        next,
-        post.slug,
-        baseUpdatedAtRef.current,
-      ),
+      payloadFor(poolPost.id, next, post.slug, baseUpdatedAtRef.current),
     );
     latestKeyRef.current = key;
     if (!localWorkspacePendingSaveIds.has(poolPost.id)) {
       lastSavedKeyRef.current = key;
     }
     setDraft(next);
-  }, [entry, poolPost.id, poolPost.updatedAt, post.slug]);
+  }, [draftHydrated, entry, poolPost.id, poolPost.updatedAt, post.slug]);
 
   useEffect(() => {
+    if (!draftHydrated) return;
     if (
       localWorkspaceDraftSessions.has(poolPost.id) ||
       localWorkspacePendingSaveIds.has(poolPost.id)
@@ -2531,12 +2711,7 @@ function LocalWorkspacePostEditor({
         localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt;
     }
     const nextKey = payloadKey(
-      payloadFor(
-        poolPost.id,
-        next,
-        post.slug,
-        baseUpdatedAtRef.current,
-      ),
+      payloadFor(poolPost.id, next, post.slug, baseUpdatedAtRef.current),
     );
     const currentKey = payloadKey(
       payloadFor(
@@ -2551,7 +2726,14 @@ function LocalWorkspacePostEditor({
     latestKeyRef.current = nextKey;
     lastSavedKeyRef.current = nextKey;
     setDraft(next);
-  }, [entry.status, poolPost.id, poolPost.updatedAt, post, stale]);
+  }, [
+    draftHydrated,
+    entry.status,
+    poolPost.id,
+    poolPost.updatedAt,
+    post,
+    stale,
+  ]);
 
   useEffect(() => {
     if (!active) return;
@@ -2591,19 +2773,21 @@ function LocalWorkspacePostEditor({
       const next = { ...draftRef.current, ...patch };
       draftRef.current = next;
       latestKeyRef.current = payloadKey(
-        payloadFor(
-          poolPost.id,
-          next,
-          post.slug,
-          baseUpdatedAtRef.current,
-        ),
+        payloadFor(poolPost.id, next, post.slug, baseUpdatedAtRef.current),
       );
       localWorkspaceDraftSessions.set(poolPost.id, next);
       markPostDirty(poolPost.id);
       bumpLocalDraftRevision(poolPost.id);
+      persistLocalWorkspaceDraft(
+        pool.blogId,
+        poolPost.id,
+        next,
+        latestKeyRef.current,
+        baseUpdatedAtRef.current,
+      );
       setDraft(next);
     },
-    [poolPost.id, post.slug],
+    [pool.blogId, poolPost.id, post.slug],
   );
 
   const enqueueSave = useCallback(
@@ -2634,11 +2818,9 @@ function LocalWorkspacePostEditor({
             localWorkspaceServerRevisions.get(poolPost.id) ??
               baseUpdatedAtRef.current,
           );
-          const saved = await saveEditablePostAction(
-            blog.handle,
-            payload,
-            { revalidate: options.revalidate },
-          );
+          const saved = await saveEditablePostAction(blog.handle, payload, {
+            revalidate: options.revalidate,
+          });
           // A superseded response must advance the revision used by the queued
           // draft, but it must never replace that newer local draft.
           baseUpdatedAtRef.current = saved.updatedAt;
@@ -2687,6 +2869,13 @@ function LocalWorkspacePostEditor({
           updatedAt: new Date().toISOString(),
         });
         updatePostBody(pool.blogId, poolPost.id, nextDraft.body);
+        persistLocalWorkspaceDraft(
+          pool.blogId,
+          poolPost.id,
+          nextDraft,
+          requestedKey,
+          baseUpdatedAtRef.current,
+        );
       }
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
@@ -2730,22 +2919,23 @@ function LocalWorkspacePostEditor({
               baseUpdatedAtRef.current,
             );
           }
+          void deletePersistedWorkspaceDraft(
+            pool.blogId,
+            poolPost.id,
+            targetKey,
+          );
           break;
         }
       }
-
     },
     [enqueueSave, pool.blogId, poolPost, post.slug],
   );
 
   useEffect(() => {
+    if (!draftHydrated) return;
     if (isOptimisticPostId(poolPost.id)) return;
 
-    const requestedKey = payloadKey(payloadFor(
-      poolPost.id,
-      draft,
-      post.slug,
-    ));
+    const requestedKey = payloadKey(payloadFor(poolPost.id, draft, post.slug));
     latestKeyRef.current = requestedKey;
     if (requestedKey === lastSavedKeyRef.current) return;
 
@@ -2778,6 +2968,11 @@ function LocalWorkspacePostEditor({
             result.saved.body,
             result.saved.updatedAt,
           );
+          void deletePersistedWorkspaceDraft(
+            pool.blogId,
+            poolPost.id,
+            result.requestedKey,
+          );
         })
         .catch(() => {
           // Keep the local draft in place. A later edit will retry the save.
@@ -2790,7 +2985,7 @@ function LocalWorkspacePostEditor({
         saveTimerRef.current = null;
       }
     };
-  }, [draft, enqueueSave, pool.blogId, poolPost.id, post.slug]);
+  }, [draft, draftHydrated, enqueueSave, pool.blogId, poolPost.id, post.slug]);
 
   useEffect(() => {
     if (!active) return;
@@ -2864,15 +3059,16 @@ function LocalWorkspacePostEditor({
   }, [updateDraft]);
 
   const containingFolderPath = folderPathForPoolPost(pool, poolPost);
-  const containingFolderHref = folderWorkspaceHref(homePath, containingFolderPath);
+  const containingFolderHref = folderWorkspaceHref(
+    homePath,
+    containingFolderPath,
+  );
   const renderedPostPath = blogPostPath(blog, {
     slug: slugify(draft.slug, post.slug),
   });
   const focusBody = useCallback(() => {
     document
-      .querySelector<HTMLElement>(
-        ".local-workspace-edit .body-editor-content",
-      )
+      .querySelector<HTMLElement>(".local-workspace-edit .body-editor-content")
       ?.focus({ preventScroll: true });
   }, []);
   const deletePost = useCallback(() => {
@@ -2916,7 +3112,15 @@ function LocalWorkspacePostEditor({
         onUpdateDraft={updateDraft}
         onVisibilityChange={(status) => saveDraftNow({ status })}
       />
-      <main className="local-workspace-edit" aria-label="Edit post">
+      <main
+        className="local-workspace-edit"
+        aria-label="Edit post"
+        aria-busy={!draftHydrated}
+        data-write-edit-surface="true"
+        data-write-edit-post-id={poolPost.id}
+        data-write-draft-hydrated={draftHydrated ? "true" : "false"}
+        style={draftHydrated ? undefined : { visibility: "hidden" }}
+      >
         <EditReaderPreview
           blog={blog}
           post={displayPost}
@@ -2955,7 +3159,9 @@ function LocalWorkspacePostEditor({
                     title: event.currentTarget.value.replace(/[\r\n]+/g, " "),
                   })
                 }
-                onBlur={(event) => deriveSlugFromTitle(event.currentTarget.value)}
+                onBlur={(event) =>
+                  deriveSlugFromTitle(event.currentTarget.value)
+                }
                 onKeyDown={(event) => {
                   if (event.metaKey || event.ctrlKey || event.altKey) return;
                   if (
@@ -3214,7 +3420,7 @@ function LocalWorkspaceContent({
       </div>
       {shouldWarmEditor && activePost && (
         <div className="local-workspace-surface" hidden={!editorVisible}>
-      <LocalWorkspacePostEditor
+          <LocalWorkspacePostEditor
             key={activePost.id}
             active={editorVisible}
             blog={blog}
@@ -3291,7 +3497,9 @@ function LocalWorkspaceShell({
   const selectedSectionPathRef = useRef(selectedSectionPath);
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const [editFolderRequestKey, setEditFolderRequestKey] = useState(0);
-  const [pendingDeletePostId, setPendingDeletePostId] = useState<string | null>(null);
+  const [pendingDeletePostId, setPendingDeletePostId] = useState<string | null>(
+    null,
+  );
   const [deletingTarget, setDeletingTarget] = useState(false);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences();
@@ -3349,6 +3557,13 @@ function LocalWorkspaceShell({
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+
+  const openedPostId =
+    view.level === "post" || view.level === "edit" ? view.postId : null;
+  useEffect(() => {
+    if (!openedPostId) return;
+    recordWorkspaceDocumentOpened(displayPool.blog.handle, openedPostId);
+  }, [displayPool.blog.handle, openedPostId]);
 
   useEffect(() => {
     selectedSectionPathRef.current = selectedSectionPath;
@@ -3454,14 +3669,10 @@ function LocalWorkspaceShell({
 
   const navigateRoot = useCallback(
     (nextSelectedSectionPath?: string | null) => {
-      navigateToView(
-        { level: "root" },
-        workspaceRootHref(homePath),
-        {
-          selectedSectionPath:
-            nextSelectedSectionPath ?? selectedSectionPathRef.current,
-        },
-      );
+      navigateToView({ level: "root" }, workspaceRootHref(homePath), {
+        selectedSectionPath:
+          nextSelectedSectionPath ?? selectedSectionPathRef.current,
+      });
     },
     [homePath, navigateToView],
   );
@@ -3507,7 +3718,7 @@ function LocalWorkspaceShell({
           ? folderWorkspaceHref(homePath, nextFolderPath)
           : mode === "edit"
             ? blogPostEditPath(displayPool.blog, post)
-          : blogPostPath(displayPool.blog, post),
+            : blogPostPath(displayPool.blog, post),
       );
     },
     [displayPool, homePath, navigateToView],
@@ -3515,7 +3726,11 @@ function LocalWorkspaceShell({
 
   const openCreatedPost = useCallback(
     (post: WorkspacePoolPost) => {
-      openPoolPost(post, folderPathForPoolPost(displayPoolRef.current, post), "edit");
+      openPoolPost(
+        post,
+        folderPathForPoolPost(displayPoolRef.current, post),
+        "edit",
+      );
     },
     [openPoolPost],
   );
@@ -3569,105 +3784,128 @@ function LocalWorkspaceShell({
         let attempt = 0;
         while (getWorkspacePost(temp.id)) {
           try {
-          const saved =
-            request.type === "bookmark"
-              ? await createFolderItemAction(pool.blog.handle, "bookmarks", {
-                  url: request.url,
-                  description: request.description,
-                  title: request.title,
-                })
-              : request.type === "note"
-                ? await createFolderItemAction(pool.blog.handle, "notes", {
+            const saved =
+              request.type === "bookmark"
+                ? await createFolderItemAction(pool.blog.handle, "bookmarks", {
+                    url: request.url,
+                    description: request.description,
                     title: request.title,
                   })
-                : await createWorkspacePostAction(
-                    pool.blog.handle,
-                    "article",
-                    request.folderPath,
-                  );
-          const poolPost = narrowPostFromPost(saved, pool.blogId);
-          if (!poolPost) {
-            throw new Error("Created item did not include an id");
-          }
-          if (cancelledOptimisticPostIdsRef.current.has(temp.id)) {
-            cancelledOptimisticPostIdsRef.current.delete(temp.id);
-            void deleteEditablePostAction(pool.blog.handle, poolPost.id).catch(
-              (error) => console.warn("cancelled item cleanup failed", error),
+                : request.type === "note"
+                  ? await createFolderItemAction(pool.blog.handle, "notes", {
+                      title: request.title,
+                    })
+                  : await createWorkspacePostAction(
+                      pool.blog.handle,
+                      "article",
+                      request.folderPath,
+                    );
+            const poolPost = narrowPostFromPost(saved, pool.blogId);
+            if (!poolPost) {
+              throw new Error("Created item did not include an id");
+            }
+            if (cancelledOptimisticPostIdsRef.current.has(temp.id)) {
+              cancelledOptimisticPostIdsRef.current.delete(temp.id);
+              void deleteEditablePostAction(
+                pool.blog.handle,
+                poolPost.id,
+              ).catch((error) =>
+                console.warn("cancelled item cleanup failed", error),
+              );
+              return;
+            }
+            if (poolPost.updatedAt) {
+              localWorkspaceServerRevisions.set(
+                poolPost.id,
+                poolPost.updatedAt,
+              );
+            }
+            const reconciled = mergeSavedWorkspacePost(
+              poolPost,
+              getWorkspacePost(temp.id),
             );
-            return;
-          }
-          if (poolPost.updatedAt) {
-            localWorkspaceServerRevisions.set(poolPost.id, poolPost.updatedAt);
-          }
-          const reconciled = mergeSavedWorkspacePost(
-            poolPost,
-            getWorkspacePost(temp.id),
-          );
-          const liveDraft = localWorkspaceDraftSessions.get(temp.id);
-          const merged = liveDraft
-            ? mergeDraftIntoWorkspacePost(reconciled, liveDraft)
-            : reconciled;
-          if (liveDraft) {
-            localWorkspacePendingSaveIds.add(merged.id);
-            localWorkspaceDraftSessions.set(merged.id, liveDraft);
-            localWorkspaceDraftSessions.delete(temp.id);
-            transferLocalDraftRevision(temp.id, merged.id);
-            updatePostBody(pool.blogId, merged.id, liveDraft.body);
-          }
-          replacePost(temp.id, merged);
-          if (request.type === "bookmark") {
-            setSelectedPostId((current) =>
-              current === temp.id ? merged.id : current,
-            );
-          } else {
-            reconcileCreatedPost(temp.id, merged);
-          }
-          if (liveDraft) {
-            const transferredRevision = localDraftRevision(merged.id);
-            const transferredPayload = payloadFor(
-              merged.id,
-              liveDraft,
-              merged.slug,
-              merged.updatedAt,
-            );
-            const transferredKey = payloadKey(transferredPayload);
-            void saveEditablePostAction(pool.blog.handle, transferredPayload, {
-              revalidate: false,
-            })
-              .then((savedDraft) => {
-                if (savedDraft.updatedAt) {
-                  localWorkspaceServerRevisions.set(
+            const liveDraft = localWorkspaceDraftSessions.get(temp.id);
+            const merged = liveDraft
+              ? mergeDraftIntoWorkspacePost(reconciled, liveDraft)
+              : reconciled;
+            if (liveDraft) {
+              localWorkspacePendingSaveIds.add(merged.id);
+              localWorkspaceDraftSessions.set(merged.id, liveDraft);
+              localWorkspaceDraftSessions.delete(temp.id);
+              transferLocalDraftRevision(temp.id, merged.id);
+              await movePersistedWorkspaceDraft(
+                pool.blogId,
+                temp.id,
+                merged.id,
+              );
+              updatePostBody(pool.blogId, merged.id, liveDraft.body);
+            }
+            replacePost(temp.id, merged);
+            if (request.type === "bookmark") {
+              setSelectedPostId((current) =>
+                current === temp.id ? merged.id : current,
+              );
+            } else {
+              reconcileCreatedPost(temp.id, merged);
+            }
+            if (liveDraft) {
+              const transferredRevision = localDraftRevision(merged.id);
+              const transferredPayload = payloadFor(
+                merged.id,
+                liveDraft,
+                merged.slug,
+                merged.updatedAt,
+              );
+              const transferredKey = payloadKey(transferredPayload);
+              void saveEditablePostAction(
+                pool.blog.handle,
+                transferredPayload,
+                {
+                  revalidate: false,
+                },
+              )
+                .then((savedDraft) => {
+                  if (savedDraft.updatedAt) {
+                    localWorkspaceServerRevisions.set(
+                      merged.id,
+                      savedDraft.updatedAt,
+                    );
+                  }
+                  if (!localWorkspacePendingSaveIds.has(merged.id)) return;
+                  if (localDraftRevision(merged.id) !== transferredRevision)
+                    return;
+                  const currentDraft = localWorkspaceDraftSessions.get(
                     merged.id,
+                  );
+                  if (
+                    currentDraft &&
+                    payloadKey(
+                      payloadFor(merged.id, currentDraft, merged.slug),
+                    ) !== transferredKey
+                  ) {
+                    return;
+                  }
+                  localWorkspacePendingSaveIds.delete(merged.id);
+                  localWorkspaceDraftSessions.delete(merged.id);
+                  applySavedWorkspacePost(savedDraft, pool.blogId);
+                  acknowledgePost(merged.id);
+                  acknowledgePostBody(
+                    pool.blogId,
+                    merged.id,
+                    savedDraft.body,
                     savedDraft.updatedAt,
                   );
-                }
-                if (!localWorkspacePendingSaveIds.has(merged.id)) return;
-                if (localDraftRevision(merged.id) !== transferredRevision) return;
-                const currentDraft = localWorkspaceDraftSessions.get(merged.id);
-                if (
-                  currentDraft &&
-                  payloadKey(
-                    payloadFor(merged.id, currentDraft, merged.slug),
-                  ) !== transferredKey
-                ) {
-                  return;
-                }
-                localWorkspacePendingSaveIds.delete(merged.id);
-                localWorkspaceDraftSessions.delete(merged.id);
-                applySavedWorkspacePost(savedDraft, pool.blogId);
-                acknowledgePost(merged.id);
-                acknowledgePostBody(
-                  pool.blogId,
-                  merged.id,
-                  savedDraft.body,
-                  savedDraft.updatedAt,
-                );
-              })
-              .catch(() => {
-                // The remounted editor retains the draft and retries autosave.
-              });
-          }
-          return;
+                  void deletePersistedWorkspaceDraft(
+                    pool.blogId,
+                    merged.id,
+                    transferredKey,
+                  );
+                })
+                .catch(() => {
+                  // The remounted editor retains the draft and retries autosave.
+                });
+            }
+            return;
           } catch (error) {
             if (
               cancelledOptimisticPostIdsRef.current.has(temp.id) ||
@@ -3700,6 +3938,7 @@ function LocalWorkspaceShell({
       if (!poolPost) throw new Error("Post not found");
       const folderPath = folderPathForPoolPost(pool, poolPost);
       if (isOptimisticPostId(post.id)) {
+        void deletePersistedWorkspaceDraft(pool.blogId, post.id);
         cancelledOptimisticPostIdsRef.current.add(post.id);
         localWorkspacePendingSaveIds.delete(post.id);
         localWorkspaceDraftSessions.delete(post.id);
@@ -3732,6 +3971,7 @@ function LocalWorkspaceShell({
 
       try {
         await deleteEditablePostAction(pool.blog.handle, post.id);
+        void deletePersistedWorkspaceDraft(pool.blogId, post.id);
       } catch (error) {
         restorePostFromTrash(poolPost.id);
         throw error;
@@ -3856,7 +4096,12 @@ function LocalWorkspaceShell({
         .querySelector<HTMLElement>(selector)
         ?.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
-  }, [effectiveSelectedPostId, effectiveSelectedSectionPath, mounted, view.level]);
+  }, [
+    effectiveSelectedPostId,
+    effectiveSelectedSectionPath,
+    mounted,
+    view.level,
+  ]);
 
   const openPostId = useCallback(
     (postId: string, mode: "read" | "edit" = "read") => {
@@ -3865,7 +4110,9 @@ function LocalWorkspaceShell({
       const nextMode = post.type === "note" && mode === "read" ? "edit" : mode;
       openPoolPost(
         post,
-        view.level === "section" || view.level === "post" || view.level === "edit"
+        view.level === "section" ||
+          view.level === "post" ||
+          view.level === "edit"
           ? view.folderPath
           : undefined,
         nextMode,
@@ -3900,7 +4147,8 @@ function LocalWorkspaceShell({
   );
 
   const visiblePostIdsInDocumentOrder = useCallback(() => {
-    if (typeof document === "undefined") return visiblePosts.map((post) => post.id);
+    if (typeof document === "undefined")
+      return visiblePosts.map((post) => post.id);
     const ids = visibleWorkspaceItems("data-workspace-post-id")
       .map((element) => element.dataset.workspacePostId)
       .filter((id): id is string => Boolean(id));
@@ -3937,11 +4185,11 @@ function LocalWorkspaceShell({
         : effectiveSelectedPostId;
       const items = visibleWorkspaceItems(attribute);
       const currentElement = selectedValue
-        ? items.find((element) =>
+        ? (items.find((element) =>
             root
               ? element.dataset.workspaceSectionPath === selectedValue
               : element.dataset.workspacePostId === selectedValue,
-          ) ?? null
+          ) ?? null)
         : null;
       const next = spatialNeighbor(items, currentElement, direction);
       if (!next) return;
@@ -3991,7 +4239,7 @@ function LocalWorkspaceShell({
         openSectionByIndex(index);
         return;
       }
-    if (current.level !== "section" && current.level !== "trash") return;
+      if (current.level !== "section" && current.level !== "trash") return;
       const postId = visiblePostIdsInDocumentOrder()[index];
       if (postId) openPostId(postId);
     },
@@ -4016,7 +4264,12 @@ function LocalWorkspaceShell({
         ? current.postId
         : null);
     if (postId) openPostId(postId);
-  }, [effectiveSelectedPostId, navigateSection, openPostId, visiblePostIdsInDocumentOrder]);
+  }, [
+    effectiveSelectedPostId,
+    navigateSection,
+    openPostId,
+    visiblePostIdsInDocumentOrder,
+  ]);
 
   const stopEditing = useCallback(() => {
     const current = viewRef.current;
@@ -4133,7 +4386,10 @@ function LocalWorkspaceShell({
           : amount === "half"
             ? Math.round(viewport * 0.5)
             : Math.round(viewport * 0.9);
-      window.scrollBy({ top: direction === "down" ? step : -step, behavior: "auto" });
+      window.scrollBy({
+        top: direction === "down" ? step : -step,
+        behavior: "auto",
+      });
     },
     [readerScrollBlocked],
   );
@@ -4168,21 +4424,19 @@ function LocalWorkspaceShell({
       const currentFolder =
         current.level === "root"
           ? null
-          : displayPoolRef.current.folders.find(
+          : (displayPoolRef.current.folders.find(
               (folder) => folder.path === current.folderPath,
-            ) ?? null;
+            ) ?? null);
       const targetFolder =
         (currentFolder?.mode === desiredMode ? currentFolder : null) ??
         displayPoolRef.current.folders.find(
           (folder) => folder.mode === desiredMode,
         );
-      const folderPath = targetFolder?.path ?? sidebarFolderPathForPostType(kind);
+      const folderPath =
+        targetFolder?.path ?? sidebarFolderPathForPostType(kind);
 
       if (kind === "bookmark") {
-        if (
-          current.level !== "section" ||
-          current.folderPath !== folderPath
-        ) {
+        if (current.level !== "section" || current.folderPath !== folderPath) {
           navigateSection(folderPath);
         }
         setCreateBookmarkRequestKey((value) => value + 1);
