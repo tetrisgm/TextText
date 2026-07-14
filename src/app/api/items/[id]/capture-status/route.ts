@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { BookmarkCapture, CaptureStatus } from "@/lib/content";
+import { publicBookmarkCapture } from "@/lib/bookmark-capture-generation";
 import { db } from "@/lib/db/client";
 import { blogs, posts } from "@/lib/db/schema";
 import { isUuid, resolveItemAccess } from "@/lib/permissions";
@@ -57,7 +58,7 @@ export async function GET(
 
   return Response.json({
     captureStatus: cleanCaptureStatus(item.captureStatus),
-    capture: item.capture as BookmarkCapture | null,
+    capture: publicBookmarkCapture(item.capture as BookmarkCapture | null),
     cover: item.cover,
     updatedAt: item.updatedAt.toISOString(),
     wordCount: item.wordCount,

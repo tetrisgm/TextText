@@ -9,10 +9,12 @@
 //     assetManifest  optional JSON [{field, originalUrl, filename?, contentType?}]
 //     asset files    optional image files named by assetManifest.field -> Blob
 //
-// -> {item: {id, slug, captureStatus}}. Artifacts go to Blob storage under
-// captures/{handle}/{postId}/; their URLs land in posts.capture.
+// -> {item: {id, slug, captureStatus}}. Artifacts go to Blob storage under a
+// versioned captures/{handle}/{postId}/generations/{generation}/ prefix; their
+// URLs become visible together only when that generation finalizes.
 
 import type { BookmarkCapture } from "@/lib/content";
+import { remoteMarkdownImageUrls } from "@/lib/bookmark-capture-generation";
 import { recordAction } from "@/lib/audit";
 import { resolveItemAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -20,7 +22,8 @@ import {
   getPostById,
   legacyBookmarkHtmlUrl,
   markCapturePending,
-  saveBookmarkCapture,
+  prepareBookmarkCaptureGeneration,
+  saveBookmarkCaptureGeneration,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
 import { syncError } from "../../sync";
@@ -171,21 +174,6 @@ function safeAssetStem(value: string, fallback: string): string {
   return stem || fallback;
 }
 
-function remoteMarkdownImageUrls(markdown: string | undefined): string[] {
-  if (!markdown) return [];
-  const pattern =
-    /!\[[^\]]*]\(\s*<?(https?:\/\/[^\s<>)]+)>?(?:\s+["'][^)]*["'])?\s*\)/gi;
-  const seen = new Set<string>();
-  const urls: string[] = [];
-  for (const match of markdown.matchAll(pattern)) {
-    const url = match[1]?.trim();
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    urls.push(url);
-  }
-  return urls;
-}
-
 function assetDownloadCandidates(sourceUrl: string): string[] {
   try {
     const url = new URL(sourceUrl);
@@ -295,12 +283,48 @@ function parseAssetManifest(value: FormDataEntryValue | null):
 
 function metaString(
   meta: Record<string, unknown>,
-  key: "title" | "siteName" | "description" | "capturedBy",
+  key: "title" | "siteName" | "description" | "capturedBy" | "generation",
 ): string | undefined {
   const value = meta[key];
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function generationErrorStatus(
+  reason: "missing" | "stale" | "invalid" | "incomplete" | "conflict",
+): number {
+  if (reason === "missing") return 404;
+  if (reason === "invalid") return 400;
+  if (reason === "incomplete") return 422;
+  return 409;
+}
+
+function captureArtifactUrls(capture: BookmarkCapture | undefined): string[] {
+  return [
+    ...(capture?.assets ?? []).map((asset) => asset.url),
+    ...(capture?.screenshotTiles ?? []).map((tile) => tile.url),
+    capture?.screenshotUrl,
+  ].filter((url): url is string => Boolean(url?.trim()));
+}
+
+async function deleteSupersededCaptureArtifacts(
+  previous: BookmarkCapture | undefined,
+  next: BookmarkCapture | undefined,
+  token: string | undefined,
+): Promise<void> {
+  if (!token) return;
+  const retained = new Set(captureArtifactUrls(next));
+  const obsolete = [...new Set(captureArtifactUrls(previous))].filter(
+    (url) => !retained.has(url),
+  );
+  if (obsolete.length === 0) return;
+  try {
+    const { del } = await import("@vercel/blob");
+    await del(obsolete, { token });
+  } catch (error) {
+    console.warn("superseded bookmark capture artifact deletion failed", error);
+  }
 }
 
 function metaNonNegativeInteger(
@@ -347,6 +371,25 @@ export async function PUT(
   }
   const url = typeof meta.url === "string" ? meta.url : "";
   if (!url) return syncError(400, "meta.url is required");
+  const requestedGeneration = metaString(meta, "generation");
+  if (
+    requestedGeneration &&
+    !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(requestedGeneration)
+  ) {
+    return syncError(400, "meta.generation is invalid");
+  }
+  const preparedGeneration = await prepareBookmarkCaptureGeneration(
+    blog.handle,
+    postId,
+    { requestedGeneration, url },
+  );
+  if (!preparedGeneration.ok) {
+    return syncError(
+      generationErrorStatus(preparedGeneration.reason),
+      preparedGeneration.message,
+    );
+  }
+  const generationId = preparedGeneration.generation.id;
   const metaError = typeof meta.error === "string" && meta.error ? meta.error : null;
 
   const screenshot = formFile(form, "screenshot");
@@ -415,7 +458,9 @@ export async function PUT(
     url,
     capturedAt: new Date().toISOString(),
     capturedBy: metaString(meta, "capturedBy") ?? "agent",
-    assets: existingPost.capture?.assets,
+    assets: preparedGeneration.generation.capture.assets,
+    screenshotTiles: preparedGeneration.generation.capture.screenshotTiles,
+    screenshotUrl: preparedGeneration.generation.capture.screenshotUrl,
   };
   const title = metaString(meta, "title");
   const siteName = metaString(meta, "siteName");
@@ -439,7 +484,7 @@ export async function PUT(
         const sourceName = entry.filename || file.name || entry.field;
         const stem = safeAssetStem(sourceName, entry.field);
         const blob = await put(
-          `captures/${blog.handle}/${postId}/assets/${stem}.${assetExtension(contentType)}`,
+          `captures/${blog.handle}/${postId}/generations/${generationId}/assets/${stem}.${assetExtension(contentType)}`,
           file,
           {
             access: "public",
@@ -479,7 +524,7 @@ export async function PUT(
         for (const { originalUrl, asset, index } of downloaded) {
           if (!asset) continue;
           const blob = await put(
-            `captures/${blog.handle}/${postId}/assets/${safeAssetStem(
+            `captures/${blog.handle}/${postId}/generations/${generationId}/assets/${safeAssetStem(
               asset.filename,
               `image-${index + 1}`,
             )}.${assetExtension(asset.contentType)}`,
@@ -527,7 +572,7 @@ export async function PUT(
           tileSuffix,
         );
         const blob = await put(
-          `captures/${blog.handle}/${postId}/${filename}`,
+          `captures/${blog.handle}/${postId}/generations/${generationId}/${filename}`,
           screenshot,
           {
             access: "public",
@@ -539,7 +584,10 @@ export async function PUT(
         if (screenshotIndex === undefined) {
           capture.screenshotUrl = blob.url;
         } else {
-          capture.screenshotTiles = [{ index: screenshotIndex, url: blob.url }];
+          capture.screenshotTiles = [
+            ...(capture.screenshotTiles ?? []),
+            { index: screenshotIndex, url: blob.url },
+          ];
           if (screenshotIndex === 0) capture.screenshotUrl = blob.url;
         }
       }
@@ -551,28 +599,52 @@ export async function PUT(
     Boolean(capture.assets?.length) &&
     !readableMarkdown &&
     !screenshot;
-  const saved = await saveBookmarkCapture(blog.handle, postId, capture, {
-    readableMarkdown: error ? undefined : readableMarkdown,
-    failed: Boolean(error),
-    keepPending:
-      !error &&
-      (usesFinalizationProtocol ? meta.isFinal !== true : legacyAssetOnlyPartial),
-  });
-  if (!saved) return syncError(404, "No such bookmark");
+  const saved = await saveBookmarkCaptureGeneration(
+    blog.handle,
+    postId,
+    generationId,
+    capture,
+    {
+      readableMarkdown: error ? undefined : readableMarkdown,
+      failed: Boolean(error),
+      screenshotCount,
+      isFinal:
+        !error &&
+        (usesFinalizationProtocol
+          ? meta.isFinal === true
+          : !legacyAssetOnlyPartial),
+    },
+  );
+  if (!saved.ok) {
+    return syncError(generationErrorStatus(saved.reason), saved.message);
+  }
   await deleteLegacyBookmarkHtmlBlob(legacyHtmlUrl);
+  if (saved.finalized && !error) {
+    await deleteSupersededCaptureArtifacts(
+      existingPost.capture,
+      saved.post.capture,
+      blobToken,
+    );
+  }
 
   await recordAction({
     actorUserId: userId,
     actorType: "external_agent",
     actionName: "sync.capture_bookmark",
     targetType: "item",
-    targetId: saved.id,
+    targetId: saved.post.id,
     inputSummary: url,
     outputSummary: error ? `failed: ${error}` : "captured",
   });
-  revalidateBlogPaths(blog, [saved.slug]);
+  revalidateBlogPaths(blog, [saved.post.slug]);
   return Response.json({
-    item: { id: saved.id, slug: saved.slug, captureStatus: saved.captureStatus },
+    item: {
+      id: saved.post.id,
+      slug: saved.post.slug,
+      captureStatus: saved.post.captureStatus,
+      generation: generationId,
+      finalized: saved.finalized,
+    },
   });
 }
 

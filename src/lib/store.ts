@@ -73,6 +73,19 @@ import {
   sanitizePostSlug,
 } from "./post-slug";
 import { RESERVED_HANDLES, TENANT_HANDLE_RE } from "./tenants";
+import {
+  captureGeneration,
+  completeCaptureGeneration,
+  completedCaptureGeneration,
+  failCaptureGeneration,
+  finalizeCaptureGeneration,
+  publicBookmarkCapture,
+  retainCaptureGeneration,
+  stageCaptureGeneration,
+  startCaptureGeneration,
+  type BookmarkCaptureGeneration,
+} from "./bookmark-capture-generation";
+import { randomUUID } from "node:crypto";
 
 type PostRow = typeof posts.$inferSelect;
 type PostFolderRow = Pick<PostRow, "id" | "folderId" | "type">;
@@ -189,7 +202,7 @@ function mapPost(row: PostRow): Post {
     wordCount,
     readingTime: readingTimeMinForWordCount(wordCount),
     captureStatus: cleanCaptureStatus(row.captureStatus),
-    capture: row.capture ?? undefined,
+    capture: publicBookmarkCapture(row.capture),
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
     pinned: row.pinned,
@@ -201,7 +214,7 @@ function mapPost(row: PostRow): Post {
 }
 
 function compactCapture(row: PostListRow): BookmarkCapture | undefined {
-  if (row.capture) return row.capture;
+  if (row.capture) return publicBookmarkCapture(row.capture);
   const capture: Partial<BookmarkCapture> = {
     url: row.captureUrl ?? undefined,
     title: row.captureTitle ?? undefined,
@@ -755,7 +768,9 @@ export async function renameFolder(
  */
 export async function listPendingCaptures(
   handle: string,
-): Promise<Array<{ id: string; slug: string; title: string; url: string }>> {
+): Promise<
+  Array<{ id: string; slug: string; title: string; url: string; generation?: string }>
+> {
   if (!db) return [];
   const blogId = await blogIdFor(handle);
   const rows = await db
@@ -765,6 +780,7 @@ export async function listPendingCaptures(
       title: posts.title,
       linkHref: sql<string | null>`${posts.links}->0->>'href'`,
       captureUrl: sql<string | null>`${posts.capture}->>'url'`,
+      capture: posts.capture,
     })
     .from(posts)
     .where(
@@ -782,6 +798,7 @@ export async function listPendingCaptures(
       slug: row.slug,
       title: row.title,
       url: row.linkHref ?? row.captureUrl ?? "",
+      generation: captureGeneration(row.capture)?.id,
     }))
     .filter((entry) => entry.url);
 }
@@ -805,6 +822,12 @@ export async function saveBookmarkCapture(
      * Mac app, with screenshots and readable assets) still claims the bookmark.
      */
     keepPending?: boolean;
+    /** A finalized capture generation replaces, rather than merges, artifacts. */
+    replaceCapture?: boolean;
+    /** Compare-and-swap guard used when finalizing a staged generation. */
+    expectedRevision?: number;
+    /** Hidden tombstone that rejects late uploads from a completed generation. */
+    completedGeneration?: string;
   } = {},
 ): Promise<Post | null> {
   if (!db) return null;
@@ -818,11 +841,23 @@ export async function saveBookmarkCapture(
     .limit(1);
   const row = existing[0];
   if (!row || row.type !== "bookmark") return null;
-  const merged: BookmarkCapture = mergeBookmarkCapture(row.capture, capture);
+  const previousCapture = publicBookmarkCapture(row.capture);
+  const merged: BookmarkCapture = opts.replaceCapture
+    ? stripLegacyBookmarkHtmlUrl(capture)
+    : mergeBookmarkCapture(previousCapture, capture);
   const readable = opts.readableMarkdown
     ? bookmarkReadableMarkdown(opts.readableMarkdown, merged.assets)
     : "";
-  const body = shouldRefreshBookmarkReadable(row.body, readable, merged.assets)
+  const body = (
+    opts.replaceCapture
+      ? shouldReplaceBookmarkReadableAfterRecapture(
+          row.body,
+          readable,
+          previousCapture,
+          merged.assets,
+        )
+      : shouldRefreshBookmarkReadable(row.body, readable, merged.assets)
+  )
     ? readable
     : row.body;
   const clean = (value: string | undefined) =>
@@ -871,7 +906,11 @@ export async function saveBookmarkCapture(
   const updated = await db
     .update(posts)
     .set({
-      capture: merged,
+      capture: opts.completedGeneration
+        ? completeCaptureGeneration(merged, opts.completedGeneration)
+        : opts.replaceCapture
+          ? merged
+          : retainCaptureGeneration(merged, row.capture),
       title,
       captureStatus: opts.keepPending
         ? "pending"
@@ -883,9 +922,203 @@ export async function saveBookmarkCapture(
       wordCount: wordCountForMarkdown(body),
       updatedAt: new Date(),
     })
-    .where(eq(posts.id, row.id))
+    .where(
+      opts.expectedRevision === undefined
+        ? eq(posts.id, row.id)
+        : and(
+            eq(posts.id, row.id),
+            eq(posts.revision, opts.expectedRevision),
+          ),
+    )
     .returning();
   return updated[0] ? mapPost(updated[0]) : null;
+}
+
+export type BookmarkCaptureGenerationPreparation =
+  | { ok: true; generation: BookmarkCaptureGeneration }
+  | { ok: false; reason: "missing" | "stale" | "conflict"; message: string };
+
+export type BookmarkCaptureGenerationSaveResult =
+  | { ok: true; post: Post; finalized: boolean }
+  | {
+      ok: false;
+      reason: "missing" | "stale" | "invalid" | "incomplete" | "conflict";
+      message: string;
+    };
+
+const CAPTURE_GENERATION_CAS_ATTEMPTS = 5;
+
+export async function prepareBookmarkCaptureGeneration(
+  handle: string,
+  postId: string,
+  params: { requestedGeneration?: string; url: string },
+): Promise<BookmarkCaptureGenerationPreparation> {
+  if (!db) {
+    return { ok: false, reason: "missing", message: "Bookmark not found" };
+  }
+  const blogId = await blogIdFor(handle);
+  for (let attempt = 0; attempt < CAPTURE_GENERATION_CAS_ATTEMPTS; attempt += 1) {
+    const rows = await db
+      .select()
+      .from(posts)
+      .where(
+        and(
+          eq(posts.id, postId),
+          eq(posts.blogId, blogId),
+          eq(posts.type, "bookmark"),
+          isNull(posts.deletedAt),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return { ok: false, reason: "missing", message: "Bookmark not found" };
+    }
+    const current = captureGeneration(row.capture);
+    if (
+      params.requestedGeneration &&
+      params.requestedGeneration === completedCaptureGeneration(row.capture)
+    ) {
+      return {
+        ok: false,
+        reason: "stale",
+        message: `Capture generation ${params.requestedGeneration} has already completed`,
+      };
+    }
+    if (current) {
+      if (
+        params.requestedGeneration &&
+        params.requestedGeneration !== current.id
+      ) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: `Capture generation ${params.requestedGeneration} is no longer current`,
+        };
+      }
+      return { ok: true, generation: current };
+    }
+
+    const generationId = params.requestedGeneration || randomUUID();
+    const storage = startCaptureGeneration(row.capture, {
+      id: generationId,
+      url: params.url,
+      startedAt: new Date().toISOString(),
+    });
+    const updated = await db
+      .update(posts)
+      .set({ capture: storage, captureStatus: "pending", updatedAt: new Date() })
+      .where(
+        and(
+          eq(posts.id, row.id),
+          eq(posts.blogId, blogId),
+          eq(posts.revision, row.revision),
+          isNull(posts.deletedAt),
+        ),
+      )
+      .returning({ capture: posts.capture });
+    const generation = captureGeneration(updated[0]?.capture);
+    if (generation) return { ok: true, generation };
+  }
+  return {
+    ok: false,
+    reason: "conflict",
+    message: "Capture changed while preparing its generation",
+  };
+}
+
+export async function saveBookmarkCaptureGeneration(
+  handle: string,
+  postId: string,
+  generationId: string,
+  incoming: BookmarkCapture,
+  opts: {
+    readableMarkdown?: string;
+    screenshotCount?: number;
+    isFinal?: boolean;
+    failed?: boolean;
+  } = {},
+): Promise<BookmarkCaptureGenerationSaveResult> {
+  if (!db) {
+    return { ok: false, reason: "missing", message: "Bookmark not found" };
+  }
+  const blogId = await blogIdFor(handle);
+  for (let attempt = 0; attempt < CAPTURE_GENERATION_CAS_ATTEMPTS; attempt += 1) {
+    const rows = await db
+      .select()
+      .from(posts)
+      .where(
+        and(
+          eq(posts.id, postId),
+          eq(posts.blogId, blogId),
+          eq(posts.type, "bookmark"),
+          isNull(posts.deletedAt),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return { ok: false, reason: "missing", message: "Bookmark not found" };
+    }
+
+    if (opts.failed) {
+      const failed = failCaptureGeneration(row.capture, generationId, incoming);
+      if (!failed.ok) return failed;
+      const saved = await saveBookmarkCapture(handle, postId, failed.capture, {
+        failed: true,
+        replaceCapture: true,
+        expectedRevision: row.revision,
+        completedGeneration: generationId,
+      });
+      if (saved) return { ok: true, post: saved, finalized: true };
+      continue;
+    }
+
+    const staged = stageCaptureGeneration(row.capture, generationId, incoming, {
+      startedAt: new Date().toISOString(),
+      readableMarkdown: opts.readableMarkdown,
+      screenshotCount: opts.screenshotCount,
+    });
+    if (!staged.ok) return staged;
+
+    if (opts.isFinal) {
+      const finalized = finalizeCaptureGeneration(staged.storage, generationId);
+      if (!finalized.ok) return finalized;
+      const saved = await saveBookmarkCapture(handle, postId, finalized.capture, {
+        readableMarkdown: finalized.readableMarkdown,
+        replaceCapture: true,
+        expectedRevision: row.revision,
+        completedGeneration: generationId,
+      });
+      if (saved) return { ok: true, post: saved, finalized: true };
+      continue;
+    }
+
+    const updated = await db
+      .update(posts)
+      .set({
+        capture: staged.storage,
+        captureStatus: "pending",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(posts.id, row.id),
+          eq(posts.blogId, blogId),
+          eq(posts.revision, row.revision),
+          isNull(posts.deletedAt),
+        ),
+      )
+      .returning();
+    if (updated[0]) {
+      return { ok: true, post: mapPost(updated[0]), finalized: false };
+    }
+  }
+  return {
+    ok: false,
+    reason: "conflict",
+    message: "Capture changed while saving its generation",
+  };
 }
 
 type LegacyBookmarkCapture = BookmarkCapture & { htmlUrl?: unknown };
@@ -993,6 +1226,25 @@ export function shouldRefreshBookmarkReadable(
   return nextSavedImageCount > currentSavedImageCount;
 }
 
+export function shouldReplaceBookmarkReadableAfterRecapture(
+  currentBody: string,
+  nextBody: string,
+  previousCapture: BookmarkCapture | null | undefined,
+  nextAssets: BookmarkCaptureAsset[] | undefined,
+): boolean {
+  if (!nextBody) return false;
+  if (!currentBody.trim()) return true;
+  const previousAssetUrls = (previousCapture?.assets ?? [])
+    .map((asset) => asset.url?.trim())
+    .filter((url): url is string => Boolean(url));
+  if (previousAssetUrls.some((url) => currentBody.includes(url))) return true;
+  const previousUrl = previousCapture?.url?.trim();
+  if (previousUrl && currentBody.slice(0, 1024).includes(`](${previousUrl})`)) {
+    return true;
+  }
+  return shouldRefreshBookmarkReadable(currentBody, nextBody, nextAssets);
+}
+
 function markdownImageCount(markdown: string): number {
   return markdown.match(
     /!\[[^\]]*]\(\s*<?(?:https?:\/\/|\/|\.\/|\.\.\/)[^\s<>)]+>?/gi,
@@ -1022,7 +1274,11 @@ export async function markCapturePending(
   const row = existing[0];
   if (!row) return null;
 
-  const capture = stripLegacyBookmarkHtmlUrl({ ...(row.capture ?? {}), url });
+  const capture = startCaptureGeneration(row.capture, {
+    id: randomUUID(),
+    url,
+    startedAt: new Date().toISOString(),
+  });
   delete capture.error;
 
   const updated = await db

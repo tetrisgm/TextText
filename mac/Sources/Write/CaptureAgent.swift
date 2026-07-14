@@ -940,7 +940,8 @@ final class CaptureAgent {
     private func uploadFailure(
         capture: PendingCapture, origin: URL, token: String, url: String, reason: String
     ) -> CaptureUploadResult {
-        let meta = CaptureMeta(url: url, capturedBy: "mac", error: reason)
+        var meta = CaptureMeta(url: url, capturedBy: "mac", error: reason)
+        meta.generation = capture.generation
         guard let body = multipartBody(meta: meta) else {
             return .terminal(CaptureAgentError("could not encode upload"))
         }
@@ -950,7 +951,7 @@ final class CaptureAgent {
     private func uploadSuccess(
         capture: PendingCapture, origin: URL, token: String, page: PageCapture, prepared: PreparedPageCapture
     ) -> CaptureUploadResult {
-        let meta = CaptureMeta(
+        var meta = CaptureMeta(
             url: page.finalURL.absoluteString,
             title: page.title,
             siteName: page.siteName,
@@ -958,6 +959,7 @@ final class CaptureAgent {
             capturedBy: "mac",
             error: nil
         )
+        meta.generation = capture.generation
 
         var storedContent = false
         var lastTransient: CaptureAgentError?
@@ -1340,6 +1342,30 @@ final class CaptureAgent {
     }
 }
 
+struct BookmarkCaptureScreenshotTile: Equatable {
+    let index: Int
+    let y: CGFloat
+    let height: CGFloat
+}
+
+func bookmarkCaptureScreenshotTilePlan(
+    pageHeight: CGFloat,
+    tileHeight: CGFloat = 4000,
+    maxTileCount: Int = 100
+) -> [BookmarkCaptureScreenshotTile] {
+    let safeTileHeight = max(1, tileHeight)
+    let safePageHeight = max(1, pageHeight)
+    let count = min(max(1, maxTileCount), max(1, Int(ceil(safePageHeight / safeTileHeight))))
+    return (0..<count).map { index in
+        let y = CGFloat(index) * safeTileHeight
+        return BookmarkCaptureScreenshotTile(
+            index: index,
+            y: y,
+            height: min(safeTileHeight, max(1, safePageHeight - y))
+        )
+    }
+}
+
 private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let requestedURL: URL
     private let fallbackTitle: String?
@@ -1541,14 +1567,14 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
     private func takeScreenshotTiles(
         readable: ReadableExtraction?, pageHeight: CGFloat, fallbackReason: String
     ) {
-        let tileCount = min(
-            maxSnapshotTileCount,
-            max(1, Int(ceil(pageHeight / snapshotTileHeight)))
+        let tiles = bookmarkCaptureScreenshotTilePlan(
+            pageHeight: pageHeight,
+            tileHeight: snapshotTileHeight,
+            maxTileCount: maxSnapshotTileCount
         )
         captureScreenshotTile(
             index: 0,
-            tileCount: tileCount,
-            pageHeight: pageHeight,
+            tiles: tiles,
             screenshots: [],
             readable: readable,
             fallbackReason: fallbackReason
@@ -1557,14 +1583,13 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
 
     private func captureScreenshotTile(
         index: Int,
-        tileCount: Int,
-        pageHeight: CGFloat,
+        tiles: [BookmarkCaptureScreenshotTile],
         screenshots: [Data],
         readable: ReadableExtraction?,
         fallbackReason: String
     ) {
         guard let webView, !completed else { return }
-        guard index < tileCount else {
+        guard index < tiles.count else {
             finishPage(
                 readable: readable,
                 screenshots: screenshots,
@@ -1573,13 +1598,11 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
             return
         }
 
-        let y = CGFloat(index) * snapshotTileHeight
-        let remaining = max(1, pageHeight - y)
-        let tileHeight = min(snapshotTileHeight, remaining)
-        let tileSize = NSSize(width: snapshotWidth, height: tileHeight)
+        let tile = tiles[index]
+        let tileSize = NSSize(width: snapshotWidth, height: tile.height)
         webView.frame = NSRect(origin: .zero, size: tileSize)
         webView.layoutSubtreeIfNeeded()
-        let scrollScript = "window.scrollTo(0, \(Int(y))); true;"
+        let scrollScript = "window.scrollTo(0, \(Int(tile.y))); true;"
         webView.evaluateJavaScript(scrollScript) { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                 guard let webView = self.webView, !self.completed else { return }
@@ -1596,8 +1619,7 @@ private final class BookmarkPageCapture: NSObject, WKNavigationDelegate, WKUIDel
                     }
                     self.captureScreenshotTile(
                         index: index + 1,
-                        tileCount: tileCount,
-                        pageHeight: pageHeight,
+                        tiles: tiles,
                         screenshots: screenshots + [png],
                         readable: readable,
                         fallbackReason: fallbackReason
@@ -1872,7 +1894,7 @@ private let lazyImageResetScrollScript = #"""
 })();
 """#
 
-private let readableExtractionScript = #"""
+let readableExtractionScript = #"""
 (function() {
   try {
     function attr(selector, name) {
@@ -2082,6 +2104,7 @@ private let readableExtractionScript = #"""
     }
     function shouldSkipImage(img, src) {
       if (!src || src.length > 4096 || /^data:/i.test(src)) return true;
+      if (isRecommendationRegion(img)) return true;
       var dimensions = imageDimensions(img);
       if (dimensions.renderedWidth > 0 && dimensions.renderedHeight > 0 &&
           (dimensions.renderedWidth < 64 || dimensions.renderedHeight < 64)) {
@@ -2293,17 +2316,36 @@ private let readableExtractionScript = #"""
       });
       return true;
     }
-    function appendFallbackContentImages() {
+    function isRecommendationRegion(img) {
+      var current = img;
+      while (current) {
+        var labels = [
+          current.id || "",
+          current.className || "",
+          current.getAttribute && current.getAttribute("role") || "",
+          current.getAttribute && current.getAttribute("aria-label") || "",
+          current.getAttribute && current.getAttribute("data-testid") || "",
+          current.getAttribute && current.getAttribute("data-component") || ""
+        ].join(" ").toLowerCase();
+        if (/(^|[\s_-])(related(?:[\s_-]?(?:content|stories|articles|posts))?|recommend(?:ation|ations|ed)?|more[\s_-]?(?:stories|articles|posts)|read[\s_-]?next|you[\s_-]?may[\s_-]?also[\s_-]?like|suggested|trending)([\s_-]|$)/.test(labels)) {
+          return true;
+        }
+        if (current === root) break;
+        current = current.parentElement;
+      }
+      return false;
+    }
+    function appendSupplementalContentImages() {
       var selectors = [
-        "article img",
-        "main img",
-        "[role='main'] img",
+        "img",
         ".ContentParagraph-Image",
         ".ContentParagraph img",
-        "[data-src]",
-        "[data-original]",
-        "[data-lazy-src]",
-        "[data-hi-res-src]"
+        "img[data-src]",
+        "img[data-original]",
+        "img[data-lazy-src]",
+        "img[data-hi-res-src]",
+        "img[data-srcset]",
+        "img[data-lazy-srcset]"
       ];
       var nodes = [];
       var seenNodes = [];
@@ -2313,16 +2355,14 @@ private let readableExtractionScript = #"""
         nodes.push(node);
       }
       for (var s = 0; s < selectors.length; s++) {
-        var matches = document.querySelectorAll(selectors[s]);
+        var matches = root.querySelectorAll(selectors[s]);
         for (var m = 0; m < matches.length; m++) pushNode(matches[m]);
-      }
-      if (!nodes.length && document.images) {
-        for (var d = 0; d < document.images.length; d++) pushNode(document.images[d]);
       }
 
       var added = 0;
       for (var n = 0; n < nodes.length; n++) {
-        if (added >= 48) break;
+        if (added >= 200) break;
+        if (isRecommendationRegion(nodes[n])) continue;
         var image = imageBlock(nodes[n], "");
         if (image && !seenImages[image.src]) {
           seenImages[image.src] = true;
@@ -2333,7 +2373,7 @@ private let readableExtractionScript = #"""
     }
     walk(root);
     flushText();
-    if (seenImageCount() === 0) appendFallbackContentImages();
+    appendSupplementalContentImages();
     if (seenImageCount() === 0) {
       appendURLImage(
         attr('meta[property="og:image"]', "content") ||
@@ -2396,6 +2436,7 @@ private struct PendingCapture: Decodable {
     let slug: String
     let title: String?
     let url: String
+    let generation: String?
 }
 
 private struct CaptureMeta: Encodable {
@@ -2408,6 +2449,7 @@ private struct CaptureMeta: Encodable {
     var screenshotIndex: Int? = nil
     var screenshotCount: Int? = nil
     var isFinal = false
+    var generation: String? = nil
 }
 
 private struct PageCapture {
