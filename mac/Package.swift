@@ -87,7 +87,6 @@ let package = Package(
         .executableTarget(
             name: "Write",
             dependencies: [
-                "WriteEditor",
                 "WriteShareCore",
                 "WriteWorkspaceCore",
                 "WriteAppIntents",

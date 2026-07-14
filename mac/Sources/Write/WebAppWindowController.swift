@@ -15,6 +15,24 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// Keeps a Finder-opened item from being overwritten by the asynchronous app
+/// cookie setup that precedes the first web navigation on a cold launch.
+struct WebAppStartupNavigation {
+    private(set) var path: String
+    private(set) var hasStarted = false
+
+    mutating func replaceBeforeStart(with path: String) -> Bool {
+        guard !hasStarted else { return false }
+        self.path = path
+        return true
+    }
+
+    mutating func begin() -> String {
+        hasStarted = true
+        return path
+    }
+}
+
 /// The main window: the full Write web experience in a native window. The app
 /// is account-gated, so it opens on the sign-in flow (never the public landing)
 /// until the account signs in. That one sign-in both authenticates the web view
@@ -27,6 +45,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var webView: WKWebView!
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
+    private var startupNavigation: WebAppStartupNavigation
     /// On-device AI over the `nativeAI` bridge; owned here, weak-proxied into
     /// the user content controller like the `writeApp` handler.
     private let aiBridge = NativeAIBridge()
@@ -56,6 +75,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     ) {
         self.origin = origin
         self.onLinked = onLinked
+        self.startupNavigation = WebAppStartupNavigation(path: startPath)
 
         Self.configureURLCacheForStartup()
 
@@ -136,7 +156,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         setAppCookie(on: webView.configuration.websiteDataStore.httpCookieStore) {
             [weak self] in
             guard let self else { return }
-            self.webView.load(self.request(for: startPath))
+            let path = self.startupNavigation.begin()
+            self.webView.load(self.request(for: path))
         }
     }
 
@@ -250,6 +271,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     /// Navigate the web view to a path on the origin (used after linking).
     func load(path: String) {
+        if startupNavigation.replaceBeforeStart(with: path) { return }
         webView.load(request(for: path))
     }
 

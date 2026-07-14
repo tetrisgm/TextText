@@ -2,7 +2,6 @@ import AppKit
 import CoreSpotlight
 import FileProvider
 import ServiceManagement
-import WriteEditor
 import WriteFileProviderKit
 import WriteShareCore
 import WriteSpotlight
@@ -31,7 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusWindow: StatusWindowController?
     private var webWindow: WebAppWindowController?
     private var sharingServicePicker: NSSharingServicePicker?
-    private var editorWindows: [URL: EditorWindowController] = [:]
+    private let openFileQueue = DispatchQueue(
+        label: "com.example.write.mac.open-files", qos: .userInitiated)
+    private var pendingExternalImports: [ExternalNoteImport] = []
     // Spotlight state is owned by spotlightQueue exclusively; the main
     // thread only ever schedules work onto it.
     private var spotlightIndexer: WorkspaceSpotlightIndexer?
@@ -156,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for url in fileURLs {
             switch OpenFileHandler.kind(for: url, syncRoot: root) {
             case .workspace:
-                _ = openEditorWindow(for: url, mode: .workspace(root))
+                resolveAndOpenManagedFile(url)
             case .external:
                 openExternalOrFileProviderItem(url)
             case .unsupported:
@@ -167,24 +168,149 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func openExternalOrFileProviderItem(_ url: URL) {
         NSFileProviderManager.getIdentifierForUserVisibleFile(at: url) {
-            [weak self] identifier, _, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                let isManaged = OpenFileHandler.isWriteFileProviderItem(identifier?.rawValue)
-                let mode: EditorOpenMode = isManaged
-                    ? .workspace(self.fileProviderRoot(containing: url))
-                    : .standalone
-                _ = self.openEditorWindow(for: url, mode: mode)
+            [weak self] identifier, domainIdentifier, _ in
+            guard let self else { return }
+            let belongsToWrite = OpenFileHandler.isWriteFileProviderItem(identifier?.rawValue)
+                || domainIdentifier?.rawValue == Self.fileProviderDomainId
+            if belongsToWrite {
+                self.resolveAndOpenManagedFile(
+                    url, fileProviderIdentifier: identifier?.rawValue)
+            } else {
+                self.prepareExternalImport(url)
             }
         }
     }
 
-    private func fileProviderRoot(containing url: URL) -> URL {
-        if let root = fileProviderUserVisibleURL,
-           WorkspaceLayout.relativePath(for: url, under: root) != nil {
-            return root
+    private func resolveAndOpenManagedFile(
+        _ url: URL,
+        fileProviderIdentifier: String? = nil
+    ) {
+        let fallbackHandle = store.cachedWorkspace()?.blog.handle
+        openFileQueue.async { [weak self] in
+            guard let self else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            let target = OpenFileHandler.managedTarget(
+                for: url,
+                fallbackHandle: fallbackHandle,
+                fileProviderIdentifier: fileProviderIdentifier
+            )
+            DispatchQueue.main.async {
+                guard let target else {
+                    self.appendActivity(
+                        "Could not match \(url.lastPathComponent) to a Write item")
+                    self.showMainWindow()
+                    return
+                }
+                self.openInMainWindow(target)
+            }
         }
-        return url.deletingLastPathComponent()
+    }
+
+    private func prepareExternalImport(_ url: URL) {
+        openFileQueue.async { [weak self] in
+            guard let self else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let item = try OpenFileHandler.externalNoteImport(for: url)
+                DispatchQueue.main.async { self.importExternalNote(item) }
+            } catch {
+                DispatchQueue.main.async {
+                    self.appendActivity(
+                        "Could not import \(url.lastPathComponent): \(error.localizedDescription)")
+                    self.showMainWindow()
+                }
+            }
+        }
+    }
+
+    private func importExternalNote(_ item: ExternalNoteImport) {
+        guard store.loadCredentials() != nil else {
+            pendingExternalImports.append(item)
+            showMainWindow()
+            return
+        }
+        openFileQueue.async { [weak self] in self?.createSyncedNote(item) }
+    }
+
+    private func createSyncedNote(_ item: ExternalNoteImport) {
+        guard let credentials = store.loadCredentials() else {
+            DispatchQueue.main.async { [weak self] in
+                self?.pendingExternalImports.append(item)
+                self?.showMainWindow()
+            }
+            return
+        }
+        let client = ServerClient(
+            origin: resolveServerOrigin(credentials: credentials),
+            token: credentials.token)
+        let workspace: Workspace
+        if let cached = store.cachedWorkspace() {
+            workspace = cached
+        } else {
+            switch client.workspace() {
+            case .failure(let error):
+                DispatchQueue.main.async { [weak self] in
+                    self?.appendActivity("Could not open note: \(error.description)")
+                    self?.showMainWindow()
+                }
+                return
+            case .success(let result):
+                workspace = result.0
+                store.cacheWorkspace(result.1)
+            }
+        }
+        guard let notesFolder = workspace.folders.first(where: { $0.mode == "notes" }) else {
+            DispatchQueue.main.async { [weak self] in
+                self?.appendActivity("Could not open note: this workspace has no Notes folder")
+                self?.showMainWindow()
+            }
+            return
+        }
+        switch client.postFile(
+            body: item.markdown,
+            folderId: notesFolder.id,
+            idempotencyKey: item.idempotencyKey
+        ) {
+        case .failure(let error):
+            DispatchQueue.main.async { [weak self] in
+                self?.appendActivity("Could not import note: \(error.description)")
+                self?.showMainWindow()
+            }
+        case .success(.conflict):
+            DispatchQueue.main.async { [weak self] in
+                self?.appendActivity("Could not import note because it changed on the server")
+                self?.showMainWindow()
+            }
+        case .success(.rejected(let message)):
+            DispatchQueue.main.async { [weak self] in
+                self?.appendActivity("Could not import note: \(message)")
+                self?.showMainWindow()
+            }
+        case .success(.saved(let saved)):
+            guard let itemId = saved.id else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.appendActivity("Could not import note: the server returned no item id")
+                    self?.showMainWindow()
+                }
+                return
+            }
+            let target = WriteItemOpenTarget(
+                handle: workspace.blog.handle,
+                itemId: itemId,
+                slug: saved.slug,
+                kind: "note"
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.engine.syncNow()
+                self?.openInMainWindow(target)
+            }
+        }
+    }
+
+    private func openInMainWindow(_ target: WriteItemOpenTarget) {
+        showMainWindow(path: target.appPath)
     }
 
     func application(
@@ -718,10 +844,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.appendActivity("No item found for Write link")
                     return
                 }
-                if !self.openEditorWindow(for: target, mode: .workspace(root)) {
-                    self.showMainWindow()
-                    NSWorkspace.shared.activateFileViewerSelecting([target])
-                }
+                self.resolveAndOpenManagedFile(target)
             }
         }
     }
@@ -1342,12 +1465,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func syncNowAction() { engine.syncNow() }
 
     @objc private func newNoteAction() {
-        do {
-            let url = try EditorNoteCreator.createUntitledNote(in: syncRoot())
-            _ = openEditorWindow(for: url, mode: .workspace(syncRoot()))
-        } catch {
-            appendActivity("Could not create note: \(error.localizedDescription)")
-        }
+        importExternalNote(ExternalNoteImport(
+            title: "Untitled",
+            body: "",
+            idempotencyKey: "new-note:\(UUID().uuidString)"
+        ))
     }
 
     @objc private func openFolderAction() {
@@ -1419,55 +1541,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// the sidebar open. The public landing is never the first thing shown, and
     /// an unlinked Mac mints its sync token silently in the web view (no visible
     /// link step) via the `needsToken` path.
-    private func showMainWindow() {
+    private func showMainWindow(path: String? = nil) {
         if webWindow == nil {
             let credentials = store.loadCredentials()
             let origin = resolveServerOrigin(credentials: credentials)
             webWindow = WebAppWindowController(
                 origin: origin,
-                startPath: "/start?to=home",
+                startPath: path ?? "/start?to=home",
                 needsToken: credentials == nil,
                 onLinked: { [weak self] token, linkedOrigin in
                     self?.handleAppLinked(token: token, origin: linkedOrigin)
                 })
+        } else if let path {
+            webWindow?.load(path: path)
         }
         webWindow?.present()
-    }
-
-    @discardableResult
-    private func openEditorWindow(for url: URL, mode: EditorOpenMode) -> Bool {
-        let key = url.standardizedFileURL
-        if let existing = editorWindows[key] {
-            existing.present()
-            return true
-        }
-
-        do {
-            let onClose: (URL) -> Void = { [weak self] closedURL in
-                self?.editorWindows.removeValue(forKey: key)
-                self?.editorWindows.removeValue(forKey: closedURL.standardizedFileURL)
-            }
-            let controller: EditorWindowController
-            switch mode {
-            case .workspace(let root):
-                controller = try EditorWindowController(
-                    fileURL: key, workspaceRootURL: root, onClose: onClose)
-            case .standalone:
-                controller = try EditorWindowController(
-                    standaloneFileURL: key, onClose: onClose)
-            }
-            editorWindows[key] = controller
-            controller.present()
-            return true
-        } catch {
-            appendActivity("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    private enum EditorOpenMode {
-        case workspace(URL)
-        case standalone
     }
 
     /// The web view minted a sync token in the background: store it and start
@@ -1484,6 +1572,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appendActivity("Linked this Mac")
         engine.syncNow()
         captureAgent.poke()
+        let pending = pendingExternalImports
+        pendingExternalImports.removeAll()
+        for item in pending { importExternalNote(item) }
         refreshUI()
     }
 
