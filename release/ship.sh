@@ -144,11 +144,30 @@ ORIGIN="${WRITE_PRODUCT_ORIGIN:-}"
 if [ -n "$ORIGIN" ]; then
   ORIGIN="${ORIGIN%/}"
   EXPECTED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist")"
-  VERIFY_QUERY="ship_verify=$(date +%s)-$$"
   echo ">> verify public release"
-  PUBLIC_APPCAST="$(curl -fsS -H 'Cache-Control: no-cache' "$ORIGIN/appcast.xml?$VERIFY_QUERY")"
-  PUBLIC_VERSION="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:shortVersionString>.*|\1|p' | head -1)"
-  PUBLIC_BUILD="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*|\1|p' | head -1)"
+  PUBLIC_APPCAST=""
+  PUBLIC_API=""
+  PUBLIC_VERSION=""
+  PUBLIC_BUILD=""
+  API_VERSION=""
+  API_BUILD=""
+  for attempt in {1..30}; do
+    VERIFY_QUERY="ship_verify=$(date +%s)-$$-$attempt"
+    PUBLIC_APPCAST="$(curl -fsS -H 'Cache-Control: no-cache' "$ORIGIN/appcast.xml?$VERIFY_QUERY" || true)"
+    PUBLIC_VERSION="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:shortVersionString>.*|\1|p' | head -1)"
+    PUBLIC_BUILD="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*|\1|p' | head -1)"
+    PUBLIC_API="$(curl -fsS -H 'Cache-Control: no-cache' "$ORIGIN/api/app/version?$VERIFY_QUERY" || true)"
+    API_VERSION="$(printf '%s' "$PUBLIC_API" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
+    API_BUILD="$(printf '%s' "$PUBLIC_API" | python3 -c 'import json,sys; print(json.load(sys.stdin)["buildNumber"])' 2>/dev/null || true)"
+    if [ "$PUBLIC_VERSION" = "$VERSION" ] && [ "$PUBLIC_BUILD" = "$EXPECTED_BUILD" ] && \
+       [ "$API_VERSION" = "$VERSION" ] && [ "$API_BUILD" = "$EXPECTED_BUILD" ]; then
+      break
+    fi
+    if [ "$attempt" -lt 30 ]; then
+      echo "   waiting for public release marker ($attempt/30): appcast ${PUBLIC_VERSION:-unavailable} (${PUBLIC_BUILD:-unavailable}), API ${API_VERSION:-unavailable} (${API_BUILD:-unavailable})"
+      sleep 2
+    fi
+  done
   PUBLIC_ZIP_URL="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<enclosure[^>]* url="\([^"]*\)".*|\1|p' | head -1)"
   PUBLIC_SIGNATURE="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<enclosure[^>]* sparkle:edSignature="\([^"]*\)".*|\1|p' | head -1)"
   [ "$PUBLIC_VERSION" = "$VERSION" ] || { echo "Public appcast version is $PUBLIC_VERSION, expected $VERSION." >&2; exit 1; }
@@ -157,9 +176,6 @@ if [ -n "$ORIGIN" ]; then
   [ -n "$PUBLIC_SIGNATURE" ] || { echo "Public appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
   curl -fsSI "$PUBLIC_ZIP_URL" >/dev/null
   curl -fsSI "$ORIGIN/download/Write.zip" >/dev/null
-  PUBLIC_API="$(curl -fsS -H 'Cache-Control: no-cache' "$ORIGIN/api/app/version?$VERIFY_QUERY")"
-  API_VERSION="$(printf '%s' "$PUBLIC_API" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-  API_BUILD="$(printf '%s' "$PUBLIC_API" | python3 -c 'import json,sys; print(json.load(sys.stdin)["buildNumber"])')"
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
   echo "   appcast:  $PUBLIC_VERSION ($PUBLIC_BUILD)"

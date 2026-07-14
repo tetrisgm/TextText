@@ -4,6 +4,57 @@ import WriteWorkspaceCore
 @testable import WriteEditor
 
 final class EditorDocumentTests: XCTestCase {
+    func testStandaloneMarkdownKeepsFrontMatterVisibleAndLiteral() throws {
+        let root = try temporaryDirectory()
+        let url = root.appendingPathComponent("outside.md")
+        let source = """
+        ---
+        title: Not Write metadata
+        custom: keep this visible
+        ---
+
+        Original body
+        """ + "\n"
+        try write(Data(source.utf8), to: url)
+
+        let document = try EditorDocument(standaloneFileURL: url)
+        XCTAssertEqual(document.mode, .standalone)
+        XCTAssertFalse(document.allowsTitleEditing)
+        XCTAssertEqual(document.title, "outside")
+        XCTAssertEqual(document.body, source)
+
+        document.setBody(source.replacingOccurrences(of: "Original", with: "Edited"))
+        try document.save()
+        XCTAssertEqual(
+            try String(contentsOf: url, encoding: .utf8),
+            source.replacingOccurrences(of: "Original", with: "Edited")
+        )
+    }
+
+    func testStandaloneTextNeverInjectsWriteMetadata() throws {
+        let root = try temporaryDirectory()
+        let url = root.appendingPathComponent("plain.txt")
+        try write(Data("Literal text\n".utf8), to: url)
+
+        let document = try EditorDocument(standaloneFileURL: url)
+        document.setTitle("Attempted metadata title")
+        document.setBody("Changed text\n")
+        try document.save()
+
+        XCTAssertEqual(document.title, "plain")
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "Changed text\n")
+        XCTAssertFalse(try String(contentsOf: url, encoding: .utf8).contains("---"))
+    }
+
+    func testStandaloneConflictCopyPreservesOriginalExtension() throws {
+        let root = try temporaryDirectory()
+        let url = root.appendingPathComponent("plain.txt")
+        try write(Data("Text\n".utf8), to: url)
+
+        let document = try EditorDocument(standaloneFileURL: url)
+        XCTAssertEqual(document.conflictedCopyURL(for: url).pathExtension, "txt")
+    }
+
     func testFrontMatterRoundTripPreservesHeaderBytesWhenBodyChanges() throws {
         let root = try temporaryDirectory()
         let url = root.appendingPathComponent("Notes/round-trip.md")

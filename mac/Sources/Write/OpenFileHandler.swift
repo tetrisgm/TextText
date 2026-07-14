@@ -1,31 +1,34 @@
 import AppKit
 import UniformTypeIdentifiers
+import WriteFileProviderKit
 import WriteWorkspaceCore
 
-/// Opening markdown files with Write.app: files inside the workspace root open
-/// in the native editor; anything else is politely refused.
+enum OpenFileKind: Equatable {
+    case workspace
+    case external
+    case unsupported
+}
+
+/// Classifies files delivered by Launch Services. Write workspace files retain
+/// their metadata-aware behavior, while ordinary text files open literally.
 enum OpenFileHandler {
-    /// Handle Finder-opened files. Returns the URLs it could NOT handle.
-    @discardableResult
-    static func open(
-        urls: [URL],
-        store _: StateStore,
-        syncRoot: URL,
-        openEditor: (URL) -> Bool
-    ) -> [URL] {
-        var unhandled: [URL] = []
-
-        for url in urls {
-            guard url.pathExtension.lowercased() == "md",
-                  let relativePath = WorkspaceLayout.relativePath(for: url, under: syncRoot),
-                  !WorkspaceLayout.isInternal(relativePath: relativePath),
-                  openEditor(url) else {
-                unhandled.append(url)
-                continue
-            }
+    static func kind(for url: URL, syncRoot: URL) -> OpenFileKind {
+        guard supportedExtensions.contains(url.pathExtension.lowercased()) else {
+            return .unsupported
         }
+        if let relativePath = WorkspaceLayout.relativePath(for: url, under: syncRoot) {
+            return WorkspaceLayout.isInternal(relativePath: relativePath)
+                ? .unsupported
+                : .workspace
+        }
+        return .external
+    }
 
-        return unhandled
+    static func isWriteFileProviderItem(_ rawIdentifier: String?) -> Bool {
+        guard let rawIdentifier,
+              let identifier = WriteItemIdentifier(rawValue: rawIdentifier),
+              case .file = identifier else { return false }
+        return true
     }
 
     /// Whether Write.app is the system default for markdown files.
@@ -45,6 +48,7 @@ enum OpenFileHandler {
     }
 
     private static let markdownType = UTType(importedAs: "net.daringfireball.markdown")
+    private static let supportedExtensions: Set<String> = ["md", "markdown", "txt"]
 
     private static func sameFile(_ lhs: URL, _ rhs: URL) -> Bool {
         let lhsId = try? lhs.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier

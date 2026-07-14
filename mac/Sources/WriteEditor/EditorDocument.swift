@@ -10,7 +10,7 @@ public enum EditorDocumentError: LocalizedError {
         case .notInWorkspace(let url):
             return "\(url.lastPathComponent) is not inside the Write workspace"
         case .unsupportedEncoding(let url):
-            return "\(url.lastPathComponent) is not UTF-8 markdown"
+            return "\(url.lastPathComponent) is not UTF-8 text"
         }
     }
 }
@@ -24,16 +24,23 @@ public enum EditorExternalChangeResult: Equatable {
     case mergedIdentity
 }
 
+public enum EditorDocumentMode: Equatable {
+    case workspace
+    case standalone
+}
+
 /// All mutating entry points are main-thread-only; the external-change
 /// handler is delivered on the main queue so every piece of document state
 /// has a single owning thread.
 public final class EditorDocument {
     public private(set) var fileURL: URL
     public let workspaceRootURL: URL
+    public let mode: EditorDocumentMode
 
     public private(set) var body: String
     public private(set) var title: String
     public private(set) var isDirty = false
+    public var allowsTitleEditing: Bool { mode == .workspace }
 
     private let coordinator: WorkspaceFileCoordinator
     private let dateProvider: () -> Date
@@ -46,22 +53,52 @@ public final class EditorDocument {
         try self.init(
             fileURL: fileURL,
             workspaceRootURL: workspaceRootURL,
-            coordinator: WorkspaceFileCoordinator(rootURL: workspaceRootURL)
+            coordinator: WorkspaceFileCoordinator(rootURL: workspaceRootURL),
+            mode: .workspace
         )
     }
 
-    public init(
+    public convenience init(
         fileURL: URL,
         workspaceRootURL: URL,
         coordinator: WorkspaceFileCoordinator,
         dateProvider: @escaping () -> Date = Date.init
     ) throws {
-        guard let relativePath = WorkspaceLayout.relativePath(for: fileURL, under: workspaceRootURL),
-              !WorkspaceLayout.isInternal(relativePath: relativePath) else {
-            throw EditorDocumentError.notInWorkspace(fileURL)
+        try self.init(
+            fileURL: fileURL,
+            workspaceRootURL: workspaceRootURL,
+            coordinator: coordinator,
+            dateProvider: dateProvider,
+            mode: .workspace
+        )
+    }
+
+    public convenience init(standaloneFileURL: URL) throws {
+        try self.init(
+            fileURL: standaloneFileURL,
+            workspaceRootURL: standaloneFileURL.deletingLastPathComponent(),
+            coordinator: WorkspaceFileCoordinator(rootURL: standaloneFileURL),
+            mode: .standalone
+        )
+    }
+
+    private init(
+        fileURL: URL,
+        workspaceRootURL: URL,
+        coordinator: WorkspaceFileCoordinator,
+        dateProvider: @escaping () -> Date = Date.init,
+        mode: EditorDocumentMode
+    ) throws {
+        if mode == .workspace {
+            guard let relativePath = WorkspaceLayout.relativePath(
+                for: fileURL, under: workspaceRootURL),
+                  !WorkspaceLayout.isInternal(relativePath: relativePath) else {
+                throw EditorDocumentError.notInWorkspace(fileURL)
+            }
         }
         self.fileURL = fileURL
         self.workspaceRootURL = workspaceRootURL
+        self.mode = mode
         self.coordinator = coordinator
         self.dateProvider = dateProvider
         self.body = ""
@@ -92,6 +129,7 @@ public final class EditorDocument {
     }
 
     public func setTitle(_ newTitle: String) {
+        guard allowsTitleEditing else { return }
         guard title != newTitle else { return }
         title = newTitle
         titleEdited = true
@@ -132,9 +170,7 @@ public final class EditorDocument {
             try save()
             return nil
         } catch {
-            let recoveryDirectory = workspaceRootURL
-                .appendingPathComponent(WorkspaceLayout.localMetadataDirectoryName, isDirectory: true)
-                .appendingPathComponent("recovery", isDirectory: true)
+            let recoveryDirectory = recoveryDirectoryURL()
             try? FileManager.default.createDirectory(
                 at: recoveryDirectory, withIntermediateDirectories: true)
             let recoveryURL = copyURL(
@@ -198,16 +234,21 @@ public final class EditorDocument {
     private func copyURL(for url: URL, marker: String) -> URL {
         let fileManager = FileManager.default
         let stem = url.deletingPathExtension().lastPathComponent
+        let pathExtension = url.pathExtension
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HHmm"
         let stamp = formatter.string(from: dateProvider())
+        func filename(_ suffix: String) -> String {
+            let base = "\(stem) (\(marker) \(stamp)\(suffix))"
+            return pathExtension.isEmpty ? base : "\(base).\(pathExtension)"
+        }
         var candidate = url.deletingLastPathComponent()
-            .appendingPathComponent("\(stem) (\(marker) \(stamp)).md")
+            .appendingPathComponent(filename(""))
         var number = 2
         while fileManager.fileExists(atPath: candidate.path) {
             candidate = url.deletingLastPathComponent()
-                .appendingPathComponent("\(stem) (\(marker) \(stamp) \(number)).md")
+                .appendingPathComponent(filename(" \(number)"))
             number += 1
         }
         return candidate
@@ -218,6 +259,7 @@ public final class EditorDocument {
     /// next save lands at the file's new home instead of resurrecting the
     /// dead path as a duplicate the server will reject.
     private func relocateIfMoved() {
+        guard mode == .workspace else { return }
         let fileManager = FileManager.default
         guard !fileManager.fileExists(atPath: fileURL.path), let writeId else { return }
         let match = WorkspaceIndexStore.identityFiles(root: workspaceRootURL)
@@ -233,6 +275,7 @@ public final class EditorDocument {
     /// front matter (body bytes identical to the last disk state); nil when
     /// the body changed too, which is a real conflict.
     private func identityOnlyFrontMatter(incoming: Data) -> Data? {
+        guard mode == .workspace else { return nil }
         let incomingSplit = MarkdownFrontMatter.split(incoming)
         guard let incomingFrontMatter = incomingSplit.frontMatter else { return nil }
         let lastSplit = MarkdownFrontMatter.split(lastDiskData)
@@ -252,7 +295,7 @@ public final class EditorDocument {
     }
 
     private func finishSave() {
-        if titleEdited {
+        if mode == .workspace, titleEdited {
             frontMatterData = MarkdownFrontMatter.rewritingTitle(in: frontMatterData, to: title)
         }
         titleEdited = false
@@ -260,6 +303,7 @@ public final class EditorDocument {
     }
 
     private func renderedData() throws -> Data {
+        if mode == .standalone { return Data(body.utf8) }
         let renderedFrontMatter = titleEdited
             ? MarkdownFrontMatter.rewritingTitle(in: frontMatterData, to: title)
             : frontMatterData
@@ -272,6 +316,18 @@ public final class EditorDocument {
     }
 
     private func applyDiskData(_ data: Data) throws {
+        if mode == .standalone {
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw EditorDocumentError.unsupportedEncoding(fileURL)
+            }
+            frontMatterData = nil
+            body = text
+            title = fileURL.deletingPathExtension().lastPathComponent
+            writeId = nil
+            titleEdited = false
+            isDirty = false
+            return
+        }
         let split = MarkdownFrontMatter.split(data)
         guard let bodyText = String(data: split.body, encoding: .utf8) else {
             throw EditorDocumentError.unsupportedEncoding(fileURL)
@@ -285,6 +341,23 @@ public final class EditorDocument {
         } ?? writeId
         titleEdited = false
         isDirty = false
+    }
+
+    private func recoveryDirectoryURL() -> URL {
+        if mode == .workspace {
+            return workspaceRootURL
+                .appendingPathComponent(
+                    WorkspaceLayout.localMetadataDirectoryName, isDirectory: true)
+                .appendingPathComponent("recovery", isDirectory: true)
+        }
+        let fileManager = FileManager.default
+        let support = fileManager.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return support
+            .appendingPathComponent("Write", isDirectory: true)
+            .appendingPathComponent("Recovery", isDirectory: true)
     }
 }
 

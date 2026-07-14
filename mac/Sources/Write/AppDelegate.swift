@@ -152,12 +152,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let fileURLs = urls.filter { $0.scheme != "write-app" }
         guard !fileURLs.isEmpty else { return }
-        let unhandled = OpenFileHandler.open(urls: fileURLs, store: store, syncRoot: syncRoot()) { [weak self] url in
-            self?.openEditorWindow(for: url) ?? false
+        let root = syncRoot()
+        for url in fileURLs {
+            switch OpenFileHandler.kind(for: url, syncRoot: root) {
+            case .workspace:
+                _ = openEditorWindow(for: url, mode: .workspace(root))
+            case .external:
+                openExternalOrFileProviderItem(url)
+            case .unsupported:
+                appendActivity("Could not open \(url.lastPathComponent): unsupported file type")
+            }
         }
-        if !unhandled.isEmpty {
-            appendActivity("Could not open \(unhandled.count) file(s): not in the Write folder")
+    }
+
+    private func openExternalOrFileProviderItem(_ url: URL) {
+        NSFileProviderManager.getIdentifierForUserVisibleFile(at: url) {
+            [weak self] identifier, _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let isManaged = OpenFileHandler.isWriteFileProviderItem(identifier?.rawValue)
+                let mode: EditorOpenMode = isManaged
+                    ? .workspace(self.fileProviderRoot(containing: url))
+                    : .standalone
+                _ = self.openEditorWindow(for: url, mode: mode)
+            }
         }
+    }
+
+    private func fileProviderRoot(containing url: URL) -> URL {
+        if let root = fileProviderUserVisibleURL,
+           WorkspaceLayout.relativePath(for: url, under: root) != nil {
+            return root
+        }
+        return url.deletingLastPathComponent()
     }
 
     func application(
@@ -691,12 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.appendActivity("No item found for Write link")
                     return
                 }
-                let unhandled = OpenFileHandler.open(
-                    urls: [target], store: self.store, syncRoot: root
-                ) { [weak self] url in
-                    self?.openEditorWindow(for: url) ?? false
-                }
-                if !unhandled.isEmpty {
+                if !self.openEditorWindow(for: target, mode: .workspace(root)) {
                     self.showMainWindow()
                     NSWorkspace.shared.activateFileViewerSelecting([target])
                 }
@@ -1322,7 +1344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func newNoteAction() {
         do {
             let url = try EditorNoteCreator.createUntitledNote(in: syncRoot())
-            _ = openEditorWindow(for: url)
+            _ = openEditorWindow(for: url, mode: .workspace(syncRoot()))
         } catch {
             appendActivity("Could not create note: \(error.localizedDescription)")
         }
@@ -1413,7 +1435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @discardableResult
-    private func openEditorWindow(for url: URL) -> Bool {
+    private func openEditorWindow(for url: URL, mode: EditorOpenMode) -> Bool {
         let key = url.standardizedFileURL
         if let existing = editorWindows[key] {
             existing.present()
@@ -1421,13 +1443,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         do {
-            let controller = try EditorWindowController(
-                fileURL: key,
-                workspaceRootURL: syncRoot(),
-                onClose: { [weak self] closedURL in
-                    self?.editorWindows.removeValue(forKey: closedURL.standardizedFileURL)
-                }
-            )
+            let onClose: (URL) -> Void = { [weak self] closedURL in
+                self?.editorWindows.removeValue(forKey: key)
+                self?.editorWindows.removeValue(forKey: closedURL.standardizedFileURL)
+            }
+            let controller: EditorWindowController
+            switch mode {
+            case .workspace(let root):
+                controller = try EditorWindowController(
+                    fileURL: key, workspaceRootURL: root, onClose: onClose)
+            case .standalone:
+                controller = try EditorWindowController(
+                    standaloneFileURL: key, onClose: onClose)
+            }
             editorWindows[key] = controller
             controller.present()
             return true
@@ -1435,6 +1463,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             appendActivity("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
             return false
         }
+    }
+
+    private enum EditorOpenMode {
+        case workspace(URL)
+        case standalone
     }
 
     /// The web view minted a sync token in the background: store it and start

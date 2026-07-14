@@ -11,12 +11,33 @@ public final class EditorWindowController: NSWindowController, NSTextViewDelegat
     private var externalChangeWorkItem: DispatchWorkItem?
     private var applyingDocumentState = false
 
-    public init(
+    public convenience init(
         fileURL: URL,
         workspaceRootURL: URL,
         onClose: ((URL) -> Void)? = nil
     ) throws {
-        self.editorDocument = try EditorDocument(fileURL: fileURL, workspaceRootURL: workspaceRootURL)
+        try self.init(
+            editorDocument: EditorDocument(
+                fileURL: fileURL, workspaceRootURL: workspaceRootURL),
+            onClose: onClose
+        )
+    }
+
+    public convenience init(
+        standaloneFileURL: URL,
+        onClose: ((URL) -> Void)? = nil
+    ) throws {
+        try self.init(
+            editorDocument: EditorDocument(standaloneFileURL: standaloneFileURL),
+            onClose: onClose
+        )
+    }
+
+    private init(
+        editorDocument: EditorDocument,
+        onClose: ((URL) -> Void)?
+    ) {
+        self.editorDocument = editorDocument
         self.onClose = onClose
 
         let window = NSWindow(
@@ -25,7 +46,9 @@ public final class EditorWindowController: NSWindowController, NSTextViewDelegat
             backing: .buffered,
             defer: false
         )
-        window.title = editorDocument.title.isEmpty ? fileURL.lastPathComponent : editorDocument.title
+        window.title = editorDocument.title.isEmpty
+            ? editorDocument.fileURL.lastPathComponent
+            : editorDocument.title
         window.minSize = NSSize(width: 520, height: 360)
 
         super.init(window: window)
@@ -98,6 +121,8 @@ public final class EditorWindowController: NSWindowController, NSTextViewDelegat
         titleField.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
         titleField.lineBreakMode = .byTruncatingTail
         titleField.delegate = self
+        titleField.isEditable = editorDocument.allowsTitleEditing
+        titleField.isSelectable = true
         titleField.cell?.sendsActionOnEndEditing = false
         titleField.setAccessibilityLabel("Title")
 
