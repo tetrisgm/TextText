@@ -1013,10 +1013,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderStatusMonitor.bind(to: domain)
         fileProviderReconcileIdentity = nil
         UserDefaults.standard.removeObject(forKey: "fpDomainBuild")
-        if let manager = NSFileProviderManager(for: domain) {
-            manager.signalEnumerator(for: .rootContainer) { _ in }
-            manager.signalEnumerator(for: .workingSet) { _ in }
-        }
+        // An app upgrade can add synthetic children below an existing folder
+        // (bookmark `.assets` sidecars are one example). Invalidating only the
+        // domain root leaves those nested listings cached indefinitely. Reuse
+        // the normal change signal so the workspace and every known folder are
+        // re-enumerated before the offline materializer walks the tree.
+        signalFileProviderChange()
         let work = DispatchWorkItem { [weak self] in
             guard let self,
                   self.fileProviderDomainEpoch == epoch,
