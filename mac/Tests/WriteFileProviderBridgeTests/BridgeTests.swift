@@ -26,11 +26,13 @@ final class BridgeTests: XCTestCase {
 
     // MARK: helpers (self-contained; do not borrow the kit test fixtures)
 
-    private func manifestEntry(hash: String = "abc123") -> WriteManifestItem {
+    private func manifestEntry(
+        hash: String = "abc123", url: String? = "https://write.example/item/p1"
+    ) -> WriteManifestItem {
         WriteManifestItem(
             file: "hello.md", kind: "article", slug: "hello", title: "Hello",
             status: "draft", hash: hash, id: "p1", date: nil,
-            createdAt: "2026-07-01T09:00:00Z", updatedAt: "2026-07-11T10:00:00Z", url: nil)
+            createdAt: "2026-07-01T09:00:00Z", updatedAt: "2026-07-11T10:00:00Z", url: url)
     }
 
     private func fileItem(readOnly: Bool = true, hash: String = "abc123") -> WriteItem {
@@ -119,6 +121,27 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(item.contentType, .folder)
         XCTAssertEqual(item.filename, "Blog")
         XCTAssertTrue(item.capabilities.contains(.allowsContentEnumerating))
+    }
+
+    func testActionPredicateUserInfoIsTruthful() {
+        let file = WriteFileProviderItem(fileItem())
+        XCTAssertEqual(
+            file.userInfo?[WriteFileProviderUserInfoKey.fileActionsAvailable] as? Bool,
+            true)
+        XCTAssertEqual(
+            file.userInfo?[WriteFileProviderUserInfoKey.manifestURLAvailable] as? Bool,
+            true)
+
+        let noLink = WriteFileProviderItem(WriteItemMapper.item(
+            for: manifestEntry(url: nil), inFolder: "blog", handle: "demo",
+            readOnly: true)!)
+        XCTAssertEqual(
+            noLink.userInfo?[WriteFileProviderUserInfoKey.fileActionsAvailable] as? Bool,
+            false)
+        XCTAssertEqual(
+            noLink.userInfo?[WriteFileProviderUserInfoKey.manifestURLAvailable] as? Bool,
+            false)
+        XCTAssertNil(WriteFileProviderItem(folderItem()).userInfo)
     }
 
     func testFileVersionTracksContentHash() {

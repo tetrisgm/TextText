@@ -13,21 +13,21 @@ struct StatusModel {
     var folderPath: String
     var folderStatus: String?
     var lastSyncLine: String
+    var finderStatus: FileProviderStatusSnapshot
     var busy: Bool
     var activity: [String]
     var isDefaultForMarkdown: Bool
 }
 
 /// A small native status window: link state (with the device-link code when
-/// one is pending), the sync folder with a Change button, recent activity,
-/// and Sign in / Sign out. Frame autosaved.
+/// one is pending), the Finder location and detailed sync state, recent
+/// activity, and Sign in / Sign out. Frame autosaved.
 final class StatusWindowController: NSWindowController {
     struct Actions {
         var signIn: () -> Void = {}
         var signOut: () -> Void = {}
         var cancelLink: () -> Void = {}
         var reopenApproval: () -> Void = {}
-        var changeFolder: () -> Void = {}
         var openFolder: () -> Void = {}
         var syncNow: () -> Void = {}
         var makeDefaultMarkdown: () -> Void = {}
@@ -43,8 +43,10 @@ final class StatusWindowController: NSWindowController {
     private let reopenButton = NSButton(title: "Open Approval Page", target: nil, action: nil)
     private let folderLabel = NSTextField(labelWithString: "")
     private let folderStatusLabel = NSTextField(labelWithString: "")
-    private let changeButton = NSButton(title: "Change", target: nil, action: nil)
     private let openButton = NSButton(title: "Open", target: nil, action: nil)
+    private let finderStatusImage = NSImageView()
+    private let finderStatusLabel = NSTextField(labelWithString: "")
+    private let finderStatusDetailLabel = NSTextField(labelWithString: "")
     private let syncLabel = NSTextField(labelWithString: "")
     private let syncButton = NSButton(title: "Sync Now", target: nil, action: nil)
     private let markdownLabel = NSTextField(labelWithString: "Open .md files with Write")
@@ -100,10 +102,16 @@ final class StatusWindowController: NSWindowController {
         folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         folderStatusLabel.font = .systemFont(ofSize: 11)
         folderStatusLabel.textColor = .secondaryLabelColor
-        changeButton.target = self
-        changeButton.action = #selector(changeFolderAction)
         openButton.target = self
         openButton.action = #selector(openFolderAction)
+
+        finderStatusImage.imageScaling = .scaleProportionallyDown
+        finderStatusImage.setContentHuggingPriority(.required, for: .horizontal)
+        finderStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        finderStatusDetailLabel.font = .systemFont(ofSize: 11)
+        finderStatusDetailLabel.textColor = .secondaryLabelColor
+        finderStatusDetailLabel.maximumNumberOfLines = 2
+        finderStatusDetailLabel.lineBreakMode = .byWordWrapping
 
         syncLabel.font = .systemFont(ofSize: 12)
         syncLabel.textColor = .secondaryLabelColor
@@ -131,12 +139,21 @@ final class StatusWindowController: NSWindowController {
         let accountRow = NSStackView(views: [accountLabel, NSView(), reopenButton, accountButton])
         accountRow.orientation = .horizontal
 
-        let folderTitle = sectionTitle("Sync folder")
-        let folderRow = NSStackView(views: [folderLabel, NSView(), openButton, changeButton])
+        let folderTitle = sectionTitle("Finder location")
+        let folderRow = NSStackView(views: [folderLabel, NSView(), openButton])
         folderRow.orientation = .horizontal
 
         let syncRow = NSStackView(views: [syncLabel, spinner, NSView(), syncButton])
         syncRow.orientation = .horizontal
+
+        let finderText = NSStackView(views: [finderStatusLabel, finderStatusDetailLabel])
+        finderText.orientation = .vertical
+        finderText.alignment = .leading
+        finderText.spacing = 2
+        let finderStatusRow = NSStackView(views: [finderStatusImage, finderText, NSView()])
+        finderStatusRow.orientation = .horizontal
+        finderStatusRow.alignment = .centerY
+        finderStatusRow.spacing = 9
 
         let markdownRow = NSStackView(views: [markdownLabel, NSView(), markdownButton])
         markdownRow.orientation = .horizontal
@@ -144,7 +161,7 @@ final class StatusWindowController: NSWindowController {
         let stack = NSStackView(views: [
             accountRow, accountDetailLabel, codeLabel, linkHintLabel,
             separator(), folderTitle, folderRow, folderStatusLabel,
-            separator(), sectionTitle("Sync"), syncRow,
+            separator(), sectionTitle("Sync"), finderStatusRow, syncRow,
             separator(), sectionTitle("Files"), markdownRow,
             separator(), sectionTitle("Recent activity"), scroll,
         ])
@@ -162,12 +179,15 @@ final class StatusWindowController: NSWindowController {
             stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             accountRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             folderRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
+            finderStatusRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             syncRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             markdownRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             codeLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             linkHintLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32),
             scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            finderStatusImage.widthAnchor.constraint(equalToConstant: 22),
+            finderStatusImage.heightAnchor.constraint(equalToConstant: 22),
         ])
     }
 
@@ -216,6 +236,20 @@ final class StatusWindowController: NSWindowController {
         folderLabel.stringValue = model.folderPath
         folderStatusLabel.stringValue = model.folderStatus ?? ""
         folderStatusLabel.isHidden = (model.folderStatus ?? "").isEmpty
+        finderStatusLabel.stringValue = model.finderStatus.title
+        finderStatusDetailLabel.stringValue = model.finderStatus.detail
+        let symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: 17, weight: .medium)
+        finderStatusImage.image = NSImage(
+            systemSymbolName: model.finderStatus.symbolName,
+            accessibilityDescription: model.finderStatus.title
+        )?.withSymbolConfiguration(symbolConfiguration)
+        finderStatusImage.contentTintColor = switch model.finderStatus.severity {
+        case .neutral: .secondaryLabelColor
+        case .healthy: .systemGreen
+        case .working: .systemBlue
+        case .warning: .systemOrange
+        }
         syncLabel.stringValue = model.lastSyncLine
         syncButton.isEnabled = model.linked && !model.busy
         if model.busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
@@ -248,7 +282,6 @@ final class StatusWindowController: NSWindowController {
 
     @objc private func reopenAction() { actions.reopenApproval() }
 
-    @objc private func changeFolderAction() { actions.changeFolder() }
     @objc private func openFolderAction() { actions.openFolder() }
     @objc private func syncNowAction() { actions.syncNow() }
     @objc private func markdownAction() { actions.makeDefaultMarkdown() }

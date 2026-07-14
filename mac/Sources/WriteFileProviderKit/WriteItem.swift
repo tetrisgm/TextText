@@ -48,8 +48,10 @@ public struct WriteItemCapabilities: OptionSet, Sendable, Equatable {
 
 /// One item in the workspace tree as the File Provider sees it: a folder or a
 /// content file. `serverId` is the folder id or post id the sync API uses;
-/// `contentHash` is the If-Match hash for files. `documentSize` is nil until
-/// content is materialized (enumeration does not fetch bodies).
+/// `contentHash` is the If-Match hash for files. `manifestURL` is the URL the
+/// server supplied for the item; consumers must not reconstruct it from a slug.
+/// `documentSize` is nil until content is materialized (enumeration does not
+/// fetch bodies).
 public struct WriteItem: Equatable, Sendable {
     public let identifier: WriteItemIdentifier
     public let parentIdentifier: WriteItemIdentifier
@@ -63,6 +65,7 @@ public struct WriteItem: Equatable, Sendable {
     public let creationDate: Date?
     public let contentModificationDate: Date?
     public let capabilities: WriteItemCapabilities
+    public let manifestURL: String?
 
     public init(
         identifier: WriteItemIdentifier,
@@ -76,7 +79,8 @@ public struct WriteItem: Equatable, Sendable {
         documentSize: Int?,
         creationDate: Date?,
         contentModificationDate: Date?,
-        capabilities: WriteItemCapabilities
+        capabilities: WriteItemCapabilities,
+        manifestURL: String? = nil
     ) {
         self.identifier = identifier
         self.parentIdentifier = parentIdentifier
@@ -90,6 +94,7 @@ public struct WriteItem: Equatable, Sendable {
         self.creationDate = creationDate
         self.contentModificationDate = contentModificationDate
         self.capabilities = capabilities
+        self.manifestURL = manifestURL
     }
 
     // Uniform type identifiers. Every content item round-trips as a markdown
@@ -116,7 +121,7 @@ public struct WriteItem: Equatable, Sendable {
             typeIdentifier: typeIdentifier, serverId: serverId,
             contentHash: hash ?? contentHash, documentSize: size ?? documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
-            capabilities: capabilities)
+            capabilities: capabilities, manifestURL: manifestURL)
     }
 
     /// A copy with a different display filename, used by the enumerator's
@@ -128,7 +133,7 @@ public struct WriteItem: Equatable, Sendable {
             typeIdentifier: typeIdentifier, serverId: serverId,
             contentHash: contentHash, documentSize: documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
-            capabilities: capabilities)
+            capabilities: capabilities, manifestURL: manifestURL)
     }
 
     /// A copy with the destination parent File Provider supplied for a move.
@@ -139,7 +144,7 @@ public struct WriteItem: Equatable, Sendable {
             typeIdentifier: typeIdentifier, serverId: serverId,
             contentHash: contentHash, documentSize: documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
-            capabilities: capabilities)
+            capabilities: capabilities, manifestURL: manifestURL)
     }
 }
 
@@ -242,7 +247,8 @@ public enum WriteItemMapper {
             documentSize: entry.size,
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
-            capabilities: caps
+            capabilities: caps,
+            manifestURL: entry.url
         )
     }
 }

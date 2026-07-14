@@ -62,6 +62,8 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let date: String?
     public let createdAt: String?
     public let updatedAt: String?
+    /// The authoritative item URL supplied by the manifest. It may be absolute
+    /// or origin-relative; clients must not rebuild it from `slug`.
     public let url: String?
     /// UTF-8 byte length of the rendered file, when the server sends it. Used to
     /// set the File Provider item's documentSize at enumeration; optional so an

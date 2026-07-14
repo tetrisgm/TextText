@@ -12,6 +12,10 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var manifestResults: [String: [Result<[WriteManifestItem], WriteSyncError>]] = [:]
     var fileTextResults: [Result<WriteFileContent, WriteSyncError>] = []
     private(set) var fileTextCalls = 0
+    var manifestDelayNanoseconds: UInt64 = 0
+    var createFileDelayNanoseconds: UInt64 = 0
+    var putFileDelayNanoseconds: UInt64 = 0
+    var deleteFileDelayNanoseconds: UInt64 = 0
 
     // Recorded write calls.
     struct CreateFileCall: Equatable { let body: String; let folderId: String?; let idempotencyKey: String? }
@@ -49,6 +53,9 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
 
     func workspace() async -> Result<WriteWorkspace, WriteSyncError> { .success(workspaceValue) }
     func manifest(folderId: String) async -> Result<[WriteManifestItem], WriteSyncError> {
+        guard await waitForDelay(manifestDelayNanoseconds) else {
+            return .failure(.network("cancelled"))
+        }
         if let failManifest { return .failure(failManifest) }
         if var queued = manifestResults[folderId], !queued.isEmpty {
             let result = queued.removeFirst()
@@ -66,10 +73,16 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
     }
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> {
+        guard await waitForDelay(createFileDelayNanoseconds) else {
+            return .failure(.network("cancelled"))
+        }
         createFileCalls.append(CreateFileCall(body: body, folderId: folderId, idempotencyKey: idempotencyKey))
         return createFileResult ?? .success(Fixtures.item(id: "new", file: "new.md", kind: "note"))
     }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> {
+        guard await waitForDelay(putFileDelayNanoseconds) else {
+            return .failure(.network("cancelled"))
+        }
         putCalls.append(PutCall(postId: postId, body: body, hash: hash))
         return putResult
     }
@@ -78,6 +91,9 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         return patchResult ?? .success(Fixtures.item(id: postId, file: (slug ?? "x") + ".md", kind: "note", title: title ?? "x"))
     }
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> {
+        guard await waitForDelay(deleteFileDelayNanoseconds) else {
+            return .failure(.network("cancelled"))
+        }
         deleteCalls.append(postId); deleteIfMatchCalls.append(hash); return deleteResult
     }
     func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<WriteWorkspaceFolder, WriteSyncError> {
@@ -96,17 +112,27 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         return renameWorkspaceResult ?? .success(
             WriteWorkspaceBlog(handle: "demo", name: name, username: "demo"))
     }
+
+    private func waitForDelay(_ nanoseconds: UInt64) async -> Bool {
+        guard nanoseconds > 0 else { return true }
+        do {
+            try await Task.sleep(nanoseconds: nanoseconds)
+            return true
+        } catch {
+            return false
+        }
+    }
 }
 
 enum Fixtures {
     static func item(
         id: String, file: String, kind: String, slug: String? = nil,
-        title: String? = nil, hash: String = "h"
+        title: String? = nil, hash: String = "h", url: String? = nil
     ) -> WriteManifestItem {
         WriteManifestItem(
             file: file, kind: kind, slug: slug ?? file.replacingOccurrences(of: ".md", with: ""),
             title: title ?? file, status: "draft", hash: hash, id: id, date: nil,
-            createdAt: nil, updatedAt: nil, url: nil)
+            createdAt: nil, updatedAt: nil, url: url)
     }
 
     static func workspace() -> WriteWorkspace {

@@ -405,6 +405,24 @@ export function PostActionBar(props: Props) {
   useDismissPopover(typeOpen, typeWrapRef, closeType);
   useDismissPopover(settingsOpen, settingsWrapRef, closeSettings);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    let consumed = false;
+    if (url.searchParams.get("manageAccess") === "1") {
+      if (canManagePost) setCollaboratorsOpen(true);
+      url.searchParams.delete("manageAccess");
+      consumed = true;
+    }
+    if (url.searchParams.get("share") === "1") {
+      setShareOpen(true);
+      url.searchParams.delete("share");
+      consumed = true;
+    }
+    if (consumed) {
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, [canManagePost]);
+
   const readDraft = readState.draft;
   const readSaveState = readState.saveState;
   const readError = readState.error;

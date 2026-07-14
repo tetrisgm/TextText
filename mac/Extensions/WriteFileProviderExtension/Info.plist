@@ -30,6 +30,33 @@
 		<string>WRITE_APP_GROUP</string>
 		<key>NSExtensionFileProviderSupportsEnumeration</key>
 		<true/>
+		<key>NSExtensionFileProviderActions</key>
+		<array>
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>net.writeapp.write.fileprovider.copy-write-link</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Copy Write Link</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND ANY fileproviderItems.userInfo.writeLinkAvailable == YES</string>
+			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>net.writeapp.write.fileprovider.share</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Share</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND ANY fileproviderItems.userInfo.writeFileActions == YES</string>
+			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>net.writeapp.write.fileprovider.manage-access</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Manage Access</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND ANY fileproviderItems.userInfo.writeFileActions == YES</string>
+			</dict>
+		</array>
 	</dict>
 	<key>WriteAppGroupIdentifier</key>
 	<string>WRITE_APP_GROUP</string>

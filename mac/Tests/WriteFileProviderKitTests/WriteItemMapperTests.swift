@@ -122,6 +122,22 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertEqual(item?.documentSize, 4096)
     }
 
+    func testManifestURLIsAuthoritativeAndSurvivesLocalCopies() {
+        let entry = WriteManifestItem(
+            file: "posts/a.md", kind: "note", slug: "stale-slug", title: "A",
+            status: "draft", hash: "h", id: "p1", date: nil, createdAt: nil,
+            updatedAt: nil, url: "https://links.example/write/authoritative")
+        let item = WriteItemMapper.item(
+            for: entry, inFolder: "notes", handle: h, readOnly: false)!
+
+        XCTAssertEqual(item.manifestURL, "https://links.example/write/authoritative")
+        XCTAssertEqual(item.withContent(hash: "h2", size: 12).manifestURL, item.manifestURL)
+        XCTAssertEqual(item.withFilename("Renamed.md").manifestURL, item.manifestURL)
+        XCTAssertEqual(
+            item.withParentIdentifier(.folder(handle: h, id: "blog")).manifestURL,
+            item.manifestURL)
+    }
+
     func testWithContentCarriesHashAndSize() {
         let entry = Fixtures.entry(id: "p1", file: "a.md", kind: "note", title: "A")
         let base = WriteItemMapper.item(for: entry, inFolder: "notes", handle: h, readOnly: false)!

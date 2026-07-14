@@ -185,6 +185,19 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         XCTAssertEqual(item.filename, "Write")
     }
 
+    func testVirtualContainersAreNotReturnedAsRootItems() async {
+        let e = enumr(Fixtures.standardWorkspace())
+
+        for identifier in [
+            WriteItemIdentifier.workingSet,
+            WriteItemIdentifier.trashContainer,
+        ] {
+            guard case .failure(.notFound) = await e.item(for: identifier) else {
+                return XCTFail("\(identifier.rawValue) must remain an enumeration scope")
+            }
+        }
+    }
+
     // MARK: Capabilities posture
 
     func testReadOnlyPostureLimitsCapabilities() async {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, embed, and sign the Share and Quick Look app extensions into an
+# Build, embed, and sign the Share, Quick Look, and File Provider extensions into an
 # already-assembled Write.app, inside-out, before the main app is signed.
 #
 #   mac/scripts/embed-extensions.sh <app-bundle> <sign-id> <app-group> <bundle-id> <version> <build>
@@ -156,6 +156,7 @@ echo ">> embedding File Provider extension"
 LINK_OBJS=("${FP_OBJS[@]}")
 embed_appex "WriteFileProviderExtension" "WriteFileProviderExtension" \
   "$FP_PROFILE" "WriteFileProviderExtension.entitlements.template" \
-  -framework Foundation -framework FileProvider -framework UniformTypeIdentifiers
+  -framework Foundation -framework AppKit -framework FileProvider \
+  -framework UniformTypeIdentifiers
 
 echo ">> extensions embedded and signed"

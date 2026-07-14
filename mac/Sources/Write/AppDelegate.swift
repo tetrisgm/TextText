@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var statusWindow: StatusWindowController?
     private var webWindow: WebAppWindowController?
+    private var sharingServicePicker: NSSharingServicePicker?
     private var editorWindows: [URL: EditorWindowController] = [:]
     // Spotlight state is owned by spotlightQueue exclusively; the main
     // thread only ever schedules work onto it.
@@ -50,9 +51,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var workspaceLocation: WorkspaceLocation?
     // The one File Provider domain registered for the signed-in workspace, if any.
     private var registeredFileProviderDomain: NSFileProviderDomain?
-    // Pushes local Finder edits on the FP mount to the server instantly (the OS
-    // uploads them on its own slow schedule otherwise).
-    private let mountBridge = MountBridge()
+    private let fileProviderStatusMonitor = FileProviderStatusMonitor()
+    private var fileProviderUserVisibleURL: URL?
+    private var fileProviderDomainEpoch = 0
+    private var fileProviderDesiredIdentity: String?
+    private var fileProviderReconcileIdentity: String?
+    private var fileProviderRemovalInFlight = false
+    private var fileProviderRetry: DispatchWorkItem?
+    private var materializationEpoch = 0
+    private var materializationRetry: DispatchWorkItem?
+    private var isMaterializing = false
 
     // MARK: Lifecycle
 
@@ -118,33 +126,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         changeListener.onRemoteChange = { [weak self] in
             self?.engine.syncNow()
             self?.captureAgent.poke()
-            self?.signalFileProviderChange()
-            // A server edit does not move the mount, so nudge the bridge to pull
-            // it into the local files promptly (evict + re-download).
-            self?.mountBridge.nudge()
+            self?.signalFileProviderChange(serverReachable: true)
         }
         changeListener.start()
         captureAgent.start()
 
-        // Instant folder -> server: watch the File Provider mount and push local
-        // Finder edits (rename, folder rename, content edit, move) immediately,
-        // rather than waiting on the OS's File Provider upload scheduler. Started
-        // from materializeWorkspace once the mount root is known.
-        mountBridge.makeContext = { [weak self] in
-            guard let self, let credentials = self.store.loadCredentials(),
-                  let blog = self.store.cachedWorkspace()?.blog, !blog.handle.isEmpty else { return nil }
-            let api = LiveWriteSyncAPI(
-                origin: resolveServerOrigin(credentials: credentials), token: credentials.token)
-            return MountBridge.Context(
-                api: api, handle: blog.handle,
-                workspaceName: blog.name.isEmpty ? blog.handle : blog.name)
+        fileProviderStatusMonitor.onChange = { [weak self] _ in
+            self?.refreshUI()
         }
-        mountBridge.onActivity = { [weak self] message in self?.appendActivity(message) }
-        // After a pull evicts a stale file, re-download it so it does not linger
-        // as a dataless placeholder.
-        mountBridge.onRefresh = { [weak self] in
-            DispatchQueue.main.async { self?.materializeWorkspace() }
-        }
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.addObserver(
+            self, selector: #selector(systemDidResume(_:)),
+            name: NSWorkspace.didWakeNotification, object: nil)
+        workspaceCenter.addObserver(
+            self, selector: #selector(systemDidResume(_:)),
+            name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
 
         showMainWindow() // open the workspace window on launch
     }
@@ -177,6 +174,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        changeListener?.stop()
+        materializationRetry?.cancel()
+        fileProviderRetry?.cancel()
+    }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { showMainWindow() }
@@ -245,9 +249,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Foreground check, throttled to one per 5 minutes (the partyparty rule).
     private var lastForegroundCheck = Date.distantPast
     func applicationDidBecomeActive(_ notification: Notification) {
+        recoverBackgroundSync()
         guard Date().timeIntervalSince(lastForegroundCheck) > 300 else { return }
         lastForegroundCheck = Date()
         updater?.checkNow()
+    }
+
+    @objc private func systemDidResume(_ notification: Notification) {
+        recoverBackgroundSync()
+    }
+
+    /// Wake, unlock, network recovery, and foregrounding all converge here. The
+    /// operations coalesce in their respective owners, so this never reloads the
+    /// web view or replaces local state; it only resumes interrupted background
+    /// work and tells Finder to compare its current tree with the server.
+    private func recoverBackgroundSync() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.recoverBackgroundSync() }
+            return
+        }
+        changeListener?.nudge()
+        engine?.syncNow()
+        captureAgent?.poke()
+        signalFileProviderChange()
+        fileProviderStatusMonitor.refresh()
     }
 
     // Push channel: the server advertises its latest app build; when it is
@@ -262,6 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func syncStateChanged() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.syncStateChanged() }
+            return
+        }
         let busy = engine.isSyncing
         // An update Sparkle offered mid-pass was deferred; the moment the
         // engine goes idle, let it surface.
@@ -355,26 +384,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
             }
         )
-    }
-
-    private func changeSyncFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = syncRoot()
-        panel.message = "Choose the folder \(appName) keeps in sync"
-        panel.prompt = "Use This Folder"
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        UserDefaults.standard.set(url.path, forKey: Self.syncRootKey)
-        setWorkspaceLocation(WorkspaceRootResolver(overrideRoot: url).resolve())
-        appendActivity("Sync folder is now \(url.path)")
-        engine.resetForNewRoot()
-        configureSpotlightIndexing()
-        configureShareInbox()
-        refreshUI()
     }
 
     // MARK: Share inbox
@@ -598,7 +607,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             appendActivity("Ignored malformed Write link \(url.absoluteString)")
             return
         }
+        guard isValidWriteItemId(id) else {
+            appendActivity("Ignored Write link with an invalid item id")
+            return
+        }
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let action = query.first(where: { $0.name == "action" })?.value
+        if let action {
+            guard let rawTarget = query.first(where: { $0.name == "url" })?.value,
+                  let target = validatedWriteWebURL(rawTarget) else {
+                appendActivity("Ignored Write action with an invalid target")
+                return
+            }
+            switch action {
+            case "share":
+                presentSharePicker(for: target)
+            case "manage-access":
+                presentAccessManagement(for: target)
+            default:
+                appendActivity("Ignored unknown Write action \(action)")
+            }
+            return
+        }
         openWriteItem(id: id)
+    }
+
+    private func validatedWriteWebURL(_ value: String) -> URL? {
+        guard let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              let host = url.host?.lowercased() else { return nil }
+        let origin = resolveServerOrigin(credentials: store.loadCredentials())
+        guard host == origin.host?.lowercased(),
+              url.port == origin.port else { return nil }
+        return url
+    }
+
+    private func presentSharePicker(for url: URL) {
+        NSApp.activate(ignoringOtherApps: true)
+        let picker = NSSharingServicePicker(items: [url])
+        sharingServicePicker = picker
+        if let button = statusItem.button {
+            picker.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        } else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            appendActivity("Copied the Write link")
+        }
+    }
+
+    private func presentAccessManagement(for url: URL) {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        var query = components.queryItems ?? []
+        query.removeAll(where: { $0.name == "manageAccess" })
+        query.append(URLQueryItem(name: "manageAccess", value: "1"))
+        components.queryItems = query
+        guard components.url != nil else { return }
+        showMainWindow()
+        let querySuffix = components.percentEncodedQuery.map { "?\($0)" } ?? ""
+        let path = components.percentEncodedPath + querySuffix
+        webWindow?.load(path: path)
     }
 
     private func openWriteItem(id: String) {
@@ -681,6 +749,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// one-element workspace list; the extension already fans out per handle, so
     /// joining more workspaces later just appends descriptors.
     private func syncFileProviderDomain() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.syncFileProviderDomain() }
+            return
+        }
         guard let credentials = store.loadCredentials(),
               let blog = store.cachedWorkspace()?.blog,
               !blog.handle.isEmpty else {
@@ -693,106 +765,205 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 name: blog.name.isEmpty ? blog.handle : blog.name,
                 handle: blog.handle, origin: origin, token: credentials.token)
         ])
-        writeFileProviderHandoff(handoff)
+        let identity = [origin, blog.handle, blog.name, credentials.token]
+            .joined(separator: "\u{0}")
+
+        if fileProviderDesiredIdentity == identity {
+            guard writeFileProviderHandoff(handoff) else {
+                scheduleFileProviderRetry(identity: identity)
+                return
+            }
+            if registeredFileProviderDomain != nil {
+                signalFileProviderChange()
+            }
+            return
+        }
+
+        fileProviderDesiredIdentity = identity
+        fileProviderRemovalInFlight = false
+        fileProviderDomainEpoch += 1
+        let epoch = fileProviderDomainEpoch
+        invalidateMaterialization()
+        fileProviderRetry?.cancel()
+        fileProviderRetry = nil
+        fileProviderReconcileIdentity = identity
+
+        guard writeFileProviderHandoff(handoff) else {
+            fileProviderReconcileIdentity = nil
+            appendActivity("File Provider credentials could not be published; retrying")
+            scheduleFileProviderRetry(identity: identity)
+            return
+        }
 
         let identifier = NSFileProviderDomainIdentifier(rawValue: Self.fileProviderDomainId)
         NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in
             DispatchQueue.main.async {
-                guard let self else { return }
-                // Migrate + de-dup: exactly one "write" domain. Remove every other
-                // domain we own (the legacy per-workspace "workspace-<handle>"
-                // ones) so the upgrade does not leave a second Locations entry.
-                for domain in domains where domain.identifier != identifier {
-                    NSFileProviderManager.remove(domain) { _ in }
+                guard let self,
+                      self.fileProviderDomainEpoch == epoch,
+                      self.fileProviderDesiredIdentity == identity else { return }
+                // Only remove domains created by the old per-workspace scheme.
+                // Other identifiers must never be treated as ours by accident.
+                for domain in domains where domain.identifier.rawValue.hasPrefix("workspace-") {
+                    self.removeFileProviderDomainPreservingLocalData(domain)
                 }
-                let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
-                let lastBuild = UserDefaults.standard.string(forKey: Self.fpDomainBuildKey)
                 if let existing = domains.first(where: { $0.identifier == identifier }) {
-                    // A new build can render enumeration differently (the system
-                    // holds a cache); refresh by remove + re-add. Otherwise keep
-                    // the domain but re-arm it: republish the handoff and signal,
-                    // so a relaunch reconnects with zero Finder clicks.
-                    if lastBuild == build {
-                        self.registeredFileProviderDomain = existing
-                        self.writeFileProviderHandoff(handoff)
-                        if let manager = NSFileProviderManager(for: existing) {
-                            manager.signalEnumerator(for: .rootContainer) { _ in }
-                            manager.signalEnumerator(for: .workingSet) { _ in }
-                        }
-                        self.materializeWorkspace()
-                        return
-                    }
-                    NSFileProviderManager.remove(existing) { _ in
-                        DispatchQueue.main.async {
-                            self.addFileProviderDomain(
-                                identifier: identifier, handoff: handoff, build: build)
-                        }
-                    }
+                    // The domain is intentionally stable across app updates. An
+                    // upgrade signals the existing cache; it never destroys the
+                    // user's local replica or pending changes.
+                    self.finishFileProviderReconcile(
+                        domain: existing, handoff: handoff, epoch: epoch, identity: identity)
                     return
                 }
-                self.addFileProviderDomain(identifier: identifier, handoff: handoff, build: build)
+                self.addFileProviderDomain(
+                    identifier: identifier, handoff: handoff,
+                    epoch: epoch, identity: identity)
             }
         }
     }
 
-    /// UserDefaults key for the app build that last registered the FP domain, so
-    /// a new build (enumeration cache) triggers a refreshing remove + re-add.
-    private static let fpDomainBuildKey = "fpDomainBuild"
     /// Legacy key (workspace name once labelled the mount); cleared on sign-out.
     private static let fpDomainNameKey = "fpDomainName"
 
     private func addFileProviderDomain(
-        identifier: NSFileProviderDomainIdentifier, handoff: FileProviderHandoff, build: String
+        identifier: NSFileProviderDomainIdentifier, handoff: FileProviderHandoff,
+        epoch: Int, identity: String
     ) {
         let domain = NSFileProviderDomain(
             identifier: identifier, displayName: Self.fileProviderDomainName)
-        NSFileProviderManager.add(domain) { error in
+        NSFileProviderManager.add(domain) { [weak self] error in
             DispatchQueue.main.async {
+                guard let self else { return }
+                guard self.fileProviderDomainEpoch == epoch,
+                      self.fileProviderDesiredIdentity == identity else {
+                    if error == nil, self.fileProviderDesiredIdentity == nil {
+                        self.removeFileProviderDomainPreservingLocalData(domain)
+                    }
+                    return
+                }
                 if let error, (error as NSError).code != NSFileWriteFileExistsError {
                     self.appendActivity(
                         "File Provider register failed: \(error.localizedDescription)")
+                    self.fileProviderReconcileIdentity = nil
+                    self.scheduleFileProviderRetry(identity: identity)
                     return
                 }
-                self.registeredFileProviderDomain = domain
-                UserDefaults.standard.set(build, forKey: Self.fpDomainBuildKey)
-                // The extension may have launched before the handoff landed;
-                // re-publish and nudge it to enumerate.
-                self.writeFileProviderHandoff(handoff)
-                if let manager = NSFileProviderManager(for: domain) {
-                    manager.signalEnumerator(for: .rootContainer) { _ in }
-                    manager.signalEnumerator(for: .workingSet) { _ in }
-                }
-                // Download the whole workspace so it is present locally by default,
-                // after a moment for the first enumeration to populate the tree.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                    self?.materializeWorkspace()
+                self.finishFileProviderReconcile(
+                    domain: domain, handoff: handoff, epoch: epoch, identity: identity)
+            }
+        }
+    }
+
+    private func finishFileProviderReconcile(
+        domain: NSFileProviderDomain, handoff: FileProviderHandoff,
+        epoch: Int, identity: String
+    ) {
+        guard fileProviderDomainEpoch == epoch,
+              fileProviderDesiredIdentity == identity else { return }
+        guard writeFileProviderHandoff(handoff) else {
+            fileProviderReconcileIdentity = nil
+            scheduleFileProviderRetry(identity: identity)
+            return
+        }
+        registeredFileProviderDomain = domain
+        fileProviderStatusMonitor.bind(to: domain)
+        fileProviderReconcileIdentity = nil
+        UserDefaults.standard.removeObject(forKey: "fpDomainBuild")
+        if let manager = NSFileProviderManager(for: domain) {
+            manager.signalEnumerator(for: .rootContainer) { _ in }
+            manager.signalEnumerator(for: .workingSet) { _ in }
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.fileProviderDomainEpoch == epoch,
+                  self.fileProviderDesiredIdentity == identity else { return }
+            self.materializeWorkspace()
+        }
+        materializationRetry?.cancel()
+        materializationRetry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    private func scheduleFileProviderRetry(identity: String) {
+        guard fileProviderDesiredIdentity == identity else { return }
+        fileProviderRetry?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.fileProviderDesiredIdentity == identity else { return }
+            self.fileProviderDesiredIdentity = nil
+            self.syncFileProviderDomain()
+        }
+        fileProviderRetry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+    }
+
+    private func removeFileProviderDomain() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.removeFileProviderDomain() }
+            return
+        }
+        guard !fileProviderRemovalInFlight else { return }
+        fileProviderRemovalInFlight = true
+        fileProviderDomainEpoch += 1
+        let epoch = fileProviderDomainEpoch
+        fileProviderDesiredIdentity = nil
+        fileProviderReconcileIdentity = nil
+        fileProviderRetry?.cancel()
+        fileProviderRetry = nil
+        invalidateMaterialization()
+        registeredFileProviderDomain = nil
+        fileProviderStatusMonitor.unbind()
+        fileProviderUserVisibleURL = nil
+        UserDefaults.standard.removeObject(forKey: "fpDomainBuild")
+        UserDefaults.standard.removeObject(forKey: Self.fpDomainNameKey)
+        FileProviderHandoffStore.clear()
+        NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard self.fileProviderDomainEpoch == epoch else { return }
+                self.fileProviderRemovalInFlight = false
+                // Sign-out removes Write from Locations, but all downloaded files
+                // and any dirty local edits are preserved by File Provider.
+                for domain in domains where
+                    domain.identifier.rawValue == Self.fileProviderDomainId
+                    || domain.identifier.rawValue.hasPrefix("workspace-") {
+                    self.removeFileProviderDomainPreservingLocalData(domain)
                 }
             }
         }
     }
 
-    private func removeFileProviderDomain() {
-        NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
-            // Remove the current "write" domain AND any legacy per-workspace one,
-            // so sign-out never leaves an orphaned (empty) Locations entry.
-            for domain in domains where
-                domain.identifier.rawValue == Self.fileProviderDomainId
-                || domain.identifier.rawValue.hasPrefix("workspace-") {
-                NSFileProviderManager.remove(domain) { _ in }
+    private func removeFileProviderDomainPreservingLocalData(_ domain: NSFileProviderDomain) {
+        NSFileProviderManager.remove(
+            domain, mode: .preserveDownloadedUserData
+        ) { [weak self] preservedLocation, error in
+            guard let error else {
+                if let preservedLocation {
+                    self?.appendActivity(
+                        "Preserved local Write files at \(preservedLocation.path)")
+                }
+                return
             }
+            self?.appendActivity(
+                "Could not remove old File Provider domain: \(error.localizedDescription)")
         }
-        registeredFileProviderDomain = nil
-        mountBridge.stop()
-        UserDefaults.standard.removeObject(forKey: Self.fpDomainBuildKey)
-        UserDefaults.standard.removeObject(forKey: Self.fpDomainNameKey)
-        FileProviderHandoffStore.clear()
     }
 
     /// Signal the registered domain that the workspace changed. Called from the
     /// app's existing long-poll; the long-poll lives here, not in the extension.
-    private func signalFileProviderChange() {
+    private func signalFileProviderChange(serverReachable: Bool = false) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.signalFileProviderChange(serverReachable: serverReachable)
+            }
+            return
+        }
         guard let domain = registeredFileProviderDomain,
               let manager = NSFileProviderManager(for: domain) else { return }
+        if serverReachable {
+            let error = NSError(
+                domain: NSFileProviderErrorDomain,
+                code: NSFileProviderError.serverUnreachable.rawValue)
+            manager.signalErrorResolved(error) { _ in }
+        }
         manager.signalEnumerator(for: .rootContainer) { _ in }
         manager.signalEnumerator(for: .workingSet) { _ in }
         if let workspace = store.cachedWorkspace() {
@@ -824,35 +995,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// with contentsOfDirectory (which forces each folder's enumeration) rather
     /// than a lazy deep enumerator, so a folder that failed to list is retried
     /// even when it exposed no files to notice.
-    private func materializeWorkspace(attempt: Int = 0) {
+    private func materializeWorkspace(attempt: Int = 0, generation: Int? = nil) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.materializeWorkspace(attempt: attempt, generation: generation)
+            }
+            return
+        }
         guard let domain = registeredFileProviderDomain,
               let manager = NSFileProviderManager(for: domain) else { return }
+        let activeGeneration: Int
         if attempt == 0 {
             if isMaterializing { return }
             isMaterializing = true
+            materializationEpoch += 1
+            activeGeneration = materializationEpoch
+        } else {
+            guard let generation, generation == materializationEpoch else { return }
+            activeGeneration = generation
         }
         manager.getUserVisibleURL(for: .rootContainer) { [weak self] rootURL, _ in
-            guard let self else { return }
-            guard let root = rootURL else { self.isMaterializing = false; return }
-            // The mount root is known now: start the instant-push watcher (idempotent).
-            self.mountBridge.start(mountRoot: root, manager: manager)
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.main.async {
+                guard let self, activeGeneration == self.materializationEpoch else { return }
+                guard let root = rootURL else { self.isMaterializing = false; return }
+                self.fileProviderUserVisibleURL = root
+                self.refreshUI()
+                DispatchQueue.global(qos: .utility).async {
                 let scoped = root.startAccessingSecurityScopedResource()
                 let incomplete = Self.warmAndMaterialize(root)
                 if scoped { root.stopAccessingSecurityScopedResource() }
                 DispatchQueue.main.async {
+                    guard activeGeneration == self.materializationEpoch else { return }
                     if incomplete && attempt < 5 {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-                            self?.materializeWorkspace(attempt: attempt + 1)
+                        let work = DispatchWorkItem { [weak self] in
+                            self?.materializeWorkspace(
+                                attempt: attempt + 1, generation: activeGeneration)
                         }
+                        self.materializationRetry?.cancel()
+                        self.materializationRetry = work
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
                     } else {
                         self.isMaterializing = false
+                        self.materializationRetry = nil
                     }
                 }
             }
+            }
         }
     }
-    private var isMaterializing = false
+
+    private func invalidateMaterialization() {
+        materializationEpoch += 1
+        materializationRetry?.cancel()
+        materializationRetry = nil
+        isMaterializing = false
+    }
 
     /// Walk the whole tree (a deep enumerator's readdir traversal forces each
     /// dataless folder to enumerate) and read every `.md` so it downloads.
@@ -893,7 +1090,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Provider extension reads. Keychain, not the app-group container: a
     /// non-sandboxed app is blocked from writing a Group Container even when
     /// entitled (that write is sandbox-gated, EPERM), but the keychain is not.
-    private func writeFileProviderHandoff(_ handoff: FileProviderHandoff) {
+    @discardableResult
+    private func writeFileProviderHandoff(_ handoff: FileProviderHandoff) -> Bool {
         FileProviderHandoffStore.save(handoff)
     }
 
@@ -1049,6 +1247,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item("Try Linking Again", #selector(signInAction)))
         }
 
+        let finderStatus = fileProviderStatusMonitor.snapshot
+        let finder = NSMenuItem(
+            title: finderStatus.title, action: nil, keyEquivalent: "")
+        finder.isEnabled = false
+        finder.image = NSImage(
+            systemSymbolName: finderStatus.symbolName,
+            accessibilityDescription: finderStatus.title)
+        menu.addItem(finder)
         let last = NSMenuItem(title: lastSyncLine(), action: nil, keyEquivalent: "")
         last.isEnabled = false
         menu.addItem(last)
@@ -1123,6 +1329,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openFolderAction() {
+        if let fileProviderUserVisibleURL {
+            NSWorkspace.shared.open(fileProviderUserVisibleURL)
+            return
+        }
+        if let domain = registeredFileProviderDomain,
+           let manager = NSFileProviderManager(for: domain) {
+            manager.getUserVisibleURL(for: .rootContainer) { [weak self] url, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let url {
+                        self.fileProviderUserVisibleURL = url
+                        NSWorkspace.shared.open(url)
+                    } else {
+                        self.openLocalMirrorFolder()
+                    }
+                }
+            }
+            return
+        }
+        openLocalMirrorFolder()
+    }
+
+    private func openLocalMirrorFolder() {
         let root = syncRoot()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         NSWorkspace.shared.open(root)
@@ -1234,7 +1463,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 signOut: { [weak self] in self?.signOut() },
                 cancelLink: { [weak self] in self?.linkController.cancel() },
                 reopenApproval: { [weak self] in self?.linkController.reopenApproval() },
-                changeFolder: { [weak self] in self?.changeSyncFolder() },
                 openFolder: { [weak self] in self?.openFolderAction() },
                 syncNow: { [weak self] in self?.engine.syncNow() },
                 makeDefaultMarkdown: { [weak self] in self?.makeWriteDefaultForMarkdown() }
@@ -1247,6 +1475,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func appendActivity(_ message: String) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.appendActivity(message) }
+            return
+        }
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "HH:mm"
@@ -1299,9 +1531,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             linking: linkController.isLinking,
             linkFailed: linkFailed,
             waitingApproval: waitingApproval,
-            folderPath: syncRoot().path,
-            folderStatus: currentWorkspaceLocation()?.statusMessage,
+            folderPath: fileProviderUserVisibleURL?.path ?? "Write in Finder",
+            folderStatus: "All Markdown files are kept on this Mac.",
             lastSyncLine: lastSyncLine(),
+            finderStatus: fileProviderStatusMonitor.snapshot,
             busy: engine.isSyncing,
             activity: activityLog,
             isDefaultForMarkdown: MarkdownDefaultHandler.isDefault()

@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import FileProvider
 import Foundation
 import WriteWorkspaceCore
 
@@ -42,6 +43,37 @@ struct SyncSummary {
 /// authoritative: slug changes rename local files.
 final class SyncEngine {
     enum PassKind { case full, pushOnly }
+    private struct PassContext {
+        let epoch: UInt64
+        let root: URL
+    }
+
+    private struct PendingPass {
+        var kind: PassKind
+        let epoch: UInt64
+    }
+
+    private final class FileProviderMountProbe: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: Bool?
+
+        func finish(with result: Bool?) {
+            lock.lock()
+            self.result = result
+            lock.unlock()
+        }
+
+        func value() -> Bool? {
+            lock.lock()
+            defer { lock.unlock() }
+            return result
+        }
+    }
+
+    private enum StalePass: Error {
+        case invalidated
+    }
+
     private enum LocalFileHash {
         case missing
         case unreadable(Error)
@@ -79,9 +111,11 @@ final class SyncEngine {
         return nil
     }
 
-    private func writeBreadcrumb(at url: URL, mirrorId: String) {
+    private func writeBreadcrumb(at url: URL, mirrorId: String, context: PassContext) {
+        guard isCurrent(context) else { return }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard isCurrent(context) else { return }
         try? Data((breadcrumbBody + "mirror-id: \(mirrorId)\n").utf8)
             .write(to: url, options: .atomic)
     }
@@ -136,6 +170,13 @@ final class SyncEngine {
     }
     var workspaceLocationProvider: () -> WorkspaceLocation? = { nil }
 
+    /// Test seam for the synchronous safety gate around the legacy mirror. In
+    /// production this resolves the owning File Provider domain and rejects the
+    /// current and legacy Write domains before the engine watches or mutates it.
+    var isInsideWriteFileProviderMount: (URL) -> Bool = {
+        SyncEngine.defaultIsInsideWriteFileProviderMount($0)
+    }
+
     /// Test seam: when set and it returns true for a moved file's relative path,
     /// the post-move convergence read is treated as if the local file were
     /// unreadable (localHash nil), to exercise the "needs pull" sentinel path.
@@ -153,7 +194,10 @@ final class SyncEngine {
     private var _isSyncing = false
     private var _lastSyncAt: Date?
     private var _lastSummary: SyncSummary?
-    private var pendingKinds = Set<String>()
+    private var passEpoch: UInt64 = 0
+    private var readyEpoch: UInt64 = 0
+    private var pendingPass: PendingPass?
+    private var drainScheduled = false
 
     /// Files whose exact content the server rejected (400): don't hot-loop
     /// them every pass; retry only when the bytes change. In-memory on
@@ -194,7 +238,7 @@ final class SyncEngine {
     func start() {
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 60, repeating: 60)
-        t.setEventHandler { [weak self] in self?.runPass(.full) }
+        t.setEventHandler { [weak self] in self?.enqueue(.full) }
         t.resume()
         timer = t
 
@@ -202,7 +246,11 @@ final class SyncEngine {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
         ) { [weak self] _ in self?.enqueue(.full) }
 
-        startWatcher()
+        if let context = makePassContext() {
+            queue.async { [weak self] in
+                self?.startWatcher(root: context.root, context: context)
+            }
+        }
         enqueue(.full)
     }
 
@@ -211,22 +259,37 @@ final class SyncEngine {
     /// to the server are adopted in place, so re-pointing at an existing
     /// mirror moves nothing.
     func resetForNewRoot() {
+        let epoch = invalidatePassEpoch()
         queue.async { [weak self] in
             guard let self else { return }
+            guard self.isCurrent(epoch: epoch) else { return }
             self.store.clearIndex()
             self.rejectedContent.removeAll()
+            self.pushDebounce?.cancel()
+            self.pushDebounce = nil
+            self.watcher?.stop()
+            self.watcher = nil
+            self.fileCoordinator = nil
+            guard self.markReady(epoch: epoch),
+                  let context = self.makePassContext(expectedEpoch: epoch) else { return }
+            self.startWatcher(root: context.root, context: context)
+            self.enqueue(.full)
         }
-        startWatcher()
-        enqueue(.full)
     }
 
     /// Sign-out hygiene: a stale index against a future different account
     /// would misread every file, so drop it. Local files stay untouched.
     func resetForSignOut() {
+        let epoch = invalidatePassEpoch()
+        // AppDelegate already does this, but repeating it after the atomic
+        // invalidation closes a stale workspace-cache check/write race.
+        store.deleteCredentials()
         queue.async { [weak self] in
             guard let self else { return }
+            guard self.isCurrent(epoch: epoch) else { return }
             self.store.clearIndex()
             self.rejectedContent.removeAll()
+            _ = self.markReady(epoch: epoch)
         }
         notifyStateChange()
     }
@@ -241,25 +304,136 @@ final class SyncEngine {
 
     // MARK: Scheduling
 
-    private func enqueue(_ kind: PassKind) {
-        let key = kind == .full ? "full" : "push"
+    /// Resets invalidate work immediately on the caller's thread. Cleanup stays
+    /// on the serial queue, and `readyEpoch` prevents a wake/timer event from
+    /// starting the new generation before that cleanup has landed.
+    private func invalidatePassEpoch() -> UInt64 {
         stateLock.lock()
-        let alreadyQueued = pendingKinds.contains(key)
-        if !alreadyQueued { pendingKinds.insert(key) }
+        passEpoch &+= 1
+        pendingPass = nil
+        let epoch = passEpoch
         stateLock.unlock()
-        guard !alreadyQueued else { return }
+        return epoch
+    }
+
+    private func markReady(epoch: UInt64) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard passEpoch == epoch else { return false }
+        readyEpoch = epoch
+        return true
+    }
+
+    private func isCurrent(epoch: UInt64) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return passEpoch == epoch
+    }
+
+    private func isCurrent(_ context: PassContext) -> Bool {
+        isCurrent(epoch: context.epoch)
+    }
+
+    private func makePassContext(expectedEpoch: UInt64? = nil) -> PassContext? {
+        stateLock.lock()
+        let epoch = expectedEpoch ?? passEpoch
+        let canStart = passEpoch == epoch && readyEpoch == epoch
+        stateLock.unlock()
+        guard canStart else { return nil }
+
+        // The provider belongs to AppDelegate/user defaults, not this lock. A
+        // generation check after resolving it closes the root-change window.
+        let root = syncRootProvider().standardizedFileURL
+        stateLock.lock()
+        let stillCurrent = passEpoch == epoch && readyEpoch == epoch
+        stateLock.unlock()
+        guard stillCurrent else { return nil }
+        return PassContext(epoch: epoch, root: root)
+    }
+
+    private static func defaultIsInsideWriteFileProviderMount(_ url: URL) -> Bool {
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+        let cloudStorage = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/CloudStorage", isDirectory: true)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let cloudPath = cloudStorage.path
+        guard resolved.path.hasPrefix(cloudPath + "/") else { return false }
+
+        let relative = String(resolved.path.dropFirst(cloudPath.count + 1))
+        let mountName = relative.split(separator: "/", omittingEmptySubsequences: true)
+            .first.map(String.init) ?? ""
+        let nameFallback = mountName == "Write" || mountName.hasPrefix("Write-")
+
+        var probeURL = resolved
+        while !FileManager.default.fileExists(atPath: probeURL.path),
+              probeURL.path.hasPrefix(cloudPath + "/") {
+            let parent = probeURL.deletingLastPathComponent()
+            guard parent.path != probeURL.path else { break }
+            probeURL = parent
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let probe = FileProviderMountProbe()
+        NSFileProviderManager.getIdentifierForUserVisibleFile(at: probeURL) {
+            _, domainIdentifier, _ in
+            let raw = domainIdentifier?.rawValue
+            probe.finish(with: raw.map {
+                $0 == "write" || $0.hasPrefix("workspace-")
+            })
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + 1) == .success else {
+            return nameFallback
+        }
+        return probe.value() ?? nameFallback
+    }
+
+    private func enqueue(_ kind: PassKind) {
+        stateLock.lock()
+        let epoch = passEpoch
+        guard readyEpoch == epoch else {
+            stateLock.unlock()
+            return
+        }
+        if var pending = pendingPass, pending.epoch == epoch {
+            if kind == .full { pending.kind = .full }
+            pendingPass = pending
+        } else {
+            pendingPass = PendingPass(kind: kind, epoch: epoch)
+        }
+        let shouldSchedule = !drainScheduled
+        if shouldSchedule { drainScheduled = true }
+        stateLock.unlock()
+        guard shouldSchedule else { return }
         queue.async { [weak self] in
-            guard let self else { return }
-            self.stateLock.lock()
-            self.pendingKinds.remove(key)
-            self.stateLock.unlock()
-            self.runPass(kind)
+            self?.drainPendingPass()
         }
     }
 
-    private func startWatcher() {
-        let root = syncRootProvider()
+    private func drainPendingPass() {
+        stateLock.lock()
+        let pending = pendingPass
+        pendingPass = nil
+        drainScheduled = false
+        let canRun = pending.map {
+            $0.epoch == passEpoch && $0.epoch == readyEpoch
+        } ?? false
+        stateLock.unlock()
+        guard canRun, let pending else { return }
+        _ = runPass(pending.kind, expectedEpoch: pending.epoch)
+    }
+
+    private func startWatcher(root: URL, context: PassContext) {
+        guard isCurrent(context) else { return }
+        let isFileProviderMount = isInsideWriteFileProviderMount(root)
+        guard isCurrent(context) else { return }
+        guard !isFileProviderMount else {
+            watcher?.stop()
+            watcher = nil
+            return
+        }
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        guard isCurrent(context) else { return }
         pushDebounce?.cancel()
         watcher?.stop()
         watcher = FolderWatcher(path: root.path, queue: queue) { [weak self] in
@@ -267,26 +441,31 @@ final class SyncEngine {
             // Debounce 2s: editors save in bursts, and our own pull writes
             // fire events too (those become cheap no-op passes).
             self.pushDebounce?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.runPass(.pushOnly) }
+            let work = DispatchWorkItem { [weak self] in self?.enqueue(.pushOnly) }
             self.pushDebounce = work
             self.queue.asyncAfter(deadline: .now() + 2, execute: work)
         }
     }
 
     @discardableResult
-    private func runPass(_ kind: PassKind) -> SyncSummary {
+    private func runPass(_ kind: PassKind, expectedEpoch: UInt64? = nil) -> SyncSummary {
+        guard let context = makePassContext(expectedEpoch: expectedEpoch) else {
+            return SyncSummary()
+        }
         stateLock.lock()
         if _isSyncing { stateLock.unlock(); return SyncSummary() } // queue is serial; belt and braces
         _isSyncing = true
         stateLock.unlock()
         notifyStateChange()
 
-        let summary = performPass(kind)
+        let summary = performPass(kind, context: context)
 
         stateLock.lock()
         _isSyncing = false
-        _lastSyncAt = Date()
-        _lastSummary = summary
+        if passEpoch == context.epoch {
+            _lastSyncAt = Date()
+            _lastSummary = summary
+        }
         stateLock.unlock()
         notifyStateChange()
         return summary
@@ -294,36 +473,50 @@ final class SyncEngine {
 
     // MARK: The pass
 
-    private func performPass(_ kind: PassKind) -> SyncSummary {
+    private func performPass(_ kind: PassKind, context: PassContext) -> SyncSummary {
         var summary = SyncSummary()
+        guard isCurrent(context) else { return summary }
+        let isFileProviderMount = isInsideWriteFileProviderMount(context.root)
+        guard isCurrent(context) else { return summary }
+        guard !isFileProviderMount else {
+            activity("Sync paused: the legacy sync folder cannot be inside the Write File Provider location")
+            summary.errors += 1
+            return summary
+        }
         guard let client = makeClient() else { return summary } // not linked: local editing still works
 
-        let root = syncRootProvider()
+        let root = context.root
+        guard isCurrent(context) else { return summary }
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        guard isCurrent(context) else { return summary }
         _ = coordinator(for: root)
 
         let workspace: Workspace
         switch client.workspace() {
         case .success(let (ws, data)):
+            guard cacheWorkspace(data, context: context) else { return summary }
             workspace = ws
-            store.cacheWorkspace(data)
         case .failure(let error):
             activity("Sync paused: \(error)")
             summary.errors += 1
             return summary
         }
         let workspaceDescriptor = descriptor(for: workspace)
+        guard isCurrent(context) else { return summary }
+        let workspaceLocation = workspaceLocationProvider()
+        guard isCurrent(context) else { return summary }
         do {
             try WorkspaceLayout.ensureSkeleton(
                 at: root,
                 workspace: workspaceDescriptor,
-                location: workspaceLocationProvider()
+                location: workspaceLocation
             )
         } catch {
             activity("Could not prepare Write workspace: \(error.localizedDescription)")
             summary.errors += 1
             return summary
         }
+        guard isCurrent(context) else { return summary }
 
         var index = loadIndex(root: root)
 
@@ -354,7 +547,8 @@ final class SyncEngine {
         }
         if markerMirrorId == nil {
             let newId = UUID().uuidString
-            writeBreadcrumb(at: breadcrumb, mirrorId: newId)
+            writeBreadcrumb(at: breadcrumb, mirrorId: newId, context: context)
+            guard isCurrent(context) else { return summary }
             markerMirrorId = newId
         }
         if index.mirrorId == nil {
@@ -364,25 +558,33 @@ final class SyncEngine {
             index.folderETags.removeAll()
         }
 
-        materializeFolders(workspace.folders, workspace: workspaceDescriptor, root: root, summary: &summary)
+        materializeFolders(
+            workspace.folders, workspace: workspaceDescriptor, root: root,
+            context: context, summary: &summary)
         let identityScan = reconcileIndexedMoves(
             root: root, client: client, workspace: workspaceDescriptor,
-            index: &index, summary: &summary)
+            context: context, index: &index, summary: &summary)
+        guard isCurrent(context) else { return summary }
 
         if kind == .full {
             for folder in workspace.folders {
                 pullFolder(folder, allFolders: workspace.folders, client: client,
-                           root: root, workspace: workspaceDescriptor, index: &index, summary: &summary)
+                           root: root, workspace: workspaceDescriptor, context: context,
+                           index: &index, summary: &summary)
+                guard isCurrent(context) else { return summary }
             }
         }
         let createdFolders = pushPass(workspace, client: client, root: root,
-                                      index: &index, summary: &summary, identityScan: identityScan)
+                                      context: context, index: &index, summary: &summary,
+                                      identityScan: identityScan)
 
+        guard isCurrent(context) else { return summary }
         saveIndex(index)
 
-        if createdFolders { enqueue(.full) }
+        if createdFolders, isCurrent(context) { enqueue(.full) }
 
-        if kind == .full, let advertised = client.advertisedAppVersion() {
+        if kind == .full, isCurrent(context), let advertised = client.advertisedAppVersion(),
+           isCurrent(context) {
             deliver { self.onServerAppVersion?(advertised) }
         }
         return summary
@@ -392,10 +594,13 @@ final class SyncEngine {
 
     private func pullFolder(
         _ folder: WorkspaceFolder, allFolders: [WorkspaceFolder], client: SyncClient, root: URL,
-        workspace: WorkspaceDescriptor, index: inout SyncIndex, summary: inout SyncSummary
+        workspace: WorkspaceDescriptor, context: PassContext,
+        index: inout SyncIndex, summary: inout SyncSummary
     ) {
+        guard isCurrent(context) else { return }
         let fm = FileManager.default
         let reply = client.manifest(folderId: folder.id, etag: index.folderETags[folder.id])
+        guard isCurrent(context) else { return }
         switch reply {
         case .failure(let error):
             activity("Folder \(folder.path): \(error)")
@@ -406,10 +611,12 @@ final class SyncEngine {
             let errorsBefore = summary.errors
             var remoteIds = Set<String>()
             for item in items {
+                guard isCurrent(context) else { return }
                 guard let id = item.id else { continue }
                 remoteIds.insert(id)
                 applyRemoteItem(item, id: id, folder: folder, client: client,
-                                workspace: workspace, root: root, index: &index, summary: &summary)
+                                workspace: workspace, root: root, context: context,
+                                index: &index, summary: &summary)
             }
             // In the index, filed under this folder, gone from the manifest:
             // deleted on the server. The local file moves to the state trash.
@@ -417,10 +624,13 @@ final class SyncEngine {
             where (entry.folderId == folder.id
                    || (entry.folderId == nil && folderPath(of: entry.relativePath, in: allFolders, workspace: workspace)?.id == folder.id))
                 && !remoteIds.contains(postId) {
+                guard isCurrent(context) else { return }
                 let url = root.appendingPathComponent(entry.relativePath)
                 if fm.fileExists(atPath: url.path) {
+                    guard isCurrent(context) else { return }
                     if let kept = store.moveToTrash(url, mover: { source, target in
-                        try self.moveItem(at: source, to: target, root: root)
+                        try self.moveItem(
+                            at: source, to: target, root: root, context: context)
                     }) {
                         activity("Server deleted \(entry.relativePath); kept a copy in \(kept.deletingLastPathComponent().lastPathComponent)/")
                     } else {
@@ -431,12 +641,13 @@ final class SyncEngine {
                 } else {
                     activity("Server deleted \(entry.relativePath)")
                 }
+                guard isCurrent(context) else { return }
                 index.entries.removeValue(forKey: postId)
                 summary.pulled += 1
             }
             // Cache the ETag only after a clean folder: an error above must
             // re-pull next pass, not hide behind a 304.
-            if summary.errors == errorsBefore, let etag {
+            if isCurrent(context), summary.errors == errorsBefore, let etag {
                 index.folderETags[folder.id] = etag
             }
         }
@@ -444,8 +655,10 @@ final class SyncEngine {
 
     private func applyRemoteItem(
         _ item: ManifestItem, id: String, folder: WorkspaceFolder, client: SyncClient,
-        workspace: WorkspaceDescriptor, root: URL, index: inout SyncIndex, summary: inout SyncSummary
+        workspace: WorkspaceDescriptor, root: URL, context: PassContext,
+        index: inout SyncIndex, summary: inout SyncSummary
     ) {
+        guard isCurrent(context) else { return }
         let fm = FileManager.default
         let expectedRel = WorkspaceLayout.relativePath(
             for: descriptor(for: item),
@@ -467,14 +680,17 @@ final class SyncEngine {
                 root: root
                ) {
                 do {
-                    try moveItem(at: candidate, to: expectedURL, root: root)
+                    try moveItem(
+                        at: candidate, to: expectedURL, root: root, context: context)
                     activity("Adopted local \(candidate.lastPathComponent) for \(expectedRel)")
                 } catch {
                     summary.errors += 1
                     activity("Could not adopt local file for \(expectedRel): \(error.localizedDescription)")
                 }
             }
-            switch localFileHash(expectedURL, root: root) {
+            let hash = localFileHash(expectedURL, root: root)
+            guard isCurrent(context) else { return }
+            switch hash {
             case .readable(let localHash):
                 if localHash == item.hash {
                     index.entries[id] = IndexEntry(
@@ -486,7 +702,9 @@ final class SyncEngine {
                     )
                     return
                 }
-                if preserveAsConflictedCopy(expectedURL).blocksOverwrite {
+                if preserveAsConflictedCopy(
+                    expectedURL, root: root, context: context
+                ).blocksOverwrite {
                     summary.errors += 1
                     activity("Could not set aside your local \(expectedRel); leaving it untouched and retrying")
                     return // never download over an edit we failed to preserve
@@ -499,7 +717,12 @@ final class SyncEngine {
             case .missing:
                 break
             }
-            if let written = download(id, to: expectedURL, client: client, folderId: folder.id, kind: item.kind) {
+            let written = download(
+                id, to: expectedURL, client: client, context: context,
+                folderId: folder.id, kind: item.kind
+            )
+            guard isCurrent(context) else { return }
+            if let written {
                 index.entries[id] = IndexEntry(
                     hash: written,
                     relativePath: expectedRel,
@@ -536,17 +759,21 @@ final class SyncEngine {
                     activeRel = entry.relativePath
                     activeURL = oldURL
                 } else {
+                    guard isCurrent(context) else { return }
                     try? fm.createDirectory(at: expectedURL.deletingLastPathComponent(),
                                             withIntermediateDirectories: true)
                     if fm.fileExists(atPath: expectedURL.path),
-                       preserveAsConflictedCopy(expectedURL).blocksOverwrite {
+                       preserveAsConflictedCopy(
+                        expectedURL, root: root, context: context
+                       ).blocksOverwrite {
                         // Could not set the stranger aside: do not clobber it.
                         summary.errors += 1
                         activity("Could not set aside the file at \(expectedRel); not renaming \(entry.relativePath) over it")
                         return
                     }
                     do {
-                        try moveItem(at: oldURL, to: expectedURL, root: root)
+                        try moveItem(
+                            at: oldURL, to: expectedURL, root: root, context: context)
                         activity("Renamed \(entry.relativePath) to \(expectedRel)")
                         entry.relativePath = expectedRel
                     } catch {
@@ -565,9 +792,11 @@ final class SyncEngine {
                 root: root
             ) {
                 do {
+                    guard isCurrent(context) else { return }
                     try? fm.createDirectory(at: expectedURL.deletingLastPathComponent(),
                                             withIntermediateDirectories: true)
-                    try moveItem(at: migratedURL, to: expectedURL, root: root)
+                    try moveItem(
+                        at: migratedURL, to: expectedURL, root: root, context: context)
                     activity("Retargeted migrated \(entry.relativePath) to \(expectedRel)")
                     entry.relativePath = expectedRel
                 } catch {
@@ -591,10 +820,17 @@ final class SyncEngine {
 
         guard item.hash != entry.hash else { return } // remote unchanged; push owns local edits
 
-        switch localFileHash(activeURL, root: root) {
+        let hash = localFileHash(activeURL, root: root)
+        guard isCurrent(context) else { return }
+        switch hash {
         case .missing:
             // Missing (resurrect) or clean: take the server's copy.
-            if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
+            let written = download(
+                id, to: activeURL, client: client, context: context,
+                folderId: folder.id, kind: item.kind
+            )
+            guard isCurrent(context) else { return }
+            if let written {
                 entry.hash = written
                 entry.fileMtime = fileMtime(activeURL)
                 entry.folderId = folder.id
@@ -612,7 +848,12 @@ final class SyncEngine {
             activity("\(activeRel) exists but is not readable yet: \(error.localizedDescription); skipping pull")
             return
         case .readable(let localHash) where localHash == entry.hash:
-            if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
+            let written = download(
+                id, to: activeURL, client: client, context: context,
+                folderId: folder.id, kind: item.kind
+            )
+            guard isCurrent(context) else { return }
+            if let written {
                 entry.hash = written
                 entry.fileMtime = fileMtime(activeURL)
                 entry.folderId = folder.id
@@ -633,7 +874,7 @@ final class SyncEngine {
         // local edit survives as a conflicted copy that is never auto-pushed.
         // If it cannot be preserved, leave the canonical file untouched and
         // retry next pass rather than overwrite the unsynced local edit.
-        switch preserveAsConflictedCopy(activeURL) {
+        switch preserveAsConflictedCopy(activeURL, root: root, context: context) {
         case .preserved(let kept):
             activity("Conflict on \(activeRel); your edit is \(kept.lastPathComponent)")
         case .nothingToPreserve:
@@ -643,7 +884,12 @@ final class SyncEngine {
             activity("Conflict on \(activeRel) but could not preserve your edit; leaving it and retrying")
             return
         }
-        if let written = download(id, to: activeURL, client: client, folderId: folder.id, kind: item.kind) {
+        let written = download(
+            id, to: activeURL, client: client, context: context,
+            folderId: folder.id, kind: item.kind
+        )
+        guard isCurrent(context) else { return }
+        if let written {
             entry.hash = written
             entry.fileMtime = fileMtime(activeURL)
             entry.folderId = folder.id
@@ -660,8 +906,10 @@ final class SyncEngine {
 
     private func pushPass(
         _ workspace: Workspace, client: SyncClient, root: URL,
-        index: inout SyncIndex, summary: inout SyncSummary, identityScan incomingIdentityScan: IdentityScan?
+        context: PassContext, index: inout SyncIndex, summary: inout SyncSummary,
+        identityScan incomingIdentityScan: IdentityScan?
     ) -> Bool {
+        guard isCurrent(context) else { return false }
         let fm = FileManager.default
         let workspaceDescriptor = descriptor(for: workspace)
         let folderById = Dictionary(uniqueKeysWithValues: workspace.folders.map { ($0.id, $0) })
@@ -681,6 +929,7 @@ final class SyncEngine {
             !fm.fileExists(atPath: root.appendingPathComponent($0.relativePath).path)
         }) {
             identityScan = scanIdentityFiles(root: root, index: index)
+            guard isCurrent(context) else { return false }
         }
         // Deletion safety is two layers. Primary: a two-strike rule. A local
         // deletion only propagates on the SECOND consecutive completed scan that
@@ -702,6 +951,7 @@ final class SyncEngine {
         // set drives the two-strike deletes and the high-fraction backstop.
         var confirmedMissing = Set<String>()
         for (postId, entry) in Array(index.entries) {
+            guard isCurrent(context) else { return false }
             let url = root.appendingPathComponent(entry.relativePath)
             guard !fm.fileExists(atPath: url.path) else { continue }
             if identityScan?.failedMovePatchIds.contains(postId) == true {
@@ -756,13 +1006,17 @@ final class SyncEngine {
         var missingThisScan = Set<String>()
         if !deletesPaused {
             for postId in confirmedMissing {
+                guard isCurrent(context) else { return false }
                 guard let entry = index.entries[postId] else { continue }
                 missingThisScan.insert(postId)
                 guard previouslyMissing.contains(postId) else {
                     activity("Noticed \(entry.relativePath) is gone; will delete on the server if it is still gone next sync")
                     continue
                 }
-                switch client.deleteFile(postId: postId, ifMatch: entry.hash) {
+                guard isCurrent(context) else { return false }
+                let reply = client.deleteFile(postId: postId, ifMatch: entry.hash)
+                guard isCurrent(context) else { return false }
+                switch reply {
                 case .success:
                     index.entries.removeValue(forKey: postId)
                     missingThisScan.remove(postId) // gone for good; nothing to carry
@@ -784,6 +1038,7 @@ final class SyncEngine {
 
         // 2. Local edits: file hash moved off the indexed hash.
         for (postId, entry) in index.entries {
+            guard isCurrent(context) else { return false }
             var entry = entry
             // A "needs pull" sentinel means a prior move could not converge the
             // local file with the server render. Skip it so no stale-If-Match
@@ -792,6 +1047,7 @@ final class SyncEngine {
             guard entry.hash != Self.needsPullHash else { continue }
             let url = root.appendingPathComponent(entry.relativePath)
             guard let data = try? readData(url, root: root) else { continue }
+            guard isCurrent(context) else { return false }
             let localHash = MarkdownIdentityCodec.syncHash(for: data)
             guard localHash != entry.hash else {
                 if entry.fileMtime != fileMtime(url) {
@@ -808,7 +1064,10 @@ final class SyncEngine {
             }
             let body = MarkdownIdentityCodec.strip(from: bodyWithIdentity)
 
-            switch client.putFile(postId: postId, body: body, ifMatch: entry.hash) {
+            guard isCurrent(context) else { return false }
+            let reply = client.putFile(postId: postId, body: body, ifMatch: entry.hash)
+            guard isCurrent(context) else { return false }
+            switch reply {
             case .success(.saved(let item)):
                 rejectedContent.removeValue(forKey: entry.relativePath)
                 let folder = entry.folderId.flatMap { folderById[$0] }
@@ -827,14 +1086,17 @@ final class SyncEngine {
                 if newRel != entry.relativePath {
                     let target = root.appendingPathComponent(newRel)
                     if fm.fileExists(atPath: target.path),
-                       preserveAsConflictedCopy(target).blocksOverwrite {
+                       preserveAsConflictedCopy(
+                        target, root: root, context: context
+                       ).blocksOverwrite {
                         // Could not set the stranger aside: keep our file where it
                         // is (canonicalization below still converges on it).
                         summary.errors += 1
                         activity("Could not set aside the file at \(newRel); leaving \(entry.relativePath) in place")
                     } else {
                         do {
-                            try moveItem(at: fileURL, to: target, root: root)
+                            try moveItem(
+                                at: fileURL, to: target, root: root, context: context)
                             fileURL = target
                             entry.relativePath = newRel
                         } catch {
@@ -846,7 +1108,12 @@ final class SyncEngine {
                 // Converge canonicalization: rewrite the local file only when
                 // the server's render differs from what we just sent.
                 if item.hash != localHash {
-                    if let written = download(postId, to: fileURL, client: client, folderId: folder?.id ?? entry.folderId, kind: item.kind) {
+                    let written = download(
+                        postId, to: fileURL, client: client, context: context,
+                        folderId: folder?.id ?? entry.folderId, kind: item.kind
+                    )
+                    guard isCurrent(context) else { return false }
+                    if let written {
                         entry.hash = written
                     } else {
                         entry.hash = item.hash // next pass re-pulls via the manifest
@@ -865,7 +1132,7 @@ final class SyncEngine {
                 // pull-side conflict. If the local edit cannot be preserved,
                 // leave the file and its old index hash so the next pass retries,
                 // rather than overwrite the unsynced edit with the server copy.
-                switch preserveAsConflictedCopy(url) {
+                switch preserveAsConflictedCopy(url, root: root, context: context) {
                 case .preserved(let kept):
                     activity("Conflict on \(entry.relativePath); your edit is \(kept.lastPathComponent)")
                 case .nothingToPreserve:
@@ -875,7 +1142,12 @@ final class SyncEngine {
                     activity("Conflict on \(entry.relativePath) but could not preserve your edit; leaving it and retrying")
                     continue
                 }
-                if let written = download(postId, to: url, client: client, folderId: entry.folderId, kind: entry.kind) {
+                let written = download(
+                    postId, to: url, client: client, context: context,
+                    folderId: entry.folderId, kind: entry.kind
+                )
+                guard isCurrent(context) else { return false }
+                if let written {
                     entry.hash = written
                     entry.fileMtime = fileMtime(url)
                     index.entries[postId] = entry
@@ -899,12 +1171,14 @@ final class SyncEngine {
         var createdFolders = false
         var knownFolderPaths = Set(workspace.folders.map { $0.path })
         for folder in workspace.folders {
+            guard isCurrent(context) else { return false }
             let dir = root.appendingPathComponent(
                 WorkspaceLayout.directoryRelativePath(for: descriptor(for: folder), workspace: workspaceDescriptor),
                 isDirectory: true
             )
             let contents = directoryContents(dir)
             for child in contents {
+                guard isCurrent(context) else { return false }
                 let name = child.lastPathComponent
                 guard isDirectory(child) else { continue }
                 guard !(folder.mode == "bookmarks" && name.range(of: #"^\d{4}$"#, options: .regularExpression) != nil) else {
@@ -914,7 +1188,8 @@ final class SyncEngine {
                 let childPath = childFolderPath(parentPath: folder.path, name: name)
                 guard !knownFolderPaths.contains(childPath) else { continue }
                 if let created = createFolderForLocalDirectory(
-                    child, parent: folder, workspace: workspaceDescriptor, client: client, root: root, summary: &summary
+                    child, parent: folder, workspace: workspaceDescriptor, client: client,
+                    root: root, context: context, summary: &summary
                 ) {
                     knownFolderPaths.insert(created.path)
                     createdFolders = true
@@ -927,6 +1202,7 @@ final class SyncEngine {
         let indexedPaths = Set(index.entries.values.map { $0.relativePath })
         let indexedIds = Set(index.entries.keys)
         for fileURL in WorkspaceLayout.markdownFiles(at: root) {
+            guard isCurrent(context) else { return false }
             guard !isDirectory(fileURL) else { continue }
             let name = fileURL.lastPathComponent
             guard !name.hasPrefix(".") else { continue }
@@ -950,20 +1226,26 @@ final class SyncEngine {
             guard let classification = WorkspaceLayout.classify(relativePath: rel, workspace: workspaceDescriptor),
                   let folder = folderById[classification.folder.id] else { continue }
             pushNewFile(fileURL, rel: rel, folder: folder, workspace: workspaceDescriptor, client: client,
-                        root: root, index: &index, summary: &summary)
+                        root: root, context: context, index: &index, summary: &summary)
         }
         return createdFolders
     }
 
     private func createFolderForLocalDirectory(
         _ dir: URL, parent: WorkspaceFolder, workspace: WorkspaceDescriptor, client: SyncClient, root: URL,
-        summary: inout SyncSummary
+        context: PassContext, summary: inout SyncSummary
     ) -> WorkspaceFolder? {
+        guard isCurrent(context) else { return nil }
         let localName = dir.lastPathComponent
         let localPath = childFolderPath(parentPath: parent.path, name: localName)
         // The folder's workspace-relative path is stable across retries, so a
         // lost create response does not spawn a duplicate folder on retry.
-        switch client.createFolder(parentPath: parent.path, name: localName, idempotencyKey: "folder:\(localPath)") {
+        guard isCurrent(context) else { return nil }
+        let reply = client.createFolder(
+            parentPath: parent.path, name: localName,
+            idempotencyKey: "folder:\(localPath)")
+        guard isCurrent(context) else { return nil }
+        switch reply {
         case .failure(let error):
             summary.errors += 1
             activity("Could not create folder \(localPath): \(error)")
@@ -975,7 +1257,9 @@ final class SyncEngine {
                     WorkspaceLayout.directoryRelativePath(for: descriptor(for: created), workspace: workspace),
                     isDirectory: true
                 )
-                if let message = renameDirectory(dir, to: target) {
+                if let message = renameDirectory(
+                    dir, to: target, root: root, context: context
+                ) {
                     summary.errors += 1
                     activity("Created folder \(created.path) but could not rename \(localPath): \(message)")
                 } else {
@@ -990,8 +1274,9 @@ final class SyncEngine {
 
     private func pushNewFile(
         _ fileURL: URL, rel: String, folder: WorkspaceFolder, workspace: WorkspaceDescriptor, client: SyncClient,
-        root: URL, index: inout SyncIndex, summary: inout SyncSummary
+        root: URL, context: PassContext, index: inout SyncIndex, summary: inout SyncSummary
     ) {
+        guard isCurrent(context) else { return }
         let fm = FileManager.default
         let data: Data
         do {
@@ -1001,6 +1286,7 @@ final class SyncEngine {
             activity("\(rel) is not readable: \(error.localizedDescription); not pushed")
             return
         }
+        guard isCurrent(context) else { return }
         guard let textWithIdentity = String(data: data, encoding: .utf8) else {
             summary.errors += 1
             activity("\(rel) is not UTF-8; not pushed")
@@ -1033,7 +1319,11 @@ final class SyncEngine {
         // publishing the post twice.
         let idempotencyKey = injectedId ?? "post:\(rel)"
 
-        switch client.postFile(body: body, folderId: folder.id, idempotencyKey: idempotencyKey) {
+        guard isCurrent(context) else { return }
+        let reply = client.postFile(
+            body: body, folderId: folder.id, idempotencyKey: idempotencyKey)
+        guard isCurrent(context) else { return }
+        switch reply {
         case .success(.saved(let item)):
             rejectedContent.removeValue(forKey: rel)
             guard let id = item.id else {
@@ -1052,14 +1342,17 @@ final class SyncEngine {
             if newRel != rel {
                 let destination = root.appendingPathComponent(newRel)
                 if fm.fileExists(atPath: destination.path),
-                   preserveAsConflictedCopy(destination).blocksOverwrite {
+                   preserveAsConflictedCopy(
+                    destination, root: root, context: context
+                   ).blocksOverwrite {
                     // Could not set the stranger aside: keep our file at its
                     // current path (canonicalization below converges on it).
                     summary.errors += 1
                     activity("Could not set aside the file at \(newRel); leaving \(rel) in place")
                 } else {
                     do {
-                        try moveItem(at: fileURL, to: destination, root: root)
+                        try moveItem(
+                            at: fileURL, to: destination, root: root, context: context)
                         target = destination
                         indexedRel = newRel
                     } catch {
@@ -1070,7 +1363,12 @@ final class SyncEngine {
             }
             // Converge on the server's canonical render (it adds schema,
             // canonical URL, and normalized frontmatter).
-            if let written = download(id, to: target, client: client, folderId: folder.id, kind: item.kind) {
+            let written = download(
+                id, to: target, client: client, context: context,
+                folderId: folder.id, kind: item.kind
+            )
+            guard isCurrent(context) else { return }
+            if let written {
                 index.entries[id] = IndexEntry(
                     hash: written,
                     relativePath: indexedRel,
@@ -1104,10 +1402,12 @@ final class SyncEngine {
     // MARK: Helpers
 
     private func materializeFolders(
-        _ folders: [WorkspaceFolder], workspace: WorkspaceDescriptor, root: URL, summary: inout SyncSummary
+        _ folders: [WorkspaceFolder], workspace: WorkspaceDescriptor, root: URL,
+        context: PassContext, summary: inout SyncSummary
     ) {
         let fm = FileManager.default
         for folder in folders {
+            guard isCurrent(context) else { return }
             let dir = root.appendingPathComponent(
                 WorkspaceLayout.directoryRelativePath(for: descriptor(for: folder), workspace: workspace),
                 isDirectory: true
@@ -1115,6 +1415,7 @@ final class SyncEngine {
             do {
                 try fm.createDirectory(at: dir, withIntermediateDirectories: true)
                 if folder.mode == "blog", folder.path.hasPrefix("blog/") {
+                    guard isCurrent(context) else { return }
                     let child = String(folder.path.dropFirst("blog/".count))
                     try fm.createDirectory(
                         at: root.appendingPathComponent("Drafts/\(child)", isDirectory: true),
@@ -1177,7 +1478,10 @@ final class SyncEngine {
         }
     }
 
-    private func preserveAsConflictedCopy(_ url: URL) -> ConflictPreservation {
+    private func preserveAsConflictedCopy(
+        _ url: URL, root: URL, context: PassContext
+    ) -> ConflictPreservation {
+        guard isCurrent(context) else { return .failed }
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return .nothingToPreserve }
         let stem = url.deletingPathExtension().lastPathComponent
@@ -1194,7 +1498,7 @@ final class SyncEngine {
             n += 1
         }
         do {
-            try moveItem(at: url, to: candidate, root: syncRootProvider())
+            try moveItem(at: url, to: candidate, root: root, context: context)
             return .preserved(candidate)
         } catch {
             return .failed
@@ -1213,19 +1517,23 @@ final class SyncEngine {
         _ postId: String,
         to url: URL,
         client: SyncClient,
+        context: PassContext,
         folderId: String? = nil,
         kind: String? = nil
     ) -> String? {
+        guard isCurrent(context) else { return nil }
         switch client.fileText(postId: postId) {
         case .failure:
             return nil
         case .success(let (text, _)):
+            guard isCurrent(context) else { return nil }
             let localText = MarkdownIdentityCodec.inject(into: text, itemId: postId, folderId: folderId, kind: kind)
             let data = Data(localText.utf8)
             do {
+                guard isCurrent(context) else { return nil }
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try writeData(data, to: url)
+                try writeData(data, to: url, root: context.root, context: context)
             } catch {
                 activity("Could not write \(url.lastPathComponent): \(error.localizedDescription)")
                 return nil
@@ -1238,21 +1546,34 @@ final class SyncEngine {
         store.loadIndex()
     }
 
+    /// Keep the epoch check and the small atomic cache write under one lock so
+    /// sign-out cannot land between them and then have stale work recreate it.
+    private func cacheWorkspace(_ data: Data, context: PassContext) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard passEpoch == context.epoch else { return false }
+        store.cacheWorkspace(data)
+        return true
+    }
+
     private func saveIndex(_ index: SyncIndex) {
         store.saveIndex(index)
     }
 
     private func reconcileIndexedMoves(
         root: URL, client: SyncClient, workspace: WorkspaceDescriptor,
-        index: inout SyncIndex, summary: inout SyncSummary
+        context: PassContext, index: inout SyncIndex, summary: inout SyncSummary
     ) -> IdentityScan? {
+        guard isCurrent(context) else { return nil }
         let fm = FileManager.default
         let missingIds = index.entries.compactMap { postId, entry -> String? in
             fm.fileExists(atPath: root.appendingPathComponent(entry.relativePath).path) ? nil : postId
         }
         guard !missingIds.isEmpty else { return nil }
         var scan = scanIdentityFiles(root: root, index: index)
+        guard isCurrent(context) else { return nil }
         for postId in missingIds {
+            guard isCurrent(context) else { return nil }
             guard let diskEntry = scan.index.entries[postId] else { continue }
             guard var entry = index.entries[postId],
                   entry.relativePath != diskEntry.relativePath else { continue }
@@ -1265,9 +1586,13 @@ final class SyncEngine {
             entry.folderId = diskEntry.folderId ?? entry.folderId
             entry.kind = diskEntry.kind ?? entry.kind
             let url = root.appendingPathComponent(diskEntry.relativePath)
-            if ensureFrontmatterReflectsPath(url: url, relativePath: diskEntry.relativePath) {
+            if ensureFrontmatterReflectsPath(
+                url: url, relativePath: diskEntry.relativePath,
+                root: root, context: context
+            ) {
                 entry.fileMtime = fileMtime(url)
             }
+            guard isCurrent(context) else { return nil }
             // A move BETWEEN folders leaves the bytes (and their hash) unchanged,
             // so the push-side PUT never fires and the server keeps the file in
             // its old folder: the next pull would rename it straight back. Tell
@@ -1280,7 +1605,12 @@ final class SyncEngine {
             // retries, or the pull reverts the local move.
             if let newFolderId, newFolderId != oldFolderId {
                 let newSlug = url.deletingPathExtension().lastPathComponent
-                switch client.patchFile(postId: postId, folderId: newFolderId, slug: newSlug, ifMatch: entry.hash) {
+                guard isCurrent(context) else { return nil }
+                let reply = client.patchFile(
+                    postId: postId, folderId: newFolderId,
+                    slug: newSlug, ifMatch: entry.hash)
+                guard isCurrent(context) else { return nil }
+                switch reply {
                 case .success(.saved(let item)):
                     entry.folderId = newFolderId
                     entry.kind = item.kind
@@ -1294,28 +1624,35 @@ final class SyncEngine {
                         localHash = (try? readData(url, root: root))
                             .map { MarkdownIdentityCodec.syncHash(for: $0) }
                     }
+                    guard isCurrent(context) else { return nil }
                     if item.hash == localHash {
                         // The local file already byte-matches the server render.
                         entry.hash = item.hash
-                    } else if let written = download(postId, to: url, client: client,
-                                                     folderId: newFolderId, kind: item.kind) {
-                        // Downloaded the server render onto the moved path.
-                        entry.hash = written
-                        entry.fileMtime = fileMtime(url)
                     } else {
-                        // The convergence download FAILED (the GET failed, or the
-                        // local file is unreadable so we cannot compare). Trusting
-                        // EITHER hash is wrong: the local hash lets a later push
-                        // carry a stale If-Match, and item.hash makes the next
-                        // pull exit early (item.hash == entry.hash) so a push can
-                        // revert the rename with pre-rename local bytes. Mark the
-                        // entry "needs pull": the next full pass's pull (which runs
-                        // before push) re-downloads the server render and converges
-                        // authoritatively, and the push edits loop skips the entry
-                        // until then. A genuine unsynced local edit is set aside as
-                        // a conflicted copy by the pull before the render lands, so
-                        // no edit is lost and the rename is never reverted.
-                        entry.hash = Self.needsPullHash
+                        let written = download(
+                            postId, to: url, client: client, context: context,
+                            folderId: newFolderId, kind: item.kind
+                        )
+                        guard isCurrent(context) else { return nil }
+                        if let written {
+                            // Downloaded the server render onto the moved path.
+                            entry.hash = written
+                            entry.fileMtime = fileMtime(url)
+                        } else {
+                            // The convergence download FAILED (the GET failed, or the
+                            // local file is unreadable so we cannot compare). Trusting
+                            // EITHER hash is wrong: the local hash lets a later push
+                            // carry a stale If-Match, and item.hash makes the next
+                            // pull exit early (item.hash == entry.hash) so a push can
+                            // revert the rename with pre-rename local bytes. Mark the
+                            // entry "needs pull": the next full pass's pull (which runs
+                            // before push) re-downloads the server render and converges
+                            // authoritatively, and the push edits loop skips the entry
+                            // until then. A genuine unsynced local edit is set aside as
+                            // a conflicted copy by the pull before the render lands, so
+                            // no edit is lost and the rename is never reverted.
+                            entry.hash = Self.needsPullHash
+                        }
                     }
                     index.entries[postId] = entry
                     summary.pushed += 1
@@ -1363,9 +1700,13 @@ final class SyncEngine {
         return IdentityScan(index: rebuilt, unreadableRelativePaths: unreadable)
     }
 
-    private func ensureFrontmatterReflectsPath(url: URL, relativePath: String) -> Bool {
-        guard let data = try? readData(url, root: syncRootProvider()),
+    private func ensureFrontmatterReflectsPath(
+        url: URL, relativePath: String, root: URL, context: PassContext
+    ) -> Bool {
+        guard isCurrent(context),
+              let data = try? readData(url, root: root),
               var text = String(data: data, encoding: .utf8) else { return false }
+        guard isCurrent(context) else { return false }
         var changed = false
         let slug = url.deletingPathExtension().lastPathComponent
         if replaceFrontmatterValue(key: "slug", value: slug, text: &text) {
@@ -1378,7 +1719,7 @@ final class SyncEngine {
         }
         guard changed else { return false }
         do {
-            try writeData(Data(text.utf8), to: url)
+            try writeData(Data(text.utf8), to: url, root: root, context: context)
             return true
         } catch {
             activity("Could not update front matter for \(relativePath): \(error.localizedDescription)")
@@ -1596,16 +1937,21 @@ final class SyncEngine {
         path.split(separator: "/").last.map(String.init) ?? path
     }
 
-    private func renameDirectory(_ source: URL, to target: URL) -> String? {
+    private func renameDirectory(
+        _ source: URL, to target: URL, root: URL, context: PassContext
+    ) -> String? {
+        guard isCurrent(context) else { return StalePass.invalidated.localizedDescription }
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: target.deletingLastPathComponent(),
                                    withIntermediateDirectories: true)
+            guard isCurrent(context) else { throw StalePass.invalidated }
             if source.path == target.path { return nil }
             if fm.fileExists(atPath: target.path) {
                 if source.path.compare(target.path, options: [.caseInsensitive, .literal]) == .orderedSame {
                     let tmp = source.deletingLastPathComponent()
                         .appendingPathComponent(".write-rename-\(UUID().uuidString)", isDirectory: true)
+                    guard isCurrent(context) else { throw StalePass.invalidated }
                     try fm.moveItem(at: source, to: tmp)
                     do {
                         try fm.moveItem(at: tmp, to: target)
@@ -1617,14 +1963,17 @@ final class SyncEngine {
                 }
                 return "\(target.lastPathComponent) already exists"
             }
-            try moveItem(at: source, to: target, root: syncRootProvider())
+            try moveItem(at: source, to: target, root: root, context: context)
             return nil
         } catch {
             return error.localizedDescription
         }
     }
 
-    private func moveItem(at source: URL, to target: URL, root: URL) throws {
+    private func moveItem(
+        at source: URL, to target: URL, root: URL, context: PassContext
+    ) throws {
+        guard isCurrent(context) else { throw StalePass.invalidated }
         try coordinator(for: root).moveItem(at: source, to: target)
     }
 
@@ -1677,8 +2026,10 @@ final class SyncEngine {
         try coordinator(for: root).readData(at: url)
     }
 
-    private func writeData(_ data: Data, to url: URL) throws {
-        let root = syncRootProvider()
+    private func writeData(
+        _ data: Data, to url: URL, root: URL, context: PassContext
+    ) throws {
+        guard isCurrent(context) else { throw StalePass.invalidated }
         try coordinator(for: root).writeData(data, to: url)
     }
 

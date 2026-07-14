@@ -85,8 +85,12 @@ public struct WorkspaceEnumerator: Sendable {
         for identifier: WriteItemIdentifier
     ) async -> Result<WriteItem, WriteSyncError> {
         switch identifier {
-        case .rootContainer, .workingSet, .trashContainer:
+        case .rootContainer:
             return .success(rootItem())
+        case .workingSet, .trashContainer:
+            // Both are virtual enumeration scopes. They are never concrete
+            // items and must not be represented by the root's identifier.
+            return .failure(.notFound)
         case .workspace:
             return .success(workspaceItem())
         case .folder(_, let id):

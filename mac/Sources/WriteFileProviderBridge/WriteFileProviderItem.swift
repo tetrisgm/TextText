@@ -3,6 +3,14 @@ import Foundation
 import UniformTypeIdentifiers
 import WriteFileProviderKit
 
+/// Stable keys used by the extension's Info.plist action predicates. Finder
+/// receives booleans only; the manifest URL itself is resolved fresh when an
+/// action runs and is never exposed as predicate metadata.
+public enum WriteFileProviderUserInfoKey {
+    public static let fileActionsAvailable = "writeFileActions"
+    public static let manifestURLAvailable = "writeLinkAvailable"
+}
+
 /// Adapts a kit `WriteItem` to the `NSFileProviderItem` the framework consumes.
 /// This is the whole surface the extension exposes per item: identity, parent,
 /// name, type, capabilities, size, dates, and a version stamp derived from the
@@ -42,6 +50,15 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     public var creationDate: Date? { item.creationDate }
 
     public var contentModificationDate: Date? { item.contentModificationDate }
+
+    public var userInfo: [AnyHashable: Any]? {
+        guard !item.isFolder else { return nil }
+        let hasLink = !(item.manifestURL?.isEmpty ?? true)
+        return [
+            WriteFileProviderUserInfoKey.fileActionsAvailable: hasLink,
+            WriteFileProviderUserInfoKey.manifestURLAvailable: hasLink,
+        ]
+    }
 
     /// The framework compares versions to decide when to re-fetch. The content
     /// hash is exactly the server's change signal for a file; folders have no

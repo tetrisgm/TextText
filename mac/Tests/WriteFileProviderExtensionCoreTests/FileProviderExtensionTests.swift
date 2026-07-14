@@ -10,7 +10,9 @@ final class FileProviderExtensionTests: XCTestCase {
     private func ext(
         _ api: WriteSyncAPI?,
         descriptors: [FileProviderWorkspace]? = nil,
-        temporaryDirectory: URL? = nil
+        temporaryDirectory: URL? = nil,
+        copyLinkHandler: @escaping (String) -> Bool = { _ in true },
+        openURLHandler: @escaping (URL) -> Bool = { _ in true }
     ) -> FileProviderExtension {
         let domain = NSFileProviderDomain(
             identifier: NSFileProviderDomainIdentifier(rawValue: "write"),
@@ -21,7 +23,9 @@ final class FileProviderExtensionTests: XCTestCase {
         return FileProviderExtension(
             domain: domain, apiFactory: { _ in api },
             descriptorsProvider: { workspaces },
-            temporaryDirectoryProvider: temporaryDirectory.map { directory in { directory } })
+            temporaryDirectoryProvider: temporaryDirectory.map { directory in { directory } },
+            copyLinkHandler: copyLinkHandler,
+            openURLHandler: openURLHandler)
     }
 
     private func fileItem(id: String, file: String, folder: String) -> WriteFileProviderItem {
@@ -68,17 +72,37 @@ final class FileProviderExtensionTests: XCTestCase {
             metadataVersion: WriteFileProviderItem(item).itemVersion.metadataVersion)
     }
 
+    private func actionDefinitions() throws -> [[String: Any]] {
+        let macDirectory = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let plistURL = macDirectory.appendingPathComponent(
+            "Extensions/WriteFileProviderExtension/Info.plist")
+        let data = try Data(contentsOf: plistURL)
+        let root = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil)
+                as? [String: Any])
+        let extensionInfo = try XCTUnwrap(root["NSExtension"] as? [String: Any])
+        XCTAssertEqual(
+            extensionInfo["NSExtensionPointIdentifier"] as? String,
+            "com.apple.fileprovider-nonui")
+        return try XCTUnwrap(
+            extensionInfo["NSExtensionFileProviderActions"] as? [[String: Any]])
+    }
+
     // MARK: not authenticated
 
     func testItemWithoutAuthIsNotAuthenticated() {
         let exp = expectation(description: "item")
         var err: NSError?
-        _ = ext(nil).item(
+        let progress = ext(nil).item(
             for: NSFileProviderItemIdentifier(rawValue: "file:demo:p1"),
             request: NSFileProviderRequest()
         ) { _, error in err = error as NSError?; exp.fulfill() }
         wait(for: [exp], timeout: 5)
         XCTAssertEqual(err?.code, NSFileProviderError.notAuthenticated.rawValue)
+        XCTAssertEqual(progress.completedUnitCount, 1)
     }
 
     func testFolderEnumeratorWithoutAuthThrows() {
@@ -88,6 +112,196 @@ final class FileProviderExtensionTests: XCTestCase {
             try ext(nil).enumerator(
                 for: NSFileProviderItemIdentifier(rawValue: "folder:demo:blog"),
             request: NSFileProviderRequest()))
+    }
+
+    func testVirtualContainerMetadataNeverAliasesRoot() {
+        let provider = ext(nil)
+
+        for identifier in [
+            NSFileProviderItemIdentifier.workingSet,
+            NSFileProviderItemIdentifier.trashContainer,
+        ] {
+            let exp = expectation(description: "virtual-container-\(identifier.rawValue)")
+            var returnedItem: NSFileProviderItem?
+            var returnedError: NSError?
+
+            _ = provider.item(
+                for: identifier,
+                request: NSFileProviderRequest()
+            ) { item, error in
+                returnedItem = item
+                returnedError = error as NSError?
+                exp.fulfill()
+            }
+            wait(for: [exp], timeout: 5)
+
+            XCTAssertNil(returnedItem)
+            XCTAssertEqual(returnedError?.domain, NSFileProviderErrorDomain)
+            XCTAssertEqual(
+                returnedError?.code,
+                NSFileProviderError.noSuchItem.rawValue)
+        }
+    }
+
+    func testTrashEnumeratorReportsUnsupported() {
+        XCTAssertThrowsError(try ext(nil).enumerator(
+            for: .trashContainer,
+            request: NSFileProviderRequest()
+        )) { error in
+            let nsError = error as NSError
+            XCTAssertEqual(nsError.domain, NSCocoaErrorDomain)
+            XCTAssertEqual(nsError.code, NSFeatureUnsupportedError)
+        }
+    }
+
+    // MARK: Finder actions
+
+    func testActionPlistMatchesImplementationAndActivatesOnlyForFiles() throws {
+        let actions = try actionDefinitions()
+        let identifiers = Set(actions.compactMap {
+            $0["NSExtensionFileProviderActionIdentifier"] as? String
+        })
+        XCTAssertEqual(identifiers, [
+            FileProviderExtension.copyWriteLinkActionIdentifier.rawValue,
+            FileProviderExtension.shareActionIdentifier.rawValue,
+            FileProviderExtension.manageAccessActionIdentifier.rawValue,
+        ])
+
+        let linked = WriteFileProviderItem(WriteItemMapper.item(
+            for: Fixtures.item(
+                id: "p1", file: "a.md", kind: "note",
+                url: "https://write.example/authoritative"),
+            inFolder: "notes", handle: "demo", readOnly: false)!)
+        let noLink = WriteFileProviderItem(WriteItemMapper.item(
+            for: Fixtures.item(id: "p2", file: "b.md", kind: "note"),
+            inFolder: "notes", handle: "demo", readOnly: false)!)
+        let folder = WriteFileProviderItem(WriteItemMapper.item(
+            for: Fixtures.workspace().folders[0], handle: "demo", readOnly: false))
+
+        for action in actions {
+            let identifier = try XCTUnwrap(
+                action["NSExtensionFileProviderActionIdentifier"] as? String)
+            let rule = try XCTUnwrap(
+                action["NSExtensionFileProviderActionActivationRule"] as? String)
+            let predicate = NSPredicate(format: rule)
+            XCTAssertTrue(predicate.evaluate(with: ["fileproviderItems": [linked]]))
+            XCTAssertFalse(predicate.evaluate(with: ["fileproviderItems": [folder]]))
+            XCTAssertFalse(predicate.evaluate(
+                with: ["fileproviderItems": [linked, noLink]]))
+            XCTAssertFalse(predicate.evaluate(with: ["fileproviderItems": [noLink]]),
+                           "\(identifier) requires an authoritative Write URL")
+        }
+    }
+
+    func testCopyWriteLinkUsesFreshAuthoritativeManifestURL() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1", file: "stale-slug.md", kind: "note", slug: "stale-slug",
+            url: "https://links.example/current-write-link")]
+        var copied: [String] = []
+        let provider = ext(api, copyLinkHandler: { copied.append($0); return true })
+        let exp = expectation(description: "copy-write-link")
+        var err: NSError?
+
+        _ = provider.performAction(
+            identifier: FileProviderExtension.copyWriteLinkActionIdentifier,
+            onItemsWithIdentifiers: [NSFileProviderItemIdentifier(
+                rawValue: "file:demo:p1")]
+        ) { error in err = error as NSError?; exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertEqual(copied, ["https://links.example/current-write-link"])
+    }
+
+    func testCopyWriteLinkResolvesOriginRelativeManifestURL() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1", file: "a.md", kind: "note",
+            url: "/api/sync/v1/files/p1")]
+        var copied: String?
+        let provider = ext(api, copyLinkHandler: { copied = $0; return true })
+        let exp = expectation(description: "copy-relative-write-link")
+
+        _ = provider.performAction(
+            identifier: FileProviderExtension.copyWriteLinkActionIdentifier,
+            onItemsWithIdentifiers: [NSFileProviderItemIdentifier(
+                rawValue: "file:demo:p1")]
+        ) { _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(copied, "https://example.test/api/sync/v1/files/p1")
+    }
+
+    func testShareAndManageAccessOpenWriteAppDeepLinks() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1", file: "a.md", kind: "note",
+            url: "https://links.example/current-write-link")]
+        var opened: [URL] = []
+        let provider = ext(api, openURLHandler: { opened.append($0); return true })
+        let cases: [(NSFileProviderExtensionActionIdentifier, String)] = [
+            (FileProviderExtension.shareActionIdentifier, "share"),
+            (FileProviderExtension.manageAccessActionIdentifier, "manage-access"),
+        ]
+
+        for (identifier, action) in cases {
+            let exp = expectation(description: action)
+            _ = provider.performAction(
+                identifier: identifier,
+                onItemsWithIdentifiers: [NSFileProviderItemIdentifier(
+                    rawValue: "file:demo:p1")]
+            ) { _ in exp.fulfill() }
+            wait(for: [exp], timeout: 5)
+        }
+
+        XCTAssertEqual(opened.count, 2)
+        XCTAssertEqual(opened.map(\.scheme), ["write-app", "write-app"])
+        XCTAssertEqual(opened.map(\.host), ["item", "item"])
+        XCTAssertEqual(opened.map(\.path), ["/p1", "/p1"])
+        XCTAssertEqual(opened.compactMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "action" })?.value
+        }, ["share", "manage-access"])
+        XCTAssertEqual(opened.compactMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "url" })?.value
+        }, [
+            "https://links.example/current-write-link",
+            "https://links.example/current-write-link",
+        ])
+    }
+
+    func testCustomActionCancellationCompletesOnceWithoutCopying() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifestDelayNanoseconds = 5_000_000_000
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1", file: "a.md", kind: "note",
+            url: "https://links.example/p1")]
+        var copied: [String] = []
+        let provider = ext(api, copyLinkHandler: { copied.append($0); return true })
+        let first = expectation(description: "action-cancelled")
+        let duplicate = expectation(description: "action-completed-twice")
+        duplicate.isInverted = true
+        var callbacks = 0
+        var err: NSError?
+
+        let progress = provider.performAction(
+            identifier: FileProviderExtension.copyWriteLinkActionIdentifier,
+            onItemsWithIdentifiers: [NSFileProviderItemIdentifier(
+                rawValue: "file:demo:p1")]
+        ) { error in
+            callbacks += 1
+            err = error as NSError?
+            callbacks == 1 ? first.fulfill() : duplicate.fulfill()
+        }
+        progress.cancel()
+        wait(for: [first, duplicate], timeout: 0.25)
+
+        XCTAssertEqual(err?.domain, NSCocoaErrorDomain)
+        XCTAssertEqual(err?.code, NSUserCancelledError)
+        XCTAssertEqual(callbacks, 1)
+        XCTAssertTrue(copied.isEmpty)
     }
 
     // MARK: fetch
@@ -158,6 +372,33 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(err?.code, NSFileProviderError.versionNoLongerAvailable.rawValue)
     }
 
+    func testFetchCancellationUsesUserCancelledErrorAndCompletesOnce() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifestDelayNanoseconds = 5_000_000_000
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = expectation(description: "fetch-cancelled")
+        let duplicate = expectation(description: "fetch-completed-twice")
+        duplicate.isInverted = true
+        var callbacks = 0
+        var err: NSError?
+
+        let progress = ext(api, temporaryDirectory: directory).fetchContents(
+            for: NSFileProviderItemIdentifier(rawValue: "file:demo:p1"),
+            version: nil, request: NSFileProviderRequest()
+        ) { _, _, error in
+            callbacks += 1
+            err = error as NSError?
+            callbacks == 1 ? first.fulfill() : duplicate.fulfill()
+        }
+        progress.cancel()
+        wait(for: [first, duplicate], timeout: 0.25)
+
+        XCTAssertEqual(err?.domain, NSCocoaErrorDomain)
+        XCTAssertEqual(err?.code, NSUserCancelledError)
+        XCTAssertEqual(callbacks, 1)
+    }
+
     // MARK: create
 
     func testCreateFileCallsCreateFileInParentFolder() {
@@ -191,6 +432,39 @@ final class FileProviderExtensionTests: XCTestCase {
         // A Finder-created "My Great Note.md" retitles the fresh post (not reslug).
         XCTAssertEqual(api.patchCalls.first?.title, "My Great Note")
         XCTAssertNil(api.patchCalls.first?.slug)
+    }
+
+    func testCreateReturnsFilenamePendingWhenTitlePatchCanRetry() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.createFileResult = .success(Fixtures.item(
+            id: "n9", file: "untitled-x.md", kind: "note",
+            slug: "untitled-x", title: "", hash: "created-hash"))
+        api.patchResult = .failure(.network("offline"))
+        let template = fileItem(id: "tmp", file: "My Great Note.md", folder: "notes")
+        let exp = expectation(description: "create-title-pending")
+        var result: NSFileProviderItem?
+        var pending: NSFileProviderItemFields = []
+        var shouldFetch = true
+        var err: NSError?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [.filename, .contents],
+            contents: tempFile("body"), options: [], request: NSFileProviderRequest()
+        ) { item, fields, fetch, error in
+            result = item
+            pending = fields
+            shouldFetch = fetch
+            err = error as NSError?
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(pending, [.filename])
+        XCTAssertFalse(shouldFetch)
+        XCTAssertEqual(api.createFileCalls.count, 1)
+        XCTAssertEqual(api.patchCalls.count, 1)
     }
 
     func testCreateFileWithUnreadableURLFailsWithoutUploadingEmptyText() {
@@ -292,6 +566,39 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(err?.code, NSFileProviderError.cannotSynchronize.rawValue)
     }
 
+    func testModifyCancellationReturnsRequiredEmptyPendingShape() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.putFileDelayNanoseconds = 5_000_000_000
+        api.putResult = .success(Fixtures.item(
+            id: "p1", file: "a.md", kind: "note", hash: "new-hash"))
+        let item = fileItem(id: "p1", file: "a.md", folder: "notes")
+        let exp = expectation(description: "modify-cancelled")
+        var result: NSFileProviderItem?
+        var pending: NSFileProviderItemFields = [.contents]
+        var shouldFetch = true
+        var err: NSError?
+
+        let progress = ext(api).modifyItem(
+            item, baseVersion: version("basehash"), changedFields: [.contents],
+            contents: tempFile("new body"), options: [], request: NSFileProviderRequest()
+        ) { returned, fields, fetch, error in
+            result = returned
+            pending = fields
+            shouldFetch = fetch
+            err = error as NSError?
+            exp.fulfill()
+        }
+        progress.cancel()
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(result)
+        XCTAssertTrue(pending.isEmpty)
+        XCTAssertFalse(shouldFetch)
+        XCTAssertEqual(err?.domain, NSCocoaErrorDomain)
+        XCTAssertEqual(err?.code, NSUserCancelledError)
+        XCTAssertTrue(api.putCalls.isEmpty)
+    }
+
     func testBeforeFirstSyncContentSentinelNeverUploads() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.manifests["notes"] = [
@@ -356,6 +663,44 @@ final class FileProviderExtensionTests: XCTestCase {
         // A Finder rename retitles the post (the filename is the title, not the slug).
         XCTAssertEqual(api.patchCalls.first?.title, "Renamed")
         XCTAssertNil(api.patchCalls.first?.slug)
+    }
+
+    func testCompoundModifyReturnsMetadataPendingAfterContentSave() throws {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.putResult = .success(WriteManifestItem(
+            file: "a.md", kind: "note", slug: "a", title: "a", status: "draft",
+            hash: "puthash", id: "p1", date: nil, createdAt: nil, updatedAt: nil,
+            url: "https://links.example/p1"))
+        api.patchResult = .failure(.network("offline"))
+        let item = fileItem(id: "p1", file: "Renamed.md", folder: "notes")
+        let exp = expectation(description: "compound-partial")
+        var result: NSFileProviderItem?
+        var pending: NSFileProviderItemFields = []
+        var shouldFetch = true
+        var err: NSError?
+
+        _ = ext(api).modifyItem(
+            item, baseVersion: version("basehash"),
+            changedFields: [.contents, .filename], contents: tempFile("new body"),
+            options: [], request: NSFileProviderRequest()
+        ) { returned, fields, fetch, error in
+            result = returned
+            pending = fields
+            shouldFetch = fetch
+            err = error as NSError?
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertEqual(pending, [.filename])
+        XCTAssertFalse(shouldFetch)
+        XCTAssertEqual(result?.filename, "a.md")
+        XCTAssertEqual(
+            String(decoding: try XCTUnwrap(result?.itemVersion?.contentVersion), as: UTF8.self),
+            "puthash")
+        XCTAssertEqual(api.putCalls.count, 1)
+        XCTAssertEqual(api.patchCalls.count, 1)
     }
 
     func testCompoundModifyDoesNotPatchWhenPutReturnsNoHash() {
