@@ -91,7 +91,7 @@ final class WorkspaceEnumeratorTests: XCTestCase {
 
     // MARK: Working set / trash
 
-    func testWorkingSetIncludesFilesButDoesNotRepublishFolders() async {
+    func testWorkingSetIncludesParentFoldersAndFilesForColdReimport() async {
         let api = Fixtures.standardWorkspace()
         let e = enumr(api)
         guard case .success(let items) = await e.children(of: .workingSet) else {
@@ -99,10 +99,14 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         }
         let ids = Set(items.map(\.identifier))
         XCTAssertTrue(ids.isSuperset(of: [
+            F("blog"), F("notes"), F("bookmarks"),
             FI("p1"), FI("p2"), FI("p3"), FI("n1"), FI("b1"),
         ]))
-        XCTAssertTrue(items.allSatisfy { !$0.isFolder },
-                      "post changes must not republish unchanged folder objects")
+        for file in items where !file.isFolder {
+            XCTAssertTrue(
+                ids.contains(file.parentIdentifier),
+                "every working-set document must include its parent container")
+        }
     }
 
     func testTrashIsEmpty() async {

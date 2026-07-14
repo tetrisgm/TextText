@@ -154,38 +154,6 @@ public enum WriteTextBundlePackage {
         return MaterializedPackage(url: packageURL, logicalSize: logicalSize)
     }
 
-    /// File Provider requires a regular-file upload snapshot for a package.
-    /// `forUploading` asks filecoordinationd to produce that snapshot. Its URL
-    /// is ephemeral, so copy it while the accessor is active.
-    public static func uploadingSnapshot(
-        of packageURL: URL, in temporaryDirectory: URL
-    ) throws -> URL {
-        var coordinationError: NSError?
-        var copiedURL: URL?
-        var copyError: Error?
-        NSFileCoordinator().coordinate(
-            readingItemAt: packageURL,
-            options: .forUploading,
-            error: &coordinationError
-        ) { coordinatedURL in
-            let destination = temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension("zip")
-            do {
-                try FileManager.default.copyItem(at: coordinatedURL, to: destination)
-                copiedURL = destination
-            } catch {
-                copyError = error
-            }
-        }
-        if let coordinationError { throw coordinationError }
-        if let copyError { throw copyError }
-        guard let copiedURL else {
-            throw WriteTextBundleError.invalidPackage("Could not snapshot package")
-        }
-        return copiedURL
-    }
-
     public static func read(from suppliedURL: URL, in temporaryDirectory: URL) throws
         -> WriteTextBundleContents {
         let packageRoot: URL

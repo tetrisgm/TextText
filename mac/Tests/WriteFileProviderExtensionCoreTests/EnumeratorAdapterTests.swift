@@ -300,7 +300,7 @@ final class EnumeratorAdapterTests: XCTestCase {
         XCTAssertEqual(obs.anchor, anchor)
     }
 
-    func testAggregateWorkingSetEnumeratesFilesOnly() {
+    func testAggregateWorkingSetIncludesFilesAndTheirParentFolders() {
         let api = standardAPI()
         let subject = AggregateWorkingSetEnumerator(
             descriptors: [FileProviderWorkspace(name: "Demo", handle: "demo", origin: "o", token: "t")],
@@ -310,8 +310,13 @@ final class EnumeratorAdapterTests: XCTestCase {
         subject.enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
         wait(for: [exp], timeout: 5)
         XCTAssertFalse(obs.items.isEmpty)
-        XCTAssertTrue(obs.items.allSatisfy { $0.contentType != .folder },
-                      "post changes must not republish unchanged folders")
+        let identifiers = Set(obs.items.map(\.itemIdentifier))
+        let files = obs.items.filter { $0.contentType != .folder }
+        let folders = obs.items.filter { $0.contentType == .folder }
+        XCTAssertFalse(files.isEmpty)
+        XCTAssertFalse(folders.isEmpty)
+        XCTAssertTrue(files.allSatisfy { identifiers.contains($0.parentItemIdentifier) },
+                      "a cold File Provider reimport needs every file's parent in the working set")
     }
 
     // MARK: error bridging

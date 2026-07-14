@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
     private static let duplicateInstanceRecheckDelay: TimeInterval = 0.5
-    static let fileProviderSchemaVersion = 6
+    static let fileProviderSchemaVersion = 9
     private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()
@@ -61,8 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var fileProviderReconcileIdentity: String?
     private var fileProviderRemovalInFlight = false
     private var fileProviderRetry: DispatchWorkItem?
-    private var fileProviderSchemaReimportRetry: DispatchWorkItem?
-    private var fileProviderSchemaReimportInFlight = false
+    private var fileProviderSchemaRepairRetry: DispatchWorkItem?
+    private var fileProviderSchemaRepairInFlight = false
+    private var fileProviderSchemaPendingEnumeration:
+        (any FileProviderPendingEnumeration)?
     private var materializationEpoch = 0
     private var materializationRetry: DispatchWorkItem?
     private var isMaterializing = false
@@ -103,6 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine.workspaceLocationProvider = { [weak self] in self?.currentWorkspaceLocation() ?? self?.syncRootLocation() }
         engine.onActivity = { [weak self] message in self?.appendActivity(message) }
         engine.onStateChange = { [weak self] in self?.syncStateChanged() }
+        engine.onPassCompleted = { [weak self] summary in
+            self?.syncPassCompleted(summary)
+        }
         engine.onServerAppVersion = { [weak self] version in self?.serverAdvertisedAppVersion(version) }
 
         linkController.onChange = { [weak self] in self?.refreshUI() }
@@ -406,6 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // Foreground check, throttled to one per 5 minutes (the partyparty rule).
     private var lastForegroundCheck = Date.distantPast
+    private var lastBackgroundRecoveryUptime: TimeInterval?
     func applicationDidBecomeActive(_ notification: Notification) {
         recoverBackgroundSync()
         guard Date().timeIntervalSince(lastForegroundCheck) > 300 else { return }
@@ -419,18 +425,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Wake, unlock, network recovery, and foregrounding all converge here. The
     /// operations coalesce in their respective owners, so this never reloads the
-    /// web view or replaces local state; it only resumes interrupted background
-    /// work and tells Finder to compare its current tree with the server.
+    /// web view, replaces local state, or redraws Finder before a sync pass has
+    /// established that mirrored content actually changed.
     private func recoverBackgroundSync() {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in self?.recoverBackgroundSync() }
             return
         }
+        let uptime = ProcessInfo.processInfo.systemUptime
+        guard Self.shouldRunBackgroundRecovery(
+            lastRunUptime: lastBackgroundRecoveryUptime,
+            nowUptime: uptime
+        ) else { return }
+        lastBackgroundRecoveryUptime = uptime
         changeListener?.nudge()
         engine?.syncNow()
         captureAgent?.poke()
-        signalFileProviderChange()
         fileProviderStatusMonitor.refresh()
+    }
+
+    static func shouldRunBackgroundRecovery(
+        lastRunUptime: TimeInterval?,
+        nowUptime: TimeInterval,
+        coalescingWindow: TimeInterval = 1
+    ) -> Bool {
+        guard let lastRunUptime else { return true }
+        return nowUptime - lastRunUptime >= coalescingWindow
     }
 
     // Push channel: the server advertises its latest app build; when it is
@@ -456,9 +476,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if wasBusy && !busy { scheduleSpotlightReindex() }
         wasBusy = busy
         refreshUI()
-        // The workspace handle only becomes known after the first sync caches it,
-        // so this is the natural place to reconcile the File Provider domain.
-        syncFileProviderDomain()
+    }
+
+    private func syncPassCompleted(_ summary: SyncSummary) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.syncPassCompleted(summary)
+            }
+            return
+        }
+        // The workspace identity is first known after a completed pass. Signal
+        // an existing domain only when that exact pass changed mirrored content;
+        // ordinary focus/resume passes keep Finder's current presentation.
+        syncFileProviderDomain(
+            signalExistingDomain: Self.shouldSignalFileProviderAfterSync(summary))
+    }
+
+    static func shouldSignalFileProviderAfterSync(_ summary: SyncSummary) -> Bool {
+        summary.pulled > 0 || summary.pushed > 0 || summary.conflicts > 0
     }
 
     // MARK: Sync root
@@ -898,17 +933,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The app holds one workspace token today, so the handoff carries a
     /// one-element workspace list; the extension already fans out per handle, so
     /// joining more workspaces later just appends descriptors.
-    private func syncFileProviderDomain() {
+    private func syncFileProviderDomain(
+        signalExistingDomain: Bool = false
+    ) {
         if !Thread.isMainThread {
-            DispatchQueue.main.async { [weak self] in self?.syncFileProviderDomain() }
+            DispatchQueue.main.async { [weak self] in
+                self?.syncFileProviderDomain(
+                    signalExistingDomain: signalExistingDomain)
+            }
             return
         }
-        guard let credentials = store.loadCredentials(),
-              let blog = store.cachedWorkspace()?.blog,
-              !blog.handle.isEmpty else {
+        guard let credentials = store.loadCredentials() else {
             removeFileProviderDomain()
             return
         }
+        // A completed sync repopulates transient workspace metadata. Keep the
+        // existing domain while that cache is unavailable so wake/focus cannot
+        // turn a temporary read failure into a destructive Finder reimport.
+        guard let blog = store.cachedWorkspace()?.blog,
+              !blog.handle.isEmpty else { return }
         let origin = resolveServerOrigin(credentials: credentials).absoluteString
         let handoff = FileProviderHandoff(version: 1, workspaces: [
             WriteFileProviderKit.FileProviderWorkspace(
@@ -923,7 +966,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 scheduleFileProviderRetry(identity: identity)
                 return
             }
-            if registeredFileProviderDomain != nil {
+            if signalExistingDomain, registeredFileProviderDomain != nil {
                 signalFileProviderChange()
             }
             return
@@ -1020,12 +1063,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderStatusMonitor.bind(to: domain)
         fileProviderReconcileIdentity = nil
         if existingDomain, !handoff.workspaces.isEmpty,
-           Self.needsFileProviderSchemaReimport(
+           Self.needsFileProviderSchemaRepair(
             storedVersion: UserDefaults.standard.integer(
                 forKey: Self.fileProviderSchemaVersionKey)
            ) {
-            reimportFileProviderRoot(
-                domain: domain, epoch: epoch, identity: identity)
+            repairFileProviderSchema(
+                domain: domain, handoff: handoff,
+                epoch: epoch, identity: identity)
             return
         }
         UserDefaults.standard.set(
@@ -1034,56 +1078,136 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleFileProviderMaterialization(epoch: epoch, identity: identity)
     }
 
-    static func needsFileProviderSchemaReimport(storedVersion: Int) -> Bool {
+    static func needsFileProviderSchemaRepair(storedVersion: Int) -> Bool {
         storedVersion < fileProviderSchemaVersion
     }
 
-    /// Finder retains a sync anchor for every nested container. A normal change
-    /// signal cannot introduce a newly synthetic child when an older extension
-    /// version never exposed it. Reimport the existing workspace subtree once
-    /// per provider schema version; this keeps stable item identifiers and
-    /// pending local edits while forcing Finder to rebuild nested listings.
-    private func reimportFileProviderRoot(
-        domain: NSFileProviderDomain,
+    enum FileProviderSchemaRepairDecision: Equatable {
+        case rebuildCache
+        case waitForPendingItems
+        case retry
+    }
+
+    static func fileProviderSchemaRepairDecision(
+        pendingCount: Int, error: Error?
+    ) -> FileProviderSchemaRepairDecision {
+        if error != nil { return .retry }
+        return pendingCount == 0 ? .rebuildCache : .waitForPendingItems
+    }
+
+    /// A representation migration can leave Finder's downloaded replica with
+    /// old `.md` files while the provider now advertises `.textbundle` packages.
+    /// Reimporting preserves those stale paths, so File Provider can never create
+    /// the replacement items. Rebuild the disposable provider cache only after
+    /// Finder confirms there are no pending local edits. The server-backed
+    /// workspace remains authoritative and is materialized again immediately.
+    private func repairFileProviderSchema(
+        domain: NSFileProviderDomain, handoff: FileProviderHandoff,
         epoch: Int, identity: String, attempt: Int = 0
     ) {
         guard fileProviderDomainEpoch == epoch,
               fileProviderDesiredIdentity == identity,
-              !fileProviderSchemaReimportInFlight,
-              let manager = NSFileProviderManager(for: domain) else { return }
-        fileProviderSchemaReimportRetry?.cancel()
-        fileProviderSchemaReimportRetry = nil
-        fileProviderSchemaReimportInFlight = true
-        manager.reimportItems(below: .rootContainer) { [weak self] error in
+              !fileProviderSchemaRepairInFlight else { return }
+        guard let provider = SystemFileProviderStatusProvider(domain) else {
+            scheduleFileProviderSchemaRepair(
+                domain: domain, handoff: handoff,
+                epoch: epoch, identity: identity, attempt: attempt + 1)
+            return
+        }
+        fileProviderSchemaRepairRetry?.cancel()
+        fileProviderSchemaRepairRetry = nil
+        fileProviderSchemaRepairInFlight = true
+        fileProviderSchemaPendingEnumeration = provider.enumeratePendingItems {
+            [weak self] pendingCount, error in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.fileProviderSchemaReimportInFlight = false
+                self.fileProviderSchemaPendingEnumeration = nil
+                guard self.fileProviderDomainEpoch == epoch,
+                      self.fileProviderDesiredIdentity == identity else { return }
+                switch Self.fileProviderSchemaRepairDecision(
+                    pendingCount: pendingCount, error: error
+                ) {
+                case .retry:
+                    self.fileProviderSchemaRepairInFlight = false
+                    self.appendActivity(
+                        "Finder migration check failed: "
+                        + (error?.localizedDescription ?? "Unknown error"))
+                    self.scheduleFileProviderSchemaRepair(
+                        domain: domain, handoff: handoff,
+                        epoch: epoch, identity: identity,
+                        attempt: attempt + 1)
+                case .waitForPendingItems:
+                    self.fileProviderSchemaRepairInFlight = false
+                    self.appendActivity(
+                        "Waiting for \(pendingCount) Finder change"
+                        + (pendingCount == 1 ? "" : "s")
+                        + " before upgrading the local cache")
+                    self.signalFileProviderChange()
+                    self.scheduleFileProviderSchemaRepair(
+                        domain: domain, handoff: handoff,
+                        epoch: epoch, identity: identity,
+                        attempt: attempt + 1)
+                case .rebuildCache:
+                    self.rebuildFileProviderCache(
+                        domain: domain, handoff: handoff,
+                        epoch: epoch, identity: identity,
+                        attempt: attempt)
+                }
+            }
+        }
+    }
+
+    private func rebuildFileProviderCache(
+        domain: NSFileProviderDomain, handoff: FileProviderHandoff,
+        epoch: Int, identity: String, attempt: Int
+    ) {
+        NSFileProviderManager.remove(domain, mode: .removeAll) {
+            [weak self] _, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.fileProviderSchemaRepairInFlight = false
                 guard self.fileProviderDomainEpoch == epoch,
                       self.fileProviderDesiredIdentity == identity else { return }
                 if let error {
                     self.appendActivity(
-                        "Finder index refresh failed: \(error.localizedDescription)")
-                    guard attempt < 5 else { return }
-                    let work = DispatchWorkItem { [weak self] in
-                        self?.reimportFileProviderRoot(
-                            domain: domain, epoch: epoch,
-                            identity: identity, attempt: attempt + 1)
-                    }
-                    self.fileProviderSchemaReimportRetry = work
-                    DispatchQueue.main.asyncAfter(
-                        deadline: .now() + Double(attempt + 1) * 2,
-                        execute: work)
+                        "Finder cache upgrade failed: \(error.localizedDescription)")
+                    self.scheduleFileProviderSchemaRepair(
+                        domain: domain, handoff: handoff,
+                        epoch: epoch, identity: identity,
+                        attempt: attempt + 1)
                     return
                 }
+
+                self.registeredFileProviderDomain = nil
+                self.fileProviderStatusMonitor.unbind()
+                self.fileProviderUserVisibleURL = nil
+                self.invalidateMaterialization()
                 UserDefaults.standard.set(
                     Self.fileProviderSchemaVersion,
                     forKey: Self.fileProviderSchemaVersionKey)
-                self.appendActivity("Refreshing Finder for this Write version")
-                self.signalFileProviderChange()
-                self.scheduleFileProviderMaterialization(
-                    epoch: epoch, identity: identity, delay: 4)
+                self.appendActivity("Upgraded Finder's local Write cache")
+                self.addFileProviderDomain(
+                    identifier: domain.identifier, handoff: handoff,
+                    epoch: epoch, identity: identity)
             }
         }
+    }
+
+    private func scheduleFileProviderSchemaRepair(
+        domain: NSFileProviderDomain, handoff: FileProviderHandoff,
+        epoch: Int, identity: String, attempt: Int
+    ) {
+        guard fileProviderDomainEpoch == epoch,
+              fileProviderDesiredIdentity == identity else { return }
+        fileProviderSchemaRepairRetry?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.repairFileProviderSchema(
+                domain: domain, handoff: handoff,
+                epoch: epoch, identity: identity, attempt: attempt)
+        }
+        fileProviderSchemaRepairRetry = work
+        let delay = min(pow(2, Double(min(attempt, 4))), 30)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func scheduleFileProviderMaterialization(
@@ -1125,9 +1249,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderReconcileIdentity = nil
         fileProviderRetry?.cancel()
         fileProviderRetry = nil
-        fileProviderSchemaReimportRetry?.cancel()
-        fileProviderSchemaReimportRetry = nil
-        fileProviderSchemaReimportInFlight = false
+        fileProviderSchemaRepairRetry?.cancel()
+        fileProviderSchemaRepairRetry = nil
+        fileProviderSchemaPendingEnumeration?.cancel()
+        fileProviderSchemaPendingEnumeration = nil
+        fileProviderSchemaRepairInFlight = false
         invalidateMaterialization()
         registeredFileProviderDomain = nil
         fileProviderStatusMonitor.unbind()
@@ -1282,10 +1408,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let fm = FileManager.default
         let coordinator = NSFileCoordinator()
         var files: [(url: URL, isPackage: Bool)] = []
+        var containsLegacySidecar = false
         if let walker = fm.enumerator(
             at: root,
             includingPropertiesForKeys: [.isRegularFileKey, .isPackageKey]) {
             for case let url as URL in walker {
+                if url.pathExtension.lowercased() == "assets" {
+                    containsLegacySidecar = true
+                }
                 let values = try? url.resourceValues(
                     forKeys: [.isRegularFileKey, .isPackageKey])
                 let isPackage = values?.isPackage == true
@@ -1295,7 +1425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
-        var incomplete = files.isEmpty // nothing enumerated yet -> retry
+        var incomplete = files.isEmpty || containsLegacySidecar
         for file in files where isDataless(file.url) {
             var err: NSError?
             coordinator.coordinate(
@@ -1538,13 +1668,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func lastSyncLine() -> String {
-        if engine.isSyncing { return "Syncing now…" }
-        guard let at = engine.lastSyncAt else { return "Not synced yet" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        var line = "Last sync \(formatter.localizedString(for: at, relativeTo: Date()))"
-        if let s = engine.lastSummary, s.errors > 0 { line += " (\(s.errors) errors)" }
-        return line
+        switch engine.status {
+        case .syncing:
+            return "Syncing now…"
+        case .error(let count, let retryScheduled):
+            let noun = count == 1 ? "error" : "errors"
+            let when = engine.lastSyncAt.map {
+                " \(formatter.localizedString(for: $0, relativeTo: Date()))"
+            } ?? ""
+            let retry = retryScheduled ? ", retrying" : ""
+            return "Sync failed\(when) (\(count) \(noun)\(retry))"
+        case .idle:
+            guard let at = engine.lastSyncAt else { return "Not synced yet" }
+            return "Last sync \(formatter.localizedString(for: at, relativeTo: Date()))"
+        }
     }
 
     // MARK: Menu actions

@@ -147,6 +147,18 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertEqual(item?.documentSize, 4096)
     }
 
+    func testTextBundleDoesNotAdvertiseCanonicalMarkdownAsPackageSize() {
+        let entry = WriteManifestItem(
+            file: "posts/a.textbundle", representation: .textbundle,
+            kind: "note", slug: "a", title: "A", status: "draft",
+            hash: "h", id: "p1", date: nil, createdAt: nil, updatedAt: nil,
+            url: nil, size: 4096)
+        let item = WriteItemMapper.item(
+            for: entry, inFolder: "notes", handle: h, readOnly: false)
+
+        XCTAssertNil(item?.documentSize)
+    }
+
     func testManifestURLIsAuthoritativeAndSurvivesLocalCopies() {
         let entry = WriteManifestItem(
             file: "posts/a.md", kind: "note", slug: "stale-slug", title: "A",

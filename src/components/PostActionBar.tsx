@@ -639,11 +639,14 @@ export function PostActionBar(props: Props) {
   const editHref = postEditPath(props.postPath, props.post.id);
   const warmEditPath = useCallback(() => {
     if (props.mode !== "read" || !canEditPost) return;
+    // A supplied navigation handler owns an already-mounted local surface.
+    // Warming the route would add server work to a local read/edit toggle.
+    if (props.onNavigate) return;
     preloadPostEditLayer();
     if (warmedEditPaths.has(editHref)) return;
     warmedEditPaths.add(editHref);
     router.prefetch(editHref);
-  }, [canEditPost, editHref, props.mode, router]);
+  }, [canEditPost, editHref, props.mode, props.onNavigate, router]);
 
   useEffect(() => {
     if (props.mode !== "read" || !canEditPost) return;

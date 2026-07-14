@@ -10,6 +10,11 @@ public enum ICloudMaterializationState: Equatable {
     case unknown
 }
 
+public enum WorkspaceConditionalWriteResult: Equatable {
+    case written
+    case changed
+}
+
 public final class WorkspaceFileCoordinator: NSObject, NSFilePresenter {
     public let rootURL: URL
     public let presentedItemOperationQueue = OperationQueue()
@@ -72,6 +77,44 @@ public final class WorkspaceFileCoordinator: NSObject, NSFilePresenter {
             }
             throw error
         }
+    }
+
+    /// Replaces `url` only while it still contains the exact bytes the caller
+    /// previously read. A nil expected value means the destination must still
+    /// be absent. The comparison and replacement share one coordinated write
+    /// accessor so a cooperating editor cannot land a newer save between them.
+    @discardableResult
+    public func writeData(
+        _ data: Data,
+        to url: URL,
+        ifUnchangedFrom expectedData: Data?
+    ) throws -> WorkspaceConditionalWriteResult {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var result: Result<WorkspaceConditionalWriteResult, Error> =
+            .failure(CocoaError(.fileWriteUnknown))
+        var coordinationError: NSError?
+        NSFileCoordinator(filePresenter: self).coordinate(
+            writingItemAt: url,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { writeURL in
+            result = Result {
+                let fm = FileManager.default
+                if let expectedData {
+                    guard fm.fileExists(atPath: writeURL.path),
+                          try Data(contentsOf: writeURL) == expectedData else {
+                        return .changed
+                    }
+                } else if fm.fileExists(atPath: writeURL.path) {
+                    return .changed
+                }
+                try data.write(to: writeURL, options: .atomic)
+                return .written
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        return try result.get()
     }
 
     public func removeItem(at url: URL) throws {

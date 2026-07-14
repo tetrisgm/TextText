@@ -726,6 +726,79 @@ final class SyncEngineRegressionTests: XCTestCase {
         XCTAssertEqual(fake.puts.map(\.postId), [], "no PUT for a file already converged with the server")
     }
 
+    func testMoveWithLocalContentEditPushesBeforeCanonicalizing() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.manifestReplies["blog"] = .notModified
+
+        let serverBefore = markdown(
+            title: "Moved", slug: "old", status: "published",
+            body: "server body")
+        let serverBeforeHash = MarkdownIdentityCodec.syncHash(for: serverBefore)
+        let locallyEdited = MarkdownIdentityCodec.inject(
+            into: markdown(
+                title: "Moved", slug: "old", status: "published",
+                body: "newer local body"),
+            itemId: "m1", folderId: "notes", kind: "note")
+        let movedURL = root.appendingPathComponent(
+            "Blogs/demo/Posts/new.md")
+        try write(locallyEdited, to: movedURL)
+        try write(
+            "marker\nmirror-id: move-edit\n",
+            to: root.appendingPathComponent(
+                ".write-local.nosync/state/sync-marker.txt"))
+
+        let serverAfterMove = markdown(
+            title: "Moved", slug: "new", status: "published",
+            body: "server body")
+        let serverAfterMoveHash = MarkdownIdentityCodec.syncHash(
+            for: serverAfterMove)
+        fake.patchHandler = { postId, _, slug in
+            .saved(self.item(
+                id: postId, kind: "article", slug: slug ?? "new",
+                status: "published", hash: serverAfterMoveHash))
+        }
+        fake.fileTextHandler = { _ in
+            XCTFail("a move with unsynced content must not download over it")
+            return .failure(.badResponse("unexpected canonical download"))
+        }
+        fake.putHandler = { postId, body, ifMatch in
+            XCTAssertEqual(postId, "m1")
+            XCTAssertEqual(ifMatch, serverAfterMoveHash)
+            XCTAssertTrue(body.contains("newer local body"))
+            XCTAssertTrue(body.contains("slug: \"new\""))
+            return .saved(self.item(
+                id: postId, kind: "article", slug: "new",
+                status: "published",
+                hash: MarkdownIdentityCodec.syncHash(for: body)))
+        }
+
+        let (store, summary) = try runEngine(
+            root: root, state: state, client: fake,
+            seed: {
+                $0.saveIndex(SyncIndex(
+                    entries: [
+                        "m1": IndexEntry(
+                            hash: serverBeforeHash,
+                            relativePath: "Notes/old.md",
+                            folderId: "notes", kind: "note")
+                    ],
+                    mirrorId: "move-edit"))
+            })
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(fake.patches.count, 1)
+        XCTAssertEqual(fake.puts.count, 1)
+        XCTAssertTrue(try String(contentsOf: movedURL).contains(
+            "newer local body"))
+        XCTAssertEqual(
+            store.loadIndex().entries["m1"]?.hash,
+            MarkdownIdentityCodec.syncHash(for: fake.puts[0].body))
+    }
+
     func testMovedFileWithRestoredOldPathIsNotPostedAsDuplicate() throws {
         // The GENERAL invariant, beyond the per-pass failed-move set: after a
         // move-PATCH 412, a later full pull can restore the OLD indexed path.
@@ -1039,6 +1112,179 @@ final class SyncEngineRegressionTests: XCTestCase {
         XCTAssertTrue(saved.contains("status: \"published\""))
     }
 
+    func testPullNeverOverwritesAnEditSavedWhileDownloadIsInFlight() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let relativePath = "Notes/a.md"
+        let url = root.appendingPathComponent(relativePath)
+        let baseline = markdown(title: "A", body: "baseline")
+        let remote = markdown(title: "A", body: "remote edit")
+        let initialLocal = MarkdownIdentityCodec.inject(
+            into: baseline, itemId: "p1", folderId: "notes", kind: "note")
+        let newerLocal = MarkdownIdentityCodec.inject(
+            into: markdown(title: "A", body: "newer local edit"),
+            itemId: "p1", folderId: "notes", kind: "note")
+        try write(initialLocal, to: url)
+        try write(
+            "marker\nmirror-id: pull-race\n",
+            to: root.appendingPathComponent(
+                ".write-local.nosync/state/sync-marker.txt"))
+
+        let baselineHash = MarkdownIdentityCodec.syncHash(for: baseline)
+        let remoteHash = MarkdownIdentityCodec.syncHash(for: remote)
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .manifest([
+            item(
+                id: "p1", kind: "note", slug: "a", status: "draft",
+                hash: remoteHash)
+        ], etag: nil)
+        var downloadCount = 0
+        fake.fileTextHandler = { postId in
+            XCTAssertEqual(postId, "p1")
+            downloadCount += 1
+            if downloadCount == 1 {
+                try! self.write(newerLocal, to: url)
+            }
+            return .success((remote, remoteHash))
+        }
+        fake.putHandler = { _, _, _ in .conflict }
+
+        let (store, summary) = try runEngine(
+            root: root, state: state, client: fake,
+            seed: {
+                $0.saveIndex(SyncIndex(
+                    entries: [
+                        "p1": IndexEntry(
+                            hash: baselineHash, relativePath: relativePath,
+                            folderId: "notes", kind: "note")
+                    ],
+                    mirrorId: "pull-race"))
+            })
+
+        XCTAssertGreaterThan(summary.errors, 0)
+        XCTAssertEqual(summary.conflicts, 1)
+        XCTAssertEqual(store.loadIndex().entries["p1"]?.hash, remoteHash)
+        let files = try FileManager.default.contentsOfDirectory(
+            at: url.deletingLastPathComponent(),
+            includingPropertiesForKeys: nil)
+        let conflict = try XCTUnwrap(files.first {
+            $0.lastPathComponent.contains("conflicted copy")
+        })
+        XCTAssertTrue(try String(contentsOf: conflict).contains("newer local edit"))
+        XCTAssertTrue(try String(contentsOf: url).contains("remote edit"))
+    }
+
+    func testPutCanonicalizationNeverOverwritesANewerLocalSave() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let relativePath = "Notes/a.md"
+        let url = root.appendingPathComponent(relativePath)
+        let baseline = markdown(title: "A", body: "baseline")
+        let edited = MarkdownIdentityCodec.inject(
+            into: markdown(title: "A", body: "first local edit"),
+            itemId: "p1", folderId: "notes", kind: "note")
+        let newer = MarkdownIdentityCodec.inject(
+            into: markdown(title: "A", body: "newer local edit"),
+            itemId: "p1", folderId: "notes", kind: "note")
+        let canonical = markdown(title: "A", body: "canonical first edit")
+        let baselineHash = MarkdownIdentityCodec.syncHash(for: baseline)
+        let canonicalHash = MarkdownIdentityCodec.syncHash(for: canonical)
+        try write(edited, to: url)
+        try write(
+            "marker\nmirror-id: put-race\n",
+            to: root.appendingPathComponent(
+                ".write-local.nosync/state/sync-marker.txt"))
+
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.fileTexts["p1"] = canonical
+        fake.putHandler = { postId, body, ifMatch in
+            XCTAssertEqual(postId, "p1")
+            XCTAssertEqual(ifMatch, baselineHash)
+            XCTAssertTrue(body.contains("first local edit"))
+            try! self.write(newer, to: url)
+            return .saved(self.item(
+                id: "p1", kind: "note", slug: "a", status: "draft",
+                hash: canonicalHash))
+        }
+
+        let (store, summary) = try runEngine(
+            root: root, state: state, client: fake,
+            seed: {
+                $0.saveIndex(SyncIndex(
+                    entries: [
+                        "p1": IndexEntry(
+                            hash: baselineHash, relativePath: relativePath,
+                            folderId: "notes", kind: "note")
+                    ],
+                    mirrorId: "put-race"))
+            })
+
+        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
+        XCTAssertEqual(summary.pushed, 1)
+        XCTAssertEqual(fake.puts.count, 1)
+        XCTAssertEqual(store.loadIndex().entries["p1"]?.hash, canonicalHash)
+        XCTAssertTrue(try String(contentsOf: url).contains("newer local edit"))
+        XCTAssertFalse(try String(contentsOf: url).contains("canonical first edit"))
+        XCTAssertTrue(fake.activities.contains {
+            $0.contains("newer local edit remains")
+        })
+    }
+
+    func testRejectedUnchangedContentStaysInErrorWithoutRepeatedPut() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let relativePath = "Notes/rejected.md"
+        let baseline = markdown(title: "Rejected", body: "server body")
+        let baselineHash = MarkdownIdentityCodec.syncHash(for: baseline)
+        let local = MarkdownIdentityCodec.inject(
+            into: markdown(title: "Rejected", body: "invalid local body"),
+            itemId: "p1", folderId: "notes", kind: "note")
+        try write(local, to: root.appendingPathComponent(relativePath))
+        try write(
+            "marker\nmirror-id: rejected-content\n",
+            to: root.appendingPathComponent(
+                ".write-local.nosync/state/sync-marker.txt"))
+
+        let fake = FakeSyncClient()
+        fake.workspaceValue = fixtureWorkspace()
+        fake.manifestReplies["notes"] = .notModified
+        fake.putHandler = { _, _, _ in .rejected("invalid") }
+
+        setenv("WRITE_STATE_DIR", state.path, 1)
+        defer { unsetenv("WRITE_STATE_DIR") }
+        let store = StateStore()
+        store.saveIndex(SyncIndex(
+            entries: [
+                "p1": IndexEntry(
+                    hash: baselineHash, relativePath: relativePath,
+                    folderId: "notes", kind: "note")
+            ],
+            mirrorId: "rejected-content"))
+        let engine = SyncEngine(store: store)
+        engine.callbackQueue = nil
+        engine.makeClient = { fake }
+        engine.syncRootProvider = { root }
+        engine.workspaceLocationProvider = {
+            WorkspaceLocation(
+                url: root, kind: .injected, iCloudAvailable: false,
+                statusMessage: "test")
+        }
+
+        let first = engine.runOnePassBlocking()
+        let second = engine.runOnePassBlocking()
+
+        XCTAssertEqual(first.errors, 1)
+        XCTAssertEqual(second.errors, 1)
+        XCTAssertEqual(fake.puts.count, 1,
+                       "unchanged rejected bytes must not be PUT again")
+        XCTAssertEqual(
+            engine.status,
+            .error(errorCount: 1, retryScheduled: false))
+    }
+
     func testUnreachableBackendLeavesLocalFilesUntouched() throws {
         // Phase 5, offline safety: a pass against an unreachable backend
         // reports the pause and mutates nothing on disk.
@@ -1075,7 +1321,18 @@ final class SyncEngineRegressionTests: XCTestCase {
         root: URL,
         state: URL,
         client: FakeSyncClient,
-        configure: ((SyncEngine) -> Void)? = nil,
+        seed: ((StateStore) -> Void)? = nil
+    ) throws -> (StateStore, SyncSummary) {
+        try runEngine(
+            root: root, state: state, client: client,
+            configure: { _ in }, seed: seed)
+    }
+
+    private func runEngine(
+        root: URL,
+        state: URL,
+        client: FakeSyncClient,
+        configure: (SyncEngine) -> Void,
         seed: ((StateStore) -> Void)? = nil
     ) throws -> (StateStore, SyncSummary) {
         setenv("WRITE_STATE_DIR", state.path, 1)
@@ -1090,7 +1347,7 @@ final class SyncEngineRegressionTests: XCTestCase {
             WorkspaceLocation(url: root, kind: .injected, iCloudAvailable: false, statusMessage: "test")
         }
         engine.onActivity = { client.activities.append($0) }
-        configure?(engine)
+        configure(engine)
         return (store, engine.runOnePassBlocking())
     }
 
@@ -1205,6 +1462,8 @@ private final class FakeSyncClient: SyncClient {
     var workspaceValue = Workspace(blog: WorkspaceBlog(handle: "demo", name: "Demo", username: nil), folders: [])
     var manifestReplies: [String: ManifestReply] = [:]
     var fileTexts: [String: String] = [:]
+    var fileTextHandler:
+        ((String) -> Result<(text: String, hash: String?), ClientFailure>)?
     var postHandler: ((String) -> SaveReply)?
     var putHandler: ((String, String, String) -> SaveReply)?
     var patchHandler: ((String, String?, String?) -> SaveReply)?
@@ -1235,6 +1494,7 @@ private final class FakeSyncClient: SyncClient {
     }
 
     func fileText(postId: String) -> Result<(text: String, hash: String?), ClientFailure> {
+        if let fileTextHandler { return fileTextHandler(postId) }
         guard let text = fileTexts[postId] else {
             return .failure(.badResponse("missing file text \(postId)"))
         }
@@ -1255,7 +1515,16 @@ private final class FakeSyncClient: SyncClient {
         posts.append(body)
         postFolderIds.append(folderId)
         postIdempotencyKeys.append(idempotencyKey)
-        return .success(postHandler?(body) ?? .saved(defaultItem(id: "new-\(posts.count)", body: body)))
+        let reply = postHandler?(body)
+            ?? .saved(defaultItem(id: "new-\(posts.count)", body: body))
+        if case .saved(let item) = reply, let id = item.id,
+           fileTexts[id] == nil {
+            // A successful create is immediately readable from the real API.
+            // Preserve that contract so canonicalization failures in tests are
+            // intentional rather than an incomplete fake.
+            fileTexts[id] = body
+        }
+        return .success(reply)
     }
 
     func deleteFile(postId: String, ifMatch hash: String?) -> Result<Void, ClientFailure> {

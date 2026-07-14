@@ -42,11 +42,17 @@ final class FileProviderExtensionTests: XCTestCase {
             openURLHandler: openURLHandler)
     }
 
-    private func fileItem(id: String, file: String, folder: String) -> WriteFileProviderItem {
+    private func fileItem(
+        id: String, file: String, folder: String,
+        representation: WriteFileRepresentation = .markdown
+    ) -> WriteFileProviderItem {
         // `file` is the literal Finder filename the framework hands us (e.g. after
         // a rename), so set it verbatim rather than re-deriving it from a title.
-        let base = WriteItemMapper.item(for: Fixtures.item(id: id, file: file, kind: "note"),
-                                        inFolder: folder, handle: "demo", readOnly: false)!
+        let base = WriteItemMapper.item(
+            for: Fixtures.item(
+                id: id, file: file, kind: "note",
+                representation: representation),
+            inFolder: folder, handle: "demo", readOnly: false)!
         return WriteFileProviderItem(base.withFilename(file))
     }
 
@@ -414,7 +420,7 @@ final class FileProviderExtensionTests: XCTestCase {
         let fetchedVersion = try XCTUnwrap(try XCTUnwrap(fetchedItem).itemVersion)
         XCTAssertEqual(
             String(decoding: fetchedVersion.contentVersion, as: UTF8.self),
-            "native-local-v2:markdown:h2")
+            "native-local-v3:markdown:h2")
     }
 
     func testStrictFetchReportsRequestedRevisionNoLongerAvailable() {
@@ -459,17 +465,25 @@ final class FileProviderExtensionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let exp = expectation(description: "fetch-bookmark-local-copy")
         var fetchedURL: URL?
+        var fetchedItem: NSFileProviderItem?
         var fetchedError: Error?
 
         _ = ext(api, temporaryDirectory: directory).fetchContents(
             for: NSFileProviderItemIdentifier(rawValue: "file:demo:b1"),
             version: nil, request: NSFileProviderRequest()
-        ) { url, _, error in
-            fetchedURL = url; fetchedError = error; exp.fulfill()
+        ) { url, item, error in
+            fetchedURL = url; fetchedItem = item; fetchedError = error; exp.fulfill()
         }
         wait(for: [exp], timeout: 5)
 
         XCTAssertNil(fetchedError)
+        XCTAssertTrue(try XCTUnwrap(fetchedURL).resourceValues(
+            forKeys: [.isDirectoryKey]).isDirectory == true)
+        let materializedItem = try XCTUnwrap(fetchedItem)
+        XCTAssertNil(materializedItem.documentSize ?? nil)
+        XCTAssertEqual(
+            try XCTUnwrap(materializedItem.contentType).identifier,
+            WriteItem.textBundleTypeIdentifier)
         let contents = try WriteTextBundlePackage.read(
             from: XCTUnwrap(fetchedURL), in: directory)
         XCTAssertEqual(contents.markdown, canonical)
@@ -567,6 +581,87 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertTrue(api.createFolderCalls.isEmpty)
         XCTAssertTrue(api.createFileCalls.isEmpty)
         XCTAssertTrue(api.patchCalls.isEmpty)
+    }
+
+    func testReimportAdoptsFileAcrossRepresentationMigration() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1", file: "Why~3F~3F.textbundle", kind: "note",
+            title: "Why??", representation: .textbundle)]
+        let template = ReimportTemplateItem(
+            id: "restored-disk-file", parent: "folder:demo:notes",
+            filename: "Why~3F~3F.md", contentType: UTType(filenameExtension: "md")!)
+        let exp = expectation(description: "adopt-migrated-file")
+        var adopted: NSFileProviderItem?
+        var error: NSError?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: tempFile("old disk body"),
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { item, _, _, returnedError in
+            adopted = item
+            error = returnedError as NSError?
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(error)
+        XCTAssertEqual(adopted?.itemIdentifier.rawValue, "file:demo:p1")
+        XCTAssertTrue(api.createFileCalls.isEmpty)
+    }
+
+    func testReimportAdoptsRawReservedAndCanonicallyEquivalentTextFilename() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let composed = "Caf\u{00E9}??"
+        let decomposed = "Cafe\u{0301}??"
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1",
+            file: WriteFilename.filename(
+                title: composed, slug: "", representation: .text),
+            kind: "note", title: composed, representation: .text)]
+        let template = ReimportTemplateItem(
+            id: "restored-disk-file", parent: "folder:demo:notes",
+            filename: decomposed + ".txt", contentType: .plainText)
+        let exp = expectation(description: "adopt-portable-text-file")
+        var adopted: NSFileProviderItem?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: tempFile("old disk body"),
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { item, _, _, _ in adopted = item; exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(adopted?.itemIdentifier.rawValue, "file:demo:p1")
+        XCTAssertTrue(api.createFileCalls.isEmpty)
+    }
+
+    func testReimportRefusesAmbiguousSemanticMatch() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifests["notes"] = [
+            Fixtures.item(
+                id: "p1", file: "Why~3F~3F.textbundle", kind: "note",
+                title: "Why??", representation: .textbundle),
+            Fixtures.item(
+                id: "p2", file: "Why~3F~3F [p2].textbundle", kind: "note",
+                title: "Why??", representation: .textbundle),
+        ]
+        let template = ReimportTemplateItem(
+            id: "restored-disk-file", parent: "folder:demo:notes",
+            filename: "Why??.md", contentType: UTType(filenameExtension: "md")!)
+        let exp = expectation(description: "reject-ambiguous-file")
+        var error: NSError?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: tempFile("old disk body"),
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { _, _, _, returnedError in
+            error = returnedError as NSError?
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNotNil(error)
+        XCTAssertTrue(api.createFileCalls.isEmpty)
     }
 
     func testReimportDropsLegacyBookmarkSidecarInsteadOfRepublishingIt() {
@@ -707,6 +802,50 @@ final class FileProviderExtensionTests: XCTestCase {
         // A Finder-created "My Great Note.md" retitles the fresh post (not reslug).
         XCTAssertEqual(api.patchCalls.first?.title, "My Great Note")
         XCTAssertNil(api.patchCalls.first?.slug)
+    }
+
+    func testCreateTextFileUsesTextRepresentationWhenDerivingTitle() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.createFileResult = .success(Fixtures.item(
+            id: "n9", file: "untitled.txt", kind: "note", title: "",
+            representation: .text))
+        let template = ReimportTemplateItem(
+            id: "file:demo:tmp", parent: "folder:demo:notes",
+            filename: "Why~3F~3F.txt", contentType: .plainText)
+        let exp = expectation(description: "create-text")
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: tempFile("hello"), options: [],
+            request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(api.createFileCalls.first?.representation, .text)
+        XCTAssertEqual(api.patchCalls.first?.title, "Why??")
+    }
+
+    func testCreateTextBundleUsesPackageRepresentationWhenDerivingTitle() throws {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.createFileResult = .success(Fixtures.item(
+            id: "n9", file: "untitled.textbundle", kind: "note", title: "",
+            representation: .textbundle))
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let package = try textBundle(
+            in: directory, filename: "Why~3F~3F.textbundle",
+            markdown: "hello", assets: [:])
+        let template = try textBundleTemplate(
+            filename: "Why~3F~3F.textbundle")
+        let exp = expectation(description: "create-textbundle-title")
+
+        _ = ext(api, temporaryDirectory: directory).createItem(
+            basedOn: template, fields: [.contents], contents: package, options: [],
+            request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(api.createFileCalls.first?.representation, .textbundle)
+        XCTAssertEqual(api.patchCalls.first?.title, "Why??")
     }
 
     func testCreateReturnsFilenamePendingWhenTitlePatchCanRetry() {
@@ -1048,7 +1187,7 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(result?.filename, "a.md")
         XCTAssertEqual(
             String(decoding: try XCTUnwrap(result?.itemVersion?.contentVersion), as: UTF8.self),
-            "native-local-v2:markdown:puthash")
+            "native-local-v3:markdown:puthash")
         XCTAssertEqual(api.putCalls.count, 1)
         XCTAssertEqual(api.patchCalls.count, 1)
     }
@@ -1094,6 +1233,52 @@ final class FileProviderExtensionTests: XCTestCase {
         let exp = expectation(description: "rename-portable")
         _ = ext(api).modifyItem(
             item, baseVersion: version("h"), changedFields: [.filename],
+            contents: nil, options: [], request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(api.patchCalls.first?.title, "Why??")
+    }
+
+    func testRenameTextFileUsesItsNativeRepresentation() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let entry = Fixtures.item(
+            id: "p1", file: "Original.txt", kind: "note", title: "Original",
+            representation: .text)
+        api.manifests["notes"] = [entry]
+        let current = WriteItemMapper.item(
+            for: entry, inFolder: "notes", handle: "demo", readOnly: false)!
+        let suffix = WriteFilename.collisionSuffix("p1")
+        let item = fileItem(
+            id: "p1", file: "Why~3F~3F\(suffix).txt", folder: "notes",
+            representation: .text)
+        let exp = expectation(description: "rename-text")
+
+        _ = ext(api).modifyItem(
+            item, baseVersion: version(current), changedFields: [.filename],
+            contents: nil, options: [], request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(api.patchCalls.first?.title, "Why??")
+    }
+
+    func testRenameTextBundleUsesItsNativeRepresentation() throws {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let entry = Fixtures.item(
+            id: "p1", file: "Original.textbundle", kind: "note", title: "Original",
+            representation: .textbundle)
+        api.manifests["notes"] = [entry]
+        let current = WriteItemMapper.item(
+            for: entry, inFolder: "notes", handle: "demo", readOnly: false)!
+        let suffix = WriteFilename.collisionSuffix("p1")
+        let item = fileItem(
+            id: "p1", file: "Why~3F~3F\(suffix).textbundle", folder: "notes",
+            representation: .textbundle)
+        let exp = expectation(description: "rename-textbundle")
+
+        _ = ext(api).modifyItem(
+            item, baseVersion: version(current), changedFields: [.filename],
             contents: nil, options: [], request: NSFileProviderRequest()
         ) { _, _, _, _ in exp.fulfill() }
         wait(for: [exp], timeout: 5)

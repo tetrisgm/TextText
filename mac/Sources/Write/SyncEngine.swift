@@ -1,4 +1,3 @@
-import AppKit
 import CryptoKit
 import FileProvider
 import Foundation
@@ -43,9 +42,16 @@ struct SyncSummary {
 /// authoritative: slug changes rename local files.
 final class SyncEngine {
     enum PassKind { case full, pushOnly }
+    enum Status: Equatable {
+        case idle
+        case syncing
+        case error(errorCount: Int, retryScheduled: Bool)
+    }
+
     private struct PassContext {
         let epoch: UInt64
         let root: URL
+        let schedulesBackgroundWork: Bool
     }
 
     private struct PendingPass {
@@ -77,7 +83,32 @@ final class SyncEngine {
     private enum LocalFileHash {
         case missing
         case unreadable(Error)
-        case readable(String)
+        case readable(hash: String, data: Data)
+    }
+
+    private enum DownloadResult {
+        case written(String)
+        case destinationChanged
+        case failed
+    }
+
+    private enum FrontmatterUpdateResult {
+        case unchanged(sourceHash: String)
+        case written(sourceHash: String)
+        case localChanged
+        case failed
+
+        var sourceHash: String? {
+            switch self {
+            case .unchanged(let hash), .written(let hash): return hash
+            case .localChanged, .failed: return nil
+            }
+        }
+
+        var didWrite: Bool {
+            if case .written = self { return true }
+            return false
+        }
     }
 
     private struct IdentityScan {
@@ -183,21 +214,32 @@ final class SyncEngine {
     /// nil in production, so the real read runs.
     var convergenceReadShouldFail: ((String) -> Bool)?
 
+    /// Test seams for background retry timing. Production uses equal-jitter
+    /// exponential backoff from 2 seconds to 60 seconds.
+    var retryBackoff = ChangeListenerBackoff(initialDelay: 2, maximumDelay: 60)
+    var retryRandomSample: () -> Double = { Double.random(in: 0...1) }
+
     /// UI hooks. Delivered on `callbackQueue` (main by default); headless
     /// sets it nil to get inline delivery, since no runloop spins there.
     var onActivity: ((String) -> Void)?
     var onStateChange: (() -> Void)?
+    var onPassCompleted: ((SyncSummary) -> Void)?
     var onServerAppVersion: ((String) -> Void)?
     var callbackQueue: DispatchQueue? = .main
 
     private let stateLock = NSLock()
     private var _isSyncing = false
+    private var _status: Status = .idle
     private var _lastSyncAt: Date?
     private var _lastSummary: SyncSummary?
     private var passEpoch: UInt64 = 0
     private var readyEpoch: UInt64 = 0
     private var pendingPass: PendingPass?
     private var drainScheduled = false
+    private var retryWorkItem: DispatchWorkItem?
+    private var retryGeneration: UInt64 = 0
+    private var unresolvedErrorCount = 0
+    private var started = false
 
     /// Files whose exact content the server rejected (400): don't hot-loop
     /// them every pass; retry only when the bytes change. In-memory on
@@ -208,7 +250,6 @@ final class SyncEngine {
     private var watcher: FolderWatcher?
     private var fileCoordinator: WorkspaceFileCoordinator?
     private var pushDebounce: DispatchWorkItem?
-    private var wakeObserver: NSObjectProtocol?
 
     init(store: StateStore) {
         self.store = store
@@ -218,7 +259,12 @@ final class SyncEngine {
 
     var isSyncing: Bool {
         stateLock.lock(); defer { stateLock.unlock() }
-        return _isSyncing
+        return _status == .syncing
+    }
+
+    var status: Status {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _status
     }
 
     var lastSyncAt: Date? {
@@ -233,18 +279,23 @@ final class SyncEngine {
 
     func syncNow() { enqueue(.full) }
 
-    /// GUI mode: periodic full passes, FSEvents-debounced push passes, a full
-    /// pass on wake, and one right now.
+    /// GUI mode: periodic full passes, FSEvents-debounced push passes, and one
+    /// pass right now. The app lifecycle owner coordinates wake/resume so its
+    /// other background services recover in the same single event.
     func start() {
+        stateLock.lock()
+        guard !started else {
+            stateLock.unlock()
+            return
+        }
+        started = true
+        stateLock.unlock()
+
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 60, repeating: 60)
         t.setEventHandler { [weak self] in self?.enqueue(.full) }
         t.resume()
         timer = t
-
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
-        ) { [weak self] _ in self?.enqueue(.full) }
 
         if let context = makePassContext() {
             queue.async { [weak self] in
@@ -291,14 +342,17 @@ final class SyncEngine {
             self.rejectedContent.removeAll()
             _ = self.markReady(epoch: epoch)
         }
-        notifyStateChange()
     }
 
     /// Headless mode: run exactly one full pass on the caller's thread's
     /// behalf (still serialized through the engine queue) and return it.
     func runOnePassBlocking() -> SyncSummary {
+        runOnePassBlocking(.full)
+    }
+
+    func runOnePassBlocking(_ kind: PassKind) -> SyncSummary {
         var summary = SyncSummary()
-        queue.sync { summary = self.runPass(.full) }
+        queue.sync { summary = self.runPass(kind) }
         return summary
     }
 
@@ -311,8 +365,16 @@ final class SyncEngine {
         stateLock.lock()
         passEpoch &+= 1
         pendingPass = nil
+        retryWorkItem?.cancel()
+        retryWorkItem = nil
+        retryGeneration &+= 1
+        retryBackoff.reset()
+        unresolvedErrorCount = 0
+        let statusChanged = !_isSyncing && _status != .idle
+        if !_isSyncing { _status = .idle }
         let epoch = passEpoch
         stateLock.unlock()
+        if statusChanged { notifyStateChange() }
         return epoch
     }
 
@@ -334,7 +396,10 @@ final class SyncEngine {
         isCurrent(epoch: context.epoch)
     }
 
-    private func makePassContext(expectedEpoch: UInt64? = nil) -> PassContext? {
+    private func makePassContext(
+        expectedEpoch: UInt64? = nil,
+        schedulesBackgroundWork: Bool = false
+    ) -> PassContext? {
         stateLock.lock()
         let epoch = expectedEpoch ?? passEpoch
         let canStart = passEpoch == epoch && readyEpoch == epoch
@@ -348,7 +413,9 @@ final class SyncEngine {
         let stillCurrent = passEpoch == epoch && readyEpoch == epoch
         stateLock.unlock()
         guard stillCurrent else { return nil }
-        return PassContext(epoch: epoch, root: root)
+        return PassContext(
+            epoch: epoch, root: root,
+            schedulesBackgroundWork: schedulesBackgroundWork)
     }
 
     private static func defaultIsInsideWriteFileProviderMount(_ url: URL) -> Bool {
@@ -395,6 +462,11 @@ final class SyncEngine {
             stateLock.unlock()
             return
         }
+        if kind == .full {
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            retryGeneration &+= 1
+        }
         if var pending = pendingPass, pending.epoch == epoch {
             if kind == .full { pending.kind = .full }
             pendingPass = pending
@@ -403,11 +475,28 @@ final class SyncEngine {
         }
         let shouldSchedule = !drainScheduled
         if shouldSchedule { drainScheduled = true }
+        let statusChanged = _status != .syncing
+        _status = .syncing
         stateLock.unlock()
-        guard shouldSchedule else { return }
-        queue.async { [weak self] in
-            self?.drainPendingPass()
+        if statusChanged { notifyStateChange() }
+        if shouldSchedule {
+            queue.async { [weak self] in
+                self?.drainPendingPass()
+            }
         }
+    }
+
+    private func fireRetry(epoch: UInt64, generation: UInt64) {
+        stateLock.lock()
+        guard retryGeneration == generation, retryWorkItem != nil else {
+            stateLock.unlock()
+            return
+        }
+        retryWorkItem = nil
+        let canRun = passEpoch == epoch && readyEpoch == epoch
+        stateLock.unlock()
+        guard canRun else { return }
+        enqueue(.full)
     }
 
     private func drainPendingPass() {
@@ -420,7 +509,9 @@ final class SyncEngine {
         } ?? false
         stateLock.unlock()
         guard canRun, let pending else { return }
-        _ = runPass(pending.kind, expectedEpoch: pending.epoch)
+        _ = runPass(
+            pending.kind, expectedEpoch: pending.epoch,
+            schedulesBackgroundRetry: true)
     }
 
     private func startWatcher(root: URL, context: PassContext) {
@@ -448,32 +539,122 @@ final class SyncEngine {
     }
 
     @discardableResult
-    private func runPass(_ kind: PassKind, expectedEpoch: UInt64? = nil) -> SyncSummary {
-        guard let context = makePassContext(expectedEpoch: expectedEpoch) else {
+    private func runPass(
+        _ kind: PassKind,
+        expectedEpoch: UInt64? = nil,
+        schedulesBackgroundRetry: Bool = false
+    ) -> SyncSummary {
+        guard let context = makePassContext(
+            expectedEpoch: expectedEpoch,
+            schedulesBackgroundWork: schedulesBackgroundRetry
+        ) else {
             return SyncSummary()
         }
+        guard let client = makeClient() else {
+            stateLock.lock()
+            let stateChanged = _status != .idle
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            retryGeneration &+= 1
+            retryBackoff.reset()
+            unresolvedErrorCount = 0
+            _status = .idle
+            stateLock.unlock()
+            if stateChanged { notifyStateChange() }
+            return SyncSummary()
+        }
+        guard isCurrent(context) else { return SyncSummary() }
         stateLock.lock()
         if _isSyncing { stateLock.unlock(); return SyncSummary() } // queue is serial; belt and braces
+        if kind == .full {
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            retryGeneration &+= 1
+        }
         _isSyncing = true
+        let startedStateChanged = _status != .syncing
+        _status = .syncing
         stateLock.unlock()
-        notifyStateChange()
+        if startedStateChanged { notifyStateChange() }
 
-        let summary = performPass(kind, context: context)
+        let summary = performPass(kind, client: client, context: context)
 
+        let retrySample = schedulesBackgroundRetry && summary.errors > 0
+            ? retryRandomSample()
+            : 0
+        var scheduledRetry: (DispatchWorkItem, TimeInterval)?
+        var completedCurrentPass = false
         stateLock.lock()
         _isSyncing = false
         if passEpoch == context.epoch {
+            completedCurrentPass = true
             _lastSyncAt = Date()
             _lastSummary = summary
+
+            let followUpPending = pendingPass?.epoch == context.epoch
+            if summary.errors > 0 {
+                unresolvedErrorCount = summary.errors
+                if followUpPending {
+                    pendingPass?.kind = .full
+                    _status = .syncing
+                } else if schedulesBackgroundRetry {
+                    let delay = retryBackoff.nextDelay(
+                        randomUnitInterval: retrySample)
+                    retryGeneration &+= 1
+                    let generation = retryGeneration
+                    let work = DispatchWorkItem { [weak self] in
+                        self?.fireRetry(
+                            epoch: context.epoch, generation: generation)
+                    }
+                    retryWorkItem?.cancel()
+                    retryWorkItem = work
+                    scheduledRetry = (work, delay)
+                    _status = .error(
+                        errorCount: summary.errors, retryScheduled: true)
+                } else {
+                    _status = .error(
+                        errorCount: summary.errors, retryScheduled: false)
+                }
+            } else {
+                switch kind {
+                case .full:
+                    unresolvedErrorCount = 0
+                    retryWorkItem?.cancel()
+                    retryWorkItem = nil
+                    retryGeneration &+= 1
+                    retryBackoff.reset()
+                    _status = followUpPending ? .syncing : .idle
+                case .pushOnly where unresolvedErrorCount > 0:
+                    _status = followUpPending
+                        ? .syncing
+                        : .error(
+                            errorCount: unresolvedErrorCount,
+                            retryScheduled: retryWorkItem != nil)
+                case .pushOnly:
+                    _status = followUpPending ? .syncing : .idle
+                }
+            }
+        } else if pendingPass != nil {
+            _status = .syncing
+        } else {
+            _status = .idle
         }
         stateLock.unlock()
+        if let (work, delay) = scheduledRetry {
+            queue.asyncAfter(deadline: .now() + delay, execute: work)
+        }
         notifyStateChange()
+        if completedCurrentPass {
+            deliver { self.onPassCompleted?(summary) }
+        }
         return summary
     }
 
     // MARK: The pass
 
-    private func performPass(_ kind: PassKind, context: PassContext) -> SyncSummary {
+    private func performPass(
+        _ kind: PassKind, client: SyncClient, context: PassContext
+    ) -> SyncSummary {
         var summary = SyncSummary()
         guard isCurrent(context) else { return summary }
         let isFileProviderMount = isInsideWriteFileProviderMount(context.root)
@@ -483,8 +664,6 @@ final class SyncEngine {
             summary.errors += 1
             return summary
         }
-        guard let client = makeClient() else { return summary } // not linked: local editing still works
-
         let root = context.root
         guard isCurrent(context) else { return summary }
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -581,7 +760,9 @@ final class SyncEngine {
         guard isCurrent(context) else { return summary }
         saveIndex(index)
 
-        if createdFolders, isCurrent(context) { enqueue(.full) }
+        if createdFolders, isCurrent(context), context.schedulesBackgroundWork {
+            enqueue(.full)
+        }
 
         if kind == .full, isCurrent(context), let advertised = client.advertisedAppVersion(),
            isCurrent(context) {
@@ -691,7 +872,7 @@ final class SyncEngine {
             let hash = localFileHash(expectedURL, root: root)
             guard isCurrent(context) else { return }
             switch hash {
-            case .readable(let localHash):
+            case .readable(let localHash, _):
                 if localHash == item.hash {
                     index.entries[id] = IndexEntry(
                         hash: item.hash,
@@ -719,12 +900,13 @@ final class SyncEngine {
             }
             let written = download(
                 id, to: expectedURL, client: client, context: context,
-                folderId: folder.id, kind: item.kind
+                replacing: nil, folderId: folder.id, kind: item.kind
             )
             guard isCurrent(context) else { return }
-            if let written {
+            switch written {
+            case .written(let hash):
                 index.entries[id] = IndexEntry(
-                    hash: written,
+                    hash: hash,
                     relativePath: expectedRel,
                     fileMtime: fileMtime(expectedURL),
                     folderId: folder.id,
@@ -732,7 +914,16 @@ final class SyncEngine {
                 )
                 summary.pulled += 1
                 activity("Pulled \(expectedRel)")
-            } else {
+            case .destinationChanged:
+                index.entries[id] = IndexEntry(
+                    hash: Self.needsPullHash,
+                    relativePath: expectedRel,
+                    fileMtime: fileMtime(expectedURL),
+                    folderId: folder.id,
+                    kind: item.kind)
+                summary.errors += 1
+                activity("Local \(expectedRel) changed while it was downloading; leaving it untouched and retrying")
+            case .failed:
                 summary.errors += 1
                 activity("Could not pull \(expectedRel)")
             }
@@ -827,18 +1018,22 @@ final class SyncEngine {
             // Missing (resurrect) or clean: take the server's copy.
             let written = download(
                 id, to: activeURL, client: client, context: context,
-                folderId: folder.id, kind: item.kind
+                replacing: nil, folderId: folder.id, kind: item.kind
             )
             guard isCurrent(context) else { return }
-            if let written {
-                entry.hash = written
+            switch written {
+            case .written(let hash):
+                entry.hash = hash
                 entry.fileMtime = fileMtime(activeURL)
                 entry.folderId = folder.id
                 entry.kind = item.kind
                 index.entries[id] = entry
                 summary.pulled += 1
                 activity("Pulled \(activeRel)")
-            } else {
+            case .destinationChanged:
+                summary.errors += 1
+                activity("Local \(activeRel) appeared while it was downloading; leaving it untouched and retrying")
+            case .failed:
                 summary.errors += 1
                 activity("Could not pull \(activeRel)")
             }
@@ -847,21 +1042,25 @@ final class SyncEngine {
             summary.errors += 1
             activity("\(activeRel) exists but is not readable yet: \(error.localizedDescription); skipping pull")
             return
-        case .readable(let localHash) where localHash == entry.hash:
+        case .readable(let localHash, let localData) where localHash == entry.hash:
             let written = download(
                 id, to: activeURL, client: client, context: context,
-                folderId: folder.id, kind: item.kind
+                replacing: localData, folderId: folder.id, kind: item.kind
             )
             guard isCurrent(context) else { return }
-            if let written {
-                entry.hash = written
+            switch written {
+            case .written(let hash):
+                entry.hash = hash
                 entry.fileMtime = fileMtime(activeURL)
                 entry.folderId = folder.id
                 entry.kind = item.kind
                 index.entries[id] = entry
                 summary.pulled += 1
                 activity("Pulled \(activeRel)")
-            } else {
+            case .destinationChanged:
+                summary.errors += 1
+                activity("Local \(activeRel) changed while it was downloading; leaving the newer edit untouched and retrying")
+            case .failed:
                 summary.errors += 1
                 activity("Could not pull \(activeRel)")
             }
@@ -886,17 +1085,21 @@ final class SyncEngine {
         }
         let written = download(
             id, to: activeURL, client: client, context: context,
-            folderId: folder.id, kind: item.kind
+            replacing: nil, folderId: folder.id, kind: item.kind
         )
         guard isCurrent(context) else { return }
-        if let written {
-            entry.hash = written
+        switch written {
+        case .written(let hash):
+            entry.hash = hash
             entry.fileMtime = fileMtime(activeURL)
             entry.folderId = folder.id
             entry.kind = item.kind
             index.entries[id] = entry
             summary.conflicts += 1
-        } else {
+        case .destinationChanged:
+            summary.errors += 1
+            activity("Local \(activeRel) changed again during conflict download; leaving the newer edit untouched and retrying")
+        case .failed:
             summary.errors += 1
             activity("Could not pull \(activeRel) after conflict")
         }
@@ -1056,7 +1259,10 @@ final class SyncEngine {
                 }
                 continue
             }
-            if rejectedContent[entry.relativePath] == localHash { continue }
+            if rejectedContent[entry.relativePath] == localHash {
+                summary.errors += 1
+                continue
+            }
             guard let bodyWithIdentity = String(data: data, encoding: .utf8) else {
                 summary.errors += 1
                 activity("\(entry.relativePath) is not UTF-8; not pushed")
@@ -1107,16 +1313,27 @@ final class SyncEngine {
                 }
                 // Converge canonicalization: rewrite the local file only when
                 // the server's render differs from what we just sent.
+                var newerLocalEditPending = false
                 if item.hash != localHash {
                     let written = download(
                         postId, to: fileURL, client: client, context: context,
+                        replacing: data,
                         folderId: folder?.id ?? entry.folderId, kind: item.kind
                     )
                     guard isCurrent(context) else { return false }
-                    if let written {
-                        entry.hash = written
-                    } else {
-                        entry.hash = item.hash // next pass re-pulls via the manifest
+                    switch written {
+                    case .written(let hash):
+                        entry.hash = hash
+                    case .destinationChanged:
+                        // The PUT succeeded for the bytes we read, but the user
+                        // saved again before canonicalization landed. Advance
+                        // the server base and immediately push the newer bytes;
+                        // never replace them with the older server render.
+                        entry.hash = item.hash
+                        newerLocalEditPending = true
+                        if context.schedulesBackgroundWork { enqueue(.pushOnly) }
+                    case .failed:
+                        entry.hash = item.hash
                     }
                 } else {
                     entry.hash = item.hash
@@ -1126,7 +1343,11 @@ final class SyncEngine {
                 entry.kind = item.kind
                 index.entries[postId] = entry
                 summary.pushed += 1
-                activity("Pushed \(entry.relativePath)")
+                if newerLocalEditPending {
+                    activity("Pushed \(entry.relativePath); a newer local edit remains and will sync next")
+                } else {
+                    activity("Pushed \(entry.relativePath)")
+                }
             case .success(.conflict):
                 // 412: the post changed underneath us. Same resolution as the
                 // pull-side conflict. If the local edit cannot be preserved,
@@ -1144,15 +1365,19 @@ final class SyncEngine {
                 }
                 let written = download(
                     postId, to: url, client: client, context: context,
-                    folderId: entry.folderId, kind: entry.kind
+                    replacing: nil, folderId: entry.folderId, kind: entry.kind
                 )
                 guard isCurrent(context) else { return false }
-                if let written {
-                    entry.hash = written
+                switch written {
+                case .written(let hash):
+                    entry.hash = hash
                     entry.fileMtime = fileMtime(url)
                     index.entries[postId] = entry
                     summary.conflicts += 1
-                } else {
+                case .destinationChanged:
+                    summary.errors += 1
+                    activity("Local \(entry.relativePath) changed again during conflict download; leaving the newer edit untouched and retrying")
+                case .failed:
                     summary.errors += 1
                     activity("Could not fetch the server copy of \(entry.relativePath)")
                 }
@@ -1293,7 +1518,10 @@ final class SyncEngine {
             return
         }
         let localHash = MarkdownIdentityCodec.syncHash(for: data)
-        if rejectedContent[rel] == localHash { return }
+        if rejectedContent[rel] == localHash {
+            summary.errors += 1
+            return
+        }
 
         // Authoritative known-id guard, on THIS read (no TOCTOU with the outer
         // step-4 scan, whose read may have transiently failed or whose index
@@ -1365,18 +1593,30 @@ final class SyncEngine {
             // canonical URL, and normalized frontmatter).
             let written = download(
                 id, to: target, client: client, context: context,
-                folderId: folder.id, kind: item.kind
+                replacing: data, folderId: folder.id, kind: item.kind
             )
             guard isCurrent(context) else { return }
-            if let written {
+            var newerLocalEditPending = false
+            switch written {
+            case .written(let hash):
                 index.entries[id] = IndexEntry(
-                    hash: written,
+                    hash: hash,
                     relativePath: indexedRel,
                     fileMtime: fileMtime(target),
                     folderId: folder.id,
                     kind: item.kind
                 )
-            } else {
+            case .destinationChanged:
+                newerLocalEditPending = true
+                index.entries[id] = IndexEntry(
+                    hash: item.hash,
+                    relativePath: indexedRel,
+                    fileMtime: fileMtime(target),
+                    folderId: folder.id,
+                    kind: item.kind
+                )
+                if context.schedulesBackgroundWork { enqueue(.pushOnly) }
+            case .failed:
                 index.entries[id] = IndexEntry(
                     hash: item.hash,
                     relativePath: indexedRel,
@@ -1386,7 +1626,11 @@ final class SyncEngine {
                 )
             }
             summary.pushed += 1
-            activity("Published \(indexedRel) as \(item.status)")
+            if newerLocalEditPending {
+                activity("Published \(indexedRel) as \(item.status); a newer local edit remains and will sync next")
+            } else {
+                activity("Published \(indexedRel) as \(item.status)")
+            }
         case .success(.rejected(let message)):
             rejectedContent[rel] = localHash
             summary.errors += 1
@@ -1510,35 +1754,38 @@ final class SyncEngine {
         return name.contains(" (conflicted copy ") || name.contains(" (legacy copy")
     }
 
-    /// Fetch the server's render of a post and write it (atomically) to url.
-    /// Returns the sha256 of the bytes written, so the caller's index entry
-    /// always matches the file that is actually on disk.
+    /// Fetch the server render and replace the destination only if it still
+    /// contains the exact bytes the caller observed. `expectedData == nil`
+    /// means the path must still be absent. This closes the network-sized race
+    /// where an editor could save after the pull's hash check and then have its
+    /// newer bytes overwritten by the completed download.
     private func download(
         _ postId: String,
         to url: URL,
         client: SyncClient,
         context: PassContext,
+        replacing expectedData: Data?,
         folderId: String? = nil,
         kind: String? = nil
-    ) -> String? {
-        guard isCurrent(context) else { return nil }
+    ) -> DownloadResult {
+        guard isCurrent(context) else { return .failed }
         switch client.fileText(postId: postId) {
         case .failure:
-            return nil
+            return .failed
         case .success(let (text, _)):
-            guard isCurrent(context) else { return nil }
+            guard isCurrent(context) else { return .failed }
             let localText = MarkdownIdentityCodec.inject(into: text, itemId: postId, folderId: folderId, kind: kind)
             let data = Data(localText.utf8)
             do {
-                guard isCurrent(context) else { return nil }
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                        withIntermediateDirectories: true)
-                try writeData(data, to: url, root: context.root, context: context)
+                let result = try writeData(
+                    data, to: url, ifUnchangedFrom: expectedData,
+                    root: context.root, context: context)
+                guard result == .written else { return .destinationChanged }
             } catch {
                 activity("Could not write \(url.lastPathComponent): \(error.localizedDescription)")
-                return nil
+                return .failed
             }
-            return MarkdownIdentityCodec.syncHash(for: data)
+            return .written(MarkdownIdentityCodec.syncHash(for: data))
         }
     }
 
@@ -1586,12 +1833,27 @@ final class SyncEngine {
             entry.folderId = diskEntry.folderId ?? entry.folderId
             entry.kind = diskEntry.kind ?? entry.kind
             let url = root.appendingPathComponent(diskEntry.relativePath)
-            if ensureFrontmatterReflectsPath(
+            let frontmatterUpdate = ensureFrontmatterReflectsPath(
                 url: url, relativePath: diskEntry.relativePath,
                 root: root, context: context
-            ) {
+            )
+            if frontmatterUpdate.didWrite {
                 entry.fileMtime = fileMtime(url)
             }
+            switch frontmatterUpdate {
+            case .localChanged, .failed:
+                // The path metadata could not be applied to the exact bytes we
+                // inspected. Do not PATCH the move and then let a stale slug or
+                // canonical download race the newer local save; leave the old
+                // index row in place so the next pass retries the whole move.
+                summary.errors += 1
+                scan.failedMovePatchIds.insert(postId)
+                activity("Local \(diskEntry.relativePath) changed while its move was being prepared; leaving it untouched and retrying")
+                continue
+            case .unchanged, .written:
+                break
+            }
+            let hasUnsyncedLocalContent = frontmatterUpdate.sourceHash != entry.hash
             guard isCurrent(context) else { return nil }
             // A move BETWEEN folders leaves the bytes (and their hash) unchanged,
             // so the push-side PUT never fires and the server keeps the file in
@@ -1605,6 +1867,18 @@ final class SyncEngine {
             // retries, or the pull reverts the local move.
             if let newFolderId, newFolderId != oldFolderId {
                 let newSlug = url.deletingPathExtension().lastPathComponent
+                // Capture the local precondition before the network request.
+                // Reading after PATCH returns would bless an edit made while
+                // the request was in flight and let canonicalization replace it.
+                let convergenceData: Data?
+                if convergenceReadShouldFail?(diskEntry.relativePath) == true {
+                    convergenceData = nil
+                } else {
+                    convergenceData = try? readData(url, root: root)
+                }
+                let convergenceHash = convergenceData.map {
+                    MarkdownIdentityCodec.syncHash(for: $0)
+                }
                 guard isCurrent(context) else { return nil }
                 let reply = client.patchFile(
                     postId: postId, folderId: newFolderId,
@@ -1617,28 +1891,34 @@ final class SyncEngine {
                     // A move+rename changes the server slug and thus its rendered
                     // hash, and the local slug frontmatter was rewritten above.
                     // We must converge on the server's post-rename render.
-                    let localHash: String?
-                    if convergenceReadShouldFail?(diskEntry.relativePath) == true {
-                        localHash = nil
-                    } else {
-                        localHash = (try? readData(url, root: root))
-                            .map { MarkdownIdentityCodec.syncHash(for: $0) }
-                    }
                     guard isCurrent(context) else { return nil }
-                    if item.hash == localHash {
+                    if hasUnsyncedLocalContent {
+                        // The PATCH moved the server's prior revision. Keep the
+                        // local edited bytes as the next PUT and advance only
+                        // their If-Match base; canonicalizing here would replace
+                        // the edit with the server's pre-edit body.
+                        entry.hash = item.hash
+                        activity("Moved \(diskEntry.relativePath) on the server; its local edit will sync next")
+                    } else if item.hash == convergenceHash {
                         // The local file already byte-matches the server render.
                         entry.hash = item.hash
-                    } else {
+                    } else if let convergenceData {
                         let written = download(
                             postId, to: url, client: client, context: context,
+                            replacing: convergenceData,
                             folderId: newFolderId, kind: item.kind
                         )
                         guard isCurrent(context) else { return nil }
-                        if let written {
+                        switch written {
+                        case .written(let hash):
                             // Downloaded the server render onto the moved path.
-                            entry.hash = written
+                            entry.hash = hash
                             entry.fileMtime = fileMtime(url)
-                        } else {
+                        case .destinationChanged:
+                            entry.hash = item.hash
+                            if context.schedulesBackgroundWork { enqueue(.pushOnly) }
+                            activity("Local \(diskEntry.relativePath) changed while its server move converged; the newer edit will sync next")
+                        case .failed:
                             // The convergence download FAILED (the GET failed, or the
                             // local file is unreadable so we cannot compare). Trusting
                             // EITHER hash is wrong: the local hash lets a later push
@@ -1652,7 +1932,14 @@ final class SyncEngine {
                             // a conflicted copy by the pull before the render lands, so
                             // no edit is lost and the rename is never reverted.
                             entry.hash = Self.needsPullHash
+                            summary.errors += 1
                         }
+                    } else {
+                        // Without a readable local snapshot there is no safe
+                        // precondition for replacing the file. Force a full
+                        // pull retry instead of writing over unknown bytes.
+                        entry.hash = Self.needsPullHash
+                        summary.errors += 1
                     }
                     index.entries[postId] = entry
                     summary.pushed += 1
@@ -1702,11 +1989,12 @@ final class SyncEngine {
 
     private func ensureFrontmatterReflectsPath(
         url: URL, relativePath: String, root: URL, context: PassContext
-    ) -> Bool {
+    ) -> FrontmatterUpdateResult {
         guard isCurrent(context),
               let data = try? readData(url, root: root),
-              var text = String(data: data, encoding: .utf8) else { return false }
-        guard isCurrent(context) else { return false }
+              var text = String(data: data, encoding: .utf8) else { return .failed }
+        guard isCurrent(context) else { return .failed }
+        let sourceHash = MarkdownIdentityCodec.syncHash(for: data)
         var changed = false
         let slug = url.deletingPathExtension().lastPathComponent
         if replaceFrontmatterValue(key: "slug", value: slug, text: &text) {
@@ -1717,13 +2005,20 @@ final class SyncEngine {
                 changed = true
             }
         }
-        guard changed else { return false }
+        guard changed else { return .unchanged(sourceHash: sourceHash) }
         do {
-            try writeData(Data(text.utf8), to: url, root: root, context: context)
-            return true
+            let result = try writeData(
+                Data(text.utf8), to: url, ifUnchangedFrom: data,
+                root: root, context: context)
+            switch result {
+            case .written:
+                return .written(sourceHash: sourceHash)
+            case .changed:
+                return .localChanged
+            }
         } catch {
             activity("Could not update front matter for \(relativePath): \(error.localizedDescription)")
-            return false
+            return .failed
         }
     }
 
@@ -2033,6 +2328,20 @@ final class SyncEngine {
         try coordinator(for: root).writeData(data, to: url)
     }
 
+    private func writeData(
+        _ data: Data,
+        to url: URL,
+        ifUnchangedFrom expectedData: Data?,
+        root: URL,
+        context: PassContext
+    ) throws -> WorkspaceConditionalWriteResult {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard passEpoch == context.epoch else { throw StalePass.invalidated }
+        return try coordinator(for: root).writeData(
+            data, to: url, ifUnchangedFrom: expectedData)
+    }
+
     private func jsonString(_ value: String) -> String {
         guard let data = try? JSONEncoder().encode(value),
               let text = String(data: data, encoding: .utf8) else {
@@ -2045,7 +2354,8 @@ final class SyncEngine {
         let existedBeforeRead = FileManager.default.fileExists(atPath: url.path)
         do {
             let data = try readData(url, root: root)
-            return .readable(MarkdownIdentityCodec.syncHash(for: data))
+            return .readable(
+                hash: MarkdownIdentityCodec.syncHash(for: data), data: data)
         } catch {
             if existedBeforeRead || FileManager.default.fileExists(atPath: url.path) {
                 return .unreadable(error)

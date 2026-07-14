@@ -19,7 +19,12 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     /// Current content versions identify both the native representation and the
     /// canonical server hash. Bump this marker whenever local materialization
     /// changes so already-downloaded content is fetched again after an upgrade.
-    public static let nativeMaterializationVersion = "native-local-v2:"
+    public static let nativeMaterializationVersion = "native-local-v3:"
+
+    /// Accepted marker from the release that manually returned ZIP snapshots for
+    /// TextBundle fetches. Never emit it again; the framework now owns package
+    /// transport and receives directory packages directly.
+    public static let previousNativeMaterializationVersion = "native-local-v2:"
 
     /// The first native marker shipped before plain Markdown assets moved into
     /// the central Data/Attachments tree. Accept it while Finder rolls cached
@@ -116,9 +121,15 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
               !value.isEmpty else { return nil }
 
         if value.hasPrefix(nativeMaterializationVersion)
+            || value.hasPrefix(previousNativeMaterializationVersion)
             || value.hasPrefix(legacyNativeMaterializationVersion) {
-            let prefix = value.hasPrefix(nativeMaterializationVersion)
-                ? nativeMaterializationVersion : legacyNativeMaterializationVersion
+            let prefix = if value.hasPrefix(nativeMaterializationVersion) {
+                nativeMaterializationVersion
+            } else if value.hasPrefix(previousNativeMaterializationVersion) {
+                previousNativeMaterializationVersion
+            } else {
+                legacyNativeMaterializationVersion
+            }
             let payload = value.dropFirst(prefix.count)
             guard let separator = payload.firstIndex(of: ":"),
                   WriteFileRepresentation(rawValue: String(payload[..<separator])) != nil else {

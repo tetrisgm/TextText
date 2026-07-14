@@ -17,6 +17,9 @@ import {
   saveEditablePostAction,
 } from "@/app/editor/actions";
 import { ProjectGallery } from "@/components/ProjectGallery";
+import { ProjectReader } from "@/components/ProjectReader";
+import { Reader } from "@/components/Reader";
+import { TalkReader } from "@/components/TalkReader";
 import {
   WorkspaceSidebarChrome,
   closeExpandedWorkspaceSidebar,
@@ -457,18 +460,6 @@ function shouldFocusTitleOnEdit(post: Post): boolean {
   return isUnsetTitle(post.title);
 }
 
-function isEmptyDraft(draft: DraftState): boolean {
-  const title = draft.title.trim().toLowerCase();
-  return (
-    (!title || title === "untitled") &&
-    !draft.excerpt.trim() &&
-    !draft.body.trim() &&
-    (!draft.cover.trim() || isNoCoverValue(draft.cover)) &&
-    draft.gallery.length === 0 &&
-    !draft.videoUrl.trim()
-  );
-}
-
 export type PostEditLayerProps = {
   blog: Blog;
   post: Post;
@@ -531,11 +522,19 @@ export function PostEditLayer({
     null,
   );
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
+  const [surfaceMode, setSurfaceMode] = useState<"read" | "edit">("edit");
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<BodyEditorHandle>(null);
+  const editSurfaceRef = useRef<HTMLDivElement>(null);
+  const lastEditFocusRef = useRef<HTMLElement | null>(null);
+  const surfaceModeRef = useRef<"read" | "edit">("edit");
+  const pendingScrollRestoreRef = useRef<{
+    left: number;
+    top: number;
+  } | null>(null);
   const currentSlugRef = useRef(initialSession.currentSlug);
   const baseUpdatedAtRef = useRef(post.updatedAt);
   const autoSlugAllowedRef = useRef(initialSession.autoSlugAllowed);
@@ -613,7 +612,7 @@ export function PostEditLayer({
 
   const shouldAutoFocusTitle = shouldFocusTitleOnEdit(post);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!shouldAutoFocusTitle) return;
     const title = titleRef.current;
     if (!title) return;
@@ -745,9 +744,13 @@ export function PostEditLayer({
               currentSlugRef.current = saved.slug;
               patchEditSession(postId, { currentSlug: saved.slug });
               if (!leavingEditRef.current) {
-                router.replace(blogPostEditPath(blog, saved), {
-                  scroll: false,
-                });
+                window.history.replaceState(
+                  window.history.state,
+                  "",
+                  surfaceModeRef.current === "edit"
+                    ? blogPostEditPath(blog, saved)
+                    : blogPostPath(blog, saved),
+                );
               }
             }
 
@@ -843,7 +846,7 @@ export function PostEditLayer({
   const saveDraftNow = useCallback(
     async (
       patch: Partial<DraftState> = {},
-      options: { exitEdit?: boolean; navigatePath?: string } = {},
+      options: { navigatePath?: string } = {},
     ) => {
       if (!postId) {
         setSaveState("error");
@@ -862,10 +865,10 @@ export function PostEditLayer({
         draftRevisionRef.current += 1;
         setDraftSnapshot((current) => ({ ...current, draft: nextDraft }));
       }
-      const leavingEdit = Boolean(options.exitEdit || options.navigatePath);
+      const leavingEdit = Boolean(options.navigatePath);
       if (leavingEdit) leavingEditRef.current = true;
 
-      const navigateAfterSave = (slug: string, savedDraft: DraftState) => {
+      const navigateAfterSave = () => {
         if (leavingEdit && postId) {
           // The newest local snapshot has been acknowledged, so the transient
           // session can be discarded without resurrecting an older draft.
@@ -873,15 +876,6 @@ export function PostEditLayer({
         }
         if (options.navigatePath) {
           router.push(options.navigatePath);
-          return;
-        }
-        if (options.exitEdit) {
-          router.replace(
-            isEmptyDraft(savedDraft)
-              ? containingFolderHref
-              : blogPostPath(blog, { slug }),
-            { scroll: false },
-          );
         }
       };
 
@@ -906,7 +900,7 @@ export function PostEditLayer({
             await deletePersistedWorkspaceDraft(draftBlogId, postId, targetKey);
             setSaveState("saved");
             setError(null);
-            navigateAfterSave(currentSlugRef.current, targetDraft);
+            navigateAfterSave();
             return;
           }
 
@@ -940,8 +934,17 @@ export function PostEditLayer({
               draft: savedDraft,
             }));
           }
+          if (!options.navigatePath) {
+            window.history.replaceState(
+              window.history.state,
+              "",
+              surfaceModeRef.current === "edit"
+                ? blogPostEditPath(blog, saved)
+                : blogPostPath(blog, saved),
+            );
+          }
 
-          navigateAfterSave(saved.slug, savedDraft);
+          navigateAfterSave();
           return;
         }
       } catch (saveError) {
@@ -950,8 +953,92 @@ export function PostEditLayer({
         setError(errorMessage(saveError, "Could not save"));
       }
     },
-    [blog, containingFolderHref, draftBlogId, enqueueSave, postId, router],
+    [blog, draftBlogId, enqueueSave, postId, router],
   );
+
+  const pathForSurfaceMode = useCallback(
+    (mode: "read" | "edit") => {
+      const item = {
+        id: postId,
+        slug: slugify(draftRef.current.slug, currentSlugRef.current),
+      };
+      return mode === "edit"
+        ? blogPostEditPath(blog, item)
+        : blogPostPath(blog, item);
+    },
+    [blog, postId],
+  );
+
+  const changeSurfaceMode = useCallback(
+    (nextMode: "read" | "edit", updateHistory = true) => {
+      if (surfaceModeRef.current === nextMode) return;
+      if (surfaceModeRef.current === "edit") {
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLElement &&
+          editSurfaceRef.current?.contains(activeElement)
+        ) {
+          lastEditFocusRef.current = activeElement;
+        }
+      }
+      pendingScrollRestoreRef.current = {
+        left: window.scrollX,
+        top: window.scrollY,
+      };
+      surfaceModeRef.current = nextMode;
+      setSurfaceMode(nextMode);
+      if (updateHistory) {
+        window.history.pushState(
+          window.history.state,
+          "",
+          pathForSurfaceMode(nextMode),
+        );
+      }
+    },
+    [pathForSurfaceMode],
+  );
+
+  useLayoutEffect(() => {
+    if (surfaceMode === "edit") {
+      lastEditFocusRef.current?.focus({ preventScroll: true });
+    }
+    const pending = pendingScrollRestoreRef.current;
+    if (!pending) return;
+    pendingScrollRestoreRef.current = null;
+    window.scrollTo({
+      left: pending.left,
+      top: pending.top,
+      behavior: "auto",
+    });
+  }, [surfaceMode]);
+
+  const stopEditingLocally = useCallback(
+    (patch: Partial<DraftState> = {}) => {
+      changeSurfaceMode("read");
+      void saveDraftNow(patch);
+    },
+    [changeSurfaceMode, saveDraftNow],
+  );
+
+  const startEditingLocally = useCallback(() => {
+    changeSurfaceMode("edit");
+  }, [changeSurfaceMode]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const nextMode =
+        new URL(window.location.href).searchParams.get("edit") === "1"
+          ? "edit"
+          : "read";
+      const previousMode = surfaceModeRef.current;
+      changeSurfaceMode(nextMode, false);
+      if (previousMode === "edit" && nextMode === "read") {
+        void saveDraftNow();
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [changeSurfaceMode, saveDraftNow]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -968,11 +1055,9 @@ export function PostEditLayer({
         if (hasOpenEditMenu()) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
         if (leavingEditRef.current) return;
-        void saveDraftNow({}, { exitEdit: true });
+        if (surfaceModeRef.current === "edit") stopEditingLocally();
+        else startEditingLocally();
         return;
       }
 
@@ -985,19 +1070,17 @@ export function PostEditLayer({
         event.stopImmediatePropagation();
         return;
       }
+      if (surfaceModeRef.current === "read") return;
 
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
       if (leavingEditRef.current) return;
-      void saveDraftNow({}, { exitEdit: true });
+      stopEditingLocally();
     };
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [saveDraftNow]);
+  }, [startEditingLocally, stopEditingLocally]);
 
   const uploadCover = useCallback(
     async (file: File) => {
@@ -1249,7 +1332,6 @@ export function PostEditLayer({
         className={titleClass}
         aria-label="Title"
         placeholder="Give it a title"
-        autoFocus={shouldAutoFocusTitle}
         rows={1}
         value={draft.title}
         onChange={(event) =>
@@ -1410,6 +1492,23 @@ export function PostEditLayer({
   const renderedPostPath = blogPostPath(blog, {
     slug: slugify(draft.slug, post.slug),
   });
+  const ReaderComponent =
+    displayPost.type === "talk"
+      ? TalkReader
+      : displayPost.type === "project"
+        ? ProjectReader
+        : Reader;
+  const navigateFromRead = useCallback(
+    (path: string) => {
+      const url = new URL(path, window.location.origin);
+      if (url.searchParams.get("edit") === "1") {
+        startEditingLocally();
+        return;
+      }
+      void saveDraftNow({}, { navigatePath: path });
+    },
+    [saveDraftNow, startEditingLocally],
+  );
 
   return (
     <div
@@ -1417,7 +1516,6 @@ export function PostEditLayer({
       data-write-edit-post-id={postId}
       data-write-draft-hydrated={draftHydrated ? "true" : "false"}
       aria-busy={!draftHydrated}
-      style={draftHydrated ? undefined : { visibility: "hidden" }}
       className={`post-editor-shell applecms has-sidebar${
         sidebarCollapsed ? " is-sidebar-collapsed" : ""
       } is-edit-workspace-shell`}
@@ -1435,52 +1533,77 @@ export function PostEditLayer({
         onToggleCollapsed={toggleSidebarCollapsed}
       />
       <div className="post-editor-content">
-        <PostActionBar
-          mode="edit"
-          owner={canManagePost}
-          canEditPost
-          canManagePost={canManagePost}
-          blog={blog}
-          post={post}
-          adjacent={adjacent}
-          homePath={homePath}
-          postPath={renderedPostPath}
-          presencePeers={collab ? presencePeers : []}
-          draft={draft}
-          deleting={deleting}
-          hasHeaderImage={hasArticleHeaderImage}
-          folders={folders}
-          onDelete={requestDeletePost}
-          onDone={() => saveDraftNow({}, { exitEdit: true })}
-          onAddHeaderImage={shufflePileCover}
-          onMoveToFolder={moveToFolder}
-          onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
-          onSlugBlur={() => {
-            autoSlugAllowedRef.current = false;
-            updateDraft({ slug: slugify(draft.slug, currentSlugRef.current) });
-          }}
-          onSlugInput={(value) => {
-            autoSlugAllowedRef.current = false;
-            updateDraft({ slug: slugify(value, "") });
-          }}
-          onUpdateDraft={updateDraft}
-          onVisibilityChange={(status) =>
-            saveDraftNow({ status }, { exitEdit: true })
-          }
-        />
-        <SaveStatusPill saveState={saveState} error={error} />
-
-        {displayPost.type === "talk" ? (
-          <EditTalkReaderPreview blog={blog} post={displayPost} slots={slots} />
-        ) : displayPost.type === "project" ? (
-          <EditProjectReaderPreview
+        <div hidden={surfaceMode === "edit"}>
+          <PostActionBar
+            mode="read"
+            owner={canManagePost}
+            canEditPost
+            canManagePost={canManagePost}
             blog={blog}
             post={displayPost}
-            slots={slots}
+            adjacent={adjacent}
+            homePath={containingFolderHref}
+            postPath={renderedPostPath}
+            presencePeers={collab ? presencePeers : []}
+            onNavigate={navigateFromRead}
           />
-        ) : (
-          <EditReaderPreview blog={blog} post={displayPost} slots={slots} />
-        )}
+          <SaveStatusPill saveState={saveState} error={error} />
+          <ReaderComponent blog={blog} post={displayPost} />
+        </div>
+        <div ref={editSurfaceRef} hidden={surfaceMode === "read"}>
+          <PostActionBar
+            mode="edit"
+            owner={canManagePost}
+            canEditPost
+            canManagePost={canManagePost}
+            blog={blog}
+            post={post}
+            adjacent={adjacent}
+            homePath={homePath}
+            postPath={renderedPostPath}
+            presencePeers={collab ? presencePeers : []}
+            draft={draft}
+            deleting={deleting}
+            hasHeaderImage={hasArticleHeaderImage}
+            folders={folders}
+            onDelete={requestDeletePost}
+            onDone={async () => stopEditingLocally()}
+            onAddHeaderImage={shufflePileCover}
+            onMoveToFolder={moveToFolder}
+            onNavigate={(path) => saveDraftNow({}, { navigatePath: path })}
+            onSlugBlur={() => {
+              autoSlugAllowedRef.current = false;
+              updateDraft({
+                slug: slugify(draft.slug, currentSlugRef.current),
+              });
+            }}
+            onSlugInput={(value) => {
+              autoSlugAllowedRef.current = false;
+              updateDraft({ slug: slugify(value, "") });
+            }}
+            onUpdateDraft={updateDraft}
+            onVisibilityChange={async (status) =>
+              stopEditingLocally({ status })
+            }
+          />
+          <SaveStatusPill saveState={saveState} error={error} />
+
+          {displayPost.type === "talk" ? (
+            <EditTalkReaderPreview
+              blog={blog}
+              post={displayPost}
+              slots={slots}
+            />
+          ) : displayPost.type === "project" ? (
+            <EditProjectReaderPreview
+              blog={blog}
+              post={displayPost}
+              slots={slots}
+            />
+          ) : (
+            <EditReaderPreview blog={blog} post={displayPost} slots={slots} />
+          )}
+        </div>
       </div>
       <ConfirmationDialog
         open={deleteDialogOpen}

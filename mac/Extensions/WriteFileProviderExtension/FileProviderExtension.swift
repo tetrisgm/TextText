@@ -289,7 +289,8 @@ public final class FileProviderExtension: NSObject,
 
                 let representation = revision.item.representation ?? .markdown
                 let destination: URL
-                let logicalSize: Int
+                let materializedSize: Int?
+                let deliveredByteCount: Int
                 do {
                     switch representation {
                     case .textbundle:
@@ -337,10 +338,13 @@ public final class FileProviderExtension: NSObject,
                             assets: assets,
                             sourceURL: revision.item.manifestURL,
                             in: dir)
-                        destination = try WriteTextBundlePackage.uploadingSnapshot(
-                            of: package.url, in: dir)
-                        logicalSize = package.logicalSize
-                        try? FileManager.default.removeItem(at: package.url)
+                        // File Provider owns package transport. Returning the real
+                        // directory lets the framework preserve package semantics;
+                        // manually returning a coordinated ZIP leaves Finder with a
+                        // regular file carrying a package UTI and corrupts its cache.
+                        destination = package.url
+                        materializedSize = nil
+                        deliveredByteCount = package.logicalSize
                     case .markdown, .text:
                         var text = revision.content.text
                         if representation == .markdown {
@@ -360,14 +364,15 @@ public final class FileProviderExtension: NSObject,
                         let bytes = Data(text.utf8)
                         destination = dir.appendingPathComponent(UUID().uuidString)
                         try bytes.write(to: destination)
-                        logicalSize = bytes.count
+                        materializedSize = bytes.count
+                        deliveredByteCount = bytes.count
                     }
                 } catch {
                     fpLog.error("fetchContents \(postId, privacy: .public) write failed: \(String(describing: error), privacy: .public)")
                     _ = finish(nil, nil, error); return
                 }
                 let item = WriteFileProviderItem(revision.item.withContent(
-                    hash: revision.content.hash, size: logicalSize))
+                    hash: revision.content.hash, size: materializedSize))
                 if let requestedVersion,
                    !Self.requestedVersion(requestedVersion, matches: item.itemVersion) {
                     try? FileManager.default.removeItem(at: destination)
@@ -378,13 +383,13 @@ public final class FileProviderExtension: NSObject,
                     try? FileManager.default.removeItem(at: destination)
                     return
                 }
-                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(logicalSize) bytes")
+                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(deliveredByteCount) bytes")
                 // The returned item MUST describe the bytes just written: its hash
                 // (the GET body and its ETag are one consistent snapshot; a stale
                 // manifest hash would make the next edit send a wrong If-Match and
-                // falsely conflict) AND its size (the system uses documentSize as
-                // the content length, so the enumeration-time nil would materialize
-                // a zero-byte file even though these bytes are real).
+                // falsely conflict). Regular files also need their exact byte size.
+                // Packages intentionally keep documentSize nil because the framework
+                // transports the directory as a package and owns its wire encoding.
                 if !finish(destination, item, nil) {
                     try? FileManager.default.removeItem(at: destination)
                 }
@@ -606,8 +611,8 @@ public final class FileProviderExtension: NSObject,
 
         if parent == .rootContainer {
             let candidates = WorkspaceListEnumerator.items(handoffDescriptors())
-            return .success(Self.matchReimportCandidate(
-                candidates, filename: template.filename, isFolder: wantsFolder))
+            return Self.matchReimportCandidate(
+                candidates, filename: template.filename, isFolder: wantsFolder)
         }
 
         guard let handle = parent.workspaceHandle,
@@ -618,22 +623,52 @@ public final class FileProviderExtension: NSObject,
         switch await core.children(of: parent) {
         case .failure(let error): return .failure(error)
         case .success(let candidates):
-            return .success(Self.matchReimportCandidate(
-                candidates, filename: template.filename, isFolder: wantsFolder))
+            return Self.matchReimportCandidate(
+                candidates, filename: template.filename, isFolder: wantsFolder)
         }
     }
 
     private static func matchReimportCandidate(
         _ candidates: [WriteItem], filename: String, isFolder: Bool
-    ) -> WriteItem? {
+    ) -> Result<WriteItem?, WriteSyncError> {
         let requested = filename.precomposedStringWithCanonicalMapping
-        return candidates.first {
-            guard $0.isFolder == isFolder else { return false }
+        let eligible = candidates.filter { $0.isFolder == isFolder }
+        let exact = eligible.filter {
             let candidate = $0.filename.precomposedStringWithCanonicalMapping
-            return candidate.compare(
-                requested, options: [.caseInsensitive, .widthInsensitive],
-                locale: Locale(identifier: "en_US_POSIX")) == .orderedSame
+            return equivalentFilename(candidate, requested)
         }
+        if exact.count == 1 { return .success(exact[0]) }
+        if exact.count > 1 { return .failure(.conflict) }
+        guard !isFolder else { return .success(nil) }
+
+        // A restored File Provider database can hand back an older representation
+        // (`.md` before a TextBundle migration), a raw unsafe spelling, or a
+        // canonically equivalent Unicode spelling. Compare semantic titles only
+        // after the exact parent-scoped lookup and adopt only an unambiguous item.
+        let requestedRepresentation = WriteFileRepresentation.inferred(
+            fromFilename: filename) ?? .markdown
+        let requestedTitle = WriteFilename.titleFromFilename(
+            filename, representation: requestedRepresentation)
+        let semantic = eligible.filter {
+            let representation = $0.representation
+                ?? WriteFileRepresentation.inferred(fromFilename: $0.filename)
+                ?? .markdown
+            let candidateTitle = WriteFilename.titleFromFilename(
+                $0.filename, stableId: $0.serverId,
+                representation: representation)
+            return equivalentFilename(candidateTitle, requestedTitle)
+        }
+        if semantic.count == 1 { return .success(semantic[0]) }
+        if semantic.count > 1 { return .failure(.conflict) }
+        return .success(nil)
+    }
+
+    private static func equivalentFilename(_ lhs: String, _ rhs: String) -> Bool {
+        let candidate = lhs.precomposedStringWithCanonicalMapping
+        let requested = rhs.precomposedStringWithCanonicalMapping
+        return candidate.compare(
+            requested, options: [.caseInsensitive, .widthInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")) == .orderedSame
     }
 
     private static func isLegacyBookmarkSidecar(_ item: NSFileProviderItem) -> Bool {
@@ -767,7 +802,8 @@ public final class FileProviderExtension: NSObject,
                     // Title the new post from the Finder filename (the filename IS
                     // the title now, not the slug). Leave the slug/URL to the
                     // server. Skip the PATCH when the title already matches.
-                    let title = WriteFilename.titleFromFilename(filename)
+                    let title = WriteFilename.titleFromFilename(
+                        filename, representation: representation)
                     guard let id = created.id, !created.hash.isEmpty,
                           !title.isEmpty, created.title != title else {
                         done(Self.fileItem(created, parentId: parentId, handle: handle), nil); return
@@ -1041,7 +1077,12 @@ public final class FileProviderExtension: NSObject,
             let newTitle: String?
             if changedFields.contains(.filename),
                item.filename != currentItem?.filename {
-                let title = WriteFilename.titleFromFilename(item.filename, stableId: postId)
+                let representation = currentItem?.representation
+                    ?? WriteFileRepresentation.inferred(fromFilename: item.filename)
+                    ?? .markdown
+                let title = WriteFilename.titleFromFilename(
+                    item.filename, stableId: postId,
+                    representation: representation)
                 guard !title.isEmpty else {
                     done(nil, Self.fpError(.cannotSynchronize)); return
                 }

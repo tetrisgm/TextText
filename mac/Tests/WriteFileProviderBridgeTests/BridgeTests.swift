@@ -216,6 +216,11 @@ final class BridgeTests: XCTestCase {
                 (WriteFileProviderItem.legacyNativeMaterializationVersion
                     + "textbundle:legacy-native-hash").utf8)),
             "legacy-native-hash")
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: Data(
+                (WriteFileProviderItem.previousNativeMaterializationVersion
+                    + "textbundle:previous-native-hash").utf8)),
+            "previous-native-hash")
         XCTAssertNil(WriteFileProviderItem.serverHash(from: Data(
             (WriteFileProviderItem.nativeMaterializationVersion + "unknown:hash").utf8)))
     }

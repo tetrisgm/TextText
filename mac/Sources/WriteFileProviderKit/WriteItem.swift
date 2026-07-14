@@ -116,11 +116,8 @@ public struct WriteItem: Equatable, Sendable {
         withContent(hash: hash, size: documentSize)
     }
 
-    /// A copy describing exactly the bytes just fetched: its hash AND its size.
-    /// fetchContents MUST set the size, because the File Provider system uses the
-    /// returned item's documentSize as the authoritative content length. Left at
-    /// the enumeration-time nil, a fetched file materializes as ZERO bytes even
-    /// though the delivered temporary file holds the real content.
+    /// A copy describing content just fetched. Regular files set their exact size;
+    /// package directories keep it nil because File Provider owns package transport.
     public func withContent(hash: String?, size: Int?) -> WriteItem {
         WriteItem(
             identifier: identifier, parentIdentifier: parentIdentifier,
@@ -253,10 +250,11 @@ public enum WriteItemMapper {
             typeIdentifier: entry.representation.typeIdentifier,
             serverId: id,
             contentHash: entry.hash,
-            // The File Provider sizes the dataless placeholder from this, so it
-            // must be the real byte length (the server sends it in the manifest),
-            // or the file materializes as zero bytes even after a successful fetch.
-            documentSize: entry.size,
+            // A package has no single stable byte length: Finder and File Provider
+            // choose the package transport encoding. The manifest size describes
+            // canonical Markdown, not that transport, so advertising it corrupts
+            // package reconciliation. Regular files retain their exact body size.
+            documentSize: entry.representation == .textbundle ? nil : entry.size,
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps,

@@ -197,6 +197,134 @@ final class SyncEngineEpochTests: XCTestCase {
         XCTAssertEqual(client.workspaceCallCount(), 2)
     }
 
+    func testBackgroundFailuresBackOffRetryAndReturnToIdleAfterRecovery() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let store = makeStore(at: state)
+        let client = EpochSyncClient()
+        client.transientWorkspaceFailures = 2
+        let recovered = expectation(description: "retry recovered")
+        let linked = LockedValue(true)
+
+        let engine = makeEngine(
+            store: store, root: LockedValue(root), client: client,
+            isLinked: { linked.get() })
+        defer {
+            engine.onActivity = nil
+            engine.onStateChange = nil
+            engine.onPassCompleted = nil
+            linked.set(false)
+            engine.resetForSignOut()
+            _ = engine.runOnePassBlocking()
+        }
+        engine.retryBackoff = ChangeListenerBackoff(
+            initialDelay: 0.01, maximumDelay: 0.02)
+        engine.retryRandomSample = { 1 }
+        let lock = NSLock()
+        var states: [SyncEngine.Status] = []
+        var retryAttempts: [Int] = []
+        var completedErrors: [Int] = []
+        var fulfilledRecovery = false
+        engine.onPassCompleted = { summary in
+            lock.lock()
+            completedErrors.append(summary.errors)
+            if completedErrors == [1, 1, 0], !fulfilledRecovery {
+                fulfilledRecovery = true
+                recovered.fulfill()
+            }
+            lock.unlock()
+        }
+        engine.onStateChange = { [weak engine] in
+            guard let engine else { return }
+            let status = engine.status
+            lock.lock()
+            states.append(status)
+            if case .error(_, retryScheduled: true) = status {
+                retryAttempts.append(engine.retryBackoff.attempt)
+            }
+            lock.unlock()
+        }
+
+        engine.syncNow()
+
+        wait(for: [recovered], timeout: 2)
+        lock.lock()
+        let observedStates = states
+        let observedAttempts = retryAttempts
+        let observedCompletions = completedErrors
+        lock.unlock()
+        XCTAssertGreaterThanOrEqual(client.workspaceCallCount(), 3)
+        XCTAssertEqual(observedAttempts, [1, 2])
+        XCTAssertEqual(observedCompletions, [1, 1, 0])
+        XCTAssertTrue(observedStates.contains(.syncing))
+        XCTAssertTrue(observedStates.contains(
+            .error(errorCount: 1, retryScheduled: true)))
+        XCTAssertEqual(engine.status, .idle)
+        XCTAssertFalse(engine.isSyncing)
+        XCTAssertEqual(engine.lastSummary?.errors, 0)
+    }
+
+    func testPushOnlyPassDoesNotCancelScheduledFullRetry() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let store = makeStore(at: state)
+        let client = EpochSyncClient()
+        client.transientWorkspaceFailures = 1
+        let retryScheduled = expectation(description: "full retry scheduled")
+        let recovered = expectation(description: "scheduled full retry recovered")
+
+        let engine = makeEngine(
+            store: store, root: LockedValue(root), client: client)
+        engine.retryBackoff = ChangeListenerBackoff(
+            initialDelay: 0.2, maximumDelay: 0.2)
+        engine.retryRandomSample = { 1 }
+        let observationLock = NSLock()
+        var observedScheduledRetry = false
+        engine.onStateChange = {
+            observationLock.lock()
+            defer { observationLock.unlock() }
+            if engine.status == .error(errorCount: 1, retryScheduled: true),
+               !observedScheduledRetry {
+                observedScheduledRetry = true
+                retryScheduled.fulfill()
+            } else if engine.status == .idle,
+                      client.workspaceCallCount() == 3 {
+                recovered.fulfill()
+            }
+        }
+
+        engine.syncNow()
+        wait(for: [retryScheduled], timeout: 1)
+
+        let pushSummary = engine.runOnePassBlocking(.pushOnly)
+        XCTAssertEqual(pushSummary.errors, 0)
+        XCTAssertEqual(
+            engine.status,
+            .error(errorCount: 1, retryScheduled: true))
+
+        wait(for: [recovered], timeout: 2)
+        XCTAssertEqual(client.workspaceCallCount(), 3)
+        XCTAssertEqual(engine.status, .idle)
+    }
+
+    func testBlockingFailureReportsErrorWithoutClaimingARetry() throws {
+        let root = try temporaryDirectory()
+        let state = try temporaryDirectory()
+        let store = makeStore(at: state)
+        let client = EpochSyncClient()
+        client.workspaceFailure = .network("offline")
+        let engine = makeEngine(
+            store: store, root: LockedValue(root), client: client)
+
+        let summary = engine.runOnePassBlocking()
+
+        XCTAssertEqual(summary.errors, 1)
+        XCTAssertEqual(
+            engine.status,
+            .error(errorCount: 1, retryScheduled: false))
+        XCTAssertFalse(engine.isSyncing)
+    }
+
     private func makeEngine(
         store: StateStore,
         root: LockedValue<URL>,
@@ -322,6 +450,7 @@ private final class EpochSyncClient: SyncClient, @unchecked Sendable {
     var workspaceValue = Workspace(
         blog: WorkspaceBlog(handle: "demo", name: "Demo", username: nil), folders: [])
     var workspaceFailure: ClientFailure?
+    var transientWorkspaceFailures = 0
     var manifestReplies: [String: ManifestReply] = [:]
     var fileTexts: [String: String] = [:]
     var workspaceGate: SyncEngineGate?
@@ -339,9 +468,17 @@ private final class EpochSyncClient: SyncClient, @unchecked Sendable {
         workspaceCalls += 1
         let call = workspaceCalls
         let callback = onWorkspaceCall
+        let transientFailure: ClientFailure?
+        if transientWorkspaceFailures > 0 {
+            transientWorkspaceFailures -= 1
+            transientFailure = .network("temporarily offline")
+        } else {
+            transientFailure = nil
+        }
         lock.unlock()
         callback?(call)
         workspaceGate?.pauseOnce()
+        if let transientFailure { return .failure(transientFailure) }
         if let workspaceFailure { return .failure(workspaceFailure) }
         let data = (try? JSONEncoder().encode(workspaceValue)) ?? Data()
         return .success((workspaceValue, data))

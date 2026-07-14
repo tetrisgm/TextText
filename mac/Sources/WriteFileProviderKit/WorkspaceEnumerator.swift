@@ -56,9 +56,10 @@ public struct WorkspaceEnumerator: Sendable {
 
     /// The children of a container. Root -> this workspace container; a workspace
     /// -> its top-level folders; a folder -> its subfolders then its content
-    /// files. The working set -> every document, excluding unchanged container
-    /// objects. Trash -> empty for now. A file id is not a container and yields
-    /// an empty list.
+    /// files. The working set -> every folder and document. File Provider can
+    /// rebuild a domain from this enumeration after reimport, so parent folders
+    /// must be present before children can reconcile. Trash -> empty for now. A
+    /// file id is not a container and yields an empty list.
     public func children(
         of container: WriteItemIdentifier
     ) async -> Result<[WriteItem], WriteSyncError> {
@@ -272,13 +273,12 @@ public struct WorkspaceEnumerator: Sendable {
                 }
             }
         }
-        // A working set represents documents, not containers. Including every
-        // folder made an ordinary post edit republish unchanged folder metadata.
-        // Disambiguate against the full tree so file names still match normal
-        // folder enumeration, then expose files only.
-        return .success(
-            WriteFilename.disambiguate(folderItems + files).filter { !$0.isFolder }
-        )
+        // File Provider also uses the working set to reconstruct a domain after
+        // reimport. Omitting containers leaves every document blocked behind a
+        // missing parent (`parentCreation`) on a cold or schema-migrated index.
+        // Stable folder identifiers keep unchanged containers from being
+        // recreated while still making the complete parent chain available.
+        return .success(WriteFilename.disambiguate(folderItems + files))
     }
 
     private func findFile(postId: String) async -> Result<WriteItem, WriteSyncError> {
