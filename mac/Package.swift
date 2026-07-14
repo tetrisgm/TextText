@@ -24,7 +24,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
-        .package(url: "https://github.com/SDWebImage/libwebp-Xcode", from: "1.3.2")
+        .package(url: "https://github.com/SDWebImage/libwebp-Xcode", from: "1.3.2"),
+        .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.19")
     ],
     targets: [
         .target(
@@ -68,6 +69,9 @@ let package = Package(
         ),
         .target(
             name: "WriteFileProviderKit",
+            dependencies: [
+                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+            ],
             path: "Sources/WriteFileProviderKit"
         ),
         .target(

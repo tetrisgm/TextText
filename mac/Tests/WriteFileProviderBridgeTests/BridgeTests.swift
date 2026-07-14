@@ -14,6 +14,7 @@ private struct StubAPI: WriteSyncAPI {
         .success(WriteChangeReply(cursor: "c0", changed: false))
     }
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
+    func createFile(body: String, folderId: String?, representation: WriteFileRepresentation, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> { .failure(.conflict) }
     func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> { .success(()) }
@@ -27,16 +28,23 @@ final class BridgeTests: XCTestCase {
     // MARK: helpers (self-contained; do not borrow the kit test fixtures)
 
     private func manifestEntry(
-        hash: String = "abc123", url: String? = "https://write.example/item/p1"
+        hash: String = "abc123", url: String? = "https://write.example/item/p1",
+        representation: WriteFileRepresentation = .markdown
     ) -> WriteManifestItem {
         WriteManifestItem(
-            file: "hello.md", kind: "article", slug: "hello", title: "Hello",
+            file: "hello" + representation.filenameSuffix,
+            representation: representation, kind: "article", slug: "hello", title: "Hello",
             status: "draft", hash: hash, id: "p1", date: nil,
             createdAt: "2026-07-01T09:00:00Z", updatedAt: "2026-07-11T10:00:00Z", url: url)
     }
 
-    private func fileItem(readOnly: Bool = true, hash: String = "abc123") -> WriteItem {
-        WriteItemMapper.item(for: manifestEntry(hash: hash), inFolder: "blog", handle: "demo", readOnly: readOnly)!
+    private func fileItem(
+        readOnly: Bool = true, hash: String = "abc123",
+        representation: WriteFileRepresentation = .markdown
+    ) -> WriteItem {
+        WriteItemMapper.item(
+            for: manifestEntry(hash: hash, representation: representation),
+            inFolder: "blog", handle: "demo", readOnly: readOnly)!
     }
 
     private func folderItem() -> WriteItem {
@@ -116,6 +124,21 @@ final class BridgeTests: XCTestCase {
         XCTAssertTrue(item.capabilities.contains(.allowsReading))
     }
 
+    func testRepresentationMapsToNativeContentType() {
+        let markdown = WriteFileProviderItem(fileItem(representation: .markdown))
+        XCTAssertEqual(markdown.filename, "Hello.md")
+        XCTAssertEqual(markdown.contentType.identifier, WriteItem.markdownTypeIdentifier)
+
+        let text = WriteFileProviderItem(fileItem(representation: .text))
+        XCTAssertEqual(text.filename, "Hello.txt")
+        XCTAssertEqual(text.contentType, .plainText)
+
+        let textbundle = WriteFileProviderItem(fileItem(representation: .textbundle))
+        XCTAssertEqual(textbundle.filename, "Hello.textbundle")
+        XCTAssertEqual(textbundle.contentType.identifier, WriteItem.textBundleTypeIdentifier)
+        XCTAssertTrue(textbundle.contentType.conforms(to: .package))
+    }
+
     func testFolderItemIsAFolderType() {
         let item = WriteFileProviderItem(folderItem())
         XCTAssertEqual(item.contentType, .folder)
@@ -150,6 +173,62 @@ final class BridgeTests: XCTestCase {
         XCTAssertNotEqual(
             a.itemVersion.contentVersion, b.itemVersion.contentVersion,
             "a new server hash must produce a new content version so the framework re-fetches")
+    }
+
+    func testBookmarkVersionIncludesNativeRepresentation() throws {
+        let entry = WriteManifestItem(
+            file: "metroid.md", kind: "bookmark", slug: "metroid",
+            title: "Metroid", status: "draft", hash: "server-hash", id: "b1",
+            date: nil, createdAt: nil, updatedAt: nil, url: nil)
+        let mapped = try XCTUnwrap(WriteItemMapper.item(
+            for: entry, inFolder: "bookmarks", handle: "demo", readOnly: false))
+        let version = WriteFileProviderItem(mapped).itemVersion
+
+        XCTAssertEqual(
+            String(data: version.contentVersion, encoding: .utf8),
+            WriteFileProviderItem.nativeMaterializationVersion
+                + "markdown:server-hash")
+    }
+
+    func testContentVersionTracksRepresentation() {
+        let markdown = WriteFileProviderItem(
+            fileItem(hash: "same", representation: .markdown)).itemVersion
+        let text = WriteFileProviderItem(
+            fileItem(hash: "same", representation: .text)).itemVersion
+
+        XCTAssertNotEqual(markdown.contentVersion, text.contentVersion)
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: markdown.contentVersion), "same")
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: text.contentVersion), "same")
+    }
+
+    func testServerHashAcceptsLegacyContentVersions() {
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: Data("raw-hash".utf8)),
+            "raw-hash")
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: Data(
+                (WriteFileProviderItem.bookmarkMaterializationVersion + "bookmark-hash").utf8)),
+            "bookmark-hash")
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: Data(
+                (WriteFileProviderItem.legacyNativeMaterializationVersion
+                    + "textbundle:legacy-native-hash").utf8)),
+            "legacy-native-hash")
+        XCTAssertNil(WriteFileProviderItem.serverHash(from: Data(
+            (WriteFileProviderItem.nativeMaterializationVersion + "unknown:hash").utf8)))
+    }
+
+    func testMetadataVersionTracksRepresentationIndependently() {
+        let markdown = WriteFileProviderItem(
+            fileItem(representation: .markdown).withFilename("Same name"))
+        let text = WriteFileProviderItem(
+            fileItem(representation: .text).withFilename("Same name"))
+
+        XCTAssertNotEqual(
+            markdown.itemVersion.metadataVersion,
+            text.itemVersion.metadataVersion)
     }
 
     func testVersionFieldsAreNonEmptyAndSmall() {

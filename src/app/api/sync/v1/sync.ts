@@ -3,7 +3,16 @@
 // all of it is unit-testable; the auth/workspace glue lives in ./auth.ts.
 
 import { blogBaseUrl, postUrl } from "@/lib/agent-surface";
-import type { Blog, Folder, Post } from "@/lib/content";
+import {
+  DEFAULT_FILE_REPRESENTATION,
+  isFileRepresentation,
+} from "@/lib/content";
+import type {
+  Blog,
+  FileRepresentation,
+  Folder,
+  Post,
+} from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import {
   renderFolderManifest,
@@ -13,12 +22,30 @@ import {
 } from "@/lib/markdown-files";
 
 export const WORKSPACE_SCHEMA = "write.workspace.v1";
+export const WRITE_FILE_REPRESENTATION_HEADER = "Write-File-Representation";
+
+const SYNC_FILE_EXTENSIONS: Record<FileRepresentation, string> = {
+  textbundle: ".textbundle",
+  markdown: ".md",
+  text: ".txt",
+};
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
+}
+
+/** Parse the immutable representation selected by a sync create. */
+export function parseSyncFileRepresentation(
+  headerValue: string | null,
+): FileRepresentation | null {
+  // Before this header existed, every sync create represented an external
+  // Markdown file. Preserve that behavior for older clients.
+  if (headerValue === null) return "markdown";
+  const value = headerValue.trim();
+  return isFileRepresentation(value) ? value : null;
 }
 
 /** Every sync API error is a JSON {error} with the right status. */
@@ -81,6 +108,20 @@ export function syncFileUrl(postId: string): string {
   return `/api/sync/v1/files/${postId}`;
 }
 
+function syncFileRepresentation(
+  post: Pick<Post, "representation">,
+): FileRepresentation {
+  return post.representation ?? DEFAULT_FILE_REPRESENTATION;
+}
+
+/** Local path advertised only by sync manifests. */
+export function syncFilePath(
+  post: Pick<Post, "slug" | "representation">,
+): string {
+  const representation = syncFileRepresentation(post);
+  return `posts/${post.slug}${SYNC_FILE_EXTENSIONS[representation]}`;
+}
+
 /**
  * A post's markdown file exactly as GET files/{id} serves it (public canonical
  * URL baked in) plus its content hash, the ETag/If-Match currency.
@@ -111,7 +152,38 @@ export function syncManifestOptions(
   };
 }
 
+export type SyncManifestItem = MarkdownFolderItem & {
+  representation: FileRepresentation;
+};
+
+/**
+ * Add the persisted local representation to a sync manifest without changing
+ * the shared public Markdown manifest renderer.
+ */
+export function renderSyncFolderManifest(
+  blog: Blog,
+  posts: Post[],
+  folder?: Folder,
+) {
+  const manifest = renderFolderManifest(
+    blog,
+    posts,
+    syncManifestOptions(blog, folder),
+  );
+  return {
+    ...manifest,
+    items: manifest.items.map((item, index): SyncManifestItem => {
+      const post = posts[index];
+      return {
+        ...item,
+        file: syncFilePath(post),
+        representation: syncFileRepresentation(post),
+      };
+    }),
+  };
+}
+
 /** One manifest v2 entry for a post, as PUT/POST return it. */
-export function syncManifestItem(blog: Blog, post: Post): MarkdownFolderItem {
-  return renderFolderManifest(blog, [post], syncManifestOptions(blog)).items[0];
+export function syncManifestItem(blog: Blog, post: Post): SyncManifestItem {
+  return renderSyncFolderManifest(blog, [post]).items[0];
 }

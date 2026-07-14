@@ -15,7 +15,13 @@ import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { resolveSyncWorkspace } from "../auth";
 import { recordAction } from "@/lib/audit";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
-import { clientSaveError, syncError, syncManifestItem } from "../sync";
+import {
+  clientSaveError,
+  parseSyncFileRepresentation,
+  syncError,
+  syncManifestItem,
+  WRITE_FILE_REPRESENTATION_HEADER,
+} from "../sync";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +32,16 @@ export async function POST(request: Request) {
   const access = await resolveWorkspaceAccess({ handle: blog.handle, user: workspace });
   if (!access.isOwner) {
     return syncError(403, "You cannot create files in this workspace");
+  }
+
+  const representation = parseSyncFileRepresentation(
+    request.headers.get(WRITE_FILE_REPRESENTATION_HEADER),
+  );
+  if (!representation) {
+    return syncError(
+      400,
+      `${WRITE_FILE_REPRESENTATION_HEADER} must be textbundle, markdown, or text`,
+    );
   }
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
@@ -65,10 +81,16 @@ export async function POST(request: Request) {
   let forcedType: Post["type"] | undefined;
   try {
     if (folderId) {
-      created = await createDraftInFolder(blog.handle, folderId);
+      created = await createDraftInFolder(blog.handle, folderId, {
+        representation,
+      });
       forcedType = created.type; // the folder's kind wins over any frontmatter
     } else {
-      created = await createDraft(blog.handle, parsed.fields.type ?? "article");
+      created = await createDraft(
+        blog.handle,
+        parsed.fields.type ?? "article",
+        { representation },
+      );
     }
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not create the file"));

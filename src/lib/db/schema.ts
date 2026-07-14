@@ -21,6 +21,11 @@ import {
 import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
+export const fileRepresentation = pgEnum("file_representation", [
+  "textbundle",
+  "markdown",
+  "text",
+]);
 // article/project/talk live in the Blog folder; note and bookmark are the
 // item kinds of the Notes and Bookmarks folders (always unlisted).
 export const postType = pgEnum("post_type", [
@@ -268,6 +273,10 @@ export const posts = pgTable(
       .references(() => blogs.id),
     /** owning folder; null only until the backfill/lazy-ensure touches it */
     folderId: uuid("folder_id").references(() => folders.id),
+    /** immutable local file representation selected when the post is created */
+    representation: fileRepresentation("file_representation")
+      .notNull()
+      .default("textbundle"),
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     /** previous public slugs, newest first; maintained atomically by a trigger */

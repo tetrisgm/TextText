@@ -32,6 +32,7 @@ struct WriteItemOpenTarget: Equatable {
 struct ExternalNoteImport: Equatable {
     let title: String
     let body: String
+    let representation: WriteFileRepresentation
     let idempotencyKey: String
 
     var markdown: String {
@@ -79,7 +80,7 @@ enum OpenFileHandler {
         fileProviderIdentifier rawIdentifier: String? = nil
     ) -> WriteItemOpenTarget? {
         guard supportedExtensions.contains(url.pathExtension.lowercased()),
-              let text = try? String(contentsOf: url, encoding: .utf8) else {
+              let text = try? text(at: url) else {
             return nil
         }
         let providerReference = writeFileProviderReference(rawIdentifier)
@@ -104,7 +105,7 @@ enum OpenFileHandler {
     }
 
     static func externalNoteImport(for url: URL) throws -> ExternalNoteImport {
-        let text = try String(contentsOf: url, encoding: .utf8)
+        let text = try text(at: url)
         let parsed = WriteMarkdownPreviewRenderer.parse(text)
         let title = nonempty(parsed.frontMatter["title"])
             ?? url.deletingPathExtension().lastPathComponent
@@ -115,6 +116,8 @@ enum OpenFileHandler {
         return ExternalNoteImport(
             title: title,
             body: body,
+            representation: WriteFileRepresentation.inferred(
+                fromFilename: url.lastPathComponent) ?? .markdown,
             idempotencyKey: "external-file:\(fingerprint)"
         )
     }
@@ -136,7 +139,21 @@ enum OpenFileHandler {
     }
 
     private static let markdownType = UTType(importedAs: "net.daringfireball.markdown")
-    private static let supportedExtensions: Set<String> = ["md", "markdown", "txt"]
+    private static let supportedExtensions: Set<String> = [
+        "md", "markdown", "txt", "textbundle",
+    ]
+
+    private static func text(at url: URL) throws -> String {
+        guard url.pathExtension.lowercased() == "textbundle" else {
+            return try String(contentsOf: url, encoding: .utf8)
+        }
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WriteOpenFile", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: temporaryDirectory, withIntermediateDirectories: true)
+        return try WriteTextBundlePackage.read(
+            from: url, in: temporaryDirectory).markdown
+    }
 
     private static func writeFileProviderReference(
         _ rawIdentifier: String?

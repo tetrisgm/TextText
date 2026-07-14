@@ -194,13 +194,17 @@ paths:
       tags:
         - Files
       operationId: createFile
-      summary: Create a markdown file
+      summary: Create a file
       description: |
         Creates an item from a whole markdown file and returns its manifest
         entry. Agents should create public writing as drafts by sending
         status: draft in the markdown frontmatter unless the owner explicitly
         asks to publish. Notes and bookmarks are always kept unlisted by the
-        server.
+        server. Write-File-Representation selects the immutable local file
+        representation. For compatibility with clients that predate the
+        header, an omitted header creates a markdown representation.
+      parameters:
+        - $ref: "#/components/parameters/WriteFileRepresentation"
       requestBody:
         required: true
         content:
@@ -327,6 +331,78 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /files/{postId}/artifacts:
+    get:
+      tags:
+        - Files
+      operationId: listFileArtifacts
+      summary: List inline document assets
+      description: |
+        Returns the Write-hosted image URLs referenced by this item's Markdown,
+        plus saved inline bookmark capture assets. The manifest is available for
+        every item kind. Screenshot and screenshot-tile capture artifacts are
+        excluded. fileHash is the hash of the unchanged canonical Markdown file.
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Deterministic inline asset manifest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentArtifactManifest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /files/{postId}/assets:
+    post:
+      tags:
+        - Files
+      operationId: uploadFileAsset
+      summary: Upload an immutable document asset
+      description: |
+        Uploads one image or video of at most 50 MB for an editable item. The
+        returned URL can then be placed in the Markdown with a separate file
+        update. Uploading an asset does not change the item's body, revision, or
+        file hash.
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DocumentAssetUploadRequest"
+      responses:
+        "201":
+          description: Immutable asset uploaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentAssetUploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -487,6 +563,15 @@ components:
       schema:
         type: string
       example: '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+    WriteFileRepresentation:
+      name: Write-File-Representation
+      in: header
+      required: false
+      description: |
+        Immutable local representation for the new file. Omit only for legacy
+        behavior, which creates markdown.
+      schema:
+        $ref: "#/components/schemas/FileRepresentation"
 
   headers:
     ETag:
@@ -568,7 +653,19 @@ components:
           example:
             error: If-Match header is required
     PayloadTooLarge:
-      description: The uploaded capture artifact or readable extraction is too large.
+      description: The uploaded file or readable extraction is too large.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnsupportedMediaType:
+      description: The request is not multipart data or the file is not an image or video.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Required storage is not configured or currently available.
       content:
         application/json:
           schema:
@@ -768,6 +865,7 @@ components:
       additionalProperties: false
       required:
         - file
+        - representation
         - kind
         - slug
         - title
@@ -776,8 +874,12 @@ components:
       properties:
         file:
           type: string
-          description: Local markdown file path used by sync clients.
-          example: posts/hello-world.md
+          description: |
+            Local sync path. The extension follows representation:
+            .textbundle, .md, or .txt.
+          example: posts/hello-world.textbundle
+        representation:
+          $ref: "#/components/schemas/FileRepresentation"
         kind:
           $ref: "#/components/schemas/MarkdownItemKind"
         slug:
@@ -819,6 +921,14 @@ components:
         - note
         - bookmark
 
+    FileRepresentation:
+      type: string
+      description: Immutable local file representation selected at creation.
+      enum:
+        - textbundle
+        - markdown
+        - text
+
     PostStatus:
       type: string
       enum:
@@ -847,6 +957,75 @@ components:
       properties:
         item:
           $ref: "#/components/schemas/ManifestItem"
+
+    DocumentArtifactManifest:
+      type: object
+      additionalProperties: false
+      required:
+        - postId
+        - slug
+        - fileHash
+        - artifacts
+      properties:
+        postId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        fileHash:
+          $ref: "#/components/schemas/Sha256Hash"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentArtifact"
+
+    DocumentArtifact:
+      type: object
+      additionalProperties: false
+      required:
+        - filename
+        - role
+        - url
+      properties:
+        filename:
+          type: string
+          description: Deterministic, path-safe filename unique within this manifest.
+          maxLength: 240
+          pattern: ^[a-z0-9][a-z0-9.-]*$
+        role:
+          type: string
+          enum:
+            - asset
+        url:
+          type: string
+          format: uri
+        originalURL:
+          type: string
+          format: uri
+          description: Original remote URL, when retained by bookmark capture metadata.
+        contentType:
+          type: string
+
+    DocumentAssetUploadRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          format: binary
+          maxLength: 52428800
+          description: One image or video, at most 50 MB.
+
+    DocumentAssetUploadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact
+      properties:
+        artifact:
+          $ref: "#/components/schemas/DocumentArtifact"
 
     ChangesResponse:
       type: object

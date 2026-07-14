@@ -5,8 +5,9 @@ final class FileProviderStatusMonitorTests: XCTestCase {
     func testFileProviderSchemaReimportOnlyRunsForOlderSchemas() {
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 0))
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 1))
-        XCTAssertFalse(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 2))
-        XCTAssertFalse(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 3))
+        XCTAssertTrue(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 5))
+        XCTAssertFalse(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 6))
+        XCTAssertFalse(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 7))
     }
 
     func testUnavailableStateExplainsHowToReconnectFinder() {

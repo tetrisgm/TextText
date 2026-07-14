@@ -58,6 +58,30 @@
 			</dict>
 		</array>
 	</dict>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>TextBundle document</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.textbundle.package</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>textbundle</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.textbundle</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 	<key>WriteAppGroupIdentifier</key>
 	<string>WRITE_APP_GROUP</string>
 	<key>WriteKeychainAccessGroup</key>

@@ -12,6 +12,7 @@ private final class FakeAPI: WriteSyncAPI, @unchecked Sendable {
     var manifests: [String: [WriteManifestItem]]
     var cursor: String
     var failManifest: WriteSyncError?
+    var artifactManifests: [String: WriteArtifactManifest] = [:]
 
     init(workspace: WriteWorkspace, manifests: [String: [WriteManifestItem]], cursor: String = "c0") {
         self.workspaceValue = workspace
@@ -24,6 +25,11 @@ private final class FakeAPI: WriteSyncAPI, @unchecked Sendable {
         return .success(manifests[folderId] ?? [])
     }
     func fileText(postId: String) async -> Result<WriteFileContent, WriteSyncError> { .failure(.notFound) }
+    func documentArtifacts(
+        postId: String
+    ) async -> Result<WriteArtifactManifest, WriteSyncError> {
+        artifactManifests[postId].map(Result.success) ?? .failure(.notFound)
+    }
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError> {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
     }
@@ -159,7 +165,12 @@ final class EnumeratorAdapterTests: XCTestCase {
         let listObs = EnumObserver(listExp)
         renamed.enumerateItems(for: listObs, startingAt: NSFileProviderPage(Data()))
         wait(for: [listExp], timeout: 5)
-        XCTAssertEqual(listObs.items.first?.filename, "New Name")
+        XCTAssertEqual(
+            listObs.items.first { $0.itemIdentifier.rawValue == "workspace:demo" }?.filename,
+            "New Name")
+        XCTAssertEqual(
+            listObs.items.first { $0.itemIdentifier.rawValue == "write-data" }?.filename,
+            "Data")
     }
 
     func testDirectWorkspaceLookupUsesTheEnumeratedCollisionName() {
@@ -175,6 +186,34 @@ final class EnumeratorAdapterTests: XCTestCase {
             enumerated.first { $0.identifier == .workspace("two") }?.filename
         )
         XCTAssertEqual(direct?.filename, "Shared [two]")
+    }
+
+    func testCentralAttachmentsListsOnlyPlainDocumentsWithValidatedAssets() async throws {
+        let api = standardAPI()
+        let assetURL =
+            "https://write.public.blob.vercel-storage.com/documents/demo/n1/assets/photo.png"
+        api.artifactManifests["n1"] = WriteArtifactManifest(
+            postId: "n1", slug: "idea", fileHash: "h",
+            artifacts: [WriteArtifact(
+                filename: "photo.png", role: "asset", url: assetURL,
+                contentType: "image/png")])
+        let descriptors = [FileProviderWorkspace(
+            name: "Demo", handle: "demo", origin: "o", token: "t")]
+        let workspace = CentralAttachmentsEnumerator(
+            container: .attachmentWorkspace("demo"), descriptors: descriptors,
+            apiFactory: { _ in api })
+
+        let documents = try await workspace.items().get()
+        let document = try XCTUnwrap(documents.first)
+        XCTAssertEqual(document.identifier, .attachmentItem(handle: "demo", id: "n1"))
+        XCTAssertEqual(document.parentIdentifier, .attachmentWorkspace("demo"))
+
+        let files = CentralAttachmentsEnumerator(
+            container: document.identifier, descriptors: descriptors,
+            apiFactory: { _ in api })
+        let assets = try await files.items().get()
+        XCTAssertEqual(assets.map(\.filename), ["photo.png"])
+        XCTAssertEqual(assets.first?.manifestURL, assetURL)
     }
 
     func testEnumerationErrorFinishesWithError() {

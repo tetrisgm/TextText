@@ -5,6 +5,20 @@ import UniformTypeIdentifiers
 @testable import WriteFileProviderKit
 @testable import WriteFileProviderBridge
 
+private final class ReimportTemplateItem: NSObject, NSFileProviderItem {
+    let itemIdentifier: NSFileProviderItemIdentifier
+    let parentItemIdentifier: NSFileProviderItemIdentifier
+    let filename: String
+    let contentType: UTType
+
+    init(id: String, parent: String, filename: String, contentType: UTType) {
+        itemIdentifier = NSFileProviderItemIdentifier(rawValue: id)
+        parentItemIdentifier = NSFileProviderItemIdentifier(rawValue: parent)
+        self.filename = filename
+        self.contentType = contentType
+    }
+}
+
 final class FileProviderExtensionTests: XCTestCase {
 
     private func ext(
@@ -50,6 +64,34 @@ final class FileProviderExtensionTests: XCTestCase {
         return url
     }
 
+    private func textBundle(
+        in directory: URL, filename: String = "Draft.textbundle",
+        markdown: String, assets: [String: Data]
+    ) throws -> URL {
+        let package = directory.appendingPathComponent(filename, isDirectory: true)
+        let assetDirectory = package.appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: assetDirectory, withIntermediateDirectories: true)
+        try Data(markdown.utf8).write(to: package.appendingPathComponent("text.md"))
+        try JSONEncoder().encode(WriteTextBundleInfo()).write(
+            to: package.appendingPathComponent("info.json"))
+        for (name, data) in assets {
+            try data.write(to: assetDirectory.appendingPathComponent(name))
+        }
+        return package
+    }
+
+    private func textBundleTemplate(
+        id: String = "tmp", filename: String = "My Note.textbundle"
+    ) throws -> WriteFileProviderItem {
+        let entry = Fixtures.item(
+            id: id, file: filename, kind: "note", title: "My Note",
+            representation: .textbundle)
+        let item = try XCTUnwrap(WriteItemMapper.item(
+            for: entry, inFolder: "notes", handle: "demo", readOnly: false))
+        return WriteFileProviderItem(item.withFilename(filename))
+    }
+
     private func version(_ hash: String) -> NSFileProviderItemVersion {
         let current = WriteItemMapper.item(
             for: Fixtures.item(
@@ -83,20 +125,21 @@ final class FileProviderExtensionTests: XCTestCase {
 
     private func bookmarkEntry(hash: String = "h1") -> WriteManifestItem {
         Fixtures.item(
-            id: "b1", file: "metroid.md", kind: "bookmark",
-            slug: "metroid?", title: "Metroid", hash: hash)
+            id: "b1", file: "metroid.textbundle", kind: "bookmark",
+            slug: "metroid?", title: "Metroid", hash: hash,
+            representation: .textbundle)
     }
 
     private var bookmarkCaptureURL: String {
         "https://write.public.blob.vercel-storage.com/captures/demo/b1/assets/hero.png"
     }
 
-    private func bookmarkArtifactManifest(
+    private func documentArtifactManifest(
         hash: String = "h1"
-    ) -> WriteBookmarkArtifactManifest {
-        WriteBookmarkArtifactManifest(
+    ) -> WriteArtifactManifest {
+        WriteArtifactManifest(
             postId: "b1", slug: "metroid?", fileHash: hash,
-            artifacts: [WriteBookmarkArtifact(
+            artifacts: [WriteArtifact(
                 filename: "asset-001.png", role: "asset",
                 url: bookmarkCaptureURL, contentType: "image/png")])
     }
@@ -371,7 +414,7 @@ final class FileProviderExtensionTests: XCTestCase {
         let fetchedVersion = try XCTUnwrap(try XCTUnwrap(fetchedItem).itemVersion)
         XCTAssertEqual(
             String(decoding: fetchedVersion.contentVersion, as: UTF8.self),
-            "h2")
+            "native-local-v2:markdown:h2")
     }
 
     func testStrictFetchReportsRequestedRevisionNoLongerAvailable() {
@@ -401,14 +444,17 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(err?.code, NSFileProviderError.versionNoLongerAvailable.rawValue)
     }
 
-    func testBookmarkFetchRewritesOnlyFinderCopyToRelativeAssetURL() throws {
+    func testBookmarkFetchMaterializesOneTextBundleWithCapturedAssets() throws {
         let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
         api.manifests["bookmarks"] = [bookmarkEntry()]
         let canonical = "# Metroid\n\n![Hero](\(bookmarkCaptureURL))"
         api.fileTextResults = [
             .success(WriteFileContent(text: canonical, hash: "h1")),
         ]
-        api.artifactManifests["b1"] = bookmarkArtifactManifest()
+        api.artifactManifests["b1"] = documentArtifactManifest()
+        let png = Data([0x89, 0x50, 0x4E, 0x47])
+        api.artifactContents[bookmarkCaptureURL] = WriteArtifactContent(
+            data: png, contentType: "image/png")
         let directory = tempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let exp = expectation(description: "fetch-bookmark-local-copy")
@@ -424,45 +470,16 @@ final class FileProviderExtensionTests: XCTestCase {
         wait(for: [exp], timeout: 5)
 
         XCTAssertNil(fetchedError)
-        let local = try String(
-            contentsOf: XCTUnwrap(fetchedURL), encoding: .utf8)
-        XCTAssertEqual(
-            local, "# Metroid\n\n![Hero](./metroid~3F.assets/asset-001.png)")
+        let contents = try WriteTextBundlePackage.read(
+            from: XCTUnwrap(fetchedURL), in: directory)
+        XCTAssertEqual(contents.markdown, canonical)
+        XCTAssertEqual(contents.assets.map(\.filename), ["asset-001.png"])
+        XCTAssertEqual(contents.assets.first?.data, png)
         XCTAssertEqual(api.fileTextCalls, 1)
-        XCTAssertEqual(api.bookmarkArtifactCalls, 1)
+        XCTAssertEqual(api.documentArtifactCalls, 1)
+        XCTAssertEqual(api.artifactDataCalls, 1)
         XCTAssertTrue(api.putCalls.isEmpty,
                       "materialization must never mutate canonical server Markdown")
-    }
-
-    func testBookmarkArtifactFetchMaterializesCapturedBytes() throws {
-        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
-        api.artifactManifests["b1"] = bookmarkArtifactManifest()
-        api.artifactContents[bookmarkCaptureURL] = WriteArtifactContent(
-            data: Data([0x89, 0x50, 0x4E, 0x47]), contentType: "image/png")
-        let directory = tempDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let identifier = WriteBookmarkSidecars.assetIdentifier(
-            handle: "demo", postId: "b1", filename: "asset-001.png")
-        let exp = expectation(description: "fetch-bookmark-artifact")
-        var fetchedURL: URL?
-        var fetchedItem: NSFileProviderItem?
-        var fetchedError: Error?
-
-        _ = ext(api, temporaryDirectory: directory).fetchContents(
-            for: NSFileProviderItemIdentifier(rawValue: identifier.rawValue),
-            version: nil, request: NSFileProviderRequest()
-        ) { url, item, error in
-            fetchedURL = url; fetchedItem = item; fetchedError = error; exp.fulfill()
-        }
-        wait(for: [exp], timeout: 5)
-
-        XCTAssertNil(fetchedError)
-        XCTAssertEqual(
-            try Data(contentsOf: XCTUnwrap(fetchedURL)),
-            Data([0x89, 0x50, 0x4E, 0x47]))
-        XCTAssertEqual(fetchedItem?.filename, "asset-001.png")
-        XCTAssertEqual(fetchedItem?.documentSize, 4)
-        XCTAssertEqual(api.artifactDataCalls, 1)
     }
 
     func testFetchCancellationUsesUserCancelledErrorAndCompletesOnce() {
@@ -494,6 +511,89 @@ final class FileProviderExtensionTests: XCTestCase {
 
     // MARK: create
 
+    func testReimportAdoptsWorkspaceByParentAndFilename() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let template = ReimportTemplateItem(
+            id: "restored-disk-workspace",
+            parent: WriteItemIdentifier.rootContainer.rawValue,
+            filename: "Demo", contentType: .folder)
+        let exp = expectation(description: "adopt-workspace")
+        var adopted: NSFileProviderItem?
+        var err: Error?
+
+        _ = ext(api).createItem(
+            basedOn: template, fields: [], contents: nil,
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { item, _, _, error in
+            adopted = item; err = error; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(err)
+        XCTAssertEqual(adopted?.itemIdentifier.rawValue, "workspace:demo")
+        XCTAssertTrue(api.createFolderCalls.isEmpty)
+        XCTAssertTrue(api.createFileCalls.isEmpty)
+    }
+
+    func testReimportAdoptsFolderAndFileByParentAndFilename() {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        let provider = ext(api)
+        let folderTemplate = ReimportTemplateItem(
+            id: "restored-disk-folder", parent: "workspace:demo",
+            filename: "Notes", contentType: .folder)
+        let folderExp = expectation(description: "adopt-folder")
+        var folder: NSFileProviderItem?
+
+        _ = provider.createItem(
+            basedOn: folderTemplate, fields: [], contents: nil,
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { item, _, _, _ in folder = item; folderExp.fulfill() }
+        wait(for: [folderExp], timeout: 5)
+
+        let fileTemplate = ReimportTemplateItem(
+            id: "restored-disk-file", parent: "folder:demo:notes",
+            filename: "a.md", contentType: UTType(filenameExtension: "md")!)
+        let fileExp = expectation(description: "adopt-file")
+        var file: NSFileProviderItem?
+
+        _ = provider.createItem(
+            basedOn: fileTemplate, fields: [], contents: tempFile("old disk body"),
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { item, _, _, _ in file = item; fileExp.fulfill() }
+        wait(for: [fileExp], timeout: 5)
+
+        XCTAssertEqual(folder?.itemIdentifier.rawValue, "folder:demo:notes")
+        XCTAssertEqual(file?.itemIdentifier.rawValue, "file:demo:p1")
+        XCTAssertTrue(api.createFolderCalls.isEmpty)
+        XCTAssertTrue(api.createFileCalls.isEmpty)
+        XCTAssertTrue(api.patchCalls.isEmpty)
+    }
+
+    func testReimportDropsLegacyBookmarkSidecarInsteadOfRepublishingIt() {
+        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
+        let provider = ext(api)
+        let sidecarTemplate = ReimportTemplateItem(
+            id: "restored-sidecar", parent: "folder:demo:bookmarks",
+            filename: "metroid.assets",
+            contentType: .folder)
+        let sidecarExp = expectation(description: "drop-sidecar")
+        var sidecar: NSFileProviderItem?
+        var sidecarError: Error?
+
+        _ = provider.createItem(
+            basedOn: sidecarTemplate, fields: [], contents: nil,
+            options: [.mayAlreadyExist], request: NSFileProviderRequest()
+        ) { item, _, _, error in
+            sidecar = item; sidecarError = error; sidecarExp.fulfill()
+        }
+        wait(for: [sidecarExp], timeout: 5)
+
+        XCTAssertNil(sidecar)
+        XCTAssertNil(sidecarError)
+        XCTAssertTrue(api.createFolderCalls.isEmpty)
+        XCTAssertTrue(api.createFileCalls.isEmpty)
+    }
+
     func testCreateFileCallsCreateFileInParentFolder() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.createFileResult = .success(Fixtures.item(id: "n9", file: "my-note.md", kind: "note", slug: "my-note"))
@@ -507,9 +607,91 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.createFileCalls.count, 1)
         XCTAssertEqual(api.createFileCalls.first?.folderId, "notes")
         XCTAssertEqual(api.createFileCalls.first?.body, "hello")
+        XCTAssertEqual(api.createFileCalls.first?.representation, .markdown)
         // The template's stable identifier is the idempotency key, so a retried
         // create returns the original item instead of a duplicate.
         XCTAssertEqual(api.createFileCalls.first?.idempotencyKey, "file:demo:tmp")
+    }
+
+    func testCreateTextBundleUploadsAssetsBeforeCommittingMarkdown() throws {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.createFileResult = .success(Fixtures.item(
+            id: "n9", file: "my-note.textbundle", kind: "note",
+            title: "My Note", hash: "h0", representation: .textbundle))
+        let uploadedURL =
+            "https://write.public.blob.vercel-storage.com/documents/demo/n9/assets/photo.png"
+        api.uploadAssetResult = .success(WriteArtifact(
+            filename: "photo.png", role: "asset", url: uploadedURL,
+            contentType: "image/png"))
+        api.putResult = .success(Fixtures.item(
+            id: "n9", file: "my-note.textbundle", kind: "note",
+            title: "My Note", hash: "h1", representation: .textbundle))
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = Data([0x89, 0x50, 0x4e, 0x47])
+        let package = try textBundle(
+            in: directory, filename: "My Note.textbundle",
+            markdown: "# My Note\n\n![Photo](assets/photo.png)",
+            assets: ["photo.png": image])
+        let exp = expectation(description: "create-textbundle")
+        var returnedError: NSError?
+
+        _ = ext(api, temporaryDirectory: directory).createItem(
+            basedOn: try textBundleTemplate(), fields: [.contents],
+            contents: package, options: [], request: NSFileProviderRequest()
+        ) { _, _, _, error in
+            returnedError = error as NSError?
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(returnedError)
+        XCTAssertEqual(api.createFileCalls.first?.body, "")
+        XCTAssertEqual(api.createFileCalls.first?.representation, .textbundle)
+        XCTAssertEqual(api.uploadAssetCalls.first?.postId, "n9")
+        XCTAssertEqual(api.uploadAssetCalls.first?.filename, "photo.png")
+        XCTAssertEqual(api.uploadAssetCalls.first?.data, image)
+        XCTAssertEqual(
+            api.putCalls.first?.body,
+            "# My Note\n\n![Photo](\(uploadedURL))")
+        XCTAssertEqual(api.putCalls.first?.hash, "h0")
+        XCTAssertEqual(api.writeOperations, ["create", "upload:photo.png", "put"])
+        XCTAssertTrue(api.deleteCalls.isEmpty)
+    }
+
+    func testCreateTextBundleRollsBackEmptyItemWhenMarkdownCommitFails() throws {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.createFileResult = .success(Fixtures.item(
+            id: "n9", file: "untitled.textbundle", kind: "note",
+            title: "", hash: "h0", representation: .textbundle))
+        let uploadedURL =
+            "https://write.public.blob.vercel-storage.com/documents/demo/n9/assets/photo.png"
+        api.uploadAssetResult = .success(WriteArtifact(
+            filename: "photo.png", role: "asset", url: uploadedURL,
+            contentType: "image/png"))
+        api.putResult = .failure(.network("commit failed"))
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let package = try textBundle(
+            in: directory, markdown: "![Photo](assets/photo.png)",
+            assets: ["photo.png": Data([0x89, 0x50, 0x4e, 0x47])])
+        let exp = expectation(description: "create-textbundle-rollback")
+        var returnedError: NSError?
+
+        _ = ext(api, temporaryDirectory: directory).createItem(
+            basedOn: try textBundleTemplate(), fields: [.contents],
+            contents: package, options: [], request: NSFileProviderRequest()
+        ) { _, _, _, error in
+            returnedError = error as NSError?
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNotNil(returnedError)
+        XCTAssertEqual(api.writeOperations, ["create", "upload:photo.png", "put"])
+        XCTAssertEqual(api.deleteCalls, ["n9"])
+        XCTAssertEqual(api.deleteIfMatchCalls, ["h0"])
+        XCTAssertTrue(api.patchCalls.isEmpty)
     }
 
     func testCreateFileTitlesTheNewPostFromTheFilename() {
@@ -626,20 +808,27 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.putCalls.first?.hash, "basehash")
     }
 
-    func testBookmarkEditRestoresCanonicalAssetURLBeforeUpload() {
+    func testTextBundleEditKeepsUnchangedAssetURLWithoutUploadingAgain() throws {
         let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
         let entry = bookmarkEntry()
         api.manifests["bookmarks"] = [entry]
-        api.artifactManifests["b1"] = bookmarkArtifactManifest()
         api.putResult = .success(bookmarkEntry(hash: "h2"))
         let item = WriteItemMapper.item(
             for: entry, inFolder: "bookmarks", handle: "demo", readOnly: false)!
-        let local = "# Metroid\n\n![Hero](./metroid~3F.assets/asset-001.png)"
-        let exp = expectation(description: "put-bookmark-canonical-copy")
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let png = Data([0x89, 0x50, 0x4e, 0x47])
+        let package = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: "# Metroid\n\n![Hero](\(bookmarkCaptureURL))",
+            assets: [.init(
+                filename: "asset-001.png", data: png,
+                remoteURL: bookmarkCaptureURL, contentType: "image/png")],
+            sourceURL: nil, in: directory)
+        let exp = expectation(description: "put-package-canonical-copy")
 
-        _ = ext(api).modifyItem(
+        _ = ext(api, temporaryDirectory: directory).modifyItem(
             WriteFileProviderItem(item), baseVersion: version(item),
-            changedFields: [.contents], contents: tempFile(local), options: [],
+            changedFields: [.contents], contents: package.url, options: [],
             request: NSFileProviderRequest()
         ) { _, _, _, _ in exp.fulfill() }
         wait(for: [exp], timeout: 5)
@@ -650,7 +839,48 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(
             api.putCalls.first?.body,
             "# Metroid\n\n![Hero](\(bookmarkCaptureURL))")
-        XCTAssertEqual(api.bookmarkArtifactCalls, 1)
+        XCTAssertTrue(api.uploadAssetCalls.isEmpty)
+        XCTAssertEqual(api.writeOperations, ["put"])
+    }
+
+    func testTextBundleEditUploadsNewAssetBeforeMarkdownRevision() throws {
+        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
+        let entry = bookmarkEntry()
+        api.manifests["bookmarks"] = [entry]
+        let uploadedURL =
+            "https://write.public.blob.vercel-storage.com/documents/demo/b1/assets/new.png"
+        api.uploadAssetResult = .success(WriteArtifact(
+            filename: "new.png", role: "asset", url: uploadedURL,
+            contentType: "image/png"))
+        api.putResult = .success(bookmarkEntry(hash: "h2"))
+        let item = try XCTUnwrap(WriteItemMapper.item(
+            for: entry, inFolder: "bookmarks", handle: "demo", readOnly: false))
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let package = directory.appendingPathComponent("Metroid.textbundle", isDirectory: true)
+        let assets = package.appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: assets, withIntermediateDirectories: true)
+        try Data("# Metroid\n\n![New](assets/new.png)".utf8).write(
+            to: package.appendingPathComponent("text.md"))
+        try JSONEncoder().encode(WriteTextBundleInfo()).write(
+            to: package.appendingPathComponent("info.json"))
+        let png = Data([0x89, 0x50, 0x4e, 0x47, 0x0d])
+        try png.write(to: assets.appendingPathComponent("new.png"))
+        let exp = expectation(description: "upload-package-asset")
+
+        _ = ext(api, temporaryDirectory: directory).modifyItem(
+            WriteFileProviderItem(item), baseVersion: version(item),
+            changedFields: [.contents], contents: package, options: [],
+            request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(api.uploadAssetCalls.first?.postId, "b1")
+        XCTAssertEqual(api.uploadAssetCalls.first?.filename, "new.png")
+        XCTAssertEqual(api.uploadAssetCalls.first?.data, png)
+        XCTAssertEqual(api.putCalls.first?.body, "# Metroid\n\n![New](\(uploadedURL))")
+        XCTAssertEqual(api.writeOperations, ["upload:new.png", "put"])
     }
 
     func testModifyContentsWithoutReadableURLFailsWithoutUploadingEmptyText() {
@@ -818,7 +1048,7 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(result?.filename, "a.md")
         XCTAssertEqual(
             String(decoding: try XCTUnwrap(result?.itemVersion?.contentVersion), as: UTF8.self),
-            "puthash")
+            "native-local-v2:markdown:puthash")
         XCTAssertEqual(api.putCalls.count, 1)
         XCTAssertEqual(api.patchCalls.count, 1)
     }

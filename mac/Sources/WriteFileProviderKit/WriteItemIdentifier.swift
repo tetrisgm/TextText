@@ -19,6 +19,16 @@ public enum WriteItemIdentifier: Hashable, Sendable {
     case workingSet
     /// The trash. Write soft-deletes; this is where evicted items surface.
     case trashContainer
+    /// Write-owned auxiliary data, kept separate from user content folders.
+    case dataContainer
+    /// Central attachments for imported plain Markdown/text files.
+    case attachmentsContainer
+    /// One workspace inside Data/Attachments.
+    case attachmentWorkspace(String)
+    /// One imported plain document's attachment container.
+    case attachmentItem(handle: String, id: String)
+    /// One immutable attachment referenced by an imported plain document.
+    case attachmentFile(handle: String, id: String, filename: String)
     /// A workspace container (server workspace handle); its children are that
     /// workspace's top-level system folders.
     case workspace(String)
@@ -37,12 +47,25 @@ public enum WriteItemIdentifier: Hashable, Sendable {
     static let workspacePrefix = "workspace:"
     static let folderPrefix = "folder:"
     static let filePrefix = "file:"
+    static let dataRaw = "write-data"
+    static let attachmentsRaw = "write-attachments"
+    static let attachmentWorkspacePrefix = "attachment-workspace:"
+    static let attachmentItemPrefix = "attachment-item:"
+    static let attachmentFilePrefix = "attachment-file:"
 
     public var rawValue: String {
         switch self {
         case .rootContainer: return Self.rootRaw
         case .workingSet: return Self.workingSetRaw
         case .trashContainer: return Self.trashRaw
+        case .dataContainer: return Self.dataRaw
+        case .attachmentsContainer: return Self.attachmentsRaw
+        case .attachmentWorkspace(let handle):
+            return Self.attachmentWorkspacePrefix + Self.token(handle)
+        case .attachmentItem(let handle, let id):
+            return Self.attachmentItemPrefix + Self.tokens([handle, id])
+        case .attachmentFile(let handle, let id, let filename):
+            return Self.attachmentFilePrefix + Self.tokens([handle, id, filename])
         case .workspace(let handle): return Self.workspacePrefix + handle
         case .folder(let handle, let id): return Self.folderPrefix + handle + ":" + id
         case .file(let handle, let id): return Self.filePrefix + handle + ":" + id
@@ -54,6 +77,8 @@ public enum WriteItemIdentifier: Hashable, Sendable {
         case Self.rootRaw: self = .rootContainer
         case Self.workingSetRaw: self = .workingSet
         case Self.trashRaw: self = .trashContainer
+        case Self.dataRaw: self = .dataContainer
+        case Self.attachmentsRaw: self = .attachmentsContainer
         default:
             if rawValue.hasPrefix(Self.workspacePrefix) {
                 let handle = String(rawValue.dropFirst(Self.workspacePrefix.count))
@@ -67,6 +92,19 @@ public enum WriteItemIdentifier: Hashable, Sendable {
                 guard let (h, id) = Self.split(rawValue.dropFirst(Self.filePrefix.count))
                 else { return nil }
                 self = .file(handle: h, id: id)
+            } else if rawValue.hasPrefix(Self.attachmentWorkspacePrefix) {
+                let raw = String(rawValue.dropFirst(Self.attachmentWorkspacePrefix.count))
+                guard let handle = Self.value(from: raw) else { return nil }
+                self = .attachmentWorkspace(handle)
+            } else if rawValue.hasPrefix(Self.attachmentItemPrefix) {
+                let raw = String(rawValue.dropFirst(Self.attachmentItemPrefix.count))
+                guard let values = Self.values(from: raw, count: 2) else { return nil }
+                self = .attachmentItem(handle: values[0], id: values[1])
+            } else if rawValue.hasPrefix(Self.attachmentFilePrefix) {
+                let raw = String(rawValue.dropFirst(Self.attachmentFilePrefix.count))
+                guard let values = Self.values(from: raw, count: 3) else { return nil }
+                self = .attachmentFile(
+                    handle: values[0], id: values[1], filename: values[2])
             } else {
                 return nil
             }
@@ -84,12 +122,43 @@ public enum WriteItemIdentifier: Hashable, Sendable {
         return (handle, id)
     }
 
+    private static func token(_ value: String) -> String {
+        Data(value.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func tokens(_ values: [String]) -> String {
+        values.map(token).joined(separator: ".")
+    }
+
+    private static func value(from token: String) -> String? {
+        var base64 = token
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        guard let data = Data(base64Encoded: base64),
+              let value = String(data: data, encoding: .utf8),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
+    private static func values(from raw: String, count: Int) -> [String]? {
+        let parts = raw.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == count else { return nil }
+        let decoded = parts.compactMap { value(from: String($0)) }
+        return decoded.count == count ? decoded : nil
+    }
+
     /// True for containers the enumerator can list children of.
     public var isContainer: Bool {
         switch self {
-        case .rootContainer, .workingSet, .trashContainer, .workspace, .folder:
+        case .rootContainer, .workingSet, .trashContainer, .dataContainer,
+             .attachmentsContainer, .attachmentWorkspace, .attachmentItem,
+             .workspace, .folder:
             return true
-        case .file:
+        case .file, .attachmentFile:
             return false
         }
     }
@@ -98,8 +167,11 @@ public enum WriteItemIdentifier: Hashable, Sendable {
     /// global containers. The extension uses it to select the workspace token.
     public var workspaceHandle: String? {
         switch self {
-        case .workspace(let h), .folder(let h, _), .file(let h, _): return h
-        case .rootContainer, .workingSet, .trashContainer: return nil
+        case .workspace(let h), .folder(let h, _), .file(let h, _),
+             .attachmentWorkspace(let h), .attachmentItem(let h, _),
+             .attachmentFile(let h, _, _): return h
+        case .rootContainer, .workingSet, .trashContainer, .dataContainer,
+             .attachmentsContainer: return nil
         }
     }
 }

@@ -59,96 +59,16 @@ final class WorkspaceEnumeratorTests: XCTestCase {
         XCTAssertEqual(api.fileTextCalls, 0)
     }
 
-    func testBookmarkListsDeterministicReadOnlySidecarAndArtifacts() async {
+    func testBookmarkListsOneFileWithoutVisibleAssetSidecars() async {
         let api = Fixtures.standardWorkspace()
-        let imageURL =
-            "https://write.public.blob.vercel-storage.com/captures/demo/b1/assets/hero.png"
-        api.artifactManifests["b1"] = WriteBookmarkArtifactManifest(
-            postId: "b1", slug: "link", fileHash: "h",
-            artifacts: [WriteBookmarkArtifact(
-                filename: "asset-001.png", role: "asset", url: imageURL,
-                contentType: "image/png")])
         let e = enumr(api, readOnly: false)
-        let sidecarID = WriteBookmarkSidecars.folderIdentifier(
-            handle: "demo", postId: "b1")
 
-        guard case .success(let bookmarkChildren) = await e.children(
-            of: F("bookmarks")
-        ), let sidecar = bookmarkChildren.first(where: {
-            $0.identifier == sidecarID
-        }) else {
-            return XCTFail("bookmark sidecar was not listed")
+        guard case .success(let children) = await e.children(of: F("bookmarks")) else {
+            return XCTFail("bookmark enumeration failed")
         }
-        XCTAssertEqual(sidecar.filename, "link.assets")
-        XCTAssertEqual(sidecar.capabilities, .readOnlyFolder)
-        XCTAssertEqual(api.bookmarkArtifactCalls, 0,
-                       "listing bookmarks must not download artifact metadata")
-
-        guard case .success(let artifacts) = await e.children(of: sidecarID),
-              let artifact = artifacts.first else {
-            return XCTFail("bookmark artifacts were not listed")
-        }
-        XCTAssertEqual(artifacts.count, 1)
-        XCTAssertEqual(artifact.filename, "asset-001.png")
-        XCTAssertEqual(artifact.parentIdentifier, sidecarID)
-        XCTAssertEqual(artifact.typeIdentifier, "public.image")
-        XCTAssertEqual(artifact.capabilities, .readOnlyFile)
-        XCTAssertEqual(api.bookmarkArtifactCalls, 1)
-    }
-
-    func testRemovedBookmarkArtifactExpiresAnchorAndDisappearsFromRelist() async {
-        let api = Fixtures.standardWorkspace()
-        let firstURL =
-            "https://write.public.blob.vercel-storage.com/captures/demo/b1/assets/one.png"
-        let staleURL =
-            "https://write.public.blob.vercel-storage.com/captures/demo/b1/assets/stale.png"
-        let sidecarID = WriteBookmarkSidecars.folderIdentifier(
-            handle: "demo", postId: "b1")
-        let first = WriteBookmarkArtifact(
-            filename: "asset-001.png", role: "asset", url: firstURL)
-        let stale = WriteBookmarkArtifact(
-            filename: "asset-002.png", role: "asset", url: staleURL)
-        api.artifactManifests["b1"] = WriteBookmarkArtifactManifest(
-            postId: "b1", slug: "link", fileHash: "h", artifacts: [first, stale])
-        let e = enumr(api)
-
-        guard case .success(let oldAnchor) = await e.containerAnchor(for: sidecarID)
-        else { return XCTFail("initial sidecar anchor failed") }
-
-        api.artifactManifests["b1"] = WriteBookmarkArtifactManifest(
-            postId: "b1", slug: "link", fileHash: "h2", artifacts: [first])
-
-        guard case .success(let newAnchor) = await e.containerAnchor(for: sidecarID),
-              case .success(let children) = await e.children(of: sidecarID) else {
-            return XCTFail("updated sidecar enumeration failed")
-        }
-        XCTAssertNotEqual(oldAnchor, newAnchor,
-                          "File Provider must full-reconcile removed sidecars")
-        XCTAssertEqual(children.map(\.filename), ["asset-001.png"])
-        XCTAssertFalse(children.contains { $0.filename == "asset-002.png" })
-    }
-
-    func testRemovedBookmarkDropsMarkdownAndSidecarFromParentRelist() async {
-        let api = Fixtures.standardWorkspace()
-        let e = enumr(api)
-        let sidecarID = WriteBookmarkSidecars.folderIdentifier(
-            handle: "demo", postId: "b1")
-
-        guard case .success(let oldAnchor) = await e.containerAnchor(
-            for: F("bookmarks")) else {
-            return XCTFail("initial bookmarks anchor failed")
-        }
-        api.manifests["bookmarks"] = []
-
-        guard case .success(let newAnchor) = await e.containerAnchor(
-            for: F("bookmarks")),
-              case .success(let children) = await e.children(
-                of: F("bookmarks")) else {
-            return XCTFail("updated bookmarks enumeration failed")
-        }
-        XCTAssertNotEqual(oldAnchor, newAnchor)
-        XCTAssertFalse(children.contains { $0.identifier == FI("b1") })
-        XCTAssertFalse(children.contains { $0.identifier == sidecarID })
+        XCTAssertEqual(children.map(\.identifier), [FI("b1")])
+        XCTAssertTrue(children.allSatisfy { !$0.isFolder })
+        XCTAssertEqual(api.documentArtifactCalls, 0)
     }
 
     func testUnknownFolderIsNotFound() async {

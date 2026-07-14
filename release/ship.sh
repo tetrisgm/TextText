@@ -120,7 +120,9 @@ if [ "$NO_PUBLISH" = "1" ]; then
   exit 0
 fi
 
-echo ">> migrate database"
+echo ">> migrate database: file representation"
+node "$ROOT/scripts/migrate-add-file-representation.mjs"
+echo ">> migrate database: slug history"
 node "$ROOT/scripts/migrate-add-slug-history.mjs"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then

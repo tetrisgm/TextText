@@ -35,14 +35,19 @@ public protocol WriteSyncAPI: Sendable {
     func manifest(folderId: String) async -> Result<[WriteManifestItem], WriteSyncError>
     /// GET /api/sync/v1/files/{id}
     func fileText(postId: String) async -> Result<WriteFileContent, WriteSyncError>
-    /// GET /api/sync/v1/files/{id}/artifacts. Only Write-hosted bookmark
-    /// capture binaries are returned by this endpoint.
-    func bookmarkArtifacts(postId: String) async
-        -> Result<WriteBookmarkArtifactManifest, WriteSyncError>
-    /// Download one URL returned by `bookmarkArtifacts`. Implementations must
+    /// GET /api/sync/v1/files/{id}/artifacts. Only immutable binaries referenced
+    /// by this document are returned by this endpoint.
+    func documentArtifacts(postId: String) async
+        -> Result<WriteArtifactManifest, WriteSyncError>
+    /// Download one URL returned by `documentArtifacts`. Implementations must
     /// reject arbitrary remote URLs rather than turning File Provider into a
     /// general-purpose downloader.
     func artifactData(url: URL) async -> Result<WriteArtifactContent, WriteSyncError>
+    /// POST /api/sync/v1/files/{id}/assets. Upload one immutable package asset;
+    /// the caller commits its returned URL in a later content PUT.
+    func uploadAsset(
+        postId: String, filename: String, data: Data, contentType: String?
+    ) async -> Result<WriteArtifact, WriteSyncError>
     /// GET /api/sync/v1/changes?cursor=&wait= . `cursor == nil` returns the
     /// current cursor immediately; a cursor with `wait > 0` long-polls.
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError>
@@ -52,6 +57,12 @@ public protocol WriteSyncAPI: Sendable {
     /// directly into that folder (its mode dictates the kind). A stable
     /// `idempotencyKey` (sent as Idempotency-Key) makes a lost-response retry
     /// return the original item instead of creating a duplicate.
+    func createFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError>
+    /// Legacy create entry point retained while older extension/test clients
+    /// roll forward. Its representation is always Markdown.
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async
         -> Result<WriteManifestItem, WriteSyncError>
     /// PUT /api/sync/v1/files/{id} with If-Match: a content edit.
@@ -80,15 +91,43 @@ public protocol WriteSyncAPI: Sendable {
         -> Result<WriteWorkspaceBlog, WriteSyncError>
 }
 
-/// Defaults keep small test and bridge fakes source-compatible. Production and
-/// sidecar-aware tests override both methods.
+/// Defaults keep older conformers and small test fakes source-compatible while
+/// clients roll onto representation-aware creates and document packages.
 public extension WriteSyncAPI {
-    func bookmarkArtifacts(postId: String) async
-        -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
+    /// Old conformers remain valid and treat representation-aware calls as the
+    /// pre-contract Markdown create until they implement the new requirement.
+    func createFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await createFile(
+            body: body, folderId: folderId, idempotencyKey: idempotencyKey)
+    }
+
+    /// Alternate label order for consumers that determine representation before
+    /// resolving the destination folder.
+    func createFile(
+        body: String, representation: WriteFileRepresentation, folderId: String?,
+        idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await createFile(
+            body: body, folderId: folderId, representation: representation,
+            idempotencyKey: idempotencyKey)
+    }
+
+    func documentArtifacts(postId: String) async
+        -> Result<WriteArtifactManifest, WriteSyncError> {
         .failure(.notFound)
     }
 
     func artifactData(url: URL) async -> Result<WriteArtifactContent, WriteSyncError> {
         .failure(.rejected("Artifact downloads are not supported"))
     }
+
+    func uploadAsset(
+        postId: String, filename: String, data: Data, contentType: String?
+    ) async -> Result<WriteArtifact, WriteSyncError> {
+        .failure(.rejected("Artifact uploads are not supported"))
+    }
+
 }

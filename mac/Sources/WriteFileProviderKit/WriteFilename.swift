@@ -16,6 +16,10 @@ public enum WriteStableDigest {
     public static func sha256Hex(_ value: String) -> String {
         sha256(value).map { String(format: "%02x", $0) }.joined()
     }
+
+    public static func sha256Hex(_ data: Data) -> String {
+        sha256(data).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 /// The reversible, portable mapping between Write titles and Finder path
@@ -27,7 +31,6 @@ public enum WriteFilename {
 
     private static let escapeMarker: UnicodeScalar = "~"
     private static let hex = Array("0123456789ABCDEF".utf8)
-    private static let markdownExtension = ".md"
     // `~` is always escaped in user input, so this can never be confused with
     // an exactly reversible component emitted by the normal codec.
     private static let boundedMarker = "~L"
@@ -82,7 +85,7 @@ public enum WriteFilename {
     }
 
     /// Encode a component while reserving enough of the 255-byte filesystem
-    /// budget for a fixed suffix such as `.assets`.
+    /// budget for a fixed extension or collision suffix.
     public static func encodeComponent(_ value: String, appending suffix: String) -> String {
         let normalized = value.precomposedStringWithCanonicalMapping
         let suffixBytes = suffix.utf8.count
@@ -181,13 +184,17 @@ public enum WriteFilename {
         return encodeComponent(source)
     }
 
-    public static func filename(title: String, slug: String) -> String {
+    public static func filename(
+        title: String, slug: String,
+        representation: WriteFileRepresentation = .markdown
+    ) -> String {
         let source = !title.isEmpty ? title : (!slug.isEmpty ? slug : "untitled")
         let normalized = source.precomposedStringWithCanonicalMapping
+        let suffix = representation.filenameSuffix
         let leaf = bounded(
             encodedComponent(normalized), source: normalized,
-            maximumUTF8Length: maximumComponentUTF8Length - markdownExtension.utf8.count)
-        return leaf + markdownExtension
+            maximumUTF8Length: maximumComponentUTF8Length - suffix.utf8.count)
+        return leaf + suffix
     }
 
     /// The exact filename forms the mapper may publish for a server title. The
@@ -195,17 +202,24 @@ public enum WriteFilename {
     /// collision because a concurrent enumeration can briefly retain that stable
     /// spelling.
     public static func isCanonicalFilename(
-        _ candidate: String, title: String, slug: String, stableId: String
+        _ candidate: String, title: String, slug: String, stableId: String,
+        representation: WriteFileRepresentation = .markdown
     ) -> Bool {
-        candidate == filename(title: title, slug: slug)
-            || candidate == collisionFilename(title: title, slug: slug, stableId: stableId)
+        candidate == filename(
+            title: title, slug: slug, representation: representation)
+            || candidate == collisionFilename(
+                title: title, slug: slug, stableId: stableId,
+                representation: representation)
     }
 
     public static func collisionFilename(
-        title: String, slug: String, stableId: String
+        title: String, slug: String, stableId: String,
+        representation: WriteFileRepresentation = .markdown
     ) -> String {
-        insert(collisionSuffix(stableId), into: filename(title: title, slug: slug),
-               isFolder: false)
+        insert(
+            collisionSuffix(stableId),
+            into: filename(title: title, slug: slug, representation: representation),
+            isFolder: false, representation: representation)
     }
 
     public static func isCanonicalComponent(
@@ -219,14 +233,19 @@ public enum WriteFilename {
         insert(collisionSuffix(stableId), into: encodeComponent(value), isFolder: true)
     }
 
-    /// Reverse a Finder filename to a Write title. Only the actual `.md`
-    /// extension is removed; a title like `example.com` remains intact. When a
-    /// stable id is supplied, the exact collision suffix for that item is also
-    /// removed before decoding.
-    public static func titleFromFilename(_ filename: String, stableId: String? = nil) -> String {
+    /// Reverse a Finder filename to a Write title using its explicit native
+    /// representation. The default remains Markdown for source compatibility;
+    /// a title like `example.com` remains intact. When a stable id is supplied,
+    /// the exact collision suffix for that item is also removed before decoding.
+    public static func titleFromFilename(
+        _ filename: String, stableId: String? = nil,
+        representation: WriteFileRepresentation? = nil
+    ) -> String {
         var base = filename
-        if base.lowercased().hasSuffix(".md") {
-            base.removeLast(3)
+        let extensionSuffix = nativeExtensionSuffix(
+            in: base, representation: representation ?? .markdown)
+        if !extensionSuffix.isEmpty {
+            base.removeLast(extensionSuffix.count)
         }
         if let stableId {
             let suffix = collisionSuffix(stableId)
@@ -249,8 +268,9 @@ public enum WriteFilename {
         return items.map { item in
             guard (counts[key(item)] ?? 0) > 1,
                   let id = stableId(item), !id.isEmpty else { return item }
-            return item.withFilename(insert(collisionSuffix(id), into: item.filename,
-                                            isFolder: item.isFolder))
+            return item.withFilename(insert(
+                collisionSuffix(id), into: item.filename,
+                isFolder: item.isFolder, representation: item.representation))
         }
     }
 
@@ -279,15 +299,31 @@ public enum WriteFilename {
         return nil
     }
 
-    private static func insert(_ suffix: String, into name: String, isFolder: Bool) -> String {
-        let ext = !isFolder && name.lowercased().hasSuffix(markdownExtension)
-            ? markdownExtension : ""
-        let stem = ext.isEmpty ? name : String(name.dropLast(markdownExtension.count))
+    private static func insert(
+        _ suffix: String, into name: String, isFolder: Bool,
+        representation: WriteFileRepresentation? = nil
+    ) -> String {
+        let ext = isFolder ? "" : nativeExtensionSuffix(
+            in: name, representation: representation)
+        let stem = ext.isEmpty ? name : String(name.dropLast(ext.count))
         let budget = maximumComponentUTF8Length - suffix.utf8.count - ext.utf8.count
         let boundedStem = bounded(
             stem, source: "collision\u{0}" + stem,
             maximumUTF8Length: max(0, budget))
         return boundedStem + suffix + ext
+    }
+
+    /// Return the actual spelling from `name` so collision handling preserves
+    /// an imported `.MD`/`.TXT` suffix rather than silently normalizing it.
+    private static func nativeExtensionSuffix(
+        in name: String, representation: WriteFileRepresentation?
+    ) -> String {
+        guard let representation = representation
+                ?? WriteFileRepresentation.inferred(fromFilename: name),
+              name.lowercased().hasSuffix(representation.filenameSuffix) else {
+            return ""
+        }
+        return String(name.suffix(representation.filenameSuffix.count))
     }
 
     private static func bounded(

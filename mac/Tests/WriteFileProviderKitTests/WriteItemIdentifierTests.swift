@@ -31,6 +31,22 @@ final class WriteItemIdentifierTests: XCTestCase {
         }
     }
 
+    func testCentralAttachmentIdentifiersRoundTripUnsafeFilenameCharacters() {
+        let ids: [WriteItemIdentifier] = [
+            .dataContainer,
+            .attachmentsContainer,
+            .attachmentWorkspace("user/name??"),
+            .attachmentItem(handle: "user/name??", id: "post:?/\\id"),
+            .attachmentFile(
+                handle: "user/name??", id: "post:?/\\id",
+                filename: "what?? #1.png"),
+        ]
+        for id in ids {
+            XCTAssertEqual(WriteItemIdentifier(rawValue: id.rawValue), id)
+        }
+        XCTAssertFalse(ids.last!.rawValue.contains("what??"))
+    }
+
     func testRawValueShape() {
         XCTAssertEqual(WriteItemIdentifier.workspace("demo").rawValue, "workspace:demo")
         XCTAssertEqual(WriteItemIdentifier.folder(handle: "demo", id: "blog").rawValue, "folder:demo:blog")
@@ -52,6 +68,10 @@ final class WriteItemIdentifierTests: XCTestCase {
         XCTAssertEqual(WriteItemIdentifier.file(handle: "h", id: "p").workspaceHandle, "h")
         XCTAssertNil(WriteItemIdentifier.rootContainer.workspaceHandle)
         XCTAssertNil(WriteItemIdentifier.workingSet.workspaceHandle)
+        XCTAssertEqual(
+            WriteItemIdentifier.attachmentFile(
+                handle: "h", id: "p", filename: "a.png").workspaceHandle,
+            "h")
     }
 
     func testReservedRoundTrip() {
@@ -73,6 +93,11 @@ final class WriteItemIdentifierTests: XCTestCase {
         XCTAssertTrue(WriteItemIdentifier.rootContainer.isContainer)
         XCTAssertTrue(WriteItemIdentifier.workspace("demo").isContainer)
         XCTAssertTrue(WriteItemIdentifier.folder(handle: "demo", id: "x").isContainer)
+        XCTAssertTrue(WriteItemIdentifier.dataContainer.isContainer)
+        XCTAssertTrue(WriteItemIdentifier.attachmentsContainer.isContainer)
+        XCTAssertTrue(WriteItemIdentifier.attachmentItem(handle: "demo", id: "x").isContainer)
         XCTAssertFalse(WriteItemIdentifier.file(handle: "demo", id: "x").isContainer)
+        XCTAssertFalse(WriteItemIdentifier.attachmentFile(
+            handle: "demo", id: "x", filename: "a.png").isContainer)
     }
 }

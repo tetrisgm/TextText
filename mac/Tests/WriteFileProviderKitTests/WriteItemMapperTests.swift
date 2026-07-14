@@ -65,6 +65,31 @@ final class WriteItemMapperTests: XCTestCase {
         }
     }
 
+    func testRepresentationExplicitlyControlsFilenameAndTypeIdentifier() throws {
+        let cases: [(WriteFileRepresentation, String, String)] = [
+            (.textbundle, "Title.textbundle", WriteItem.textBundleTypeIdentifier),
+            (.markdown, "Title.md", WriteItem.markdownTypeIdentifier),
+            (.text, "Title.txt", WriteItem.plainTextTypeIdentifier),
+        ]
+
+        for (representation, filename, typeIdentifier) in cases {
+            // Deliberately leave the wire path as .md: mapping must use the
+            // explicit representation instead of inferring from `file`.
+            let entry = WriteManifestItem(
+                file: "posts/stale.md", representation: representation,
+                kind: "note", slug: "title", title: "Title", status: "draft",
+                hash: "h", id: representation.rawValue, date: nil,
+                createdAt: nil, updatedAt: nil, url: nil)
+            let item = try XCTUnwrap(WriteItemMapper.item(
+                for: entry, inFolder: "notes", handle: h, readOnly: true))
+
+            XCTAssertEqual(item.filename, filename)
+            XCTAssertEqual(item.typeIdentifier, typeIdentifier)
+            XCTAssertEqual(item.representation, representation)
+            XCTAssertFalse(item.isFolder)
+        }
+    }
+
     func testEntryWithoutIdIsSkipped() {
         let entry = WriteManifestItem(
             file: "x.md", kind: "note", slug: "x", title: "X", status: "draft",
@@ -136,6 +161,11 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertEqual(
             item.withParentIdentifier(.folder(handle: h, id: "blog")).manifestURL,
             item.manifestURL)
+        XCTAssertEqual(item.withContent(hash: "h2", size: 12).representation, .markdown)
+        XCTAssertEqual(item.withFilename("Renamed.md").representation, .markdown)
+        XCTAssertEqual(
+            item.withParentIdentifier(.folder(handle: h, id: "blog")).representation,
+            .markdown)
     }
 
     func testWithContentCarriesHashAndSize() {

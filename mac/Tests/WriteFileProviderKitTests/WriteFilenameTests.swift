@@ -12,14 +12,31 @@ final class WriteFilenameTests: XCTestCase {
         XCTAssertEqual(WriteFilename.slugify("---"), "")
     }
 
-    func testFilenameIsTitlePlusExtension() {
-        XCTAssertEqual(WriteFilename.filename(title: "5 Dad Jokes", slug: "5-dad-jokes"), "5 Dad Jokes.md")
+    func testFilenameUsesRepresentationExtension() {
+        let expected: [(WriteFileRepresentation, String)] = [
+            (.textbundle, "5 Dad Jokes.textbundle"),
+            (.markdown, "5 Dad Jokes.md"),
+            (.text, "5 Dad Jokes.txt"),
+        ]
+        for (representation, filename) in expected {
+            XCTAssertEqual(
+                WriteFilename.filename(
+                    title: "5 Dad Jokes", slug: "5-dad-jokes",
+                    representation: representation),
+                filename)
+        }
     }
 
     func testQuestionMarksArePortableAndRestoreTheExactTitle() {
-        let filename = WriteFilename.filename(title: "Why??", slug: "why")
-        XCTAssertEqual(filename, "Why~3F~3F.md")
-        XCTAssertEqual(WriteFilename.titleFromFilename(filename), "Why??")
+        for representation in WriteFileRepresentation.allCases {
+            let filename = WriteFilename.filename(
+                title: "Why??", slug: "why", representation: representation)
+            XCTAssertEqual(filename, "Why~3F~3F" + representation.filenameSuffix)
+            XCTAssertEqual(
+                WriteFilename.titleFromFilename(
+                    filename, representation: representation),
+                "Why??")
+        }
     }
 
     func testFilenameFallsBackToSlugThenUntitled() {
@@ -78,41 +95,91 @@ final class WriteFilenameTests: XCTestCase {
         XCTAssertTrue(encoded.contains("~L"))
     }
 
-    func testOverlongMarkdownFilenameBudgetsExtensionAndRemainsCanonical() {
+    func testOverlongFilenamesBudgetEveryExtensionAndRemainCanonical() {
         let title = String(repeating: "Why? ", count: 80)
-        let filename = WriteFilename.filename(title: title, slug: "why")
+        for representation in WriteFileRepresentation.allCases {
+            let filename = WriteFilename.filename(
+                title: title, slug: "why", representation: representation)
 
-        XCTAssertLessThanOrEqual(filename.utf8.count,
-                                 WriteFilename.maximumComponentUTF8Length)
-        XCTAssertTrue(filename.hasSuffix(".md"))
-        XCTAssertTrue(WriteFilename.isCanonicalFilename(
-            filename, title: title, slug: "why", stableId: "post-1"))
+            XCTAssertLessThanOrEqual(
+                filename.utf8.count, WriteFilename.maximumComponentUTF8Length)
+            XCTAssertTrue(filename.hasSuffix(representation.filenameSuffix))
+            XCTAssertTrue(WriteFilename.isCanonicalFilename(
+                filename, title: title, slug: "why", stableId: "post-1",
+                representation: representation))
+        }
     }
 
     func testCollisionSuffixRebudgetsLongNamesAndLongStableIds() {
         let title = String(repeating: "?", count: 200)
         let firstId = String(repeating: "a", count: 180) + "1"
         let secondId = String(repeating: "a", count: 180) + "2"
-        let base = WriteFilename.filename(title: title, slug: "same")
-        let items = [
-            fileItem(id: firstId, parent: "blog", filename: base),
-            fileItem(id: secondId, parent: "blog", filename: base),
-        ]
+        for representation in WriteFileRepresentation.allCases {
+            let base = WriteFilename.filename(
+                title: title, slug: "same", representation: representation)
+            let items = [
+                fileItem(
+                    id: firstId, parent: "blog", filename: base,
+                    representation: representation),
+                fileItem(
+                    id: secondId, parent: "blog", filename: base,
+                    representation: representation),
+            ]
 
-        let out = WriteFilename.disambiguate(items)
-        XCTAssertEqual(Set(out.map(\.filename)).count, 2)
-        XCTAssertTrue(out.allSatisfy {
-            $0.filename.utf8.count <= WriteFilename.maximumComponentUTF8Length
-                && $0.filename.hasSuffix(".md")
-        })
+            let out = WriteFilename.disambiguate(items)
+            XCTAssertEqual(Set(out.map(\.filename)).count, 2)
+            XCTAssertTrue(out.allSatisfy {
+                $0.filename.utf8.count <= WriteFilename.maximumComponentUTF8Length
+                    && $0.filename.hasSuffix(representation.filenameSuffix)
+            })
+        }
     }
 
-    func testTitleFromFilenameStripsOnlyMarkdownExtension() {
+    func testTitleFromFilenameStripsOnlyNativeExtensions() {
         XCTAssertEqual(WriteFilename.titleFromFilename("My Great Note.md"), "My Great Note")
+        XCTAssertEqual(
+            WriteFilename.titleFromFilename("My Great Note.txt", representation: .text),
+            "My Great Note")
+        XCTAssertEqual(
+            WriteFilename.titleFromFilename(
+                "My Great Note.textbundle", representation: .textbundle),
+            "My Great Note")
         XCTAssertEqual(WriteFilename.titleFromFilename("No Extension"), "No Extension")
         XCTAssertEqual(WriteFilename.titleFromFilename("example.com"), "example.com")
         XCTAssertEqual(WriteFilename.titleFromFilename("report.txt"), "report.txt")
         XCTAssertEqual(WriteFilename.titleFromFilename("Madonna's Best Album.md"), "Madonna's Best Album")
+    }
+
+    func testRepresentationInferencePreservesExternalMarkdownAndTextExtensions() {
+        XCTAssertEqual(
+            WriteFileRepresentation.inferred(fromFilename: "Draft.MD"), .markdown)
+        XCTAssertEqual(
+            WriteFileRepresentation.inferred(fromFilename: "Draft.TXT"), .text)
+        XCTAssertEqual(
+            WriteFileRepresentation.inferred(fromFilename: "Draft.textbundle"), .textbundle)
+        XCTAssertNil(WriteFileRepresentation.inferred(fromFilename: "Draft.rtf"))
+    }
+
+    func testCollisionsPreserveAllRepresentationExtensions() {
+        for representation in WriteFileRepresentation.allCases {
+            let base = WriteFilename.filename(
+                title: "Same", slug: "same", representation: representation)
+            let out = WriteFilename.disambiguate([
+                fileItem(
+                    id: "a", parent: "blog", filename: base,
+                    representation: representation),
+                fileItem(
+                    id: "b", parent: "blog", filename: base,
+                    representation: representation),
+            ])
+
+            XCTAssertEqual(out[0].filename, "Same [a]" + representation.filenameSuffix)
+            XCTAssertEqual(out[1].filename, "Same [b]" + representation.filenameSuffix)
+            XCTAssertEqual(
+                WriteFilename.titleFromFilename(
+                    out[0].filename, stableId: "a", representation: representation),
+                "Same")
+        }
     }
 
     func testDisambiguateBreaksIntraFolderCollisions() {
@@ -156,13 +223,17 @@ final class WriteFilenameTests: XCTestCase {
         XCTAssertEqual(out.map(\.filename), ["One.md", "Two.md", "One.md"])
     }
 
-    private func fileItem(id: String, parent: String, filename: String) -> WriteItem {
+    private func fileItem(
+        id: String, parent: String, filename: String,
+        representation: WriteFileRepresentation = .markdown
+    ) -> WriteItem {
         WriteItem(
             identifier: .file(handle: "demo", id: id),
             parentIdentifier: .folder(handle: "demo", id: parent),
             filename: filename, isFolder: false, kind: .note,
-            typeIdentifier: WriteItem.markdownTypeIdentifier, serverId: id,
+            typeIdentifier: representation.typeIdentifier, serverId: id,
             contentHash: "h", documentSize: nil, creationDate: nil,
-            contentModificationDate: nil, capabilities: .readOnlyFile)
+            contentModificationDate: nil, capabilities: .readOnlyFile,
+            representation: representation)
     }
 }

@@ -54,12 +54,12 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         }
     }
 
-    public func bookmarkArtifacts(
+    public func documentArtifacts(
         postId: String
-    ) async -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
+    ) async -> Result<WriteArtifactManifest, WriteSyncError> {
         await get(
             "/api/sync/v1/files/\(escape(postId))/artifacts",
-            as: WriteBookmarkArtifactManifest.self)
+            as: WriteArtifactManifest.self)
     }
 
     public func artifactData(
@@ -68,7 +68,7 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         guard url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased(),
               host.hasSuffix(".blob.vercel-storage.com"),
-              url.path.hasPrefix("/captures/") else {
+              Self.isAllowedArtifactPath(url.path) else {
             return .failure(.rejected("Artifact URL is not Write-hosted"))
         }
         var request = URLRequest(url: url)
@@ -86,6 +86,36 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
                 contentType: http.value(forHTTPHeaderField: "Content-Type")))
         } catch {
             return .failure(.network(error.localizedDescription))
+        }
+    }
+
+    public func uploadAsset(
+        postId: String, filename: String, data: Data, contentType: String?
+    ) async -> Result<WriteArtifact, WriteSyncError> {
+        guard WriteDocumentAssets.isSafeFilename(filename),
+              !data.isEmpty else {
+            return .failure(.rejected("Asset is empty or has an unsafe filename"))
+        }
+        let boundary = "WriteBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        var body = Data()
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+        body.append("Content-Type: \(contentType ?? "application/octet-stream")\r\n\r\n")
+        body.append(data)
+        body.append("\r\n--\(boundary)--\r\n")
+        switch await send(
+            "POST", "/api/sync/v1/files/\(escape(postId))/assets",
+            headers: ["Content-Type": "multipart/form-data; boundary=\(boundary)"],
+            body: body
+        ) {
+        case .failure(let error): return .failure(error)
+        case .success(let reply):
+            if reply.status == 404 { return .failure(.notFound) }
+            if reply.status == 400 || reply.status == 413 {
+                return .failure(.rejected(reply.errorMessage))
+            }
+            guard reply.status == 201 else { return .failure(reply.httpError) }
+            return decode(ArtifactEnvelope.self, reply.data).map(\.artifact)
         }
     }
 
@@ -107,9 +137,21 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     public func createFile(
         body: String, folderId: String?, idempotencyKey: String?
     ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await createFile(
+            body: body, folderId: folderId, representation: .markdown,
+            idempotencyKey: idempotencyKey)
+    }
+
+    public func createFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
         var path = "/api/sync/v1/files"
         if let folderId, !folderId.isEmpty { path += "?folder=\(escape(folderId))" }
-        var headers = ["Content-Type": "text/markdown; charset=utf-8"]
+        var headers = [
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Write-File-Representation": representation.rawValue,
+        ]
         if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
         switch await send("POST", path, headers: headers, body: Data(body.utf8)) {
         case .failure(let e): return .failure(e)
@@ -242,6 +284,7 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
 
     private struct ManifestEnvelope: Codable { let items: [WriteManifestItem] }
     private struct ItemEnvelope: Codable { let item: WriteManifestItem }
+    private struct ArtifactEnvelope: Codable { let artifact: WriteArtifact }
     private struct FolderEnvelope: Codable { let folder: WriteWorkspaceFolder }
     private struct BlogEnvelope: Codable { let blog: WriteWorkspaceBlog }
 
@@ -274,6 +317,12 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
 
     private func escape(_ component: String) -> String {
         component.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? component
+    }
+
+    private static func isAllowedArtifactPath(_ path: String) -> Bool {
+        path.hasPrefix("/captures/")
+            || path.hasPrefix("/documents/")
+            || path.hasPrefix("/editor/media/")
     }
 
     private func decode<T: Decodable>(
@@ -320,5 +369,11 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         } catch {
             return .failure(.network(error.localizedDescription))
         }
+    }
+}
+
+private extension Data {
+    mutating func append(_ string: String) {
+        append(contentsOf: string.utf8)
     }
 }

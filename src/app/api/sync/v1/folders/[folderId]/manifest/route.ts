@@ -1,5 +1,4 @@
 import { markdownFileHash } from "@/lib/content-hash";
-import { renderFolderManifest } from "@/lib/markdown-files";
 import {
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
@@ -7,8 +6,8 @@ import {
 import { resolveSyncWorkspace } from "../../../auth";
 import {
   ifNoneMatchSatisfied,
+  renderSyncFolderManifest,
   syncError,
-  syncManifestOptions,
 } from "../../../sync";
 
 interface Props {
@@ -38,11 +37,7 @@ export async function GET(request: Request, { params }: Props) {
       exact: true,
     })
   ).filter((post) => Boolean(post.id));
-  const manifest = renderFolderManifest(
-    blog,
-    posts,
-    syncManifestOptions(blog, folder),
-  );
+  const manifest = renderSyncFolderManifest(blog, posts, folder);
 
   const json = JSON.stringify(manifest, null, 2);
   const etag = `"${markdownFileHash(json)}"`;

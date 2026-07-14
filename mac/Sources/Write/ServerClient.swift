@@ -1,4 +1,5 @@
 import Foundation
+import WriteFileProviderKit
 
 // MARK: Wire types (exactly what the write platform's routes emit)
 
@@ -102,8 +103,21 @@ protocol SyncClient {
     func putFile(postId: String, body: String, ifMatch hash: String) -> Result<SaveReply, ClientFailure>
     func patchFile(postId: String, folderId: String?, slug: String?, ifMatch hash: String?) -> Result<SaveReply, ClientFailure>
     func postFile(body: String, folderId: String?, idempotencyKey: String?) -> Result<SaveReply, ClientFailure>
+    func postFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) -> Result<SaveReply, ClientFailure>
     func deleteFile(postId: String, ifMatch hash: String?) -> Result<Void, ClientFailure>
     func advertisedAppVersion() -> String?
+}
+
+extension SyncClient {
+    func postFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) -> Result<SaveReply, ClientFailure> {
+        postFile(body: body, folderId: folderId, idempotencyKey: idempotencyKey)
+    }
 }
 
 /// Synchronous URLSession client for the write platform. Called only from
@@ -221,8 +235,22 @@ final class ServerClient: SyncClient {
         }
     }
 
-    func postFile(body: String, folderId: String?, idempotencyKey: String?) -> Result<SaveReply, ClientFailure> {
-        var headers = ["Content-Type": "text/markdown; charset=utf-8"]
+    func postFile(
+        body: String, folderId: String?, idempotencyKey: String?
+    ) -> Result<SaveReply, ClientFailure> {
+        postFile(
+            body: body, folderId: folderId, representation: .markdown,
+            idempotencyKey: idempotencyKey)
+    }
+
+    func postFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) -> Result<SaveReply, ClientFailure> {
+        var headers = [
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Write-File-Representation": representation.rawValue,
+        ]
         // A stable Idempotency-Key makes a lost-response retry return the
         // ORIGINAL 201 instead of publishing the post twice.
         if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }

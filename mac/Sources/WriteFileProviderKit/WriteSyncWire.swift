@@ -5,6 +5,40 @@ import Foundation
 // they are intentionally kept in sync but not shared, because the File Provider
 // extension links this kit, not the app executable).
 
+/// The immutable native/on-disk form selected when a file is created. The
+/// server still exchanges canonical UTF-8 Markdown bytes; this value controls
+/// the filename, UTI, and local materialization contract File Provider exposes.
+public enum WriteFileRepresentation: String, Codable, CaseIterable, Sendable {
+    case textbundle
+    case markdown
+    case text
+
+    public var filenameExtension: String {
+        switch self {
+        case .textbundle: return "textbundle"
+        case .markdown: return "md"
+        case .text: return "txt"
+        }
+    }
+
+    public var filenameSuffix: String { "." + filenameExtension }
+
+    public var typeIdentifier: String {
+        switch self {
+        case .textbundle: return "org.textbundle.package"
+        case .markdown: return "net.daringfireball.markdown"
+        case .text: return "public.plain-text"
+        }
+    }
+
+    /// Infer the representation of an external file without rewriting its
+    /// extension. Manifest mapping never uses this: the wire value is explicit.
+    public static func inferred(fromFilename filename: String) -> WriteFileRepresentation? {
+        let lowercased = filename.lowercased()
+        return allCases.first { lowercased.hasSuffix($0.filenameSuffix) }
+    }
+}
+
 /// GET /api/sync/v1/workspace -> `blog`
 public struct WriteWorkspaceBlog: Codable, Equatable, Sendable {
     public let handle: String
@@ -48,11 +82,12 @@ public struct WriteWorkspace: Codable, Equatable, Sendable {
 }
 
 /// One manifest entry (GET /api/sync/v1/folders/{id}/manifest), also the body
-/// returned by PUT/POST /files. `file` is the markdown filename; `hash` is the
+/// returned by PUT/POST /files. `file` follows `representation`; `hash` is the
 /// content hash used for If-Match. `id` is the server post id (the stable
 /// identity the File Provider hangs an item off).
 public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let file: String
+    public let representation: WriteFileRepresentation
     public let kind: String
     public let slug: String
     public let title: String
@@ -71,11 +106,13 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let size: Int?
 
     public init(
-        file: String, kind: String, slug: String, title: String, status: String,
+        file: String, representation: WriteFileRepresentation = .markdown,
+        kind: String, slug: String, title: String, status: String,
         hash: String, id: String?, date: String?, createdAt: String?,
         updatedAt: String?, url: String?, size: Int? = nil
     ) {
         self.file = file
+        self.representation = representation
         self.kind = kind
         self.slug = slug
         self.title = title
@@ -88,13 +125,66 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         self.url = url
         self.size = size
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case file
+        case representation
+        case kind
+        case slug
+        case title
+        case status
+        case hash
+        case id
+        case date
+        case createdAt
+        case updatedAt
+        case url
+        case size
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            file: try values.decode(String.self, forKey: .file),
+            // Manifests emitted before representations existed described .md
+            // files. Preserve that meaning during a rolling server/client update.
+            representation: try values.decodeIfPresent(
+                WriteFileRepresentation.self, forKey: .representation) ?? .markdown,
+            kind: try values.decode(String.self, forKey: .kind),
+            slug: try values.decode(String.self, forKey: .slug),
+            title: try values.decode(String.self, forKey: .title),
+            status: try values.decode(String.self, forKey: .status),
+            hash: try values.decode(String.self, forKey: .hash),
+            id: try values.decodeIfPresent(String.self, forKey: .id),
+            date: try values.decodeIfPresent(String.self, forKey: .date),
+            createdAt: try values.decodeIfPresent(String.self, forKey: .createdAt),
+            updatedAt: try values.decodeIfPresent(String.self, forKey: .updatedAt),
+            url: try values.decodeIfPresent(String.self, forKey: .url),
+            size: try values.decodeIfPresent(Int.self, forKey: .size))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(file, forKey: .file)
+        try values.encode(representation, forKey: .representation)
+        try values.encode(kind, forKey: .kind)
+        try values.encode(slug, forKey: .slug)
+        try values.encode(title, forKey: .title)
+        try values.encode(status, forKey: .status)
+        try values.encode(hash, forKey: .hash)
+        try values.encodeIfPresent(id, forKey: .id)
+        try values.encodeIfPresent(date, forKey: .date)
+        try values.encodeIfPresent(createdAt, forKey: .createdAt)
+        try values.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try values.encodeIfPresent(url, forKey: .url)
+        try values.encodeIfPresent(size, forKey: .size)
+    }
 }
 
-/// One immutable binary produced by Write's bookmark capture pipeline. The
-/// server assigns a deterministic ASCII filename so File Provider can expose
-/// it as a normal sibling in `<slug>.assets` without deriving a path from an
-/// untrusted remote URL.
-public struct WriteBookmarkArtifact: Codable, Equatable, Sendable {
+/// One immutable binary referenced by a Write document. The server assigns a
+/// deterministic, portable filename; File Provider validates both the name and
+/// the Write-owned URL before materializing it in a package or attachment tree.
+public struct WriteArtifact: Codable, Equatable, Sendable {
     public let filename: String
     public let role: String
     public let url: String
@@ -114,16 +204,16 @@ public struct WriteBookmarkArtifact: Codable, Equatable, Sendable {
 }
 
 /// GET /api/sync/v1/files/{id}/artifacts. `fileHash` ties this manifest to the
-/// canonical Markdown revision so a local rewrite never combines two captures.
-public struct WriteBookmarkArtifactManifest: Codable, Equatable, Sendable {
+/// canonical Markdown revision so a local rewrite never combines two versions.
+public struct WriteArtifactManifest: Codable, Equatable, Sendable {
     public let postId: String
     public let slug: String
     public let fileHash: String
-    public let artifacts: [WriteBookmarkArtifact]
+    public let artifacts: [WriteArtifact]
 
     public init(
         postId: String, slug: String, fileHash: String,
-        artifacts: [WriteBookmarkArtifact]
+        artifacts: [WriteArtifact]
     ) {
         self.postId = postId
         self.slug = slug

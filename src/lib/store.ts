@@ -21,6 +21,7 @@ import {
 import { cache } from "react";
 import {
   BLOG_FOLDER_PATH,
+  DEFAULT_FILE_REPRESENTATION,
   PRIVATE_POST_TYPES,
   isBlogBucketPath,
   isPrivatePostType,
@@ -36,6 +37,7 @@ import type {
   CaptureStatus,
   Folder,
   FolderMode,
+  FileRepresentation,
   LinkRef,
   Post,
   PostType,
@@ -94,6 +96,7 @@ type PostListRow = Pick<
   | "id"
   | "blogId"
   | "folderId"
+  | "representation"
   | "type"
   | "slug"
   | "title"
@@ -183,6 +186,7 @@ function mapPost(row: PostRow): Post {
   const wordCount = row.wordCount ?? wordCountForMarkdown(row.body);
   return {
     id: row.id,
+    representation: row.representation,
     type: row.type,
     slug: row.slug,
     title: row.title,
@@ -234,6 +238,7 @@ function compactLinks(row: PostListRow): LinkRef[] | undefined {
 function mapPostList(row: PostListRow): Post {
   return {
     id: row.id,
+    representation: row.representation,
     type: row.type,
     slug: row.slug,
     title: row.title,
@@ -285,6 +290,7 @@ function postListSelection() {
     id: posts.id,
     blogId: posts.blogId,
     folderId: posts.folderId,
+    representation: posts.representation,
     type: posts.type,
     slug: posts.slug,
     title: posts.title,
@@ -1538,6 +1544,10 @@ export function defaultPostTypeForFolderMode(mode: FolderMode): PostType {
   }
 }
 
+type CreateDraftOptions = {
+  representation?: FileRepresentation;
+};
+
 /**
  * Create an empty draft directly inside a specific folder (a File Provider
  * create knows the target folder, unlike the type-derived createDraft). The
@@ -1547,6 +1557,7 @@ export function defaultPostTypeForFolderMode(mode: FolderMode): PostType {
 export async function createDraftInFolder(
   handle: string,
   folderId: string,
+  options: CreateDraftOptions = {},
 ): Promise<Post> {
   if (!db) throw new Error("createDraftInFolder requires DATABASE_URL");
   const folder = await getFolderById(handle, folderId);
@@ -1559,6 +1570,8 @@ export async function createDraftInFolder(
     .values({
       blogId,
       folderId: folder.id,
+      representation:
+        options.representation ?? DEFAULT_FILE_REPRESENTATION,
       type,
       slug,
       title: "",
@@ -1631,6 +1644,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
       {
         blogId,
         folderId: blogFolderId,
+        representation: DEFAULT_FILE_REPRESENTATION,
         type: "article",
         slug: STARTER_BLOG_POST.slug,
         title: STARTER_BLOG_POST.title,
@@ -1641,6 +1655,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
       {
         blogId,
         folderId: notesFolderId,
+        representation: DEFAULT_FILE_REPRESENTATION,
         type: "note",
         slug: STARTER_NOTE.slug,
         title: STARTER_NOTE.title,
@@ -1651,6 +1666,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
       {
         blogId,
         folderId: bookmarksFolderId,
+        representation: DEFAULT_FILE_REPRESENTATION,
         type: "bookmark",
         slug: STARTER_BOOKMARK.slug,
         title: STARTER_BOOKMARK.title,
@@ -2794,6 +2810,7 @@ export async function savePost(
       .values({
         blogId,
         folderId: insertFolder.id,
+        representation: post.representation ?? DEFAULT_FILE_REPRESENTATION,
         slug,
         ...base,
         publishedAt:
@@ -2862,6 +2879,7 @@ export async function savePostContentPatch(
 export async function createDraft(
   handle: string,
   type: PostType = "article",
+  options: CreateDraftOptions = {},
 ): Promise<Post> {
   if (!db) throw new Error("createDraft requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
@@ -2872,6 +2890,8 @@ export async function createDraft(
     .values({
       blogId,
       folderId: folder.id,
+      representation:
+        options.representation ?? DEFAULT_FILE_REPRESENTATION,
       type,
       slug,
       title: "",

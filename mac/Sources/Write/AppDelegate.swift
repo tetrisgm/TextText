@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
     private static let duplicateInstanceRecheckDelay: TimeInterval = 0.5
-    static let fileProviderSchemaVersion = 2
+    static let fileProviderSchemaVersion = 6
     private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()
@@ -275,6 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch client.postFile(
             body: item.markdown,
             folderId: notesFolder.id,
+            representation: item.representation,
             idempotencyKey: item.idempotencyKey
         ) {
         case .failure(let error):
@@ -1018,14 +1019,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         registeredFileProviderDomain = domain
         fileProviderStatusMonitor.bind(to: domain)
         fileProviderReconcileIdentity = nil
-        if existingDomain, let workspace = handoff.workspaces.first,
+        if existingDomain, !handoff.workspaces.isEmpty,
            Self.needsFileProviderSchemaReimport(
             storedVersion: UserDefaults.standard.integer(
                 forKey: Self.fileProviderSchemaVersionKey)
            ) {
-            reimportFileProviderWorkspace(
-                domain: domain, handle: workspace.handle,
-                epoch: epoch, identity: identity)
+            reimportFileProviderRoot(
+                domain: domain, epoch: epoch, identity: identity)
             return
         }
         UserDefaults.standard.set(
@@ -1043,8 +1043,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// version never exposed it. Reimport the existing workspace subtree once
     /// per provider schema version; this keeps stable item identifiers and
     /// pending local edits while forcing Finder to rebuild nested listings.
-    private func reimportFileProviderWorkspace(
-        domain: NSFileProviderDomain, handle: String,
+    private func reimportFileProviderRoot(
+        domain: NSFileProviderDomain,
         epoch: Int, identity: String, attempt: Int = 0
     ) {
         guard fileProviderDomainEpoch == epoch,
@@ -1054,9 +1054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderSchemaReimportRetry?.cancel()
         fileProviderSchemaReimportRetry = nil
         fileProviderSchemaReimportInFlight = true
-        let workspaceIdentifier = NSFileProviderItemIdentifier(
-            rawValue: WriteItemIdentifier.workspace(handle).rawValue)
-        manager.reimportItems(below: workspaceIdentifier) { [weak self] error in
+        manager.reimportItems(below: .rootContainer) { [weak self] error in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.fileProviderSchemaReimportInFlight = false
@@ -1067,8 +1065,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         "Finder index refresh failed: \(error.localizedDescription)")
                     guard attempt < 5 else { return }
                     let work = DispatchWorkItem { [weak self] in
-                        self?.reimportFileProviderWorkspace(
-                            domain: domain, handle: handle, epoch: epoch,
+                        self?.reimportFileProviderRoot(
+                            domain: domain, epoch: epoch,
                             identity: identity, attempt: attempt + 1)
                     }
                     self.fileProviderSchemaReimportRetry = work
@@ -1274,8 +1272,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Walk the whole tree (a deep enumerator's readdir traversal forces each
-    /// dataless folder to enumerate) and read every regular file so Markdown
-    /// and bookmark sidecar assets are both available offline.
+    /// dataless folder to enumerate) and read every regular file or TextBundle
+    /// package so all content and package assets stay available offline.
     /// Returns true if the tree still looks cold: nothing enumerated yet, or a
     /// file is still dataless after the read. The caller retries on that signal,
     /// which covers a cold first walk that reached only the top level before the
@@ -1283,24 +1281,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static func warmAndMaterialize(_ root: URL) -> Bool {
         let fm = FileManager.default
         let coordinator = NSFileCoordinator()
-        var files: [URL] = []
+        var files: [(url: URL, isPackage: Bool)] = []
         if let walker = fm.enumerator(
-            at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isPackageKey]) {
             for case let url as URL in walker {
-                if (try? url.resourceValues(
-                    forKeys: [.isRegularFileKey]
-                ).isRegularFile) == true {
-                    files.append(url)
+                let values = try? url.resourceValues(
+                    forKeys: [.isRegularFileKey, .isPackageKey])
+                let isPackage = values?.isPackage == true
+                if values?.isRegularFile == true || isPackage {
+                    files.append((url, isPackage))
+                    if isPackage { walker.skipDescendants() }
                 }
             }
         }
         var incomplete = files.isEmpty // nothing enumerated yet -> retry
-        for fileURL in files where isDataless(fileURL) {
+        for file in files where isDataless(file.url) {
             var err: NSError?
-            coordinator.coordinate(readingItemAt: fileURL, options: [], error: &err) { u in
+            coordinator.coordinate(
+                readingItemAt: file.url,
+                options: file.isPackage ? .forUploading : [],
+                error: &err
+            ) { u in
                 _ = try? Data(contentsOf: u) // reading downloads it
             }
-            if isDataless(fileURL) { incomplete = true }
+            if isDataless(file.url) { incomplete = true }
         }
         return incomplete
     }
@@ -1550,6 +1555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         importExternalNote(ExternalNoteImport(
             title: "Untitled",
             body: "",
+            representation: .textbundle,
             idempotencyKey: "new-note:\(UUID().uuidString)"
         ))
     }

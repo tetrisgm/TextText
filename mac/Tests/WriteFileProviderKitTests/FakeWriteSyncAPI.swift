@@ -7,7 +7,7 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     var workspaceValue: WriteWorkspace
     var manifests: [String: [WriteManifestItem]]   // folderId -> entries
     var files: [String: WriteFileContent]           // postId -> content
-    var artifactManifests: [String: WriteBookmarkArtifactManifest]
+    var artifactManifests: [String: WriteArtifactManifest]
     var artifactContents: [String: WriteArtifactContent]
     var cursor: String
 
@@ -21,14 +21,15 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     private(set) var workspaceCalls = 0
     private(set) var manifestCalls = 0
     private(set) var fileTextCalls = 0
-    private(set) var bookmarkArtifactCalls = 0
+    private(set) var documentArtifactCalls = 0
     private(set) var artifactDataCalls = 0
+    private(set) var createFileRepresentations: [WriteFileRepresentation] = []
 
     init(
         workspace: WriteWorkspace,
         manifests: [String: [WriteManifestItem]] = [:],
         files: [String: WriteFileContent] = [:],
-        artifactManifests: [String: WriteBookmarkArtifactManifest] = [:],
+        artifactManifests: [String: WriteArtifactManifest] = [:],
         artifactContents: [String: WriteArtifactContent] = [:],
         cursor: String = "c0"
     ) {
@@ -58,10 +59,10 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         return .success(content)
     }
 
-    func bookmarkArtifacts(
+    func documentArtifacts(
         postId: String
-    ) async -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
-        bookmarkArtifactCalls += 1
+    ) async -> Result<WriteArtifactManifest, WriteSyncError> {
+        documentArtifactCalls += 1
         guard let manifest = artifactManifests[postId] else {
             return .failure(.notFound)
         }
@@ -83,7 +84,16 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
 
     // Write paths: minimal, enough for the read-path tests here.
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> {
-        .failure(.rejected("not implemented in fake"))
+        await createFile(
+            body: body, folderId: folderId, representation: .markdown,
+            idempotencyKey: idempotencyKey)
+    }
+    func createFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        createFileRepresentations.append(representation)
+        return .failure(.rejected("not implemented in fake"))
     }
     func putFile(postId: String, body: String, ifMatch hash: String) async
         -> Result<WriteManifestItem, WriteSyncError> {
@@ -126,10 +136,14 @@ enum Fixtures {
 
     static func entry(
         id: String, file: String, kind: String, title: String,
+        representation: WriteFileRepresentation = .markdown,
         hash: String = "h", updatedAt: String? = "2026-07-11T10:00:00Z"
     ) -> WriteManifestItem {
-        WriteManifestItem(
-            file: file, kind: kind, slug: file.replacingOccurrences(of: ".md", with: ""),
+        let suffix = representation.filenameSuffix
+        let slug = file.lowercased().hasSuffix(suffix)
+            ? String(file.dropLast(suffix.count)) : file
+        return WriteManifestItem(
+            file: file, representation: representation, kind: kind, slug: slug,
             title: title, status: "draft", hash: hash, id: id, date: nil,
             createdAt: "2026-07-01T09:00:00Z", updatedAt: updatedAt, url: nil
         )

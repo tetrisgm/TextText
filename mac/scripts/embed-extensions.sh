@@ -54,13 +54,15 @@ CORE_OBJS=()
 while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(find "$BIN/WriteShareCore.build" -name '*.o')
 [ "${#CORE_OBJS[@]}" -gt 0 ] || { echo "no WriteShareCore objects; run swift build -c release first" >&2; exit 1; }
 
-# The File Provider extension depends instead on the FP Kit + Bridge (not
-# WriteShareCore); collect their release objects for its dedicated link. The
+# The File Provider extension depends instead on the FP Kit + Bridge and
+# ZIPFoundation (not WriteShareCore); collect their release objects for its
+# dedicated link. The
 # extension's own two sources are compiled fresh by embed_appex below, so do NOT
 # also link WriteFileProviderExtensionCore objects (that would double symbols).
 FP_OBJS=()
 while IFS= read -r f; do FP_OBJS+=("$f"); done < <(find \
-  "$BIN/WriteFileProviderKit.build" "$BIN/WriteFileProviderBridge.build" -name '*.o')
+  "$BIN/WriteFileProviderKit.build" "$BIN/WriteFileProviderBridge.build" \
+  "$BIN/ZIPFoundation.build" -name '*.o')
 [ "${#FP_OBJS[@]}" -gt 0 ] || { echo "no File Provider objects; run swift build -c release first" >&2; exit 1; }
 
 # $1=appex-name $2=source-dir $3=principal-suffix $4=profile $5=entitlements-template
@@ -157,6 +159,6 @@ LINK_OBJS=("${FP_OBJS[@]}")
 embed_appex "WriteFileProviderExtension" "WriteFileProviderExtension" \
   "$FP_PROFILE" "WriteFileProviderExtension.entitlements.template" \
   -framework Foundation -framework AppKit -framework FileProvider \
-  -framework UniformTypeIdentifiers
+  -framework UniformTypeIdentifiers -lz
 
 echo ">> extensions embedded and signed"

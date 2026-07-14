@@ -50,6 +50,8 @@ public struct WriteItemCapabilities: OptionSet, Sendable, Equatable {
 /// content file. `serverId` is the folder id or post id the sync API uses;
 /// `contentHash` is the If-Match hash for files. `manifestURL` is the URL the
 /// server supplied for the item; consumers must not reconstruct it from a slug.
+/// `representation` is the immutable native form of a content file and is nil
+/// for folders.
 /// `documentSize` is nil until content is materialized (enumeration does not
 /// fetch bodies).
 public struct WriteItem: Equatable, Sendable {
@@ -66,6 +68,7 @@ public struct WriteItem: Equatable, Sendable {
     public let contentModificationDate: Date?
     public let capabilities: WriteItemCapabilities
     public let manifestURL: String?
+    public let representation: WriteFileRepresentation?
 
     public init(
         identifier: WriteItemIdentifier,
@@ -80,7 +83,8 @@ public struct WriteItem: Equatable, Sendable {
         creationDate: Date?,
         contentModificationDate: Date?,
         capabilities: WriteItemCapabilities,
-        manifestURL: String? = nil
+        manifestURL: String? = nil,
+        representation: WriteFileRepresentation? = nil
     ) {
         self.identifier = identifier
         self.parentIdentifier = parentIdentifier
@@ -95,12 +99,15 @@ public struct WriteItem: Equatable, Sendable {
         self.contentModificationDate = contentModificationDate
         self.capabilities = capabilities
         self.manifestURL = manifestURL
+        self.representation = representation
     }
 
-    // Uniform type identifiers. Every content item round-trips as a markdown
-    // file, so markdown is correct for notes and bookmarks too.
+    // Uniform type identifiers used without linking UniformTypeIdentifiers into
+    // the pure kit. The bridge imports TextBundle as a package explicitly.
     public static let folderTypeIdentifier = "public.folder"
-    public static let markdownTypeIdentifier = "net.daringfireball.markdown"
+    public static let textBundleTypeIdentifier = WriteFileRepresentation.textbundle.typeIdentifier
+    public static let markdownTypeIdentifier = WriteFileRepresentation.markdown.typeIdentifier
+    public static let plainTextTypeIdentifier = WriteFileRepresentation.text.typeIdentifier
 
     /// A copy carrying a specific content hash, used when materialized bytes
     /// come from a GET whose ETag may differ from the enumeration-time manifest
@@ -121,7 +128,8 @@ public struct WriteItem: Equatable, Sendable {
             typeIdentifier: typeIdentifier, serverId: serverId,
             contentHash: hash ?? contentHash, documentSize: size ?? documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
-            capabilities: capabilities, manifestURL: manifestURL)
+            capabilities: capabilities, manifestURL: manifestURL,
+            representation: representation)
     }
 
     /// A copy with a different display filename, used by the enumerator's
@@ -133,7 +141,8 @@ public struct WriteItem: Equatable, Sendable {
             typeIdentifier: typeIdentifier, serverId: serverId,
             contentHash: contentHash, documentSize: documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
-            capabilities: capabilities, manifestURL: manifestURL)
+            capabilities: capabilities, manifestURL: manifestURL,
+            representation: representation)
     }
 
     /// A copy with the destination parent File Provider supplied for a move.
@@ -144,7 +153,8 @@ public struct WriteItem: Equatable, Sendable {
             typeIdentifier: typeIdentifier, serverId: serverId,
             contentHash: contentHash, documentSize: documentSize,
             creationDate: creationDate, contentModificationDate: contentModificationDate,
-            capabilities: capabilities, manifestURL: manifestURL)
+            capabilities: capabilities, manifestURL: manifestURL,
+            representation: representation)
     }
 }
 
@@ -235,10 +245,12 @@ public enum WriteItemMapper {
         return WriteItem(
             identifier: .file(handle: handle, id: id),
             parentIdentifier: .folder(handle: handle, id: folderId),
-            filename: WriteFilename.filename(title: entry.title, slug: entry.slug),
+            filename: WriteFilename.filename(
+                title: entry.title, slug: entry.slug,
+                representation: entry.representation),
             isFolder: false,
             kind: WriteItemKind(kindString: entry.kind),
-            typeIdentifier: WriteItem.markdownTypeIdentifier,
+            typeIdentifier: entry.representation.typeIdentifier,
             serverId: id,
             contentHash: entry.hash,
             // The File Provider sizes the dataless placeholder from this, so it
@@ -248,58 +260,9 @@ public enum WriteItemMapper {
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps,
-            manifestURL: entry.url
+            manifestURL: entry.url,
+            representation: entry.representation
         )
     }
 
-    /// A read-only sibling container for a bookmark's captured binaries.
-    public static func bookmarkSidecarFolder(
-        for entry: WriteManifestItem, inFolder folderId: String, handle: String
-    ) -> WriteItem? {
-        guard entry.kind == "bookmark", let postId = entry.id, !postId.isEmpty else {
-            return nil
-        }
-        return WriteItem(
-            identifier: WriteBookmarkSidecars.folderIdentifier(
-                handle: handle, postId: postId),
-            parentIdentifier: .folder(handle: handle, id: folderId),
-            filename: WriteBookmarkSidecars.directoryName(slug: entry.slug),
-            isFolder: true,
-            kind: .folder,
-            typeIdentifier: WriteItem.folderTypeIdentifier,
-            serverId: nil,
-            contentHash: nil,
-            documentSize: nil,
-            creationDate: date(entry.createdAt) ?? date(entry.date),
-            contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
-            capabilities: .readOnlyFolder)
-    }
-
-    /// One immutable captured image inside a bookmark sidecar container.
-    public static func bookmarkArtifact(
-        _ artifact: WriteBookmarkArtifact,
-        manifest: WriteBookmarkArtifactManifest,
-        handle: String
-    ) -> WriteItem? {
-        guard WriteBookmarkSidecars.isSafeFilename(artifact.filename),
-              URL(string: artifact.url) != nil else { return nil }
-        return WriteItem(
-            identifier: WriteBookmarkSidecars.assetIdentifier(
-                handle: handle, postId: manifest.postId,
-                filename: artifact.filename),
-            parentIdentifier: WriteBookmarkSidecars.folderIdentifier(
-                handle: handle, postId: manifest.postId),
-            filename: artifact.filename,
-            isFolder: false,
-            kind: .other("bookmark-asset"),
-            typeIdentifier: artifact.contentType?.hasPrefix("image/") == true
-                ? "public.image" : "public.data",
-            serverId: nil,
-            contentHash: WriteBookmarkSidecars.contentHash(
-                manifest: manifest, artifact: artifact),
-            documentSize: nil,
-            creationDate: nil,
-            contentModificationDate: nil,
-            capabilities: .readOnlyFile)
-    }
 }

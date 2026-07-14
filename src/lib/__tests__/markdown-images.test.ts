@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isRemoteImageUrl,
   localizeRemoteMarkdownImages,
+  remoteMarkdownImageUrls,
   stripRemoteMarkdownImages,
 } from "@/lib/markdown-images";
 
@@ -12,6 +13,28 @@ describe("isRemoteImageUrl", () => {
     expect(isRemoteImageUrl("/assets/image.jpg")).toBe(false);
     expect(isRemoteImageUrl("./post.assets/image.jpg")).toBe(false);
     expect(isRemoteImageUrl("data:image/png;base64,abc")).toBe(false);
+  });
+});
+
+describe("remoteMarkdownImageUrls", () => {
+  it("returns unique remote image URLs in Markdown order", () => {
+    const markdown = [
+      "[![linked](https://assets.example/linked.webp)](https://example.com)",
+      '![titled](<http://assets.example/titled.png> "Title")',
+      "![duplicate](https://assets.example/linked.webp)",
+      "![local](./assets/local.png)",
+      "[ordinary link](https://assets.example/not-an-image.jpg)",
+    ].join("\n\n");
+
+    expect(remoteMarkdownImageUrls(markdown)).toEqual([
+      "https://assets.example/linked.webp",
+      "http://assets.example/titled.png",
+    ]);
+  });
+
+  it("handles missing and empty Markdown", () => {
+    expect(remoteMarkdownImageUrls(undefined)).toEqual([]);
+    expect(remoteMarkdownImageUrls("")).toEqual([]);
   });
 });
 

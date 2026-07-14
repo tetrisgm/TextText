@@ -18,6 +18,16 @@ export interface Blog {
 
 export type BlogCardStyle = "cover" | "minimal";
 export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
+export const FILE_REPRESENTATIONS = ["textbundle", "markdown", "text"] as const;
+export type FileRepresentation = (typeof FILE_REPRESENTATIONS)[number];
+export const DEFAULT_FILE_REPRESENTATION: FileRepresentation = "textbundle";
+
+export function isFileRepresentation(
+  value: string | null | undefined,
+): value is FileRepresentation {
+  return FILE_REPRESENTATIONS.some((representation) => representation === value);
+}
+
 /**
  * article/project/talk are the Blog folder's public kinds; note and bookmark
  * belong to the Notes and Bookmarks folders and are always unlisted.
@@ -77,8 +87,9 @@ export type ItemKind =
 /**
  * Everything a completed bookmark capture produced. Binary artifacts live in
  * Blob storage (URLs here); the readable extraction lives in the post body
- * itself so the markdown file round-trips it. The Mac app additionally
- * materializes artifacts as local sidecar files under <slug>.assets/.
+ * itself so the Markdown file round-trips it. Native Write documents package
+ * these artifacts inside their TextBundle; imported plain files address them
+ * through the single root Data/Attachments tree.
  */
 export type BookmarkCapture = {
   /** the captured page URL (may differ from the requested URL via redirects) */
@@ -132,6 +143,8 @@ export interface LinkRef {
 export interface Post {
   /** opaque database id; absent for demo/seed content and unsaved drafts */
   id?: string;
+  /** immutable Finder/on-disk representation; persisted posts always have one */
+  representation?: FileRepresentation;
   type: PostType;
   /** bookmark capture pipeline state; only bookmarks ever set these */
   captureStatus?: CaptureStatus;

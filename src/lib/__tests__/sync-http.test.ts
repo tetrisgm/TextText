@@ -9,8 +9,11 @@ import {
   ifMatchSatisfied,
   ifNoneMatchSatisfied,
   isUuid,
+  parseSyncFileRepresentation,
+  renderSyncFolderManifest,
   renderSyncFile,
   syncError,
+  syncFilePath,
   syncFileUrl,
   syncManifestItem,
 } from "@/app/api/sync/v1/sync";
@@ -18,6 +21,7 @@ import type { Blog, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import {
   parsePostMarkdownFile,
+  renderFolderManifest,
   renderPostMarkdownFile,
 } from "@/lib/markdown-files";
 
@@ -31,6 +35,7 @@ const blog: Blog = {
 
 const post: Post = {
   id: "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60",
+  representation: "textbundle",
   type: "article",
   slug: "hello-sync",
   title: "Hello Sync",
@@ -109,6 +114,28 @@ describe("isUuid", () => {
   });
 });
 
+describe("parseSyncFileRepresentation", () => {
+  it("keeps headerless legacy sync creates as markdown", () => {
+    expect(parseSyncFileRepresentation(null)).toBe("markdown");
+  });
+
+  it.each(["textbundle", "markdown", "text"] as const)(
+    "accepts the %s representation",
+    (representation) => {
+      expect(parseSyncFileRepresentation(` ${representation} `)).toBe(
+        representation,
+      );
+    },
+  );
+
+  it("rejects empty, unknown, and non-canonical values", () => {
+    expect(parseSyncFileRepresentation("")).toBeNull();
+    expect(parseSyncFileRepresentation("pdf")).toBeNull();
+    expect(parseSyncFileRepresentation("Markdown")).toBeNull();
+    expect(parseSyncFileRepresentation("markdown, text")).toBeNull();
+  });
+});
+
 describe("syncError", () => {
   it("emits the status and a JSON {error} body", async () => {
     const response = syncError(412, "conflict");
@@ -169,6 +196,13 @@ describe("renderSyncFile", () => {
     expect(publicAfter).toBe(publicBefore);
     expect(publicBefore).not.toContain("syncRevision:");
   });
+
+  it("does not put the local representation into canonical bytes or hashes", () => {
+    const baseline = renderSyncFile(blog, post);
+    for (const representation of ["markdown", "text"] as const) {
+      expect(renderSyncFile(blog, { ...post, representation })).toEqual(baseline);
+    }
+  });
 });
 
 describe("syncManifestItem", () => {
@@ -181,5 +215,30 @@ describe("syncManifestItem", () => {
     expect(item.slug).toBe(post.slug);
     expect(item.status).toBe("published");
     expect(item.updatedAt).toBe(post.updatedAt);
+    expect(item.representation).toBe("textbundle");
+    expect(item.file).toBe("posts/hello-sync.textbundle");
+  });
+
+  it.each([
+    ["textbundle", "posts/hello-sync.textbundle"],
+    ["markdown", "posts/hello-sync.md"],
+    ["text", "posts/hello-sync.txt"],
+  ] as const)("uses the %s filename", (representation, filename) => {
+    const represented = { ...post, representation };
+    expect(syncFilePath(represented)).toBe(filename);
+    expect(syncManifestItem(blog, represented)).toMatchObject({
+      file: filename,
+      representation,
+    });
+  });
+
+  it("adds representation to every sync item without changing public manifests", () => {
+    const sync = renderSyncFolderManifest(blog, [post]);
+    const publicManifest = renderFolderManifest(blog, [post]);
+
+    expect(sync.items[0].representation).toBe("textbundle");
+    expect(sync.items[0].file).toBe("posts/hello-sync.textbundle");
+    expect(publicManifest.items[0].file).toBe("posts/hello-sync.md");
+    expect(publicManifest.items[0]).not.toHaveProperty("representation");
   });
 });

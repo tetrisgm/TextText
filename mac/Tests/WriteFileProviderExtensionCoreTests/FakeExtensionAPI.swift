@@ -11,10 +11,10 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var failManifest: WriteSyncError?
     var manifestResults: [String: [Result<[WriteManifestItem], WriteSyncError>]] = [:]
     var fileTextResults: [Result<WriteFileContent, WriteSyncError>] = []
-    var artifactManifests: [String: WriteBookmarkArtifactManifest] = [:]
+    var artifactManifests: [String: WriteArtifactManifest] = [:]
     var artifactContents: [String: WriteArtifactContent] = [:]
     private(set) var fileTextCalls = 0
-    private(set) var bookmarkArtifactCalls = 0
+    private(set) var documentArtifactCalls = 0
     private(set) var artifactDataCalls = 0
     var manifestDelayNanoseconds: UInt64 = 0
     var createFileDelayNanoseconds: UInt64 = 0
@@ -22,12 +22,23 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var deleteFileDelayNanoseconds: UInt64 = 0
 
     // Recorded write calls.
-    struct CreateFileCall: Equatable { let body: String; let folderId: String?; let idempotencyKey: String? }
+    struct CreateFileCall: Equatable {
+        let body: String
+        let folderId: String?
+        let representation: WriteFileRepresentation
+        let idempotencyKey: String?
+    }
     struct PatchCall: Equatable { let postId: String; let folderId: String?; let slug: String?; let title: String?; let ifMatch: String? }
     struct PutCall: Equatable { let postId: String; let body: String; let hash: String }
     struct CreateFolderCall: Equatable { let parentPath: String; let name: String; let idempotencyKey: String? }
     struct RenameFolderCall: Equatable { let folderId: String; let name: String }
     struct RenameWorkspaceCall: Equatable { let name: String }
+    struct UploadAssetCall: Equatable {
+        let postId: String
+        let filename: String
+        let data: Data
+        let contentType: String?
+    }
     private(set) var createFileCalls: [CreateFileCall] = []
     private(set) var patchCalls: [PatchCall] = []
     private(set) var putCalls: [PutCall] = []
@@ -36,6 +47,8 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     private(set) var createFolderCalls: [CreateFolderCall] = []
     private(set) var renameFolderCalls: [RenameFolderCall] = []
     private(set) var renameWorkspaceCalls: [RenameWorkspaceCall] = []
+    private(set) var uploadAssetCalls: [UploadAssetCall] = []
+    private(set) var writeOperations: [String] = []
 
     // What the write calls return.
     var createFileResult: Result<WriteManifestItem, WriteSyncError>?
@@ -45,6 +58,7 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var createFolderResult: Result<WriteWorkspaceFolder, WriteSyncError>?
     var renameFolderResult: Result<WriteWorkspaceFolder, WriteSyncError>?
     var renameWorkspaceResult: Result<WriteWorkspaceBlog, WriteSyncError>?
+    var uploadAssetResult: Result<WriteArtifact, WriteSyncError>?
 
     init(workspace: WriteWorkspace, manifests: [String: [WriteManifestItem]] = [:], cursor: String = "c0") {
         self.workspaceValue = workspace
@@ -73,10 +87,10 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         if !fileTextResults.isEmpty { return fileTextResults.removeFirst() }
         return .success(WriteFileContent(text: "# body", hash: "h"))
     }
-    func bookmarkArtifacts(
+    func documentArtifacts(
         postId: String
-    ) async -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
-        bookmarkArtifactCalls += 1
+    ) async -> Result<WriteArtifactManifest, WriteSyncError> {
+        documentArtifactCalls += 1
         guard let manifest = artifactManifests[postId] else {
             return .failure(.notFound)
         }
@@ -89,14 +103,37 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         }
         return .success(content)
     }
+    func uploadAsset(
+        postId: String, filename: String, data: Data, contentType: String?
+    ) async -> Result<WriteArtifact, WriteSyncError> {
+        uploadAssetCalls.append(UploadAssetCall(
+            postId: postId, filename: filename, data: data,
+            contentType: contentType))
+        writeOperations.append("upload:\(filename)")
+        return uploadAssetResult ?? .failure(.rejected("not implemented in fake"))
+    }
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError> {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
     }
-    func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<WriteManifestItem, WriteSyncError> {
+    func createFile(
+        body: String, folderId: String?, idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await createFile(
+            body: body, folderId: folderId, representation: .markdown,
+            idempotencyKey: idempotencyKey)
+    }
+
+    func createFile(
+        body: String, folderId: String?, representation: WriteFileRepresentation,
+        idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
         guard await waitForDelay(createFileDelayNanoseconds) else {
             return .failure(.network("cancelled"))
         }
-        createFileCalls.append(CreateFileCall(body: body, folderId: folderId, idempotencyKey: idempotencyKey))
+        createFileCalls.append(CreateFileCall(
+            body: body, folderId: folderId, representation: representation,
+            idempotencyKey: idempotencyKey))
+        writeOperations.append("create")
         return createFileResult ?? .success(Fixtures.item(id: "new", file: "new.md", kind: "note"))
     }
     func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<WriteManifestItem, WriteSyncError> {
@@ -104,6 +141,7 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
             return .failure(.network("cancelled"))
         }
         putCalls.append(PutCall(postId: postId, body: body, hash: hash))
+        writeOperations.append("put")
         return putResult
     }
     func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async -> Result<WriteManifestItem, WriteSyncError> {
@@ -147,10 +185,12 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
 enum Fixtures {
     static func item(
         id: String, file: String, kind: String, slug: String? = nil,
-        title: String? = nil, hash: String = "h", url: String? = nil
+        title: String? = nil, hash: String = "h", url: String? = nil,
+        representation: WriteFileRepresentation = .markdown
     ) -> WriteManifestItem {
         WriteManifestItem(
-            file: file, kind: kind, slug: slug ?? file.replacingOccurrences(of: ".md", with: ""),
+            file: file, representation: representation, kind: kind,
+            slug: slug ?? file.replacingOccurrences(of: ".md", with: ""),
             title: title ?? file, status: "draft", hash: hash, id: id, date: nil,
             createdAt: nil, updatedAt: nil, url: url)
     }

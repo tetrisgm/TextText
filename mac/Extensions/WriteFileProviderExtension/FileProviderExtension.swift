@@ -150,6 +150,26 @@ public final class FileProviderExtension: NSObject,
             // its hidden trash container in a permanent reconciliation loop.
             finish(nil, Self.fpError(.noSuchItem))
             return requestState.progress
+        case .dataContainer:
+            finish(WriteFileProviderItem(
+                WriteCentralAttachments.dataContainerItem()), nil)
+            return requestState.progress
+        case .attachmentsContainer:
+            finish(WriteFileProviderItem(
+                WriteCentralAttachments.attachmentsContainerItem()), nil)
+            return requestState.progress
+        case .attachmentWorkspace, .attachmentItem, .attachmentFile:
+            let enumerator = CentralAttachmentsEnumerator(
+                container: wid, descriptors: handoffDescriptors(),
+                apiFactory: apiFactory)
+            let task = Task {
+                switch await enumerator.item(for: wid) {
+                case .success(let item): finish(WriteFileProviderItem(item), nil)
+                case .failure(let error): finish(nil, Self.nsError(from: error))
+                }
+            }
+            requestState.install(task)
+            return requestState.progress
         case .workspace(let handle):
             guard let item = WorkspaceListEnumerator.item(
                 for: handle, in: handoffDescriptors()
@@ -191,7 +211,61 @@ public final class FileProviderExtension: NSObject,
                 completionHandler(nil, nil, Self.cancelledError())
             }
         }
-        guard case .file(let handle, let postId)? = WriteItemIdentifier(itemIdentifier) else {
+        guard let requestedIdentifier = WriteItemIdentifier(itemIdentifier) else {
+            _ = finish(nil, nil, Self.fpError(.noSuchItem))
+            return requestState.progress
+        }
+        if case .attachmentFile(let handle, let postId, let filename) = requestedIdentifier {
+            guard let api = apiFactory(handle) else {
+                _ = finish(nil, nil, Self.fpError(.notAuthenticated))
+                return requestState.progress
+            }
+            let tempDir = fpTemporaryDirectory()
+            let task = Task {
+                let enumerator = CentralAttachmentsEnumerator(
+                    container: .attachmentItem(handle: handle, id: postId),
+                    descriptors: handoffDescriptors(), apiFactory: apiFactory)
+                let metadata: WriteItem
+                switch await enumerator.item(for: requestedIdentifier) {
+                case .failure(let error):
+                    _ = finish(nil, nil, Self.nsError(from: error)); return
+                case .success(let value): metadata = value
+                }
+                guard let rawURL = metadata.manifestURL,
+                      let artifactURL = URL(string: rawURL),
+                      let dir = tempDir else {
+                    _ = finish(nil, nil, Self.fpError(.cannotSynchronize)); return
+                }
+                let content: WriteArtifactContent
+                switch await api.artifactData(url: artifactURL) {
+                case .failure(let error):
+                    _ = finish(nil, nil, Self.nsError(from: error)); return
+                case .success(let value): content = value
+                }
+                let destination = dir.appendingPathComponent(UUID().uuidString)
+                do { try content.data.write(to: destination) } catch {
+                    _ = finish(nil, nil, error); return
+                }
+                let item = WriteFileProviderItem(metadata.withContent(
+                    hash: metadata.contentHash, size: content.data.count))
+                if let requestedVersion,
+                   !Self.requestedVersion(requestedVersion, matches: item.itemVersion) {
+                    try? FileManager.default.removeItem(at: destination)
+                    _ = finish(nil, nil, Self.fpError(.versionNoLongerAvailable))
+                    return
+                }
+                guard !Task.isCancelled else {
+                    try? FileManager.default.removeItem(at: destination); return
+                }
+                if !finish(destination, item, nil) {
+                    try? FileManager.default.removeItem(at: destination)
+                }
+                fpLog.info("fetchContents attachment \(filename, privacy: .public) delivered \(content.data.count) bytes")
+            }
+            requestState.install(task)
+            return requestState.progress
+        }
+        guard case .file(let handle, let postId) = requestedIdentifier else {
             _ = finish(nil, nil, Self.fpError(.noSuchItem))
             return requestState.progress
         }
@@ -202,104 +276,109 @@ public final class FileProviderExtension: NSObject,
         let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
         let tempDir = fpTemporaryDirectory()
         let task = Task {
-            if let identity = WriteBookmarkSidecars.assetIdentity(
-                fromFileServerId: postId) {
-                let manifest: WriteBookmarkArtifactManifest
-                switch await api.bookmarkArtifacts(postId: identity.postId) {
-                case .failure(let error):
-                    _ = finish(nil, nil, Self.nsError(from: error)); return
-                case .success(let value): manifest = value
-                }
-                guard manifest.postId == identity.postId,
-                      let artifact = WriteBookmarkSidecars.validatedArtifacts(
-                        manifest, handle: handle
-                      ).first(where: { $0.filename == identity.filename }),
-                      let artifactURL = URL(string: artifact.url) else {
-                    _ = finish(nil, nil, Self.fpError(.noSuchItem)); return
-                }
-                let mapped: WriteItem
-                switch await core.item(for: .file(handle: handle, id: postId)) {
-                case .failure(let error):
-                    _ = finish(nil, nil, Self.nsError(from: error)); return
-                case .success(let value): mapped = value
-                }
-                let downloaded: WriteArtifactContent
-                switch await api.artifactData(url: artifactURL) {
-                case .failure(let error):
-                    _ = finish(nil, nil, Self.nsError(from: error)); return
-                case .success(let value): downloaded = value
-                }
-                let returned = WriteFileProviderItem(mapped.withContent(
-                    hash: mapped.contentHash, size: downloaded.data.count))
-                if let requestedVersion,
-                   !Self.requestedVersion(requestedVersion, matches: returned.itemVersion) {
-                    _ = finish(nil, nil, Self.fpError(.versionNoLongerAvailable)); return
-                }
-                guard let dir = tempDir else {
-                    _ = finish(nil, nil, Self.fpError(.serverUnreachable)); return
-                }
-                let destination = dir.appendingPathComponent(UUID().uuidString)
-                do { try downloaded.data.write(to: destination) }
-                catch { _ = finish(nil, nil, error); return }
-                guard !Task.isCancelled else {
-                    try? FileManager.default.removeItem(at: destination)
-                    return
-                }
-                if !finish(destination, returned, nil) {
-                    try? FileManager.default.removeItem(at: destination)
-                }
-                return
-            }
             switch await consistentFetch(postId: postId, core: core, api: api) {
             case .failure(let error):
                 fpLog.error("fetchContents \(postId, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 _ = finish(nil, nil, Self.nsError(from: error))
             case .success(let revision):
                 guard !Task.isCancelled else { return }
-                var materializedText = revision.content.text
-                if revision.item.kind == .bookmark {
-                    let manifest: WriteBookmarkArtifactManifest
-                    switch await api.bookmarkArtifacts(postId: postId) {
-                    case .failure(let error):
-                        _ = finish(nil, nil, Self.nsError(from: error)); return
-                    case .success(let value): manifest = value
-                    }
-                    guard manifest.postId == postId,
-                          manifest.fileHash == revision.content.hash else {
-                        _ = finish(
-                            nil, nil,
-                            Self.nsError(from: .network(
-                                "Bookmark artifacts changed during materialization")))
-                        return
-                    }
-                    materializedText = WriteBookmarkSidecars.localMarkdown(
-                        canonical: revision.content.text,
-                        manifest: manifest,
-                        handle: handle)
-                }
-                let bytes = Data(materializedText.utf8)
-                let item = WriteFileProviderItem(revision.item.withContent(
-                    hash: revision.content.hash, size: bytes.count))
-                if let requestedVersion,
-                   !Self.requestedVersion(requestedVersion, matches: item.itemVersion) {
-                    _ = finish(nil, nil, Self.fpError(.versionNoLongerAvailable))
-                    return
-                }
                 guard let dir = tempDir else {
                     fpLog.error("fetchContents \(postId, privacy: .public): no temp dir")
                     _ = finish(nil, nil, Self.fpError(.serverUnreachable)); return
                 }
-                let destination = dir.appendingPathComponent(UUID().uuidString)
-                do { try bytes.write(to: destination) }
-                catch {
+
+                let representation = revision.item.representation ?? .markdown
+                let destination: URL
+                let logicalSize: Int
+                do {
+                    switch representation {
+                    case .textbundle:
+                        let manifest: WriteArtifactManifest
+                        switch await api.documentArtifacts(postId: postId) {
+                        case .failure(.notFound) where revision.item.kind != .bookmark:
+                            manifest = WriteArtifactManifest(
+                                postId: postId,
+                                slug: "",
+                                fileHash: revision.content.hash ?? "",
+                                artifacts: [])
+                        case .failure(let error):
+                            _ = finish(nil, nil, Self.nsError(from: error)); return
+                        case .success(let value): manifest = value
+                        }
+                        guard manifest.postId == postId,
+                              manifest.fileHash == revision.content.hash else {
+                            _ = finish(
+                                nil, nil,
+                                Self.nsError(from: .network(
+                                    "Document assets changed during materialization")))
+                            return
+                        }
+                        var assets: [WriteTextBundlePackage.MaterializedAsset] = []
+                        for artifact in WriteDocumentAssets.validatedInlineAssets(
+                            manifest, handle: handle
+                        ) {
+                            guard let artifactURL = URL(string: artifact.url) else {
+                                _ = finish(nil, nil, Self.fpError(.cannotSynchronize)); return
+                            }
+                            let downloaded: WriteArtifactContent
+                            switch await api.artifactData(url: artifactURL) {
+                            case .failure(let error):
+                                _ = finish(nil, nil, Self.nsError(from: error)); return
+                            case .success(let value): downloaded = value
+                            }
+                            assets.append(.init(
+                                filename: artifact.filename,
+                                data: downloaded.data,
+                                remoteURL: artifact.url,
+                                contentType: artifact.contentType ?? downloaded.contentType))
+                        }
+                        let package = try WriteTextBundlePackage.materialize(
+                            canonicalMarkdown: revision.content.text,
+                            assets: assets,
+                            sourceURL: revision.item.manifestURL,
+                            in: dir)
+                        destination = try WriteTextBundlePackage.uploadingSnapshot(
+                            of: package.url, in: dir)
+                        logicalSize = package.logicalSize
+                        try? FileManager.default.removeItem(at: package.url)
+                    case .markdown, .text:
+                        var text = revision.content.text
+                        if representation == .markdown {
+                            switch await plainDocumentContext(
+                                item: revision.item, api: api) {
+                            case .failure(let error):
+                                _ = finish(nil, nil, Self.nsError(from: error)); return
+                            case .success(let context):
+                                text = WriteCentralAttachments.localMarkdown(
+                                    canonical: text, manifest: context.manifest,
+                                    handle: handle,
+                                    workspaceFilename: context.workspaceFilename,
+                                    documentFilename: context.documentFilename,
+                                    folderDepth: context.folderDepth)
+                            }
+                        }
+                        let bytes = Data(text.utf8)
+                        destination = dir.appendingPathComponent(UUID().uuidString)
+                        try bytes.write(to: destination)
+                        logicalSize = bytes.count
+                    }
+                } catch {
                     fpLog.error("fetchContents \(postId, privacy: .public) write failed: \(String(describing: error), privacy: .public)")
                     _ = finish(nil, nil, error); return
+                }
+                let item = WriteFileProviderItem(revision.item.withContent(
+                    hash: revision.content.hash, size: logicalSize))
+                if let requestedVersion,
+                   !Self.requestedVersion(requestedVersion, matches: item.itemVersion) {
+                    try? FileManager.default.removeItem(at: destination)
+                    _ = finish(nil, nil, Self.fpError(.versionNoLongerAvailable))
+                    return
                 }
                 guard !Task.isCancelled else {
                     try? FileManager.default.removeItem(at: destination)
                     return
                 }
-                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(bytes.count) bytes")
+                fpLog.info("fetchContents \(postId, privacy: .public) delivered \(logicalSize) bytes")
                 // The returned item MUST describe the bytes just written: its hash
                 // (the GET body and its ETag are one consistent snapshot; a stale
                 // manifest hash would make the next edit send a wrong If-Match and
@@ -336,11 +415,16 @@ public final class FileProviderExtension: NSObject,
             // File Provider's contract, an extension that does not advertise
             // allowsTrashing must reject this enumerator explicitly.
             throw Self.readOnlyError()
+        case .dataContainer, .attachmentsContainer, .attachmentWorkspace,
+             .attachmentItem:
+            return CentralAttachmentsEnumerator(
+                container: wid, descriptors: handoffDescriptors(),
+                apiFactory: apiFactory)
         case .workspace(let handle), .folder(let handle, _):
             guard let api = apiFactory(handle) else { throw Self.fpError(.notAuthenticated) }
             return WriteEnumeratorAdapter(
                 container: wid, core: makeCore(api, handle: handle, name: descriptorName(for: handle)))
-        case .file:
+        case .file, .attachmentFile:
             throw Self.fpError(.noSuchItem)
         }
     }
@@ -458,19 +542,142 @@ public final class FileProviderExtension: NSObject,
                 completionHandler(nil, [], false, Self.cancelledError())
             }
         }
+        if options.contains(.mayAlreadyExist) {
+            // Releases 0.65-0.67 exposed bookmark assets as visible sibling
+            // folders. A schema upgrade intentionally drops those disk objects;
+            // their bytes now live inside the bookmark's TextBundle package.
+            if Self.isLegacyBookmarkSidecar(itemTemplate) {
+                done(nil, nil)
+                return requestState.progress
+            }
+            let task = Task {
+                guard !Task.isCancelled else { return }
+                switch await existingItemForReimport(matching: itemTemplate) {
+                case .success(let existing?):
+                    fpLog.info(
+                        "adopted reimported item \(existing.identifier.rawValue, privacy: .public) for '\(itemTemplate.filename, privacy: .public)'"
+                    )
+                    done(WriteFileProviderItem(existing), nil)
+                    return
+                case .failure(let error):
+                    done(nil, Self.nsError(from: error))
+                    return
+                case .success(nil):
+                    // This is genuinely new disk content. Continue through the
+                    // normal create path when its parent is writable.
+                    break
+                }
+                createOrdinaryItem(
+                    basedOn: itemTemplate, contents: url,
+                    requestState: requestState, finish: finish, done: done)
+            }
+            requestState.install(task)
+            return requestState.progress
+        }
+        createOrdinaryItem(
+            basedOn: itemTemplate, contents: url,
+            requestState: requestState, finish: finish, done: done)
+        return requestState.progress
+    }
+
+    /// Reimport scans the existing disk tree and invokes `createItem` with
+    /// `.mayAlreadyExist`. Match the disk object to the authoritative provider
+    /// item before considering a server create. Stable identifiers are cheapest;
+    /// a parent-scoped filename lookup covers restored File Provider databases
+    /// whose temporary disk identifiers no longer carry Write's identity.
+    private func existingItemForReimport(
+        matching template: NSFileProviderItem
+    ) async -> Result<WriteItem?, WriteSyncError> {
+        if let identifier = WriteItemIdentifier(rawValue: template.itemIdentifier.rawValue),
+           let handle = identifier.workspaceHandle,
+           let api = apiFactory(handle) {
+            let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
+            switch await core.item(for: identifier) {
+            case .success(let item): return .success(item)
+            case .failure(.notFound): break
+            case .failure(let error): return .failure(error)
+            }
+        }
+
+        guard let parent = WriteItemIdentifier(
+            rawValue: template.parentItemIdentifier.rawValue
+        ) else { return .success(nil) }
+        let wantsFolder = template.contentType?.conforms(to: .folder) ?? false
+
+        if parent == .rootContainer {
+            let candidates = WorkspaceListEnumerator.items(handoffDescriptors())
+            return .success(Self.matchReimportCandidate(
+                candidates, filename: template.filename, isFolder: wantsFolder))
+        }
+
+        guard let handle = parent.workspaceHandle,
+              let api = apiFactory(handle) else {
+            return .failure(.http(401, "Not authenticated"))
+        }
+        let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
+        switch await core.children(of: parent) {
+        case .failure(let error): return .failure(error)
+        case .success(let candidates):
+            return .success(Self.matchReimportCandidate(
+                candidates, filename: template.filename, isFolder: wantsFolder))
+        }
+    }
+
+    private static func matchReimportCandidate(
+        _ candidates: [WriteItem], filename: String, isFolder: Bool
+    ) -> WriteItem? {
+        let requested = filename.precomposedStringWithCanonicalMapping
+        return candidates.first {
+            guard $0.isFolder == isFolder else { return false }
+            let candidate = $0.filename.precomposedStringWithCanonicalMapping
+            return candidate.compare(
+                requested, options: [.caseInsensitive, .widthInsensitive],
+                locale: Locale(identifier: "en_US_POSIX")) == .orderedSame
+        }
+    }
+
+    private static func isLegacyBookmarkSidecar(_ item: NSFileProviderItem) -> Bool {
+        if let identifier = WriteItemIdentifier(rawValue: item.itemIdentifier.rawValue) {
+            switch identifier {
+            case .folder(_, let id):
+                if WriteLegacyBookmarkSidecars.postId(fromFolderServerId: id) != nil {
+                    return true
+                }
+            case .file(_, let id):
+                if WriteLegacyBookmarkSidecars.assetIdentity(fromFileServerId: id) != nil {
+                    return true
+                }
+            default: break
+            }
+        }
+        return item.filename.lowercased().hasSuffix(".assets")
+            && (item.contentType?.conforms(to: .folder) ?? false)
+    }
+
+    private func createOrdinaryItem(
+        basedOn itemTemplate: NSFileProviderItem,
+        contents url: URL?,
+        requestState: FileProviderRequestState,
+        finish: @escaping (
+            NSFileProviderItem?, NSFileProviderItemFields, Bool, (any Error)?
+        ) -> Void,
+        done: @escaping (NSFileProviderItem?, (any Error)?) -> Void
+    ) {
         guard case .folder(let handle, let parentId)? = WriteItemIdentifier(itemTemplate.parentItemIdentifier) else {
             // New items must land inside a workspace folder (the root holds the
             // workspace containers, and a workspace holds only its system folders).
-            done(nil, Self.readOnlyError()); return requestState.progress
+            done(nil, Self.readOnlyError()); return
         }
         guard let api = apiFactory(handle) else {
-            done(nil, Self.fpError(.notAuthenticated)); return requestState.progress
+            done(nil, Self.fpError(.notAuthenticated)); return
         }
-        if WriteBookmarkSidecars.postId(fromFolderServerId: parentId) != nil {
-            done(nil, Self.readOnlyError()); return requestState.progress
-        }
-        let isFolder = itemTemplate.contentType?.conforms(to: .folder) ?? false
         let filename = itemTemplate.filename
+        let representation = WriteFileRepresentation.inferred(fromFilename: filename)
+            ?? (itemTemplate.contentType?.identifier == WriteTextBundlePackage.typeIdentifier
+                ? .textbundle : .markdown)
+        let isTextBundle = representation == .textbundle
+        let isFolder = !isTextBundle
+            && (itemTemplate.contentType?.conforms(to: .folder) ?? false)
         // The template's itemIdentifier is stable across the framework's retries
         // of THIS create, so it is the right Idempotency-Key: a lost response
         // plus retry returns the original item instead of a duplicate.
@@ -494,9 +701,20 @@ public final class FileProviderExtension: NSObject,
                 }
             } else {
                 let body: String
+                var packageContents: WriteTextBundleContents?
                 if let url {
                     do {
-                        body = try String(contentsOf: url, encoding: .utf8)
+                        if representation == .textbundle {
+                            guard let temporaryDirectory = fpTemporaryDirectory() else {
+                                done(nil, Self.fpError(.serverUnreachable)); return
+                            }
+                            let contents = try WriteTextBundlePackage.read(
+                                from: url, in: temporaryDirectory)
+                            packageContents = contents
+                            body = contents.markdown
+                        } else {
+                            body = try String(contentsOf: url, encoding: .utf8)
+                        }
                     } catch {
                         done(nil, Self.unreadableContentsError(error)); return
                     }
@@ -507,9 +725,45 @@ public final class FileProviderExtension: NSObject,
                     body = ""
                 }
                 guard !Task.isCancelled else { return }
-                switch await api.createFile(body: body, folderId: parentId, idempotencyKey: idempotencyKey) {
+                let hasLocalAssets = packageContents?.assets.contains {
+                    $0.remoteURL == nil
+                } ?? false
+                switch await api.createFile(
+                    // A package asset URL cannot be assigned until the server
+                    // has issued a stable post id. Create an empty revision,
+                    // upload immutable assets, then commit the Markdown last.
+                    body: hasLocalAssets ? "" : body, folderId: parentId,
+                    representation: representation,
+                    idempotencyKey: idempotencyKey
+                ) {
                 case .failure(let error): done(nil, Self.nsError(from: error))
-                case .success(let created):
+                case .success(let initial):
+                    var created = initial
+                    if hasLocalAssets, let packageContents {
+                        guard let postId = initial.id, !postId.isEmpty,
+                              !initial.hash.isEmpty else {
+                            done(nil, Self.fpError(.cannotSynchronize)); return
+                        }
+                        let canonical: String
+                        switch await uploadLocalPackageAssets(
+                            packageContents, postId: postId, handle: handle, api: api
+                        ) {
+                        case .failure(let error):
+                            _ = await api.deleteFile(postId: postId, ifMatch: initial.hash)
+                            done(nil, Self.nsError(from: error)); return
+                        case .success(let value): canonical = value
+                        }
+                        guard !Task.isCancelled else { return }
+                        switch await api.putFile(
+                            postId: postId, body: canonical, ifMatch: initial.hash
+                        ) {
+                        case .failure(let error):
+                            _ = await api.deleteFile(
+                                postId: postId, ifMatch: initial.hash)
+                            done(nil, Self.nsError(from: error)); return
+                        case .success(let saved): created = saved
+                        }
+                    }
                     // Title the new post from the Finder filename (the filename IS
                     // the title now, not the slug). Leave the slug/URL to the
                     // server. Skip the PATCH when the title already matches.
@@ -536,7 +790,6 @@ public final class FileProviderExtension: NSObject,
             }
         }
         requestState.install(task)
-        return requestState.progress
     }
 
     // MARK: Modify (content edit, rename, move)
@@ -583,10 +836,6 @@ public final class FileProviderExtension: NSObject,
             // draws a cloud error badge on an otherwise fully synced folder.
             // Renames remain the only container field sent to the server;
             // moves and content changes are still rejected below.
-            if case .folder(_, let folderId)? = WriteItemIdentifier(item.itemIdentifier),
-               WriteBookmarkSidecars.postId(fromFolderServerId: folderId) != nil {
-                done(nil, Self.readOnlyError()); return requestState.progress
-            }
             guard changedFields.subtracting(Self.supportedContainerFields).isEmpty else {
                 done(nil, Self.readOnlyError()); return requestState.progress
             }
@@ -695,9 +944,6 @@ public final class FileProviderExtension: NSObject,
         guard let api = apiFactory(handle) else {
             done(nil, Self.fpError(.notAuthenticated)); return requestState.progress
         }
-        if WriteBookmarkSidecars.assetIdentity(fromFileServerId: postId) != nil {
-            done(nil, Self.readOnlyError()); return requestState.progress
-        }
         let core = makeCore(api, handle: handle, name: descriptorName(for: handle))
         let task = Task {
             let changesMetadata = changedFields.contains(.filename)
@@ -708,20 +954,20 @@ public final class FileProviderExtension: NSObject,
                     changedFields: changedFields, options: options, finish: finish)
                 return
             }
-            var currentMetadataItem: WriteItem?
-            if changesMetadata {
+            var currentItem: WriteItem?
+            if changesMetadata || changedFields.contains(.contents) {
                 let current: WriteItem
                 switch await core.item(for: .file(handle: handle, id: postId)) {
                 case .failure(let error): done(nil, Self.nsError(from: error)); return
                 case .success(let value): current = value
                 }
-                guard Self.metadataBase(version, matches: current) else {
+                guard !changesMetadata || Self.metadataBase(version, matches: current) else {
                     finishModifyConflict(
                         current: current, changedFields: changedFields,
                         options: options, finish: finish)
                     return
                 }
-                currentMetadataItem = current
+                currentItem = current
             }
 
             var body: String?
@@ -729,37 +975,45 @@ public final class FileProviderExtension: NSObject,
                 guard let newContents else {
                     done(nil, Self.unreadableContentsError(nil)); return
                 }
-                do { body = try String(contentsOf: newContents, encoding: .utf8) }
-                catch { done(nil, Self.unreadableContentsError(error)); return }
+                do {
+                    if currentItem?.representation == .textbundle {
+                        guard let temporaryDirectory = fpTemporaryDirectory() else {
+                            done(nil, Self.fpError(.serverUnreachable)); return
+                        }
+                        let contents = try WriteTextBundlePackage.read(
+                            from: newContents, in: temporaryDirectory)
+                        switch await uploadLocalPackageAssets(
+                            contents, postId: postId, handle: handle, api: api
+                        ) {
+                        case .failure(let error):
+                            done(nil, Self.nsError(from: error)); return
+                        case .success(let canonical): body = canonical
+                        }
+                    } else {
+                        let local = try String(contentsOf: newContents, encoding: .utf8)
+                        if currentItem?.representation == .markdown,
+                           let currentItem {
+                            switch await plainDocumentContext(
+                                item: currentItem, api: api) {
+                            case .failure(let error):
+                                done(nil, Self.nsError(from: error)); return
+                            case .success(let context):
+                                body = WriteCentralAttachments.canonicalMarkdown(
+                                    local: local, manifest: context.manifest,
+                                    handle: handle,
+                                    workspaceFilename: context.workspaceFilename,
+                                    documentFilename: context.documentFilename,
+                                    folderDepth: context.folderDepth)
+                            }
+                        } else {
+                            body = local
+                        }
+                    }
+                } catch {
+                    done(nil, Self.unreadableContentsError(error)); return
+                }
             } else {
                 body = nil
-            }
-
-            if let localBody = body {
-                let current: WriteItem
-                if let currentMetadataItem {
-                    current = currentMetadataItem
-                } else {
-                    switch await core.item(for: .file(handle: handle, id: postId)) {
-                    case .failure(let error): done(nil, Self.nsError(from: error)); return
-                    case .success(let value): current = value
-                    }
-                }
-                if current.kind == .bookmark {
-                    let manifest: WriteBookmarkArtifactManifest
-                    switch await api.bookmarkArtifacts(postId: postId) {
-                    case .failure(let error): done(nil, Self.nsError(from: error)); return
-                    case .success(let value): manifest = value
-                    }
-                    guard manifest.postId == postId, manifest.fileHash == baseHash else {
-                        await resolveModifyConflict(
-                            identifier: .file(handle: handle, id: postId), core: core,
-                            changedFields: changedFields, options: options, finish: finish)
-                        return
-                    }
-                    body = WriteBookmarkSidecars.canonicalMarkdown(
-                        local: localBody, manifest: manifest, handle: handle)
-                }
             }
 
             // Validate the complete intent before applying either half of a
@@ -769,7 +1023,7 @@ public final class FileProviderExtension: NSObject,
             var newFolderId: String?
             if changedFields.contains(.parentItemIdentifier),
                item.parentItemIdentifier.rawValue
-                    != currentMetadataItem?.parentIdentifier.rawValue {
+                    != currentItem?.parentIdentifier.rawValue {
                 guard case .folder(let parentHandle, let folderId)? =
                         WriteItemIdentifier(item.parentItemIdentifier),
                       parentHandle == handle else {
@@ -786,7 +1040,7 @@ public final class FileProviderExtension: NSObject,
             }
             let newTitle: String?
             if changedFields.contains(.filename),
-               item.filename != currentMetadataItem?.filename {
+               item.filename != currentItem?.filename {
                 let title = WriteFilename.titleFromFilename(item.filename, stableId: postId)
                 guard !title.isEmpty else {
                     done(nil, Self.fpError(.cannotSynchronize)); return
@@ -797,8 +1051,8 @@ public final class FileProviderExtension: NSObject,
             }
 
             if body == nil, newFolderId == nil, newTitle == nil,
-               let currentMetadataItem {
-                done(WriteFileProviderItem(currentMetadataItem), nil)
+               let currentItem {
+                done(WriteFileProviderItem(currentItem), nil)
                 return
             }
 
@@ -844,7 +1098,7 @@ public final class FileProviderExtension: NSObject,
                     let pending = changedFields.intersection(Self.serverMetadataFields)
                     if Self.canDefer(error), !pending.isEmpty,
                        let savedContentItem,
-                       let parent = currentMetadataItem?.parentIdentifier,
+                       let parent = currentItem?.parentIdentifier,
                        case .folder(let parentHandle, let parentId) = parent,
                        parentHandle == handle,
                        let partial = Self.fileItem(
@@ -889,9 +1143,6 @@ public final class FileProviderExtension: NSObject,
         guard case .file(let handle, let postId)? = WriteItemIdentifier(identifier) else {
             done(Self.readOnlyError()); return requestState.progress
         }
-        if WriteBookmarkSidecars.assetIdentity(fromFileServerId: postId) != nil {
-            done(Self.readOnlyError()); return requestState.progress
-        }
         guard let api = apiFactory(handle) else {
             done(Self.fpError(.notAuthenticated)); return requestState.progress
         }
@@ -928,6 +1179,112 @@ public final class FileProviderExtension: NSObject,
     }
 
     // MARK: Helpers
+
+    /// Resolve package-local `assets/<name>` references to immutable server
+    /// URLs. Assets whose TextBundle metadata still matches their bytes retain
+    /// their existing URL; new or replaced bytes upload first, and the caller
+    /// commits the returned Markdown in one final PUT.
+    private func uploadLocalPackageAssets(
+        _ contents: WriteTextBundleContents, postId: String, handle: String,
+        api: WriteSyncAPI
+    ) async -> Result<String, WriteSyncError> {
+        var markdown = contents.markdown
+        for asset in contents.assets
+            .filter({ $0.remoteURL == nil })
+            .sorted(by: { $0.filename < $1.filename }) {
+            guard !Task.isCancelled else {
+                return .failure(.network("cancelled"))
+            }
+            guard WriteDocumentAssets.isSafeFilename(asset.filename),
+                  let contentType = asset.contentType
+                    ?? WriteDocumentAssets.inferredContentType(filename: asset.filename) else {
+                return .failure(.rejected(
+                    "Only image and video assets with portable filenames are supported"))
+            }
+            let uploaded: WriteArtifact
+            switch await api.uploadAsset(
+                postId: postId, filename: asset.filename, data: asset.data,
+                contentType: contentType
+            ) {
+            case .failure(let error): return .failure(error)
+            case .success(let value): uploaded = value
+            }
+            guard uploaded.role == "asset",
+                  let url = URL(string: uploaded.url),
+                  WriteDocumentAssets.isWriteHostedAssetURL(
+                    url, handle: handle, postId: postId) else {
+                return .failure(.rejected("Server returned an invalid asset URL"))
+            }
+            let relative = "assets/\(asset.filename)"
+            markdown = markdown.replacingOccurrences(
+                of: "./\(relative)", with: uploaded.url)
+            markdown = markdown.replacingOccurrences(
+                of: relative, with: uploaded.url)
+        }
+        return .success(markdown)
+    }
+
+    private struct PlainDocumentContext {
+        let manifest: WriteArtifactManifest
+        let workspaceFilename: String
+        let documentFilename: String
+        let folderDepth: Int
+    }
+
+    /// Resolve the one synthetic attachment path used by an imported Markdown
+    /// file. The hierarchy comes from stable server ids, not from parsing the
+    /// user-visible path, so punctuation such as `?` can never corrupt identity.
+    private func plainDocumentContext(
+        item: WriteItem, api: WriteSyncAPI
+    ) async -> Result<PlainDocumentContext, WriteSyncError> {
+        guard case .file(let handle, let postId) = item.identifier,
+              item.representation == .markdown,
+              case .folder(let parentHandle, let folderId) = item.parentIdentifier,
+              parentHandle == handle else { return .failure(.notFound) }
+
+        async let workspaceResult = api.workspace()
+        async let artifactResult = api.documentArtifacts(postId: postId)
+
+        let workspace: WriteWorkspace
+        switch await workspaceResult {
+        case .failure(let error): return .failure(error)
+        case .success(let value): workspace = value
+        }
+
+        let manifest: WriteArtifactManifest
+        switch await artifactResult {
+        case .failure(.notFound):
+            manifest = WriteArtifactManifest(
+                postId: postId, slug: "", fileHash: item.contentHash ?? "",
+                artifacts: [])
+        case .failure(let error): return .failure(error)
+        case .success(let value): manifest = value
+        }
+        guard manifest.postId == postId,
+              manifest.fileHash == item.contentHash else {
+            return .failure(.network(
+                "Document assets changed during Markdown materialization"))
+        }
+
+        var depth = 0
+        var current: String? = folderId
+        var visited = Set<String>()
+        while let id = current {
+            guard visited.insert(id).inserted,
+                  let folder = workspace.folders.first(where: { $0.id == id }) else {
+                return .failure(.decode("Invalid workspace folder hierarchy"))
+            }
+            depth += 1
+            current = folder.parentId
+        }
+
+        return .success(PlainDocumentContext(
+            manifest: manifest,
+            workspaceFilename: WriteCentralAttachments.workspaceFolderFilename(
+                displayName: descriptorName(for: handle), handle: handle),
+            documentFilename: WriteCentralAttachments.documentFolderFilename(for: item),
+            folderDepth: depth))
+    }
 
     private struct FetchedRevision {
         let item: WriteItem
@@ -971,10 +1328,8 @@ public final class FileProviderExtension: NSObject,
     }
 
     private static func usableBaseHash(_ version: NSFileProviderItemVersion) -> String? {
-        guard isUsableBaseComponent(version.contentVersion),
-              let hash = String(data: version.contentVersion, encoding: .utf8),
-              !hash.isEmpty else { return nil }
-        return hash
+        guard isUsableBaseComponent(version.contentVersion) else { return nil }
+        return WriteFileProviderItem.serverHash(from: version.contentVersion)
     }
 
     private static func requestedVersion(

@@ -8,6 +8,24 @@ export function isRemoteImageUrl(value: string | undefined): value is string {
   }
 }
 
+export function remoteMarkdownImageUrls(
+  markdown: string | undefined,
+): string[] {
+  if (!markdown) return [];
+
+  const pattern =
+    /!\[[^\]]*]\(\s*<?(https?:\/\/[^\s<>)]+)>?(?:\s+["'][^)]*["'])?\s*\)/gi;
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const match of markdown.matchAll(pattern)) {
+    const url = match[1]?.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
 export function localizeRemoteMarkdownImages(
   markdown: string,
   replacements: Map<string, string>,

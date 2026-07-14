@@ -3,8 +3,9 @@ import Foundation
 import WriteFileProviderKit
 import WriteFileProviderBridge
 
-/// Enumerates the domain ROOT: one folder per workspace the app handed off. The
-/// root is the only container that spans workspaces, so it lives in the
+/// Enumerates the domain ROOT: the shared Data tree plus one folder per
+/// workspace the app handed off. The root is the only container that spans
+/// workspaces, so it lives in the
 /// extension (the kit's per-workspace core never sees more than one). Membership
 /// rarely changes, so change tracking fingerprints the actual mapped workspace
 /// child set. Any difference expires it for a clean root re-list.
@@ -51,7 +52,7 @@ final class WorkspaceListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     static func items(_ descriptors: [FileProviderWorkspace]) -> [WriteItem] {
-        WriteFilename.disambiguate(descriptors.map {
+        WriteFilename.disambiguate([WriteCentralAttachments.dataContainerItem()] + descriptors.map {
             WriteItemMapper.workspaceItem(handle: $0.handle, name: $0.name, readOnly: false)
         })
     }

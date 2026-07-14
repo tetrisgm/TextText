@@ -16,6 +16,20 @@ public enum WriteFileProviderUserInfoKey {
 /// name, type, capabilities, size, dates, and a version stamp derived from the
 /// content hash so the framework knows when to re-materialize.
 public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
+    /// Current content versions identify both the native representation and the
+    /// canonical server hash. Bump this marker whenever local materialization
+    /// changes so already-downloaded content is fetched again after an upgrade.
+    public static let nativeMaterializationVersion = "native-local-v2:"
+
+    /// The first native marker shipped before plain Markdown assets moved into
+    /// the central Data/Attachments tree. Accept it while Finder rolls cached
+    /// versions forward, but never emit it for newly enumerated items.
+    public static let legacyNativeMaterializationVersion = "native-local-v1:"
+
+    /// Accepted legacy marker from the bookmark-sidecar-only materializer.
+    /// Keep the public spelling while older extension builds can still return it.
+    public static let bookmarkMaterializationVersion = "bookmark-local-v1:"
+
     private let item: WriteItem
 
     public init(_ item: WriteItem) {
@@ -34,8 +48,15 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
 
     public var contentType: UTType {
         if item.isFolder { return .folder }
+        if item.representation == .textbundle {
+            return UTType(
+                importedAs: WriteItem.textBundleTypeIdentifier,
+                conformingTo: .package)
+        }
         return UTType(item.typeIdentifier)
-            ?? UTType(filenameExtension: "md")
+            ?? item.representation.flatMap {
+                UTType(filenameExtension: $0.filenameExtension)
+            }
             ?? .plainText
     }
 
@@ -60,12 +81,14 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
         ]
     }
 
-    /// The framework compares versions to decide when to re-fetch. The content
-    /// hash is exactly the server's change signal for a file; folders have no
-    /// body, so their content version is a stable constant and only metadata
-    /// (name/parent) drives change. Both fields must be non-empty and small.
+    /// The framework compares versions to decide when to re-fetch. A file's
+    /// content version carries its native representation and the server change
+    /// hash; folders have no body, so their content version is a stable constant
+    /// and only metadata (name/parent) drives change. Both fields are bounded.
     ///
-    /// metadataVersion is name+parent ONLY, deliberately NOT the content hash:
+    /// metadataVersion is representation+name+parent for native files (and the
+    /// legacy name+parent identity for non-represented items), deliberately NOT
+    /// the content hash:
     /// coupling them made an ordinary body edit (hash changes, name does not)
     /// look like a metadata change too, and — because the Finder filename derives
     /// from the post title — a rename's frontmatter re-render then churned the
@@ -73,15 +96,44 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     /// independent lets a rename settle the name once and a content change settle
     /// the body once, instead of each re-triggering the other.
     public var itemVersion: NSFileProviderItemVersion {
-        // Mutation code receives contentVersion back from File Provider and uses
-        // it as the server's If-Match value, so it must remain the exact bounded
-        // server hash. metadataVersion contains user-controlled path data and is
-        // therefore reduced to a fixed 32-byte digest.
-        let content = Data((item.contentHash ?? "folder").utf8)
-        let metadata = WriteStableDigest.sha256(
-            "metadata\u{0}\(item.filename)\u{0}\(item.parentIdentifier.rawValue)")
+        let serverHash = item.contentHash ?? "folder"
+        let versionedHash = item.representation.map {
+            Self.nativeMaterializationVersion + $0.rawValue + ":" + serverHash
+        } ?? serverHash
+        let content = Data(versionedHash.utf8)
+        let metadataIdentity = item.representation.map {
+            "metadata\u{0}\($0.rawValue)\u{0}\(item.filename)\u{0}\(item.parentIdentifier.rawValue)"
+        } ?? "metadata\u{0}\(item.filename)\u{0}\(item.parentIdentifier.rawValue)"
+        let metadata = WriteStableDigest.sha256(metadataIdentity)
         return NSFileProviderItemVersion(
             contentVersion: content, metadataVersion: metadata)
+    }
+
+    /// Recover the If-Match hash from current native versions and both forms a
+    /// rolling upgrade may hand back: the old raw hash and bookmark-local-v1.
+    public static func serverHash(from contentVersion: Data) -> String? {
+        guard let value = String(data: contentVersion, encoding: .utf8),
+              !value.isEmpty else { return nil }
+
+        if value.hasPrefix(nativeMaterializationVersion)
+            || value.hasPrefix(legacyNativeMaterializationVersion) {
+            let prefix = value.hasPrefix(nativeMaterializationVersion)
+                ? nativeMaterializationVersion : legacyNativeMaterializationVersion
+            let payload = value.dropFirst(prefix.count)
+            guard let separator = payload.firstIndex(of: ":"),
+                  WriteFileRepresentation(rawValue: String(payload[..<separator])) != nil else {
+                return nil
+            }
+            let hash = payload[payload.index(after: separator)...]
+            return hash.isEmpty ? nil : String(hash)
+        }
+
+        if value.hasPrefix(bookmarkMaterializationVersion) {
+            let hash = value.dropFirst(bookmarkMaterializationVersion.count)
+            return hash.isEmpty ? nil : String(hash)
+        }
+
+        return value
     }
 
     /// Keep every file downloaded on disk (a filled icon, not a hollow "download
