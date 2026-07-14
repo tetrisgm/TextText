@@ -72,6 +72,35 @@ final class FileProviderExtensionTests: XCTestCase {
             metadataVersion: WriteFileProviderItem(item).itemVersion.metadataVersion)
     }
 
+    private func bookmarkWorkspace() -> WriteWorkspace {
+        let base = Fixtures.workspace()
+        return WriteWorkspace(
+            blog: base.blog,
+            folders: base.folders + [WriteWorkspaceFolder(
+                id: "bookmarks", name: "Bookmarks", path: "Bookmarks",
+                mode: "bookmarks", parentId: nil)])
+    }
+
+    private func bookmarkEntry(hash: String = "h1") -> WriteManifestItem {
+        Fixtures.item(
+            id: "b1", file: "metroid.md", kind: "bookmark",
+            slug: "metroid?", title: "Metroid", hash: hash)
+    }
+
+    private var bookmarkCaptureURL: String {
+        "https://write.public.blob.vercel-storage.com/captures/demo/b1/assets/hero.png"
+    }
+
+    private func bookmarkArtifactManifest(
+        hash: String = "h1"
+    ) -> WriteBookmarkArtifactManifest {
+        WriteBookmarkArtifactManifest(
+            postId: "b1", slug: "metroid?", fileHash: hash,
+            artifacts: [WriteBookmarkArtifact(
+                filename: "asset-001.png", role: "asset",
+                url: bookmarkCaptureURL, contentType: "image/png")])
+    }
+
     private func actionDefinitions() throws -> [[String: Any]] {
         let macDirectory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -372,6 +401,70 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(err?.code, NSFileProviderError.versionNoLongerAvailable.rawValue)
     }
 
+    func testBookmarkFetchRewritesOnlyFinderCopyToRelativeAssetURL() throws {
+        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
+        api.manifests["bookmarks"] = [bookmarkEntry()]
+        let canonical = "# Metroid\n\n![Hero](\(bookmarkCaptureURL))"
+        api.fileTextResults = [
+            .success(WriteFileContent(text: canonical, hash: "h1")),
+        ]
+        api.artifactManifests["b1"] = bookmarkArtifactManifest()
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let exp = expectation(description: "fetch-bookmark-local-copy")
+        var fetchedURL: URL?
+        var fetchedError: Error?
+
+        _ = ext(api, temporaryDirectory: directory).fetchContents(
+            for: NSFileProviderItemIdentifier(rawValue: "file:demo:b1"),
+            version: nil, request: NSFileProviderRequest()
+        ) { url, _, error in
+            fetchedURL = url; fetchedError = error; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(fetchedError)
+        let local = try String(
+            contentsOf: XCTUnwrap(fetchedURL), encoding: .utf8)
+        XCTAssertEqual(
+            local, "# Metroid\n\n![Hero](./metroid~3F.assets/asset-001.png)")
+        XCTAssertEqual(api.fileTextCalls, 1)
+        XCTAssertEqual(api.bookmarkArtifactCalls, 1)
+        XCTAssertTrue(api.putCalls.isEmpty,
+                      "materialization must never mutate canonical server Markdown")
+    }
+
+    func testBookmarkArtifactFetchMaterializesCapturedBytes() throws {
+        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
+        api.artifactManifests["b1"] = bookmarkArtifactManifest()
+        api.artifactContents[bookmarkCaptureURL] = WriteArtifactContent(
+            data: Data([0x89, 0x50, 0x4E, 0x47]), contentType: "image/png")
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let identifier = WriteBookmarkSidecars.assetIdentifier(
+            handle: "demo", postId: "b1", filename: "asset-001.png")
+        let exp = expectation(description: "fetch-bookmark-artifact")
+        var fetchedURL: URL?
+        var fetchedItem: NSFileProviderItem?
+        var fetchedError: Error?
+
+        _ = ext(api, temporaryDirectory: directory).fetchContents(
+            for: NSFileProviderItemIdentifier(rawValue: identifier.rawValue),
+            version: nil, request: NSFileProviderRequest()
+        ) { url, item, error in
+            fetchedURL = url; fetchedItem = item; fetchedError = error; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(fetchedError)
+        XCTAssertEqual(
+            try Data(contentsOf: XCTUnwrap(fetchedURL)),
+            Data([0x89, 0x50, 0x4E, 0x47]))
+        XCTAssertEqual(fetchedItem?.filename, "asset-001.png")
+        XCTAssertEqual(fetchedItem?.documentSize, 4)
+        XCTAssertEqual(api.artifactDataCalls, 1)
+    }
+
     func testFetchCancellationUsesUserCancelledErrorAndCompletesOnce() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.manifestDelayNanoseconds = 5_000_000_000
@@ -531,6 +624,33 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.putCalls.first?.postId, "p1")
         XCTAssertEqual(api.putCalls.first?.body, "new body")
         XCTAssertEqual(api.putCalls.first?.hash, "basehash")
+    }
+
+    func testBookmarkEditRestoresCanonicalAssetURLBeforeUpload() {
+        let api = FakeExtensionAPI(workspace: bookmarkWorkspace())
+        let entry = bookmarkEntry()
+        api.manifests["bookmarks"] = [entry]
+        api.artifactManifests["b1"] = bookmarkArtifactManifest()
+        api.putResult = .success(bookmarkEntry(hash: "h2"))
+        let item = WriteItemMapper.item(
+            for: entry, inFolder: "bookmarks", handle: "demo", readOnly: false)!
+        let local = "# Metroid\n\n![Hero](./metroid~3F.assets/asset-001.png)"
+        let exp = expectation(description: "put-bookmark-canonical-copy")
+
+        _ = ext(api).modifyItem(
+            WriteFileProviderItem(item), baseVersion: version(item),
+            changedFields: [.contents], contents: tempFile(local), options: [],
+            request: NSFileProviderRequest()
+        ) { _, _, _, _ in exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertEqual(api.putCalls.count, 1)
+        XCTAssertEqual(api.putCalls.first?.postId, "b1")
+        XCTAssertEqual(api.putCalls.first?.hash, "h1")
+        XCTAssertEqual(
+            api.putCalls.first?.body,
+            "# Metroid\n\n![Hero](\(bookmarkCaptureURL))")
+        XCTAssertEqual(api.bookmarkArtifactCalls, 1)
     }
 
     func testModifyContentsWithoutReadableURLFailsWithoutUploadingEmptyText() {

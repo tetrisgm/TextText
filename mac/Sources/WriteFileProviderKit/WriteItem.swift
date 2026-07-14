@@ -251,4 +251,55 @@ public enum WriteItemMapper {
             manifestURL: entry.url
         )
     }
+
+    /// A read-only sibling container for a bookmark's captured binaries.
+    public static func bookmarkSidecarFolder(
+        for entry: WriteManifestItem, inFolder folderId: String, handle: String
+    ) -> WriteItem? {
+        guard entry.kind == "bookmark", let postId = entry.id, !postId.isEmpty else {
+            return nil
+        }
+        return WriteItem(
+            identifier: WriteBookmarkSidecars.folderIdentifier(
+                handle: handle, postId: postId),
+            parentIdentifier: .folder(handle: handle, id: folderId),
+            filename: WriteBookmarkSidecars.directoryName(slug: entry.slug),
+            isFolder: true,
+            kind: .folder,
+            typeIdentifier: WriteItem.folderTypeIdentifier,
+            serverId: nil,
+            contentHash: nil,
+            documentSize: nil,
+            creationDate: date(entry.createdAt) ?? date(entry.date),
+            contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
+            capabilities: .readOnlyFolder)
+    }
+
+    /// One immutable captured image inside a bookmark sidecar container.
+    public static func bookmarkArtifact(
+        _ artifact: WriteBookmarkArtifact,
+        manifest: WriteBookmarkArtifactManifest,
+        handle: String
+    ) -> WriteItem? {
+        guard WriteBookmarkSidecars.isSafeFilename(artifact.filename),
+              URL(string: artifact.url) != nil else { return nil }
+        return WriteItem(
+            identifier: WriteBookmarkSidecars.assetIdentifier(
+                handle: handle, postId: manifest.postId,
+                filename: artifact.filename),
+            parentIdentifier: WriteBookmarkSidecars.folderIdentifier(
+                handle: handle, postId: manifest.postId),
+            filename: artifact.filename,
+            isFolder: false,
+            kind: .other("bookmark-asset"),
+            typeIdentifier: artifact.contentType?.hasPrefix("image/") == true
+                ? "public.image" : "public.data",
+            serverId: nil,
+            contentHash: WriteBookmarkSidecars.contentHash(
+                manifest: manifest, artifact: artifact),
+            documentSize: nil,
+            creationDate: nil,
+            contentModificationDate: nil,
+            capabilities: .readOnlyFile)
+    }
 }

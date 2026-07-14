@@ -11,7 +11,11 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
     var failManifest: WriteSyncError?
     var manifestResults: [String: [Result<[WriteManifestItem], WriteSyncError>]] = [:]
     var fileTextResults: [Result<WriteFileContent, WriteSyncError>] = []
+    var artifactManifests: [String: WriteBookmarkArtifactManifest] = [:]
+    var artifactContents: [String: WriteArtifactContent] = [:]
     private(set) var fileTextCalls = 0
+    private(set) var bookmarkArtifactCalls = 0
+    private(set) var artifactDataCalls = 0
     var manifestDelayNanoseconds: UInt64 = 0
     var createFileDelayNanoseconds: UInt64 = 0
     var putFileDelayNanoseconds: UInt64 = 0
@@ -68,6 +72,22 @@ final class FakeExtensionAPI: WriteSyncAPI, @unchecked Sendable {
         fileTextCalls += 1
         if !fileTextResults.isEmpty { return fileTextResults.removeFirst() }
         return .success(WriteFileContent(text: "# body", hash: "h"))
+    }
+    func bookmarkArtifacts(
+        postId: String
+    ) async -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
+        bookmarkArtifactCalls += 1
+        guard let manifest = artifactManifests[postId] else {
+            return .failure(.notFound)
+        }
+        return .success(manifest)
+    }
+    func artifactData(url: URL) async -> Result<WriteArtifactContent, WriteSyncError> {
+        artifactDataCalls += 1
+        guard let content = artifactContents[url.absoluteString] else {
+            return .failure(.notFound)
+        }
+        return .success(content)
     }
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError> {
         .success(WriteChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))

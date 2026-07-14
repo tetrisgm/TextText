@@ -90,6 +90,58 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     }
 }
 
+/// One immutable binary produced by Write's bookmark capture pipeline. The
+/// server assigns a deterministic ASCII filename so File Provider can expose
+/// it as a normal sibling in `<slug>.assets` without deriving a path from an
+/// untrusted remote URL.
+public struct WriteBookmarkArtifact: Codable, Equatable, Sendable {
+    public let filename: String
+    public let role: String
+    public let url: String
+    public let originalURL: String?
+    public let contentType: String?
+
+    public init(
+        filename: String, role: String, url: String,
+        originalURL: String? = nil, contentType: String? = nil
+    ) {
+        self.filename = filename
+        self.role = role
+        self.url = url
+        self.originalURL = originalURL
+        self.contentType = contentType
+    }
+}
+
+/// GET /api/sync/v1/files/{id}/artifacts. `fileHash` ties this manifest to the
+/// canonical Markdown revision so a local rewrite never combines two captures.
+public struct WriteBookmarkArtifactManifest: Codable, Equatable, Sendable {
+    public let postId: String
+    public let slug: String
+    public let fileHash: String
+    public let artifacts: [WriteBookmarkArtifact]
+
+    public init(
+        postId: String, slug: String, fileHash: String,
+        artifacts: [WriteBookmarkArtifact]
+    ) {
+        self.postId = postId
+        self.slug = slug
+        self.fileHash = fileHash
+        self.artifacts = artifacts
+    }
+}
+
+public struct WriteArtifactContent: Equatable, Sendable {
+    public let data: Data
+    public let contentType: String?
+
+    public init(data: Data, contentType: String? = nil) {
+        self.data = data
+        self.contentType = contentType
+    }
+}
+
 /// GET /api/sync/v1/changes -> {cursor, changed}. The cursor is opaque; compare
 /// only by inequality.
 public struct WriteChangeReply: Codable, Equatable, Sendable {

@@ -54,6 +54,41 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         }
     }
 
+    public func bookmarkArtifacts(
+        postId: String
+    ) async -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
+        await get(
+            "/api/sync/v1/files/\(escape(postId))/artifacts",
+            as: WriteBookmarkArtifactManifest.self)
+    }
+
+    public func artifactData(
+        url: URL
+    ) async -> Result<WriteArtifactContent, WriteSyncError> {
+        guard url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              host.hasSuffix(".blob.vercel-storage.com"),
+              url.path.hasPrefix("/captures/") else {
+            return .failure(.rejected("Artifact URL is not Write-hosted"))
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return .failure(.network("not an HTTP response"))
+            }
+            guard http.statusCode == 200 else {
+                return .failure(.http(http.statusCode, "artifact download failed"))
+            }
+            return .success(WriteArtifactContent(
+                data: data,
+                contentType: http.value(forHTTPHeaderField: "Content-Type")))
+        } catch {
+            return .failure(.network(error.localizedDescription))
+        }
+    }
+
     public func changes(
         since cursor: String?, wait: Int
     ) async -> Result<WriteChangeReply, WriteSyncError> {

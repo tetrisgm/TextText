@@ -35,6 +35,14 @@ public protocol WriteSyncAPI: Sendable {
     func manifest(folderId: String) async -> Result<[WriteManifestItem], WriteSyncError>
     /// GET /api/sync/v1/files/{id}
     func fileText(postId: String) async -> Result<WriteFileContent, WriteSyncError>
+    /// GET /api/sync/v1/files/{id}/artifacts. Only Write-hosted bookmark
+    /// capture binaries are returned by this endpoint.
+    func bookmarkArtifacts(postId: String) async
+        -> Result<WriteBookmarkArtifactManifest, WriteSyncError>
+    /// Download one URL returned by `bookmarkArtifacts`. Implementations must
+    /// reject arbitrary remote URLs rather than turning File Provider into a
+    /// general-purpose downloader.
+    func artifactData(url: URL) async -> Result<WriteArtifactContent, WriteSyncError>
     /// GET /api/sync/v1/changes?cursor=&wait= . `cursor == nil` returns the
     /// current cursor immediately; a cursor with `wait > 0` long-polls.
     func changes(since cursor: String?, wait: Int) async -> Result<WriteChangeReply, WriteSyncError>
@@ -70,4 +78,17 @@ public protocol WriteSyncAPI: Sendable {
     /// (its display name). Renaming the workspace folder in Finder maps here.
     func renameWorkspace(name: String) async
         -> Result<WriteWorkspaceBlog, WriteSyncError>
+}
+
+/// Defaults keep small test and bridge fakes source-compatible. Production and
+/// sidecar-aware tests override both methods.
+public extension WriteSyncAPI {
+    func bookmarkArtifacts(postId: String) async
+        -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
+        .failure(.notFound)
+    }
+
+    func artifactData(url: URL) async -> Result<WriteArtifactContent, WriteSyncError> {
+        .failure(.rejected("Artifact downloads are not supported"))
+    }
 }

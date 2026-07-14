@@ -1197,7 +1197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Walk the whole tree (a deep enumerator's readdir traversal forces each
-    /// dataless folder to enumerate) and read every `.md` so it downloads.
+    /// dataless folder to enumerate) and read every regular file so Markdown
+    /// and bookmark sidecar assets are both available offline.
     /// Returns true if the tree still looks cold: nothing enumerated yet, or a
     /// file is still dataless after the read. The caller retries on that signal,
     /// which covers a cold first walk that reached only the top level before the
@@ -1208,8 +1209,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var files: [URL] = []
         if let walker = fm.enumerator(
             at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
-            for case let url as URL in walker where url.pathExtension == "md" {
-                files.append(url)
+            for case let url as URL in walker {
+                if (try? url.resourceValues(
+                    forKeys: [.isRegularFileKey]
+                ).isRegularFile) == true {
+                    files.append(url)
+                }
             }
         }
         var incomplete = files.isEmpty // nothing enumerated yet -> retry

@@ -7,6 +7,8 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     var workspaceValue: WriteWorkspace
     var manifests: [String: [WriteManifestItem]]   // folderId -> entries
     var files: [String: WriteFileContent]           // postId -> content
+    var artifactManifests: [String: WriteBookmarkArtifactManifest]
+    var artifactContents: [String: WriteArtifactContent]
     var cursor: String
 
     /// Force a specific failure on the next call of a given kind, for error
@@ -19,16 +21,22 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     private(set) var workspaceCalls = 0
     private(set) var manifestCalls = 0
     private(set) var fileTextCalls = 0
+    private(set) var bookmarkArtifactCalls = 0
+    private(set) var artifactDataCalls = 0
 
     init(
         workspace: WriteWorkspace,
         manifests: [String: [WriteManifestItem]] = [:],
         files: [String: WriteFileContent] = [:],
+        artifactManifests: [String: WriteBookmarkArtifactManifest] = [:],
+        artifactContents: [String: WriteArtifactContent] = [:],
         cursor: String = "c0"
     ) {
         self.workspaceValue = workspace
         self.manifests = manifests
         self.files = files
+        self.artifactManifests = artifactManifests
+        self.artifactContents = artifactContents
         self.cursor = cursor
     }
 
@@ -47,6 +55,24 @@ final class FakeWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     func fileText(postId: String) async -> Result<WriteFileContent, WriteSyncError> {
         fileTextCalls += 1
         guard let content = files[postId] else { return .failure(.notFound) }
+        return .success(content)
+    }
+
+    func bookmarkArtifacts(
+        postId: String
+    ) async -> Result<WriteBookmarkArtifactManifest, WriteSyncError> {
+        bookmarkArtifactCalls += 1
+        guard let manifest = artifactManifests[postId] else {
+            return .failure(.notFound)
+        }
+        return .success(manifest)
+    }
+
+    func artifactData(url: URL) async -> Result<WriteArtifactContent, WriteSyncError> {
+        artifactDataCalls += 1
+        guard let content = artifactContents[url.absoluteString] else {
+            return .failure(.notFound)
+        }
         return .success(content)
     }
 

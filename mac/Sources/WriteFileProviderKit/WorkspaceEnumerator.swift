@@ -68,6 +68,9 @@ public struct WorkspaceEnumerator: Sendable {
         case .workspace:
             return await topLevelFolders()
         case .folder(_, let id):
+            if let postId = WriteBookmarkSidecars.postId(fromFolderServerId: id) {
+                return await bookmarkAssetChildren(postId: postId)
+            }
             return await folderChildren(folderId: id)
         case .workingSet:
             return await everything()
@@ -94,6 +97,9 @@ public struct WorkspaceEnumerator: Sendable {
         case .workspace:
             return .success(workspaceItem())
         case .folder(_, let id):
+            if let postId = WriteBookmarkSidecars.postId(fromFolderServerId: id) {
+                return await findBookmarkSidecarFolder(postId: postId)
+            }
             switch await api.workspace() {
             case .failure(let e): return .failure(e)
             case .success(let ws):
@@ -116,6 +122,10 @@ public struct WorkspaceEnumerator: Sendable {
                 }
             }
         case .file(_, let id):
+            if let identity = WriteBookmarkSidecars.assetIdentity(fromFileServerId: id) {
+                return await findBookmarkArtifact(
+                    postId: identity.postId, filename: identity.filename)
+            }
             return await findFile(postId: id)
         }
     }
@@ -228,8 +238,65 @@ public struct WorkspaceEnumerator: Sendable {
             let files = entries.compactMap {
                 WriteItemMapper.item(for: $0, inFolder: folderId, handle: handle, readOnly: readOnly)
             }
+            let sidecars = entries.compactMap {
+                WriteItemMapper.bookmarkSidecarFolder(
+                    for: $0, inFolder: folderId, handle: handle)
+            }
             // Files and subfolders occupy the same Finder namespace.
-            return .success(WriteFilename.disambiguate(subfolders + files))
+            return .success(WriteFilename.disambiguate(subfolders + files + sidecars))
+        }
+    }
+
+    private func bookmarkAssetChildren(
+        postId: String
+    ) async -> Result<[WriteItem], WriteSyncError> {
+        switch await api.bookmarkArtifacts(postId: postId) {
+        case .failure(let error): return .failure(error)
+        case .success(let manifest):
+            guard manifest.postId == postId else {
+                return .failure(.decode("artifact manifest addressed a different post"))
+            }
+            let artifacts = WriteBookmarkSidecars.validatedArtifacts(
+                manifest, handle: handle)
+            return .success(artifacts.compactMap {
+                WriteItemMapper.bookmarkArtifact(
+                    $0, manifest: manifest, handle: handle)
+            })
+        }
+    }
+
+    private func findBookmarkSidecarFolder(
+        postId: String
+    ) async -> Result<WriteItem, WriteSyncError> {
+        switch await findManifestEntry(postId: postId) {
+        case .failure(let error): return .failure(error)
+        case .success(let found):
+            guard found.entry.kind == "bookmark" else { return .failure(.notFound) }
+            switch await folderChildren(folderId: found.folderId) {
+            case .failure(let error): return .failure(error)
+            case .success(let items):
+                let identifier = WriteBookmarkSidecars.folderIdentifier(
+                    handle: handle, postId: postId)
+                guard let item = items.first(where: { $0.identifier == identifier }) else {
+                    return .failure(.notFound)
+                }
+                return .success(item)
+            }
+        }
+    }
+
+    private func findBookmarkArtifact(
+        postId: String, filename: String
+    ) async -> Result<WriteItem, WriteSyncError> {
+        switch await bookmarkAssetChildren(postId: postId) {
+        case .failure(let error): return .failure(error)
+        case .success(let items):
+            let identifier = WriteBookmarkSidecars.assetIdentifier(
+                handle: handle, postId: postId, filename: filename)
+            guard let item = items.first(where: { $0.identifier == identifier }) else {
+                return .failure(.notFound)
+            }
+            return .success(item)
         }
     }
 
@@ -278,6 +345,45 @@ public struct WorkspaceEnumerator: Sendable {
     private func findFile(postId: String) async -> Result<WriteItem, WriteSyncError> {
         let ws: WriteWorkspace
         switch await api.workspace() {
+        case .failure(let error): return .failure(error)
+        case .success(let value): ws = value
+        }
+
+        // Scan each manifest once. A moved item can briefly appear in both its
+        // old and new parent; the later occurrence is authoritative.
+        var found: WriteItem?
+        for folder in ws.folders {
+            switch await api.manifest(folderId: folder.id) {
+            case .failure(let error): return .failure(error)
+            case .success(let entries):
+                let subfolders = ws.folders
+                    .filter { $0.parentId == folder.id }
+                    .map { WriteItemMapper.item(
+                        for: $0, handle: handle, readOnly: readOnly) }
+                let files = entries.compactMap { WriteItemMapper.item(
+                    for: $0, inFolder: folder.id, handle: handle,
+                    readOnly: readOnly) }
+                let sidecars = entries.compactMap {
+                    WriteItemMapper.bookmarkSidecarFolder(
+                        for: $0, inFolder: folder.id, handle: handle)
+                }
+                let siblings = WriteFilename.disambiguate(
+                    subfolders + files + sidecars)
+                if let item = siblings.first(where: {
+                    $0.identifier == .file(handle: handle, id: postId)
+                }) {
+                    found = item
+                }
+            }
+        }
+        return found.map(Result.success) ?? .failure(.notFound)
+    }
+
+    private func findManifestEntry(
+        postId: String
+    ) async -> Result<(entry: WriteManifestItem, folderId: String), WriteSyncError> {
+        let ws: WriteWorkspace
+        switch await api.workspace() {
         case .failure(let e): return .failure(e)
         case .success(let value): ws = value
         }
@@ -285,23 +391,13 @@ public struct WorkspaceEnumerator: Sendable {
         // that moved can still linger in its old folder's manifest alongside the
         // new one. The LATER occurrence (a folder fetched after the move) is the
         // current parent, so the last match wins.
-        var found: WriteItem?
+        var found: (entry: WriteManifestItem, folderId: String)?
         for folder in ws.folders {
             switch await api.manifest(folderId: folder.id) {
             case .failure(let e): return .failure(e)
             case .success(let entries):
-                let subfolders = ws.folders
-                    .filter { $0.parentId == folder.id }
-                    .map { WriteItemMapper.item(for: $0, handle: handle, readOnly: readOnly) }
-                let files = entries.compactMap {
-                    WriteItemMapper.item(
-                        for: $0, inFolder: folder.id, handle: handle, readOnly: readOnly)
-                }
-                let siblings = WriteFilename.disambiguate(subfolders + files)
-                if let item = siblings.first(where: {
-                    $0.identifier == .file(handle: handle, id: postId)
-                }) {
-                    found = item
+                if let entry = entries.first(where: { $0.id == postId }) {
+                    found = (entry, folder.id)
                 }
             }
         }

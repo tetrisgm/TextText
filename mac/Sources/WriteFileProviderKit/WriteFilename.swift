@@ -12,6 +12,10 @@ public enum WriteStableDigest {
     public static func sha256(_ value: String) -> Data {
         sha256(Data(value.utf8))
     }
+
+    public static func sha256Hex(_ value: String) -> String {
+        sha256(value).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 /// The reversible, portable mapping between Write titles and Finder path
@@ -75,6 +79,22 @@ public enum WriteFilename {
         return bounded(
             encodedComponent(normalized), source: normalized,
             maximumUTF8Length: maximumComponentUTF8Length)
+    }
+
+    /// Encode a component while reserving enough of the 255-byte filesystem
+    /// budget for a fixed suffix such as `.assets`.
+    public static func encodeComponent(_ value: String, appending suffix: String) -> String {
+        let normalized = value.precomposedStringWithCanonicalMapping
+        let suffixBytes = suffix.utf8.count
+        guard suffixBytes < maximumComponentUTF8Length else {
+            return String(
+                decoding: suffix.utf8.prefix(maximumComponentUTF8Length),
+                as: UTF8.self)
+        }
+        let stem = bounded(
+            encodedComponent(normalized), source: normalized,
+            maximumUTF8Length: maximumComponentUTF8Length - suffixBytes)
+        return stem + suffix
     }
 
     private static func encodedComponent(_ normalized: String) -> String {
