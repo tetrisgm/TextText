@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
     private static let duplicateInstanceRecheckDelay: TimeInterval = 0.5
+    static let fileProviderSchemaVersion = 2
+    private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()
     private var engine: SyncEngine!
@@ -59,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var fileProviderReconcileIdentity: String?
     private var fileProviderRemovalInFlight = false
     private var fileProviderRetry: DispatchWorkItem?
+    private var fileProviderSchemaReimportRetry: DispatchWorkItem?
+    private var fileProviderSchemaReimportInFlight = false
     private var materializationEpoch = 0
     private var materializationRetry: DispatchWorkItem?
     private var isMaterializing = false
@@ -956,7 +960,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     // upgrade signals the existing cache; it never destroys the
                     // user's local replica or pending changes.
                     self.finishFileProviderReconcile(
-                        domain: existing, handoff: handoff, epoch: epoch, identity: identity)
+                        domain: existing, handoff: handoff, epoch: epoch, identity: identity,
+                        existingDomain: true)
                     return
                 }
                 self.addFileProviderDomain(
@@ -993,14 +998,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     return
                 }
                 self.finishFileProviderReconcile(
-                    domain: domain, handoff: handoff, epoch: epoch, identity: identity)
+                    domain: domain, handoff: handoff, epoch: epoch, identity: identity,
+                    existingDomain: false)
             }
         }
     }
 
     private func finishFileProviderReconcile(
         domain: NSFileProviderDomain, handoff: FileProviderHandoff,
-        epoch: Int, identity: String
+        epoch: Int, identity: String, existingDomain: Bool
     ) {
         guard fileProviderDomainEpoch == epoch,
               fileProviderDesiredIdentity == identity else { return }
@@ -1012,13 +1018,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         registeredFileProviderDomain = domain
         fileProviderStatusMonitor.bind(to: domain)
         fileProviderReconcileIdentity = nil
-        UserDefaults.standard.removeObject(forKey: "fpDomainBuild")
-        // An app upgrade can add synthetic children below an existing folder
-        // (bookmark `.assets` sidecars are one example). Invalidating only the
-        // domain root leaves those nested listings cached indefinitely. Reuse
-        // the normal change signal so the workspace and every known folder are
-        // re-enumerated before the offline materializer walks the tree.
+        if existingDomain, let workspace = handoff.workspaces.first,
+           Self.needsFileProviderSchemaReimport(
+            storedVersion: UserDefaults.standard.integer(
+                forKey: Self.fileProviderSchemaVersionKey)
+           ) {
+            reimportFileProviderWorkspace(
+                domain: domain, handle: workspace.handle,
+                epoch: epoch, identity: identity)
+            return
+        }
+        UserDefaults.standard.set(
+            Self.fileProviderSchemaVersion, forKey: Self.fileProviderSchemaVersionKey)
         signalFileProviderChange()
+        scheduleFileProviderMaterialization(epoch: epoch, identity: identity)
+    }
+
+    static func needsFileProviderSchemaReimport(storedVersion: Int) -> Bool {
+        storedVersion < fileProviderSchemaVersion
+    }
+
+    /// Finder retains a sync anchor for every nested container. A normal change
+    /// signal cannot introduce a newly synthetic child when an older extension
+    /// version never exposed it. Reimport the existing workspace subtree once
+    /// per provider schema version; this keeps stable item identifiers and
+    /// pending local edits while forcing Finder to rebuild nested listings.
+    private func reimportFileProviderWorkspace(
+        domain: NSFileProviderDomain, handle: String,
+        epoch: Int, identity: String, attempt: Int = 0
+    ) {
+        guard fileProviderDomainEpoch == epoch,
+              fileProviderDesiredIdentity == identity,
+              !fileProviderSchemaReimportInFlight,
+              let manager = NSFileProviderManager(for: domain) else { return }
+        fileProviderSchemaReimportRetry?.cancel()
+        fileProviderSchemaReimportRetry = nil
+        fileProviderSchemaReimportInFlight = true
+        let workspaceIdentifier = NSFileProviderItemIdentifier(
+            rawValue: WriteItemIdentifier.workspace(handle).rawValue)
+        manager.reimportItems(below: workspaceIdentifier) { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.fileProviderSchemaReimportInFlight = false
+                guard self.fileProviderDomainEpoch == epoch,
+                      self.fileProviderDesiredIdentity == identity else { return }
+                if let error {
+                    self.appendActivity(
+                        "Finder index refresh failed: \(error.localizedDescription)")
+                    guard attempt < 5 else { return }
+                    let work = DispatchWorkItem { [weak self] in
+                        self?.reimportFileProviderWorkspace(
+                            domain: domain, handle: handle, epoch: epoch,
+                            identity: identity, attempt: attempt + 1)
+                    }
+                    self.fileProviderSchemaReimportRetry = work
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + Double(attempt + 1) * 2,
+                        execute: work)
+                    return
+                }
+                UserDefaults.standard.set(
+                    Self.fileProviderSchemaVersion,
+                    forKey: Self.fileProviderSchemaVersionKey)
+                self.appendActivity("Refreshing Finder for this Write version")
+                self.signalFileProviderChange()
+                self.scheduleFileProviderMaterialization(
+                    epoch: epoch, identity: identity, delay: 4)
+            }
+        }
+    }
+
+    private func scheduleFileProviderMaterialization(
+        epoch: Int, identity: String, delay: TimeInterval = 2
+    ) {
         let work = DispatchWorkItem { [weak self] in
             guard let self,
                   self.fileProviderDomainEpoch == epoch,
@@ -1027,7 +1099,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         materializationRetry?.cancel()
         materializationRetry = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func scheduleFileProviderRetry(identity: String) {
@@ -1055,11 +1127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderReconcileIdentity = nil
         fileProviderRetry?.cancel()
         fileProviderRetry = nil
+        fileProviderSchemaReimportRetry?.cancel()
+        fileProviderSchemaReimportRetry = nil
+        fileProviderSchemaReimportInFlight = false
         invalidateMaterialization()
         registeredFileProviderDomain = nil
         fileProviderStatusMonitor.unbind()
         fileProviderUserVisibleURL = nil
-        UserDefaults.standard.removeObject(forKey: "fpDomainBuild")
+        UserDefaults.standard.removeObject(forKey: Self.fileProviderSchemaVersionKey)
         UserDefaults.standard.removeObject(forKey: Self.fpDomainNameKey)
         FileProviderHandoffStore.clear()
         NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, _ in

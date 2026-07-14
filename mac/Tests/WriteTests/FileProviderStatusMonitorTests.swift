@@ -2,6 +2,13 @@ import XCTest
 @testable import Write
 
 final class FileProviderStatusMonitorTests: XCTestCase {
+    func testFileProviderSchemaReimportOnlyRunsForOlderSchemas() {
+        XCTAssertTrue(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 0))
+        XCTAssertTrue(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 1))
+        XCTAssertFalse(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 2))
+        XCTAssertFalse(AppDelegate.needsFileProviderSchemaReimport(storedVersion: 3))
+    }
+
     func testUnavailableStateExplainsHowToReconnectFinder() {
         XCTAssertEqual(FileProviderStatusSnapshot.unavailable.symbolName, "icloud.slash")
         XCTAssertEqual(FileProviderStatusSnapshot.unavailable.severity, .neutral)
