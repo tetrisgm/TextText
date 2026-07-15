@@ -52,6 +52,16 @@ non-passing receipt. Installed health validates each embedded receipt under its
 own check ID. It never trashes or restores folders, changes access, creates a
 comment, recaptures a bookmark, or changes an asset in a person's workspace.
 
+Those receipts are content-blind by design, so they are supplemented (not
+replaced) by a live staged-app probe. `scripts/verify-workflow-live.ts` (run
+with `npm run verify:workflows`, needs `DATABASE_URL`) stands up a fully
+isolated scratch workspace and actually EXECUTES each of the five required
+workflows through the shared command surface (`/api/mcp`), asserting both the
+durable mutation and its `action_audit` row, then tears the scratch workspace
+down in a `finally`. It never touches a real workspace. This proves the
+workflows run end-to-end and are audited, which the content-blind receipts
+cannot; the two together cover contract-shape and real execution.
+
 The release also has one architecture identity from build through update. The
 Write executable and its three extensions must be arm64-only, while Sparkle is
 left universal. The staged and public appcasts must advertise
