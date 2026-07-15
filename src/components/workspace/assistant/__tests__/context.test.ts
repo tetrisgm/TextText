@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveWorkspaceAssistantContext } from "@/components/workspace/assistant/context";
+import {
+  appendAssistantSelectionContext,
+  assistantContextChipWithSelection,
+  resolveWorkspaceAssistantContext,
+} from "@/components/workspace/assistant/context";
 import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
@@ -129,6 +133,36 @@ describe("workspace assistant context", () => {
       chip: { label: "Trash" },
       contextKey: "place:/t/local?folder=trash",
       view: { level: "trash", folderPath: "trash" },
+    });
+  });
+
+  it("describes the live field and source range to the native assistant", () => {
+    const selection = {
+      field: "excerpt" as const,
+      start: 4,
+      end: 17,
+      text: "selected text",
+    };
+    const context = appendAssistantSelectionContext("Item is open.", {
+      title: "Draft",
+      excerpt: "The selected text is here.",
+      body: "Body",
+      selection,
+    });
+
+    expect(context).toContain(
+      "selected excerpt text at source range [4, 17)",
+    );
+    expect(context).toContain('Selected text: "selected text"');
+    expect(
+      assistantContextChipWithSelection(
+        { kind: "item", label: "Draft", detail: "Editing" },
+        selection,
+      ),
+    ).toEqual({
+      kind: "item",
+      label: "Draft",
+      detail: "Selected excerpt text",
     });
   });
 });

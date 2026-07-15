@@ -1,5 +1,10 @@
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import {
+  resolveWorkspaceItemTextSelection,
+  type WorkspaceItemTextSelection,
+  type WorkspaceItemTextSnapshot,
+} from "@/lib/ai/workspace-item-draft";
+import {
   findPoolPostById,
   folderPathForPoolPost,
 } from "@/lib/pool/selectors";
@@ -28,6 +33,39 @@ export type ResolvedAssistantContext = {
   contextKey: string;
   view: AssistantViewSnapshot;
 };
+
+const FIELD_LABELS = {
+  title: "title",
+  excerpt: "excerpt",
+  body: "body",
+} as const;
+
+export function assistantContextChipWithSelection(
+  chip: AssistantContext,
+  selection: WorkspaceItemTextSelection | null,
+): AssistantContext {
+  if (!selection) return chip;
+  return {
+    ...chip,
+    detail: `Selected ${FIELD_LABELS[selection.field]} text`,
+  };
+}
+
+export function appendAssistantSelectionContext(
+  context: string,
+  item: WorkspaceItemTextSnapshot,
+): string {
+  const selection = resolveWorkspaceItemTextSelection(item);
+  if (!selection) {
+    return `${context}\nNo editor text is selected; use the whole current item when appropriate.`;
+  }
+  return [
+    context,
+    `The user selected ${selection.field} text at source range [${selection.start}, ${selection.end}).`,
+    `Selected text: ${JSON.stringify(selection.text)}`,
+    "Treat that exact range as the active editing context. Do not imply that unselected text is selected.",
+  ].join("\n");
+}
 
 function folderPlaceKey(homePath: string, folderPath: string): string {
   return `place:${homePath}?folder=${encodeURIComponent(folderPath)}`;

@@ -34,6 +34,7 @@ export function AssistantConversation({
   quickActions?: ReadonlyArray<{
     id: NativeQuickActionId;
     label: string;
+    description?: string;
   }>;
   skills?: Array<AssistantSkill & { enabled: boolean; source?: string }>;
   submitting: boolean;
@@ -82,6 +83,7 @@ export function AssistantConversation({
             type="button"
             className={styles.quickAction}
             disabled={submitting}
+            title={action.description ?? `${action.label} on this Mac`}
             onClick={() => void onQuickAction?.(action.id)}
           >
             {action.label}
@@ -123,36 +125,35 @@ export function AssistantConversation({
       <div className={styles.skills}>
         <p className={styles.skillsHeading}>Skills</p>
         {skills.map((skill) => (
-          <label className={styles.skillRow} key={skill.id}>
-            <input
-              type="checkbox"
-              checked={skill.enabled}
-              disabled={!onToggleSkill}
-              onChange={(event) =>
-                onToggleSkill?.(skill.id, event.currentTarget.checked)
-              }
-            />
-            <span className={styles.skillCopy}>
-              <span className={styles.skillName}>{skill.name}</span>
-              <span className={styles.skillDescription}>
-                {skill.description}
+          <div className={styles.skillRow} key={skill.id}>
+            <label className={styles.skillControl}>
+              <input
+                type="checkbox"
+                checked={skill.enabled}
+                disabled={!onToggleSkill}
+                onChange={(event) =>
+                  onToggleSkill?.(skill.id, event.currentTarget.checked)
+                }
+              />
+              <span className={styles.skillCopy}>
+                <span className={styles.skillName}>{skill.name}</span>
+                <span className={styles.skillDescription}>
+                  {skill.description}
+                </span>
               </span>
-            </span>
+            </label>
             {skill.source && onRemoveSkill && (
               <button
                 type="button"
                 className={styles.skillRemove}
                 aria-label={`Remove skill ${skill.name}`}
                 title="Remove skill"
-                onClick={(event) => {
-                  event.preventDefault();
-                  onRemoveSkill(skill.id);
-                }}
+                onClick={() => onRemoveSkill(skill.id)}
               >
                 Remove
               </button>
             )}
-          </label>
+          </div>
         ))}
         {onInstallSkill && (
           <div className={styles.skillInstall}>
@@ -160,6 +161,7 @@ export function AssistantConversation({
               className={styles.skillInstallInput}
               type="text"
               value={installValue}
+              aria-label="Skill URL"
               placeholder="Paste a skills.sh link to install"
               disabled={installing}
               onChange={(event) => {
@@ -177,6 +179,7 @@ export function AssistantConversation({
               type="button"
               className={styles.skillInstallButton}
               disabled={installing || !installValue.trim()}
+              title="Install skill"
               onClick={() => void install()}
             >
               {installing ? "Installing" : "Install"}
@@ -217,7 +220,12 @@ export function AssistantConversation({
   }
 
   return (
-    <div className={styles.thread} aria-live="polite">
+    <div
+      className={styles.thread}
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions text"
+    >
       {jobsStrip}
       {quickActionBar}
       {skillsBlock && (
@@ -226,6 +234,7 @@ export function AssistantConversation({
             type="button"
             className={styles.skillsToggle}
             aria-expanded={showSkills}
+            title={showSkills ? "Hide skills" : "Show skills"}
             onClick={() => setShowSkills((current) => !current)}
           >
             {showSkills ? "Hide skills" : "Skills"}
@@ -236,7 +245,7 @@ export function AssistantConversation({
       {messages.map((message) => {
         if (message.role === "progress") {
           return (
-            <div key={message.id} className={styles.progress}>
+            <div key={message.id} className={styles.progress} role="status">
               {message.text}
             </div>
           );
@@ -247,10 +256,31 @@ export function AssistantConversation({
             proposal.status === "applying" || proposal.status === "undoing";
           const applied =
             proposal.status === "applied" || proposal.status === "undoing";
+          const scopeLabel =
+            proposal.scope === "selection"
+              ? `${proposal.field} selection${
+                  proposal.range
+                    ? `, source offsets ${proposal.range.start} to ${proposal.range.end}`
+                    : ""
+                }`
+              : proposal.field;
           return (
             <div key={message.id} className={styles.proposal}>
               <p className={styles.proposalLabel}>{proposal.label}</p>
-              <div className={styles.proposalPreview}>{proposal.after}</div>
+              <p className={styles.proposalScope}>{scopeLabel}</p>
+              <div
+                className={styles.proposalPreview}
+                aria-label={`${proposal.label} preview`}
+              >
+                <div className={styles.proposalValue} data-kind="before">
+                  <span className={styles.proposalValueLabel}>Original</span>
+                  <pre>{proposal.before || "Empty"}</pre>
+                </div>
+                <div className={styles.proposalValue} data-kind="after">
+                  <span className={styles.proposalValueLabel}>Replacement</span>
+                  <pre>{proposal.after || "Empty"}</pre>
+                </div>
+              </div>
               {proposal.note && (
                 <p className={styles.proposalNote}>{proposal.note}</p>
               )}
@@ -260,6 +290,7 @@ export function AssistantConversation({
                     type="button"
                     className={styles.proposalSecondary}
                     disabled={changing}
+                    title="Undo this assistant edit"
                     onClick={() => void onUndoProposal?.(message.id)}
                   >
                     {proposal.status === "undoing" ? "Undoing" : "Undo"}
@@ -269,6 +300,11 @@ export function AssistantConversation({
                     type="button"
                     className={styles.proposalPrimary}
                     disabled={!proposal.canApply || changing}
+                    title={
+                      proposal.canApply
+                        ? "Apply this preview"
+                        : "This preview cannot be applied"
+                    }
                     onClick={() => void onApplyProposal?.(message.id)}
                   >
                     {proposal.status === "undone"
@@ -281,6 +317,9 @@ export function AssistantConversation({
                 {proposal.status === "undone" && (
                   <span className={styles.proposalStatus}>Undone</span>
                 )}
+                {proposal.status === "applied" && !proposal.syncPending && (
+                  <span className={styles.proposalStatus}>Applied</span>
+                )}
                 {proposal.syncPending && (
                   <span className={styles.proposalStatus}>Sync pending</span>
                 )}
@@ -291,6 +330,7 @@ export function AssistantConversation({
         return (
           <div
             key={message.id}
+            role={message.role === "error" ? "alert" : undefined}
             className={
               message.role === "user"
                 ? styles.userTurn
@@ -303,8 +343,12 @@ export function AssistantConversation({
           </div>
         );
       })}
-      {submitting && <div className={styles.progress}>Thinking on this Mac</div>}
-      <div ref={endRef} />
+      {submitting && (
+        <div className={styles.progress} role="status">
+          Thinking on this Mac
+        </div>
+      )}
+      <div ref={endRef} aria-hidden="true" />
     </div>
   );
 }

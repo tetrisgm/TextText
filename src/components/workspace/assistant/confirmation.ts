@@ -27,10 +27,16 @@ export function createAssistantConfirmationController(
     confirm: () => settle(true),
     dispose: () => settle(false),
     request: (description) => {
+      const normalized = description.trim();
+      if (!normalized) return Promise.resolve(false);
       if (resolvePending) settle(false);
       return new Promise<boolean>((resolve) => {
         resolvePending = resolve;
-        onChange({ description });
+        try {
+          onChange({ description: normalized });
+        } catch {
+          settle(false);
+        }
       });
     },
   };

@@ -1,7 +1,17 @@
 import { nativeOcr } from "@/lib/ai/native";
+import type { NativeAICapabilities } from "@/lib/ai/native";
 import type { AssistantAttachment } from "./AssistantSidebar";
 
 export const ASSISTANT_ATTACHMENT_ACCEPT = "image/*,.txt,.md,.markdown";
+export const ASSISTANT_TEXT_ATTACHMENT_ACCEPT = ".txt,.md,.markdown";
+
+export function assistantAttachmentAccept(
+  capabilities: NativeAICapabilities | null,
+): string {
+  return capabilities?.ocr
+    ? ASSISTANT_ATTACHMENT_ACCEPT
+    : ASSISTANT_TEXT_ATTACHMENT_ACCEPT;
+}
 
 const MAX_ATTACHMENT_CONTEXT_LENGTH = 7_000;
 

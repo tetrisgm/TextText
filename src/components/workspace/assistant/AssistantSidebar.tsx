@@ -59,6 +59,8 @@ export type AssistantSidebarProps = {
   composerLabel?: string;
   composerPlaceholder?: string;
   accept?: string;
+  attachmentDisabled?: boolean;
+  attachmentTitle?: string;
   multiple?: boolean;
   maxComposerLength?: number;
   submitOnEnter?: boolean;
@@ -188,6 +190,8 @@ export function AssistantSidebar({
   composerLabel = "Message assistant",
   composerPlaceholder = "Ask about this page",
   accept,
+  attachmentDisabled = false,
+  attachmentTitle = "Add attachment",
   multiple = true,
   maxComposerLength,
   submitOnEnter = true,
@@ -204,6 +208,7 @@ export function AssistantSidebar({
   const fileInputId = useId();
   const panelId = panelIdProp ?? `assistant-sidebar-${generatedPanelId}`;
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -296,12 +301,15 @@ export function AssistantSidebar({
     previousStateRef.current = state;
 
     if (previousState === "hidden" && visible) {
-      if (focusOnOpenRef.current) closeButtonRef.current?.focus();
+      if (focusOnOpenRef.current) {
+        if (disabled) closeButtonRef.current?.focus();
+        else composerRef.current?.focus({ preventScroll: true });
+      }
       focusOnOpenRef.current = true;
     } else if (previousState !== "hidden" && !visible) {
       launcherRef.current?.focus();
     }
-  }, [state, visible]);
+  }, [disabled, state, visible]);
 
   const handleRootPointerEnter = () => {
     if (state === "hidden") setPeeking(true);
@@ -563,7 +571,8 @@ export function AssistantSidebar({
             id={fileInputId}
             type="file"
             accept={accept}
-            disabled={disabled || submitting}
+            aria-label="Choose assistant attachments"
+            disabled={disabled || submitting || attachmentDisabled}
             hidden
             multiple={multiple}
             onChange={chooseFiles}
@@ -607,10 +616,12 @@ export function AssistantSidebar({
 
           <div className={styles.composerField}>
             <textarea
+              ref={composerRef}
               className={styles.textarea}
               value={composerValue}
               rows={1}
               aria-label={composerLabel}
+              aria-keyshortcuts={submitOnEnter ? "Enter" : undefined}
               disabled={disabled}
               enterKeyHint={submitOnEnter ? "send" : "enter"}
               maxLength={maxComposerLength}
@@ -622,10 +633,10 @@ export function AssistantSidebar({
               <button
                 className={styles.composerButton}
                 type="button"
-                disabled={disabled || submitting}
+                disabled={disabled || submitting || attachmentDisabled}
                 aria-controls={fileInputId}
                 aria-label="Add attachment"
-                title="Add attachment"
+                title={attachmentTitle}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <PlusIcon />
@@ -638,7 +649,13 @@ export function AssistantSidebar({
                 type="submit"
                 disabled={!canSubmit}
                 aria-label={submitting ? "Sending message" : "Send message"}
-                title={submitting ? "Sending message" : "Send message"}
+                title={
+                  submitting
+                    ? "Sending message"
+                    : submitOnEnter
+                      ? "Send message (Return)"
+                      : "Send message"
+                }
               >
                 <SendIcon />
               </button>

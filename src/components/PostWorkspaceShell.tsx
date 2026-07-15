@@ -75,18 +75,27 @@ import {
   type AssistantSidebarState,
 } from "@/components/workspace/assistant";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
-import { ASSISTANT_ATTACHMENT_ACCEPT } from "@/components/workspace/assistant/attachments";
 import { useAssistantComposerDraft } from "@/components/workspace/assistant/composer-store";
 import {
   createAssistantConfirmationController,
   type AssistantConfirmationRequest,
 } from "@/components/workspace/assistant/confirmation";
-import { resolveWorkspaceAssistantContext } from "@/components/workspace/assistant/context";
+import {
+  assistantContextChipWithSelection,
+  resolveWorkspaceAssistantContext,
+} from "@/components/workspace/assistant/context";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import {
-  patchOpenWorkspaceItemDraft,
+  createWorkspaceItemTextSelection,
+  locateWorkspaceItemTextSelection,
+  openWorkspaceItemDraftRevision,
+  patchOpenWorkspaceItemDraftIfCurrent,
   readOpenWorkspaceItemDraft,
+  readOpenWorkspaceItemSelection,
   registerOpenWorkspaceItemDraft,
+  setOpenWorkspaceItemSelection,
+  subscribeOpenWorkspaceItemDrafts,
+  type WorkspaceItemTextField,
   type WorkspaceItemTextPatch,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
@@ -2547,6 +2556,7 @@ function LocalWorkspacePostEditor({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const excerptRef = useRef<HTMLTextAreaElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
+  const editSurfaceRef = useRef<HTMLElement>(null);
   const bodyLoadedPostIdRef = useRef<string | null>(
     entry.status === "ready" && !stale ? poolPost.id : null,
   );
@@ -2734,6 +2744,89 @@ function LocalWorkspacePostEditor({
       apply: (patch) => updateDraft(patch),
     });
   }, [active, poolPost.id, updateDraft]);
+
+  const captureTextControlSelection = useCallback(
+    (
+      field: Exclude<WorkspaceItemTextField, "body">,
+      control: HTMLTextAreaElement,
+    ) => {
+      const source = draftRef.current[field];
+      setOpenWorkspaceItemSelection(
+        poolPost.id,
+        createWorkspaceItemTextSelection(
+          field,
+          source,
+          control.selectionStart,
+          control.selectionEnd,
+        ),
+      );
+    },
+    [poolPost.id],
+  );
+
+  const captureBodySelection = useCallback(() => {
+    const root = editSurfaceRef.current?.querySelector<HTMLElement>(
+      ".body-editor-content[contenteditable='true']",
+    );
+    const selection = window.getSelection();
+    if (!root || !selection || selection.rangeCount === 0) return;
+    if (
+      !selection.anchorNode ||
+      !selection.focusNode ||
+      !root.contains(selection.anchorNode) ||
+      !root.contains(selection.focusNode)
+    ) {
+      return;
+    }
+    if (selection.isCollapsed) {
+      setOpenWorkspaceItemSelection(poolPost.id, null);
+      return;
+    }
+
+    try {
+      const range = selection.getRangeAt(0);
+      const beforeRange = document.createRange();
+      beforeRange.selectNodeContents(root);
+      beforeRange.setEnd(range.startContainer, range.startOffset);
+      const afterRange = document.createRange();
+      afterRange.selectNodeContents(root);
+      afterRange.setStart(range.endContainer, range.endOffset);
+      setOpenWorkspaceItemSelection(
+        poolPost.id,
+        locateWorkspaceItemTextSelection(
+          "body",
+          draftRef.current.body,
+          selection.toString(),
+          {
+            beforeText: beforeRange.toString(),
+            afterText: afterRange.toString(),
+          },
+        ),
+      );
+    } catch {
+      setOpenWorkspaceItemSelection(poolPost.id, null);
+    }
+  }, [poolPost.id]);
+
+  useEffect(() => {
+    if (!active) return;
+    const captureActiveSelection = () => {
+      const activeElement = document.activeElement;
+      if (activeElement === titleRef.current && titleRef.current) {
+        captureTextControlSelection("title", titleRef.current);
+        return;
+      }
+      if (activeElement === excerptRef.current && excerptRef.current) {
+        captureTextControlSelection("excerpt", excerptRef.current);
+        return;
+      }
+      captureBodySelection();
+    };
+    document.addEventListener("selectionchange", captureActiveSelection);
+    return () => {
+      document.removeEventListener("selectionchange", captureActiveSelection);
+    };
+  }, [active, captureBodySelection, captureTextControlSelection]);
 
   const enqueueSave = useCallback(
     (
@@ -3058,6 +3151,7 @@ function LocalWorkspacePostEditor({
         onVisibilityChange={(status) => saveDraftNow({ status })}
       />
       <main
+        ref={editSurfaceRef}
         className="local-workspace-edit"
         aria-label="Edit post"
         aria-busy={!draftHydrated}
@@ -3098,6 +3192,9 @@ function LocalWorkspacePostEditor({
                 placeholder="Give it a title"
                 rows={1}
                 value={draft.title}
+                onSelect={(event) =>
+                  captureTextControlSelection("title", event.currentTarget)
+                }
                 onChange={(event) =>
                   updateDraft({
                     title: event.currentTarget.value.replace(/[\r\n]+/g, " "),
@@ -3128,6 +3225,9 @@ function LocalWorkspacePostEditor({
                 placeholder="Add a short description"
                 rows={1}
                 value={draft.excerpt}
+                onSelect={(event) =>
+                  captureTextControlSelection("excerpt", event.currentTarget)
+                }
                 onChange={(event) =>
                   updateDraft({ excerpt: event.currentTarget.value })
                 }
@@ -3159,7 +3259,11 @@ function LocalWorkspacePostEditor({
               />
             ),
             body: (
-              <div>
+              <div
+                onKeyUp={captureBodySelection}
+                onMouseUp={captureBodySelection}
+                onSelectCapture={captureBodySelection}
+              >
                 <div
                   ref={setBodyToolbarHost}
                   className="body-editor-toolbar-anchor"
@@ -3455,6 +3559,11 @@ function LocalWorkspaceShell({
   const [deletingTarget, setDeletingTarget] = useState(false);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences();
+  useSyncExternalStore(
+    subscribeOpenWorkspaceItemDrafts,
+    openWorkspaceItemDraftRevision,
+    () => 0,
+  );
   const [assistantConfirmation, setAssistantConfirmation] =
     useState<AssistantConfirmationRequest | null>(null);
   const assistantConfirmationController = useMemo(
@@ -4035,6 +4144,14 @@ function LocalWorkspaceShell({
       view,
     ],
   );
+  const assistantSelection =
+    assistantTarget.view.level === "edit" && assistantTarget.view.postId
+      ? readOpenWorkspaceItemSelection(assistantTarget.view.postId)
+      : null;
+  const assistantContext = assistantContextChipWithSelection(
+    assistantTarget.chip,
+    assistantSelection,
+  );
   const getAssistantPool = useCallback(() => displayPoolRef.current, []);
   const getAssistantView = useCallback(
     () => assistantTarget.view,
@@ -4068,15 +4185,39 @@ function LocalWorkspaceShell({
     [],
   );
   const applyAssistantItemPatch = useCallback(
-    async (postId: string, patch: WorkspaceItemTextPatch) => {
-      if (patchOpenWorkspaceItemDraft(postId, patch)) {
+    async (
+      postId: string,
+      patch: WorkspaceItemTextPatch,
+      expected: WorkspaceItemTextPatch = {},
+    ) => {
+      const openDraftResult = patchOpenWorkspaceItemDraftIfCurrent(
+        postId,
+        patch,
+        expected,
+      );
+      if (openDraftResult === "applied") {
         return { synced: true, queued: true };
+      }
+      if (openDraftResult === "stale") {
+        throw new Error(
+          "This item changed after the preview. Run the action again.",
+        );
       }
 
       const currentPool = displayPoolRef.current;
       const poolPost = findPoolPostById(currentPool, postId);
       if (!poolPost) throw new Error("This item is no longer available.");
       const currentText = await readAssistantItemText(postId);
+      for (const field of ["title", "excerpt", "body"] as const) {
+        if (
+          expected[field] !== undefined &&
+          currentText[field] !== expected[field]
+        ) {
+          throw new Error(
+            "This item changed after the preview. Run the action again.",
+          );
+        }
+      }
       const existingDraft = localWorkspaceDraftSessions.get(postId);
       const draft =
         existingDraft ??
@@ -4733,7 +4874,7 @@ function LocalWorkspaceShell({
         width={assistantWidth}
         onWidthChange={changeAssistantWidth}
         layout="overlay"
-        context={assistantTarget.chip}
+        context={assistantContext}
         composerValue={assistantComposer.draft.text}
         onComposerChange={assistantComposer.setText}
         attachments={assistantComposer.draft.attachments}
@@ -4752,7 +4893,9 @@ function LocalWorkspaceShell({
             ? "Ask or act, on this Mac"
             : "Ask about this page"
         }
-        accept={ASSISTANT_ATTACHMENT_ACCEPT}
+        accept={assistant.attachmentAccept}
+        attachmentDisabled={!assistant.attachmentsAvailable}
+        attachmentTitle={assistant.attachmentTitle}
       >
         <AssistantConversation
           capabilities={assistant.capabilities}

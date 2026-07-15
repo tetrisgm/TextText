@@ -112,22 +112,68 @@ describe("assistant sidebar UI", () => {
               label: "Suggested title",
               before: "Draft",
               after: "A clearer title",
+              source: "Draft",
+              result: "A clearer title",
+              range: { start: 0, end: 5 },
+              scope: "selection",
               canApply: true,
               status: "pending",
             },
           },
         ],
         quickActions: [
-          { id: "summarize", label: "Summarize" },
-          { id: "title", label: "Title" },
+          {
+            id: "summarize",
+            label: "Summarize",
+            description: "Summarize selected text on this Mac",
+          },
+          { id: "title", label: "Title", description: "Suggest a title" },
         ],
         submitting: false,
       }),
     );
 
     expect(html).toContain('aria-label="On-device actions"');
+    expect(html).toContain('title="Summarize selected text on this Mac"');
+    expect(html).toContain('role="log"');
     expect(html).toContain("Summarize");
+    expect(html).toContain("title selection, source offsets 0 to 5");
+    expect(html).toContain("Original");
+    expect(html).toContain("Draft");
+    expect(html).toContain("Replacement");
     expect(html).toContain("A clearer title");
     expect(html).toContain(">Apply<");
+  });
+
+  it("explains selected-text context and unavailable attachments", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "open",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        context: {
+          kind: "item",
+          label: "Draft",
+          detail: "Selected body text",
+        },
+        attachmentDisabled: true,
+        attachmentTitle: "Attachments require the on-device assistant",
+      }),
+    );
+
+    expect(html).toContain(
+      'aria-label="Context: Draft, Selected body text"',
+    );
+    expect(html).toContain(
+      'title="Attachments require the on-device assistant"',
+    );
+    expect(html).toContain('aria-label="Choose assistant attachments"');
+    expect(html).toContain('aria-keyshortcuts="Enter"');
   });
 });

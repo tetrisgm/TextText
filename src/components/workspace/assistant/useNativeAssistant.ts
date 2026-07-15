@@ -37,10 +37,15 @@ import {
   runNativeQuickAction,
   type NativeQuickActionField,
   type NativeQuickActionId,
+  type NativeQuickActionScope,
 } from "@/lib/ai/quick-actions";
-import type {
-  WorkspaceItemTextPatch,
-  WorkspaceItemTextSnapshot,
+import {
+  createWorkspaceItemTextEdit,
+  resolveWorkspaceItemTextEdit,
+  resolveWorkspaceItemTextSelection,
+  type WorkspaceItemTextEdit,
+  type WorkspaceItemTextPatch,
+  type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
 import {
   assistantJobs,
@@ -60,10 +65,14 @@ import { findPoolPostById } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import {
+  assistantAttachmentAccept,
   buildNativeAssistantPrompt,
   formatAssistantSubmission,
 } from "./attachments";
-import type { AssistantViewSnapshot } from "./context";
+import {
+  appendAssistantSelectionContext,
+  type AssistantViewSnapshot,
+} from "./context";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -75,6 +84,10 @@ export type AssistantProposal = {
   label: string;
   before: string;
   after: string;
+  source?: string;
+  result?: string;
+  range?: WorkspaceItemTextEdit["range"];
+  scope?: NativeQuickActionScope;
   canApply: boolean;
   note?: string;
   status: "pending" | "applying" | "applied" | "undoing" | "undone";
@@ -97,6 +110,7 @@ type UseNativeAssistantOptions = {
   applyItemPatch: (
     postId: string,
     patch: WorkspaceItemTextPatch,
+    expected?: WorkspaceItemTextPatch,
   ) => Promise<unknown> | unknown;
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
@@ -193,6 +207,27 @@ function setThreadBusy(threadKey: string, busy: boolean) {
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+function proposalEdit(
+  proposal: AssistantProposal,
+): WorkspaceItemTextEdit | null {
+  const source = proposal.source ?? proposal.before;
+  const range = proposal.range ?? { start: 0, end: source.length };
+  const edit = createWorkspaceItemTextEdit({
+    after: proposal.after,
+    end: range.end,
+    field: proposal.field,
+    source,
+    start: range.start,
+  });
+  if (
+    !edit ||
+    (proposal.result !== undefined && edit.result !== proposal.result)
+  ) {
+    return null;
+  }
+  return edit;
 }
 
 // ---- Unavailability copy ----
@@ -327,6 +362,11 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
+        const submittedView = getViewRef.current();
+        const editingItem =
+          submittedView.level === "edit" && submittedView.postId
+            ? await readItemTextRef.current(submittedView.postId)
+            : null;
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
@@ -335,7 +375,10 @@ export function useNativeAssistant({
           return;
         }
         const prepared = await buildNativeAssistantPrompt(prompt, attachments);
-        const context = tools.describeContext(getViewRef.current());
+        const baseContext = tools.describeContext(submittedView);
+        const context = editingItem
+          ? appendAssistantSelectionContext(baseContext, editingItem)
+          : baseContext;
         const { instructions } = composeInstructions(
           handle,
           prepared.prompt,
@@ -381,16 +424,32 @@ export function useNativeAssistant({
       const actionLabel =
         NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
           ?.label ?? action;
-      appendToThread(thread, "user", actionLabel);
       setThreadBusy(thread, true);
       try {
+        const item = await readItemTextRef.current(view.postId);
+        const selection = resolveWorkspaceItemTextSelection(item);
+        const selectionAction = action === "rewrite" || action === "summarize";
+        appendToThread(
+          thread,
+          "user",
+          selection && selectionAction
+            ? `${actionLabel} selection`
+            : actionLabel,
+        );
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
           appendToThread(thread, "assistant", unavailableExplanation(current));
           return;
         }
-        const item = await readItemTextRef.current(view.postId);
+        if (current.textOps && !current.textOps.includes(action)) {
+          appendToThread(
+            thread,
+            "error",
+            `${actionLabel} is not available on this Mac.`,
+          );
+          return;
+        }
         const result = await runNativeQuickAction(action, item);
         if (result.kind === "response") {
           appendToThread(thread, "assistant", result.text || "Done.");
@@ -402,6 +461,10 @@ export function useNativeAssistant({
           label: result.label,
           before: result.before,
           after: result.after,
+          source: result.source,
+          result: result.result,
+          range: result.range,
+          scope: result.scope,
           canApply: result.canApply,
           note: result.note,
           status: "pending",
@@ -436,10 +499,18 @@ export function useNativeAssistant({
       ) {
         return;
       }
-      const expected = direction === "apply" ? proposal.before : proposal.after;
-      const value = direction === "apply" ? proposal.after : proposal.before;
+      const edit = proposalEdit(proposal);
+      if (!edit) {
+        appendToThread(
+          threadKey,
+          "error",
+          "This preview is no longer valid. Run the action again.",
+        );
+        return;
+      }
       const current = await readItemTextRef.current(proposal.itemId);
-      if (current[proposal.field] !== expected) {
+      const resolution = resolveWorkspaceItemTextEdit(current, edit, direction);
+      if (!resolution.ok) {
         appendToThread(
           threadKey,
           "error",
@@ -458,9 +529,11 @@ export function useNativeAssistant({
           : undefined,
       }));
       try {
-        const result = await applyItemPatchRef.current(proposal.itemId, {
-          [proposal.field]: value,
-        });
+        const result = await applyItemPatchRef.current(
+          proposal.itemId,
+          resolution.patch,
+          resolution.expected,
+        );
         const syncPending =
           typeof result === "object" &&
           result !== null &&
@@ -507,7 +580,21 @@ export function useNativeAssistant({
     [applyProposalValue],
   );
 
-  const quickActions = getView().postId ? [...NATIVE_QUICK_ACTIONS] : [];
+  const textOps = capabilities?.textOps;
+  const quickActions =
+    getView().postId && capabilities?.available
+      ? NATIVE_QUICK_ACTIONS.filter(
+          (action) => !textOps || textOps.includes(action.id),
+        )
+      : [];
+  const attachmentsAvailable = capabilities?.available === true;
+  const attachmentTitle = attachmentsAvailable
+    ? capabilities.ocr
+      ? "Add a text file or image for private on-device processing"
+      : "Add a text file for private on-device processing"
+    : capabilities
+      ? "Attachments require the on-device assistant"
+      : "Checking on-device attachment support";
 
   // Skill toggles for the sidebar; a plain version counter re-reads
   // localStorage-backed state after each change.
@@ -554,6 +641,9 @@ export function useNativeAssistant({
 
   return {
     addSkill,
+    attachmentAccept: assistantAttachmentAccept(capabilities),
+    attachmentsAvailable,
+    attachmentTitle,
     applyProposal,
     capabilities,
     deleteSkill,

@@ -9,6 +9,7 @@ vi.mock("@/app/editor/actions", () => ({
 }));
 
 import {
+  assistantAttachmentAccept,
   buildNativeAssistantPrompt,
   formatAssistantSubmission,
 } from "@/components/workspace/assistant/attachments";
@@ -101,6 +102,17 @@ describe("native assistant submissions", () => {
     expect(result.prompt).toContain("Words from image");
   });
 
+  it("offers image attachments only when native OCR is available", () => {
+    expect(assistantAttachmentAccept(null)).toBe(".txt,.md,.markdown");
+    expect(
+      assistantAttachmentAccept({
+        available: true,
+        ocr: true,
+        imageUnderstanding: false,
+      }),
+    ).toBe("image/*,.txt,.md,.markdown");
+  });
+
   it("dispatches through the native agent bridge without a network request", async () => {
     const request = vi.fn(async () => ({ text: "Done", truncated: false }));
     const fetch = vi.fn();
@@ -143,6 +155,72 @@ describe("native assistant submissions", () => {
       label: "Suggested title",
       before: "Draft",
       after: "A clearer title",
+      source: "Draft",
+      result: "A clearer title",
+      range: { start: 0, end: 5 },
+      scope: "field",
+      canApply: true,
+      note: undefined,
+    });
+  });
+
+  it("summarizes only the current selection", async () => {
+    const request = vi.fn(async (op: string, payload: unknown) => {
+      expect(op).toBe("summarize");
+      expect(payload).toEqual({ text: "selected words" });
+      return { summary: "Selection summary", truncated: false };
+    });
+    vi.stubGlobal("window", { writeNativeAI: { request } });
+    const body = "Before selected words after";
+    const start = body.indexOf("selected words");
+
+    await expect(
+      runNativeQuickAction("summarize", {
+        title: "Draft",
+        excerpt: "",
+        body,
+        selection: {
+          field: "body",
+          start,
+          end: start + "selected words".length,
+          text: "selected words",
+        },
+      }),
+    ).resolves.toEqual({ kind: "response", text: "Selection summary" });
+  });
+
+  it("creates a precise range proposal when rewriting a selection", async () => {
+    const request = vi.fn(async (op: string, payload: unknown) => {
+      expect(op).toBe("rewrite");
+      expect(payload).toMatchObject({ text: "rough phrase" });
+      return { text: "clear sentence", truncated: false };
+    });
+    vi.stubGlobal("window", { writeNativeAI: { request } });
+    const body = "Keep this rough phrase and the ending.";
+    const start = body.indexOf("rough phrase");
+
+    await expect(
+      runNativeQuickAction("rewrite", {
+        title: "Draft",
+        excerpt: "",
+        body,
+        selection: {
+          field: "body",
+          start,
+          end: start + "rough phrase".length,
+          text: "rough phrase",
+        },
+      }),
+    ).resolves.toMatchObject({
+      kind: "proposal",
+      field: "body",
+      label: "Rewritten selection",
+      before: "rough phrase",
+      after: "clear sentence",
+      source: body,
+      result: "Keep this clear sentence and the ending.",
+      range: { start, end: start + "rough phrase".length },
+      scope: "selection",
       canApply: true,
     });
   });
@@ -248,5 +326,15 @@ describe("assistant destructive confirmation", () => {
       tools.executor("delete_item", { id: "post-1" }),
     ).resolves.toEqual({ ok: false, cancelled: true });
     expect(pool().posts[0]?.status).toBe("draft");
+  });
+
+  it("fails closed when a destructive confirmation has no description", async () => {
+    const changes: Array<string | null> = [];
+    const controller = createAssistantConfirmationController((request) =>
+      changes.push(request?.description ?? null),
+    );
+
+    await expect(controller.request("   ")).resolves.toBe(false);
+    expect(changes).toEqual([]);
   });
 });
