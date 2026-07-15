@@ -4,6 +4,10 @@ Codex (the local `codex` CLI, headless) does the bounded build tracks;
 Claude (or Ramine) holds schema, security, contracts, merges, review, and
 deploys. This file is the queue's state.
 
+Current project status is NOT tracked here. See `docs/app-health.md`,
+`docs/mcp.md`, and `docs/ai-sidebar-architecture.md` for the shipped
+architecture, and the release commits for what has landed.
+
 ## How to run
 
 ```sh
@@ -23,20 +27,16 @@ Tasks whose briefs declare DISJOINT file ownership may run in parallel
 
 ## Queue
 
+_Empty._ The July 7, 2026 batch (nested sync, bookmarks web, capture
+open-with, sharing UI, category pages, OpenAPI/ChatGPT actions, OAuth
+`/connect`, capture hardening, folder-tree sidebar, category chip) all
+shipped in v0.74; its briefs live in `codex/tasks/` as historical records,
+and the plan is archived at `docs/archive/2026-07-07-plan.md`.
+
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | T1-mac-nested-sync | running | SyncEngine/ServerClient nested paths |
-| 2 | T2-bookmarks-web | running | FolderPage + bookmark components |
-| 3 | T3-mac-capture-openwith | running | CaptureAgent + OpenFileHandler |
-| 4 | T4-sharing-workspace-ui | running | 4 island components |
-| 5 | T5-public-category-pages | merged (partial) | category listing PAGES landed + verified live; the on-card chip was REJECTED and reverted because Codex restructured the shared PostCard root from a Link to an article (a whole-app hover/tilt/a11y change), against the brief. Chip still shows in the category page's own timeline/index layouts. |
-| 6 | category-chip-on-cards | queued | add the category chip to PostCard WITHOUT changing its single-link structure (render as a non-link label, or an overlay sibling); needs real-browser hover verification. Do NOT convert the card root away from Link. |
-| - | folder-tree-sidebar-polish | queued | wire Codex's FolderTree component into PostWorkspaceShell (styling reconciliation); today the sidebar shows subfolders as depth-indented flat rows |
-| 6 | openapi-sync-actions | queued | OpenAPI file + ChatGPT Actions guide |
-| 7 | oauth-connect | queued | needs Claude security review before merge |
-| 8 | capture-hardening | queued | PDFs, paywalls, retries |
+| - | _(none queued)_ | | |
 
-Update the Status column as tasks move (queued -> running -> review ->
-merged / rejected). New briefs go in codex/tasks/, one file per task,
-always with a STRICT file-ownership section; that section is what makes
-parallelism safe.
+Add a new brief in `codex/tasks/`, one file per task, always with a STRICT
+file-ownership section (that section is what makes parallelism safe), then
+add a row above and move it queued -> running -> review -> merged / rejected.
