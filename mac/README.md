@@ -1,8 +1,9 @@
 # Write.app for Mac
 
 A native markdown sync client for the Write platform. Pure AppKit, SwiftPM
-only (no .xcodeproj), one dependency (Sparkle). It mirrors your workspace's
-folders to a local directory:
+only (no .xcodeproj), one dependency (Sparkle), and supported on Apple silicon
+with macOS 14 or later. It mirrors your workspace's folders to a local
+directory:
 
     ~/Write/
       blog/my-first-post.md
@@ -71,17 +72,25 @@ Mint the token by approving a device link (or via the link flow itself:
 
 ## Release ritual (owner's Mac, no CI secrets)
 
-    WRITE_NOTARY_PROFILE=write-notary \
-    WRITE_BUNDLE_ID=<real bundle id> \
-    WRITE_PRODUCT_ORIGIN=https://<product-domain> \
-    WRITE_SPARKLE_PUBLIC_KEY=<EdDSA public key> \
-      mac/scripts/release.sh 0.2
+    release/ship.sh 0.2
 
 That bumps the version (CFBundleVersion auto-increments), builds and signs
 inside-out with the auto-detected Developer ID identity, notarizes + staples
 (refuses without the notary profile), zips with ditto, signs the appcast,
 and prints/executes the upload steps in the only safe order: versioned zip,
 appcast, stable alias, advertised-version pointer last.
+
+Write and its three app extensions are built and verified as arm64-only.
+Sparkle remains universal. The generated, uploaded, and publicly deployed
+appcast must carry an arm64 hardware requirement before the ship command can
+complete. The exact element is
+`<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>`. The signed
+build attestation also requires content-blind capability receipts for folder
+Trash/restore, sharing/access, comments, bookmark recapture, and cover/assets.
+
+`mac/scripts/release.sh` is the lower-level artifact publisher. The owner
+command calls it only after the source gates pass and the workflow capability
+receipt exists; invoking it without those release-gate inputs fails closed.
 
 Committed placeholders stay neutral: bundle id `com.example.write.mac`,
 domain `write.example.com`, key `REPLACE_WITH_SPARKLE_PUBLIC_KEY`. Real

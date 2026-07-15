@@ -172,6 +172,7 @@ export async function PostPageForHandle({
   const isPrivatePost = isUnlistedItem(post) || post.status !== "published";
   if (isPrivatePost && !canEdit && !itemAccess?.canView) notFound();
   const canEditPost = canEdit || Boolean(itemAccess?.canEditContent);
+  const canCommentPost = Boolean(viewer && (canEdit || itemAccess?.canView));
   const editMode = canEditPost && editRequested;
   if (slugResolution.kind === "history") {
     const path = postPathForRequest(blog, post, tenantHandle);
@@ -290,6 +291,7 @@ export async function PostPageForHandle({
         <PostReadWorkspaceShell
           adjacent={adjacent}
           blog={blog}
+          canCommentPost={canCommentPost}
           canManageFolders={canEdit}
           canManageSharing={access.isOwner}
           counts={counts}
@@ -341,6 +343,7 @@ export async function PostPageForHandle({
           usedSlugs={usedSlugs}
           collab={collab}
           canManagePost={canEdit}
+          canCommentPost={canCommentPost}
           workspaceBlogId={access.blogId ?? undefined}
         />
       </>
@@ -355,6 +358,7 @@ export async function PostPageForHandle({
         <PostReadWorkspaceShell
           adjacent={adjacent}
           blog={blog}
+          canCommentPost={canCommentPost}
           canManageFolders={canEdit}
           canManageSharing={access.isOwner}
           counts={counts}
@@ -385,6 +389,7 @@ export async function PostPageForHandle({
             postPath={currentPostPath}
             canEditPost={canEditPost}
             canManagePost={canEdit}
+            canCommentPost={canCommentPost}
           />
           {reader}
         </>

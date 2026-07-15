@@ -13,10 +13,11 @@ import type {
 import { isSafeLinkHref } from "@/lib/content";
 import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
-import type { BlogPatch, PostContentPatch } from "@/lib/store";
+import type { BlogPatch, ItemComment, PostContentPatch } from "@/lib/store";
 import {
   claimBlogForUser,
   countAllPosts,
+  createItemComment,
   createAnonymousBlogRecord,
   createDraft,
   createSubfolder,
@@ -31,6 +32,7 @@ import {
   getPostById,
   getUserIdBySub,
   isWorkspaceStarterPost,
+  listItemComments,
   markCapturePending,
   renameFolder,
   restoreFolder,
@@ -40,6 +42,7 @@ import {
   setPostFolder,
   setPostCreatedAt,
   setPostPinned,
+  setItemCommentResolved,
   trashBlogPosts,
   trashFolder,
   updateBlogByHandle,
@@ -84,6 +87,15 @@ import {
   tenantPostPath,
 } from "@/lib/public-paths";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
+import { NO_COVER_VALUE } from "@/lib/cover";
+import {
+  attachItemAsset,
+  importItemAssetFromUrl,
+  listItemAssetReferences,
+  removeItemAssetReferences,
+  type ItemAssetPlacement,
+  type ItemAssetReference,
+} from "@/lib/item-assets";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
@@ -843,6 +855,444 @@ export async function saveEditablePostAction(
     await revalidateBlog(handle, [existing.slug, saved.slug]);
   }
   return saved;
+}
+
+// MARK: Comments and bookmark recapture
+
+export type ItemCommentView = {
+  id: string;
+  parentId: string | null;
+  body: string;
+  authorName: string;
+  createdAt: string;
+  updatedAt: string;
+  resolved: boolean;
+  resolvedAt: string | null;
+  anchor: ItemComment["anchor"];
+};
+
+function itemCommentView(comment: ItemComment): ItemCommentView {
+  const actorLabel =
+    comment.author.actorType === "ai"
+      ? "AI"
+      : comment.author.actorType === "external_agent"
+        ? "External agent"
+        : "Someone";
+  return {
+    id: comment.id,
+    parentId: comment.parentId,
+    body: comment.body,
+    authorName: comment.authorName?.trim() || actorLabel,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt,
+    resolved: comment.resolved,
+    resolvedAt: comment.resolvedAt,
+    anchor: comment.anchor,
+  };
+}
+
+async function storedItemComments(postId: string): Promise<ItemCommentView[]> {
+  return (await listItemComments(postId)).map(itemCommentView);
+}
+
+function cleanCommentBody(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Comment must be text");
+  const body = value.replace(/\u0000/g, "").trim();
+  if (!body) throw new Error("Write a comment first");
+  if (body.length > 4_000) throw new Error("Comments can be up to 4,000 characters");
+  return body;
+}
+
+async function accessibleItemForComments(
+  handleInput: unknown,
+  postIdInput: unknown,
+  permission: "view" | "edit",
+) {
+  const handle = cleanHandle(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sign in to use comments");
+  const access = await resolveItemAccess({ handle, postId, user });
+  if (!access.canView) throw new Error("You cannot view comments on this item");
+  if (permission === "edit" && !access.canEditContent) {
+    throw new Error("You cannot resolve comments on this item");
+  }
+  const actorUserId =
+    access.userId ?? user.userId ?? (await getUserIdBySub(user.sub));
+  if (!actorUserId) throw new Error("Your account could not be resolved");
+  return { access, actorUserId, handle, postId, user };
+}
+
+export async function listItemCommentsAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<ItemCommentView[]> {
+  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  return storedItemComments(item.postId);
+}
+
+export async function addItemCommentAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  bodyInput: unknown,
+  anchorFieldInput?: unknown,
+  anchorExactInput?: unknown,
+  anchorStartInput?: unknown,
+  anchorEndInput?: unknown,
+): Promise<ItemCommentView[]> {
+  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  const body = cleanCommentBody(bodyInput);
+  const anchorField =
+    anchorFieldInput === "title" ||
+    anchorFieldInput === "excerpt" ||
+    anchorFieldInput === "body"
+      ? anchorFieldInput
+      : undefined;
+  const anchorExact =
+    typeof anchorExactInput === "string" && anchorExactInput.trim()
+      ? anchorExactInput.slice(0, 4_000)
+      : undefined;
+  if ((anchorField && !anchorExact) || (!anchorField && anchorExact)) {
+    throw new Error("Anchored comments need a field and quoted text");
+  }
+  const anchorStart =
+    typeof anchorStartInput === "number" && Number.isInteger(anchorStartInput)
+      ? anchorStartInput
+      : undefined;
+  const anchorEnd =
+    typeof anchorEndInput === "number" && Number.isInteger(anchorEndInput)
+      ? anchorEndInput
+      : undefined;
+  if ((anchorStart === undefined) !== (anchorEnd === undefined)) {
+    throw new Error("Anchored comments need both start and end offsets");
+  }
+  await createItemComment(
+    {
+      itemId: item.postId,
+      body,
+      anchor:
+        anchorField && anchorExact
+          ? {
+              field: anchorField,
+              exactQuote: anchorExact,
+              ...(anchorStart === undefined ? {} : { start: anchorStart }),
+              ...(anchorEnd === undefined ? {} : { end: anchorEnd }),
+            }
+          : null,
+    },
+    {
+      actorUserId: item.actorUserId,
+      actorType: "human",
+      actorName:
+        item.user.name?.trim() || item.user.email?.split("@")[0] || "Someone",
+    },
+  );
+  await recordAction({
+    actorUserId: item.actorUserId,
+    actorType: "human",
+    actionName: "comment.add",
+    targetType: "item",
+    targetId: item.postId,
+    inputSummary: body,
+  });
+  return storedItemComments(item.postId);
+}
+
+export async function replyItemCommentAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  parentCommentIdInput: unknown,
+  bodyInput: unknown,
+): Promise<ItemCommentView[]> {
+  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  const parentId = cleanPostId(parentCommentIdInput);
+  const body = cleanCommentBody(bodyInput);
+  const comments = await storedItemComments(item.postId);
+  const parent = comments.find((comment) => comment.id === parentId);
+  if (!parent || parent.parentId) {
+    throw new Error("Comment thread not found");
+  }
+  await createItemComment(
+    { itemId: item.postId, parentId, body },
+    {
+      actorUserId: item.actorUserId,
+      actorType: "human",
+      actorName:
+        item.user.name?.trim() || item.user.email?.split("@")[0] || "Someone",
+    },
+  );
+  await recordAction({
+    actorUserId: item.actorUserId,
+    actorType: "human",
+    actionName: "comment.reply",
+    targetType: "item",
+    targetId: item.postId,
+    inputSummary: `${parentId}: ${body}`,
+  });
+  return storedItemComments(item.postId);
+}
+
+async function setItemCommentResolutionAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  commentIdInput: unknown,
+  resolved: boolean,
+): Promise<ItemCommentView[]> {
+  const item = await accessibleItemForComments(handleInput, postIdInput, "edit");
+  const commentId = cleanPostId(commentIdInput);
+  const comments = await storedItemComments(item.postId);
+  const comment = comments.find((candidate) => candidate.id === commentId);
+  if (!comment || comment.parentId) {
+    throw new Error("Comment thread not found");
+  }
+  await setItemCommentResolved(item.postId, commentId, resolved, {
+    actorUserId: item.actorUserId,
+    actorType: "human",
+    actorName:
+      item.user.name?.trim() || item.user.email?.split("@")[0] || "Someone",
+  });
+  await recordAction({
+    actorUserId: item.actorUserId,
+    actorType: "human",
+    actionName: resolved ? "comment.resolve" : "comment.reopen",
+    targetType: "item",
+    targetId: item.postId,
+    inputSummary: commentId,
+  });
+  return storedItemComments(item.postId);
+}
+
+export async function resolveItemCommentAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  commentIdInput: unknown,
+): Promise<ItemCommentView[]> {
+  return setItemCommentResolutionAction(
+    handleInput,
+    postIdInput,
+    commentIdInput,
+    true,
+  );
+}
+
+export async function reopenItemCommentAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  commentIdInput: unknown,
+): Promise<ItemCommentView[]> {
+  return setItemCommentResolutionAction(
+    handleInput,
+    postIdInput,
+    commentIdInput,
+    false,
+  );
+}
+
+export async function recaptureBookmarkAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<Post> {
+  const handle = cleanHandle(handleInput);
+  const postId = cleanPostId(postIdInput);
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sign in to recapture bookmarks");
+  const access = await resolveItemAccess({ handle, postId, user });
+  if (!access.isOwner) throw new Error("Only the owner can recapture bookmarks");
+  const post = await getPostById(handle, postId);
+  if (!post || post.type !== "bookmark") throw new Error("Bookmark not found");
+  const url = cleanBookmarkUrl(post.links?.[0]?.href ?? post.capture?.url);
+  const pending = await markCapturePending(handle, postId, url.toString());
+  if (!pending) throw new Error("Bookmark not found");
+  await recordAction({
+    actorUserId:
+      access.userId ?? user.userId ?? (await getUserIdBySub(user.sub)),
+    actorType: "human",
+    actionName: "recapture_bookmark",
+    targetType: "item",
+    targetId: postId,
+    inputSummary: url.toString(),
+  });
+  await revalidateBlog(handle, [post.slug]);
+  return pending;
+}
+
+// MARK: Item covers and assets
+
+async function ownedItemForAssets(handleInput: unknown, postIdInput: unknown) {
+  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  if (!item.access.isOwner) throw new Error("Only the owner can manage item assets");
+  const post = await getPostById(item.handle, item.postId);
+  if (!post?.id) throw new Error("Item not found");
+  return { ...item, post };
+}
+
+function cleanAssetUrl(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`${label} is required`);
+  const candidate = value.trim();
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new Error(`${label} must be a valid URL`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${label} must use HTTP or HTTPS`);
+  }
+  return url.toString();
+}
+
+function cleanAssetPlacement(value: unknown): ItemAssetPlacement {
+  if (value === "cover" || value === "body_end" || value === "gallery") {
+    return value;
+  }
+  throw new Error("Asset placement is not supported");
+}
+
+function cleanOptionalAssetText(value: unknown, max: number): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new Error("Asset text must be text");
+  return value.replace(/\u0000/g, "").trim().slice(0, max) || undefined;
+}
+
+async function saveAssetPost(
+  handle: string,
+  post: Post,
+  actionName: string,
+  summary?: string,
+): Promise<Post> {
+  const saved = await savePost(handle, post, {
+    preservePublishedAt: true,
+    ...(typeof post.revision === "number"
+      ? { expectedRevision: post.revision }
+      : {}),
+  });
+  const user = await getCurrentUser();
+  await recordAction({
+    actorUserId: user
+      ? user.userId ?? (await getUserIdBySub(user.sub))
+      : null,
+    actorType: "human",
+    actionName,
+    targetType: "item",
+    targetId: saved.id,
+    inputSummary: summary,
+  });
+  await revalidateBlog(handle, [saved.slug]);
+  return saved;
+}
+
+export async function listItemAssetsAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+): Promise<ItemAssetReference[]> {
+  const item = await accessibleItemForComments(handleInput, postIdInput, "view");
+  const post = await getPostById(item.handle, item.postId);
+  if (!post) throw new Error("Item not found");
+  return listItemAssetReferences(post);
+}
+
+export async function addItemAssetAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  sourceUrlInput: unknown,
+  placementInput: unknown,
+  altTextInput?: unknown,
+  captionInput?: unknown,
+): Promise<{ asset: ItemAssetReference; post: Post }> {
+  const item = await ownedItemForAssets(handleInput, postIdInput);
+  const placement = cleanAssetPlacement(placementInput);
+  const sourceUrl = cleanAssetUrl(sourceUrlInput, "Asset URL");
+  const altText = cleanOptionalAssetText(altTextInput, 500);
+  const caption = cleanOptionalAssetText(captionInput, 2_000);
+  const asset = await importItemAssetFromUrl({
+    handle: item.handle,
+    itemId: item.postId,
+    sourceUrl,
+    media: placement === "cover" ? "image" : "image-or-video",
+  });
+  const saved = await saveAssetPost(
+    item.handle,
+    attachItemAsset(item.post, asset, placement, { altText, caption }),
+    "add_item_asset",
+    `${placement}: ${asset.filename} (${asset.bytes} bytes)`,
+  );
+  return {
+    asset: {
+      url: asset.url,
+      role: placement === "body_end" ? "body" : placement,
+      contentType: asset.contentType,
+      filename: asset.filename,
+      originalUrl: asset.sourceUrl,
+      altText,
+      caption,
+    },
+    post: saved,
+  };
+}
+
+export async function removeItemAssetAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  assetUrlInput: unknown,
+): Promise<{ changed: boolean; post: Post }> {
+  const item = await ownedItemForAssets(handleInput, postIdInput);
+  const assetUrl = cleanAssetUrl(assetUrlInput, "Asset URL");
+  const removed = removeItemAssetReferences(item.post, assetUrl);
+  if (!removed.changed) return { changed: false, post: item.post };
+  const saved = await saveAssetPost(
+    item.handle,
+    removed.post,
+    "remove_item_asset",
+    assetUrl,
+  );
+  return { changed: true, post: saved };
+}
+
+export async function setItemCoverAction(
+  handleInput: unknown,
+  postIdInput: unknown,
+  sourceInput: unknown,
+  urlInput?: unknown,
+  captionInput?: unknown,
+  heightInput?: unknown,
+): Promise<Post> {
+  const item = await ownedItemForAssets(handleInput, postIdInput);
+  if (sourceInput !== "url" && sourceInput !== "auto" && sourceInput !== "none") {
+    throw new Error("Cover source is not supported");
+  }
+  const url = sourceInput === "url" ? cleanAssetUrl(urlInput, "Cover URL") : undefined;
+  if (
+    url &&
+    !listItemAssetReferences(item.post).some((asset) => asset.url === url)
+  ) {
+    throw new Error("Import or attach that asset before using it as the cover");
+  }
+  const caption =
+    captionInput === null
+      ? undefined
+      : cleanOptionalAssetText(captionInput, 2_000) ?? item.post.coverCaption;
+  const height =
+    heightInput === null
+      ? undefined
+      : typeof heightInput === "number" && Number.isInteger(heightInput)
+        ? Math.min(860, Math.max(180, heightInput))
+        : item.post.coverHeight;
+  return saveAssetPost(
+    item.handle,
+    {
+      ...item.post,
+      cover:
+        sourceInput === "url"
+          ? url
+          : sourceInput === "none"
+            ? NO_COVER_VALUE
+            : undefined,
+      coverCaption: caption,
+      coverHeight: height,
+    },
+    "set_item_cover",
+    String(sourceInput),
+  );
 }
 
 // MARK: Sharing

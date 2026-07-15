@@ -7,6 +7,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -17,6 +18,7 @@ import {
   uuid,
   uniqueIndex,
   pgEnum,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 
@@ -34,6 +36,11 @@ export const postType = pgEnum("post_type", [
   "talk",
   "note",
   "bookmark",
+]);
+export const itemCommentAnchorField = pgEnum("item_comment_anchor_field", [
+  "title",
+  "excerpt",
+  "body",
 ]);
 
 export const users = pgTable("users", {
@@ -384,6 +391,95 @@ export const posts = pgTable(
     index("posts_blog_workspace_order_idx")
       .on(t.blogId, t.pinned.desc(), t.updatedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
+// Durable discussion belongs to an item but is deliberately not part of the
+// post row: it never enters Markdown, sync files, or public reader payloads.
+// Deleting a post permanently removes its comments in the database, while a
+// soft-deleted post keeps its discussion intact for restore.
+export const itemComments = pgTable(
+  "item_comments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references(
+      (): AnyPgColumn => itemComments.id,
+      { onDelete: "cascade" },
+    ),
+    body: text("body").notNull(),
+    anchorField: itemCommentAnchorField("anchor_field"),
+    anchorQuote: text("anchor_quote"),
+    anchorStart: integer("anchor_start"),
+    anchorEnd: integer("anchor_end"),
+    authorUserId: uuid("author_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** display-name snapshot supplied by the authorized caller */
+    authorName: text("author_name"),
+    /** "human" | "ai" | "external_agent" */
+    authorActorType: text("author_actor_type").notNull(),
+    editedByUserId: uuid("edited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    editedByActorType: text("edited_by_actor_type"),
+    resolvedAt: timestamp("resolved_at"),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    resolvedByActorType: text("resolved_by_actor_type"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("item_comments_post_created_idx").on(t.postId, t.createdAt, t.id),
+    index("item_comments_parent_created_idx").on(t.parentId, t.createdAt, t.id),
+    index("item_comments_post_resolved_created_idx").on(
+      t.postId,
+      t.resolvedAt,
+      t.createdAt,
+    ),
+    check("item_comments_body_not_blank", sql`length(btrim(${t.body})) > 0`),
+    check(
+      "item_comments_anchor_complete",
+      sql`(
+        (${t.anchorField} is null and ${t.anchorQuote} is null and
+          ${t.anchorStart} is null and ${t.anchorEnd} is null)
+        or
+        (${t.anchorField} is not null and ${t.anchorQuote} is not null and
+          length(btrim(${t.anchorQuote})) > 0)
+      )`,
+    ),
+    check(
+      "item_comments_anchor_offsets_valid",
+      sql`(${t.anchorStart} is null or ${t.anchorStart} >= 0) and
+        (${t.anchorEnd} is null or ${t.anchorEnd} >= 0) and
+        (${t.anchorStart} is null or ${t.anchorEnd} is null or
+          ${t.anchorEnd} >= ${t.anchorStart})`,
+    ),
+    check(
+      "item_comments_actor_types_valid",
+      sql`${t.authorActorType} in ('human', 'ai', 'external_agent') and
+        (${t.editedByActorType} is null or
+          ${t.editedByActorType} in ('human', 'ai', 'external_agent')) and
+        (${t.resolvedByActorType} is null or
+          ${t.resolvedByActorType} in ('human', 'ai', 'external_agent'))`,
+    ),
+    check(
+      "item_comments_edit_actor_complete",
+      sql`${t.editedByUserId} is null or ${t.editedByActorType} is not null`,
+    ),
+    check(
+      "item_comments_resolution_complete",
+      sql`(
+        ${t.resolvedAt} is null and ${t.resolvedByUserId} is null and
+          ${t.resolvedByActorType} is null
+      ) or (
+        ${t.resolvedAt} is not null and ${t.resolvedByActorType} is not null
+      )`,
+    ),
   ],
 );
 

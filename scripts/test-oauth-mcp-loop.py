@@ -39,6 +39,8 @@ EXPECTED_TOOLS = [
     "list_folders",
     "create_folder",
     "rename_folder",
+    "delete_folder",
+    "restore_folder",
     "list_items",
     "list_trash",
     "read_item",
@@ -52,7 +54,20 @@ EXPECTED_TOOLS = [
     "set_item_status",
     "set_item_metadata",
     "set_item_pinned",
+    "list_access",
+    "grant_access",
+    "set_access_role",
+    "revoke_access",
+    "list_comments",
+    "add_comment",
+    "set_comment_resolved",
+    "recapture_bookmark",
+    "list_item_assets",
+    "add_item_asset",
+    "remove_item_asset",
+    "set_item_cover",
 ]
+EXPECTED_OPEN_WORLD_TOOLS = {"recapture_bookmark", "add_item_asset"}
 
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -274,12 +289,17 @@ if tool_names != EXPECTED_TOOLS:
 for tool in listed_tools:
     annotations = tool.get("annotations", {})
     if (
-        annotations.get("openWorldHint") is not False
+        not isinstance(annotations.get("openWorldHint"), bool)
         or not isinstance(annotations.get("readOnlyHint"), bool)
         or not isinstance(annotations.get("destructiveHint"), bool)
         or not isinstance(annotations.get("idempotentHint"), bool)
     ):
         fail("mcp-tool-annotations", code, json.dumps(tool))
+    if (
+        annotations["openWorldHint"]
+        != (tool.get("name") in EXPECTED_OPEN_WORLD_TOOLS)
+    ):
+        fail("mcp-tool-open-world-contract", code, json.dumps(tool))
 print(f"6. MCP tools/list: {len(tool_names)} canonical tools")
 
 code, _, body = call(opener, f"{BASE}/api/mcp", {

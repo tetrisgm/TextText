@@ -7,9 +7,10 @@ integrations, and reports can be reviewed without collecting document content.
 ## Lifecycle
 
 1. `release/ship.sh` runs TypeScript, web unit tests, Swift unit tests, the Next
-   production build, and the Apple acceptance matrix.
+   production build, the Apple acceptance matrix, and the deterministic
+   workflow capability evaluator.
 2. The ship process writes a build attestation containing stable suite IDs,
-   source commit, version, and build.
+   workflow receipts, source commit, version, and build.
 3. The receipt is copied into the app before code signing.
 4. The staged app runs `releaseVerification`. Any non-passing check blocks
    publishing.
@@ -33,6 +34,29 @@ The installed app also samples File Provider readiness for a bounded five-second
 window so the initial `checking` state can settle without hiding persistent
 pending work or provider failures. Runtime reports expose only sample counts and
 stable state flags.
+
+Web-owned workflows use signed capability receipts rather than production
+mutation probes. `mac/scripts/verify-workflow-capabilities.sh` evaluates the
+typed command schemas, scope requirements, confirmation semantics, and
+content-blind fixtures for these required IDs:
+
+- `workflow.folder_trash_restore`
+- `workflow.sharing_access`
+- `workflow.comments`
+- `workflow.bookmark_recapture`
+- `workflow.cover_assets`
+
+The evaluator writes only source identity, stable IDs, and pass status. The
+build attestation refuses a missing, stale, duplicate, incomplete, or
+non-passing receipt. Installed health validates each embedded receipt under its
+own check ID. It never trashes or restores folders, changes access, creates a
+comment, recaptures a bookmark, or changes an asset in a person's workspace.
+
+The release also has one architecture identity from build through update. The
+Write executable and its three extensions must be arm64-only, while Sparkle is
+left universal. The staged and public appcasts must advertise
+`sparkle:hardwareRequirements` as `arm64`; a missing marker blocks publishing
+or completion of the owner ship command.
 
 This follows the useful PartyParty pattern of a bounded local history, lifecycle
 probes, best-effort upload, and centralized review. Write uses a structured,
@@ -154,7 +178,9 @@ are stored.
 ## Adding a check
 
 1. Choose a stable dotted ID and stable numeric metric keys.
-2. Exercise production code with a deterministic content-blind fixture.
+2. Exercise production code with a deterministic content-blind fixture, or
+   use a signed capability receipt when a safe runtime probe would mutate
+   production state.
 3. Keep the check fast and independent of the web view.
 4. Add a focused unit test and include the ID in staged-app verification when
    it is release-critical.

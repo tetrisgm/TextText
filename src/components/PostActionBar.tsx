@@ -10,12 +10,18 @@ import {
 } from "react";
 import type { ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
-import { saveEditablePostAction } from "@/app/editor/actions";
+import {
+  recaptureBookmarkAction,
+  saveEditablePostAction,
+} from "@/app/editor/actions";
 import { CLOSE_EDIT_MENU_EVENT } from "@/components/PostShortcuts";
+import { useCaptureStatus } from "@/components/bookmarks/useCaptureStatus";
+import type { CaptureStatusResponse } from "@/components/bookmarks/useCaptureStatus";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { shortcutLabelForCommand } from "@/lib/commands/workspace";
 import { preloadPostEditLayer } from "@/components/preloadPostEditLayer";
+import { CommentsDialog } from "@/components/workspace/CommentsDialog";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -39,6 +45,8 @@ type CommonProps = {
   owner: boolean;
   canEditPost?: boolean;
   canManagePost?: boolean;
+  canCommentPost?: boolean;
+  onBookmarkCaptureChange?: (post: Post) => void;
   onNavigate?: (path: string) => Promise<void> | void;
   presencePeers?: PresencePeer[];
 };
@@ -272,6 +280,70 @@ function ShareIcon() {
   );
 }
 
+function CommentIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.1 3.1h9.8v7.1H7.3L4.2 13v-2.8H3.1V3.1Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+    </svg>
+  );
+}
+
+function RecaptureIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M12.6 5.1A5.2 5.2 0 1 0 13 9M12.6 5.1V2.4m0 2.7H9.9"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+    </svg>
+  );
+}
+
+function CaptureIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect
+        x="2.5"
+        y="3"
+        width="11"
+        height="9.5"
+        rx="1.2"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path
+        d="m4.2 10 2.2-2.2 1.7 1.7 1.4-1.4 2.3 2.3"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.2"
+      />
+    </svg>
+  );
+}
+
+function OriginalIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M6.3 3H3.7A1.7 1.7 0 0 0 2 4.7v7.6A1.7 1.7 0 0 0 3.7 14h7.6a1.7 1.7 0 0 0 1.7-1.7V9.7M9 2h5v5M13.5 2.5 7.2 8.8"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
 function PencilIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -289,6 +361,118 @@ function PencilIcon() {
         strokeWidth="1.35"
       />
     </svg>
+  );
+}
+
+function bookmarkWithCaptureSnapshot(
+  post: Post,
+  status: Exclude<Post["captureStatus"], "pending" | undefined>,
+  snapshot: CaptureStatusResponse,
+): Post {
+  return {
+    ...post,
+    captureStatus: status,
+    capture: snapshot.capture ?? post.capture,
+    cover: snapshot.cover ?? post.cover,
+    updatedAt: snapshot.updatedAt ?? post.updatedAt,
+    wordCount: snapshot.wordCount ?? post.wordCount,
+  };
+}
+
+function BookmarkRecaptureControl({
+  handle,
+  post,
+  onCaptureChange,
+}: {
+  handle: string;
+  post: Post;
+  onCaptureChange?: (post: Post) => void;
+}) {
+  const [request, setRequest] = useState<{
+    error: string | null;
+    post: Post;
+    requested: boolean;
+  } | null>(null);
+  const requestRef = useRef(request);
+  const [starting, setStarting] = useState(false);
+  const effectiveRequest = request?.post.id === post.id ? request : null;
+  const effectivePost = effectiveRequest?.post ?? post;
+
+  useEffect(() => {
+    requestRef.current = request;
+  }, [request]);
+
+  const captureStatus = useCaptureStatus(
+    effectivePost.id,
+    effectivePost.captureStatus,
+    {
+      onResolved: (status, snapshot) => {
+        const active = requestRef.current;
+        const base = active && active.post.id === post.id ? active.post : post;
+        const resolved = bookmarkWithCaptureSnapshot(base, status, snapshot);
+        setRequest({
+          error:
+            status === "failed"
+              ? snapshot.capture?.error || "Capture failed"
+              : null,
+          post: resolved,
+          requested: false,
+        });
+        onCaptureChange?.(resolved);
+      },
+    },
+  );
+  const pending = captureStatus === "pending";
+  const requested = Boolean(effectiveRequest?.requested);
+  const error = effectiveRequest?.error ?? null;
+
+  const recapture = useCallback(async () => {
+    if (!post.id || pending || starting) return;
+    const optimistic = { ...post, captureStatus: "pending" as const };
+    setStarting(true);
+    setRequest({ error: null, post: optimistic, requested: true });
+    onCaptureChange?.(optimistic);
+    try {
+      const next = await recaptureBookmarkAction(handle, post.id);
+      setRequest({ error: null, post: next, requested: true });
+      onCaptureChange?.(next);
+    } catch (captureError) {
+      const message =
+        captureError instanceof Error && captureError.message
+          ? captureError.message
+          : "Could not recapture bookmark";
+      setRequest({ error: message, post, requested: false });
+      onCaptureChange?.(post);
+    } finally {
+      setStarting(false);
+    }
+  }, [handle, onCaptureChange, pending, post, starting]);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="post-bookmark-recapture ac-btn ac-btn-gray"
+        disabled={pending || starting}
+        aria-label={
+          pending ? "Bookmark capture in progress" : "Recapture bookmark"
+        }
+        title={error || (pending ? "Bookmark capture in progress" : "Recapture")}
+        onClick={() => void recapture()}
+      >
+        <span className="post-action-button-icon">
+          <RecaptureIcon />
+        </span>
+        <span className="post-responsive-action-label">
+          {pending ? (requested ? "Recapturing" : "Capturing") : "Recapture"}
+        </span>
+      </button>
+      {error && (
+        <span className="ac-sr-only" role="status">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -379,6 +563,8 @@ export function PostActionBar(props: Props) {
   const readBaseUpdatedAtRef = useRef(props.post.updatedAt);
   const [shareOpen, setShareOpen] = useState(false);
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [openCommentCount, setOpenCommentCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const origin = useSyncExternalStore(
@@ -397,6 +583,7 @@ export function PostActionBar(props: Props) {
   }));
   const canEditPost = props.canEditPost ?? props.owner;
   const canManagePost = props.canManagePost ?? props.owner;
+  const canCommentPost = props.canCommentPost ?? canEditPost;
 
   const closeShare = useCallback(() => setShareOpen(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -447,6 +634,7 @@ export function PostActionBar(props: Props) {
   useEffect(() => {
     const closePopovers = () => {
       setShareOpen(false);
+      setCommentsOpen(false);
       setTypeOpen(false);
       setSettingsOpen(false);
     };
@@ -619,18 +807,21 @@ export function PostActionBar(props: Props) {
   }, [publicUrl]);
 
   const openShare = useCallback(() => {
+    setCommentsOpen(false);
     setTypeOpen(false);
     setSettingsOpen(false);
     setShareOpen((open) => !open);
   }, []);
 
   const openSettings = useCallback(() => {
+    setCommentsOpen(false);
     setShareOpen(false);
     setTypeOpen(false);
     setSettingsOpen((open) => !open);
   }, []);
 
   const openType = useCallback(() => {
+    setCommentsOpen(false);
     setShareOpen(false);
     setSettingsOpen(false);
     setTypeOpen((open) => !open);
@@ -667,7 +858,8 @@ export function PostActionBar(props: Props) {
             void props.onDone();
           }}
         >
-          Stop editing
+          <span className="post-stop-edit-label-full">Stop editing</span>
+          <span className="post-stop-edit-label-compact">Done</span>
         </button>
       </ShortcutTooltip>
     ) : (
@@ -753,13 +945,18 @@ export function PostActionBar(props: Props) {
               bookmarkMode === "capture" ? " is-active" : ""
             }`}
             aria-pressed={bookmarkMode === "capture"}
+            aria-label="Show full bookmark capture"
+            title="Show full capture"
             onClick={() =>
               props.onBookmarkContentModeChange?.(
                 bookmarkMode === "capture" ? "readable" : "capture",
               )
             }
           >
-            Show full capture
+            <span className="post-action-button-icon">
+              <CaptureIcon />
+            </span>
+            <span className="post-responsive-action-label">Show full capture</span>
           </button>
         )}
         {bookmarkOriginalUrl && (
@@ -769,6 +966,7 @@ export function PostActionBar(props: Props) {
               bookmarkMode === "original" ? " is-active" : ""
             }`}
             aria-pressed={bookmarkMode === "original"}
+            aria-label="Show original bookmark page"
             title={bookmarkOriginalUrl}
             onClick={() =>
               props.onBookmarkContentModeChange?.(
@@ -776,7 +974,10 @@ export function PostActionBar(props: Props) {
               )
             }
           >
-            <span>Original</span>
+            <span className="post-action-button-icon">
+              <OriginalIcon />
+            </span>
+            <span className="post-responsive-action-label">Original</span>
             <span className="post-bookmark-original-url">
               {displayUrl(bookmarkOriginalUrl)}
             </span>
@@ -784,7 +985,50 @@ export function PostActionBar(props: Props) {
         )}
       </div>
     ) : null;
-  const showTopActionBar = canEditPost || showPostNav || Boolean(bookmarkControls);
+  const commentsControl = canCommentPost && props.post.id ? (
+    <button
+      type="button"
+      className="post-comments-button ac-btn ac-btn-gray"
+      aria-haspopup="dialog"
+      aria-expanded={commentsOpen}
+      aria-label={
+        openCommentCount > 0
+          ? `Comments, ${openCommentCount} open`
+          : "Comments"
+      }
+      title="Comments"
+      onClick={() => {
+        setShareOpen(false);
+        setTypeOpen(false);
+        setSettingsOpen(false);
+        setCommentsOpen(true);
+      }}
+    >
+      <span className="post-action-button-icon">
+        <CommentIcon />
+      </span>
+      <span className="post-responsive-action-label">Comments</span>
+      {openCommentCount > 0 && (
+        <span className="post-comments-count" aria-hidden="true">
+          {openCommentCount > 99 ? "99+" : openCommentCount}
+        </span>
+      )}
+    </button>
+  ) : null;
+  const recaptureControl =
+    canManagePost && props.post.id && props.post.type === "bookmark" ? (
+      <BookmarkRecaptureControl
+        handle={props.blog.handle}
+        post={props.post}
+        onCaptureChange={props.onBookmarkCaptureChange}
+      />
+    ) : null;
+  const showTopActionBar =
+    canEditPost ||
+    canCommentPost ||
+    showPostNav ||
+    Boolean(bookmarkControls) ||
+    Boolean(recaptureControl);
   const showAddHeaderItem =
     props.mode === "edit" &&
     activeDraft.type === "article" &&
@@ -802,7 +1046,7 @@ export function PostActionBar(props: Props) {
         <span className="post-action-button-icon">
           <ShareIcon />
         </span>
-        Share
+        <span className="post-responsive-action-label">Share</span>
       </button>
       {shareOpen && (
         <div
@@ -924,10 +1168,15 @@ export function PostActionBar(props: Props) {
           aria-label="Post controls"
         >
           <div className="post-action-toolbar ac-chrome">
-            {(canEditPost || bookmarkControls) && (
+            {(canEditPost ||
+              canCommentPost ||
+              bookmarkControls ||
+              recaptureControl) && (
               <div className="post-action-owner-group">
                 {bookmarkControls}
                 {canManagePost && shareControl}
+                {commentsControl}
+                {recaptureControl}
                 {canEditPost && presenceControl}
                 {canManagePost &&
                   props.mode === "edit" &&
@@ -1073,6 +1322,18 @@ export function PostActionBar(props: Props) {
             )}
           </div>
         </div>
+      )}
+      {canCommentPost && props.post.id && (
+        <CommentsDialog
+          key={props.post.id}
+          canResolve={canEditPost}
+          handle={props.blog.handle}
+          postId={props.post.id}
+          postTitle={postTitle(activeDraft.title)}
+          open={commentsOpen}
+          onClose={() => setCommentsOpen(false)}
+          onOpenCountChange={setOpenCommentCount}
+        />
       )}
     </>
   );

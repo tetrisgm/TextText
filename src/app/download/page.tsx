@@ -6,7 +6,8 @@ import { LandingFooter } from "@/components/LandingFooter";
 
 export const metadata: Metadata = {
   title: "Download Write",
-  description: "Get the Write desktop app for Mac. Windows and Linux are on the way.",
+  description:
+    "Get the Write desktop app for Apple silicon Macs. Windows and Linux are on the way.",
 };
 
 export const dynamic = "force-dynamic";
@@ -45,9 +46,9 @@ export default async function DownloadPage() {
         <p className="write-landing-kicker">The desktop app</p>
         <h1>Download Write</h1>
         <p>
-          Download the Mac app, open Write, and sign in when it launches. You
-          get the same editor and folders as the web, backed by Markdown files
-          that sync both ways.
+          Download the Mac app for Apple silicon, open Write, and sign in when
+          it launches. You get the same editor and folders as the web, backed
+          by Markdown files that sync both ways.
         </p>
         {advertised && (
           <p className="write-download-version">
@@ -79,11 +80,11 @@ export default async function DownloadPage() {
 
       <section className="write-download-grid" aria-label="Platforms">
         <article className="write-download-card">
-          <h2>Mac</h2>
-          <p>macOS 14 Sonoma or later. Apple silicon and Intel.</p>
+          <h2>Mac, Apple silicon</h2>
+          <p>macOS 14 Sonoma or later. Requires an Apple silicon Mac.</p>
           {macAvailable ? (
             <a className="write-landing-primary" href="/download/Write.zip">
-              Download for Mac
+              Download for Apple silicon
             </a>
           ) : (
             <button
@@ -91,7 +92,7 @@ export default async function DownloadPage() {
               type="button"
               disabled
             >
-              Download for Mac
+              Download for Apple silicon
             </button>
           )}
           <p className="write-download-card-note">

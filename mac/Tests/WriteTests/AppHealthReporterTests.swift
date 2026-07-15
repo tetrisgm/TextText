@@ -38,6 +38,11 @@ final class AppHealthReporterTests: XCTestCase {
             "selftest.filename_codec",
             "selftest.document_assets",
             "selftest.public_link",
+            "workflow.folder_trash_restore",
+            "workflow.sharing_access",
+            "workflow.comments",
+            "workflow.bookmark_recapture",
+            "workflow.cover_assets",
             "state.persistence",
             "sync.index",
             "workspace.storage",
@@ -52,6 +57,46 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertFalse(encoded.contains(root.path))
         XCTAssertFalse(encoded.contains(state.path))
         XCTAssertFalse(encoded.contains("token"))
+    }
+
+    func testMissingWorkflowReceiptFailsBuildAndNamedWorkflowCheck() throws {
+        let root = try temporaryDirectory(name: "workspace-missing-receipt")
+        let state = try temporaryDirectory(name: "state-missing-receipt")
+        let retained = WriteWorkflowHealth.requiredCheckIDs.filter {
+            $0 != WriteWorkflowHealth.comments
+        }
+        let bundle = try releaseBundle(workflowSuites: retained)
+        let previous = ProcessInfo.processInfo.environment["WRITE_STATE_DIR"]
+        setenv("WRITE_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("WRITE_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("WRITE_STATE_DIR")
+            }
+        }
+
+        let report = AppHealthReporter(
+            stateStore: StateStore(),
+            syncRootProvider: { root },
+            finderStatusProvider: { .healthyFixture },
+            bundle: bundle
+        ).run(trigger: .releaseVerification)
+
+        XCTAssertEqual(report.status, .fail)
+        XCTAssertEqual(
+            report.checks.first(where: { $0.id == "build.attestation" })?.status,
+            .fail)
+        let comments = try XCTUnwrap(
+            report.checks.first(where: { $0.id == WriteWorkflowHealth.comments }))
+        XCTAssertEqual(comments.status, .fail)
+        XCTAssertEqual(comments.metrics["receipt_present"], 0)
+        XCTAssertEqual(comments.metrics["receipt_passed"], 0)
+        XCTAssertEqual(
+            report.checks.first(where: {
+                $0.id == WriteWorkflowHealth.folderTrashRestore
+            })?.status,
+            .pass)
     }
 
     func testCorruptIndexIsAHealthFailure() throws {
@@ -175,7 +220,9 @@ final class AppHealthReporterTests: XCTestCase {
         return url
     }
 
-    private func releaseBundle() throws -> Bundle {
+    private func releaseBundle(
+        workflowSuites: [String] = WriteWorkflowHealth.requiredCheckIDs
+    ) throws -> Bundle {
         let parent = try temporaryDirectory(name: "release-bundle")
         let app = parent.appendingPathComponent("Release.app", isDirectory: true)
         let contents = app.appendingPathComponent("Contents", isDirectory: true)
@@ -203,16 +250,18 @@ final class AppHealthReporterTests: XCTestCase {
         let data = try PropertyListSerialization.data(
             fromPropertyList: info, format: .xml, options: 0)
         try data.write(to: contents.appendingPathComponent("Info.plist"))
+        let suites = [
+            ["id": "web.unit", "status": "pass"],
+            ["id": "native.unit", "status": "pass"],
+        ] + workflowSuites.map { ["id": $0, "status": "pass"] }
         let attestation: [String: Any] = [
             "schemaVersion": 1,
             "appVersion": "9.8",
             "buildNumber": "76",
             "sourceCommit": "health-test-revision",
+            "workflowContractHash": String(repeating: "a", count: 64),
             "generatedAt": "2026-07-14T00:00:00Z",
-            "suites": [
-                ["id": "web.unit", "status": "pass"],
-                ["id": "native.unit", "status": "pass"],
-            ],
+            "suites": suites,
         ]
         let attestationData = try JSONSerialization.data(
             withJSONObject: attestation, options: [.prettyPrinted, .sortedKeys])

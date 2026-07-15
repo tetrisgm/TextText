@@ -1,15 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const actions = vi.hoisted(() => ({
+  addItemAssetAction: vi.fn(),
+  addItemCommentAction: vi.fn(),
   createSubfolderAction: vi.fn(),
   createWorkspacePostAction: vi.fn(),
   deleteEditablePostAction: vi.fn(),
+  listItemAssetsAction: vi.fn(),
+  listItemCommentsAction: vi.fn(),
+  listScopeSharesAction: vi.fn(),
   movePostToFolderAction: vi.fn(),
+  recaptureBookmarkAction: vi.fn(),
   renameFolderAction: vi.fn(),
+  removeItemAssetAction: vi.fn(),
+  replyItemCommentAction: vi.fn(),
+  reopenItemCommentAction: vi.fn(),
   restoreEditablePostAction: vi.fn(),
+  restoreFolderAction: vi.fn(),
+  revokeScopeShareAction: vi.fn(),
   saveEditablePostAction: vi.fn(),
+  setItemCoverAction: vi.fn(),
+  shareScopeAction: vi.fn(),
+  resolveItemCommentAction: vi.fn(),
   setEditablePostStatusAction: vi.fn(),
+  trashFolderAction: vi.fn(),
   toggleEditablePostPinnedAction: vi.fn(),
+  updateScopeShareRoleAction: vi.fn(),
 }));
 
 vi.mock("@/app/editor/actions", () => actions);
@@ -88,6 +104,16 @@ function workspacePool(): WorkspacePoolPayload {
         status: "published",
       },
     ],
+    trashedFolders: [
+      {
+        id: "old-folder",
+        name: "Old folder",
+        path: "blog/old-folder",
+        mode: "blog",
+        parentId: "blog",
+        position: 3,
+      },
+    ],
   };
 }
 
@@ -110,7 +136,11 @@ describe("native workspace tool adapter", () => {
         folderModes: ["blog", "notes", "bookmarks"],
         scopes: { fullAccess: "sync", readOnly: expect.arrayContaining(["read"]) },
         permanentDeletion: false,
-        memberManagement: false,
+        memberManagement: true,
+        accessManagement: true,
+        comments: true,
+        bookmarkRecapture: true,
+        itemAssets: true,
       },
     });
   });
@@ -172,5 +202,71 @@ describe("native workspace tool adapter", () => {
     ).rejects.toThrow("must be unlisted before restoration");
     expect(confirmDestructive).not.toHaveBeenCalled();
     expect(actions.restoreEditablePostAction).not.toHaveBeenCalled();
+  });
+
+  it("routes access, comments, recapture, and assets through app actions", async () => {
+    const current = workspacePool();
+    current.posts.push({
+      id: "bookmark-1",
+      blogId: current.blogId,
+      folderId: "notes",
+      type: "bookmark",
+      slug: "source",
+      title: "Source",
+      status: "draft",
+    });
+    actions.listScopeSharesAction.mockResolvedValue([{ id: "share-1" }]);
+    actions.listItemCommentsAction.mockResolvedValue([
+      { id: "comment-1", resolvedAt: null },
+      { id: "comment-2", resolvedAt: "2026-07-15T13:00:00.000Z" },
+    ]);
+    actions.recaptureBookmarkAction.mockResolvedValue({
+      id: "bookmark-1",
+      type: "bookmark",
+      slug: "source",
+      title: "Source",
+      status: "draft",
+      captureStatus: "pending",
+    });
+    actions.listItemAssetsAction.mockResolvedValue([{ url: "https://assets.test/a.jpg" }]);
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: () => current,
+    });
+
+    await expect(
+      tools.executor("list_access", { scope_type: "workspace" }),
+    ).resolves.toMatchObject({ access: [{ id: "share-1" }] });
+    await expect(
+      tools.executor("list_comments", { id: "post-1", state: "open" }),
+    ).resolves.toMatchObject({ comments: [{ id: "comment-1" }] });
+    await expect(
+      tools.executor("recapture_bookmark", { id: "bookmark-1" }),
+    ).resolves.toMatchObject({ queued: true });
+    await expect(
+      tools.executor("list_item_assets", { id: "post-1" }),
+    ).resolves.toMatchObject({
+      assets: [{ url: "https://assets.test/a.jpg" }],
+    });
+  });
+
+  it("requires confirmation before folder Trash and access mutations", async () => {
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+    });
+
+    await expect(
+      tools.executor("delete_folder", { folder_id: "notes" }),
+    ).resolves.toEqual({ ok: false, cancelled: true });
+    await expect(
+      tools.executor("grant_access", {
+        scope_type: "workspace",
+        email: "reader@example.com",
+        role: "guest",
+      }),
+    ).resolves.toEqual({ ok: false, cancelled: true });
+    expect(actions.trashFolderAction).not.toHaveBeenCalled();
+    expect(actions.shareScopeAction).not.toHaveBeenCalled();
   });
 });

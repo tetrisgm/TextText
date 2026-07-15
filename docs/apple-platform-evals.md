@@ -28,9 +28,12 @@ owner-facing ship command refuses an independent `--skip-tests` release unless
 workflow.
 
 After TypeScript, web unit, Swift unit, Next build, and Apple acceptance gates
-pass, `mac/scripts/write-build-attestation.sh` records their stable suite IDs,
-source commit, app version, and build number. `build-app.sh` embeds the receipt
-as `Contents/Resources/AppHealthBuildAttestation.json` before signing.
+pass, `mac/scripts/verify-workflow-capabilities.sh` evaluates the five web-owned
+workflow command classes without executing a production mutation. Then
+`mac/scripts/write-build-attestation.sh` records their stable receipt IDs with
+the source suites, source commit, app version, and build number. `build-app.sh`
+embeds the receipt as
+`Contents/Resources/AppHealthBuildAttestation.json` before signing.
 
 The staged app then runs its own `releaseVerification` health suite.
 `build.attestation` fails when the receipt is missing, when a suite is not
@@ -52,15 +55,42 @@ version, daily, and on demand. The production-safe unit-style checks include:
   paths and restore without loss.
 - `selftest.public_link`: public Finder actions never expose the authenticated
   sync transport URL.
+- `workflow.folder_trash_restore`: the signed command contract preserves soft
+  deletion, restoration, confirmation, and no permanent delete input.
+- `workflow.sharing_access`: list, grant, role change, and revoke contracts keep
+  scope and audience-changing confirmation requirements.
+- `workflow.comments`: list, add, and resolve contracts validate bounded,
+  content-blind comment and anchor fixtures.
+- `workflow.bookmark_recapture`: recapture is a scoped open-world write that
+  accepts only the saved bookmark identity and concurrency token.
+- `workflow.cover_assets`: list, import, remove, and cover contracts retain
+  media placement, URL, confirmation, and concurrency constraints.
 - `state.persistence`: private local state is writable with restricted modes.
 - `sync.index`: the local sync index is decodable.
 - `workspace.storage`: the local workspace is readable and writable.
 - `finder.provider`: Finder integration reports a healthy, working, or failed
   native status.
 
-These tests invoke real production codecs and mappers with deterministic
-fixtures. They do not duplicate implementation logic and they never touch a
+The direct self-tests invoke real production codecs and mappers. The workflow
+checks validate source-matched signed receipts from typed command definitions.
+Both use deterministic fixtures, duplicate no mutation logic, and never touch a
 person's documents.
+
+## Apple silicon release gate
+
+`build-app.sh` builds Write explicitly for arm64. The reusable staged-bundle
+check verifies the main executable and the Share, Quick Look, and File Provider
+extensions contain only the arm64 slice. Sparkle remains universal because its
+framework and update helpers do not need to be thinned.
+
+Sparkle infers
+`<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>` from the
+main executable. `mac/scripts/release.sh` checks that marker before upload,
+`scripts/publish-mac-release.mjs` refuses an appcast without it, and
+`release/ship.sh` requires it from the deployed public appcast. The installed
+bundle is checked again after replacement. WKWebView's desktop compatibility
+user agent intentionally retains its Intel token and is not an executable
+architecture claim.
 
 ## Named regression suites
 
@@ -93,6 +123,8 @@ document storage.
 - Store locally before upload. Network failure cannot block launch, editing,
   navigation, Finder sync, or optimistic client state.
 - Health work runs outside the web view and never reloads it.
+- Daily health must not perform destructive or externally visible production
+  mutations. Use a source-matched capability receipt for those workflows.
 
 Add a regression test for every behavioral defect and a runtime self-test only
 when a short deterministic probe can detect a production integration failure.

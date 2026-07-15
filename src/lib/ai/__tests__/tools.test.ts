@@ -12,6 +12,8 @@ const EXPECTED_NAMES = [
   "list_folders",
   "create_folder",
   "rename_folder",
+  "delete_folder",
+  "restore_folder",
   "list_items",
   "list_trash",
   "read_item",
@@ -25,31 +27,68 @@ const EXPECTED_NAMES = [
   "set_item_status",
   "set_item_metadata",
   "set_item_pinned",
+  "list_access",
+  "grant_access",
+  "set_access_role",
+  "revoke_access",
+  "list_comments",
+  "add_comment",
+  "set_comment_resolved",
+  "recapture_bookmark",
+  "list_item_assets",
+  "add_item_asset",
+  "remove_item_asset",
+  "set_item_cover",
 ] as const;
 
 const DESTRUCTIVE_TOOLS = new Set([
   "rename_folder",
+  "delete_folder",
   "update_item",
   "move_item",
   "delete_item",
   "set_item_status",
   "set_item_metadata",
   "set_item_pinned",
+  "set_access_role",
+  "revoke_access",
+  "set_comment_resolved",
+  "recapture_bookmark",
+  "remove_item_asset",
+  "set_item_cover",
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
+  "delete_folder",
+  "restore_folder",
   "move_item",
   "delete_item",
   "restore_item",
   "set_item_status",
   "set_item_metadata",
   "set_item_pinned",
+  "set_access_role",
+  "revoke_access",
+  "set_comment_resolved",
+  "remove_item_asset",
+  "set_item_cover",
 ]);
 
 const CONFIRMED_TOOLS = new Set([
+  "delete_folder",
+  "restore_folder",
   "delete_item",
   "restore_item",
   "set_item_status",
+  "grant_access",
+  "set_access_role",
+  "revoke_access",
+  "remove_item_asset",
+]);
+
+const OPEN_WORLD_TOOLS = new Set([
+  "recapture_bookmark",
+  "add_item_asset",
 ]);
 
 describe("workspace tool contract", () => {
@@ -73,7 +112,7 @@ describe("workspace tool contract", () => {
         destructiveHint: DESTRUCTIVE_TOOLS.has(name),
         idempotentHint:
           definition.mutability === "read" || IDEMPOTENT_WRITES.has(name),
-        openWorldHint: false,
+        openWorldHint: OPEN_WORLD_TOOLS.has(name),
       });
       expect(definition.jsonSchema).toMatchObject({ type: "object" });
       expect(definition.jsonSchema).toHaveProperty("properties");
@@ -86,7 +125,7 @@ describe("workspace tool contract", () => {
     }
   });
 
-  it("exposes workspace identity capabilities without management powers", () => {
+  it("exposes workspace identity and scoped access capabilities", () => {
     const workspace = WORKSPACE_TOOL_DEFINITIONS.get_workspace;
     expect(workspace.mutability).toBe("read");
     expect(workspace.annotations.readOnlyHint).toBe(true);
@@ -95,6 +134,7 @@ describe("workspace tool contract", () => {
       fullAccess: "sync",
       readOnly: expect.arrayContaining(["read"]),
     });
+    expect(WORKSPACE_TOOL_DEFINITIONS.list_access.requiredScope).toBe("sync");
   });
 
   it("strictly validates mutation inputs", () => {

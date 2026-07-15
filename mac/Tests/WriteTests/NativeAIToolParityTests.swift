@@ -12,6 +12,8 @@ final class NativeAIToolParityTests: XCTestCase {
         "list_folders",
         "create_folder",
         "rename_folder",
+        "delete_folder",
+        "restore_folder",
         "list_items",
         "list_trash",
         "read_item",
@@ -25,6 +27,18 @@ final class NativeAIToolParityTests: XCTestCase {
         "set_item_status",
         "set_item_metadata",
         "set_item_pinned",
+        "list_access",
+        "grant_access",
+        "set_access_role",
+        "revoke_access",
+        "list_comments",
+        "add_comment",
+        "set_comment_resolved",
+        "recapture_bookmark",
+        "list_item_assets",
+        "add_item_asset",
+        "remove_item_asset",
+        "set_item_cover",
     ]
 
     func testNativeAgentExposesOnlyTheSafeWorkspaceToolSurface() {

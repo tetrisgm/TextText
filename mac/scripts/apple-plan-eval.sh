@@ -141,11 +141,15 @@ check "fp.writes" "File Provider Phase 3: write path maps Finder edits to the sy
 check "fp.unlisted" "Invariant: folder-scoped create keeps the folder's kind (notes/bookmarks stay unlisted)" \
   "grep -q 'defaultPostTypeForFolderMode' '$ROOT/src/lib/store.ts'"
 check "health.runtime" "Reliability: installed app runs content-blind production self-tests" \
-  "grep -q 'selftest.filename_codec' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_assets' '$MAC/Sources/Write/AppHealthReporter.swift'"
+  "grep -q 'selftest.filename_codec' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_assets' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'workflow.folder_trash_restore' '$MAC/Sources/Write/AppHealthReporter.swift'"
 check "health.finder-readiness" "Reliability: Finder health waits for transient startup work to settle" \
   "grep -q 'FileProviderReadinessProbe' '$MAC/Sources/Write/FileProviderStatusMonitor.swift' && grep -q 'working_exhausted' '$MAC/Sources/Write/AppHealthReporter.swift'"
 check "health.attestation" "Reliability: release bundle carries a verified build attestation" \
   "grep -q 'AppHealthBuildAttestation.json' '$MAC/scripts/build-app.sh' && grep -q 'write-build-attestation.sh' '$ROOT/release/ship.sh'"
+check "health.workflows" "Reliability: destructive web workflows use signed capability receipts" \
+  "test -x '$MAC/scripts/verify-workflow-capabilities.sh' && grep -q 'WRITE_WORKFLOW_CAPABILITY_RECEIPT' '$MAC/scripts/write-build-attestation.sh' && grep -q 'workflow.cover_assets' '$MAC/scripts/verify-app-health.sh'"
+check "release.arm64" "Release: Write binaries and Sparkle feed require Apple silicon" \
+  "test -x '$MAC/scripts/verify-apple-silicon-app.sh' && grep -q -- '--triple arm64-apple-macosx14.0' '$MAC/scripts/build-app.sh' && grep -q 'hardwareRequirements' '$MAC/scripts/release.sh' && grep -q 'PUBLIC_HARDWARE_REQUIREMENTS' '$ROOT/release/ship.sh'"
 
 # --- Explicit non-goals stay absent ---
 check "nongoal.cloudkit" "Non-goal: no CloudKit document storage" \

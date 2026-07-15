@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
@@ -46,7 +47,8 @@ describe("native workspace tool parity", () => {
       contract.map((tool) => [tool.name, tool.inputSchema]),
     ) as Record<string, { properties?: Record<string, unknown> }>;
 
-    expect(contract).toHaveLength(17);
+    expect(contract).toHaveLength(WORKSPACE_TOOL_NAMES.length);
+    expect(contract.map((tool) => tool.name)).toEqual(WORKSPACE_TOOL_NAMES);
     expect(contract.some((tool) => tool.name.includes("permanent"))).toBe(false);
     expect(schemas.list_items.properties).not.toHaveProperty("folder");
     expect(schemas.create_item.properties).not.toHaveProperty("folder");
@@ -54,5 +56,18 @@ describe("native workspace tool parity", () => {
     expect(schemas.set_item_pinned.properties?.pinned).toEqual({
       type: "boolean",
     });
+  });
+
+  it("is reproducible from the canonical TypeScript contract", () => {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(process.cwd(), "scripts/sync-native-tool-contract.mjs"), "--check"],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout).toContain(
+      `Native AI tool contract is current (${WORKSPACE_TOOL_NAMES.length} tools).`,
+    );
   });
 });

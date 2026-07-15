@@ -1,4 +1,14 @@
+import {
+  WORKSPACE_TOOL_DEFINITIONS,
+  WORKSPACE_TOOL_NAMES,
+} from "@/lib/ai/tools";
+
 export const dynamic = "force-dynamic";
+
+const READ_TOOL_COUNT = WORKSPACE_TOOL_NAMES.filter(
+  (name) => WORKSPACE_TOOL_DEFINITIONS[name].requiredScope === "read",
+).length;
+const WORKSPACE_TOOL_COUNT = WORKSPACE_TOOL_NAMES.length;
 
 export async function GET(request: Request) {
   const origin = new URL(request.url).origin;
@@ -20,9 +30,9 @@ function openApiDocument(origin: string) {
       description:
         "Import this document into ChatGPT Actions or another AI connector. " +
         "These actions use the sync HTTP API and require the sync scope. " +
-        "Write also offers a read-only OAuth scope for the six read MCP tools, " +
+        `Write also offers a read-only OAuth scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
         "but this document is a smaller action surface, not the complete " +
-        "17-tool MCP contract. OAuth uses authorization code with PKCE S256, " +
+        `${WORKSPACE_TOOL_COUNT}-tool MCP contract. OAuth uses authorization code with PKCE S256, ` +
         "one-hour access tokens, and rotating refresh tokens.",
     },
     servers: [{ url: origin }],
@@ -345,7 +355,7 @@ function openApiDocument(origin: string) {
               refreshUrl: `${origin}/oauth/token`,
               scopes: {
                 read:
-                  "Call the six read-only MCP workspace tools. The sync HTTP " +
+                  `Call the ${READ_TOOL_COUNT} read-only MCP workspace tools. The sync HTTP ` +
                   "actions in this document do not accept this scope.",
                 sync: "Read and write the authenticated owner's workspace.",
               },

@@ -12,6 +12,9 @@ if [ ! -x "$APP/Contents/MacOS/Write" ] || [ -z "$EXPECTED_VERSION" ] || [ -z "$
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$SCRIPT_DIR/verify-apple-silicon-app.sh" "$APP" --require-extensions
+
 ROOT="$(mktemp -d -t write-app-health)"
 trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/state" "$ROOT/workspace"
@@ -38,6 +41,11 @@ required = {
     "selftest.filename_codec",
     "selftest.document_assets",
     "selftest.public_link",
+    "workflow.folder_trash_restore",
+    "workflow.sharing_access",
+    "workflow.comments",
+    "workflow.bookmark_recapture",
+    "workflow.cover_assets",
     "state.persistence",
     "sync.index",
     "workspace.storage",
@@ -50,6 +58,7 @@ assert report.get("buildNumber") == build, "health report build mismatch"
 assert report.get("trigger") == "releaseVerification", "wrong health trigger"
 assert report.get("status") == "pass", "staged app health is not pass"
 assert required <= ids, "staged app omitted required health checks"
+assert len(ids) == len(report.get("checks", [])), "staged app duplicated health checks"
 assert all(check["status"] == "pass" for check in report["checks"]), (
     "staged app contains a non-passing check"
 )

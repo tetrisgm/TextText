@@ -2406,15 +2406,19 @@ function BookmarkViewBody({
 
 function WorkspacePostReader({
   blog,
+  canCommentPost,
   canManagePost,
   homePath,
+  onCaptureResolved,
   onNavigate,
   pool,
   poolPost,
 }: {
   blog: Blog;
+  canCommentPost: boolean;
   canManagePost: boolean;
   homePath: string;
+  onCaptureResolved?: FolderCaptureResolved;
   onNavigate: (path: string) => Promise<void> | void;
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
@@ -2493,8 +2497,10 @@ function WorkspacePostReader({
         homePath={sectionPath}
         postPath={blogPostPath(blog, post)}
         bookmarkContentMode={bookmarkContentMode}
+        canCommentPost={canCommentPost}
         canEditPost
         canManagePost={canManagePost}
+        onBookmarkCaptureChange={onCaptureResolved}
         onNavigate={async (path) => {
           await onNavigate(path);
         }}
@@ -2508,9 +2514,11 @@ function WorkspacePostReader({
 function LocalWorkspacePostEditor({
   active,
   blog,
+  canCommentPost,
   canManagePost,
   editorIdentity,
   homePath,
+  onCaptureResolved,
   onDeleteItem,
   onNavigate,
   pool,
@@ -2518,9 +2526,11 @@ function LocalWorkspacePostEditor({
 }: {
   active: boolean;
   blog: Blog;
+  canCommentPost: boolean;
   canManagePost: boolean;
   editorIdentity: string;
   homePath: string;
+  onCaptureResolved?: FolderCaptureResolved;
   onDeleteItem?: FolderDeleteItem;
   onNavigate: (path: string) => Promise<void> | void;
   pool: WorkspacePoolPayload;
@@ -3124,6 +3134,7 @@ function LocalWorkspacePostEditor({
       <PostActionBar
         mode="edit"
         owner={canManagePost}
+        canCommentPost={canCommentPost}
         canEditPost
         canManagePost={canManagePost}
         blog={blog}
@@ -3135,6 +3146,7 @@ function LocalWorkspacePostEditor({
         deleting={deleting}
         hasHeaderImage={hasArticleHeaderImage}
         folders={pool.folders}
+        onBookmarkCaptureChange={onCaptureResolved}
         onDelete={deletePost}
         onDone={async () => {
           await onNavigate(renderedPostPath);
@@ -3329,6 +3341,7 @@ function LocalWorkspacePostEditor({
 
 function LocalWorkspaceContent({
   blog,
+  canCommentPost,
   canCreateItems,
   canEditItems,
   canManagePost,
@@ -3352,6 +3365,7 @@ function LocalWorkspaceContent({
   view,
 }: {
   blog: Blog;
+  canCommentPost: boolean;
   canCreateItems: boolean;
   canEditItems: boolean;
   canManagePost: boolean;
@@ -3443,8 +3457,10 @@ function LocalWorkspaceContent({
     page = post ? (
       <WorkspacePostReader
         blog={blog}
+        canCommentPost={canCommentPost}
         canManagePost={canManagePost}
         homePath={homePath}
+        onCaptureResolved={onCaptureResolved}
         onNavigate={onNavigate}
         pool={pool}
         poolPost={post}
@@ -3474,9 +3490,11 @@ function LocalWorkspaceContent({
             key={itemIdentity.stableKey(activePost.id)}
             active={editorVisible}
             blog={blog}
+            canCommentPost={canCommentPost}
             canManagePost={canManagePost}
             editorIdentity={itemIdentity.stableKey(activePost.id)}
             homePath={homePath}
+            onCaptureResolved={onCaptureResolved}
             onDeleteItem={onDeleteItem}
             onNavigate={onNavigate}
             pool={pool}
@@ -3490,6 +3508,7 @@ function LocalWorkspaceContent({
 
 function LocalWorkspaceShell({
   blog,
+  canCommentPost,
   canManageFolders,
   canManageSharing,
   className,
@@ -3500,6 +3519,7 @@ function LocalWorkspaceShell({
   showGuestSignIn,
 }: {
   blog: Blog;
+  canCommentPost: boolean;
   canManageFolders: boolean;
   canManageSharing: boolean;
   children: ReactNode;
@@ -4795,6 +4815,7 @@ function LocalWorkspaceShell({
   const content = (
     <LocalWorkspaceContent
       blog={displayPool.blog}
+      canCommentPost={canCommentPost}
       canCreateItems={canManageFolders}
       canEditItems={canManageFolders}
       canManagePost={canManageFolders}
@@ -4949,6 +4970,7 @@ export function BlogHomeWorkspaceShell({
   activeFolder = null,
   blog,
   children,
+  canCommentPost = false,
   counts,
   canManageFolders = false,
   canManageSharing = false,
@@ -4961,6 +4983,7 @@ export function BlogHomeWorkspaceShell({
   activeFolder?: SidebarFolderId | null;
   blog: Blog;
   children: ReactNode;
+  canCommentPost?: boolean;
   counts: Record<string, number>;
   canManageFolders?: boolean;
   canManageSharing?: boolean;
@@ -4986,6 +5009,7 @@ export function BlogHomeWorkspaceShell({
       <WorkspaceProvider initialPool={initialPool}>
         <LocalWorkspaceShell
           blog={blog}
+          canCommentPost={canCommentPost}
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
           className="is-home-workspace-shell"
@@ -5043,6 +5067,7 @@ export function PostReadWorkspaceShell({
   adjacent,
   blog,
   children,
+  canCommentPost = false,
   canManageFolders = false,
   canManageSharing = false,
   counts,
@@ -5059,6 +5084,7 @@ export function PostReadWorkspaceShell({
   adjacent: AdjacentPosts;
   blog: Blog;
   children: ReactNode;
+  canCommentPost?: boolean;
   canManageFolders?: boolean;
   canManageSharing?: boolean;
   counts: Record<string, number>;
@@ -5116,6 +5142,7 @@ export function PostReadWorkspaceShell({
       >
         <LocalWorkspaceShell
           blog={blog}
+          canCommentPost={canCommentPost}
           canManageFolders={canManageFolders}
           canManageSharing={canManageSharing}
           className="is-read-workspace-shell"
@@ -5137,6 +5164,7 @@ export function PostReadWorkspaceShell({
             mode="read"
             owner
             blog={blog}
+            canCommentPost={canCommentPost}
             post={post}
             adjacent={adjacent}
             homePath={folderWorkspaceHref(
@@ -5175,6 +5203,7 @@ export function PostReadWorkspaceShell({
           mode="read"
           owner
           blog={blog}
+          canCommentPost={canCommentPost}
           post={post}
           adjacent={adjacent}
           homePath={homePath}

@@ -12,6 +12,13 @@ import {
 } from "@/lib/ai/tools";
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
 import type { Blog, Folder, Post } from "@/lib/content";
+import { NO_COVER_VALUE } from "@/lib/cover";
+import {
+  attachItemAsset,
+  importItemAssetFromUrl,
+  listItemAssetReferences,
+  removeItemAssetReferences,
+} from "@/lib/item-assets";
 import {
   parsePostMarkdownFile,
   postTypeForItemKind,
@@ -19,6 +26,7 @@ import {
 } from "@/lib/markdown-files";
 import {
   type AccessUser,
+  type CollaboratorScopeType,
   type EffectiveAccess,
   resolveFolderAccess,
   resolveItemAccess,
@@ -26,6 +34,14 @@ import {
 } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
+  inviteScopeShare,
+  listScopeShares,
+  revokeScopeShare,
+  updateScopeShareRole,
+} from "@/lib/shares";
+import type { ScopeShareRole } from "@/lib/shares";
+import {
+  createItemComment,
   createDraftInFolder,
   createSubfolder,
   deletePost,
@@ -35,13 +51,19 @@ import {
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
   getPostById,
+  getTrashedFolders,
   getTrashedPosts,
+  listItemComments,
+  markCapturePending,
   movePostFile,
   PostConflictError,
   renameFolder,
+  restoreFolder,
   restorePost,
   savePost,
   savePostContentPatch,
+  setItemCommentResolved,
+  trashFolder,
 } from "@/lib/store";
 import { workspaceBlog } from "./auth";
 import {
@@ -259,6 +281,61 @@ function folderSummary(folder: Folder, count?: number) {
   };
 }
 
+function requiredSub(extra: ToolContext): string | CallToolResult {
+  const sub = extra.authInfo?.extra?.sub;
+  return typeof sub === "string" && sub.trim()
+    ? sub
+    : errorResult("This connection is not associated with a signed-in user.");
+}
+
+async function accessTarget(
+  extra: ToolContext,
+  scopeType: CollaboratorScopeType,
+  scopeId?: string,
+): Promise<
+  | {
+      blog: Blog;
+      access: EffectiveAccess;
+      scopeType: CollaboratorScopeType;
+      scopeId: string;
+    }
+  | CallToolResult
+> {
+  const resolved = await requireWorkspace(extra);
+  if (isToolResult(resolved)) return resolved;
+  if (scopeType === "workspace") {
+    if (!resolved.access.blogId) return errorResult("Workspace not found.");
+    return {
+      blog: resolved.blog,
+      access: resolved.access,
+      scopeType,
+      scopeId: resolved.access.blogId,
+    };
+  }
+  if (!scopeId || !UUID_RE.test(scopeId)) return errorResult("Scope not found.");
+  if (scopeType === "folder") {
+    const folder = (await getAccessibleFolders(
+      resolved.blog.handle,
+      accessUser(extra),
+    )).find((entry) => entry.id === scopeId);
+    if (!folder) return errorResult("Folder not found.");
+    const access = await resolveFolderAccess({
+      handle: resolved.blog.handle,
+      folderId: folder.id,
+      user: accessUser(extra),
+    });
+    return { blog: resolved.blog, access, scopeType, scopeId: folder.id };
+  }
+  const item = await requirePost(extra, scopeId);
+  if (isToolResult(item)) return item;
+  return {
+    blog: item.blog,
+    access: item.access,
+    scopeType,
+    scopeId: item.post.id!,
+  };
+}
+
 function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -321,9 +398,9 @@ function scopeError(name: WorkspaceToolName, extra: ToolContext): CallToolResult
   if (scope === "none") {
     return errorResult("This token has no supported workspace scope.");
   }
-  if (definition.mutability === "write" && scope !== "full") {
+  if (definition.requiredScope === "sync" && scope !== "full") {
     return errorResult(
-      `This connection is read-only and cannot invoke the ${name} mutation.`,
+      `This connection is read-only and cannot invoke ${name}.`,
     );
   }
   return null;
@@ -370,7 +447,11 @@ async function executeMcpTool(
           folderModes: WORKSPACE_FOLDER_MODES,
           scopes: WORKSPACE_SCOPE_CAPABILITIES,
           permanentDeletion: false,
-          memberManagement: false,
+          memberManagement: true,
+          accessManagement: true,
+          comments: true,
+          bookmarkRecapture: true,
+          itemAssets: true,
         },
       });
     }
@@ -448,6 +529,59 @@ async function executeMcpTool(
       }
     }
 
+    case "delete_folder": {
+      const input = args as WorkspaceToolInput<"delete_folder">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const folder = (await getAccessibleFolders(
+        resolved.blog.handle,
+        accessUser(extra),
+      )).find((entry) => entry.id === input.folder_id);
+      if (!folder) return errorResult("Folder not found.");
+      try {
+        await trashFolder(resolved.blog.handle, folder.id);
+        await auditMcp(
+          extra,
+          "mcp.delete_folder",
+          "folder",
+          folder.id,
+          folder.path,
+        );
+        revalidateBlogPaths(resolved.blog);
+        return jsonResult({ ok: true, folder: folderSummary(folder), trashed: true });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : "Folder could not be moved to Trash.",
+        );
+      }
+    }
+
+    case "restore_folder": {
+      const input = args as WorkspaceToolInput<"restore_folder">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const folder = (await getTrashedFolders(resolved.blog.handle)).find(
+        (entry) => entry.id === input.folder_id,
+      );
+      if (!folder) return errorResult("Folder not found in Trash.");
+      try {
+        await restoreFolder(resolved.blog.handle, folder.id);
+        await auditMcp(
+          extra,
+          "mcp.restore_folder",
+          "folder",
+          folder.id,
+          folder.path,
+        );
+        revalidateBlogPaths(resolved.blog);
+        return jsonResult({ ok: true, folder: folderSummary(folder), restored: true });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : "Folder could not be restored.",
+        );
+      }
+    }
+
     case "list_items": {
       const input = args as WorkspaceToolInput<"list_items">;
       const blog = await requireBlog(extra);
@@ -472,12 +606,22 @@ async function executeMcpTool(
     case "list_trash": {
       const resolved = await requireWorkspace(extra, true);
       if (isToolResult(resolved)) return resolved;
-      const posts = await getTrashedPosts(resolved.blog.handle);
+      const [posts, folders] = await Promise.all([
+        getTrashedPosts(resolved.blog.handle),
+        getTrashedFolders(resolved.blog.handle),
+      ]);
+      const trashedFolderIds = new Set(folders.map((folder) => folder.id));
+      const folderUnits = folders.filter(
+        (folder) => !folder.parentId || !trashedFolderIds.has(folder.parentId),
+      );
       return jsonResult({
-        items: posts.map((post) => {
+        folders: folderUnits.map((folder) => folderSummary(folder)),
+        items: posts
+          .filter((post) => !post.folderId || !trashedFolderIds.has(post.folderId))
+          .map((post) => {
           const entry = itemEntry(resolved.blog, post);
           return { ...entry, file: undefined, folderId: post.folderId ?? null };
-        }),
+          }),
       });
     }
 
@@ -953,6 +1097,359 @@ async function executeMcpTool(
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(resolved.post, "the pin change could be saved");
+        }
+        return saveErrorResult(error);
+      }
+    }
+
+    case "list_access": {
+      const input = args as WorkspaceToolInput<"list_access">;
+      const target = await accessTarget(extra, input.scope_type, input.scope_id);
+      if (isToolResult(target)) return target;
+      if (!target.access.canManage) return errorResult("You cannot manage this access list.");
+      return jsonResult({
+        scope: { type: target.scopeType, id: target.scopeId },
+        access: await listScopeShares(target.scopeType, target.scopeId),
+      });
+    }
+
+    case "grant_access": {
+      const input = args as WorkspaceToolInput<"grant_access">;
+      const target = await accessTarget(extra, input.scope_type, input.scope_id);
+      if (isToolResult(target)) return target;
+      if (!target.access.canManage) return errorResult("You cannot manage this access list.");
+      const sub = requiredSub(extra);
+      if (typeof sub !== "string") return sub;
+      try {
+        const share = await inviteScopeShare({
+          scopeType: target.scopeType,
+          scopeId: target.scopeId,
+          email: input.email,
+          role: input.role as ScopeShareRole,
+          invitedBySub: sub,
+          actorType: "external_agent",
+          actorUserId: accessUser(extra).userId,
+          auditActionName: "mcp.grant_access",
+        });
+        return jsonResult({ share });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : "Access could not be granted.");
+      }
+    }
+
+    case "set_access_role": {
+      const input = args as WorkspaceToolInput<"set_access_role">;
+      const target = await accessTarget(extra, input.scope_type, input.scope_id);
+      if (isToolResult(target)) return target;
+      if (!target.access.canManage) return errorResult("You cannot manage this access list.");
+      const sub = requiredSub(extra);
+      if (typeof sub !== "string") return sub;
+      const current = await listScopeShares(target.scopeType, target.scopeId);
+      if (!current.some((share) => share.id === input.access_id)) {
+        return errorResult("Access grant not found.");
+      }
+      try {
+        await updateScopeShareRole({
+          scopeType: target.scopeType,
+          scopeId: target.scopeId,
+          shareId: input.access_id,
+          role: input.role as ScopeShareRole,
+          updatedBySub: sub,
+          actorType: "external_agent",
+          actorUserId: accessUser(extra).userId,
+          auditActionName: "mcp.set_access_role",
+        });
+        return jsonResult({
+          access: await listScopeShares(target.scopeType, target.scopeId),
+        });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : "Access role could not be changed.");
+      }
+    }
+
+    case "revoke_access": {
+      const input = args as WorkspaceToolInput<"revoke_access">;
+      const target = await accessTarget(extra, input.scope_type, input.scope_id);
+      if (isToolResult(target)) return target;
+      if (!target.access.canManage) return errorResult("You cannot manage this access list.");
+      const sub = requiredSub(extra);
+      if (typeof sub !== "string") return sub;
+      const current = await listScopeShares(target.scopeType, target.scopeId);
+      if (!current.some((share) => share.id === input.access_id)) {
+        return jsonResult({ changed: false, access: current });
+      }
+      try {
+        await revokeScopeShare(
+          target.scopeType,
+          target.scopeId,
+          input.access_id,
+          sub,
+          {
+            actorType: "external_agent",
+            actorUserId: accessUser(extra).userId,
+            auditActionName: "mcp.revoke_access",
+          },
+        );
+        return jsonResult({
+          changed: true,
+          access: await listScopeShares(target.scopeType, target.scopeId),
+        });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : "Access could not be revoked.");
+      }
+    }
+
+    case "list_comments": {
+      const input = args as WorkspaceToolInput<"list_comments">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      const resolvedFilter =
+        input.state === "open"
+          ? false
+          : input.state === "resolved"
+            ? true
+            : undefined;
+      return jsonResult({
+        itemId: input.id,
+        comments: await listItemComments(input.id, { resolved: resolvedFilter }),
+      });
+    }
+
+    case "add_comment": {
+      const input = args as WorkspaceToolInput<"add_comment">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      const comment = await createItemComment(
+        {
+          itemId: input.id,
+          parentId: input.parent_comment_id ?? null,
+          body: input.body,
+          anchor:
+            input.anchor_field && input.anchor_exact
+              ? {
+                  field: input.anchor_field,
+                  exactQuote: input.anchor_exact,
+                  ...(input.anchor_start === undefined ? {} : { start: input.anchor_start }),
+                  ...(input.anchor_end === undefined ? {} : { end: input.anchor_end }),
+                }
+              : null,
+        },
+        {
+          actorUserId: resolved.access.userId,
+          actorType: "external_agent",
+          actorName: "External agent",
+        },
+      );
+      await auditMcp(extra, "mcp.add_comment", "item", input.id, input.body);
+      return jsonResult({ comment });
+    }
+
+    case "set_comment_resolved": {
+      const input = args as WorkspaceToolInput<"set_comment_resolved">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.canEditContent) {
+        return errorResult("You cannot resolve comments on this item.");
+      }
+      const comments = await listItemComments(input.id);
+      if (!comments.some((comment) => comment.id === input.comment_id)) {
+        return errorResult("Comment not found.");
+      }
+      const comment = await setItemCommentResolved({
+        itemId: input.id,
+        commentId: input.comment_id,
+        resolved: input.resolved,
+        actor: {
+          actorUserId: resolved.access.userId,
+          actorType: "external_agent",
+          actorName: "External agent",
+        },
+      });
+      await auditMcp(
+        extra,
+        input.resolved ? "mcp.resolve_comment" : "mcp.reopen_comment",
+        "item",
+        input.id,
+        input.comment_id,
+      );
+      return jsonResult({ comment });
+    }
+
+    case "recapture_bookmark": {
+      const input = args as WorkspaceToolInput<"recapture_bookmark">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner || resolved.post.type !== "bookmark") {
+        return errorResult("Only the owner can recapture a bookmark.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const source = resolved.post.links?.[0]?.href ?? resolved.post.capture?.url;
+      if (!source) return errorResult("Bookmark has no original URL.");
+      let sourceUrl: URL;
+      try {
+        sourceUrl = new URL(source);
+      } catch {
+        return errorResult("Bookmark has no valid original URL.");
+      }
+      if (sourceUrl.protocol !== "http:" && sourceUrl.protocol !== "https:") {
+        return errorResult("Bookmark has no valid original URL.");
+      }
+      const pending = await markCapturePending(
+        resolved.blog.handle,
+        input.id,
+        sourceUrl.toString(),
+      );
+      if (!pending) return errorResult("Bookmark not found.");
+      await auditMcp(
+        extra,
+        "mcp.recapture_bookmark",
+        "item",
+        input.id,
+        sourceUrl.toString(),
+      );
+      revalidateBlogPaths(resolved.blog, [resolved.post.slug]);
+      return jsonResult({ queued: true, item: itemEntry(resolved.blog, pending) });
+    }
+
+    case "list_item_assets": {
+      const input = args as WorkspaceToolInput<"list_item_assets">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      return jsonResult({
+        itemId: input.id,
+        assets: listItemAssetReferences(resolved.post),
+      });
+    }
+
+    case "add_item_asset": {
+      const input = args as WorkspaceToolInput<"add_item_asset">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) return errorResult("Only the owner can attach item assets.");
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      try {
+        const asset = await importItemAssetFromUrl({
+          handle: resolved.blog.handle,
+          itemId: input.id,
+          sourceUrl: input.source_url,
+          media: input.placement === "cover" ? "image" : "image-or-video",
+        });
+        const saved = await savePost(
+          resolved.blog.handle,
+          {
+            ...attachItemAsset(resolved.post, asset, input.placement, {
+              altText: input.alt_text,
+              caption: input.caption,
+            }),
+            status: isAlwaysDraftType(resolved.post.type)
+              ? "draft"
+              : resolved.post.status,
+            date: resolved.post.status === "published" ? resolved.post.date : undefined,
+          },
+          { expectedRevision: revision },
+        );
+        await auditMcp(
+          extra,
+          "mcp.add_item_asset",
+          "item",
+          input.id,
+          `${input.placement}: ${asset.filename} (${asset.bytes} bytes)`,
+        );
+        revalidateBlogPaths(resolved.blog, [saved.slug]);
+        return jsonResult({ asset, item: itemEntry(resolved.blog, saved) });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the asset could be attached");
+        }
+        return errorResult(error instanceof Error ? error.message : "Asset could not be attached.");
+      }
+    }
+
+    case "remove_item_asset": {
+      const input = args as WorkspaceToolInput<"remove_item_asset">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) return errorResult("Only the owner can remove item assets.");
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      const { changed, post: next } = removeItemAssetReferences(
+        resolved.post,
+        input.asset_url,
+      );
+      if (!changed) return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
+      try {
+        const saved = await savePost(resolved.blog.handle, next, {
+          expectedRevision: revision,
+        });
+        await auditMcp(
+          extra,
+          "mcp.remove_item_asset",
+          "item",
+          input.id,
+          input.asset_url,
+        );
+        revalidateBlogPaths(resolved.blog, [saved.slug]);
+        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the asset could be removed");
+        }
+        return saveErrorResult(error);
+      }
+    }
+
+    case "set_item_cover": {
+      const input = args as WorkspaceToolInput<"set_item_cover">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) return errorResult("Only the owner can set an item cover.");
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      if (
+        input.source === "url" &&
+        !listItemAssetReferences(resolved.post).some((asset) => asset.url === input.url)
+      ) {
+        return errorResult("Import or attach that asset before using it as the cover.");
+      }
+      const cover =
+        input.source === "url"
+          ? input.url
+          : input.source === "none"
+            ? NO_COVER_VALUE
+            : undefined;
+      try {
+        const saved = await savePost(
+          resolved.blog.handle,
+          {
+            ...resolved.post,
+            cover,
+            coverCaption:
+              input.caption === null ? undefined : (input.caption ?? resolved.post.coverCaption),
+            coverHeight:
+              input.height === null ? undefined : (input.height ?? resolved.post.coverHeight),
+          },
+          { expectedRevision: revision },
+        );
+        await auditMcp(
+          extra,
+          "mcp.set_item_cover",
+          "item",
+          input.id,
+          input.source,
+        );
+        revalidateBlogPaths(resolved.blog, [saved.slug]);
+        return jsonResult({ item: itemEntry(resolved.blog, saved) });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the cover could be changed");
         }
         return saveErrorResult(error);
       }

@@ -1,15 +1,31 @@
 "use client";
 
 import {
+  addItemAssetAction,
+  addItemCommentAction,
   createSubfolderAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
+  listItemAssetsAction,
+  listItemCommentsAction,
+  listScopeSharesAction,
   movePostToFolderAction,
+  recaptureBookmarkAction,
   renameFolderAction,
+  removeItemAssetAction,
+  replyItemCommentAction,
+  reopenItemCommentAction,
+  restoreFolderAction,
   restoreEditablePostAction,
+  revokeScopeShareAction,
   saveEditablePostAction,
+  setItemCoverAction,
   setEditablePostStatusAction,
+  shareScopeAction,
+  resolveItemCommentAction,
   toggleEditablePostPinnedAction,
+  trashFolderAction,
+  updateScopeShareRoleAction,
 } from "@/app/editor/actions";
 import {
   WORKSPACE_FOLDER_MODES,
@@ -44,8 +60,10 @@ import {
   addPost,
   ensurePostBody,
   getCachedWorkspacePostBody,
+  moveFolderToTrash,
   movePost,
   movePostToTrash,
+  restoreFolderFromTrash,
   restorePostFromTrash,
   seedWorkspacePool,
   updateFolder,
@@ -251,6 +269,18 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     return post;
   }
 
+  function requireFolder(id: string) {
+    const folder = pool().folders.find((entry) => entry.id === id);
+    if (!folder) throw new Error(`No folder with id ${id}`);
+    return folder;
+  }
+
+  function requireTrashedFolder(id: string) {
+    const folder = (pool().trashedFolders ?? []).find((entry) => entry.id === id);
+    if (!folder) throw new Error(`No folder with id ${id} exists in Trash`);
+    return folder;
+  }
+
   function syncPost(post: Post) {
     const mapped = poolPostFromPost(post, pool().blogId);
     if (mapped) updatePost(mapped.id, mapped);
@@ -392,9 +422,36 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     if (WORKSPACE_TOOL_DEFINITIONS[name].confirmation === "none") return true;
     if (!confirmDestructive) return false;
 
+    if (name === "delete_folder" || name === "restore_folder") {
+      const folderId = typeof input.folder_id === "string" ? input.folder_id : "";
+      const folder =
+        name === "restore_folder"
+          ? requireTrashedFolder(folderId)
+          : requireFolder(folderId);
+      return await confirmDestructive(
+        name === "delete_folder"
+          ? `Move the "${folder.name}" folder and its contents to Trash?`
+          : `Restore the "${folder.name}" folder and its contents?`,
+      );
+    }
+
+    if (
+      name === "grant_access" ||
+      name === "set_access_role" ||
+      name === "revoke_access"
+    ) {
+      const scope = String(input.scope_type ?? "workspace");
+      const description =
+        name === "grant_access"
+          ? `Give ${String(input.email ?? "this person")} ${String(input.role ?? "access")} access to this ${scope}?`
+          : name === "set_access_role"
+            ? `Change this ${scope} access grant to ${String(input.role ?? "the new role")}?`
+            : `Revoke this ${scope} access grant?`;
+      return await confirmDestructive(description);
+    }
+
     const id = typeof input.id === "string" ? input.id : "";
-    const post =
-      name === "restore_item" ? requireTrashedPost(id) : requirePost(id);
+    const post = name === "restore_item" ? requireTrashedPost(id) : requirePost(id);
     if (
       name === "restore_item" &&
       post.status === "published" &&
@@ -415,7 +472,11 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         ? `Move "${title}" to Trash?`
         : name === "restore_item"
           ? `Restore "${title}"${post.status === "published" ? " and make it public again" : ""}?`
-          : `${input.status === "published" ? "Publish" : "Unpublish"} "${title}"?`;
+          : name === "set_item_status"
+            ? `${input.status === "published" ? "Publish" : "Unpublish"} "${title}"?`
+            : name === "remove_item_asset"
+              ? `Remove this asset from "${title}"?`
+              : `Apply this change to "${title}"?`;
     return await confirmDestructive(description);
   }
 
@@ -442,7 +503,11 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             folderModes: WORKSPACE_FOLDER_MODES,
             scopes: WORKSPACE_SCOPE_CAPABILITIES,
             permanentDeletion: false,
-            memberManagement: false,
+            memberManagement: true,
+            accessManagement: true,
+            comments: true,
+            bookmarkRecapture: true,
+            itemAssets: true,
           },
         };
       }
@@ -483,6 +548,32 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         return { ok: true, folder };
       }
 
+      case "delete_folder": {
+        const input = args as WorkspaceToolInput<"delete_folder">;
+        requireFolder(input.folder_id);
+        moveFolderToTrash(input.folder_id);
+        try {
+          await trashFolderAction(handle, input.folder_id);
+        } catch (error) {
+          restoreFolderFromTrash(input.folder_id);
+          throw error;
+        }
+        return { ok: true, folder_id: input.folder_id, trashed: true };
+      }
+
+      case "restore_folder": {
+        const input = args as WorkspaceToolInput<"restore_folder">;
+        requireTrashedFolder(input.folder_id);
+        restoreFolderFromTrash(input.folder_id);
+        try {
+          await restoreFolderAction(handle, input.folder_id);
+        } catch (error) {
+          moveFolderToTrash(input.folder_id);
+          throw error;
+        }
+        return { ok: true, folder_id: input.folder_id, restored: true };
+      }
+
       case "list_items": {
         const input = args as WorkspaceToolInput<"list_items">;
         const folderPath = normalizeFolderPath(
@@ -508,8 +599,24 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       }
 
       case "list_trash": {
+        const trashedFolders = pool().trashedFolders ?? [];
+        const trashedFolderIds = new Set(trashedFolders.map((folder) => folder.id));
+        const restorationUnits = trashedFolders.filter(
+          (folder) => !folder.parentId || !trashedFolderIds.has(folder.parentId),
+        );
         return {
-          items: (pool().trashedPosts ?? []).map((item) => ({
+          folders: restorationUnits.map((folder) => ({
+            id: folder.id,
+            path: folder.path,
+            name: folder.name,
+            mode: folder.mode,
+            items: (pool().trashedPosts ?? []).filter(
+              (post) => post.folderId === folder.id,
+            ).length,
+          })),
+          items: (pool().trashedPosts ?? [])
+            .filter((item) => !item.folderId || !trashedFolderIds.has(item.folderId))
+            .map((item) => ({
             id: item.id,
             slug: item.slug,
             title: capped(item.title || "Untitled", 120),
@@ -517,7 +624,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             status: item.status,
             folderId: item.folderId ?? null,
             updatedAt: item.updatedAt ?? null,
-          })),
+            })),
         };
       }
 
@@ -823,6 +930,164 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           id: input.id,
           pinned: Boolean(saved.pinned),
         };
+      }
+
+      case "list_access": {
+        const input = args as WorkspaceToolInput<"list_access">;
+        return {
+          scope: { type: input.scope_type, id: input.scope_id ?? pool().blogId },
+          access: await listScopeSharesAction(
+            handle,
+            input.scope_type,
+            input.scope_id,
+          ),
+        };
+      }
+
+      case "grant_access": {
+        const input = args as WorkspaceToolInput<"grant_access">;
+        return {
+          ok: true,
+          access: await shareScopeAction(
+            handle,
+            input.scope_type,
+            input.scope_id,
+            input.email,
+            input.role,
+          ),
+        };
+      }
+
+      case "set_access_role": {
+        const input = args as WorkspaceToolInput<"set_access_role">;
+        return {
+          ok: true,
+          access: await updateScopeShareRoleAction(
+            handle,
+            input.scope_type,
+            input.scope_id,
+            input.access_id,
+            input.role,
+          ),
+        };
+      }
+
+      case "revoke_access": {
+        const input = args as WorkspaceToolInput<"revoke_access">;
+        return {
+          ok: true,
+          access: await revokeScopeShareAction(
+            handle,
+            input.scope_type,
+            input.scope_id,
+            input.access_id,
+          ),
+        };
+      }
+
+      case "list_comments": {
+        const input = args as WorkspaceToolInput<"list_comments">;
+        requirePost(input.id);
+        const comments = await listItemCommentsAction(handle, input.id);
+        return {
+          item_id: input.id,
+          comments: comments.filter((comment) =>
+            input.state === "open"
+              ? !comment.resolvedAt
+              : input.state === "resolved"
+                ? Boolean(comment.resolvedAt)
+                : true,
+          ),
+        };
+      }
+
+      case "add_comment": {
+        const input = args as WorkspaceToolInput<"add_comment">;
+        requirePost(input.id);
+        const comments = input.parent_comment_id
+          ? await replyItemCommentAction(
+              handle,
+              input.id,
+              input.parent_comment_id,
+              input.body,
+            )
+          : await addItemCommentAction(
+              handle,
+              input.id,
+              input.body,
+              input.anchor_field,
+              input.anchor_exact,
+              input.anchor_start,
+              input.anchor_end,
+            );
+        return { ok: true, item_id: input.id, comments };
+      }
+
+      case "set_comment_resolved": {
+        const input = args as WorkspaceToolInput<"set_comment_resolved">;
+        requirePost(input.id);
+        const comments = input.resolved
+          ? await resolveItemCommentAction(handle, input.id, input.comment_id)
+          : await reopenItemCommentAction(handle, input.id, input.comment_id);
+        return { ok: true, item_id: input.id, comments };
+      }
+
+      case "recapture_bookmark": {
+        const input = args as WorkspaceToolInput<"recapture_bookmark">;
+        const post = requirePost(input.id);
+        if (post.type !== "bookmark") {
+          throw new Error("Only bookmarks can be recaptured");
+        }
+        const pending = await recaptureBookmarkAction(handle, input.id);
+        syncPost(pending);
+        return { ok: true, queued: true, id: input.id };
+      }
+
+      case "list_item_assets": {
+        const input = args as WorkspaceToolInput<"list_item_assets">;
+        requirePost(input.id);
+        return {
+          item_id: input.id,
+          assets: await listItemAssetsAction(handle, input.id),
+        };
+      }
+
+      case "add_item_asset": {
+        const input = args as WorkspaceToolInput<"add_item_asset">;
+        requirePost(input.id);
+        const result = await addItemAssetAction(
+          handle,
+          input.id,
+          input.source_url,
+          input.placement,
+          input.alt_text,
+          input.caption,
+        );
+        syncPost(result.post);
+        return { ok: true, asset: result.asset, id: input.id };
+      }
+
+      case "remove_item_asset": {
+        const input = args as WorkspaceToolInput<"remove_item_asset">;
+        requirePost(input.id);
+        const result = await removeItemAssetAction(handle, input.id, input.asset_url);
+        syncPost(result.post);
+        return { ok: true, changed: result.changed, id: input.id };
+      }
+
+      case "set_item_cover": {
+        const input = args as WorkspaceToolInput<"set_item_cover">;
+        requirePost(input.id);
+        const saved = await setItemCoverAction(
+          handle,
+          input.id,
+          input.source,
+          input.url,
+          input.caption,
+          input.height,
+        );
+        syncPost(saved);
+        return { ok: true, id: input.id, cover: saved.cover ?? null };
       }
     }
   };

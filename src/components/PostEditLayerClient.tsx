@@ -471,6 +471,7 @@ export type PostEditLayerProps = {
   mediaEnabled?: boolean;
   usedSlugs?: string[];
   collab?: BodyEditorCollab | null;
+  canCommentPost?: boolean;
   canManagePost?: boolean;
   workspaceBlogId?: string;
 };
@@ -486,6 +487,7 @@ export function PostEditLayer({
   mediaEnabled = true,
   usedSlugs = [],
   collab = null,
+  canCommentPost = true,
   canManagePost = true,
   workspaceBlogId,
 }: PostEditLayerProps) {
@@ -1537,6 +1539,7 @@ export function PostEditLayer({
           <PostActionBar
             mode="read"
             owner={canManagePost}
+            canCommentPost={canCommentPost}
             canEditPost
             canManagePost={canManagePost}
             blog={blog}
@@ -1554,6 +1557,7 @@ export function PostEditLayer({
           <PostActionBar
             mode="edit"
             owner={canManagePost}
+            canCommentPost={canCommentPost}
             canEditPost
             canManagePost={canManagePost}
             blog={blog}

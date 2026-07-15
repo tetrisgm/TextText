@@ -13,10 +13,15 @@ import {
 import { rootDomainUrl } from "@/lib/site-url";
 import "@/styles/connect.css";
 
+const WORKSPACE_TOOL_COUNT = WORKSPACE_TOOL_NAMES.length;
+const READ_TOOL_COUNT = WORKSPACE_TOOL_NAMES.filter(
+  (name) => WORKSPACE_TOOL_DEFINITIONS[name].requiredScope === "read",
+).length;
+
 export const metadata: Metadata = {
   title: "Connect your AI",
   description:
-    "Connect an MCP client to Write's shared 17-tool workspace command surface.",
+    `Connect an MCP client to Write's shared ${WORKSPACE_TOOL_COUNT}-tool workspace command surface.`,
 };
 
 const ACTIONS: Array<[name: string, what: string]> = [
@@ -176,8 +181,8 @@ Content-Type: application/json
           <h2 className="connect-section-title">What a connected AI can do</h2>
           <p className="connect-body">
             A <code className="connect-inline-code">read</code> token can call
-            the six read tools. A <code className="connect-inline-code">sync</code>{" "}
-            token can call all 17 tools.
+            the {READ_TOOL_COUNT} read tools. A <code className="connect-inline-code">sync</code>{" "}
+            token can call all {WORKSPACE_TOOL_COUNT} tools.
           </p>
           <div className="connect-table-wrap">
             <table className="connect-table">
@@ -323,7 +328,7 @@ Content-Type: application/json
           <h2 className="connect-section-title">Assistant in Write</h2>
           <p className="connect-body">
             Write for Mac uses Apple&apos;s on-device Foundation Models runtime.
-            The assistant calls the same 17 workspace commands directly through
+            The assistant calls the same {WORKSPACE_TOOL_COUNT} workspace commands directly through
             the signed-in page, so it does not connect back to Write over MCP.
           </p>
           <ul>

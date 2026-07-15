@@ -2047,6 +2047,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-bookmark-view-button {
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   white-space: nowrap;
 }
 .post-bookmark-view-button.is-active {
@@ -2066,6 +2069,28 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.post-comments-button,
+.post-bookmark-recapture {
+  position: relative;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.post-comments-count {
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 8px;
+  padding: 0 4px;
+  background: var(--ac-accent);
+  color: var(--ac-on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
 }
 @media (max-width: 1200px) {
   .post-bookmark-original-url {
@@ -2095,6 +2120,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-owner-edit,
 .post-action-share,
+.post-comments-button,
+.post-bookmark-recapture,
+.post-bookmark-view-button,
 .post-edit-menu-button,
 .post-edit-menu-item,
 .post-edit-delete,
@@ -2104,6 +2132,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-owner-edit {
   flex: 0 0 auto;
+}
+.post-stop-edit-label-compact {
+  display: none;
 }
 .post-detail-controls {
   display: flex;
@@ -5475,10 +5506,40 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     justify-content: flex-end;
   }
   .post-owner-edit,
-  .post-action-share {
+  .post-action-share,
+  .post-comments-button,
+  .post-bookmark-recapture,
+  .post-bookmark-view-button {
     min-height: 44px;
     height: 44px;
     padding-inline: 12px;
+  }
+  .post-top-action-bar.is-read .post-action-owner-group {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  .post-top-action-bar.is-read .post-owner-edit,
+  .post-action-share,
+  .post-comments-button,
+  .post-bookmark-recapture,
+  .post-bookmark-view-button {
+    width: 44px;
+    min-width: 44px;
+    gap: 0;
+    padding-inline: 0;
+  }
+  .post-responsive-action-label,
+  .post-top-action-bar.is-read .post-owner-edit .shortcut-label {
+    display: none;
+  }
+  .post-comments-count {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 14px;
+    height: 14px;
+    padding-inline: 3px;
+    line-height: 14px;
   }
   .post-edit-menu-button,
   .post-detail-nav,
@@ -5521,9 +5582,35 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
   .post-action-share {
     gap: 0;
-    width: 44px;
+    width: 40px;
+    min-width: 40px;
     padding-inline: 0;
     font-size: 0;
+  }
+  .post-top-action-bar {
+    right: max(4px, env(safe-area-inset-right));
+    max-width: calc(100vw - 56px);
+  }
+  .post-back-action-bar {
+    left: max(4px, env(safe-area-inset-left));
+  }
+  .post-action-toolbar,
+  .post-action-owner-group,
+  .post-bookmark-action-group {
+    gap: 2px;
+  }
+  .post-top-action-bar.is-read .post-owner-edit,
+  .post-comments-button,
+  .post-bookmark-recapture,
+  .post-bookmark-view-button {
+    width: 40px;
+    min-width: 40px;
+  }
+  .post-stop-edit-label-full {
+    display: none;
+  }
+  .post-stop-edit-label-compact {
+    display: inline;
   }
   .post-action-share .post-action-button-icon {
     width: 18px;

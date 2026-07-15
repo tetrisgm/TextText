@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export type WorkspaceToolMutability = "read" | "write";
 export type WorkspaceToolConfirmation = "none" | "destructive" | "audience";
+export type WorkspaceToolRequiredScope = "read" | "sync";
 
 export type WorkspaceToolAnnotations = {
   title: string;
@@ -24,6 +25,7 @@ type WorkspaceToolDefinition<Schema extends z.ZodType = z.ZodType> = {
   inputSchema: Schema;
   jsonSchema: Record<string, unknown>;
   mutability: WorkspaceToolMutability;
+  requiredScope: WorkspaceToolRequiredScope;
   confirmation: WorkspaceToolConfirmation;
   audienceChanging: boolean;
   annotations: WorkspaceToolAnnotations;
@@ -37,6 +39,8 @@ type DefinitionOptions<Schema extends z.ZodType> = {
   confirmation?: WorkspaceToolConfirmation;
   destructive?: boolean;
   idempotent?: boolean;
+  openWorld?: boolean;
+  requiredScope?: WorkspaceToolRequiredScope;
 };
 
 const CONFIRMATION_COPY: Record<Exclude<WorkspaceToolConfirmation, "none">, string> = {
@@ -51,6 +55,7 @@ function defineTool<Name extends string, Schema extends z.ZodType>(
   options: DefinitionOptions<Schema>,
 ): WorkspaceToolDefinition<Schema> & { name: Name } {
   const mutability = options.mutability ?? "read";
+  const requiredScope = options.requiredScope ?? (mutability === "write" ? "sync" : "read");
   const confirmation = options.confirmation ?? "none";
   const destructive = options.destructive ?? confirmation === "destructive";
   const audienceChanging = confirmation === "audience";
@@ -69,6 +74,7 @@ function defineTool<Name extends string, Schema extends z.ZodType>(
       unknown
     >,
     mutability,
+    requiredScope,
     confirmation,
     audienceChanging,
     annotations: {
@@ -76,13 +82,19 @@ function defineTool<Name extends string, Schema extends z.ZodType>(
       readOnlyHint: mutability === "read",
       destructiveHint: destructive,
       idempotentHint: options.idempotent ?? mutability === "read",
-      openWorldHint: false,
+      openWorldHint: options.openWorld ?? false,
     },
   };
 }
 
 const emptyInput = () => z.object({}).strict();
 const id = z.string().trim().min(1).max(128).describe("The workspace item id.");
+const folderId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .describe("The stable workspace folder id.");
 const folderPath = z
   .string()
   .trim()
@@ -105,6 +117,54 @@ const itemKind = z.enum([
   "note",
   "bookmark",
 ]);
+
+const scopeType = z.enum(["workspace", "folder", "item"]);
+const accessRole = z.enum(["member", "guest", "editor", "viewer"]);
+const accessTargetInput = {
+  scope_type: scopeType,
+  scope_id: z
+    .string()
+    .trim()
+    .min(1)
+    .max(128)
+    .optional()
+    .describe("Required for folder and item scopes. Omit for the current workspace."),
+} as const;
+
+function validateAccessTarget(
+  value: { scope_type: z.infer<typeof scopeType>; scope_id?: string; role?: z.infer<typeof accessRole> },
+  context: z.RefinementCtx,
+) {
+  if (value.scope_type !== "workspace" && !value.scope_id) {
+    context.addIssue({
+      code: "custom",
+      path: ["scope_id"],
+      message: "Folder and item access require a scope_id.",
+    });
+  }
+  if (value.scope_type === "workspace" && value.scope_id) {
+    context.addIssue({
+      code: "custom",
+      path: ["scope_id"],
+      message: "Workspace access uses the current workspace and does not accept scope_id.",
+    });
+  }
+  if (!value.role) return;
+  const valid =
+    value.scope_type === "workspace"
+      ? ["member", "guest"].includes(value.role)
+      : ["editor", "viewer"].includes(value.role);
+  if (!valid) {
+    context.addIssue({
+      code: "custom",
+      path: ["role"],
+      message:
+        value.scope_type === "workspace"
+          ? "Workspace roles are member or guest."
+          : "Folder and item roles are editor or viewer.",
+    });
+  }
+}
 
 const createItemInput = z
   .object({
@@ -248,6 +308,24 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     mutability: "write",
     destructive: true,
   }),
+  delete_folder: defineTool("delete_folder", {
+    title: "Move folder to Trash",
+    description:
+      "Soft-delete one folder subtree and its live items. The folder remains restorable and permanent deletion is not available to agents.",
+    inputSchema: z.object({ folder_id: folderId }).strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
+  restore_folder: defineTool("restore_folder", {
+    title: "Restore folder",
+    description:
+      "Restore one folder subtree from Trash. Restored published items can become public again.",
+    inputSchema: z.object({ folder_id: folderId }).strict(),
+    mutability: "write",
+    confirmation: "audience",
+    idempotent: true,
+  }),
   list_items: defineTool("list_items", {
     title: "List items",
     description:
@@ -262,7 +340,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   list_trash: defineTool("list_trash", {
     title: "List Trash",
     description:
-      "List soft-deleted items that can be restored. This never exposes permanent-delete operations.",
+      "List soft-deleted folder restoration units and individual items. This never exposes permanent-delete operations.",
     inputSchema: emptyInput(),
   }),
   read_item: defineTool("read_item", {
@@ -369,6 +447,211 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({ id, pinned: z.boolean(), if_match_hash: ifMatchHash })
       .strict(),
+    mutability: "write",
+    destructive: true,
+    idempotent: true,
+  }),
+  list_access: defineTool("list_access", {
+    title: "List access",
+    description:
+      "List the people and roles with direct access to the current workspace, one folder, or one item.",
+    inputSchema: z
+      .object(accessTargetInput)
+      .strict()
+      .superRefine(validateAccessTarget),
+    requiredScope: "sync",
+  }),
+  grant_access: defineTool("grant_access", {
+    title: "Grant access",
+    description:
+      "Invite one email address to the current workspace, one folder, or one item with an explicit role.",
+    inputSchema: z
+      .object({
+        ...accessTargetInput,
+        email: z.string().trim().email().max(320),
+        role: accessRole,
+      })
+      .strict()
+      .superRefine(validateAccessTarget),
+    mutability: "write",
+    confirmation: "audience",
+  }),
+  set_access_role: defineTool("set_access_role", {
+    title: "Change access role",
+    description:
+      "Change one existing direct access grant on the current workspace, one folder, or one item.",
+    inputSchema: z
+      .object({
+        ...accessTargetInput,
+        access_id: z.string().trim().min(1).max(128),
+        role: accessRole,
+      })
+      .strict()
+      .superRefine(validateAccessTarget),
+    mutability: "write",
+    confirmation: "audience",
+    destructive: true,
+    idempotent: true,
+  }),
+  revoke_access: defineTool("revoke_access", {
+    title: "Revoke access",
+    description:
+      "Revoke one direct access grant from the current workspace, one folder, or one item.",
+    inputSchema: z
+      .object({
+        ...accessTargetInput,
+        access_id: z.string().trim().min(1).max(128),
+      })
+      .strict()
+      .superRefine(validateAccessTarget),
+    mutability: "write",
+    confirmation: "audience",
+    destructive: true,
+    idempotent: true,
+  }),
+  list_comments: defineTool("list_comments", {
+    title: "List comments",
+    description:
+      "List collaboration comments and replies on one item, including anchored text context and resolution state.",
+    inputSchema: z
+      .object({ id, state: z.enum(["open", "resolved", "all"]).optional() })
+      .strict(),
+  }),
+  add_comment: defineTool("add_comment", {
+    title: "Add comment",
+    description:
+      "Add a collaboration comment or reply on one item. Anchors retain the quoted context even if the document later changes.",
+    inputSchema: z
+      .object({
+        id,
+        body: z.string().trim().min(1).max(20_000),
+        parent_comment_id: z.string().trim().min(1).max(128).optional(),
+        anchor_field: z.enum(["title", "excerpt", "body"]).optional(),
+        anchor_exact: z.string().min(1).max(4_000).optional(),
+        anchor_start: z.number().int().min(0).optional(),
+        anchor_end: z.number().int().min(0).optional(),
+      })
+      .strict()
+      .superRefine((value, context) => {
+        const anchorValues = [
+          value.anchor_field,
+          value.anchor_exact,
+          value.anchor_start,
+          value.anchor_end,
+        ];
+        const hasAnchor = anchorValues.some((entry) => entry !== undefined);
+        if (hasAnchor && (!value.anchor_field || !value.anchor_exact)) {
+          context.addIssue({
+            code: "custom",
+            path: ["anchor_field"],
+            message: "Anchored comments require anchor_field and anchor_exact.",
+          });
+        }
+        if ((value.anchor_start === undefined) !== (value.anchor_end === undefined)) {
+          context.addIssue({
+            code: "custom",
+            path: ["anchor_start"],
+            message: "Pass both anchor_start and anchor_end, or neither.",
+          });
+        }
+        if (
+          value.anchor_start !== undefined &&
+          value.anchor_end !== undefined &&
+          value.anchor_end < value.anchor_start
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["anchor_end"],
+            message: "Anchor end must not precede start.",
+          });
+        }
+      }),
+    mutability: "write",
+  }),
+  set_comment_resolved: defineTool("set_comment_resolved", {
+    title: "Resolve or reopen comment",
+    description:
+      "Set whether one collaboration comment thread is resolved.",
+    inputSchema: z
+      .object({
+        id,
+        comment_id: z.string().trim().min(1).max(128),
+        resolved: z.boolean(),
+      })
+      .strict(),
+    mutability: "write",
+    destructive: true,
+    idempotent: true,
+  }),
+  recapture_bookmark: defineTool("recapture_bookmark", {
+    title: "Recapture bookmark",
+    description:
+      "Queue a fresh full capture of an existing bookmark using its saved original URL. The current completed capture remains visible until the replacement is complete.",
+    inputSchema: z.object({ id, if_match_hash: ifMatchHash }).strict(),
+    mutability: "write",
+    destructive: true,
+    openWorld: true,
+  }),
+  list_item_assets: defineTool("list_item_assets", {
+    title: "List item assets",
+    description:
+      "List cover, body, gallery, video, capture, and screenshot assets referenced by one item.",
+    inputSchema: z.object({ id }).strict(),
+  }),
+  add_item_asset: defineTool("add_item_asset", {
+    title: "Add item asset",
+    description:
+      "Import one public image or video URL into Write storage and attach it as the cover, at the end of the body, or in the gallery.",
+    inputSchema: z
+      .object({
+        id,
+        source_url: z.string().url().max(2_048),
+        placement: z.enum(["cover", "body_end", "gallery"]),
+        alt_text: z.string().max(500).optional(),
+        caption: z.string().max(2_000).optional(),
+        if_match_hash: ifMatchHash,
+      })
+      .strict(),
+    mutability: "write",
+    openWorld: true,
+  }),
+  remove_item_asset: defineTool("remove_item_asset", {
+    title: "Remove item asset",
+    description:
+      "Remove references to one asset URL from an item's cover, body, and gallery without physically deleting shared storage.",
+    inputSchema: z
+      .object({ id, asset_url: z.string().url().max(2_048), if_match_hash: ifMatchHash })
+      .strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
+  set_item_cover: defineTool("set_item_cover", {
+    title: "Set item cover",
+    description:
+      "Use a referenced asset URL as the item cover, restore automatic cover selection, or explicitly show no cover.",
+    inputSchema: z
+      .object({
+        id,
+        source: z.enum(["url", "auto", "none"]),
+        url: z.string().url().max(2_048).optional(),
+        caption: z.string().max(2_000).nullable().optional(),
+        height: z.number().int().min(180).max(860).nullable().optional(),
+        if_match_hash: ifMatchHash,
+      })
+      .strict()
+      .superRefine((value, context) => {
+        if (value.source === "url" && !value.url) {
+          context.addIssue({ code: "custom", path: ["url"], message: "A URL cover requires url." });
+        }
+        if (value.source !== "url" && value.url) {
+          context.addIssue({
+            code: "custom",
+            path: ["url"],
+            message: "Only a URL cover accepts url.",
+          });
+        }
+      }),
     mutability: "write",
     destructive: true,
     idempotent: true,

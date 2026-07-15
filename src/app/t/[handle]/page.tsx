@@ -577,6 +577,7 @@ export async function BlogHomeForHandle({
     <BlogHomeWorkspaceShell
       blog={blog}
       activeFolder={activeFolder?.path ?? activeSpecialFolder}
+      canCommentPost={Boolean(viewer && canEdit)}
       canManageFolders={canEdit}
       canManageSharing={canManageSharing}
       counts={counts}

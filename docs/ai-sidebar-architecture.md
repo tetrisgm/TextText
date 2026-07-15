@@ -7,7 +7,7 @@ not call its own MCP server.
 
 ## Architectural invariants
 
-- `src/lib/ai/tools.ts` is the source of truth for the 17 public workspace
+- `src/lib/ai/tools.ts` is the source of truth for the 31 public workspace
   tool names, Zod input schemas, JSON schemas, mutability, confirmation class,
   and MCP annotations.
 - The native assistant and MCP server consume that same contract. Their
@@ -22,12 +22,12 @@ not call its own MCP server.
   consumer calls a command.
 - Every mutation is audited. MCP records the actor as `external_agent` with
   per-token attribution.
-- A delete command means Move to Trash. The 17-tool surface exposes restore,
+- A delete command means Move to Trash. The shared surface exposes restore,
   but no permanent delete.
 
-## Shared 17-tool contract
+## Shared 31-tool contract
 
-The six read tools are:
+The eight read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -35,27 +35,40 @@ The six read tools are:
 4. `list_trash`
 5. `read_item`
 6. `search`
+7. `list_comments`
+8. `list_item_assets`
 
-The eleven mutation tools are:
+The 23 sync-scope tools are:
 
 1. `create_folder`
 2. `rename_folder`
-3. `create_item`
-4. `update_item`
-5. `append_to_item`
-6. `move_item`
-7. `delete_item`
-8. `restore_item`
-9. `set_item_status`
-10. `set_item_metadata`
-11. `set_item_pinned`
+3. `delete_folder`
+4. `restore_folder`
+5. `create_item`
+6. `update_item`
+7. `append_to_item`
+8. `move_item`
+9. `delete_item`
+10. `restore_item`
+11. `set_item_status`
+12. `set_item_metadata`
+13. `set_item_pinned`
+14. `list_access`
+15. `grant_access`
+16. `set_access_role`
+17. `revoke_access`
+18. `add_comment`
+19. `set_comment_resolved`
+20. `recapture_bookmark`
+21. `add_item_asset`
+22. `remove_item_asset`
+23. `set_item_cover`
 
-The contract deliberately has no workspace administration, member management,
-folder deletion, folder restoration, or permanent-delete tool. It marks
-`delete_item`, `restore_item`, and `set_item_status` as requiring explicit
-human confirmation immediately before execution. Restore is audience-changing
-because an item returns with its previous status, so a restored published item
-can become public again.
+`list_access` is read-only but requires `sync` because membership information is
+workspace administration data. The contract has no permanent-delete tool.
+Folder and item deletion move content to Trash. Restores, publication changes,
+access changes, and destructive asset operations require explicit human
+confirmation immediately before execution.
 
 MCP live-item mutations accept an optional `if_match_hash`. External callers
 should always send the latest hash from `list_items`, `search`, or the previous
@@ -75,17 +88,17 @@ records each mutation in `action_audit`.
 
 The scope guard in `src/lib/mcp/auth.ts` runs before tool execution:
 
-- `read` can call only the six read tools.
-- `sync` can call all 17 tools.
+- `read` can call tools whose definitions require the `read` scope.
+- `sync` can call all tools, including access-management operations.
 - A mutation attempted with `read` returns `403 insufficient_scope` and names
   `sync` in the bearer challenge.
 
-MCP exposes all 17 definitions in `tools/list`; authorization determines which
+MCP exposes every canonical definition in `tools/list`; authorization determines which
 ones the current token may call.
 
 ### Native assistant
 
-`src/lib/ai/agent-tools.ts` projects the same 17 definitions into the native
+`src/lib/ai/agent-tools.ts` projects the same canonical definitions into the native
 agent format. Its executor runs in the signed-in page and maps calls onto the
 same optimistic pool updates and server actions used by the workspace UI.
 Failed server writes roll back optimistic state. Native tool results are
@@ -115,8 +128,9 @@ Current assistant behavior includes:
   selection context
 - one conversation transcript per workspace context, retained for the browser
   session
-- all 17 workspace tools, with progress events surfaced in the conversation
-- confirmation gates for Move to Trash, restore, and publication changes
+- all canonical workspace tools, with progress events surfaced in the conversation
+- confirmation gates for Trash, restore, publication, access, and destructive
+  asset changes
 - quick actions for summarize, rewrite, title, tags, and excerpt
 - preview, apply, undo, and stale-source checks for quick-action edits
 - text attachments and private on-device OCR for image attachments when the
@@ -165,16 +179,16 @@ different conversation.
 
 Read operations can run immediately. Mutations still pass through normal
 permissions and revision checks. The in-app executor requires a confirmation
-callback for the three confirmation-marked operations: Move to Trash, restore,
-and publication status changes. MCP descriptions and annotations tell external
-clients which calls need confirmation; those clients are responsible for
-presenting it.
+callback for every confirmation-marked operation. MCP descriptions and
+annotations tell external clients which calls need confirmation; those clients
+are responsible for presenting it.
 
-`delete_item` soft-deletes one live item into Trash. `list_trash` returns
-restorable items, and `restore_item` restores the previous status. The shared
-tool contract currently covers item Trash only. The product UI has additional
-folder Trash controls, but agents do not receive folder delete, folder restore,
-Empty Trash, or permanent-delete commands.
+`delete_item` soft-deletes one live item into Trash. `delete_folder` moves a
+folder and its live contents to Trash as one restoration unit. `list_trash`
+returns restorable items and folders. Restore commands recover only content
+from the same deletion operation, so restoring a folder cannot revive an item
+that was independently trashed earlier. Agents do not receive Empty Trash or
+permanent-delete commands.
 
 The server enforces the privacy invariant below both adapters. A note or
 bookmark cannot be published or moved into a public-mode folder, and a public

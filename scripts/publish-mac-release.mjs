@@ -60,6 +60,15 @@ if (shortVersion !== version) {
   console.error(`mac/dist/appcast.xml advertises ${shortVersion}, expected ${version}`);
   process.exit(1);
 }
+const hardwareRequirements = appcast.match(
+  /<sparkle:hardwareRequirements>([^<]+)<\/sparkle:hardwareRequirements>/,
+)?.[1]?.trim();
+if (hardwareRequirements !== "arm64") {
+  console.error(
+    `mac/dist/appcast.xml requires ${hardwareRequirements ?? "no architecture"}, expected arm64`,
+  );
+  process.exit(1);
+}
 
 const zipUrl = `${blobBase}/downloads/Write-${version}.zip`;
 const appcastUrl = `${blobBase}/downloads/appcast-${version}.xml`;

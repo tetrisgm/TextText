@@ -104,6 +104,7 @@ APP_FEED="$("$PB" -c 'Print :SUFeedURL' "$APP_PLIST")"
 APP_PUBLIC_KEY="$("$PB" -c 'Print :SUPublicEDKey' "$APP_PLIST")"
 APPCAST_BUILD="$(sed -n 's|.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*|\1|p' "$APPCAST" | head -1)"
 APPCAST_VERSION="$(sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:shortVersionString>.*|\1|p' "$APPCAST" | head -1)"
+APPCAST_HARDWARE_REQUIREMENTS="$(sed -n 's|.*<sparkle:hardwareRequirements>\([^<]*\)</sparkle:hardwareRequirements>.*|\1|p' "$APPCAST" | head -1)"
 APPCAST_ZIP_URL="$(sed -n 's|.*<enclosure[^>]* url="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
 APPCAST_SIGNATURE="$(sed -n 's|.*<enclosure[^>]* sparkle:edSignature="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
 EXPECTED_ZIP_URL="$BLOB_BASE/downloads/Write-$VERSION.zip"
@@ -114,6 +115,7 @@ EXPECTED_ZIP_URL="$BLOB_BASE/downloads/Write-$VERSION.zip"
 [ -n "$APP_PUBLIC_KEY" ] && [ "$APP_PUBLIC_KEY" != "REPLACE_WITH_SPARKLE_PUBLIC_KEY" ] || { echo "Built app has no real Sparkle public key." >&2; exit 1; }
 [ "$APPCAST_VERSION" = "$VERSION" ] || { echo "Appcast shortVersionString is $APPCAST_VERSION, expected $VERSION." >&2; exit 1; }
 [ "$APPCAST_BUILD" = "$BUILD" ] || { echo "Appcast sparkle:version is $APPCAST_BUILD, expected $BUILD." >&2; exit 1; }
+[ "$APPCAST_HARDWARE_REQUIREMENTS" = "arm64" ] || { echo "Appcast hardware requirement is '$APPCAST_HARDWARE_REQUIREMENTS', expected arm64." >&2; exit 1; }
 [ "$APPCAST_ZIP_URL" = "$EXPECTED_ZIP_URL" ] || { echo "Appcast zip URL is $APPCAST_ZIP_URL, expected $EXPECTED_ZIP_URL." >&2; exit 1; }
 [ -n "$APPCAST_SIGNATURE" ] || { echo "Appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
 
@@ -138,7 +140,7 @@ else
   echo "No installed Write.app found; skipping installed-build comparison."
 fi
 echo "   built app: $APP_VERSION ($APP_BUILD)"
-echo "   appcast:   $APPCAST_VERSION ($APPCAST_BUILD)"
+echo "   appcast:   $APPCAST_VERSION ($APPCAST_BUILD, $APPCAST_HARDWARE_REQUIREMENTS)"
 echo "   feed:      $APP_FEED"
 echo "   zip:       $APPCAST_ZIP_URL"
 

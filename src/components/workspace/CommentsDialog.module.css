@@ -1,0 +1,353 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 64px 12px 12px;
+  background: color-mix(in srgb, var(--ac-bg-2) 18%, transparent);
+  color: var(--ac-label);
+  font-family: var(--ac-font-text);
+}
+
+.panel {
+  width: min(410px, 100%);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-mat-bg);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+  box-shadow: 0 24px 72px color-mix(in srgb, var(--ac-bg-2) 42%, transparent);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ac-sp-3);
+  padding: var(--ac-sp-4);
+  border-bottom: 1px solid var(--ac-separator);
+}
+
+.titleGroup {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.titleGroup h2 {
+  margin: 0;
+  color: var(--ac-label);
+  font: 700 var(--ac-fs-title3) / 1.15 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.titleGroup p {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iconButton {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0;
+  background: transparent;
+  color: var(--ac-label-2);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+}
+
+.iconButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: var(--ac-sp-3) var(--ac-sp-4);
+  padding: 2px;
+  border-radius: var(--ac-radius-control);
+  background: var(--ac-fill-3);
+}
+
+.segmented button {
+  min-width: 0;
+  min-height: 28px;
+  border: 0;
+  border-radius: calc(var(--ac-radius-control) - 2px);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-footnote) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ac-bg-2) 22%, transparent);
+}
+
+.segmented span {
+  color: var(--ac-label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  margin: 0;
+  padding: 0 var(--ac-sp-4) var(--ac-sp-3);
+  color: var(--ac-red);
+  font: 400 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.threadList {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  border-top: 1px solid var(--ac-separator);
+  background: var(--ac-bg);
+}
+
+.emptyState {
+  padding: 44px var(--ac-sp-4);
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-subheadline) / 1.4 var(--ac-font-text);
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.thread {
+  padding: var(--ac-sp-4);
+  border-bottom: 1px solid var(--ac-separator);
+}
+
+.thread[data-resolved="true"] {
+  color: var(--ac-label-2);
+}
+
+.commentRow,
+.replyRow {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ac-sp-2);
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ac-tinted-fill);
+  color: var(--ac-accent);
+  font: 700 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.commentMain {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.commentMeta {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ac-sp-2);
+}
+
+.commentMeta strong {
+  overflow: hidden;
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-subheadline) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commentMeta time {
+  flex: 0 0 auto;
+  color: var(--ac-label-3);
+  font: 400 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.commentBody {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-subheadline) / 1.45 var(--ac-font-text);
+  letter-spacing: 0;
+  white-space: pre-wrap;
+}
+
+.replies {
+  display: grid;
+  gap: var(--ac-sp-3);
+  margin: var(--ac-sp-3) 0 0 14px;
+  padding-left: var(--ac-sp-3);
+  border-left: 2px solid var(--ac-separator);
+}
+
+.replyRow .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.threadActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: var(--ac-sp-2) 0 0 34px;
+}
+
+.threadActions button,
+.replyForm button,
+.composer button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  padding: 0 9px;
+  background: transparent;
+  color: var(--ac-accent);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.threadActions button:hover,
+.replyForm button:hover {
+  background: var(--ac-fill-4);
+}
+
+.threadActions button:disabled,
+.replyForm button:disabled,
+.composer button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.threadActions svg {
+  width: 14px;
+  height: 14px;
+}
+
+.replyForm {
+  display: grid;
+  gap: var(--ac-sp-2);
+  margin: var(--ac-sp-2) 0 0 34px;
+}
+
+.replyForm textarea,
+.composer textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-field);
+  padding: 8px 10px;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-subheadline) / 1.4 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.replyForm textarea::placeholder,
+.composer textarea::placeholder {
+  color: var(--ac-placeholder);
+}
+
+.replyForm > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.replyForm button[type="submit"] {
+  background: var(--ac-accent);
+  color: var(--ac-on-accent);
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ac-sp-2);
+  align-items: end;
+  padding: var(--ac-sp-3) var(--ac-sp-4) var(--ac-sp-4);
+  border-top: 1px solid var(--ac-separator);
+  background: var(--ac-bg);
+}
+
+.composer textarea {
+  min-height: 66px;
+  max-height: 160px;
+}
+
+.composer button {
+  min-width: 58px;
+  background: var(--ac-accent);
+  color: var(--ac-on-accent);
+}
+
+.iconButton:focus-visible,
+.segmented button:focus-visible,
+.threadActions button:focus-visible,
+.replyForm button:focus-visible,
+.replyForm textarea:focus-visible,
+.composer button:focus-visible,
+.composer textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+@media (max-width: 560px) {
+  .backdrop {
+    align-items: flex-end;
+    padding: max(52px, env(safe-area-inset-top)) 0 0;
+  }
+
+  .panel {
+    width: 100%;
+    max-height: 100%;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: var(--ac-radius-control) var(--ac-radius-control) 0 0;
+  }
+
+  .composer {
+    padding-bottom: max(var(--ac-sp-4), env(safe-area-inset-bottom));
+  }
+}

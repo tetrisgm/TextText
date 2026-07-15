@@ -4,7 +4,7 @@
 
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import { recordAction } from "@/lib/audit";
+import { recordAction, type AuditActorType } from "@/lib/audit";
 import { db } from "@/lib/db/client";
 import { blogs, collaborators, folders, posts, users } from "@/lib/db/schema";
 import {
@@ -34,6 +34,12 @@ export type ScopeShare = {
 };
 
 export type PostShare = ScopeShare & { role: ShareRole };
+
+type ShareAuditContext = {
+  actorType?: AuditActorType;
+  actorUserId?: string | null;
+  auditActionName?: string;
+};
 
 export function normalizeShareEmail(email: string): string {
   return normalizeAccessEmail(email);
@@ -102,12 +108,15 @@ export async function inviteScopeShare(opts: {
   email: string;
   role: ScopeShareRole;
   invitedBySub: string;
-}): Promise<ScopeShare> {
+} & ShareAuditContext): Promise<ScopeShare> {
   if (!db) throw new Error("Sharing needs a database.");
   const email = normalizeShareEmail(opts.email);
   if (!isValidShareEmail(email)) throw new Error("Enter a valid email address.");
   const role = cleanScopeRole(opts.scopeType, opts.role);
-  const invitedById = await getUserIdBySub(opts.invitedBySub);
+  const invitedById =
+    opts.actorUserId === undefined
+      ? await getUserIdBySub(opts.invitedBySub)
+      : opts.actorUserId;
 
   const existing = await db
     .select()
@@ -128,6 +137,14 @@ export async function inviteScopeShare(opts: {
       .where(eq(collaborators.id, existing[0].id))
       .returning();
     const row = updated[0];
+    await recordAction({
+      actorUserId: invitedById,
+      actorType: opts.actorType ?? "human",
+      actionName: opts.auditActionName ?? "share.invite",
+      targetType: auditTargetType(opts.scopeType),
+      targetId: opts.scopeId,
+      inputSummary: `${email} as ${role}`,
+    });
     return {
       id: row.id,
       email,
@@ -151,8 +168,8 @@ export async function inviteScopeShare(opts: {
   const row = inserted[0];
   await recordAction({
     actorUserId: invitedById,
-    actorType: "human",
-    actionName: "share.invite",
+    actorType: opts.actorType ?? "human",
+    actionName: opts.auditActionName ?? "share.invite",
     targetType: auditTargetType(opts.scopeType),
     targetId: opts.scopeId,
     inputSummary: `${email} as ${role}`,
@@ -172,7 +189,7 @@ export async function updateScopeShareRole(opts: {
   shareId: string;
   role: ScopeShareRole;
   updatedBySub: string;
-}): Promise<void> {
+} & ShareAuditContext): Promise<void> {
   if (!db) return;
   const role = cleanScopeRole(opts.scopeType, opts.role);
   await db
@@ -187,9 +204,12 @@ export async function updateScopeShareRole(opts: {
       ),
     );
   await recordAction({
-    actorUserId: await getUserIdBySub(opts.updatedBySub),
-    actorType: "human",
-    actionName: "share.role",
+    actorUserId:
+      opts.actorUserId === undefined
+        ? await getUserIdBySub(opts.updatedBySub)
+        : opts.actorUserId,
+    actorType: opts.actorType ?? "human",
+    actionName: opts.auditActionName ?? "share.role",
     targetType: auditTargetType(opts.scopeType),
     targetId: opts.scopeId,
     inputSummary: role,
@@ -201,6 +221,7 @@ export async function revokeScopeShare(
   scopeId: string,
   shareId: string,
   revokedBySub: string,
+  audit: ShareAuditContext = {},
 ): Promise<void> {
   if (!db) return;
   await db
@@ -215,9 +236,12 @@ export async function revokeScopeShare(
       ),
     );
   await recordAction({
-    actorUserId: await getUserIdBySub(revokedBySub),
-    actorType: "human",
-    actionName: "share.revoke",
+    actorUserId:
+      audit.actorUserId === undefined
+        ? await getUserIdBySub(revokedBySub)
+        : audit.actorUserId,
+    actorType: audit.actorType ?? "human",
+    actionName: audit.auditActionName ?? "share.revoke",
     targetType: auditTargetType(scopeType),
     targetId: scopeId,
   });

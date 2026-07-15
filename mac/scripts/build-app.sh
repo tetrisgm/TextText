@@ -55,8 +55,9 @@ if [ "$SIGN_ID" != "-" ] && [ -f "$FP_PROFILE" ] && [ -z "${WRITE_APP_GROUP:-}" 
 fi
 
 echo ">> swift build (release)"
-swift build -c release --package-path "$MAC"
-BIN="$(swift build -c release --package-path "$MAC" --show-bin-path)"
+swift build -c release --triple arm64-apple-macosx14.0 --package-path "$MAC"
+BIN="$(swift build -c release --triple arm64-apple-macosx14.0 \
+  --package-path "$MAC" --show-bin-path)"
 
 echo ">> assembling $APP"
 rm -rf "$APP"
@@ -83,7 +84,7 @@ echo ">> App Intents metadata (xcodebuild const-values pass)"
 # binary stays the SwiftPM one above. The derived-data cache makes this fast
 # after the first release. Metadata failure fails the build: the intents
 # would silently be invisible to Shortcuts otherwise.
-xcodebuild build -scheme Write -destination 'platform=macOS' \
+xcodebuild build -scheme Write -destination 'platform=macOS,arch=arm64' \
   -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
   SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
 CONSTVALS="$MAC/build/appintents-constvals.txt"
@@ -205,4 +206,9 @@ rm -f "$MAIN_ENT"
 
 echo ">> verify"
 codesign --verify --strict --verbose=2 "$APP"
+if [ "$SIGN_ID" = "-" ]; then
+  "$MAC/scripts/verify-apple-silicon-app.sh" "$APP"
+else
+  "$MAC/scripts/verify-apple-silicon-app.sh" "$APP" --require-extensions
+fi
 echo ">> built $APP"

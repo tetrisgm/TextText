@@ -42,7 +42,7 @@ import type {
   Post,
   PostType,
 } from "./content";
-import { recordAction } from "./audit";
+import { recordAction, type AuditActorType } from "./audit";
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
 import {
@@ -51,6 +51,7 @@ import {
   collabUpdates,
   folders,
   idempotencyKeys,
+  itemComments,
   posts,
   users,
 } from "./db/schema";
@@ -90,6 +91,7 @@ import {
 import { randomUUID } from "node:crypto";
 
 type PostRow = typeof posts.$inferSelect;
+type ItemCommentRow = typeof itemComments.$inferSelect;
 type PostFolderRow = Pick<PostRow, "id" | "folderId" | "type">;
 type PostListRow = Pick<
   PostRow,
@@ -166,6 +168,66 @@ export type StoreUser = {
   sub: string;
   name?: string;
   email?: string;
+};
+
+export type ItemCommentAnchorField = "title" | "excerpt" | "body";
+export type ItemCommentAnchor = {
+  field: ItemCommentAnchorField;
+  exactQuote: string;
+  start?: number;
+  end?: number;
+};
+export type ItemCommentActor = {
+  actorUserId: string | null;
+  actorType: AuditActorType;
+};
+export type ItemCommentActorContext = {
+  actorUserId?: string | null;
+  actorType: AuditActorType;
+  actorName?: string | null;
+};
+export type ItemComment = {
+  id: string;
+  itemId: string;
+  parentId: string | null;
+  body: string;
+  anchor: ItemCommentAnchor | null;
+  author: ItemCommentActor;
+  authorName: string | null;
+  editedBy: ItemCommentActor | null;
+  resolved: boolean;
+  resolvedAt: string | null;
+  resolvedBy: ItemCommentActor | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ItemCommentListOptions = {
+  /** Omit to include both open and resolved comments. */
+  resolved?: boolean;
+  /** Omit to include top-level comments and replies; null selects roots. */
+  parentId?: string | null;
+};
+export type CreateItemCommentInput = {
+  itemId: string;
+  parentId?: string | null;
+  body: string;
+  anchor?: ItemCommentAnchor | null;
+};
+export type CreateItemCommentRequest = CreateItemCommentInput & {
+  actor: ItemCommentActorContext;
+};
+export type UpdateItemCommentInput = {
+  body?: string;
+  /** null removes an existing anchor; omission preserves it. */
+  anchor?: ItemCommentAnchor | null;
+};
+export type SetItemCommentResolvedInput = {
+  itemId: string;
+  commentId: string;
+  resolved: boolean;
+};
+export type SetItemCommentResolvedRequest = SetItemCommentResolvedInput & {
+  actor: ItemCommentActorContext;
 };
 
 export const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
@@ -2215,6 +2277,423 @@ export async function getPostById(
   return getPostByIdCached(handle, id);
 }
 
+function cleanItemCommentActorType(value: string): AuditActorType {
+  if (value === "human" || value === "ai" || value === "external_agent") {
+    return value;
+  }
+  throw new Error("Stored item comment has an invalid actor type");
+}
+
+function cleanItemCommentActor(
+  actor: ItemCommentActorContext,
+): ItemCommentActor & { actorName: string | null } {
+  const actorType = cleanItemCommentActorType(actor.actorType);
+  const actorUserId = actor.actorUserId ?? null;
+  if (
+    actorUserId !== null &&
+    (typeof actorUserId !== "string" || actorUserId.trim() === "")
+  ) {
+    throw new Error("Comment actor user ID must be a non-empty string");
+  }
+  const actorName = actor.actorName?.replace(/\u0000/g, "").trim() || null;
+  return { actorUserId, actorType, actorName };
+}
+
+function storedItemCommentActor(
+  actorUserId: string | null,
+  actorType: string | null,
+): ItemCommentActor | null {
+  if (!actorType) return null;
+  return {
+    actorUserId,
+    actorType: cleanItemCommentActorType(actorType),
+  };
+}
+
+function cleanItemCommentBody(value: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("Comment body cannot be empty");
+  }
+  return value;
+}
+
+function cleanItemCommentAnchor(
+  anchor:
+    | ItemCommentAnchor
+    | {
+        field: ItemCommentAnchorField;
+        exact?: string;
+        start?: number;
+        end?: number;
+      }
+    | null
+    | undefined,
+): {
+  anchorField: ItemCommentAnchorField | null;
+  anchorQuote: string | null;
+  anchorStart: number | null;
+  anchorEnd: number | null;
+} {
+  if (!anchor) {
+    return {
+      anchorField: null,
+      anchorQuote: null,
+      anchorStart: null,
+      anchorEnd: null,
+    };
+  }
+  if (
+    anchor.field !== "title" &&
+    anchor.field !== "excerpt" &&
+    anchor.field !== "body"
+  ) {
+    throw new Error("Comment anchor field must be title, excerpt, or body");
+  }
+  const exactQuote =
+    "exactQuote" in anchor && typeof anchor.exactQuote === "string"
+      ? anchor.exactQuote
+      : "exact" in anchor && typeof anchor.exact === "string"
+        ? anchor.exact
+        : "";
+  if (exactQuote.trim() === "") {
+    throw new Error("Comment anchor quote cannot be empty");
+  }
+  for (const [name, value] of [
+    ["start", anchor.start],
+    ["end", anchor.end],
+  ] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new Error(`Comment anchor ${name} must be a non-negative integer`);
+    }
+  }
+  if (
+    anchor.start !== undefined &&
+    anchor.end !== undefined &&
+    anchor.end < anchor.start
+  ) {
+    throw new Error("Comment anchor end cannot be before its start");
+  }
+  return {
+    anchorField: anchor.field,
+    anchorQuote: exactQuote,
+    anchorStart: anchor.start ?? null,
+    anchorEnd: anchor.end ?? null,
+  };
+}
+
+function mapItemComment(row: ItemCommentRow): ItemComment {
+  const author = storedItemCommentActor(row.authorUserId, row.authorActorType);
+  if (!author) throw new Error("Stored item comment is missing its author");
+  const anchor =
+    row.anchorField && row.anchorQuote !== null
+      ? {
+          field: row.anchorField,
+          exactQuote: row.anchorQuote,
+          ...(row.anchorStart === null ? {} : { start: row.anchorStart }),
+          ...(row.anchorEnd === null ? {} : { end: row.anchorEnd }),
+        }
+      : null;
+  return {
+    id: row.id,
+    itemId: row.postId,
+    parentId: row.parentId,
+    body: row.body,
+    anchor,
+    author,
+    authorName: row.authorName,
+    editedBy: storedItemCommentActor(
+      row.editedByUserId,
+      row.editedByActorType,
+    ),
+    resolved: row.resolvedAt !== null,
+    resolvedAt: row.resolvedAt?.toISOString() ?? null,
+    resolvedBy: storedItemCommentActor(
+      row.resolvedByUserId,
+      row.resolvedByActorType,
+    ),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * List every comment for an item by default, including replies and resolved
+ * threads. Authorization belongs to the caller; this function only scopes and
+ * filters persistence rows.
+ */
+export async function listItemComments(
+  itemId: string,
+  options: ItemCommentListOptions = {},
+): Promise<ItemComment[]> {
+  if (!db) return [];
+  const filters: SQL[] = [eq(itemComments.postId, itemId)];
+  if (options.resolved === true) filters.push(isNotNull(itemComments.resolvedAt));
+  if (options.resolved === false) filters.push(isNull(itemComments.resolvedAt));
+  if (options.parentId === null) filters.push(isNull(itemComments.parentId));
+  if (typeof options.parentId === "string") {
+    filters.push(eq(itemComments.parentId, options.parentId));
+  }
+  const rows = await db
+    .select()
+    .from(itemComments)
+    .where(and(...filters))
+    .orderBy(asc(itemComments.createdAt), asc(itemComments.id));
+  return rows.map(mapItemComment);
+}
+
+export function createItemComment(
+  input: CreateItemCommentRequest,
+): Promise<ItemComment>;
+export function createItemComment(
+  input: CreateItemCommentInput,
+  actorContext: ItemCommentActorContext,
+): Promise<ItemComment>;
+export async function createItemComment(
+  input: CreateItemCommentInput | CreateItemCommentRequest,
+  ...actorContexts: [ItemCommentActorContext?]
+): Promise<ItemComment> {
+  if (!db) throw new Error("createItemComment requires DATABASE_URL");
+  const record = input as unknown as Record<string, unknown>;
+  const itemId =
+    typeof input.itemId === "string" && input.itemId.trim()
+      ? input.itemId
+      : typeof record.postId === "string" && record.postId.trim()
+        ? record.postId
+        : null;
+  if (!itemId) throw new Error("Comment item ID is required");
+  const bodyValue =
+    typeof input.body === "string" ? input.body : record.content;
+  const body = cleanItemCommentBody(bodyValue as string);
+  const embeddedActor =
+    "actor" in input && input.actor && typeof input.actor === "object"
+      ? input.actor
+      : null;
+  const actorUserId =
+    typeof record.actorUserId === "string"
+      ? record.actorUserId
+      : typeof record.authorUserId === "string"
+        ? record.authorUserId
+        : typeof record.userId === "string"
+          ? record.userId
+          : null;
+  const actorType =
+    record.actorType === "ai" || record.actorType === "external_agent"
+      ? record.actorType
+      : "human";
+  const actorName =
+    typeof record.authorName === "string"
+      ? record.authorName
+      : typeof record.actorName === "string"
+        ? record.actorName
+        : null;
+  const actor = cleanItemCommentActor(
+    actorContexts[0] ??
+      embeddedActor ?? {
+        actorUserId,
+        actorType,
+        actorName,
+      },
+  );
+  const anchor = cleanItemCommentAnchor(input.anchor);
+  const parentIdValue = input.parentId ?? record.parentCommentId ?? null;
+  if (
+    parentIdValue !== null &&
+    (typeof parentIdValue !== "string" || parentIdValue.trim() === "")
+  ) {
+    throw new Error("Parent comment ID must be a string");
+  }
+  const parentId = parentIdValue;
+
+  // Replies are one level deep and cannot cross item boundaries. The parent
+  // FK protects deletion races after this check.
+  if (parentId) {
+    const parents = await db
+      .select({ id: itemComments.id })
+      .from(itemComments)
+      .where(
+        and(
+          eq(itemComments.id, parentId),
+          eq(itemComments.postId, itemId),
+          isNull(itemComments.parentId),
+        ),
+      )
+      .limit(1);
+    if (!parents[0]) throw new Error("Parent comment not found");
+  }
+
+  const inserted = await db
+    .insert(itemComments)
+    .values({
+      postId: itemId,
+      parentId,
+      body,
+      ...anchor,
+      authorUserId: actor.actorUserId,
+      authorName: actor.actorName,
+      authorActorType: actor.actorType,
+    })
+    .returning();
+  if (!inserted[0]) throw new Error("Failed to create comment");
+  return mapItemComment(inserted[0]);
+}
+
+function hasOwnItemCommentKey<K extends keyof UpdateItemCommentInput>(
+  patch: UpdateItemCommentInput,
+  key: K,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+export async function updateItemComment(
+  itemId: string,
+  commentId: string,
+  patch: UpdateItemCommentInput,
+  actorContext: ItemCommentActorContext,
+): Promise<ItemComment> {
+  if (!db) throw new Error("updateItemComment requires DATABASE_URL");
+  const changes: {
+    body?: string;
+    anchorField?: ItemCommentAnchorField | null;
+    anchorQuote?: string | null;
+    anchorStart?: number | null;
+    anchorEnd?: number | null;
+  } = {};
+  if (hasOwnItemCommentKey(patch, "body")) {
+    changes.body = cleanItemCommentBody(patch.body as string);
+  }
+  if (hasOwnItemCommentKey(patch, "anchor")) {
+    Object.assign(changes, cleanItemCommentAnchor(patch.anchor));
+  }
+  if (Object.keys(changes).length === 0) {
+    throw new Error("No comment changes provided");
+  }
+  const actor = cleanItemCommentActor(actorContext);
+  const updated = await db
+    .update(itemComments)
+    .set({
+      ...changes,
+      editedByUserId: actor.actorUserId,
+      editedByActorType: actor.actorType,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Comment not found");
+  return mapItemComment(updated[0]);
+}
+
+export function setItemCommentResolved(
+  input: SetItemCommentResolvedRequest,
+): Promise<ItemComment>;
+export function setItemCommentResolved(
+  itemId: string,
+  commentId: string,
+  resolved: boolean,
+  actorContext: ItemCommentActorContext,
+): Promise<ItemComment>;
+export async function setItemCommentResolved(
+  inputOrItemId: string | SetItemCommentResolvedRequest,
+  ...args: [string?, boolean?, ItemCommentActorContext?]
+): Promise<ItemComment> {
+  if (!db) throw new Error("setItemCommentResolved requires DATABASE_URL");
+  const record =
+    typeof inputOrItemId === "string"
+      ? null
+      : (inputOrItemId as unknown as Record<string, unknown>);
+  const itemId =
+    typeof inputOrItemId === "string"
+      ? inputOrItemId
+      : typeof inputOrItemId.itemId === "string" && inputOrItemId.itemId.trim()
+        ? inputOrItemId.itemId
+        : typeof record?.postId === "string"
+          ? record.postId
+          : "";
+  const commentId =
+    typeof inputOrItemId === "string"
+      ? args[0]
+      : typeof inputOrItemId.commentId === "string"
+        ? inputOrItemId.commentId
+        : typeof record?.id === "string"
+          ? record.id
+          : undefined;
+  const resolved =
+    typeof inputOrItemId === "string" ? args[1] : inputOrItemId.resolved;
+  if (!itemId || !commentId || typeof resolved !== "boolean") {
+    throw new Error("Comment item ID, comment ID, and resolved state are required");
+  }
+  const embeddedActor =
+    typeof inputOrItemId === "object" &&
+    "actor" in inputOrItemId &&
+    inputOrItemId.actor &&
+    typeof inputOrItemId.actor === "object"
+      ? inputOrItemId.actor
+      : null;
+  const actorUserId =
+    typeof record?.actorUserId === "string"
+      ? record.actorUserId
+      : typeof record?.resolvedByUserId === "string"
+        ? record.resolvedByUserId
+        : null;
+  const actorType =
+    record?.actorType === "ai" || record?.actorType === "external_agent"
+      ? record.actorType
+      : "human";
+  const actor = cleanItemCommentActor(
+    args[2] ?? embeddedActor ?? { actorUserId, actorType },
+  );
+  const now = new Date();
+  const updated = await db
+    .update(itemComments)
+    .set({
+      resolvedAt: resolved ? now : null,
+      resolvedByUserId: resolved ? actor.actorUserId : null,
+      resolvedByActorType: resolved ? actor.actorType : null,
+      updatedAt: now,
+    })
+    .where(
+      and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Comment not found");
+  return mapItemComment(updated[0]);
+}
+
+export async function resolveItemComment(
+  itemId: string,
+  commentId: string,
+  actorContext: ItemCommentActorContext,
+): Promise<ItemComment> {
+  return setItemCommentResolved(itemId, commentId, true, actorContext);
+}
+
+export async function reopenItemComment(
+  itemId: string,
+  commentId: string,
+  actorContext: ItemCommentActorContext,
+): Promise<ItemComment> {
+  return setItemCommentResolved(itemId, commentId, false, actorContext);
+}
+
+/** Return the deleted row so the caller can audit its comment and item IDs. */
+export async function deleteItemComment(
+  itemId: string,
+  commentId: string,
+  actorContext: ItemCommentActorContext,
+): Promise<ItemComment> {
+  if (!db) throw new Error("deleteItemComment requires DATABASE_URL");
+  cleanItemCommentActor(actorContext);
+  const deleted = await db
+    .delete(itemComments)
+    .where(
+      and(eq(itemComments.id, commentId), eq(itemComments.postId, itemId)),
+    )
+    .returning();
+  if (!deleted[0]) throw new Error("Comment not found");
+  return mapItemComment(deleted[0]);
+}
+
 export async function deletePost(handle: string, id: string): Promise<void> {
   if (!db) throw new Error("deletePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
@@ -2505,7 +2984,13 @@ export async function trashFolder(
     await db
       .update(posts)
       .set({ deletedAt: now, updatedAt: now })
-      .where(and(eq(posts.blogId, blogId), inArray(posts.folderId, ids)));
+      .where(
+        and(
+          eq(posts.blogId, blogId),
+          inArray(posts.folderId, ids),
+          isNull(posts.deletedAt),
+        ),
+      );
     await db
       .update(folders)
       .set({ deletedAt: now, updatedAt: now })
@@ -2532,13 +3017,15 @@ export async function restoreFolder(
     .limit(1);
   const folder = target[0];
   if (!folder) throw new Error("Folder not found in Trash");
+  const deletionTime = folder.deletedAt;
+  if (!deletionTime) throw new Error("Folder not found in Trash");
   const descendants = await db
     .select({ id: folders.id })
     .from(folders)
     .where(
       and(
         eq(folders.blogId, blogId),
-        isNotNull(folders.deletedAt),
+        eq(folders.deletedAt, deletionTime),
         or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`)),
       ),
     );
@@ -2556,7 +3043,7 @@ export async function restoreFolder(
         and(
           eq(posts.blogId, blogId),
           inArray(posts.folderId, ids),
-          isNotNull(posts.deletedAt),
+          eq(posts.deletedAt, deletionTime),
         ),
       );
   }

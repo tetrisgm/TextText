@@ -3,10 +3,20 @@
 // /@{username}/llms.txt) indexes one blog's posts; this file describes the
 // platform. Terse and factual on purpose.
 
+import {
+  WORKSPACE_TOOL_DEFINITIONS,
+  WORKSPACE_TOOL_NAMES,
+} from "@/lib/ai/tools";
 import { rootDomainUrl } from "@/lib/site-url";
 
 export function GET() {
   const origin = rootDomainUrl().origin;
+  const readTools = WORKSPACE_TOOL_NAMES.filter(
+    (name) => WORKSPACE_TOOL_DEFINITIONS[name].requiredScope === "read",
+  );
+  const mutationTools = WORKSPACE_TOOL_NAMES.filter(
+    (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write",
+  );
 
   const text = `# Write
 
@@ -37,8 +47,8 @@ The endpoint advertises OAuth discovery from its unauthenticated 401 response.
 The click-to-approve flow uses authorization code with PKCE S256. Clients
 should request the least privilege they need:
 
-- read: the six read-only workspace tools
-- sync: all 17 tools, including mutations
+- read: ${readTools.length} workspace tools that do not manage access
+- sync: all ${WORKSPACE_TOOL_NAMES.length} tools, including access management and mutations
 
 A client requesting both advertised scopes receives effective sync access.
 
@@ -51,17 +61,19 @@ Clients without OAuth can create a manual sync-scoped wsk_ bearer token at
 ${origin}/connect. Manual tokens remain valid until revoked. Send access tokens
 as "Authorization: Bearer wsk_...".
 
-The shared 17 tools are:
+The shared ${WORKSPACE_TOOL_NAMES.length} tools are:
 
-- Read: get_workspace, list_folders, list_items, list_trash, read_item, search
-- Sync: create_folder, rename_folder, create_item, update_item,
-  append_to_item, move_item, delete_item, restore_item, set_item_status,
-  set_item_metadata, set_item_pinned
+- Read: ${readTools.join(", ")}
+- Mutations: ${mutationTools.join(", ")}
 
-delete_item is a soft delete that moves one item to Trash. list_trash exposes
-restorable items, and restore_item restores the previous status. A restored
-published item can become public again. There is no permanent-delete MCP tool
-and no folder-delete or folder-restore tool.
+delete_item and delete_folder are soft deletes. list_trash exposes restorable
+items and folder restoration units. restore_item and restore_folder restore
+them. A restored published item can become public again. There is no
+permanent-delete MCP tool.
+
+The command surface also manages direct workspace, folder, and item access;
+collaboration comments; bookmark recapture; and item cover and asset references.
+Every mutation is audited.
 
 New items are drafts. Notes and bookmarks cannot publish. Existing-item writes
 should send the latest if_match_hash; stale writes are rejected. Every mutation
@@ -81,12 +93,12 @@ item to Trash.
 OpenAPI actions: ${origin}/openapi.json
 
 The OpenAPI document is a smaller sync-backed action surface, not the complete
-17-tool MCP contract.
+${WORKSPACE_TOOL_NAMES.length}-tool MCP contract.
 
 ## In-app assistant
 
 Write for Mac uses Apple's on-device Foundation Models runtime and calls the
-same 17 workspace commands directly through the signed-in page. It does not use
+same ${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the signed-in page. It does not use
 Write's MCP endpoint. The plain web app has no assistant model fallback.
 OpenAI and Anthropic are not implemented as in-app providers; they can connect
 as external MCP clients.

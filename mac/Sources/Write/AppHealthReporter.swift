@@ -52,7 +52,24 @@ private struct WriteBuildAttestation: Decodable {
     let appVersion: String
     let buildNumber: String
     let sourceCommit: String
+    let workflowContractHash: String
     let suites: [Suite]
+}
+
+enum WriteWorkflowHealth {
+    static let folderTrashRestore = "workflow.folder_trash_restore"
+    static let sharingAccess = "workflow.sharing_access"
+    static let comments = "workflow.comments"
+    static let bookmarkRecapture = "workflow.bookmark_recapture"
+    static let coverAssets = "workflow.cover_assets"
+
+    static let requiredCheckIDs = [
+        folderTrashRestore,
+        sharingAccess,
+        comments,
+        bookmarkRecapture,
+        coverAssets,
+    ]
 }
 
 /// Local-first persistence for app-owned health reports. Reports contain only
@@ -351,6 +368,21 @@ final class AppHealthReporter {
             timedCheck(id: "selftest.filename_codec", operation: checkFilenameCodec),
             timedCheck(id: "selftest.document_assets", operation: checkDocumentAssets),
             timedCheck(id: "selftest.public_link", operation: checkPublicLinkMapping),
+            timedCheck(id: WriteWorkflowHealth.folderTrashRestore) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.folderTrashRestore)
+            },
+            timedCheck(id: WriteWorkflowHealth.sharingAccess) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.sharingAccess)
+            },
+            timedCheck(id: WriteWorkflowHealth.comments) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.comments)
+            },
+            timedCheck(id: WriteWorkflowHealth.bookmarkRecapture) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.bookmarkRecapture)
+            },
+            timedCheck(id: WriteWorkflowHealth.coverAssets) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.coverAssets)
+            },
             timedCheck(id: "state.persistence", operation: checkStatePersistence),
             timedCheck(id: "sync.index", operation: checkSyncIndex),
             timedCheck(id: "workspace.storage", operation: checkWorkspaceStorage),
@@ -409,12 +441,7 @@ final class AppHealthReporter {
     }
 
     private func checkBuildAttestation() -> (WriteHealthStatus, [String: Double]) {
-        guard let url = bundle.url(
-            forResource: "AppHealthBuildAttestation", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let attestation = try? JSONDecoder().decode(
-                WriteBuildAttestation.self, from: data)
-        else {
+        guard let attestation = buildAttestation() else {
             let status: WriteHealthStatus = bundle.bundleURL.pathExtension == "app"
                 ? .fail : .warning
             return (status, [
@@ -425,6 +452,9 @@ final class AppHealthReporter {
                 "suite_count": 0,
                 "passed_count": 0,
                 "source_revision_present": 0,
+                "workflow_contract_valid": 0,
+                "suite_ids_unique": 0,
+                "required_suites_present": 0,
             ])
         }
 
@@ -432,14 +462,21 @@ final class AppHealthReporter {
         let versionMatches = attestation.appVersion == bundleVersion
         let buildMatches = attestation.buildNumber == buildNumber
         let passed = attestation.suites.filter { $0.status == "pass" }.count
+        let suiteIDs = attestation.suites.map(\.id)
+        let uniqueSuiteIDs = Set(suiteIDs).count == suiteIDs.count
+        let requiredSuitesPresent = Set(WriteWorkflowHealth.requiredCheckIDs)
+            .isSubset(of: Set(suiteIDs))
         let suitesValid = !attestation.suites.isEmpty
             && passed == attestation.suites.count
+            && uniqueSuiteIDs
+            && requiredSuitesPresent
             && attestation.suites.allSatisfy {
                 Self.validIdentifier($0.id) && $0.status == "pass"
             }
         let sourcePresent = !attestation.sourceCommit.isEmpty
+        let workflowContractValid = Self.validSHA256(attestation.workflowContractHash)
         let valid = validSchema && versionMatches && buildMatches
-            && suitesValid && sourcePresent
+            && suitesValid && sourcePresent && workflowContractValid
         return (valid ? .pass : .fail, [
             "present": 1,
             "valid": validSchema && suitesValid ? 1 : 0,
@@ -448,7 +485,48 @@ final class AppHealthReporter {
             "suite_count": Double(attestation.suites.count),
             "passed_count": Double(passed),
             "source_revision_present": sourcePresent ? 1 : 0,
+            "workflow_contract_valid": workflowContractValid ? 1 : 0,
+            "suite_ids_unique": uniqueSuiteIDs ? 1 : 0,
+            "required_suites_present": requiredSuitesPresent ? 1 : 0,
         ])
+    }
+
+    private func checkAttestedWorkflow(
+        id: String
+    ) -> (WriteHealthStatus, [String: Double]) {
+        guard let attestation = buildAttestation() else {
+            let status: WriteHealthStatus = bundle.bundleURL.pathExtension == "app"
+                ? .fail : .warning
+            return (status, [
+                "receipt_present": 0,
+                "receipt_passed": 0,
+                "receipt_unique": 0,
+                "identity_match": 0,
+            ])
+        }
+        let matching = attestation.suites.filter { $0.id == id }
+        let receiptPresent = !matching.isEmpty
+        let receiptUnique = matching.count == 1
+        let receiptPassed = matching.first?.status == "pass"
+        let identityMatches = attestation.schemaVersion == 1
+            && attestation.appVersion == bundleVersion
+            && attestation.buildNumber == buildNumber
+            && Self.validSHA256(attestation.workflowContractHash)
+        let valid = receiptPresent && receiptUnique && receiptPassed && identityMatches
+        return (valid ? .pass : .fail, [
+            "receipt_present": receiptPresent ? 1 : 0,
+            "receipt_passed": receiptPassed ? 1 : 0,
+            "receipt_unique": receiptUnique ? 1 : 0,
+            "identity_match": identityMatches ? 1 : 0,
+        ])
+    }
+
+    private func buildAttestation() -> WriteBuildAttestation? {
+        guard let url = bundle.url(
+            forResource: "AppHealthBuildAttestation", withExtension: "json"),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return try? JSONDecoder().decode(WriteBuildAttestation.self, from: data)
     }
 
     private func checkMarkdownIdentity() -> (WriteHealthStatus, [String: Double]) {
@@ -677,6 +755,12 @@ final class AppHealthReporter {
         return value.unicodeScalars.allSatisfy {
             CharacterSet.alphanumerics.contains($0)
                 || $0 == "." || $0 == "_" || $0 == "-"
+        }
+    }
+
+    private static func validSHA256(_ value: String) -> Bool {
+        value.count == 64 && value.unicodeScalars.allSatisfy {
+            (48...57).contains(Int($0.value)) || (97...102).contains(Int($0.value))
         }
     }
 

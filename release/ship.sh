@@ -111,6 +111,12 @@ elif [ "${WRITE_RELEASE_GATES_VERIFIED:-0}" != "1" ]; then
   exit 1
 fi
 
+echo ">> evaluate workflow capability contracts"
+WORKFLOW_CAPABILITY_RECEIPT="$ROOT/mac/build/workflow-capability-receipt.json"
+"$ROOT/mac/scripts/verify-workflow-capabilities.sh" \
+  "$WORKFLOW_CAPABILITY_RECEIPT"
+export WRITE_WORKFLOW_CAPABILITY_RECEIPT="$WORKFLOW_CAPABILITY_RECEIPT"
+
 if [ "$NO_PUBLISH" = "1" ]; then
   echo ">> dry-run Mac app build"
   DRY_BUILD="$(( $("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist") + 1 ))"
@@ -142,6 +148,8 @@ echo ">> migrate database: app health reports"
 node "$ROOT/scripts/migrate-add-app-health.mjs"
 echo ">> migrate database: OAuth token lifecycle"
 node "$ROOT/scripts/migrate-add-oauth-token-lifecycle.mjs"
+echo ">> migrate database: item comments"
+node "$ROOT/scripts/migrate-add-item-comments.mjs"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'
@@ -169,6 +177,7 @@ if [ -n "$ORIGIN" ]; then
   PUBLIC_API=""
   PUBLIC_VERSION=""
   PUBLIC_BUILD=""
+  PUBLIC_HARDWARE_REQUIREMENTS=""
   API_VERSION=""
   API_BUILD=""
   for attempt in {1..30}; do
@@ -176,15 +185,17 @@ if [ -n "$ORIGIN" ]; then
     PUBLIC_APPCAST="$(curl -fsS -H 'Cache-Control: no-cache' "$ORIGIN/appcast.xml?$VERIFY_QUERY" || true)"
     PUBLIC_VERSION="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:shortVersionString>.*|\1|p' | head -1)"
     PUBLIC_BUILD="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:version>\([0-9][0-9]*\)</sparkle:version>.*|\1|p' | head -1)"
+    PUBLIC_HARDWARE_REQUIREMENTS="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<sparkle:hardwareRequirements>\([^<]*\)</sparkle:hardwareRequirements>.*|\1|p' | head -1)"
     PUBLIC_API="$(curl -fsS -H 'Cache-Control: no-cache' "$ORIGIN/api/app/version?$VERIFY_QUERY" || true)"
     API_VERSION="$(printf '%s' "$PUBLIC_API" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
     API_BUILD="$(printf '%s' "$PUBLIC_API" | python3 -c 'import json,sys; print(json.load(sys.stdin)["buildNumber"])' 2>/dev/null || true)"
     if [ "$PUBLIC_VERSION" = "$VERSION" ] && [ "$PUBLIC_BUILD" = "$EXPECTED_BUILD" ] && \
+       [ "$PUBLIC_HARDWARE_REQUIREMENTS" = "arm64" ] && \
        [ "$API_VERSION" = "$VERSION" ] && [ "$API_BUILD" = "$EXPECTED_BUILD" ]; then
       break
     fi
     if [ "$attempt" -lt 30 ]; then
-      echo "   waiting for public release marker ($attempt/30): appcast ${PUBLIC_VERSION:-unavailable} (${PUBLIC_BUILD:-unavailable}), API ${API_VERSION:-unavailable} (${API_BUILD:-unavailable})"
+      echo "   waiting for public release marker ($attempt/30): appcast ${PUBLIC_VERSION:-unavailable} (${PUBLIC_BUILD:-unavailable}, ${PUBLIC_HARDWARE_REQUIREMENTS:-no architecture}), API ${API_VERSION:-unavailable} (${API_BUILD:-unavailable})"
       sleep 2
     fi
   done
@@ -192,6 +203,7 @@ if [ -n "$ORIGIN" ]; then
   PUBLIC_SIGNATURE="$(printf '%s' "$PUBLIC_APPCAST" | sed -n 's|.*<enclosure[^>]* sparkle:edSignature="\([^"]*\)".*|\1|p' | head -1)"
   [ "$PUBLIC_VERSION" = "$VERSION" ] || { echo "Public appcast version is $PUBLIC_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$PUBLIC_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public appcast build is $PUBLIC_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
+  [ "$PUBLIC_HARDWARE_REQUIREMENTS" = "arm64" ] || { echo "Public appcast hardware requirement is '$PUBLIC_HARDWARE_REQUIREMENTS', expected arm64." >&2; exit 1; }
   [ -n "$PUBLIC_ZIP_URL" ] || { echo "Public appcast is missing an enclosure URL." >&2; exit 1; }
   [ -n "$PUBLIC_SIGNATURE" ] || { echo "Public appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
   curl -fsSI "$PUBLIC_ZIP_URL" >/dev/null
@@ -215,7 +227,7 @@ if [ -n "$ORIGIN" ]; then
     echo "Guest start flow returned $GUEST_SMOKE_STATUS at $GUEST_SMOKE_URL." >&2
     exit 1
   }
-  echo "   appcast:  $PUBLIC_VERSION ($PUBLIC_BUILD)"
+  echo "   appcast:  $PUBLIC_VERSION ($PUBLIC_BUILD, $PUBLIC_HARDWARE_REQUIREMENTS)"
   echo "   zip:      $PUBLIC_ZIP_URL"
   echo "   version:  $API_VERSION ($API_BUILD)"
   echo "   guest:    $GUEST_SMOKE_URL"
@@ -245,6 +257,8 @@ INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALL_PATH/Contents/Inf
 [ "$INSTALLED_VERSION" = "$VERSION" ] || { echo "Installed app version is $INSTALLED_VERSION, expected $VERSION." >&2; exit 1; }
 [ "$INSTALLED_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app build is $INSTALLED_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
 codesign --verify --strict --verbose=2 "$INSTALL_PATH"
+"$ROOT/mac/scripts/verify-apple-silicon-app.sh" \
+  "$INSTALL_PATH" --require-extensions
 pgrep -x Write >/dev/null || { echo "Installed Write app did not launch." >&2; exit 1; }
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 
