@@ -4,8 +4,10 @@ import { db } from "@/lib/db/client";
 import { oauthClients } from "@/lib/db/schema";
 import {
   OAUTH_SCOPE,
+  isOAuthScope,
   loadOAuthClientsFromEnv,
   type OAuthClient,
+  type OAuthScope,
 } from "@/lib/oauth";
 
 const CLIENT_ID_RE = /^[A-Za-z0-9._~-]{1,128}$/;
@@ -17,7 +19,7 @@ export type RegisteredOAuthClient = {
   clientId: string;
   clientName: string;
   redirectUris: string[];
-  scope: typeof OAUTH_SCOPE;
+  scope: OAuthScope;
   createdAt: Date;
 };
 
@@ -49,13 +51,14 @@ function registeredClientFromRow(row: {
   scope: string;
 }): OAuthClient | null {
   if (!CLIENT_ID_RE.test(row.clientId)) return null;
-  if (row.scope !== OAUTH_SCOPE) return null;
+  if (!isOAuthScope(row.scope)) return null;
   const redirectUris = cleanRedirectUris(row.redirectUris);
   if (redirectUris.length === 0) return null;
   return {
     clientId: row.clientId,
     name: row.clientName,
     redirectUris,
+    defaultScope: row.scope,
   };
 }
 
@@ -88,6 +91,7 @@ export async function loadOAuthClients(): Promise<OAuthClient[]> {
 export async function createRegisteredOAuthClient(input: {
   clientName: string;
   redirectUris: string[];
+  scope?: OAuthScope;
 }): Promise<RegisteredOAuthClient> {
   if (!db) {
     throw new OAuthClientRegistrationError(
@@ -103,7 +107,7 @@ export async function createRegisteredOAuthClient(input: {
         clientId,
         clientName: input.clientName,
         redirectUris: input.redirectUris,
-        scope: OAUTH_SCOPE,
+        scope: input.scope ?? OAUTH_SCOPE,
       })
       .onConflictDoNothing({ target: oauthClients.clientId })
       .returning({
@@ -115,12 +119,12 @@ export async function createRegisteredOAuthClient(input: {
       });
 
     const row = inserted[0];
-    if (row && row.scope === OAUTH_SCOPE) {
+    if (row && isOAuthScope(row.scope)) {
       return {
         clientId: row.clientId,
         clientName: row.clientName,
         redirectUris: row.redirectUris,
-        scope: OAUTH_SCOPE,
+        scope: row.scope,
         createdAt: row.createdAt,
       };
     }

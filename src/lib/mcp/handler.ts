@@ -8,7 +8,7 @@
 // legacy SSE transport is disabled outright.
 
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
-import { verifyWriteApiToken } from "./auth";
+import { enforceMcpToolScope, verifyWriteApiToken } from "./auth";
 import { registerWriteTools } from "./tools";
 
 export function buildMcpRouteHandler(
@@ -23,7 +23,11 @@ export function buildMcpRouteHandler(
       maxDuration: 60,
     },
   );
+  const scopeGuardedHandler = async (request: Request) => {
+    const denied = await enforceMcpToolScope(request);
+    return denied ?? handler(request);
+  };
   // required: true makes a missing or invalid token answer with the
   // MCP-proper 401: WWW-Authenticate: Bearer plus an OAuth error body.
-  return withMcpAuth(handler, verifyWriteApiToken, { required: true });
+  return withMcpAuth(scopeGuardedHandler, verifyWriteApiToken, { required: true });
 }

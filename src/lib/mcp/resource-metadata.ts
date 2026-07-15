@@ -9,7 +9,7 @@ import {
   generateProtectedResourceMetadata,
   getPublicOrigin,
 } from "mcp-handler";
-import { OAUTH_SCOPE } from "@/lib/oauth";
+import { OAUTH_SCOPES } from "@/lib/oauth";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -25,7 +25,7 @@ export function protectedResourceMetadataResponse(request: Request): Response {
     additionalMetadata: {
       resource_name: "Write",
       resource_documentation: `${origin}/docs/ai`,
-      scopes_supported: [OAUTH_SCOPE],
+      scopes_supported: [...OAUTH_SCOPES],
       bearer_methods_supported: ["header"],
     },
   });

@@ -4,6 +4,12 @@
 // cross tenants.
 
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { getPublicOrigin } from "mcp-handler";
+import {
+  WORKSPACE_SCOPE_CAPABILITIES,
+  WORKSPACE_TOOL_DEFINITIONS,
+  isWorkspaceToolName,
+} from "@/lib/ai/tools";
 import { resolveApiToken } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
 import { getOwnedBlog } from "@/lib/store";
@@ -19,12 +25,88 @@ export async function verifyWriteApiToken(
 ): Promise<AuthInfo | undefined> {
   const identity = await resolveApiToken(request.headers.get("authorization"));
   if (!identity) return undefined;
+  const scopes = [...new Set(identity.scopes.split(/\s+/).filter(Boolean))];
   return {
     token: bearerToken ?? "",
     clientId: identity.userId,
-    scopes: identity.scopes.split(/\s+/).filter(Boolean),
+    scopes,
+    expiresAt: identity.expiresAt
+      ? Math.floor(identity.expiresAt.getTime() / 1000)
+      : undefined,
     extra: { userId: identity.userId, sub: identity.sub },
   };
+}
+
+type AuthenticatedRequest = Request & { auth?: AuthInfo };
+
+function requestedToolNames(value: unknown): string[] {
+  const messages = Array.isArray(value) ? value : [value];
+  const names: string[] = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const record = message as Record<string, unknown>;
+    if (record.method !== "tools/call") continue;
+    const params = record.params;
+    if (!params || typeof params !== "object") continue;
+    const name = (params as Record<string, unknown>).name;
+    if (typeof name === "string") names.push(name);
+  }
+  return names;
+}
+
+function insufficientScopeResponse(request: Request): Response {
+  const metadata = `${getPublicOrigin(request)}/.well-known/oauth-protected-resource`;
+  return Response.json(
+    {
+      error: "insufficient_scope",
+      error_description: "The sync scope is required for mutating tools",
+    },
+    {
+      status: 403,
+      headers: {
+        "Cache-Control": "no-store",
+        "WWW-Authenticate":
+          `Bearer error="insufficient_scope", ` +
+          `error_description="The sync scope is required for mutating tools", ` +
+          `scope="sync", resource_metadata="${metadata}"`,
+      },
+    },
+  );
+}
+
+export async function enforceMcpToolScope(
+  request: Request,
+): Promise<Response | null> {
+  const scopes = (request as AuthenticatedRequest).auth?.scopes ?? [];
+  const hasReadOnlyScope = scopes.some((scope) =>
+    WORKSPACE_SCOPE_CAPABILITIES.readOnly.includes(
+      scope as (typeof WORKSPACE_SCOPE_CAPABILITIES.readOnly)[number],
+    ),
+  );
+  if (scopes.includes(WORKSPACE_SCOPE_CAPABILITIES.fullAccess) && !hasReadOnlyScope) {
+    return null;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.clone().json();
+  } catch {
+    return null;
+  }
+
+  const toolNames = requestedToolNames(payload);
+  if (toolNames.length === 0) return null;
+  if (
+    hasReadOnlyScope &&
+    toolNames.every(
+      (name) =>
+        isWorkspaceToolName(name) &&
+        WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read",
+    )
+  ) {
+    return null;
+  }
+  return insufficientScopeResponse(request);
 }
 
 /**

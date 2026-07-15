@@ -5,7 +5,7 @@
 // application code.
 
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "./db/client";
 import { apiTokens, users } from "./db/schema";
 
@@ -22,6 +22,8 @@ export type ApiTokenIdentity = {
   sub: string;
   /** space-separated scopes, e.g. "sync" */
   scopes: string;
+  /** null for non-expiring manually-created tokens */
+  expiresAt: Date | null;
 };
 
 export type ApiTokenSummary = {
@@ -63,12 +65,19 @@ export function parseBearerApiToken(header: string | null): string | null {
 export async function createApiToken(
   userId: string,
   name: string,
+  options: { scopes?: string; expiresAt?: Date } = {},
 ): Promise<{ raw: string; record: ApiTokenSummary }> {
   if (!db) throw new Error("createApiToken requires DATABASE_URL");
   const raw = generateApiToken();
   const inserted = await db
     .insert(apiTokens)
-    .values({ userId, name, tokenHash: hashApiToken(raw) })
+    .values({
+      userId,
+      name,
+      tokenHash: hashApiToken(raw),
+      scopes: options.scopes,
+      expiresAt: options.expiresAt,
+    })
     .returning();
   if (!inserted[0]) throw new Error("failed to create the token");
   return { raw, record: mapToken(inserted[0]) };
@@ -113,12 +122,14 @@ export async function resolveApiToken(
 ): Promise<ApiTokenIdentity | null> {
   const token = parseBearerApiToken(header);
   if (!token || !db) return null;
+  const now = new Date();
 
   const rows = await db
     .select({
       id: apiTokens.id,
       userId: apiTokens.userId,
       scopes: apiTokens.scopes,
+      expiresAt: apiTokens.expiresAt,
       lastUsedAt: apiTokens.lastUsedAt,
       sub: users.appleSub,
     })
@@ -128,6 +139,7 @@ export async function resolveApiToken(
       and(
         eq(apiTokens.tokenHash, hashApiToken(token)),
         isNull(apiTokens.revokedAt),
+        or(isNull(apiTokens.expiresAt), gt(apiTokens.expiresAt, now)),
       ),
     )
     .limit(1);
@@ -148,5 +160,10 @@ export async function resolveApiToken(
     }
   }
 
-  return { userId: row.userId, sub: row.sub, scopes: row.scopes };
+  return {
+    userId: row.userId,
+    sub: row.sub,
+    scopes: row.scopes,
+    expiresAt: row.expiresAt,
+  };
 }

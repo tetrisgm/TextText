@@ -2,6 +2,7 @@ import {
   OAuthRequestError,
   allowInsecureLocalhostOAuthRedirects,
   exchangeOAuthAuthorizationCode,
+  refreshOAuthAccessToken,
 } from "@/lib/oauth";
 import { loadOAuthClients } from "../clients";
 
@@ -15,6 +16,8 @@ const TOKEN_FORM_KEYS = new Set([
   "redirect_uri",
   "client_id",
   "code_verifier",
+  "refresh_token",
+  "scope",
 ]);
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -116,6 +119,31 @@ function requiredSingle(params: URLSearchParams, name: string): string {
   return values[0];
 }
 
+function optionalSingle(
+  params: URLSearchParams,
+  name: string,
+): string | undefined {
+  const values = params.getAll(name);
+  if (values.length > 1) {
+    throw new OAuthRequestError("invalid_request", `${name} must appear once`);
+  }
+  return values[0];
+}
+
+function assertOnlyGrantParams(
+  params: URLSearchParams,
+  allowed: ReadonlySet<string>,
+): void {
+  for (const key of params.keys()) {
+    if (!allowed.has(key)) {
+      throw new OAuthRequestError(
+        "invalid_request",
+        `${key} is not valid for this grant_type`,
+      );
+    }
+  }
+}
+
 export async function POST(request: Request) {
   if (!checkTokenRateLimit(request)) {
     return oauthJson(
@@ -139,27 +167,55 @@ export async function POST(request: Request) {
   try {
     const params = await formParams(request);
     const grantType = requiredSingle(params, "grant_type");
-    if (grantType !== "authorization_code") {
-      throw new OAuthRequestError(
-        "unsupported_grant_type",
-        "grant_type must be authorization_code",
+
+    if (grantType === "authorization_code") {
+      assertOnlyGrantParams(
+        params,
+        new Set([
+          "grant_type",
+          "code",
+          "redirect_uri",
+          "client_id",
+          "code_verifier",
+        ]),
       );
+      const clients = await loadOAuthClients();
+      const token = await exchangeOAuthAuthorizationCode(
+        {
+          code: requiredSingle(params, "code"),
+          clientId: requiredSingle(params, "client_id"),
+          redirectUri: requiredSingle(params, "redirect_uri"),
+          codeVerifier: requiredSingle(params, "code_verifier"),
+        },
+        {
+          clients,
+          allowInsecureLocalhost: allowInsecureLocalhostOAuthRedirects(),
+        },
+      );
+      return oauthJson(token);
     }
 
-    const clients = await loadOAuthClients();
-    const token = await exchangeOAuthAuthorizationCode(
-      {
-        code: requiredSingle(params, "code"),
-        clientId: requiredSingle(params, "client_id"),
-        redirectUri: requiredSingle(params, "redirect_uri"),
-        codeVerifier: requiredSingle(params, "code_verifier"),
-      },
-      {
-        clients,
-        allowInsecureLocalhost: allowInsecureLocalhostOAuthRedirects(),
-      },
+    if (grantType === "refresh_token") {
+      assertOnlyGrantParams(
+        params,
+        new Set(["grant_type", "refresh_token", "client_id", "scope"]),
+      );
+      const clients = await loadOAuthClients();
+      const token = await refreshOAuthAccessToken(
+        {
+          refreshToken: requiredSingle(params, "refresh_token"),
+          clientId: requiredSingle(params, "client_id"),
+          scope: optionalSingle(params, "scope"),
+        },
+        { clients },
+      );
+      return oauthJson(token);
+    }
+
+    throw new OAuthRequestError(
+      "unsupported_grant_type",
+      "grant_type must be authorization_code or refresh_token",
     );
-    return oauthJson(token);
   } catch (cause) {
     return oauthErrorResponse(cause);
   }

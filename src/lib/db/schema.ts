@@ -226,6 +226,8 @@ export const apiTokens = pgTable(
     /** space-separated scopes; "sync" grants read/write on owned content */
     scopes: text("scopes").notNull().default("sync"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    /** null for manually-created tokens; OAuth access tokens expire */
+    expiresAt: timestamp("expires_at"),
     lastUsedAt: timestamp("last_used_at"),
     revokedAt: timestamp("revoked_at"),
   },
@@ -502,3 +504,78 @@ export const oauthClients = pgTable(
 
 export type OAuthClientRecord = typeof oauthClients.$inferSelect;
 export type NewOAuthClientRecord = typeof oauthClients.$inferInsert;
+
+// A refresh-token family is one OAuth authorization grant. Rotations retain the
+// original absolute deadline, slide the inactivity deadline, and revoke the
+// whole family if any consumed refresh token is presented again.
+export const oauthRefreshTokenFamilies = pgTable(
+  "oauth_refresh_token_families",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    clientId: text("client_id").notNull(),
+    scope: text("scope").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+    absoluteExpiresAt: timestamp("absolute_expires_at").notNull(),
+    inactivityExpiresAt: timestamp("inactivity_expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    replayDetectedAt: timestamp("replay_detected_at"),
+  },
+  (t) => [
+    index("oauth_refresh_families_user_idx").on(t.userId),
+    index("oauth_refresh_families_client_idx").on(t.clientId),
+  ],
+);
+
+// OAuth access-token metadata is separate from api_tokens so existing manual
+// tokens preserve their current lifecycle. The api_tokens row remains the
+// single bearer identity consumed by sync and MCP authentication.
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  {
+    apiTokenId: uuid("api_token_id")
+      .primaryKey()
+      .references(() => apiTokens.id, { onDelete: "cascade" }),
+    refreshTokenFamilyId: uuid("refresh_token_family_id")
+      .notNull()
+      .references(() => oauthRefreshTokenFamilies.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("oauth_access_tokens_family_idx").on(t.refreshTokenFamilyId),
+  ],
+);
+
+// Raw refresh tokens are returned once and never persisted. Only their SHA-256
+// hashes live here; consumed_at makes rotation/replay detection atomic.
+export const oauthRefreshTokens = pgTable(
+  "oauth_refresh_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    refreshTokenFamilyId: uuid("refresh_token_family_id")
+      .notNull()
+      .references(() => oauthRefreshTokenFamilies.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    accessTokenId: uuid("access_token_id").references(() => apiTokens.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    consumedAt: timestamp("consumed_at"),
+  },
+  (t) => [
+    uniqueIndex("oauth_refresh_tokens_hash_idx").on(t.tokenHash),
+    index("oauth_refresh_tokens_family_idx").on(t.refreshTokenFamilyId),
+  ],
+);
+
+export type OAuthRefreshTokenFamily =
+  typeof oauthRefreshTokenFamilies.$inferSelect;
+export type NewOAuthRefreshTokenFamily =
+  typeof oauthRefreshTokenFamilies.$inferInsert;
+export type OAuthAccessToken = typeof oauthAccessTokens.$inferSelect;
+export type NewOAuthAccessToken = typeof oauthAccessTokens.$inferInsert;
+export type OAuthRefreshToken = typeof oauthRefreshTokens.$inferSelect;
+export type NewOAuthRefreshToken = typeof oauthRefreshTokens.$inferInsert;

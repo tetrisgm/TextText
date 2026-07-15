@@ -11,7 +11,7 @@ import "@/styles/connect.css";
 
 export const metadata: Metadata = {
   title: "Authorize",
-  description: "Authorize a connector to sync with your workspace.",
+  description: "Authorize a connector to access your workspace.",
 };
 
 export const dynamic = "force-dynamic";
@@ -86,16 +86,20 @@ export default async function OAuthAuthorizePage({ searchParams }: Props) {
   }
 
   const request = validation.request;
+  const readOnly = request.scope === "read";
 
   return (
     <Shell>
       <h1 className="connect-title">Authorize {request.client.name}?</h1>
       <p className="connect-lede">
-        <strong>{request.client.name}</strong> wants access to sync your
-        workspace.
+        <strong>{request.client.name}</strong>{" "}
+        {readOnly
+          ? "wants read-only access to your workspace. It can view content but cannot create or change it."
+          : "wants read/write access to your workspace. It can view, create, and change content."}
       </p>
       <p className="connect-sub">
-        Scope: <span className="connect-inline-code">{request.scope}</span>
+        Access: {readOnly ? "Read-only" : "Read/write"} ({" "}
+        <span className="connect-inline-code">{request.scope}</span>)
       </p>
       <form
         action="/oauth/authorize/approve"

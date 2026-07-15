@@ -1,7 +1,7 @@
 import {
-  OAUTH_SCOPE,
   cleanOAuthClientName,
   parseOAuthScope,
+  type OAuthScope,
   validateOAuthRedirectUri,
 } from "@/lib/oauth";
 import {
@@ -206,7 +206,7 @@ function validateTokenEndpointAuthMethod(
   }
 }
 
-function validateScope(metadata: Record<string, unknown>): typeof OAUTH_SCOPE {
+function validateScope(metadata: Record<string, unknown>): OAuthScope {
   try {
     return parseOAuthScope(optionalString(metadata, "scope"));
   } catch (cause) {
@@ -215,6 +215,23 @@ function validateScope(metadata: Record<string, unknown>): typeof OAUTH_SCOPE {
       cause instanceof Error ? cause.message : "scope is invalid",
     );
   }
+}
+
+function validateGrantTypes(metadata: Record<string, unknown>): string[] {
+  const values = validateStringArray(metadata.grant_types, "grant_types");
+  if (!values) return ["authorization_code"];
+  const supported = new Set(["authorization_code", "refresh_token"]);
+  if (
+    !values.includes("authorization_code") ||
+    values.some((value) => !supported.has(value)) ||
+    new Set(values).size !== values.length
+  ) {
+    throw new RegistrationRequestError(
+      "invalid_client_metadata",
+      "grant_types must contain authorization_code and may contain refresh_token",
+    );
+  }
+  return values;
 }
 
 function validateRedirectUris(metadata: Record<string, unknown>): string[] {
@@ -291,7 +308,7 @@ export async function POST(request: Request) {
 
   try {
     const metadata = await readMetadata(request);
-    validateSingletonArray(metadata, "grant_types", "authorization_code");
+    const grantTypes = validateGrantTypes(metadata);
     validateSingletonArray(metadata, "response_types", "code");
     validateTokenEndpointAuthMethod(metadata);
     const scope = validateScope(metadata);
@@ -303,6 +320,7 @@ export async function POST(request: Request) {
     const client = await createRegisteredOAuthClient({
       clientName,
       redirectUris,
+      scope,
     });
 
     return registrationJson(
@@ -311,7 +329,7 @@ export async function POST(request: Request) {
         client_id_issued_at: Math.floor(client.createdAt.getTime() / 1000),
         client_name: client.clientName,
         redirect_uris: client.redirectUris,
-        grant_types: ["authorization_code"],
+        grant_types: grantTypes,
         response_types: ["code"],
         token_endpoint_auth_method: "none",
         scope,
