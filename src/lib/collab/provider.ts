@@ -232,6 +232,7 @@ export class CollabProvider {
     this.clientId = stableSessionClientId(opts.postId);
     this.base = `/api/collab/${encodeURIComponent(opts.postId)}`;
     this.onDocUpdate = this.onDocUpdate.bind(this);
+    this.onPageHide = this.onPageHide.bind(this);
   }
 
   /** Reports whether an authoritative initial history was applied. */
@@ -245,6 +246,11 @@ export class CollabProvider {
     // initial history is in flight, and those edits must enter the outbox.
     this.started = true;
     this.doc.on("update", this.onDocUpdate);
+    // A tab close aborts the async outbox flush mid-flight; sendBeacon on
+    // pagehide gives any queued edits one last delivery that survives unload.
+    if (this.opts.canPush && typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+    }
 
     const outbox = outboxFor(this.opts.postId, this.base);
     this.outbox = outbox;
@@ -274,7 +280,10 @@ export class CollabProvider {
 
   destroy(): void {
     if (this.stopped) return; // already stopped (e.g. after an access-loss)
-    // Best-effort leave so peers drop us promptly. Sent before stop() aborts.
+    // NOTE: do NOT beacon-flush here. destroy() is a React unmount with the tab
+    // still open, where the module-level outbox survives and keeps flushing (or
+    // a remount replays it); draining it here would defeat that. The beacon is
+    // for pagehide only, where the whole JS context is going away.
     if (
       this.opts.canPush &&
       typeof navigator !== "undefined" &&
@@ -288,6 +297,38 @@ export class CollabProvider {
     this.stop();
   }
 
+  private onPageHide(): void {
+    // A tab close / bfcache navigation aborts the async flush; sendBeacon is
+    // the only push that survives unload.
+    this.flushPendingViaBeacon();
+  }
+
+  /** Last-resort delivery of queued edits over sendBeacon (survives page
+   * unload, when a normal fetch would be cancelled). Best-effort: the server
+   * appends what it receives; if the payload exceeds the beacon limit it is
+   * left in the outbox for the next normal flush. Delivered updates are dropped
+   * from the queue so a following normal flush cannot double-send them. */
+  private flushPendingViaBeacon(): void {
+    if (
+      !this.opts.canPush ||
+      !this.outbox ||
+      this.outbox.pending.length === 0 ||
+      typeof navigator === "undefined" ||
+      typeof navigator.sendBeacon !== "function"
+    ) {
+      return;
+    }
+    const batch = this.outbox.pending.slice(0, MAX_PUSH_BATCH);
+    const payload = JSON.stringify({ updates: batch.map(u8ToBase64) });
+    // sendBeacon silently drops an over-limit body; skip so the normal flush
+    // (which chunks and retries) still owns those bytes.
+    if (payload.length > 60_000) return;
+    const blob = new Blob([payload], { type: "application/json" });
+    if (navigator.sendBeacon(this.base, blob)) {
+      this.outbox.pending.splice(0, batch.length);
+    }
+  }
+
   /** Tear down every loop and release shared state. Idempotent. Invoked by
    * destroy() (editor unmount) and by an access-loss (401/403) on any loop, so
    * a mid-session revoke stops the push/poll/heartbeat hammering at once. */
@@ -295,6 +336,9 @@ export class CollabProvider {
     if (this.stopped) return;
     this.stopped = true;
     this.abort.abort();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pagehide", this.onPageHide);
+    }
     if (this.started) this.doc.off("update", this.onDocUpdate);
     if (this.presenceTimer) {
       clearInterval(this.presenceTimer);

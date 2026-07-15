@@ -242,4 +242,56 @@ describe("CollabProvider startup and outbox", () => {
 
     provider.destroy();
   });
+
+  it("delivers queued edits over sendBeacon on pagehide", async () => {
+    vi.useFakeTimers();
+    const beacons: string[] = [];
+    const pageListeners = new Map<string, Set<() => void>>();
+    vi.stubGlobal("window", {
+      addEventListener: (ev: string, fn: () => void) => {
+        (pageListeners.get(ev) ?? pageListeners.set(ev, new Set()).get(ev)!).add(fn);
+      },
+      removeEventListener: (ev: string, fn: () => void) => {
+        pageListeners.get(ev)?.delete(fn);
+      },
+      sessionStorage: { getItem: () => null, setItem: () => {} },
+    });
+    vi.stubGlobal("navigator", {
+      sendBeacon: vi.fn((url: string) => {
+        beacons.push(url);
+        return true;
+      }),
+    });
+    let catchUpDone = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") return new Promise<Response>(() => {}); // push never resolves: stays queued
+        if (!catchUpDone) {
+          catchUpDone = true;
+          return jsonResponse({ updates: [], seq: 0 });
+        }
+        return new Promise<Response>(() => {});
+      }),
+    );
+
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "beacon-post",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+    });
+    await provider.start();
+    doc.getMap("body").set("text", "queued edit"); // enqueues a push (debounced)
+
+    // The tab is closing before the debounced flush fires: the queued edit
+    // must still be delivered, via a beacon to the collab push endpoint.
+    for (const fn of pageListeners.get("pagehide") ?? []) fn();
+    expect(beacons).toContain("/api/collab/beacon-post");
+
+    provider.destroy();
+  });
 });
