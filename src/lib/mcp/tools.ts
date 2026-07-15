@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import { recordAction, type AuditEntry } from "@/lib/audit";
+import { hasActiveCoEditors } from "@/lib/collab";
 import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -150,6 +151,17 @@ function conflictResult(post: Pick<Post, "slug" | "title">, action: string) {
   return errorResult(
     `Conflict: "${post.title || post.slug}" changed before ${action}. ` +
       "Read the latest item, merge the change, then retry with its new hash.",
+  );
+}
+
+/** A raw body overwrite while people are co-editing the item in the browser
+ * would be silently discarded by the next co-editor autosave (the canonical
+ * body and the live Yjs document are separate write paths). Refuse instead of
+ * losing the write; the agent can retry once the session ends. */
+function coEditingConflictResult(post: Pick<Post, "slug" | "title">) {
+  return errorResult(
+    `"${post.title || post.slug}" is being co-edited right now. ` +
+      "Its body is owned by the live editing session; try again after it ends.",
   );
 }
 
@@ -774,6 +786,11 @@ async function executeMcpTool(
       if (!access.isOwner && input.excerpt !== undefined) {
         return errorResult("Only the owner can change an item's excerpt.");
       }
+      // Only a real body change can clobber a live co-editing session; a
+      // title/excerpt-only edit leaves the Yjs document alone.
+      if (content.body !== post.body && post.id && (await hasActiveCoEditors(post.id))) {
+        return coEditingConflictResult(post);
+      }
 
       try {
         const saved = access.isOwner
@@ -814,6 +831,11 @@ async function executeMcpTool(
       if (stale) return stale;
       const revision = mutationRevision(post);
       if (typeof revision !== "number") return revision;
+      // Appending rewrites the whole body, which a live co-editing session
+      // owns; refuse rather than have the next autosave discard it.
+      if (post.id && (await hasActiveCoEditors(post.id))) {
+        return coEditingConflictResult(post);
+      }
       const fragment = input.markdown_fragment.trim();
       const base = post.body.replace(/\s+$/, "");
       const body = base ? `${base}\n\n${fragment}` : fragment;

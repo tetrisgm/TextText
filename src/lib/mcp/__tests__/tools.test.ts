@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
   getTrashedFolders: vi.fn(),
+  hasActiveCoEditors: vi.fn(async () => false),
   importItemAssetFromUrl: vi.fn(),
   inviteScopeShare: vi.fn(),
   listItemAssetReferences: vi.fn(),
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
+vi.mock("@/lib/collab", () => ({ hasActiveCoEditors: mocks.hasActiveCoEditors }));
 vi.mock("@/lib/item-assets", () => ({
   attachItemAsset: mocks.attachItemAsset,
   importItemAssetFromUrl: mocks.importItemAssetFromUrl,
@@ -281,6 +283,56 @@ describe("MCP workspace tool adapter", () => {
         targetId: id,
       }),
     );
+  });
+
+  it("refuses a body overwrite while the item is being co-edited", async () => {
+    const id = "44444444-4444-4444-8444-444444444444";
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getPostById.mockResolvedValue({
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "Before",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    });
+    mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
+    const updateItem = registrations().find((entry) => entry.name === "update_item");
+    const result = await updateItem!.callback({ id, body: "After" }, auth(["sync"]));
+    // A live session owns the body: refuse rather than clobber, never save.
+    expect(result.isError).toBe(true);
+    expect(toolText(result)).toMatch(/co-edited/i);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+  });
+
+  it("allows a title-only edit while co-edited (does not touch the body)", async () => {
+    const id = "55555555-5555-4555-8555-555555555555";
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "Body",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    } as const;
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.savePost.mockResolvedValue({ ...post, title: "Renamed", revision: 43 });
+    mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
+    const updateItem = registrations().find((entry) => entry.name === "update_item");
+    const result = await updateItem!.callback({ id, title: "Renamed" }, auth(["sync"]));
+    expect(result.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
   it("soft-deletes through the revision-guarded Trash operation", async () => {
