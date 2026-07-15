@@ -141,12 +141,24 @@ describe("sync file PATCH", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.movePostFile).toHaveBeenCalledWith(blog.handle, postId, {
-      folderId: undefined,
-      slug: undefined,
-      title: "Changed",
-      expectedRevision: post.revision,
-    });
+    expect(mocks.movePostFile).toHaveBeenCalledWith(
+      blog.handle,
+      postId,
+      {
+        folderId: undefined,
+        slug: undefined,
+        title: "Changed",
+        expectedRevision: post.revision,
+      },
+      // The sync.patch_file audit is now folded into the move's own
+      // transaction rather than recorded as a separate best-effort write.
+      expect.objectContaining({
+        actionName: "sync.patch_file",
+        actorType: "external_agent",
+        targetType: "item",
+        targetId: postId,
+      }),
+    );
   });
 
   it("rejects a wildcard content PUT instead of accepting an unknown base", async () => {
@@ -243,13 +255,21 @@ describe("sync file PATCH", () => {
       blog.handle,
       targetFolderId,
     );
-    expect(mocks.movePostFile).toHaveBeenCalledWith(blog.handle, postId, {
-      folderId: targetFolderId,
-      slug: safeSlug,
-      title: "What??",
-      expectedRevision: post.revision,
-    });
-    expect(mocks.recordAction).toHaveBeenCalledTimes(1);
+    expect(mocks.movePostFile).toHaveBeenCalledWith(
+      blog.handle,
+      postId,
+      {
+        folderId: targetFolderId,
+        slug: safeSlug,
+        title: "What??",
+        expectedRevision: post.revision,
+      },
+      expect.objectContaining({ actionName: "sync.patch_file", targetId: postId }),
+    );
+    // The sync.patch_file audit is folded into movePostFile now; only the
+    // secondary slug-change annotation remains a separate best-effort write.
+    expect(mocks.recordAction).not.toHaveBeenCalled();
+    expect(mocks.recordSlugChanged).toHaveBeenCalledTimes(1);
     expect(mocks.revalidateBlogPaths).toHaveBeenCalledTimes(1);
   });
 });
@@ -292,12 +312,20 @@ describe("sync file DELETE", () => {
     );
 
     expect(response.status).toBe(204);
+    // The sync.delete_file audit is folded into the delete's transaction (the
+    // 4th arg), so no separate best-effort recordAction is issued.
     expect(mocks.deletePostAtomic).toHaveBeenCalledWith(
       blog.handle,
       postId,
       post.revision,
+      expect.objectContaining({
+        actionName: "sync.delete_file",
+        actorType: "external_agent",
+        targetType: "item",
+        targetId: postId,
+      }),
     );
-    expect(mocks.recordAction).toHaveBeenCalledTimes(1);
+    expect(mocks.recordAction).not.toHaveBeenCalled();
   });
 
   it("maps an atomic delete race to a stale-write response", async () => {

@@ -4,7 +4,11 @@
 
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import { recordAction, type AuditActorType } from "@/lib/audit";
+import {
+  auditInsertQuery,
+  recordAction,
+  type AuditActorType,
+} from "@/lib/audit";
 import { db } from "@/lib/db/client";
 import { blogs, collaborators, folders, posts, users } from "@/lib/db/schema";
 import {
@@ -131,20 +135,24 @@ export async function inviteScopeShare(opts: {
     )
     .limit(1);
   if (existing[0]) {
-    const updated = await db
-      .update(collaborators)
-      .set({ role })
-      .where(eq(collaborators.id, existing[0].id))
-      .returning();
+    // Atomic: the role change and its audit row commit together (batch), so a
+    // permission change is never left without provenance.
+    const [updated] = await db.batch([
+      db
+        .update(collaborators)
+        .set({ role })
+        .where(eq(collaborators.id, existing[0].id))
+        .returning(),
+      auditInsertQuery({
+        actorUserId: invitedById,
+        actorType: opts.actorType ?? "human",
+        actionName: opts.auditActionName ?? "share.invite",
+        targetType: auditTargetType(opts.scopeType),
+        targetId: opts.scopeId,
+        inputSummary: `${email} as ${role}`,
+      }),
+    ]);
     const row = updated[0];
-    await recordAction({
-      actorUserId: invitedById,
-      actorType: opts.actorType ?? "human",
-      actionName: opts.auditActionName ?? "share.invite",
-      targetType: auditTargetType(opts.scopeType),
-      targetId: opts.scopeId,
-      inputSummary: `${email} as ${role}`,
-    });
     return {
       id: row.id,
       email,
@@ -154,26 +162,29 @@ export async function inviteScopeShare(opts: {
     };
   }
 
-  const inserted = await db
-    .insert(collaborators)
-    .values({
-      scopeType: opts.scopeType,
-      scopeId: opts.scopeId,
-      invitedEmail: email,
-      userId: await emailSubUserId(email),
-      role,
-      invitedById,
-    })
-    .returning();
+  const userId = await emailSubUserId(email);
+  const [inserted] = await db.batch([
+    db
+      .insert(collaborators)
+      .values({
+        scopeType: opts.scopeType,
+        scopeId: opts.scopeId,
+        invitedEmail: email,
+        userId,
+        role,
+        invitedById,
+      })
+      .returning(),
+    auditInsertQuery({
+      actorUserId: invitedById,
+      actorType: opts.actorType ?? "human",
+      actionName: opts.auditActionName ?? "share.invite",
+      targetType: auditTargetType(opts.scopeType),
+      targetId: opts.scopeId,
+      inputSummary: `${email} as ${role}`,
+    }),
+  ]);
   const row = inserted[0];
-  await recordAction({
-    actorUserId: invitedById,
-    actorType: opts.actorType ?? "human",
-    actionName: opts.auditActionName ?? "share.invite",
-    targetType: auditTargetType(opts.scopeType),
-    targetId: opts.scopeId,
-    inputSummary: `${email} as ${role}`,
-  });
   return {
     id: row.id,
     email,
@@ -192,28 +203,31 @@ export async function updateScopeShareRole(opts: {
 } & ShareAuditContext): Promise<void> {
   if (!db) return;
   const role = cleanScopeRole(opts.scopeType, opts.role);
-  await db
-    .update(collaborators)
-    .set({ role })
-    .where(
-      and(
-        eq(collaborators.id, opts.shareId),
-        eq(collaborators.scopeType, opts.scopeType),
-        eq(collaborators.scopeId, opts.scopeId),
-        isNull(collaborators.revokedAt),
+  const actorUserId =
+    opts.actorUserId === undefined
+      ? await getUserIdBySub(opts.updatedBySub)
+      : opts.actorUserId;
+  await db.batch([
+    db
+      .update(collaborators)
+      .set({ role })
+      .where(
+        and(
+          eq(collaborators.id, opts.shareId),
+          eq(collaborators.scopeType, opts.scopeType),
+          eq(collaborators.scopeId, opts.scopeId),
+          isNull(collaborators.revokedAt),
+        ),
       ),
-    );
-  await recordAction({
-    actorUserId:
-      opts.actorUserId === undefined
-        ? await getUserIdBySub(opts.updatedBySub)
-        : opts.actorUserId,
-    actorType: opts.actorType ?? "human",
-    actionName: opts.auditActionName ?? "share.role",
-    targetType: auditTargetType(opts.scopeType),
-    targetId: opts.scopeId,
-    inputSummary: role,
-  });
+    auditInsertQuery({
+      actorUserId,
+      actorType: opts.actorType ?? "human",
+      actionName: opts.auditActionName ?? "share.role",
+      targetType: auditTargetType(opts.scopeType),
+      targetId: opts.scopeId,
+      inputSummary: role,
+    }),
+  ]);
 }
 
 export async function revokeScopeShare(
@@ -224,27 +238,30 @@ export async function revokeScopeShare(
   audit: ShareAuditContext = {},
 ): Promise<void> {
   if (!db) return;
-  await db
-    .update(collaborators)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(collaborators.id, shareId),
-        eq(collaborators.scopeType, scopeType),
-        eq(collaborators.scopeId, scopeId),
-        isNull(collaborators.revokedAt),
+  const actorUserId =
+    audit.actorUserId === undefined
+      ? await getUserIdBySub(revokedBySub)
+      : audit.actorUserId;
+  await db.batch([
+    db
+      .update(collaborators)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(collaborators.id, shareId),
+          eq(collaborators.scopeType, scopeType),
+          eq(collaborators.scopeId, scopeId),
+          isNull(collaborators.revokedAt),
+        ),
       ),
-    );
-  await recordAction({
-    actorUserId:
-      audit.actorUserId === undefined
-        ? await getUserIdBySub(revokedBySub)
-        : audit.actorUserId,
-    actorType: audit.actorType ?? "human",
-    actionName: audit.auditActionName ?? "share.revoke",
-    targetType: auditTargetType(scopeType),
-    targetId: scopeId,
-  });
+    auditInsertQuery({
+      actorUserId,
+      actorType: audit.actorType ?? "human",
+      actionName: audit.auditActionName ?? "share.revoke",
+      targetType: auditTargetType(scopeType),
+      targetId: scopeId,
+    }),
+  ]);
 }
 
 export async function listPostShares(postId: string): Promise<PostShare[]> {

@@ -42,7 +42,12 @@ import type {
   Post,
   PostType,
 } from "./content";
-import { recordAction, type AuditActorType } from "./audit";
+import {
+  auditCteFrom,
+  recordAction,
+  type AuditActorType,
+  type AuditEntry,
+} from "./audit";
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
 import {
@@ -1432,6 +1437,7 @@ export async function movePostFile(
     title?: string;
     expectedRevision?: number;
   },
+  audit?: AuditEntry,
 ): Promise<
   | { post: Post; changed: boolean; previousSlug: string }
   | null
@@ -1518,22 +1524,44 @@ export async function movePostFile(
     changes.expectedRevision !== undefined
       ? [eq(posts.revision, changes.expectedRevision)]
       : [];
+  const where = and(
+    eq(posts.id, row.id),
+    eq(posts.blogId, blogId),
+    isNull(posts.deletedAt),
+    ...guard,
+  );
   try {
-    const updated = await db
-      .update(posts)
-      .set(set)
-      .where(
-        and(
-          eq(posts.id, row.id),
-          eq(posts.blogId, blogId),
-          isNull(posts.deletedAt),
-          ...guard,
-        ),
-      )
-      .returning();
-    if (updated[0]) {
+    let movedId: string | undefined;
+    if (audit) {
+      // Atomic: the metadata move and its audit row commit in ONE neon-http
+      // transaction. The drizzle UPDATE is embedded as the CTE body so its
+      // columns/params are built by the query builder (no hand-written SQL),
+      // and the audit lands iff the guard matched a row.
+      // No parens around ${updateQuery}: drizzle renders an embedded statement
+      // already wrapped in parens, so `AS ${q}` yields the single-paren CTE body
+      // `AS (update ...)`. Wrapping it again would produce `AS ((update ...))`,
+      // which Postgres rejects as a syntax error.
+      const updateQuery = db.update(posts).set(set).where(where).returning({ id: posts.id });
+      const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
+      const result = await db.execute(sql`
+        WITH changed AS ${updateQuery}, audit AS (${auditCte})
+        SELECT id FROM changed
+      `);
+      movedId = (result.rows[0] as { id?: string } | undefined)?.id;
+    } else {
+      const updated = await db.update(posts).set(set).where(where).returning({ id: posts.id });
+      movedId = updated[0]?.id;
+    }
+    if (movedId) {
+      // Re-read the mapped row (the CTE returns raw columns; a fresh select
+      // keeps the drizzle mapping and reflects the trigger-assigned revision).
+      const [fresh] = await db
+        .select()
+        .from(posts)
+        .where(and(eq(posts.id, row.id), eq(posts.blogId, blogId)))
+        .limit(1);
       return {
-        post: mapPost(updated[0]),
+        post: mapPost(fresh ?? row),
         changed: true,
         previousSlug: row.slug,
       };
@@ -2721,22 +2749,41 @@ export async function deletePostAtomic(
   handle: string,
   id: string,
   expectedRevision: number,
+  audit?: AuditEntry,
 ): Promise<void> {
   if (!db) throw new Error("deletePostAtomic requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  const deleted = await db
-    .update(posts)
-    .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(
-      and(
-        eq(posts.id, id),
-        eq(posts.blogId, blogId),
-        isNull(posts.deletedAt),
-        eq(posts.revision, expectedRevision),
-      ),
-    )
-    .returning({ id: posts.id });
-  if (deleted[0]) return;
+  let deletedId: string | undefined;
+  if (audit) {
+    // Atomic: the soft-delete and its audit row commit in ONE neon-http
+    // transaction, so a mutated post can never be left without provenance.
+    const auditCte = auditCteFrom(audit, "changed", sql`changed.id::text`);
+    const result = await db.execute(sql`
+      WITH changed AS (
+        UPDATE ${posts} SET deleted_at = now(), updated_at = now()
+        WHERE id = ${id} AND blog_id = ${blogId}
+          AND deleted_at IS NULL AND revision = ${expectedRevision}
+        RETURNING id
+      ), audit AS (${auditCte})
+      SELECT id FROM changed
+    `);
+    deletedId = (result.rows[0] as { id?: string } | undefined)?.id;
+  } else {
+    const deleted = await db
+      .update(posts)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(posts.id, id),
+          eq(posts.blogId, blogId),
+          isNull(posts.deletedAt),
+          eq(posts.revision, expectedRevision),
+        ),
+      )
+      .returning({ id: posts.id });
+    deletedId = deleted[0]?.id;
+  }
+  if (deletedId) return;
   // Nothing matched: either the post is already gone (idempotent success) or it
   // is still live at a newer revision (a concurrent edit) which must not be
   // silently deleted.

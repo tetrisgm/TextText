@@ -216,21 +216,22 @@ export async function DELETE(request: Request, { params }: Props) {
     return syncError(409, "This item has no version and cannot be safely deleted");
   }
   try {
-    await deletePostAtomic(blog.handle, postId, post.revision);
+    // The audit row is folded into the delete's own transaction, so a deleted
+    // post can never be left without provenance.
+    await deletePostAtomic(blog.handle, postId, post.revision, {
+      actorUserId: userId,
+      actorType: "external_agent",
+      actionName: "sync.delete_file",
+      targetType: "item",
+      targetId: postId,
+      inputSummary: post.title,
+    });
   } catch (error) {
     if (error instanceof PostConflictError) {
       return syncError(412, "The post changed since this file was fetched");
     }
     throw error;
   }
-  await recordAction({
-    actorUserId: userId,
-    actorType: "external_agent",
-    actionName: "sync.delete_file",
-    targetType: "item",
-    targetId: postId,
-    inputSummary: post.title,
-  });
   revalidateBlogPaths(blog, [post.slug]);
   return new Response(null, { status: 204 });
 }
@@ -304,12 +305,27 @@ export async function PATCH(request: Request, { params }: Props) {
     // PUT racing this move/rename cannot be clobbered by a stale full-row save.
     // The base revision guards the update so a concurrent metadata change
     // conflicts (412) instead of being overwritten.
-    const result = await movePostFile(blog.handle, postId, {
-      folderId: targetFolderId,
-      slug,
-      title,
-      expectedRevision: post.revision,
-    });
+    // The sync.patch_file audit is folded into the move's own transaction (it
+    // lands iff the guarded update actually changed a row). The secondary
+    // slug-change annotation stays a best-effort follow-up.
+    const result = await movePostFile(
+      blog.handle,
+      postId,
+      {
+        folderId: targetFolderId,
+        slug,
+        title,
+        expectedRevision: post.revision,
+      },
+      {
+        actorUserId: userId,
+        actorType: "external_agent",
+        actionName: "sync.patch_file",
+        targetType: "item",
+        targetId: postId,
+        inputSummary: title ?? post.title,
+      },
+    );
     if (!result) return syncError(404, "Post not found");
     const current = result.post;
     if (!result.changed) {
@@ -321,14 +337,6 @@ export async function PATCH(request: Request, { params }: Props) {
       targetId: postId,
       oldSlug: result.previousSlug,
       newSlug: current.slug,
-    });
-    await recordAction({
-      actorUserId: userId,
-      actorType: "external_agent",
-      actionName: "sync.patch_file",
-      targetType: "item",
-      targetId: postId,
-      inputSummary: current.title,
     });
     revalidateBlogPaths(blog, [post.slug, current.slug]);
     return Response.json({ item: syncManifestItem(blog, current) });

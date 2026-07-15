@@ -2,7 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
-import { recordAction } from "@/lib/audit";
+import { recordAction, type AuditEntry } from "@/lib/audit";
 import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -178,6 +178,26 @@ async function auditMcp(
     targetId,
     inputSummary: summary,
   });
+}
+
+/** Build (rather than write) the audit entry, to fold it atomically into a
+ * store mutation's own transaction instead of recording it as a follow-up. */
+function mcpAuditEntry(
+  extra: ToolContext,
+  actionName: string,
+  targetType: ToolTargetType,
+  targetId: string | undefined,
+  summary?: string,
+): AuditEntry {
+  const userId = extra.authInfo?.extra?.userId;
+  return {
+    actorUserId: typeof userId === "string" ? userId : null,
+    actorType: "external_agent",
+    actionName,
+    targetType,
+    targetId,
+    inputSummary: summary,
+  };
 }
 
 function isToolResult<T extends object>(
@@ -848,19 +868,18 @@ async function executeMcpTool(
       const revision = mutationRevision(resolved.post);
       if (typeof revision !== "number") return revision;
       try {
-        const moved = await movePostFile(resolved.blog.handle, input.id, {
-          folderId: folder.id,
-          expectedRevision: revision,
-        });
+        const moved = await movePostFile(
+          resolved.blog.handle,
+          input.id,
+          {
+            folderId: folder.id,
+            expectedRevision: revision,
+          },
+          mcpAuditEntry(extra, "mcp.move_item", "item", input.id, folder.path),
+        );
         if (!moved) return errorResult("Item not found.");
         if (moved.changed) {
-          await auditMcp(
-            extra,
-            "mcp.move_item",
-            "item",
-            moved.post.id,
-            folder.path,
-          );
+          // The mcp.move_item audit was written atomically inside movePostFile.
           revalidateBlogPaths(resolved.blog, [moved.post.slug]);
         }
         return jsonResult({
@@ -892,14 +911,9 @@ async function executeMcpTool(
           resolved.blog.handle,
           input.id,
           revision,
+          mcpAuditEntry(extra, "mcp.delete_item", "item", input.id, resolved.post.title),
         );
-        await auditMcp(
-          extra,
-          "mcp.delete_item",
-          "item",
-          input.id,
-          resolved.post.title,
-        );
+        // The mcp.delete_item audit was written atomically inside deletePostAtomic.
         revalidateBlogPaths(resolved.blog, [resolved.post.slug]);
         return jsonResult({ ok: true, id: input.id, trashed: true });
       } catch (error) {

@@ -306,12 +306,20 @@ describe("MCP workspace tool adapter", () => {
       id,
       trashed: true,
     });
-    expect(mocks.deletePostAtomic).toHaveBeenCalledWith("local", id, 12);
-    expect(mocks.recordAction).toHaveBeenCalledWith(
+    // The mcp.delete_item audit is folded into the delete's own transaction
+    // (the 4th arg), not recorded as a separate best-effort write.
+    expect(mocks.deletePostAtomic).toHaveBeenCalledWith(
+      "local",
+      id,
+      12,
       expect.objectContaining({
         actionName: "mcp.delete_item",
+        actorType: "external_agent",
         targetId: id,
       }),
+    );
+    expect(mocks.recordAction).not.toHaveBeenCalledWith(
+      expect.objectContaining({ actionName: "mcp.delete_item" }),
     );
   });
 
