@@ -72,10 +72,16 @@ import {
   ASSISTANT_SIDEBAR_MAX_WIDTH,
   ASSISTANT_SIDEBAR_MIN_WIDTH,
   AssistantSidebar,
-  type AssistantAttachment,
   type AssistantSidebarState,
 } from "@/components/workspace/assistant";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
+import { ASSISTANT_ATTACHMENT_ACCEPT } from "@/components/workspace/assistant/attachments";
+import { useAssistantComposerDraft } from "@/components/workspace/assistant/composer-store";
+import {
+  createAssistantConfirmationController,
+  type AssistantConfirmationRequest,
+} from "@/components/workspace/assistant/confirmation";
+import { resolveWorkspaceAssistantContext } from "@/components/workspace/assistant/context";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import { isVideoFile } from "@/lib/content";
@@ -3429,10 +3435,12 @@ function LocalWorkspaceShell({
   const [deletingTarget, setDeletingTarget] = useState(false);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences();
-  const [assistantComposer, setAssistantComposer] = useState("");
-  const [assistantAttachments, setAssistantAttachments] = useState<
-    AssistantAttachment[]
-  >([]);
+  const [assistantConfirmation, setAssistantConfirmation] =
+    useState<AssistantConfirmationRequest | null>(null);
+  const assistantConfirmationController = useMemo(
+    () => createAssistantConfirmationController(setAssistantConfirmation),
+    [],
+  );
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
 
@@ -3444,41 +3452,14 @@ function LocalWorkspaceShell({
     (next: number) => setWorkspaceAssistantWidth(next),
     [],
   );
-  // Layer 1 of the provider ladder: the on-device model through the Mac
-  // app's bridge, with agent tools executing against this pool. Each context
-  // owns its own transcript: items key by id (read and edit share a thread);
-  // containers key by their URL, which stays stable even where the URL to
-  // view-level mapping differs between initial load and history navigation.
-  const assistantContextKey = useMemo(() => {
-    if (view.level === "post" || view.level === "edit") {
-      return `item:${view.postId}`;
-    }
-    if (typeof window === "undefined") return "place:root";
-    const params = new URLSearchParams(window.location.search);
-    const folder = params.get("folder");
-    return `place:${window.location.pathname}${folder ? `?folder=${folder}` : ""}`;
-  }, [view]);
-  const assistant = useNativeAssistant({
-    handle: displayPool.blog.handle,
-    contextKey: assistantContextKey,
-    getPool: () => displayPoolRef.current,
-    getView: () => {
-      const current = viewRef.current;
-      if (current.level === "root") return { level: "root" };
-      if (current.level === "post" || current.level === "edit") {
-        return {
-          level: current.level,
-          folderPath: current.folderPath,
-          postId: current.postId,
-        };
-      }
-      return { level: "section", folderPath: current.folderPath };
-    },
-  });
-
   useEffect(() => {
     displayPoolRef.current = displayPool;
   }, [displayPool]);
+
+  useEffect(
+    () => () => assistantConfirmationController.dispose(),
+    [assistantConfirmationController],
+  );
 
   useEffect(() => {
     viewRef.current = view;
@@ -4014,6 +3995,42 @@ function LocalWorkspaceShell({
     ? itemIdentity.stableKey(effectiveSelectedPostId)
     : null;
 
+  // The selected row is the assistant's context on folder/root pages; an open
+  // item remains authoritative in reader/editor views. This is all local UI
+  // state and does not navigate, reload, or refresh the workspace.
+  const assistantTarget = useMemo(
+    () =>
+      resolveWorkspaceAssistantContext({
+        homePath,
+        pool: displayPool,
+        selectedFolderPath: effectiveSelectedSectionPath,
+        selectedPostId: effectiveSelectedPostId,
+        view,
+      }),
+    [
+      displayPool,
+      effectiveSelectedPostId,
+      effectiveSelectedSectionPath,
+      homePath,
+      view,
+    ],
+  );
+  const getAssistantPool = useCallback(() => displayPoolRef.current, []);
+  const getAssistantView = useCallback(
+    () => assistantTarget.view,
+    [assistantTarget],
+  );
+  const assistant = useNativeAssistant({
+    handle: displayPool.blog.handle,
+    contextKey: assistantTarget.contextKey,
+    getPool: getAssistantPool,
+    getView: getAssistantView,
+    confirmDestructive: assistantConfirmationController.request,
+  });
+  const assistantComposer = useAssistantComposerDraft(
+    `${displayPool.blog.handle}:${assistantTarget.contextKey}`,
+  );
+
   useEffect(() => {
     if (!mounted) return;
     const selectedPostForScroll = effectiveSelectedPostIdentity
@@ -4531,25 +4548,6 @@ function LocalWorkspaceShell({
 
   const atRoot = view.level === "root";
   const effectiveSidebarCollapsed = sidebarCollapsed;
-  const assistantContext = useMemo(() => {
-    if (view.level === "post" || view.level === "edit") {
-      const post = findPoolPostById(displayPool, view.postId);
-      return {
-        label: post?.title.trim() || "Untitled",
-        detail: view.level === "edit" ? "Editing" : "Post",
-      };
-    }
-    if (view.level === "section") {
-      const folder = displayPool.folders.find(
-        (candidate) => candidate.path === view.folderPath,
-      );
-      return { label: folder?.name ?? view.folderPath, detail: "Folder" };
-    }
-    if (view.level === "trash") return { label: "Trash" };
-    if (view.level === "shared") return { label: "Shared with me" };
-    return { label: displayPool.blog.name, detail: "Workspace" };
-  }, [displayPool, view]);
-
   return (
     <div
       className={`post-editor-shell applecms has-sidebar ${className}${
@@ -4599,29 +4597,17 @@ function LocalWorkspaceShell({
         width={assistantWidth}
         onWidthChange={changeAssistantWidth}
         layout="overlay"
-        context={assistantContext}
-        composerValue={assistantComposer}
-        onComposerChange={setAssistantComposer}
-        attachments={assistantAttachments}
-        onFilesSelected={(files) => {
-          setAssistantAttachments((current) => [
-            ...current,
-            ...files.map((file) => ({
-              id: `${file.name}:${file.size}:${file.lastModified}`,
-              name: file.name,
-              size: file.size,
-            })),
-          ]);
-        }}
+        context={assistantTarget.chip}
+        composerValue={assistantComposer.draft.text}
+        onComposerChange={assistantComposer.setText}
+        attachments={assistantComposer.draft.attachments}
+        onFilesSelected={assistantComposer.addFiles}
         onRemoveAttachment={(attachment) =>
-          setAssistantAttachments((current) =>
-            current.filter((candidate) => candidate.id !== attachment.id),
-          )
+          assistantComposer.removeAttachment(attachment.id)
         }
         onSubmit={(submission) => {
-          setAssistantComposer("");
-          setAssistantAttachments([]);
-          void assistant.submit(submission.text);
+          assistantComposer.clear();
+          void assistant.submit(submission.text, submission.attachments);
         }}
         submitting={assistant.submitting}
         launcherBusy={assistant.runningJobs > 0}
@@ -4630,7 +4616,7 @@ function LocalWorkspaceShell({
             ? "Ask or act, on this Mac"
             : "Ask about this page"
         }
-        accept="image/*,.pdf,.txt,.md"
+        accept={ASSISTANT_ATTACHMENT_ACCEPT}
       >
         <AssistantConversation
           capabilities={assistant.capabilities}
@@ -4654,6 +4640,14 @@ function LocalWorkspaceShell({
           onToggleSkill={assistant.toggleSkill}
         />
       </AssistantSidebar>
+      <ConfirmationDialog
+        open={Boolean(assistantConfirmation)}
+        title="Confirm assistant action"
+        message={assistantConfirmation?.description ?? ""}
+        confirmLabel="Continue"
+        onCancel={assistantConfirmationController.cancel}
+        onConfirm={assistantConfirmationController.confirm}
+      />
       <ConfirmationDialog
         open={Boolean(pendingDeletePostId)}
         title="Move this item to Trash?"

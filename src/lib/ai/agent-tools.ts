@@ -11,7 +11,7 @@
 //   const tools = createWorkspaceAgentTools({
 //     handle,
 //     getPool: () => poolRef.current,
-//     confirmDestructive: async (what) => window.confirm(what),
+//     confirmDestructive: (what) => assistantConfirmation.request(what),
 //   });
 //   useEffect(() => registerNativeAgentTools(tools.executor), [tools]);
 //   ...
@@ -75,8 +75,8 @@ export type WorkspaceAgentToolsOptions = {
   getPool: () => WorkspacePoolPayload | null;
   /**
    * Gate for delete_item and set_item_status. Return false to cancel; the
-   * model receives the cancellation and reports it. Omit to allow directly
-   * (the Swift instructions already forbid unrequested destructive calls).
+   * model receives the cancellation and reports it. Omit to deny destructive
+   * calls; the UI must provide an explicit confirmation surface.
    */
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
@@ -208,7 +208,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
   }
 
   async function confirmOrCancel(description: string): Promise<boolean> {
-    if (!confirmDestructive) return true;
+    if (!confirmDestructive) return false;
     return await confirmDestructive(description);
   }
 
@@ -421,6 +421,15 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       }
       if (view.level === "section") {
         return `The user is looking at the "${view.folderPath ?? ""}" folder.`;
+      }
+      if (view.level === "trash") {
+        return "The user is looking at Trash.";
+      }
+      if (view.level === "shared") {
+        return "The user is looking at items shared with them.";
+      }
+      if (!view.postId) {
+        return "The user is looking at the workspace.";
       }
       const post = view.postId
         ? findPoolPostById(pool(), view.postId)

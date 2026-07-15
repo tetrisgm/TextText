@@ -1,8 +1,7 @@
 // Typed client for the Mac app's on-device AI bridge (NativeAI.swift). The
 // bridge exists only inside Write.app on the workspace origin; on the plain
-// web these helpers report unavailable and the assistant falls back to a
-// configured cloud provider. Provider ladder: native on-device first (free,
-// private, offline), then bring-your-own cloud, then external agents via MCP.
+// web these helpers report unavailable. The in-app assistant uses this bridge
+// directly and does not route its requests through a cloud provider or MCP.
 
 export type NativeAICapabilities = {
   available: boolean;

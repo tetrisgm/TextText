@@ -1,0 +1,134 @@
+import { describe, expect, it } from "vitest";
+import { resolveWorkspaceAssistantContext } from "@/components/workspace/assistant/context";
+import type {
+  WorkspacePoolPayload,
+  WorkspacePoolPost,
+} from "@/lib/pool/types";
+
+function post(patch: Partial<WorkspacePoolPost> = {}): WorkspacePoolPost {
+  return {
+    id: "post-1",
+    blogId: "blog-1",
+    folderId: "notes",
+    type: "note",
+    slug: "selected-note",
+    title: "Selected note",
+    status: "draft",
+    pinned: false,
+    createdAt: "2026-07-14T12:00:00.000Z",
+    updatedAt: "2026-07-14T12:00:00.000Z",
+    ...patch,
+  };
+}
+
+function pool(posts: WorkspacePoolPost[] = [post()]): WorkspacePoolPayload {
+  return {
+    version: 1,
+    blogId: "blog-1",
+    fetchedAt: "2026-07-14T12:00:00.000Z",
+    blog: {
+      handle: "local",
+      name: "Writer's desk",
+      author: "Writer",
+      tagline: "",
+      cardStyle: "cover",
+      homeLayout: "grid",
+    },
+    folders: [
+      { id: "blog", name: "Blog", path: "blog", mode: "blog", position: 0 },
+      {
+        id: "notes",
+        name: "Notes",
+        path: "notes",
+        mode: "notes",
+        position: 1,
+      },
+    ],
+    posts,
+    counts: {},
+  };
+}
+
+describe("workspace assistant context", () => {
+  it("uses the selected folder at the workspace root", () => {
+    expect(
+      resolveWorkspaceAssistantContext({
+        homePath: "/t/local",
+        pool: pool(),
+        selectedFolderPath: "notes",
+        selectedPostId: null,
+        view: { level: "root" },
+      }),
+    ).toEqual({
+      chip: { kind: "folder", label: "Notes", detail: "Folder" },
+      contextKey: "place:/t/local?folder=notes",
+      view: { level: "section", folderPath: "notes" },
+    });
+  });
+
+  it("uses the selected item while its folder remains open", () => {
+    expect(
+      resolveWorkspaceAssistantContext({
+        homePath: "/t/local",
+        pool: pool(),
+        selectedFolderPath: "notes",
+        selectedPostId: "post-1",
+        view: { level: "section", folderPath: "notes" },
+      }),
+    ).toEqual({
+      chip: {
+        kind: "item",
+        label: "Selected note",
+        detail: "Selected item",
+      },
+      contextKey: "item:post-1",
+      view: { level: "post", folderPath: "notes", postId: "post-1" },
+    });
+  });
+
+  it("keeps an open editor item authoritative and stable across renames", () => {
+    const result = resolveWorkspaceAssistantContext({
+      homePath: "/t/local",
+      pool: pool([post({ title: "Renamed locally" })]),
+      selectedFolderPath: "blog",
+      selectedPostId: null,
+      view: { level: "edit", folderPath: "notes", postId: "post-1" },
+    });
+
+    expect(result.contextKey).toBe("item:post-1");
+    expect(result.chip).toEqual({
+      kind: "item",
+      label: "Renamed locally",
+      detail: "Editing",
+    });
+    expect(result.view.level).toBe("edit");
+  });
+
+  it("falls back to the current place when there is no selectable item", () => {
+    const emptyFolder = resolveWorkspaceAssistantContext({
+      homePath: "/t/local",
+      pool: pool([]),
+      selectedFolderPath: null,
+      selectedPostId: null,
+      view: { level: "section", folderPath: "notes" },
+    });
+    const trash = resolveWorkspaceAssistantContext({
+      homePath: "/t/local",
+      pool: pool([]),
+      selectedFolderPath: null,
+      selectedPostId: null,
+      view: { level: "trash", folderPath: "trash" },
+    });
+
+    expect(emptyFolder.chip.label).toBe("Notes");
+    expect(emptyFolder.view).toEqual({
+      level: "section",
+      folderPath: "notes",
+    });
+    expect(trash).toMatchObject({
+      chip: { label: "Trash" },
+      contextKey: "place:/t/local?folder=trash",
+      view: { level: "trash", folderPath: "trash" },
+    });
+  });
+});

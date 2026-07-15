@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type {
   ChangeEvent,
   CSSProperties,
@@ -10,7 +10,10 @@ import type {
   ReactNode,
 } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import type { AssistantContext } from "./context";
 import styles from "./AssistantSidebar.module.css";
+
+export type { AssistantContext } from "./context";
 
 export const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 360;
 export const ASSISTANT_SIDEBAR_MIN_WIDTH = 280;
@@ -20,15 +23,12 @@ export type AssistantSidebarState = "hidden" | "open" | "pinned";
 
 export type AssistantSidebarLayout = "auto" | "inline" | "overlay";
 
-export type AssistantContext = {
-  label: string;
-  detail?: string;
-};
-
 export type AssistantAttachment = {
+  file?: File;
   id: string;
   name: string;
   size?: number;
+  type?: string;
 };
 
 export type AssistantComposerSubmission = {
@@ -92,6 +92,62 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+export function resolveAssistantSidebarDimensions({
+  availableWidth,
+  maxWidth,
+  minWidth,
+  width,
+}: {
+  availableWidth?: number | null;
+  maxWidth: number;
+  minWidth: number;
+  width: number;
+}) {
+  const configuredMin = Math.round(
+    positiveNumber(minWidth, ASSISTANT_SIDEBAR_MIN_WIDTH),
+  );
+  const configuredMax = Math.max(
+    configuredMin,
+    Math.round(positiveNumber(maxWidth, ASSISTANT_SIDEBAR_MAX_WIDTH)),
+  );
+  const viewportLimit =
+    availableWidth !== null &&
+    availableWidth !== undefined &&
+    Number.isFinite(availableWidth) &&
+    availableWidth > 0
+      ? Math.max(1, Math.floor(availableWidth))
+      : null;
+  const resolvedMinWidth = viewportLimit
+    ? Math.min(configuredMin, viewportLimit)
+    : configuredMin;
+  const resolvedMaxWidth = viewportLimit
+    ? Math.max(resolvedMinWidth, Math.min(configuredMax, viewportLimit))
+    : configuredMax;
+  const resolvedWidth = Math.round(
+    clamp(
+      positiveNumber(width, ASSISTANT_SIDEBAR_DEFAULT_WIDTH),
+      resolvedMinWidth,
+      resolvedMaxWidth,
+    ),
+  );
+
+  return { resolvedMaxWidth, resolvedMinWidth, resolvedWidth };
+}
+
+export function isAssistantToggleShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
+  >,
+): boolean {
+  return (
+    !event.altKey &&
+    event.shiftKey &&
+    (event.metaKey || event.ctrlKey) &&
+    event.key.toLowerCase() === "a"
+  );
+}
+
 function formatFileSize(value: number | undefined): string | null {
   if (value === undefined || !Number.isFinite(value) || value < 0) return null;
   if (value < 1024) return `${Math.round(value)} B`;
@@ -152,6 +208,10 @@ export function AssistantSidebar({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previousStateRef = useRef(state);
+  const lastVisibleStateRef = useRef<Exclude<AssistantSidebarState, "hidden">>(
+    state === "pinned" ? "pinned" : "open",
+  );
+  const focusOnOpenRef = useRef(true);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const [resizing, setResizing] = useState(false);
   // Hover-peek: approaching the collapsed right rail reveals the panel as an
@@ -159,21 +219,15 @@ export function AssistantSidebar({
   // retracts when the pointer leaves, unless focus moved inside, in which case
   // it promotes to a persistent "open" so a mouse-out mid-edit is not jarring.
   const [peeking, setPeeking] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null);
 
-  const resolvedMinWidth = Math.round(
-    positiveNumber(minWidth, ASSISTANT_SIDEBAR_MIN_WIDTH),
-  );
-  const resolvedMaxWidth = Math.max(
-    resolvedMinWidth,
-    Math.round(positiveNumber(maxWidth, ASSISTANT_SIDEBAR_MAX_WIDTH)),
-  );
-  const resolvedWidth = Math.round(
-    clamp(
-      positiveNumber(width, ASSISTANT_SIDEBAR_DEFAULT_WIDTH),
-      resolvedMinWidth,
-      resolvedMaxWidth,
-    ),
-  );
+  const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
+    resolveAssistantSidebarDimensions({
+      availableWidth: viewportWidth,
+      maxWidth,
+      minWidth,
+      width,
+    });
   const resolvedResizeStep = positiveNumber(resizeStep, 16);
   const visible = state !== "hidden";
   const pinned = state === "pinned";
@@ -194,23 +248,60 @@ export function AssistantSidebar({
     "--assistant-sidebar-max-width": `${resolvedMaxWidth}px`,
   } as CSSProperties;
 
-  useEscapeLayer(visible, "Assistant", () => onStateChange("hidden"));
+  const showAssistant = useCallback(() => {
+    focusOnOpenRef.current = true;
+    setPeeking(false);
+    onStateChange(lastVisibleStateRef.current);
+  }, [onStateChange]);
+
+  const hideAssistant = useCallback(() => {
+    setPeeking(false);
+    onStateChange("hidden");
+  }, [onStateChange]);
+
+  const toggleAssistant = useCallback(() => {
+    if (revealed) hideAssistant();
+    else showAssistant();
+  }, [hideAssistant, revealed, showAssistant]);
+
+  useEscapeLayer(revealed, "Assistant", () => {
+    if (peekingHidden) setPeeking(false);
+    else hideAssistant();
+  });
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    updateViewportWidth();
+    window.addEventListener("resize", updateViewportWidth);
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
+
+  useEffect(() => {
+    const onToggleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isAssistantToggleShortcut(event)) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      event.preventDefault();
+      toggleAssistant();
+    };
+    window.addEventListener("keydown", onToggleShortcut, true);
+    return () => window.removeEventListener("keydown", onToggleShortcut, true);
+  }, [toggleAssistant]);
+
+  useEffect(() => {
+    if (visible) lastVisibleStateRef.current = pinned ? "pinned" : "open";
+  }, [pinned, visible]);
 
   useEffect(() => {
     const previousState = previousStateRef.current;
     previousStateRef.current = state;
 
     if (previousState === "hidden" && visible) {
-      closeButtonRef.current?.focus();
+      if (focusOnOpenRef.current) closeButtonRef.current?.focus();
+      focusOnOpenRef.current = true;
     } else if (previousState !== "hidden" && !visible) {
       launcherRef.current?.focus();
     }
   }, [state, visible]);
-
-  useEffect(() => {
-    // A peek only exists while hidden; any explicit state change clears it.
-    if (state !== "hidden" && peeking) setPeeking(false);
-  }, [state, peeking]);
 
   const handleRootPointerEnter = () => {
     if (state === "hidden") setPeeking(true);
@@ -221,6 +312,7 @@ export function AssistantSidebar({
     // user clicked into the composer): promote to a persistent open instead of
     // yanking it away mid-interaction.
     if (panelRef.current?.contains(document.activeElement)) {
+      focusOnOpenRef.current = false;
       onStateChange("open");
     }
     setPeeking(false);
@@ -314,10 +406,18 @@ export function AssistantSidebar({
   };
 
   const handlePanelKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Escape" || !visible) return;
+    if (event.defaultPrevented || event.key !== "Escape" || !revealed) return;
     event.preventDefault();
     event.stopPropagation();
-    onStateChange("hidden");
+    if (peekingHidden) setPeeking(false);
+    else hideAssistant();
+  };
+
+  const handlePanelFocus = () => {
+    if (!peekingHidden) return;
+    focusOnOpenRef.current = false;
+    setPeeking(false);
+    onStateChange("open");
   };
 
   return (
@@ -339,11 +439,12 @@ export function AssistantSidebar({
           type="button"
           aria-controls={panelId}
           aria-expanded="false"
+          aria-keyshortcuts="Meta+Shift+A Control+Shift+A"
           aria-label={
             launcherBusy ? "Open assistant (working)" : "Open assistant"
           }
           title={launcherBusy ? "Assistant is working" : "Open assistant"}
-          onClick={() => onStateChange("open")}
+          onClick={showAssistant}
         >
           <SidebarIcon />
           {launcherBusy && (
@@ -360,6 +461,7 @@ export function AssistantSidebar({
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : titleId}
         inert={revealed ? undefined : true}
+        onFocusCapture={handlePanelFocus}
         onKeyDown={handlePanelKeyDown}
       >
         <div
@@ -402,8 +504,9 @@ export function AssistantSidebar({
                 className={styles.iconButton}
                 type="button"
                 aria-label="Hide assistant"
+                aria-keyshortcuts="Meta+Shift+A Control+Shift+A"
                 title="Hide assistant"
-                onClick={() => onStateChange("hidden")}
+                onClick={hideAssistant}
               >
                 <CloseIcon />
               </button>
@@ -425,7 +528,13 @@ export function AssistantSidebar({
               }
             >
               <span className={styles.contextIcon} aria-hidden="true">
-                <DocumentIcon />
+                {context.kind === "folder" ? (
+                  <FolderIcon />
+                ) : context.kind === "workspace" ? (
+                  <WorkspaceIcon />
+                ) : (
+                  <DocumentIcon />
+                )}
               </span>
               <span className={styles.contextLabel}>{context.label}</span>
               {context.detail && (
@@ -607,6 +716,47 @@ function DocumentIcon() {
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.25 4.25h4l1.15 1.4h6.35v7.1H2.25v-8.5Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M2.5 6h11"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
+function WorkspaceIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect
+        x="2.25"
+        y="2.25"
+        width="11.5"
+        height="11.5"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M6 2.75v10.5M6.5 6h6.75"
+        stroke="currentColor"
+        strokeLinecap="round"
         strokeWidth="1.3"
       />
     </svg>

@@ -13,11 +13,17 @@
 // SUBMITTED it, even if the user navigates elsewhere while the model works.
 //
 // When the bridge or model is unavailable (plain web, old macOS, Apple
-// Intelligence off) the transcript explains the fallback path instead of
-// failing silently. The BYO-cloud rung slots in here later: same submit
-// entry point, different transport.
+// Intelligence off) the transcript explains why instead of silently routing
+// workspace content to another provider.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   hasNativeAI,
   nativeAgent,
@@ -42,6 +48,14 @@ import {
 } from "@/lib/ai/skills";
 import { findPoolPostById } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
+import type { AssistantAttachment } from "./AssistantSidebar";
+import {
+  buildNativeAssistantPrompt,
+  formatAssistantSubmission,
+} from "./attachments";
+import type { AssistantViewSnapshot } from "./context";
+
+export type { AssistantViewSnapshot } from "./context";
 
 export type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
 
@@ -49,12 +63,6 @@ export type AssistantMessage = {
   id: string;
   role: AssistantMessageRole;
   text: string;
-};
-
-export type AssistantViewSnapshot = {
-  level?: string;
-  folderPath?: string;
-  postId?: string;
 };
 
 type UseNativeAssistantOptions = {
@@ -147,7 +155,7 @@ function unavailableExplanation(
   capabilities: NativeAICapabilities | null,
 ): string {
   if (!hasNativeAI()) {
-    return "The on-device assistant runs inside the Write app for Mac. Download it from the download page, or connect your own AI from Connect.";
+    return "The on-device assistant is available inside Write for Mac.";
   }
   switch (capabilities?.reason) {
     case "appleIntelligenceNotEnabled":
@@ -155,11 +163,11 @@ function unavailableExplanation(
     case "modelNotReady":
       return "The on-device model is still downloading. Try again in a few minutes.";
     case "deviceNotEligible":
-      return "This Mac does not support Apple Intelligence. Connect your own AI from Connect instead.";
+      return "This Mac does not support Apple Intelligence.";
     case "osTooOld":
-      return "On-device AI needs macOS 26 or later. Connect your own AI from Connect instead.";
+      return "On-device AI needs macOS 26 or later.";
     default:
-      return "On-device AI is unavailable right now. Connect your own AI from Connect instead.";
+      return "On-device AI is unavailable right now.";
   }
 }
 
@@ -174,14 +182,12 @@ export function useNativeAssistant({
     useState<NativeAICapabilities | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
-  const confirmRef = useRef(confirmDestructive);
   const threadKey = `${handle}:${contextKey}`;
 
   useEffect(() => {
     getPoolRef.current = getPool;
     getViewRef.current = getView;
-    confirmRef.current = confirmDestructive;
-  }, [confirmDestructive, getPool, getView]);
+  }, [getPool, getView]);
 
   const messages = useSyncExternalStore(
     subscribe,
@@ -198,13 +204,11 @@ export function useNativeAssistant({
     () =>
       createWorkspaceAgentTools({
         handle,
-        getPool: () => getPoolRef.current(),
+        getPool,
         confirmDestructive: (description) =>
-          confirmRef.current
-            ? confirmRef.current(description)
-            : window.confirm(description),
+          confirmDestructive ? confirmDestructive(description) : false,
       }),
-    [handle],
+    [confirmDestructive, getPool, handle],
   );
 
   // Registration is deliberately sticky (no unregister on unmount): a job
@@ -244,20 +248,29 @@ export function useNativeAssistant({
   }, []);
 
   const submit = useCallback(
-    async (text: string) => {
+    async (
+      text: string,
+      attachments: readonly AssistantAttachment[] = [],
+    ) => {
       const prompt = text.trim();
       // One request per thread at a time; different threads run in parallel.
       // Replies and job updates land in the thread that asked, even if the
       // user navigates away while the model works.
       const thread = threadKey;
-      if (!prompt || busyThreads.has(thread)) return;
-      appendToThread(thread, "user", prompt);
+      if (
+        (!prompt && attachments.length === 0) ||
+        busyThreads.has(thread)
+      ) {
+        return;
+      }
+      const displayPrompt = formatAssistantSubmission(prompt, attachments);
+      appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
       const jobId = startAssistantJob({
         threadKey: thread,
         contextKey,
         contextLabel: contextLabel(),
-        prompt,
+        prompt: displayPrompt,
       });
       try {
         const current = await nativeAICapabilities();
@@ -267,11 +280,17 @@ export function useNativeAssistant({
           updateAssistantJob(jobId, { status: "done" });
           return;
         }
+        const prepared = await buildNativeAssistantPrompt(prompt, attachments);
         const context = tools.describeContext(getViewRef.current());
-        const { instructions } = composeInstructions(handle, prompt, context);
-        const reply = await nativeAgent(prompt, {
+        const { instructions } = composeInstructions(
+          handle,
+          prepared.prompt,
+          context,
+        );
+        const reply = await nativeAgent(prepared.prompt, {
           context,
           instructions,
+          tools: tools.toolNames,
           onEvent: (event) => {
             if (event.type === "tool") {
               const activity =
