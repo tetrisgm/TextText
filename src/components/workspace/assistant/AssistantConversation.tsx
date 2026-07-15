@@ -5,6 +5,7 @@ import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { AssistantSkill } from "@/lib/ai/skills";
 import type { NativeAICapabilities } from "@/lib/ai/native";
+import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import styles from "./AssistantConversation.module.css";
 
 // The transcript inside the assistant sidebar: user and assistant turns,
@@ -16,22 +17,33 @@ export function AssistantConversation({
   capabilities,
   jobs,
   messages,
+  quickActions,
   skills,
   submitting,
+  onApplyProposal,
   onInstallSkill,
   onOpenJob,
+  onQuickAction,
   onRemoveSkill,
   onToggleSkill,
+  onUndoProposal,
 }: {
   capabilities: NativeAICapabilities | null;
   jobs?: AssistantJob[];
   messages: AssistantMessage[];
+  quickActions?: ReadonlyArray<{
+    id: NativeQuickActionId;
+    label: string;
+  }>;
   skills?: Array<AssistantSkill & { enabled: boolean; source?: string }>;
   submitting: boolean;
+  onApplyProposal?: (messageId: string) => Promise<void> | void;
   onInstallSkill?: (reference: string) => Promise<unknown>;
   onOpenJob?: (job: AssistantJob) => void;
+  onQuickAction?: (action: NativeQuickActionId) => Promise<void> | void;
   onRemoveSkill?: (skillId: string) => void;
   onToggleSkill?: (skillId: string, enabled: boolean) => void;
+  onUndoProposal?: (messageId: string) => Promise<void> | void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const [installValue, setInstallValue] = useState("");
@@ -61,6 +73,22 @@ export function AssistantConversation({
   };
 
   const visibleJobs = (jobs ?? []).slice(0, 6);
+  const quickActionBar =
+    quickActions && quickActions.length > 0 ? (
+      <div className={styles.quickActions} aria-label="On-device actions">
+        {quickActions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            className={styles.quickAction}
+            disabled={submitting}
+            onClick={() => void onQuickAction?.(action.id)}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+    ) : null;
   const jobsStrip =
     visibleJobs.length > 0 ? (
       <div className={styles.jobs} aria-label="Assistant jobs">
@@ -167,6 +195,7 @@ export function AssistantConversation({
     return (
       <div className={styles.empty}>
         {jobsStrip}
+        {quickActionBar}
         <p className={styles.emptyTitle}>
           {capabilities?.available
             ? "Private, on this Mac"
@@ -190,6 +219,7 @@ export function AssistantConversation({
   return (
     <div className={styles.thread} aria-live="polite">
       {jobsStrip}
+      {quickActionBar}
       {skillsBlock && (
         <div className={styles.skillsToggleRow}>
           <button
@@ -208,6 +238,53 @@ export function AssistantConversation({
           return (
             <div key={message.id} className={styles.progress}>
               {message.text}
+            </div>
+          );
+        }
+        if (message.proposal) {
+          const proposal = message.proposal;
+          const changing =
+            proposal.status === "applying" || proposal.status === "undoing";
+          const applied =
+            proposal.status === "applied" || proposal.status === "undoing";
+          return (
+            <div key={message.id} className={styles.proposal}>
+              <p className={styles.proposalLabel}>{proposal.label}</p>
+              <div className={styles.proposalPreview}>{proposal.after}</div>
+              {proposal.note && (
+                <p className={styles.proposalNote}>{proposal.note}</p>
+              )}
+              <div className={styles.proposalActions}>
+                {applied ? (
+                  <button
+                    type="button"
+                    className={styles.proposalSecondary}
+                    disabled={changing}
+                    onClick={() => void onUndoProposal?.(message.id)}
+                  >
+                    {proposal.status === "undoing" ? "Undoing" : "Undo"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.proposalPrimary}
+                    disabled={!proposal.canApply || changing}
+                    onClick={() => void onApplyProposal?.(message.id)}
+                  >
+                    {proposal.status === "undone"
+                      ? "Apply again"
+                      : changing
+                        ? "Applying"
+                        : "Apply"}
+                  </button>
+                )}
+                {proposal.status === "undone" && (
+                  <span className={styles.proposalStatus}>Undone</span>
+                )}
+                {proposal.syncPending && (
+                  <span className={styles.proposalStatus}>Sync pending</span>
+                )}
+              </div>
             </div>
           );
         }

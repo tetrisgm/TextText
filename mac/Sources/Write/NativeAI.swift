@@ -362,6 +362,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             properties: [
                 ("id", "The item id", false, nil),
                 ("title", "New title", true, nil),
+                ("excerpt", "New short description", true, nil),
                 ("body", "New full markdown body", true, nil),
             ]),
         .init(

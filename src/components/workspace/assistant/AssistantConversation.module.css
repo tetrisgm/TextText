@@ -37,6 +37,34 @@
   padding: 4px 0 8px;
 }
 
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.quickAction {
+  min-height: 28px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  padding: 5px 9px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.quickAction:hover:not(:disabled) {
+  background: var(--ac-fill-3);
+}
+
+.quickAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .userTurn,
 .assistantTurn,
 .errorTurn {
@@ -75,6 +103,84 @@
   color: var(--ac-label-2);
   font: 550 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
   letter-spacing: 0;
+}
+
+.proposal {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 360px);
+  justify-self: start;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+}
+
+.proposalLabel,
+.proposalNote {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.proposalLabel {
+  font: 650 var(--ac-fs-footnote) / 1.25 var(--ac-font-text);
+}
+
+.proposalPreview {
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 7px;
+  background: var(--ac-fill-5, var(--ac-fill-4));
+  font: 500 var(--ac-fs-footnote) / 1.42 var(--ac-font-text);
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.proposalNote,
+.proposalStatus {
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
+}
+
+.proposalActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proposalPrimary,
+.proposalSecondary {
+  min-height: 28px;
+  border-radius: 7px;
+  padding: 5px 11px;
+  font: 650 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.proposalPrimary {
+  border: 1px solid transparent;
+  background: var(--ac-accent);
+  color: var(--ac-accent-contrast, white);
+}
+
+.proposalSecondary {
+  border: 1px solid var(--ac-hairline);
+  background: transparent;
+  color: var(--ac-label);
+}
+
+.proposalPrimary:disabled,
+.proposalSecondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.proposalStatus {
+  margin-left: auto;
 }
 
 .jobs {

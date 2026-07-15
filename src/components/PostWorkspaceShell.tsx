@@ -83,6 +83,13 @@ import {
 } from "@/components/workspace/assistant/confirmation";
 import { resolveWorkspaceAssistantContext } from "@/components/workspace/assistant/context";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
+import {
+  patchOpenWorkspaceItemDraft,
+  readOpenWorkspaceItemDraft,
+  registerOpenWorkspaceItemDraft,
+  type WorkspaceItemTextPatch,
+  type WorkspaceItemTextSnapshot,
+} from "@/lib/ai/workspace-item-draft";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import { isVideoFile } from "@/lib/content";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
@@ -100,6 +107,7 @@ import {
   addPost,
   acknowledgePost,
   acknowledgePostBody,
+  ensurePostBody,
   getCachedWorkspacePostBody,
   getWorkspacePost,
   markPostDirty,
@@ -2715,6 +2723,18 @@ function LocalWorkspacePostEditor({
     [pool.blogId, poolPost.id, post.slug],
   );
 
+  useEffect(() => {
+    if (!active) return;
+    return registerOpenWorkspaceItemDraft(poolPost.id, {
+      read: () => ({
+        title: draftRef.current.title,
+        excerpt: draftRef.current.excerpt,
+        body: draftRef.current.body,
+      }),
+      apply: (patch) => updateDraft(patch),
+    });
+  }, [active, poolPost.id, updateDraft]);
+
   const enqueueSave = useCallback(
     (
       nextDraft: DraftState,
@@ -4020,11 +4040,127 @@ function LocalWorkspaceShell({
     () => assistantTarget.view,
     [assistantTarget],
   );
+  const readAssistantItemText = useCallback(
+    async (postId: string): Promise<WorkspaceItemTextSnapshot> => {
+      const openDraft = readOpenWorkspaceItemDraft(postId);
+      if (openDraft) return openDraft;
+
+      const currentPool = displayPoolRef.current;
+      const poolPost = findPoolPostById(currentPool, postId);
+      if (!poolPost) throw new Error("This item is no longer available.");
+
+      let body = getCachedWorkspacePostBody(currentPool.blogId, postId)?.body;
+      if (body === undefined) {
+        await ensurePostBody(currentPool.blogId, postId);
+        body =
+          getCachedWorkspacePostBody(currentPool.blogId, postId)?.body ??
+          currentPool.initialBodies?.find(
+            (candidate) => candidate.postId === postId,
+          )?.body ??
+          "";
+      }
+      return {
+        title: poolPost.title,
+        excerpt: poolPost.excerpt ?? "",
+        body,
+      };
+    },
+    [],
+  );
+  const applyAssistantItemPatch = useCallback(
+    async (postId: string, patch: WorkspaceItemTextPatch) => {
+      if (patchOpenWorkspaceItemDraft(postId, patch)) {
+        return { synced: true, queued: true };
+      }
+
+      const currentPool = displayPoolRef.current;
+      const poolPost = findPoolPostById(currentPool, postId);
+      if (!poolPost) throw new Error("This item is no longer available.");
+      const currentText = await readAssistantItemText(postId);
+      const existingDraft = localWorkspaceDraftSessions.get(postId);
+      const draft =
+        existingDraft ??
+        initialDraft(postFromPoolPost(poolPost, currentText.body));
+      const nextDraft = { ...draft, ...patch };
+      if (
+        patch.title?.trim() &&
+        isPlaceholderSlug(nextDraft.slug)
+      ) {
+        const usedSlugs = currentPool.posts
+          .filter((candidate) => candidate.id !== postId)
+          .map((candidate) => candidate.slug);
+        nextDraft.slug = uniqueSlug(
+          slugify(patch.title, "post"),
+          usedSlugs,
+        );
+      }
+
+      const baseUpdatedAt =
+        localWorkspaceServerRevisions.get(postId) ?? poolPost.updatedAt;
+      const requestedKey = payloadKey(
+        payloadFor(postId, nextDraft, poolPost.slug, baseUpdatedAt),
+      );
+      localWorkspaceDraftSessions.set(postId, nextDraft);
+      localWorkspacePendingSaveIds.add(postId);
+      markPostDirty(postId);
+      const requestedRevision = bumpLocalDraftRevision(postId);
+      updatePost(postId, {
+        ...mergeDraftIntoWorkspacePost(poolPost, nextDraft),
+        updatedAt: new Date().toISOString(),
+      });
+      if (patch.body !== undefined) {
+        updatePostBody(currentPool.blogId, postId, nextDraft.body);
+      }
+      persistLocalWorkspaceDraft(
+        currentPool.blogId,
+        postId,
+        nextDraft,
+        requestedKey,
+        baseUpdatedAt,
+      );
+
+      try {
+        const saved = await saveEditablePostAction(
+          currentPool.blog.handle,
+          payloadFor(postId, nextDraft, poolPost.slug, baseUpdatedAt),
+        );
+        if (saved.updatedAt) {
+          localWorkspaceServerRevisions.set(postId, saved.updatedAt);
+        }
+        if (localDraftRevision(postId) === requestedRevision) {
+          localWorkspacePendingSaveIds.delete(postId);
+          localWorkspaceDraftSessions.delete(postId);
+          acknowledgePost(postId);
+          applySavedWorkspacePost(saved, currentPool.blogId);
+          acknowledgePostBody(
+            currentPool.blogId,
+            postId,
+            saved.body,
+            saved.updatedAt,
+          );
+          void deletePersistedWorkspaceDraft(
+            currentPool.blogId,
+            postId,
+            requestedKey,
+          );
+        }
+        return { synced: true, queued: false };
+      } catch {
+        // The local draft remains authoritative and persisted. Opening the
+        // item resumes the editor's normal retry path instead of rolling the
+        // user's accepted change back to stale server state.
+        return { synced: false, queued: true };
+      }
+    },
+    [readAssistantItemText],
+  );
   const assistant = useNativeAssistant({
     handle: displayPool.blog.handle,
     contextKey: assistantTarget.contextKey,
     getPool: getAssistantPool,
     getView: getAssistantView,
+    readItemText: readAssistantItemText,
+    applyItemPatch: applyAssistantItemPatch,
     confirmDestructive: assistantConfirmationController.request,
   });
   const assistantComposer = useAssistantComposerDraft(
@@ -4622,8 +4758,10 @@ function LocalWorkspaceShell({
           capabilities={assistant.capabilities}
           jobs={assistant.jobs}
           messages={assistant.messages}
+          quickActions={assistant.quickActions}
           skills={assistant.skills}
           submitting={assistant.submitting}
+          onApplyProposal={assistant.applyProposal}
           onOpenJob={(job) => {
             // Jump to the context the job reports into: items open directly,
             // places navigate by their stored URL.
@@ -4636,8 +4774,10 @@ function LocalWorkspaceShell({
             }
           }}
           onInstallSkill={assistant.addSkill}
+          onQuickAction={assistant.runQuickAction}
           onRemoveSkill={assistant.deleteSkill}
           onToggleSkill={assistant.toggleSkill}
+          onUndoProposal={assistant.undoProposal}
         />
       </AssistantSidebar>
       <ConfirmationDialog

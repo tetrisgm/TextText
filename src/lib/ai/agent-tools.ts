@@ -41,7 +41,8 @@ import {
   ensurePostBody,
   getCachedWorkspacePostBody,
   movePost,
-  removePost,
+  movePostToTrash,
+  restorePostFromTrash,
   updatePost,
 } from "@/lib/pool/store";
 import {
@@ -55,6 +56,10 @@ import type {
   WorkspacePoolPost,
 } from "@/lib/pool/types";
 import type { NativeAgentToolExecutor } from "@/lib/ai/native";
+import type {
+  WorkspaceItemTextPatch,
+  WorkspaceItemTextSnapshot,
+} from "@/lib/ai/workspace-item-draft";
 
 export const WORKSPACE_AGENT_TOOL_NAMES = [
   "list_folders",
@@ -73,6 +78,11 @@ type ToolArgs = Record<string, unknown>;
 export type WorkspaceAgentToolsOptions = {
   handle: string;
   getPool: () => WorkspacePoolPayload | null;
+  readItemText?: (postId: string) => Promise<WorkspaceItemTextSnapshot>;
+  applyItemPatch?: (
+    postId: string,
+    patch: WorkspaceItemTextPatch,
+  ) => Promise<unknown> | unknown;
   /**
    * Gate for delete_item and set_item_status. Return false to cancel; the
    * model receives the cancellation and reports it. Omit to deny destructive
@@ -193,7 +203,13 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     postId?: string;
   }) => string;
 } {
-  const { handle, getPool, confirmDestructive } = options;
+  const {
+    handle,
+    getPool,
+    readItemText,
+    applyItemPatch,
+    confirmDestructive,
+  } = options;
 
   function pool(): WorkspacePoolPayload {
     const current = getPool();
@@ -214,12 +230,28 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
 
   async function saveDraftPatch(
     poolPost: WorkspacePoolPost,
-    patch: { title?: string; body?: string },
+    patch: WorkspaceItemTextPatch,
   ) {
-    const body = await readBody(pool().blogId, poolPost.id);
-    const post = postFromPoolPost(poolPost, patch.body ?? body);
+    const current = readItemText
+      ? await readItemText(poolPost.id)
+      : {
+          title: poolPost.title,
+          excerpt: poolPost.excerpt ?? "",
+          body: await readBody(pool().blogId, poolPost.id),
+        };
+    if (applyItemPatch) {
+      await applyItemPatch(poolPost.id, patch);
+      return {
+        ...postFromPoolPost(poolPost, patch.body ?? current.body),
+        title: patch.title ?? current.title,
+        excerpt: patch.excerpt ?? current.excerpt,
+      };
+    }
+
+    const post = postFromPoolPost(poolPost, patch.body ?? current.body);
     const draft = initialDraft(post);
     if (patch.title !== undefined) draft.title = patch.title;
+    if (patch.excerpt !== undefined) draft.excerpt = patch.excerpt;
     if (patch.body !== undefined) draft.body = patch.body;
     // Same behavior as the editor's title blur: a placeholder slug follows
     // the title, so agent-created posts get real slugs, not untitled-x URLs.
@@ -273,14 +305,21 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       case "read_item": {
         const id = str(args, "id");
         const post = requirePost(id);
-        const body = await readBody(pool().blogId, id);
+        const current = readItemText
+          ? await readItemText(id)
+          : {
+              title: post.title,
+              excerpt: post.excerpt ?? "",
+              body: await readBody(pool().blogId, id),
+            };
         return {
           id,
-          title: post.title,
+          title: current.title,
+          excerpt: current.excerpt,
           type: post.type,
           status: post.status,
           folder: folderPathForPoolPost(pool(), post),
-          body: capped(body, 6_000),
+          body: capped(current.body, 6_000),
         };
       }
 
@@ -327,11 +366,16 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       case "update_item": {
         const id = str(args, "id");
         const title = optionalStr(args, "title");
+        const excerpt = optionalStr(args, "excerpt");
         const body = optionalStr(args, "body");
-        if (title === undefined && body === undefined) {
-          throw new Error("Nothing to update: pass title or body");
+        if (title === undefined && excerpt === undefined && body === undefined) {
+          throw new Error("Nothing to update: pass title, excerpt, or body");
         }
-        const saved = await saveDraftPatch(requirePost(id), { title, body });
+        const saved = await saveDraftPatch(requirePost(id), {
+          title,
+          excerpt,
+          body,
+        });
         return { ok: true, id, title: saved.title };
       }
 
@@ -339,7 +383,9 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         const id = str(args, "id");
         const markdown = str(args, "markdown");
         const post = requirePost(id);
-        const body = await readBody(pool().blogId, id);
+        const body = readItemText
+          ? (await readItemText(id)).body
+          : await readBody(pool().blogId, id);
         const joined = body.trim()
           ? `${body.replace(/\s+$/, "")}\n\n${markdown}`
           : markdown;
@@ -373,8 +419,13 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           `Delete "${post.title || "Untitled"}"?`,
         );
         if (!allowed) return { ok: false, cancelled: true };
-        await deleteEditablePostAction(handle, id);
-        removePost(id);
+        movePostToTrash(id);
+        try {
+          await deleteEditablePostAction(handle, id);
+        } catch (error) {
+          restorePostFromTrash(id);
+          throw error;
+        }
         return { ok: true, id, deleted: true };
       }
 

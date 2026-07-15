@@ -16,6 +16,12 @@ import { createAssistantConfirmationController } from "@/components/workspace/as
 import type { AssistantAttachment } from "@/components/workspace/assistant/AssistantSidebar";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import { nativeAgent } from "@/lib/ai/native";
+import { runNativeQuickAction } from "@/lib/ai/quick-actions";
+import {
+  patchOpenWorkspaceItemDraft,
+  readOpenWorkspaceItemDraft,
+  registerOpenWorkspaceItemDraft,
+} from "@/lib/ai/workspace-item-draft";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 
 afterEach(() => {
@@ -116,6 +122,97 @@ describe("native assistant submissions", () => {
       }),
     );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("creates an applyable title preview through the on-device bridge", async () => {
+    const request = vi.fn(async (op: string) => {
+      expect(op).toBe("title");
+      return { title: "A clearer title", truncated: false };
+    });
+    vi.stubGlobal("window", { writeNativeAI: { request } });
+
+    await expect(
+      runNativeQuickAction("title", {
+        title: "Draft",
+        excerpt: "",
+        body: "A useful local document.",
+      }),
+    ).resolves.toEqual({
+      kind: "proposal",
+      field: "title",
+      label: "Suggested title",
+      before: "Draft",
+      after: "A clearer title",
+      canApply: true,
+    });
+  });
+
+  it("never offers to replace a body with a truncated rewrite", async () => {
+    const request = vi.fn(async () => ({
+      text: "Partial rewrite",
+      truncated: true,
+    }));
+    vi.stubGlobal("window", { writeNativeAI: { request } });
+
+    const result = await runNativeQuickAction("rewrite", {
+      title: "Draft",
+      excerpt: "",
+      body: "A long document.",
+    });
+
+    expect(result).toMatchObject({
+      kind: "proposal",
+      field: "body",
+      after: "Partial rewrite",
+      canApply: false,
+    });
+  });
+});
+
+describe("assistant local-first item edits", () => {
+  it("reads and patches the open editor draft synchronously", () => {
+    let current = { title: "Draft", excerpt: "", body: "Local body" };
+    const unregister = registerOpenWorkspaceItemDraft("post-1", {
+      read: () => current,
+      apply: (patch) => {
+        current = { ...current, ...patch };
+      },
+    });
+
+    expect(readOpenWorkspaceItemDraft("post-1")?.body).toBe("Local body");
+    expect(
+      patchOpenWorkspaceItemDraft("post-1", { title: "Changed now" }),
+    ).toBe(true);
+    expect(readOpenWorkspaceItemDraft("post-1")?.title).toBe("Changed now");
+    unregister();
+    expect(readOpenWorkspaceItemDraft("post-1")).toBeNull();
+  });
+
+  it("routes agent updates through the live draft command when provided", async () => {
+    const applyItemPatch = vi.fn(async () => ({ synced: true }));
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: pool,
+      readItemText: async () => ({
+        title: "Draft",
+        excerpt: "Old excerpt",
+        body: "Local body",
+      }),
+      applyItemPatch,
+    });
+
+    await expect(
+      tools.executor("update_item", {
+        id: "post-1",
+        title: "Local title",
+        excerpt: "Local excerpt",
+      }),
+    ).resolves.toMatchObject({ ok: true, id: "post-1", title: "Local title" });
+    expect(applyItemPatch).toHaveBeenCalledWith("post-1", {
+      title: "Local title",
+      excerpt: "Local excerpt",
+      body: undefined,
+    });
   });
 });
 

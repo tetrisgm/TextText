@@ -33,6 +33,16 @@ import {
 } from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
+  NATIVE_QUICK_ACTIONS,
+  runNativeQuickAction,
+  type NativeQuickActionField,
+  type NativeQuickActionId,
+} from "@/lib/ai/quick-actions";
+import type {
+  WorkspaceItemTextPatch,
+  WorkspaceItemTextSnapshot,
+} from "@/lib/ai/workspace-item-draft";
+import {
   assistantJobs,
   runningAssistantJobCount,
   startAssistantJob,
@@ -59,10 +69,23 @@ export type { AssistantViewSnapshot } from "./context";
 
 export type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
 
+export type AssistantProposal = {
+  itemId: string;
+  field: NativeQuickActionField;
+  label: string;
+  before: string;
+  after: string;
+  canApply: boolean;
+  note?: string;
+  status: "pending" | "applying" | "applied" | "undoing" | "undone";
+  syncPending?: boolean;
+};
+
 export type AssistantMessage = {
   id: string;
   role: AssistantMessageRole;
   text: string;
+  proposal?: AssistantProposal;
 };
 
 type UseNativeAssistantOptions = {
@@ -70,6 +93,11 @@ type UseNativeAssistantOptions = {
   contextKey: string;
   getPool: () => WorkspacePoolPayload | null;
   getView: () => AssistantViewSnapshot;
+  readItemText: (postId: string) => Promise<WorkspaceItemTextSnapshot>;
+  applyItemPatch: (
+    postId: string,
+    patch: WorkspaceItemTextPatch,
+  ) => Promise<unknown> | unknown;
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
 
@@ -124,16 +152,34 @@ function appendToThread(
   threadKey: string,
   role: AssistantMessageRole,
   text: string,
+  proposal?: AssistantProposal,
 ) {
   const next = [
     ...threadFor(threadKey),
-    { id: nextMessageId(), role, text },
+    { id: nextMessageId(), role, text, proposal },
   ].slice(-MAX_MESSAGES_PER_THREAD);
   transcripts.set(threadKey, next);
   try {
     sessionStorage.setItem(storageKey(threadKey), JSON.stringify(next));
   } catch {
     // Quota or private mode: the in-memory thread still works.
+  }
+  notify();
+}
+
+function updateThreadMessage(
+  threadKey: string,
+  messageId: string,
+  update: (message: AssistantMessage) => AssistantMessage,
+) {
+  const next = threadFor(threadKey).map((message) =>
+    message.id === messageId ? update(message) : message,
+  );
+  transcripts.set(threadKey, next);
+  try {
+    sessionStorage.setItem(storageKey(threadKey), JSON.stringify(next));
+  } catch {
+    // The in-memory transcript remains authoritative for this session.
   }
   notify();
 }
@@ -176,18 +222,24 @@ export function useNativeAssistant({
   contextKey,
   getPool,
   getView,
+  readItemText,
+  applyItemPatch,
   confirmDestructive,
 }: UseNativeAssistantOptions) {
   const [capabilities, setCapabilities] =
     useState<NativeAICapabilities | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
+  const readItemTextRef = useRef(readItemText);
+  const applyItemPatchRef = useRef(applyItemPatch);
   const threadKey = `${handle}:${contextKey}`;
 
   useEffect(() => {
     getPoolRef.current = getPool;
     getViewRef.current = getView;
-  }, [getPool, getView]);
+    readItemTextRef.current = readItemText;
+    applyItemPatchRef.current = applyItemPatch;
+  }, [applyItemPatch, getPool, getView, readItemText]);
 
   const messages = useSyncExternalStore(
     subscribe,
@@ -205,10 +257,12 @@ export function useNativeAssistant({
       createWorkspaceAgentTools({
         handle,
         getPool,
+        readItemText,
+        applyItemPatch,
         confirmDestructive: (description) =>
           confirmDestructive ? confirmDestructive(description) : false,
       }),
-    [confirmDestructive, getPool, handle],
+    [applyItemPatch, confirmDestructive, getPool, handle, readItemText],
   );
 
   // Registration is deliberately sticky (no unregister on unmount): a job
@@ -318,6 +372,143 @@ export function useNativeAssistant({
     [contextKey, contextLabel, handle, threadKey, tools],
   );
 
+  const runQuickAction = useCallback(
+    async (action: NativeQuickActionId) => {
+      const thread = threadKey;
+      if (busyThreads.has(thread)) return;
+      const view = getViewRef.current();
+      if (!view.postId) return;
+      const actionLabel =
+        NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
+          ?.label ?? action;
+      appendToThread(thread, "user", actionLabel);
+      setThreadBusy(thread, true);
+      try {
+        const current = await nativeAICapabilities();
+        setCapabilities(current);
+        if (!current.available) {
+          appendToThread(thread, "assistant", unavailableExplanation(current));
+          return;
+        }
+        const item = await readItemTextRef.current(view.postId);
+        const result = await runNativeQuickAction(action, item);
+        if (result.kind === "response") {
+          appendToThread(thread, "assistant", result.text || "Done.");
+          return;
+        }
+        appendToThread(thread, "assistant", result.label, {
+          itemId: view.postId,
+          field: result.field,
+          label: result.label,
+          before: result.before,
+          after: result.after,
+          canApply: result.canApply,
+          note: result.note,
+          status: "pending",
+        });
+      } catch (error) {
+        appendToThread(
+          thread,
+          "error",
+          error instanceof Error && error.message
+            ? error.message
+            : "The on-device action could not finish.",
+        );
+      } finally {
+        setThreadBusy(thread, false);
+      }
+    },
+    [threadKey],
+  );
+
+  const applyProposalValue = useCallback(
+    async (messageId: string, direction: "apply" | "undo") => {
+      const message = threadFor(threadKey).find(
+        (candidate) => candidate.id === messageId,
+      );
+      const proposal = message?.proposal;
+      if (!message || !proposal || !proposal.canApply) return;
+      if (
+        (direction === "apply" &&
+          proposal.status !== "pending" &&
+          proposal.status !== "undone") ||
+        (direction === "undo" && proposal.status !== "applied")
+      ) {
+        return;
+      }
+      const expected = direction === "apply" ? proposal.before : proposal.after;
+      const value = direction === "apply" ? proposal.after : proposal.before;
+      const current = await readItemTextRef.current(proposal.itemId);
+      if (current[proposal.field] !== expected) {
+        appendToThread(
+          threadKey,
+          "error",
+          "This item changed after the preview. Run the action again.",
+        );
+        return;
+      }
+
+      updateThreadMessage(threadKey, messageId, (candidate) => ({
+        ...candidate,
+        proposal: candidate.proposal
+          ? {
+              ...candidate.proposal,
+              status: direction === "apply" ? "applying" : "undoing",
+            }
+          : undefined,
+      }));
+      try {
+        const result = await applyItemPatchRef.current(proposal.itemId, {
+          [proposal.field]: value,
+        });
+        const syncPending =
+          typeof result === "object" &&
+          result !== null &&
+          "synced" in result &&
+          (result as { synced?: unknown }).synced === false;
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          proposal: candidate.proposal
+            ? {
+                ...candidate.proposal,
+                status: direction === "apply" ? "applied" : "undone",
+                syncPending,
+              }
+            : undefined,
+        }));
+      } catch (error) {
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          proposal: candidate.proposal
+            ? {
+                ...candidate.proposal,
+                status: direction === "apply" ? "pending" : "applied",
+              }
+            : undefined,
+        }));
+        appendToThread(
+          threadKey,
+          "error",
+          error instanceof Error && error.message
+            ? error.message
+            : "The change could not be applied.",
+        );
+      }
+    },
+    [threadKey],
+  );
+
+  const applyProposal = useCallback(
+    (messageId: string) => applyProposalValue(messageId, "apply"),
+    [applyProposalValue],
+  );
+  const undoProposal = useCallback(
+    (messageId: string) => applyProposalValue(messageId, "undo"),
+    [applyProposalValue],
+  );
+
+  const quickActions = getView().postId ? [...NATIVE_QUICK_ACTIONS] : [];
+
   // Skill toggles for the sidebar; a plain version counter re-reads
   // localStorage-backed state after each change.
   const [skillsVersion, setSkillsVersion] = useState(0);
@@ -363,14 +554,18 @@ export function useNativeAssistant({
 
   return {
     addSkill,
+    applyProposal,
     capabilities,
     deleteSkill,
     jobs,
     messages,
+    quickActions,
+    runQuickAction,
     runningJobs,
     skills,
     submit,
     submitting,
     toggleSkill,
+    undoProposal,
   };
 }
