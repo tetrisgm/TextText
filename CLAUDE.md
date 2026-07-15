@@ -51,9 +51,9 @@ portfolio this was extracted from; it stays its own thing).
 
 ## Deploy
 
-Vercel (Neon Postgres + Blob wired via env). ALWAYS ship the latest verified
-work straight to production and keep the Mac app (which loads prod) on it. Do
-not hold verified work on a preview or ask "should I ship this"; push to prod
-as soon as it is built and verified. Ramine evaluates on production, so
-anything not shipped does not exist for him. Only genuinely prohibited or
-irreversible-external actions pause for a check.
+Vercel (Neon Postgres + Blob wired via env). Work directly on `main`; do not
+leave product work on feature branches. Ramine decides when a version is ready
+to release. At that point, ship the exact clean and verified `main` commit with
+the owner-facing command, update production and the installed Mac app, and
+verify that source, public artifacts, website, appcast, and installed build all
+match. Never release from a temporary subagent branch or worktree.

@@ -4,6 +4,25 @@
 This version has breaking changes. APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Main-only workflow (binding)
+
+- `main` is the only durable development branch and the only release source for
+  this repository. Ordinary work happens directly in the main worktree.
+- Temporary branches or worktrees may be used only for isolated subagents. The
+  parent agent must review and integrate their useful changes into `main`, run
+  final verification on `main`, and remove those temporary refs before calling
+  the task complete.
+- Never leave completed work only in a subagent branch. If work cannot be
+  integrated safely, provide an explicit handoff with its branch, worktree,
+  commit, files, tests, and blocker.
+- Before a final response, verify `git status`, `git worktree list`, and branches
+  not merged into `main`. Report the main commit, cleanliness, remaining
+  temporary refs, and release state.
+- Releases happen only from clean, verified `main`, after the owner says the
+  version is ready or asks to ship. Use the one-command ship workflow and leave
+  the remote source, public artifacts, update feed, and installed app on the
+  same source version.
+
 # AI approach (binding)
 
 Full architecture: docs/ai-sidebar-architecture.md. The short contract every
