@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     .insert(appHealthReports)
     .values({
       id: report.id,
-      userId: identity.sub,
+      userId: identity.userId,
       installationId: report.installationId,
       appIdentifier: report.appIdentifier,
       appVersion: report.appVersion,
