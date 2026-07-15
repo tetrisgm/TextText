@@ -26,6 +26,8 @@ export type McpItemEntry = {
   date?: string;
   createdAt?: string;
   updatedAt?: string;
+  /** monotonic store revision used by guarded mutations */
+  revision?: number;
   /** the same file over HTTP, on the sync API */
   file?: string;
   /** sha256 hex of the rendered markdown file; the if_match_hash currency */
@@ -100,6 +102,7 @@ export function itemEntry(blog: Blog, post: Post): McpItemEntry {
     ...(post.date ? { date: post.date } : {}),
     ...(post.createdAt ? { createdAt: post.createdAt } : {}),
     ...(post.updatedAt ? { updatedAt: post.updatedAt } : {}),
+    ...(post.revision !== undefined ? { revision: post.revision } : {}),
     ...(post.id ? { file: syncFileUrl(post.id) } : {}),
     hash: renderItemFile(blog, post).hash,
   };

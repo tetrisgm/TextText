@@ -1,34 +1,38 @@
 "use client";
 
-// The page-side executor for on-device agent tool calls (see native.ts).
-// Each tool maps onto the SAME pool store mutations and server actions the
-// UI and command palette use, so agent edits are optimistic, synced, and
-// audited exactly like human edits, and the model can never do anything the
-// signed-in page could not.
-//
-// Turnkey wiring (the assistant sidebar does this once on mount):
-//
-//   const tools = createWorkspaceAgentTools({
-//     handle,
-//     getPool: () => poolRef.current,
-//     confirmDestructive: (what) => assistantConfirmation.request(what),
-//   });
-//   useEffect(() => registerNativeAgentTools(tools.executor), [tools]);
-//   ...
-//   const reply = await nativeAgent(promptText, {
-//     context: tools.describeContext(view),
-//     onEvent: (event) => setBusyTool(event.name),
-//   });
-
 import {
+  createSubfolderAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
   movePostToFolderAction,
+  renameFolderAction,
+  restoreEditablePostAction,
   saveEditablePostAction,
   setEditablePostStatusAction,
+  toggleEditablePostPinnedAction,
 } from "@/app/editor/actions";
+import {
+  WORKSPACE_FOLDER_MODES,
+  WORKSPACE_SCOPE_CAPABILITIES,
+  WORKSPACE_TOOL_DEFINITIONS,
+  WORKSPACE_TOOL_NAMES,
+  isWorkspaceToolName,
+  parseWorkspaceToolInput,
+} from "@/lib/ai/tools";
+import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
+import type { NativeAgentToolExecutor } from "@/lib/ai/native";
+import type {
+  WorkspaceItemTextPatch,
+  WorkspaceItemTextSnapshot,
+} from "@/lib/ai/workspace-item-draft";
 import { isPrivatePostType } from "@/lib/content";
 import type { Post, PostType } from "@/lib/content";
+import {
+  folderModeForPostType,
+  itemKindForPostType,
+  parsePostMarkdownFile,
+  postTypeForItemKind,
+} from "@/lib/markdown-files";
 import {
   initialDraft,
   isPlaceholderSlug,
@@ -43,6 +47,8 @@ import {
   movePost,
   movePostToTrash,
   restorePostFromTrash,
+  seedWorkspacePool,
+  updateFolder,
   updatePost,
 } from "@/lib/pool/store";
 import {
@@ -55,23 +61,21 @@ import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
-import type { NativeAgentToolExecutor } from "@/lib/ai/native";
-import type {
-  WorkspaceItemTextPatch,
-  WorkspaceItemTextSnapshot,
-} from "@/lib/ai/workspace-item-draft";
 
-export const WORKSPACE_AGENT_TOOL_NAMES = [
-  "list_folders",
-  "list_items",
-  "read_item",
-  "create_item",
-  "update_item",
-  "append_to_item",
-  "move_item",
-  "delete_item",
-  "set_item_status",
-] as const;
+export const WORKSPACE_AGENT_TOOL_NAMES = WORKSPACE_TOOL_NAMES;
+
+export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map((name) => {
+  const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+  return Object.freeze({
+    name,
+    title: definition.title,
+    description: definition.description,
+    inputSchema: definition.jsonSchema,
+    mutability: definition.mutability,
+    confirmation: definition.confirmation,
+    annotations: definition.annotations,
+  });
+});
 
 type ToolArgs = Record<string, unknown>;
 
@@ -83,25 +87,10 @@ export type WorkspaceAgentToolsOptions = {
     postId: string,
     patch: WorkspaceItemTextPatch,
   ) => Promise<unknown> | unknown;
-  /**
-   * Gate for delete_item and set_item_status. Return false to cancel; the
-   * model receives the cancellation and reports it. Omit to deny destructive
-   * calls; the UI must provide an explicit confirmation surface.
-   */
+  /** Required for soft deletion and audience-changing restore/status calls. */
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
 
-function str(args: ToolArgs, key: string): string {
-  const value = args[key];
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`Missing ${key}`);
-  }
-  return value.trim();
-}
-
-// Small on-device models occasionally emit glitched argument tokens (for
-// example a folder of "blog}<ctrl45>..."). Folder values are a closed set,
-// so recover the intended path instead of failing the whole request.
 function normalizeFolderPath(
   raw: string,
   folders: Array<{ path: string }>,
@@ -118,19 +107,44 @@ function normalizeFolderPath(
   return prefix?.path ?? raw;
 }
 
-function optionalStr(args: ToolArgs, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+function normalizeLegacyNativeArgs(
+  name: WorkspaceToolName,
+  args: ToolArgs,
+  folders: Array<{ path: string }>,
+): ToolArgs {
+  const normalized = { ...args };
+  if (
+    (name === "list_items" || name === "create_item" || name === "move_item") &&
+    normalized.folder_path === undefined &&
+    typeof normalized.folder === "string"
+  ) {
+    normalized.folder_path = normalizeFolderPath(normalized.folder, folders);
+  }
+  if (
+    name === "append_to_item" &&
+    normalized.markdown_fragment === undefined &&
+    typeof normalized.markdown === "string"
+  ) {
+    normalized.markdown_fragment = normalized.markdown;
+  }
+  delete normalized.folder;
+  if (name === "append_to_item") delete normalized.markdown;
+  return normalized;
 }
 
 function capped(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}...` : value;
 }
 
-function poolPostFromPost(
-  post: Post,
-  blogId: string,
-): WorkspacePoolPost | null {
+function itemKind(type: PostType) {
+  return itemKindForPostType(type);
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null {
   if (!post.id) return null;
   return {
     id: post.id,
@@ -162,10 +176,6 @@ function poolPostFromPost(
   };
 }
 
-// Deterministic idempotency for create_item within one agent request: if the
-// model asks to create the same title in the same folder twice under one
-// request tag (small models sometimes redo the last item), return the first
-// result instead of creating a duplicate.
 const createdByRequest = new Map<string, Map<string, unknown>>();
 const CREATED_REQUEST_LIMIT = 8;
 
@@ -194,9 +204,21 @@ async function readBody(blogId: string, postId: string): Promise<string> {
   throw new Error("Could not load the item body");
 }
 
+function searchSnippet(text: string, query: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const index = normalized.toLowerCase().indexOf(query.toLowerCase());
+  if (index < 0) return capped(normalized, 180);
+  const start = Math.max(0, index - 70);
+  const end = Math.min(normalized.length, index + query.length + 100);
+  return `${start > 0 ? "..." : ""}${normalized.slice(start, end)}${
+    end < normalized.length ? "..." : ""
+  }`;
+}
+
 export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): {
   executor: NativeAgentToolExecutor;
-  toolNames: string[];
+  toolNames: WorkspaceToolName[];
+  toolDefinitions: typeof WORKSPACE_AGENT_TOOL_DEFINITIONS;
   describeContext: (view?: {
     level?: string;
     folderPath?: string;
@@ -223,22 +245,43 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     return post;
   }
 
-  async function confirmOrCancel(description: string): Promise<boolean> {
-    if (!confirmDestructive) return false;
-    return await confirmDestructive(description);
+  function requireTrashedPost(id: string): WorkspacePoolPost {
+    const post = (pool().trashedPosts ?? []).find((entry) => entry.id === id);
+    if (!post) throw new Error(`No item with id ${id} exists in Trash`);
+    return post;
+  }
+
+  function syncPost(post: Post) {
+    const mapped = poolPostFromPost(post, pool().blogId);
+    if (mapped) updatePost(mapped.id, mapped);
+  }
+
+  function addFolderToPool(folder: WorkspacePoolPayload["folders"][number]) {
+    const current = pool();
+    if (current.folders.some((entry) => entry.id === folder.id)) return;
+    seedWorkspacePool({
+      ...current,
+      folders: [...current.folders, folder],
+      counts: { ...current.counts, [folder.path]: 0 },
+      fetchedAt: new Date().toISOString(),
+    });
+  }
+
+  async function currentText(post: WorkspacePoolPost) {
+    return readItemText
+      ? await readItemText(post.id)
+      : {
+          title: post.title,
+          excerpt: post.excerpt ?? "",
+          body: await readBody(pool().blogId, post.id),
+        };
   }
 
   async function saveDraftPatch(
     poolPost: WorkspacePoolPost,
     patch: WorkspaceItemTextPatch,
   ) {
-    const current = readItemText
-      ? await readItemText(poolPost.id)
-      : {
-          title: poolPost.title,
-          excerpt: poolPost.excerpt ?? "",
-          body: await readBody(pool().blogId, poolPost.id),
-        };
+    const current = await currentText(poolPost);
     if (applyItemPatch) {
       await applyItemPatch(poolPost.id, patch);
       return {
@@ -253,8 +296,6 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     if (patch.title !== undefined) draft.title = patch.title;
     if (patch.excerpt !== undefined) draft.excerpt = patch.excerpt;
     if (patch.body !== undefined) draft.body = patch.body;
-    // Same behavior as the editor's title blur: a placeholder slug follows
-    // the title, so agent-created posts get real slugs, not untitled-x URLs.
     if (patch.title && isPlaceholderSlug(draft.slug)) {
       const used = pool()
         .posts.filter((candidate) => candidate.id !== poolPost.id)
@@ -265,98 +306,348 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       handle,
       payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
     );
-    updatePost(poolPost.id, {
-      title: saved.title,
-      excerpt: saved.excerpt,
-      slug: saved.slug,
-      updatedAt: saved.updatedAt,
-    });
+    syncPost(saved);
     return saved;
   }
 
-  const executor: NativeAgentToolExecutor = async (name, args, requestTag) => {
-    switch (name) {
+  async function saveCreatedItem(
+    poolPost: WorkspacePoolPost,
+    input: {
+      type: PostType;
+      title?: string;
+      excerpt?: string;
+      body: string;
+      slug?: string;
+      accent?: string;
+      cover?: string;
+      coverCaption?: string;
+      coverHeight?: number;
+      videoUrl?: string;
+      venue?: string;
+      duration?: string;
+    },
+  ) {
+    const draft = initialDraft(postFromPoolPost(poolPost, input.body));
+    draft.type = input.type;
+    draft.title = input.title ?? draft.title;
+    draft.excerpt = input.excerpt ?? "";
+    draft.body = input.body;
+    draft.slug = input.slug ?? draft.slug;
+    draft.accent = input.accent ?? draft.accent;
+    draft.cover = input.cover ?? draft.cover;
+    draft.coverCaption = input.coverCaption ?? draft.coverCaption;
+    draft.coverHeight = input.coverHeight ?? draft.coverHeight;
+    draft.videoUrl = input.videoUrl ?? draft.videoUrl;
+    draft.venue = input.venue ?? draft.venue;
+    draft.duration = input.duration ?? draft.duration;
+    draft.status = "draft";
+    if (input.title && isPlaceholderSlug(draft.slug)) {
+      const used = pool()
+        .posts.filter((candidate) => candidate.id !== poolPost.id)
+        .map((candidate) => candidate.slug);
+      draft.slug = uniqueSlug(slugify(input.title, "post"), used);
+    }
+    const saved = await saveEditablePostAction(
+      handle,
+      payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
+    );
+    syncPost(saved);
+    return saved;
+  }
+
+  async function saveMetadata(
+    poolPost: WorkspacePoolPost,
+    input: WorkspaceToolInput<"set_item_metadata">,
+  ) {
+    if (input.date !== undefined && poolPost.status !== "published") {
+      throw new Error("Publication date can only be set on a published item");
+    }
+    const text = await currentText(poolPost);
+    const draft = initialDraft(postFromPoolPost(poolPost, text.body));
+    draft.title = input.title ?? text.title;
+    draft.excerpt =
+      input.excerpt === null ? "" : (input.excerpt ?? text.excerpt);
+    if (input.slug !== undefined) draft.slug = input.slug;
+    if (input.accent !== undefined) draft.accent = input.accent ?? "";
+    if (input.cover !== undefined) draft.cover = input.cover ?? "";
+    if (input.cover_caption !== undefined) {
+      draft.coverCaption = input.cover_caption ?? "";
+    }
+    if (input.cover_height !== undefined) {
+      draft.coverHeight = input.cover_height;
+    }
+    if (input.date !== undefined) draft.date = input.date;
+    const saved = await saveEditablePostAction(
+      handle,
+      payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
+    );
+    syncPost(saved);
+    return saved;
+  }
+
+  async function confirmTool(
+    name: WorkspaceToolName,
+    input: Record<string, unknown>,
+  ): Promise<boolean> {
+    if (WORKSPACE_TOOL_DEFINITIONS[name].confirmation === "none") return true;
+    if (!confirmDestructive) return false;
+
+    const id = typeof input.id === "string" ? input.id : "";
+    const post =
+      name === "restore_item" ? requireTrashedPost(id) : requirePost(id);
+    if (
+      name === "restore_item" &&
+      post.status === "published" &&
+      isPrivatePostType(post.type)
+    ) {
+      throw new Error("Notes and bookmarks must be unlisted before restoration");
+    }
+    if (
+      name === "set_item_status" &&
+      input.status === "published" &&
+      isPrivatePostType(post.type)
+    ) {
+      throw new Error("Notes and bookmarks are always unlisted");
+    }
+    const title = post.title || "Untitled";
+    const description =
+      name === "delete_item"
+        ? `Move "${title}" to Trash?`
+        : name === "restore_item"
+          ? `Restore "${title}"${post.status === "published" ? " and make it public again" : ""}?`
+          : `${input.status === "published" ? "Publish" : "Unpublish"} "${title}"?`;
+    return await confirmDestructive(description);
+  }
+
+  const executor: NativeAgentToolExecutor = async (rawName, rawArgs, requestTag) => {
+    if (!isWorkspaceToolName(rawName)) throw new Error(`Unknown tool: ${rawName}`);
+    const normalized = normalizeLegacyNativeArgs(rawName, rawArgs, pool().folders);
+    const args = parseWorkspaceToolInput(rawName, normalized);
+    if (!(await confirmTool(rawName, args as Record<string, unknown>))) {
+      return { ok: false, cancelled: true };
+    }
+
+    switch (rawName) {
+      case "get_workspace": {
+        const current = pool();
+        return {
+          workspace: {
+            id: current.blogId,
+            handle: current.blog.handle,
+            username: current.blog.username ?? null,
+            name: current.blog.name,
+            author: current.blog.author,
+          },
+          capabilities: {
+            folderModes: WORKSPACE_FOLDER_MODES,
+            scopes: WORKSPACE_SCOPE_CAPABILITIES,
+            permanentDeletion: false,
+            memberManagement: false,
+          },
+        };
+      }
+
       case "list_folders": {
         const current = pool();
         return {
           folders: current.folders.map((folder) => ({
+            id: folder.id,
             path: folder.path,
             name: folder.name,
             mode: folder.mode,
+            parentId: folder.parentId ?? null,
             items: current.posts.filter((post) => post.folderId === folder.id)
               .length,
           })),
         };
       }
 
+      case "create_folder": {
+        const input = args as WorkspaceToolInput<"create_folder">;
+        const folder = await createSubfolderAction(
+          handle,
+          input.parent_path,
+          input.name,
+        );
+        addFolderToPool(folder);
+        return { ok: true, folder };
+      }
+
+      case "rename_folder": {
+        const input = args as WorkspaceToolInput<"rename_folder">;
+        if (!pool().folders.some((folder) => folder.id === input.folder_id)) {
+          throw new Error("Folder not found");
+        }
+        const folder = await renameFolderAction(handle, input.folder_id, input.name);
+        updateFolder(folder.id, folder);
+        return { ok: true, folder };
+      }
+
       case "list_items": {
-        const folder = normalizeFolderPath(str(args, "folder"), pool().folders);
-        const items = poolPostsForFolder(pool(), folder).slice(0, 40);
+        const input = args as WorkspaceToolInput<"list_items">;
+        const folderPath = normalizeFolderPath(
+          input.folder_path ?? "blog",
+          pool().folders,
+        );
+        const items = poolPostsForFolder(pool(), folderPath).slice(
+          0,
+          input.limit ?? 50,
+        );
         return {
+          folder_path: folderPath,
           items: items.map((item) => ({
             id: item.id,
-            title: capped(item.title || "Untitled", 80),
-            type: item.type,
+            slug: item.slug,
+            title: capped(item.title || "Untitled", 120),
+            kind: itemKind(item.type),
             status: item.status,
+            pinned: Boolean(item.pinned),
+            updatedAt: item.updatedAt ?? null,
+          })),
+        };
+      }
+
+      case "list_trash": {
+        return {
+          items: (pool().trashedPosts ?? []).map((item) => ({
+            id: item.id,
+            slug: item.slug,
+            title: capped(item.title || "Untitled", 120),
+            kind: itemKind(item.type),
+            status: item.status,
+            folderId: item.folderId ?? null,
+            updatedAt: item.updatedAt ?? null,
           })),
         };
       }
 
       case "read_item": {
-        const id = str(args, "id");
-        const post = requirePost(id);
-        const current = readItemText
-          ? await readItemText(id)
-          : {
-              title: post.title,
-              excerpt: post.excerpt ?? "",
-              body: await readBody(pool().blogId, id),
-            };
+        const input = args as WorkspaceToolInput<"read_item">;
+        const post = requirePost(input.id);
+        const text = await currentText(post);
         return {
-          id,
-          title: current.title,
-          excerpt: current.excerpt,
-          type: post.type,
+          id: input.id,
+          title: text.title,
+          excerpt: text.excerpt,
+          kind: itemKind(post.type),
           status: post.status,
-          folder: folderPathForPoolPost(pool(), post),
-          body: capped(current.body, 6_000),
+          pinned: Boolean(post.pinned),
+          folder_path: folderPathForPoolPost(pool(), post),
+          slug: post.slug,
+          accent: post.accent ?? null,
+          cover: post.cover ?? null,
+          cover_caption: post.coverCaption ?? null,
+          cover_height: post.coverHeight ?? null,
+          date: post.date ?? null,
+          updatedAt: post.updatedAt ?? null,
+          body: capped(text.body, 12_000),
         };
       }
 
+      case "search": {
+        const input = args as WorkspaceToolInput<"search">;
+        const query = input.query.toLowerCase();
+        const results: Array<Record<string, unknown>> = [];
+        for (const post of pool().posts) {
+          const summary = `${post.title}\n${post.excerpt ?? ""}`;
+          let matchedText = summary;
+          if (!summary.toLowerCase().includes(query)) {
+            try {
+              matchedText = (await currentText(post)).body;
+            } catch {
+              continue;
+            }
+          }
+          if (!matchedText.toLowerCase().includes(query)) continue;
+          results.push({
+            id: post.id,
+            slug: post.slug,
+            title: post.title,
+            kind: itemKind(post.type),
+            status: post.status,
+            snippet: searchSnippet(matchedText, input.query),
+          });
+          if (results.length >= (input.limit ?? 25)) break;
+        }
+        return { query: input.query, results };
+      }
+
       case "create_item": {
-        const folder = normalizeFolderPath(str(args, "folder"), pool().folders);
-        const title = str(args, "title");
-        const body = optionalStr(args, "body");
-        const dedupeKey = `${folder}::${title.toLowerCase()}`;
+        const input = args as WorkspaceToolInput<"create_item">;
+        const folderPath = normalizeFolderPath(input.folder_path, pool().folders);
+        const folder = pool().folders.find(
+          (candidate) => candidate.path === folderPath,
+        );
+        if (!folder) throw new Error(`No folder at path ${folderPath}`);
+
+        const parsed = input.markdown
+          ? parsePostMarkdownFile(input.markdown)
+          : {
+              fields: {
+                title: input.title,
+                excerpt: input.excerpt ?? undefined,
+                type: input.kind ? postTypeForItemKind(input.kind) : undefined,
+              },
+              body: input.body ?? "",
+              unknownKeys: [],
+            };
+        if (parsed.unknownKeys.length > 0) {
+          throw new Error(
+            `Unsupported frontmatter keys: ${parsed.unknownKeys.join(", ")}`,
+          );
+        }
+        if (parsed.fields.status === "published") {
+          throw new Error("New items must start as drafts");
+        }
+        if (parsed.fields.pinned) throw new Error("New items cannot start pinned");
+        if (parsed.fields.date) {
+          throw new Error("A draft cannot have a publication date");
+        }
+        const type =
+          parsed.fields.type ??
+          (folder.mode === "notes"
+            ? "note"
+            : folder.mode === "bookmarks"
+              ? "bookmark"
+              : "article");
+        if (folderModeForPostType(type) !== folder.mode) {
+          throw new Error(`A ${type} cannot be created in the ${folder.mode} folder`);
+        }
+
+        const title = parsed.fields.title ?? input.title ?? "Untitled";
+        const dedupeKey = `${folderPath}::${title.toLowerCase()}`;
         const priorCreates = requestTag ? requestCreates(requestTag) : null;
         const prior = priorCreates?.get(dedupeKey);
         if (prior) {
           return { ...(prior as Record<string, unknown>), alreadyCreated: true };
         }
-        const requestedKind = optionalStr(args, "kind");
-        const folderMode = pool().folders.find(
-          (candidate) => candidate.path === folder,
-        )?.mode;
-        const kind = (requestedKind ??
-          (folderMode === "notes"
-            ? "note"
-            : folderMode === "bookmarks"
-              ? "bookmark"
-              : "article")) as Extract<
-          PostType,
-          "article" | "note" | "bookmark"
-        >;
-        let saved = await createWorkspacePostAction(handle, kind, folder);
+
+        const actionType: Extract<PostType, "article" | "note" | "bookmark"> =
+          type === "note" || type === "bookmark" ? type : "article";
+        let saved = await createWorkspacePostAction(handle, actionType, folderPath);
         const poolPost = poolPostFromPost(saved, pool().blogId);
         if (poolPost) addPost(poolPost);
-        if (poolPost && (title || body)) {
-          saved = await saveDraftPatch(poolPost, { title, body });
+        if (poolPost) {
+          saved = await saveCreatedItem(poolPost, {
+            type,
+            title: parsed.fields.title,
+            excerpt: parsed.fields.excerpt,
+            body: parsed.body,
+            slug: parsed.fields.slug,
+            accent: parsed.fields.accent,
+            cover: parsed.fields.cover,
+            coverCaption: parsed.fields.coverCaption,
+            coverHeight: parsed.fields.coverHeight,
+            videoUrl: parsed.fields.videoUrl,
+            venue: parsed.fields.venue,
+            duration: parsed.fields.duration,
+          });
         }
         const created = {
           ok: true,
           id: saved.id,
           title: saved.title,
-          folder,
+          folder_path: folderPath,
           status: saved.status,
         };
         priorCreates?.set(dedupeKey, created);
@@ -364,108 +655,182 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       }
 
       case "update_item": {
-        const id = str(args, "id");
-        const title = optionalStr(args, "title");
-        const excerpt = optionalStr(args, "excerpt");
-        const body = optionalStr(args, "body");
-        if (title === undefined && excerpt === undefined && body === undefined) {
-          throw new Error("Nothing to update: pass title, excerpt, or body");
+        const input = args as WorkspaceToolInput<"update_item">;
+        const post = requirePost(input.id);
+        let patch: WorkspaceItemTextPatch;
+        if (input.markdown) {
+          const parsed = parsePostMarkdownFile(input.markdown);
+          if (parsed.unknownKeys.length > 0) {
+            throw new Error(
+              `Unsupported frontmatter keys: ${parsed.unknownKeys.join(", ")}`,
+            );
+          }
+          const protectedFields: Array<
+            [keyof typeof parsed.fields, unknown]
+          > = [
+            ["type", post.type],
+            ["slug", post.slug],
+            ["status", post.status],
+            ["date", post.date],
+            ["accent", post.accent],
+            ["cover", post.cover],
+            ["coverCaption", post.coverCaption],
+            ["coverHeight", post.coverHeight],
+            ["pinned", Boolean(post.pinned)],
+            ["gallery", post.gallery],
+            ["links", post.links],
+            ["videoUrl", post.videoUrl],
+            ["venue", post.venue],
+            ["duration", post.duration],
+          ];
+          for (const [key, stored] of protectedFields) {
+            if (!Object.prototype.hasOwnProperty.call(parsed.fields, key)) continue;
+            const incoming =
+              key === "pinned" ? Boolean(parsed.fields.pinned) : parsed.fields[key];
+            if (!sameValue(incoming, stored)) {
+              throw new Error(`update_item cannot change ${key}`);
+            }
+          }
+          patch = {
+            title: parsed.fields.title ?? post.title,
+            excerpt: parsed.fields.excerpt ?? post.excerpt ?? "",
+            body: parsed.body,
+          };
+        } else {
+          patch = {};
+          if (input.title !== undefined) patch.title = input.title;
+          if (input.excerpt !== undefined) patch.excerpt = input.excerpt ?? "";
+          if (input.body !== undefined) patch.body = input.body;
         }
-        const saved = await saveDraftPatch(requirePost(id), {
-          title,
-          excerpt,
-          body,
-        });
-        return { ok: true, id, title: saved.title };
+        const saved = await saveDraftPatch(post, patch);
+        return { ok: true, id: input.id, title: saved.title };
       }
 
       case "append_to_item": {
-        const id = str(args, "id");
-        const markdown = str(args, "markdown");
-        const post = requirePost(id);
-        const body = readItemText
-          ? (await readItemText(id)).body
-          : await readBody(pool().blogId, id);
+        const input = args as WorkspaceToolInput<"append_to_item">;
+        const post = requirePost(input.id);
+        const body = (await currentText(post)).body;
+        const fragment = input.markdown_fragment.trim();
         const joined = body.trim()
-          ? `${body.replace(/\s+$/, "")}\n\n${markdown}`
-          : markdown;
+          ? `${body.replace(/\s+$/, "")}\n\n${fragment}`
+          : fragment;
         await saveDraftPatch(post, { body: joined });
-        return { ok: true, id };
+        return { ok: true, id: input.id };
       }
 
       case "move_item": {
-        const id = str(args, "id");
-        const folderPath = normalizeFolderPath(str(args, "folder"), pool().folders);
-        const post = requirePost(id);
+        const input = args as WorkspaceToolInput<"move_item">;
+        const folderPath = normalizeFolderPath(input.folder_path, pool().folders);
+        const post = requirePost(input.id);
         const folder = pool().folders.find(
           (candidate) => candidate.path === folderPath,
         );
         if (!folder) throw new Error(`No folder at path ${folderPath}`);
+        if (folder.mode !== folderModeForPostType(post.type)) {
+          throw new Error(`A ${post.type} cannot move into the ${folder.mode} folder`);
+        }
+        if (post.folderId === folder.id) {
+          return { ok: true, changed: false, id: input.id, folder_path: folderPath };
+        }
         const previousFolderId = post.folderId;
-        movePost(id, folder.id);
+        movePost(input.id, folder.id);
         try {
-          await movePostToFolderAction(handle, id, folder.path);
+          const moved = await movePostToFolderAction(handle, input.id, folder.path);
+          syncPost(moved);
         } catch (error) {
-          movePost(id, previousFolderId);
+          movePost(input.id, previousFolderId);
           throw error;
         }
-        return { ok: true, id, folder: folderPath };
+        return { ok: true, changed: true, id: input.id, folder_path: folderPath };
       }
 
       case "delete_item": {
-        const id = str(args, "id");
-        const post = requirePost(id);
-        const allowed = await confirmOrCancel(
-          `Delete "${post.title || "Untitled"}"?`,
-        );
-        if (!allowed) return { ok: false, cancelled: true };
-        movePostToTrash(id);
+        const input = args as WorkspaceToolInput<"delete_item">;
+        requirePost(input.id);
+        movePostToTrash(input.id);
         try {
-          await deleteEditablePostAction(handle, id);
+          await deleteEditablePostAction(handle, input.id);
         } catch (error) {
-          restorePostFromTrash(id);
+          restorePostFromTrash(input.id);
           throw error;
         }
-        return { ok: true, id, deleted: true };
+        return { ok: true, id: input.id, trashed: true };
+      }
+
+      case "restore_item": {
+        const input = args as WorkspaceToolInput<"restore_item">;
+        const post = requireTrashedPost(input.id);
+        if (post.status === "published" && isPrivatePostType(post.type)) {
+          throw new Error("Notes and bookmarks must be unlisted before restoration");
+        }
+        restorePostFromTrash(input.id);
+        try {
+          const restored = await restoreEditablePostAction(handle, input.id);
+          syncPost(restored);
+          return { ok: true, id: input.id, status: restored.status };
+        } catch (error) {
+          movePostToTrash(input.id);
+          throw error;
+        }
       }
 
       case "set_item_status": {
-        const id = str(args, "id");
-        const status = str(args, "status") as "published" | "draft";
-        if (status !== "published" && status !== "draft") {
-          throw new Error("status must be published or draft");
-        }
-        const post = requirePost(id);
-        if (isPrivatePostType(post.type)) {
+        const input = args as WorkspaceToolInput<"set_item_status">;
+        const post = requirePost(input.id);
+        if (isPrivatePostType(post.type) && input.status === "published") {
           throw new Error("Notes and bookmarks are always unlisted");
         }
-        const allowed = await confirmOrCancel(
-          `${status === "published" ? "Publish" : "Unpublish"} "${post.title || "Untitled"}"?`,
-        );
-        if (!allowed) return { ok: false, cancelled: true };
+        if (post.status === input.status) {
+          return { ok: true, changed: false, id: input.id, status: post.status };
+        }
         const previous = { status: post.status, publishedAt: post.publishedAt };
-        updatePost(id, {
-          status,
+        updatePost(input.id, {
+          status: input.status,
           publishedAt:
-            status === "published" ? (post.date ?? post.publishedAt) : undefined,
+            input.status === "published" ? (post.date ?? post.publishedAt) : undefined,
         });
         try {
-          await setEditablePostStatusAction(handle, id, status);
+          const saved = await setEditablePostStatusAction(
+            handle,
+            input.id,
+            input.status,
+          );
+          syncPost(saved);
         } catch (error) {
-          updatePost(id, previous);
+          updatePost(input.id, previous);
           throw error;
         }
-        return { ok: true, id, status };
+        return { ok: true, changed: true, id: input.id, status: input.status };
       }
 
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+      case "set_item_metadata": {
+        const input = args as WorkspaceToolInput<"set_item_metadata">;
+        const saved = await saveMetadata(requirePost(input.id), input);
+        return { ok: true, id: input.id, title: saved.title, slug: saved.slug };
+      }
+
+      case "set_item_pinned": {
+        const input = args as WorkspaceToolInput<"set_item_pinned">;
+        const post = requirePost(input.id);
+        if (Boolean(post.pinned) === input.pinned) {
+          return { ok: true, changed: false, id: input.id, pinned: input.pinned };
+        }
+        const saved = await toggleEditablePostPinnedAction(handle, input.id);
+        syncPost(saved);
+        return {
+          ok: true,
+          changed: true,
+          id: input.id,
+          pinned: Boolean(saved.pinned),
+        };
+      }
     }
   };
 
   return {
     executor,
-    toolNames: [...WORKSPACE_AGENT_TOOL_NAMES],
+    toolNames: [...WORKSPACE_TOOL_NAMES],
+    toolDefinitions: WORKSPACE_AGENT_TOOL_DEFINITIONS,
     describeContext: (view) => {
       if (!view || view.level === "root" || !view.level) {
         return "The user is at the workspace root, looking at the folder list.";
@@ -473,18 +838,12 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       if (view.level === "section") {
         return `The user is looking at the "${view.folderPath ?? ""}" folder.`;
       }
-      if (view.level === "trash") {
-        return "The user is looking at Trash.";
-      }
+      if (view.level === "trash") return "The user is looking at Trash.";
       if (view.level === "shared") {
         return "The user is looking at items shared with them.";
       }
-      if (!view.postId) {
-        return "The user is looking at the workspace.";
-      }
-      const post = view.postId
-        ? findPoolPostById(pool(), view.postId)
-        : null;
+      if (!view.postId) return "The user is looking at the workspace.";
+      const post = findPoolPostById(pool(), view.postId);
       const title = post?.title || "Untitled";
       return `The user has the item "${title}" (id ${view.postId}) open in ${
         view.level === "edit" ? "the editor" : "the reader"

@@ -1,32 +1,22 @@
-// The MCP tool surface: an authenticated agent's view of one workspace (the
-// token owner's blog). Every tool speaks the markdown-file vocabulary of the
-// sync API v1: read_item returns the same file bytes as sync GET, mutations
-// take whole files, and listings return manifest-style entries whose hash is
-// the update conflict currency.
-//
-// Deliberately absent in v1: a delete tool. Agents ask the owner to delete;
-// the sync API DELETE and the app remain the only ways to remove an item.
-
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
-import type { Blog, Post } from "@/lib/content";
+import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import type { z } from "zod";
 import { recordAction } from "@/lib/audit";
-import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
-import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
-  createDraft,
-  createSubfolder,
-  deletePost,
-  getAccessibleAllPostFiles,
-  getAccessibleFolderPostFiles,
-  getAccessibleFolders,
-  getPostById,
-  PostConflictError,
-  savePost,
-  savePostContentPatch,
-} from "@/lib/store";
+  WORKSPACE_FOLDER_MODES,
+  WORKSPACE_SCOPE_CAPABILITIES,
+  WORKSPACE_TOOL_DEFINITIONS,
+  WORKSPACE_TOOL_NAMES,
+  parseWorkspaceToolInput,
+} from "@/lib/ai/tools";
+import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
+import type { Blog, Folder, Post } from "@/lib/content";
+import {
+  parsePostMarkdownFile,
+  postTypeForItemKind,
+  slugForNewFile,
+} from "@/lib/markdown-files";
 import {
   type AccessUser,
   type EffectiveAccess,
@@ -34,6 +24,26 @@ import {
   resolveItemAccess,
   resolveWorkspaceAccess,
 } from "@/lib/permissions";
+import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import {
+  createDraftInFolder,
+  createSubfolder,
+  deletePost,
+  deletePostAtomic,
+  getAccessibleAllPostFiles,
+  getAccessibleFolderCounts,
+  getAccessibleFolderPostFiles,
+  getAccessibleFolders,
+  getPostById,
+  getTrashedPosts,
+  movePostFile,
+  PostConflictError,
+  renameFolder,
+  restorePost,
+  savePost,
+  savePostContentPatch,
+} from "@/lib/store";
+import { workspaceBlog } from "./auth";
 import {
   DEFAULT_TYPE_BY_MODE,
   folderModeForType,
@@ -42,22 +52,52 @@ import {
   itemKindForPost,
   kindsForFolderMode,
   normalizeItemHash,
-  postInFolder,
   postMatchesQuery,
   renderItemFile,
   searchSnippet,
 } from "./items";
-import { workspaceBlog } from "./auth";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const SEARCH_RESULT_LIMIT = 25;
-
-// The savePost failures an agent can fix by editing its file (message strings
-// owned by src/lib/store.ts); anything else stays a generic internal error so
-// raw driver messages never leak into a tool result.
 const CLIENT_SAVE_ERRORS = new Set(["That URL is already used"]);
+
+type ToolContext = { authInfo?: AuthInfo };
+type ToolTargetType = "workspace" | "folder" | "item";
+type RegisteredCallback = (
+  args: Record<string, unknown>,
+  extra: ToolContext,
+) => Promise<CallToolResult>;
+type RegisterTool = (
+  name: string,
+  config: {
+    title: string;
+    description: string;
+    inputSchema: z.ZodType;
+    annotations: ToolAnnotations;
+  },
+  callback: RegisteredCallback,
+) => unknown;
+
+export type McpScopeAccess = "full" | "read-only" | "none";
+
+function isReadOnlyScope(scope: string): boolean {
+  const normalized = scope.trim().toLowerCase();
+  return (
+    normalized === "read" ||
+    normalized === "readonly" ||
+    normalized === "read-only" ||
+    /(?:^|[:./_-])read(?:[-_]?only)?$/.test(normalized)
+  );
+}
+
+export function resolveMcpScopeAccess(
+  scopes: readonly string[] | undefined,
+): McpScopeAccess {
+  const values = scopes ?? [];
+  if (values.some(isReadOnlyScope)) return "read-only";
+  if (values.includes("sync")) return "full";
+  return "none";
+}
 
 function textResult(text: string): CallToolResult {
   return { content: [{ type: "text", text }] };
@@ -72,8 +112,7 @@ function errorResult(message: string): CallToolResult {
 }
 
 function parseErrorResult(error: unknown): CallToolResult {
-  const detail =
-    error instanceof Error && error.message ? ` ${error.message}` : "";
+  const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
   return errorResult(`Could not parse the markdown file.${detail}`);
 }
 
@@ -81,11 +120,16 @@ function saveErrorResult(error: unknown): CallToolResult {
   if (error instanceof Error && CLIENT_SAVE_ERRORS.has(error.message)) {
     return errorResult(error.message);
   }
-  console.error("MCP savePost failed:", error);
+  console.error("MCP workspace mutation failed:", error);
   return errorResult("The item could not be saved. Try again.");
 }
 
-type ToolContext = { authInfo?: AuthInfo };
+function conflictResult(post: Pick<Post, "slug" | "title">, action: string) {
+  return errorResult(
+    `Conflict: "${post.title || post.slug}" changed before ${action}. ` +
+      "Read the latest item, merge the change, then retry with its new hash.",
+  );
+}
 
 function accessUser(extra: ToolContext): AccessUser {
   const sub = extra.authInfo?.extra?.sub;
@@ -96,10 +140,10 @@ function accessUser(extra: ToolContext): AccessUser {
   };
 }
 
-// One audit row per MCP mutation; the actor is the token's user.
 async function auditMcp(
   extra: ToolContext,
   actionName: string,
+  targetType: ToolTargetType,
   targetId: string | undefined,
   summary?: string,
 ) {
@@ -108,22 +152,10 @@ async function auditMcp(
     actorUserId: typeof userId === "string" ? userId : null,
     actorType: "external_agent",
     actionName,
-    targetType: "item",
+    targetType,
     targetId,
     inputSummary: summary,
   });
-}
-
-// Auth glue shared by every tool: the token is already verified by
-// withMcpAuth, so the only failure left is a user with no blog.
-async function requireBlog(extra: ToolContext): Promise<Blog | CallToolResult> {
-  const blog = await workspaceBlog(extra.authInfo);
-  if (!blog) {
-    return errorResult(
-      "No blog exists for this token's user. Open the editor once to create one.",
-    );
-  }
-  return blog;
 }
 
 function isToolResult<T extends object>(
@@ -132,14 +164,42 @@ function isToolResult<T extends object>(
   return "content" in value;
 }
 
+async function requireBlog(extra: ToolContext): Promise<Blog | CallToolResult> {
+  const blog = await workspaceBlog(extra.authInfo);
+  if (!blog) {
+    return errorResult(
+      "No workspace exists for this token's user. Open the editor once to create one.",
+    );
+  }
+  return blog;
+}
+
+async function requireWorkspace(
+  extra: ToolContext,
+  ownerOnly = false,
+): Promise<{ blog: Blog; access: EffectiveAccess } | CallToolResult> {
+  const blog = await requireBlog(extra);
+  if (isToolResult(blog)) return blog;
+  const access = await resolveWorkspaceAccess({
+    handle: blog.handle,
+    user: accessUser(extra),
+  });
+  if (!access.canView || (ownerOnly && !access.isOwner)) {
+    return errorResult(
+      ownerOnly
+        ? "Only the workspace owner can perform this action."
+        : "You cannot access this workspace.",
+    );
+  }
+  return { blog, access };
+}
+
 async function requirePost(
   extra: ToolContext,
   id: string,
 ): Promise<{ blog: Blog; post: Post; access: EffectiveAccess } | CallToolResult> {
   const blog = await requireBlog(extra);
   if (isToolResult(blog)) return blog;
-  // A foreign id can never resolve inside this workspace, so "not found"
-  // covers both "not yours" and "does not exist".
   const post = UUID_RE.test(id) ? await getPostById(blog.handle, id) : null;
   if (!post) return errorResult(`No item with id "${id}" exists in this workspace.`);
   const access = await resolveItemAccess({
@@ -153,444 +213,766 @@ async function requirePost(
   return { blog, post, access };
 }
 
-async function postsInFolder(
-  handle: string,
-  folder: Parameters<typeof postInFolder>[0],
-  user: AccessUser,
-): Promise<Post[]> {
-  // The database does the folder scoping (NULL folder_id counts as blog).
-  const posts = await getAccessibleFolderPostFiles(handle, folder.path, user);
-  return posts.filter((post) => post.id);
+async function accessibleFolder(
+  blog: Blog,
+  extra: ToolContext,
+  path: string,
+): Promise<Folder | CallToolResult> {
+  const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
+  const folder = folders.find((entry) => entry.path === path);
+  return (
+    folder ??
+    errorResult(
+      `No folder with path "${path}" exists. Call list_folders for available paths.`,
+    )
+  );
 }
 
-export function registerWriteTools(server: McpServer): void {
-  server.registerTool(
-    "list_folders",
-    {
-      title: "List folders",
-      description:
-        "The workspace's folders (id, name, path, mode) plus the blog they " +
-        "belong to. Folder modes: blog holds public writing, notes and " +
-        "bookmarks hold private items that are never published. Call this " +
-        "first to learn the folder_path values other tools accept.",
-    },
-    async (extra) => {
-      const blog = await requireBlog(extra);
-      if (isToolResult(blog)) return blog;
-      const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
-      return jsonResult({
-        blog: {
-          handle: blog.handle,
-          username: blog.username ?? null,
-          name: blog.name,
-        },
-        folders: folders.map((folder) => ({
-          id: folder.id,
-          name: folder.name,
-          path: folder.path,
-          mode: folder.mode,
-          parentId: folder.parentId ?? null,
-        })),
-      });
-    },
+function hashConflict(
+  blog: Blog,
+  post: Post,
+  expected: string | undefined,
+): CallToolResult | null {
+  if (!expected) return null;
+  const current = renderItemFile(blog, post);
+  if (normalizeItemHash(expected) === current.hash) return null;
+  return errorResult(
+    `Conflict: "${post.title || post.slug}" changed since it was read ` +
+      `(its hash is now ${current.hash}). Read the latest item, merge, then retry.`,
   );
+}
 
-  server.registerTool(
-    "create_folder",
-    {
-      title: "Create folder",
-      description:
-        "Create a subfolder under an existing folder (categories). " +
-        "parent_path is a full folder path from list_folders, e.g. \"blog\" " +
-        "or \"blog/ideas\". The subfolder inherits the parent's mode, so " +
-        "anything under notes or bookmarks stays private. Nesting caps at " +
-        "four levels.",
-      inputSchema: {
-        parent_path: z
-          .string()
-          .describe("Full path of the parent folder, e.g. \"blog\""),
-        name: z.string().describe("Display name for the new folder"),
-      },
-    },
-    async ({ parent_path, name }, extra) => {
-      const blog = await requireBlog(extra);
-      if (isToolResult(blog)) return blog;
-      const access = await resolveWorkspaceAccess({
-        handle: blog.handle,
-        user: accessUser(extra),
+function mutationRevision(post: Post): number | CallToolResult {
+  return post.revision ?? errorResult(
+    "This item has no revision and cannot be mutated safely. Read it again and retry.",
+  );
+}
+
+function folderSummary(folder: Folder, count?: number) {
+  return {
+    id: folder.id,
+    name: folder.name,
+    path: folder.path,
+    mode: folder.mode,
+    parentId: folder.parentId ?? null,
+    ...(count === undefined ? {} : { itemCount: count }),
+  };
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function markdownContentUpdate(
+  post: Post,
+  markdown: string,
+):
+  | { title: string; excerpt: string | undefined; body: string }
+  | CallToolResult {
+  let parsed: ReturnType<typeof parsePostMarkdownFile>;
+  try {
+    parsed = parsePostMarkdownFile(markdown);
+  } catch (error) {
+    return parseErrorResult(error);
+  }
+  if (parsed.unknownKeys.length > 0) {
+    return errorResult(
+      `Unsupported frontmatter keys: ${parsed.unknownKeys.join(", ")}.`,
+    );
+  }
+
+  const protectedFields: Array<[keyof typeof parsed.fields, unknown]> = [
+    ["type", post.type],
+    ["slug", post.slug],
+    ["status", post.status],
+    ["date", post.date],
+    ["accent", post.accent],
+    ["cover", post.cover],
+    ["coverCaption", post.coverCaption],
+    ["coverHeight", post.coverHeight],
+    ["pinned", Boolean(post.pinned)],
+    ["gallery", post.gallery],
+    ["links", post.links],
+    ["videoUrl", post.videoUrl],
+    ["venue", post.venue],
+    ["duration", post.duration],
+  ];
+  for (const [key, stored] of protectedFields) {
+    if (!Object.prototype.hasOwnProperty.call(parsed.fields, key)) continue;
+    const incoming =
+      key === "pinned" ? Boolean(parsed.fields.pinned) : parsed.fields[key];
+    if (!sameValue(incoming, stored)) {
+      return errorResult(
+        `update_item cannot change ${key}. Use its dedicated workspace tool.`,
+      );
+    }
+  }
+
+  return {
+    title: parsed.fields.title ?? post.title,
+    excerpt: parsed.fields.excerpt ?? post.excerpt,
+    body: parsed.body,
+  };
+}
+
+function scopeError(name: WorkspaceToolName, extra: ToolContext): CallToolResult | null {
+  const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+  const scope = resolveMcpScopeAccess(extra.authInfo?.scopes);
+  if (scope === "none") {
+    return errorResult("This token has no supported workspace scope.");
+  }
+  if (definition.mutability === "write" && scope !== "full") {
+    return errorResult(
+      `This connection is read-only and cannot invoke the ${name} mutation.`,
+    );
+  }
+  return null;
+}
+
+async function executeMcpTool(
+  name: WorkspaceToolName,
+  rawArgs: Record<string, unknown>,
+  extra: ToolContext,
+): Promise<CallToolResult> {
+  const denied = scopeError(name, extra);
+  if (denied) return denied;
+
+  let args: WorkspaceToolInput<typeof name>;
+  try {
+    args = parseWorkspaceToolInput(name, rawArgs);
+  } catch (error) {
+    return errorResult(
+      `Invalid arguments for ${name}: ${error instanceof Error ? error.message : "invalid input"}`,
+    );
+  }
+
+  switch (name) {
+    case "get_workspace": {
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const scope = resolveMcpScopeAccess(extra.authInfo?.scopes);
+      return jsonResult({
+        workspace: {
+          handle: resolved.blog.handle,
+          username: resolved.blog.username ?? null,
+          name: resolved.blog.name,
+          author: resolved.blog.author,
+        },
+        access: {
+          role: resolved.access.role,
+          owner: resolved.access.isOwner,
+          scope,
+          grantedScopes: extra.authInfo?.scopes ?? [],
+          canEdit: resolved.access.canEditContent && scope === "full",
+          canManage: resolved.access.canManage && scope === "full",
+        },
+        capabilities: {
+          folderModes: WORKSPACE_FOLDER_MODES,
+          scopes: WORKSPACE_SCOPE_CAPABILITIES,
+          permanentDeletion: false,
+          memberManagement: false,
+        },
       });
-      if (!access.isOwner) return errorResult("Only the owner can create folders.");
+    }
+
+    case "list_folders": {
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      const [folders, counts] = await Promise.all([
+        getAccessibleFolders(resolved.blog.handle, accessUser(extra)),
+        getAccessibleFolderCounts(resolved.blog.handle, accessUser(extra)),
+      ]);
+      return jsonResult({
+        workspace: {
+          handle: resolved.blog.handle,
+          username: resolved.blog.username ?? null,
+          name: resolved.blog.name,
+        },
+        folders: folders.map((folder) => folderSummary(folder, counts[folder.path] ?? 0)),
+      });
+    }
+
+    case "create_folder": {
+      const input = args as WorkspaceToolInput<"create_folder">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
       try {
-        const folder = await createSubfolder(blog.handle, parent_path, name);
-        await auditMcp(extra, "mcp.create_folder", folder.id, folder.path);
-        revalidateBlogPaths(blog);
-        return jsonResult({ folder });
+        const folder = await createSubfolder(
+          resolved.blog.handle,
+          input.parent_path,
+          input.name,
+        );
+        await auditMcp(
+          extra,
+          "mcp.create_folder",
+          "folder",
+          folder.id,
+          folder.path,
+        );
+        revalidateBlogPaths(resolved.blog);
+        return jsonResult({ folder: folderSummary(folder) });
       } catch (error) {
         return errorResult(
-          error instanceof Error ? error.message : "Could not create folder",
+          error instanceof Error ? error.message : "Could not create folder.",
         );
       }
-    },
-  );
+    }
 
-  server.registerTool(
-    "list_items",
-    {
-      title: "List items",
-      description:
-        "Manifest-style entries (id, slug, title, kind, status, updatedAt, " +
-        "hash) for one folder, drafts included. The hash identifies the " +
-        "item's current file content; pass it as if_match_hash when updating " +
-        "to detect conflicts.",
-      inputSchema: {
-        folder_path: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Folder path from list_folders, e.g. "blog", "notes", or ' +
-              '"bookmarks". Defaults to "blog".',
-          ),
-      },
-    },
-    async ({ folder_path }, extra) => {
+    case "rename_folder": {
+      const input = args as WorkspaceToolInput<"rename_folder">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const folders = await getAccessibleFolders(resolved.blog.handle, accessUser(extra));
+      if (!folders.some((folder) => folder.id === input.folder_id)) {
+        return errorResult("Folder not found.");
+      }
+      try {
+        const folder = await renameFolder(
+          resolved.blog.handle,
+          input.folder_id,
+          input.name,
+        );
+        await auditMcp(
+          extra,
+          "mcp.rename_folder",
+          "folder",
+          folder.id,
+          folder.name,
+        );
+        revalidateBlogPaths(resolved.blog);
+        return jsonResult({ folder: folderSummary(folder) });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : "Could not rename folder.",
+        );
+      }
+    }
+
+    case "list_items": {
+      const input = args as WorkspaceToolInput<"list_items">;
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const path = folder_path ?? "blog";
-      const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
-      const folder = folders.find((entry) => entry.path === path);
-      if (!folder) {
-        return errorResult(
-          `No folder with path "${path}" exists. Call list_folders for the ` +
-            "available paths.",
-        );
-      }
-      const posts = await postsInFolder(blog.handle, folder, accessUser(extra));
+      const path = input.folder_path ?? "blog";
+      const folder = await accessibleFolder(blog, extra, path);
+      if (isToolResult(folder)) return folder;
+      const posts = await getAccessibleFolderPostFiles(
+        blog.handle,
+        folder.path,
+        accessUser(extra),
+      );
       return jsonResult({
-        folder: {
-          id: folder.id,
-          name: folder.name,
-          path: folder.path,
-          mode: folder.mode,
-        },
-        items: posts.map((post) => itemEntry(blog, post)),
+        folder: folderSummary(folder),
+        items: posts
+          .filter((post) => post.id)
+          .slice(0, input.limit ?? 50)
+          .map((post) => itemEntry(blog, post)),
       });
-    },
-  );
+    }
 
-  server.registerTool(
-    "read_item",
-    {
-      title: "Read item",
-      description:
-        "The item's markdown file: single-line key: value frontmatter, then " +
-        "the body. This is the exact representation update_item expects " +
-        "back. The item's current hash comes from list_items or search.",
-      inputSchema: {
-        id: z.string().min(1).describe("The item id from list_items or search."),
-      },
-    },
-    async ({ id }, extra) => {
-      const resolved = await requirePost(extra, id);
+    case "list_trash": {
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const posts = await getTrashedPosts(resolved.blog.handle);
+      return jsonResult({
+        items: posts.map((post) => {
+          const entry = itemEntry(resolved.blog, post);
+          return { ...entry, file: undefined, folderId: post.folderId ?? null };
+        }),
+      });
+    }
+
+    case "read_item": {
+      const input = args as WorkspaceToolInput<"read_item">;
+      const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       return textResult(renderItemFile(resolved.blog, resolved.post).text);
-    },
-  );
+    }
 
-  server.registerTool(
-    "create_item",
-    {
-      title: "Create item",
-      description:
-        "Create an item in a folder from a whole markdown file (frontmatter " +
-        "optional). In the blog folder the kind may be article, media_post, " +
-        "or video_post (default article) and new work should stay status: " +
-        "draft; ask the owner before publishing. Items created in notes or " +
-        "bookmarks folders are private and always kept as drafts. There is " +
-        "no delete tool: ask the owner to delete items in the app.",
-      inputSchema: {
-        folder_path: z
-          .string()
-          .min(1)
-          .describe('Target folder path from list_folders, e.g. "blog" or "notes".'),
-        markdown: z
-          .string()
-          .min(1)
-          .describe("The whole markdown file, frontmatter plus body."),
-      },
-    },
-    async ({ folder_path, markdown }, extra) => {
+    case "search": {
+      const input = args as WorkspaceToolInput<"search">;
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const folders = await getAccessibleFolders(blog.handle, accessUser(extra));
-      const folder = folders.find((entry) => entry.path === folder_path);
-      if (!folder) {
-        return errorResult(
-          `No folder with path "${folder_path}" exists. Call list_folders ` +
-            "for the available paths.",
-        );
-      }
+      const posts = await getAccessibleAllPostFiles(blog.handle, accessUser(extra));
+      const results = posts
+        .filter((post) => post.id && postMatchesQuery(post, input.query))
+        .slice(0, input.limit ?? 25)
+        .map((post) => ({
+          ...itemEntry(blog, post),
+          snippet: searchSnippet(post, input.query),
+        }));
+      return jsonResult({ query: input.query, results });
+    }
+
+    case "create_item": {
+      const input = args as WorkspaceToolInput<"create_item">;
+      const blog = await requireBlog(extra);
+      if (isToolResult(blog)) return blog;
+      const folder = await accessibleFolder(blog, extra, input.folder_path);
+      if (isToolResult(folder)) return folder;
       const folderAccess = await resolveFolderAccess({
         handle: blog.handle,
         folderId: folder.id,
         user: accessUser(extra),
       });
       if (!folderAccess.isOwner) {
-        return errorResult("You cannot create items in this folder.");
+        return errorResult("Only the owner can create items in this folder.");
       }
 
       let parsed: ReturnType<typeof parsePostMarkdownFile>;
       try {
-        parsed = parsePostMarkdownFile(markdown);
+        parsed = input.markdown
+          ? parsePostMarkdownFile(input.markdown)
+          : {
+              fields: {
+                title: input.title,
+                excerpt: input.excerpt ?? undefined,
+                type: input.kind ? postTypeForItemKind(input.kind) : undefined,
+              },
+              body: input.body ?? "",
+              unknownKeys: [],
+            };
       } catch (error) {
         return parseErrorResult(error);
       }
-
-      const type = parsed.fields.type ?? DEFAULT_TYPE_BY_MODE[folder.mode];
-      // The file's kind must belong to the target folder: otherwise a file
-      // claiming "kind: article, status: published" aimed at the notes folder
-      // would mint a PUBLIC post while the caller believes it created a
-      // private note (and the item would not even land in the folder asked
-      // for, because the store files a post by its type).
-      if (folderModeForType(type) !== folder.mode) {
+      if (parsed.unknownKeys.length > 0) {
         return errorResult(
-          `Kind "${itemKindForPost({ type })}" does not belong in the ` +
-            `"${folder.path}" folder, which holds ${kindsForFolderMode(folder.mode)} ` +
-            "items. Pick a matching folder_path or drop the kind from the file.",
+          `Unsupported frontmatter keys: ${parsed.unknownKeys.join(", ")}.`,
         );
       }
-      // notes and bookmarks are always unlisted, no matter what the file says.
-      const status = isAlwaysDraftType(type)
-        ? ("draft" as const)
-        : (parsed.fields.status ?? ("draft" as const));
+      if (parsed.fields.status === "published") {
+        return errorResult(
+          "New items must start as drafts. Create it first, then use set_item_status after human confirmation.",
+        );
+      }
+      if (parsed.fields.pinned) {
+        return errorResult(
+          "New items cannot start pinned. Create it first, then use set_item_pinned.",
+        );
+      }
+      if (parsed.fields.date) {
+        return errorResult(
+          "A draft cannot have a publication date. Set the date after publishing.",
+        );
+      }
 
-      // createDraft files the post in the system folder matching its type,
-      // which the check above pinned to the requested folder_path. TODO: when
-      // the store learns multiple folders per mode, pass folder.id through.
-      const created = await createDraft(blog.handle, type);
+      const type = parsed.fields.type ?? DEFAULT_TYPE_BY_MODE[folder.mode];
+      if (folderModeForType(type) !== folder.mode) {
+        return errorResult(
+          `Kind "${itemKindForPost({ type })}" does not belong in ` +
+            `"${folder.path}", which holds ${kindsForFolderMode(folder.mode)} items.`,
+        );
+      }
+
+      const created = await createDraftInFolder(blog.handle, folder.id);
       try {
-        // date comes from the file alone: created.date is the placeholder's
-        // derived createdAt, and letting it through would backdate a publish.
         const saved = await savePost(blog.handle, {
           ...created,
           ...parsed.fields,
           type,
-          status,
-          date: parsed.fields.date,
+          status: "draft",
+          pinned: false,
+          date: undefined,
           slug: slugForNewFile(parsed.fields, created.slug),
           body: parsed.body,
         });
-        await auditMcp(extra, "mcp.create_item", saved.id, saved.title);
+        await auditMcp(extra, "mcp.create_item", "item", saved.id, saved.title);
         revalidateBlogPaths(blog, [saved.slug]);
-        return jsonResult({ item: itemEntry(blog, saved) });
+        return jsonResult({
+          folder: folderSummary(folder),
+          item: itemEntry(blog, saved),
+        });
       } catch (error) {
-        // Never strand the placeholder draft behind a failed save.
         if (created.id) await deletePost(blog.handle, created.id).catch(() => {});
         return saveErrorResult(error);
       }
-    },
-  );
+    }
 
-  server.registerTool(
-    "update_item",
-    {
-      title: "Update item",
-      description:
-        "Replace an item with a whole markdown file. Fields absent from the " +
-        "frontmatter keep their stored values; the body is always taken from " +
-        "the file. The kind can only change within the item's folder; a note " +
-        "or bookmark never becomes a public kind. Pass if_match_hash (from " +
-        "list_items or a previous mutation) so a concurrent edit fails " +
-        "loudly instead of being overwritten. Ask the owner before changing " +
-        "status to published.",
-      inputSchema: {
-        id: z.string().min(1).describe("The item id from list_items or search."),
-        markdown: z
-          .string()
-          .min(1)
-          .describe("The whole markdown file, frontmatter plus body."),
-        if_match_hash: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            "The item's hash as of the last read. If the item changed since, " +
-              "the update is rejected with a conflict.",
-          ),
-      },
-    },
-    async ({ id, markdown, if_match_hash }, extra) => {
-      const resolved = await requirePost(extra, id);
+    case "update_item": {
+      const input = args as WorkspaceToolInput<"update_item">;
+      const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       const { blog, post, access } = resolved;
       if (!access.canEditContent) return errorResult("You cannot edit this item.");
+      const stale = hashConflict(blog, post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(post);
+      if (typeof revision !== "number") return revision;
 
-      if (if_match_hash) {
-        const current = renderItemFile(blog, post);
-        if (normalizeItemHash(if_match_hash) !== current.hash) {
-          return errorResult(
-            `Conflict: "${post.title || post.slug}" changed since it was ` +
-              `read (its hash is now ${current.hash}). Fetch the latest ` +
-              "with read_item, merge your changes, then retry with the new hash.",
-          );
-        }
+      const content = input.markdown
+        ? markdownContentUpdate(post, input.markdown)
+        : {
+            title: input.title ?? post.title,
+            excerpt:
+              input.excerpt === null ? undefined : (input.excerpt ?? post.excerpt),
+            body: input.body ?? post.body,
+          };
+      if (isToolResult(content)) return content;
+      if (!access.isOwner && input.excerpt !== undefined) {
+        return errorResult("Only the owner can change an item's excerpt.");
       }
-
-      let parsed: ReturnType<typeof parsePostMarkdownFile>;
-      try {
-        parsed = parsePostMarkdownFile(markdown);
-      } catch (error) {
-        return parseErrorResult(error);
-      }
-
-      const type = parsed.fields.type ?? post.type;
-      // A kind may only change within the item's folder: the store never
-      // moves a post between folders on save, and relabeling a note or
-      // bookmark as a public kind would let one update publish something the
-      // owner filed as private.
-      if (folderModeForType(type) !== folderModeForType(post.type)) {
-        return errorResult(
-          `This item is a ${itemKindForPost(post)} and its kind can only ` +
-            `change to ${kindsForFolderMode(folderModeForType(post.type))}. ` +
-            "Notes and bookmarks stay private; to make content public, " +
-            "create a new draft in the blog folder instead.",
-        );
-      }
-      // notes and bookmarks are always unlisted, no matter what the file says.
-      const status = isAlwaysDraftType(type)
-        ? ("draft" as const)
-        : (parsed.fields.status ?? post.status);
 
       try {
-        // Same rule as sync PUT: owners may author metadata, while
-        // collaborators use the content-only store helper so the mapped date
-        // string cannot overwrite published_at.
         const saved = access.isOwner
-          ? await savePost(blog.handle, {
-              ...post,
-              ...parsed.fields,
-              type,
-              status,
-              date: parsed.fields.date,
-              slug: parsed.fields.slug ?? post.slug,
-              body: parsed.body,
-            },
-            // Compare-and-swap on the version we just hashed: if another writer
-            // committed between the read and here, conflict instead of clobber.
-            { expectedRevision: post.revision })
+          ? await savePost(
+              blog.handle,
+              {
+                ...post,
+                ...content,
+                status: isAlwaysDraftType(post.type) ? "draft" : post.status,
+                date: post.status === "published" ? post.date : undefined,
+              },
+              { expectedRevision: revision },
+            )
           : await savePostContentPatch(
               blog.handle,
               post,
-              {
-                title: parsed.fields.title ?? post.title,
-                cover: parsed.fields.cover ?? post.cover,
-                coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
-                coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
-                body: parsed.body,
-              },
-              { expectedRevision: post.revision },
+              { title: content.title, body: content.body },
+              { expectedRevision: revision },
             );
-        await auditMcp(extra, "mcp.update_item", saved.id, saved.title);
+        await auditMcp(extra, "mcp.update_item", "item", saved.id, saved.title);
         revalidateBlogPaths(blog, [post.slug, saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
       } catch (error) {
         if (error instanceof PostConflictError) {
-          return errorResult(
-            `Conflict: "${post.title || post.slug}" changed since it was read. ` +
-              "Fetch the latest with read_item, merge, then retry.",
-          );
+          return conflictResult(post, "the update could be saved");
         }
         return saveErrorResult(error);
       }
-    },
-  );
+    }
 
-  server.registerTool(
-    "append_to_item",
-    {
-      title: "Append to item",
-      description:
-        "Append a markdown fragment to the end of an item's body, separated " +
-        "by a blank line. Frontmatter and all other fields are untouched. " +
-        "Good for running logs and growing drafts.",
-      inputSchema: {
-        id: z.string().min(1).describe("The item id from list_items or search."),
-        markdown_fragment: z
-          .string()
-          .min(1)
-          .describe("Body markdown to append. No frontmatter."),
-      },
-    },
-    async ({ id, markdown_fragment }, extra) => {
-      const resolved = await requirePost(extra, id);
+    case "append_to_item": {
+      const input = args as WorkspaceToolInput<"append_to_item">;
+      const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       const { blog, post, access } = resolved;
       if (!access.canEditContent) return errorResult("You cannot edit this item.");
-
-      const fragment = markdown_fragment.trim();
+      const stale = hashConflict(blog, post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(post);
+      if (typeof revision !== "number") return revision;
+      const fragment = input.markdown_fragment.trim();
       const base = post.body.replace(/\s+$/, "");
       const body = base ? `${base}\n\n${fragment}` : fragment;
-
       try {
-        // date stays undefined: post.date is derived (publishedAt), and
-        // passing it back would turn it into an authored publish date. The
-        // revision guard makes this read-modify-write atomic so a concurrent
-        // edit is not clobbered by the appended copy.
-        const saved = await savePost(
-          blog.handle,
-          {
-            ...post,
-            date: undefined,
-            body,
-          },
-          { expectedRevision: post.revision },
-        );
-        await auditMcp(extra, "mcp.append_to_item", saved.id, saved.title);
+        const saved = access.isOwner
+          ? await savePost(
+              blog.handle,
+              {
+                ...post,
+                body,
+                status: isAlwaysDraftType(post.type) ? "draft" : post.status,
+                date: post.status === "published" ? post.date : undefined,
+              },
+              { expectedRevision: revision },
+            )
+          : await savePostContentPatch(
+              blog.handle,
+              post,
+              { body },
+              { expectedRevision: revision },
+            );
+        await auditMcp(extra, "mcp.append_to_item", "item", saved.id, saved.title);
         revalidateBlogPaths(blog, [saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
       } catch (error) {
         if (error instanceof PostConflictError) {
-          return errorResult(
-            `Conflict: "${post.title || post.slug}" changed since it was read. ` +
-              "Fetch the latest with read_item, then retry the append.",
-          );
+          return conflictResult(post, "the append could be saved");
         }
         return saveErrorResult(error);
       }
-    },
-  );
+    }
 
-  server.registerTool(
-    "search",
-    {
-      title: "Search items",
-      description:
-        "Case-insensitive substring search over the title, excerpt, and body " +
-        "of every item in the workspace, drafts and private folders " +
-        "included. Returns id, slug, title, kind, and a snippet around the " +
-        "first match.",
-      inputSchema: {
-        query: z.string().min(1).describe("Text to look for."),
+    case "move_item": {
+      const input = args as WorkspaceToolInput<"move_item">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.canEditContent) {
+        return errorResult("You cannot move this item.");
+      }
+      const folder = await accessibleFolder(resolved.blog, extra, input.folder_path);
+      if (isToolResult(folder)) return folder;
+      const targetAccess = await resolveFolderAccess({
+        handle: resolved.blog.handle,
+        folderId: folder.id,
+        user: accessUser(extra),
+      });
+      if (!targetAccess.canEditContent) {
+        return errorResult("You cannot move items into this folder.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      try {
+        const moved = await movePostFile(resolved.blog.handle, input.id, {
+          folderId: folder.id,
+          expectedRevision: revision,
+        });
+        if (!moved) return errorResult("Item not found.");
+        if (moved.changed) {
+          await auditMcp(
+            extra,
+            "mcp.move_item",
+            "item",
+            moved.post.id,
+            folder.path,
+          );
+          revalidateBlogPaths(resolved.blog, [moved.post.slug]);
+        }
+        return jsonResult({
+          changed: moved.changed,
+          folder: folderSummary(folder),
+          item: itemEntry(resolved.blog, moved.post),
+        });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the move could be saved");
+        }
+        return errorResult(error instanceof Error ? error.message : "Could not move item.");
+      }
+    }
+
+    case "delete_item": {
+      const input = args as WorkspaceToolInput<"delete_item">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) {
+        return errorResult("Only the owner can move this item to Trash.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      try {
+        await deletePostAtomic(
+          resolved.blog.handle,
+          input.id,
+          revision,
+        );
+        await auditMcp(
+          extra,
+          "mcp.delete_item",
+          "item",
+          input.id,
+          resolved.post.title,
+        );
+        revalidateBlogPaths(resolved.blog, [resolved.post.slug]);
+        return jsonResult({ ok: true, id: input.id, trashed: true });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "it could be moved to Trash");
+        }
+        return errorResult("The item could not be moved to Trash.");
+      }
+    }
+
+    case "restore_item": {
+      const input = args as WorkspaceToolInput<"restore_item">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      const trashed = await getTrashedPosts(resolved.blog.handle);
+      const post = trashed.find((entry) => entry.id === input.id);
+      if (!post) return errorResult("Item not found in Trash.");
+      if (isAlwaysDraftType(post.type) && post.status === "published") {
+        return errorResult(
+          "Notes and bookmarks must be unlisted before restoration.",
+        );
+      }
+      try {
+        const restored = await restorePost(resolved.blog.handle, input.id);
+        await auditMcp(
+          extra,
+          "mcp.restore_item",
+          "item",
+          input.id,
+          restored.title,
+        );
+        revalidateBlogPaths(resolved.blog, [restored.slug]);
+        return jsonResult({ item: itemEntry(resolved.blog, restored) });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : "The item could not be restored.",
+        );
+      }
+    }
+
+    case "set_item_status": {
+      const input = args as WorkspaceToolInput<"set_item_status">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) {
+        return errorResult("Only the owner can change publication status.");
+      }
+      if (isAlwaysDraftType(resolved.post.type) && input.status === "published") {
+        return errorResult("Notes and bookmarks are always unlisted.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      if (resolved.post.status === input.status) {
+        return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
+      }
+      try {
+        const saved = await savePost(
+          resolved.blog.handle,
+          {
+            ...resolved.post,
+            status: isAlwaysDraftType(resolved.post.type) ? "draft" : input.status,
+            date:
+              input.status === "published" ? resolved.post.date : undefined,
+          },
+          { expectedRevision: revision },
+        );
+        await auditMcp(
+          extra,
+          input.status === "published"
+            ? "mcp.publish_item"
+            : "mcp.unpublish_item",
+          "item",
+          saved.id,
+          saved.title,
+        );
+        revalidateBlogPaths(resolved.blog, [resolved.post.slug, saved.slug]);
+        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the status change could be saved");
+        }
+        return saveErrorResult(error);
+      }
+    }
+
+    case "set_item_metadata": {
+      const input = args as WorkspaceToolInput<"set_item_metadata">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) {
+        return errorResult("Only the owner can change item metadata.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      if (input.date !== undefined && resolved.post.status !== "published") {
+        return errorResult("Publication date can only be set on a published item.");
+      }
+      const next: Post = {
+        ...resolved.post,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.slug !== undefined ? { slug: input.slug } : {}),
+        ...(input.excerpt !== undefined
+          ? { excerpt: input.excerpt ?? undefined }
+          : {}),
+        ...(input.accent !== undefined
+          ? { accent: input.accent ?? undefined }
+          : {}),
+        ...(input.cover !== undefined ? { cover: input.cover ?? undefined } : {}),
+        ...(input.cover_caption !== undefined
+          ? { coverCaption: input.cover_caption ?? undefined }
+          : {}),
+        ...(input.cover_height !== undefined
+          ? { coverHeight: input.cover_height ?? undefined }
+          : {}),
+        ...(input.date !== undefined ? { date: input.date } : {}),
+        status: isAlwaysDraftType(resolved.post.type)
+          ? "draft"
+          : resolved.post.status,
+        pinned: resolved.post.pinned,
+      };
+      const changed =
+        next.title !== resolved.post.title ||
+        next.slug !== resolved.post.slug ||
+        next.excerpt !== resolved.post.excerpt ||
+        next.accent !== resolved.post.accent ||
+        next.cover !== resolved.post.cover ||
+        next.coverCaption !== resolved.post.coverCaption ||
+        next.coverHeight !== resolved.post.coverHeight ||
+        next.date !== resolved.post.date;
+      if (!changed) {
+        return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
+      }
+      try {
+        const saved = await savePost(resolved.blog.handle, next, {
+          expectedRevision: revision,
+        });
+        await auditMcp(
+          extra,
+          "mcp.set_item_metadata",
+          "item",
+          saved.id,
+          saved.title,
+        );
+        revalidateBlogPaths(resolved.blog, [resolved.post.slug, saved.slug]);
+        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the metadata change could be saved");
+        }
+        return saveErrorResult(error);
+      }
+    }
+
+    case "set_item_pinned": {
+      const input = args as WorkspaceToolInput<"set_item_pinned">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.isOwner) {
+        return errorResult("Only the owner can pin or unpin items.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      if (Boolean(resolved.post.pinned) === input.pinned) {
+        return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
+      }
+      try {
+        const saved = await savePost(
+          resolved.blog.handle,
+          {
+            ...resolved.post,
+            pinned: input.pinned,
+            status: isAlwaysDraftType(resolved.post.type)
+              ? "draft"
+              : resolved.post.status,
+            date:
+              resolved.post.status === "published" ? resolved.post.date : undefined,
+          },
+          { expectedRevision: revision },
+        );
+        await auditMcp(
+          extra,
+          input.pinned ? "mcp.pin_item" : "mcp.unpin_item",
+          "item",
+          saved.id,
+          saved.title,
+        );
+        revalidateBlogPaths(resolved.blog, [saved.slug]);
+        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the pin change could be saved");
+        }
+        return saveErrorResult(error);
+      }
+    }
+  }
+}
+
+export function registerWriteTools(server: McpServer): void {
+  const register = server.registerTool.bind(server) as unknown as RegisterTool;
+  for (const name of WORKSPACE_TOOL_NAMES) {
+    const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+    register(
+      name,
+      {
+        title: definition.title,
+        description: definition.description,
+        inputSchema: definition.inputSchema,
+        annotations: definition.annotations,
       },
-    },
-    async ({ query }, extra) => {
-      const blog = await requireBlog(extra);
-      if (isToolResult(blog)) return blog;
-      const posts = await getAccessibleAllPostFiles(
-        blog.handle,
-        accessUser(extra),
-      );
-      const results = posts
-        .filter((post) => post.id && postMatchesQuery(post, query))
-        .slice(0, SEARCH_RESULT_LIMIT)
-        .map((post) => ({
-          id: post.id,
-          slug: post.slug,
-          title: post.title,
-          kind: itemKindForPost(post),
-          snippet: searchSnippet(post, query),
-        }));
-      return jsonResult({ query, results });
-    },
-  );
+      (args, extra) => executeMcpTool(name, args, extra),
+    );
+  }
 }
