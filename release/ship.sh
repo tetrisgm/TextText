@@ -140,6 +140,8 @@ echo ">> migrate database: slug history"
 node "$ROOT/scripts/migrate-add-slug-history.mjs"
 echo ">> migrate database: app health reports"
 node "$ROOT/scripts/migrate-add-app-health.mjs"
+echo ">> migrate database: OAuth token lifecycle"
+node "$ROOT/scripts/migrate-add-oauth-token-lifecycle.mjs"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'

@@ -246,9 +246,12 @@ Content-Type: application/json
               <code className="connect-inline-code">{origin}/oauth/register</code>{" "}
               and send you to{" "}
               <code className="connect-inline-code">{origin}/oauth/authorize</code>{" "}
-              to click Approve. The public-client flow uses PKCE S256 and
-              requests exactly one scope: <code className="connect-inline-code">read</code>{" "}
-              or <code className="connect-inline-code">sync</code>.
+              to click Approve. The public-client flow uses PKCE S256. Clients
+              should request the least privilege they need: {" "}
+              <code className="connect-inline-code">read</code> or {" "}
+              <code className="connect-inline-code">sync</code>. A client that
+              requests both advertised scopes receives effective {" "}
+              <code className="connect-inline-code">sync</code> access.
             </li>
             <li>
               Approval returns a <code className="connect-inline-code">wsk_</code>{" "}

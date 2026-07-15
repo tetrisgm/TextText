@@ -84,11 +84,28 @@ describe("OAuth dynamic client registration", () => {
     );
   });
 
-  it("rejects unsupported or combined scopes", async () => {
+  it("normalizes a request for all advertised scopes", async () => {
     const response = await POST(
       registrationRequest({
         redirect_uris: ["https://connector.example/callback"],
         scope: "read sync",
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      scope: "sync",
+    });
+    expect(mocks.createRegisteredOAuthClient).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "sync" }),
+    );
+  });
+
+  it("rejects unsupported scopes", async () => {
+    const response = await POST(
+      registrationRequest({
+        redirect_uris: ["https://connector.example/callback"],
+        scope: "read unknown",
       }),
     );
 

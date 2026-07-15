@@ -34,11 +34,13 @@ Base URL: ${origin}/@{username}
 MCP Streamable HTTP endpoint: ${origin}/api/mcp
 
 The endpoint advertises OAuth discovery from its unauthenticated 401 response.
-The click-to-approve flow uses authorization code with PKCE S256 and exactly
-one scope:
+The click-to-approve flow uses authorization code with PKCE S256. Clients
+should request the least privilege they need:
 
 - read: the six read-only workspace tools
 - sync: all 17 tools, including mutations
+
+A client requesting both advertised scopes receives effective sync access.
 
 OAuth access tokens begin with wsk_ and expire after 3,600 seconds. Each token
 exchange also returns a wrt_ refresh token. Refresh tokens rotate on every use;

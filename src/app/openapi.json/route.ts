@@ -51,7 +51,8 @@ function openApiDocument(origin: string) {
             "Registers a public OAuth client and stores its exact redirect_uri " +
             "allowlist. Redirect URIs must be HTTPS absolute URLs with no " +
             "fragment or userinfo. The client uses PKCE S256 and no client " +
-            "secret. Request exactly one scope, read or sync. Include the " +
+            "secret. Request the least privilege needed, read or sync. A " +
+            "request for both advertised scopes receives sync. Include the " +
             "refresh_token grant type to advertise refresh support.",
           security: [],
           requestBody: {
@@ -572,12 +573,13 @@ function openApiDocument(origin: string) {
             },
             scope: {
               type: "string",
-              enum: ["read", "sync"],
+              pattern: "^(?:(?:read|sync)(?:\\s+(?:read|sync))*)$",
               default: "sync",
               description:
-                "Request exactly one scope. read is MCP read-only access; " +
-                "sync grants read/write access and is required by every " +
-                "action in this document.",
+                "Request the least privilege needed. read is MCP read-only " +
+                "access; sync grants read/write access and is required by " +
+                "every action in this document. A request containing both " +
+                "advertised scopes is normalized to sync.",
             },
           },
         },

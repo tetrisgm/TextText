@@ -166,13 +166,40 @@ describe("PKCE S256", () => {
 });
 
 describe("OAuth scopes and metadata", () => {
-  it("defaults existing clients to sync and accepts one explicit scope", () => {
+  it("defaults existing clients and normalizes supported scope sets", () => {
     expect(parseOAuthScope(undefined)).toBe("sync");
     expect(parseOAuthScope("read")).toBe("read");
     expect(parseOAuthScope(undefined, "read")).toBe("read");
-    expect(() => parseOAuthScope("read sync")).toThrowError(
+    expect(parseOAuthScope("read sync")).toBe("sync");
+    expect(parseOAuthScope("sync read read")).toBe("sync");
+    expect(parseOAuthScope("read read")).toBe("read");
+    expect(() => parseOAuthScope("read unknown")).toThrowError(
       expect.objectContaining({ code: "invalid_scope" }),
     );
+  });
+
+  it("accepts a connector requesting all advertised scopes", () => {
+    const client: OAuthClient = {
+      clientId: "all-scopes",
+      name: "All scopes",
+      redirectUris: ["https://connector.example/callback"],
+    };
+    const validation = validateOAuthAuthorizationParams(
+      new URLSearchParams({
+        client_id: client.clientId,
+        redirect_uri: client.redirectUris[0],
+        response_type: "code",
+        scope: "read sync",
+        code_challenge: pkceS256Challenge("v".repeat(43)),
+        code_challenge_method: "S256",
+      }),
+      { clients: [client] },
+    );
+
+    expect(validation).toMatchObject({
+      ok: true,
+      request: { scope: "sync" },
+    });
   });
 
   it("uses a dynamically registered client's read default", () => {

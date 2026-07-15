@@ -194,7 +194,8 @@ human click-to-approve consent page. Discovery follows this chain:
   -> /oauth/token
 ```
 
-OAuth clients request exactly one of `read` or `sync`. Authorization-code
+OAuth clients request `read` or `sync`; clients requesting both advertised
+scopes receive effective `sync` access. Authorization-code
 exchange returns a `wsk_` access token valid for one hour and a `wrt_` refresh
 token. Refresh tokens rotate on every use. Reuse of a consumed refresh token
 revokes the full family and all access tokens in it. Families have a 180-day

@@ -638,11 +638,18 @@ export function parseOAuthScope(
   defaultScope: OAuthScope = OAUTH_SCOPE,
 ): OAuthScope {
   if (rawScope === undefined || rawScope.trim() === "") return defaultScope;
-  const scopes = rawScope.trim().split(/\s+/);
-  if (scopes.length === 1 && isOAuthScope(scopes[0])) return scopes[0];
+  const scopes = new Set(rawScope.trim().split(/\s+/));
+  if ([...scopes].some((scope) => !isOAuthScope(scope))) {
+    throw new OAuthRequestError(
+      "invalid_scope",
+      `supported scopes are: ${OAUTH_SCOPES.join(", ")}`,
+    );
+  }
+  if (scopes.has(OAUTH_SCOPE)) return OAUTH_SCOPE;
+  if (scopes.has(OAUTH_READ_SCOPE)) return OAUTH_READ_SCOPE;
   throw new OAuthRequestError(
     "invalid_scope",
-    `scope must be exactly one of: ${OAUTH_SCOPES.join(", ")}`,
+    `supported scopes are: ${OAUTH_SCOPES.join(", ")}`,
   );
 }
 

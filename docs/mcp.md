@@ -24,8 +24,9 @@ The normal connection flow is OAuth authorization code with PKCE S256:
 
 1. The client follows the protected-resource and authorization-server
    metadata advertised by Write.
-2. Public clients can register at `/oauth/register` and request exactly one
-   scope: `read` or `sync`.
+2. Public clients can register at `/oauth/register` and request the least
+   privilege they need: `read` or `sync`. A client that requests both
+   advertised scopes receives effective `sync` access.
 3. Write shows the signed-in owner a consent page naming the client and
    requested access. The owner must click Approve.
 4. The authorization code exchange returns a `wsk_` bearer access token and a

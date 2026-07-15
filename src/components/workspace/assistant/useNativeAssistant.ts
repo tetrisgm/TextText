@@ -116,15 +116,23 @@ type UseNativeAssistantOptions = {
 };
 
 const TOOL_PROGRESS_LABELS: Record<string, string> = {
+  get_workspace: "Checking workspace access",
   list_folders: "Looking at your folders",
+  create_folder: "Creating a folder",
+  rename_folder: "Renaming a folder",
   list_items: "Listing items",
+  list_trash: "Looking in Trash",
   read_item: "Reading an item",
+  search: "Searching your workspace",
   create_item: "Creating an item",
   update_item: "Updating an item",
   append_to_item: "Appending to an item",
   move_item: "Moving an item",
-  delete_item: "Deleting an item",
+  delete_item: "Moving an item to Trash",
+  restore_item: "Restoring an item",
   set_item_status: "Changing publish status",
+  set_item_metadata: "Updating item details",
+  set_item_pinned: "Changing pin status",
 };
 
 // ---- Per-context transcript store (module scope, sessionStorage mirror) ----

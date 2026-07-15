@@ -34,6 +34,25 @@ import urllib.request
 BASE = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://localhost:3000"
 REDIRECT = "https://connector-test.example.com/callback"
 DEV_EMAIL = "connector-loop-test@example.com"
+EXPECTED_TOOLS = [
+    "get_workspace",
+    "list_folders",
+    "create_folder",
+    "rename_folder",
+    "list_items",
+    "list_trash",
+    "read_item",
+    "search",
+    "create_item",
+    "update_item",
+    "append_to_item",
+    "move_item",
+    "delete_item",
+    "restore_item",
+    "set_item_status",
+    "set_item_metadata",
+    "set_item_pinned",
+]
 
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -72,6 +91,17 @@ def call(op, url, data=None, headers=None, form=False):
 def fail(step, code, body):
     print(f"FAIL at {step}: HTTP {code}\n{body[:500]}")
     sys.exit(1)
+
+
+def rpc_payload(body):
+    """Decode either a direct JSON response or streamable HTTP SSE data."""
+    stripped = body.strip()
+    if stripped.startswith("{"):
+        return json.loads(stripped)
+    for line in stripped.splitlines():
+        if line.startswith("data:"):
+            return json.loads(line.removeprefix("data:").strip())
+    raise ValueError(f"No JSON-RPC payload in response: {body[:200]}")
 
 
 # 0. Discovery chain: the 401 breadcrumb and both metadata documents.
@@ -234,8 +264,108 @@ code, _, body = call(opener, f"{BASE}/api/mcp", {
 }, headers=mcp_headers)
 if code != 200:
     fail("mcp-tools", code, body)
-tools = re.findall(r'"name":"([a-z_]+)"', body)
-print(f"6. MCP tools/list: {tools}")
+try:
+    listed_tools = rpc_payload(body)["result"]["tools"]
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    fail("mcp-tools-shape", code, body)
+tool_names = [tool.get("name") for tool in listed_tools]
+if tool_names != EXPECTED_TOOLS:
+    fail("mcp-tools-contract", code, json.dumps(tool_names))
+for tool in listed_tools:
+    annotations = tool.get("annotations", {})
+    if (
+        annotations.get("openWorldHint") is not False
+        or not isinstance(annotations.get("readOnlyHint"), bool)
+        or not isinstance(annotations.get("destructiveHint"), bool)
+        or not isinstance(annotations.get("idempotentHint"), bool)
+    ):
+        fail("mcp-tool-annotations", code, json.dumps(tool))
+print(f"6. MCP tools/list: {len(tool_names)} canonical tools")
+
+code, _, body = call(opener, f"{BASE}/api/mcp", {
+    "jsonrpc": "2.0", "method": "tools/call", "id": 3,
+    "params": {"name": "get_workspace", "arguments": {}},
+}, headers=mcp_headers)
+if code != 200:
+    fail("mcp-get-workspace", code, body)
+try:
+    workspace_result = rpc_payload(body)["result"]
+    workspace_text = workspace_result["content"][0]["text"]
+    workspace = json.loads(workspace_text)
+except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+    fail("mcp-get-workspace-shape", code, body)
+if workspace_result.get("isError") or not workspace.get("workspace", {}).get("handle"):
+    fail("mcp-get-workspace-result", code, body)
+print("6a. MCP get_workspace: ok")
+
+# 6b. A separately approved read connection can inspect but cannot mutate.
+read_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+read_challenge = (
+    base64.urlsafe_b64encode(hashlib.sha256(read_verifier.encode()).digest())
+    .rstrip(b"=")
+    .decode()
+)
+read_authorize_query = urllib.parse.urlencode({
+    "response_type": "code",
+    "client_id": client_id,
+    "redirect_uri": REDIRECT,
+    "scope": "read",
+    "code_challenge": read_challenge,
+    "code_challenge_method": "S256",
+    "state": "readonly123",
+})
+code, _, body = call(opener, f"{BASE}/oauth/authorize?{read_authorize_query}")
+if code != 200 or "Read-only" not in body:
+    fail("read-consent", code, body)
+code, headers, body = call(no_redirect_opener, f"{BASE}/oauth/authorize/approve", {
+    "decision": "approve",
+    "response_type": "code",
+    "client_id": client_id,
+    "redirect_uri": REDIRECT,
+    "scope": "read",
+    "code_challenge": read_challenge,
+    "code_challenge_method": "S256",
+    "state": "readonly123",
+}, form=True, headers={"Origin": BASE, "Referer": f"{BASE}/oauth/authorize"})
+read_location = headers.get("Location") or headers.get("location")
+if code not in (302, 303, 307) or not read_location:
+    fail("read-approve", code, body)
+read_code = urllib.parse.parse_qs(
+    urllib.parse.urlparse(read_location).query
+).get("code", [""])[0]
+code, _, body = call(opener, f"{BASE}/oauth/token", {
+    "grant_type": "authorization_code",
+    "code": read_code,
+    "redirect_uri": REDIRECT,
+    "client_id": client_id,
+    "code_verifier": read_verifier,
+}, form=True)
+if code != 200:
+    fail("read-token", code, body)
+read_token = json.loads(body)
+if read_token.get("scope") != "read":
+    fail("read-token-scope", code, body)
+read_headers = {
+    "Authorization": f"Bearer {read_token['access_token']}",
+    "Accept": "application/json, text/event-stream",
+}
+code, _, body = call(opener, f"{BASE}/api/mcp", {
+    "jsonrpc": "2.0", "method": "tools/call", "id": 31,
+    "params": {"name": "get_workspace", "arguments": {}},
+}, headers=read_headers)
+if code != 200:
+    fail("read-scope-read", code, body)
+code, headers, body = call(opener, f"{BASE}/api/mcp", {
+    "jsonrpc": "2.0", "method": "tools/call", "id": 32,
+    "params": {
+        "name": "create_folder",
+        "arguments": {"parent_path": "blog", "name": "Must Not Exist"},
+    },
+}, headers=read_headers)
+www = headers.get("WWW-Authenticate", headers.get("www-authenticate", ""))
+if code != 403 or "insufficient_scope" not in body or 'scope="sync"' not in www:
+    fail("read-scope-mutation", code, f"{body}\nWWW-Authenticate: {www}")
+print("6b. read scope: reads allowed, mutation rejected")
 
 # 7. Rotate the refresh token and use the replacement access token.
 code, _, body = call(opener, f"{BASE}/oauth/token", {
@@ -261,7 +391,7 @@ rotated_headers = {
     "Accept": "application/json, text/event-stream",
 }
 code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 3, "params": {},
+    "jsonrpc": "2.0", "method": "tools/list", "id": 4, "params": {},
 }, headers=rotated_headers)
 if code != 200:
     fail("mcp-tools-after-refresh", code, body)
@@ -278,13 +408,13 @@ if code != 400 or replay.get("error") != "invalid_grant":
     fail("refresh-replay", code, body)
 
 code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 4, "params": {},
+    "jsonrpc": "2.0", "method": "tools/list", "id": 5, "params": {},
 }, headers=rotated_headers)
 if code != 401:
     fail("refresh-replay-family-revocation", code, body)
 
 code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 5, "params": {},
+    "jsonrpc": "2.0", "method": "tools/list", "id": 6, "params": {},
 }, headers=mcp_headers)
 if code != 401:
     fail("refresh-replay-original-access-revocation", code, body)
