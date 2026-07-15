@@ -205,6 +205,20 @@ export async function upsertPresence(
   return activePresence(postId);
 }
 
+/**
+ * True while at least one editor is actively co-editing this post (a presence
+ * heartbeat within the stale window). The canonical `posts.body` and the live
+ * Yjs document are separate write paths bridged only by the editor's own
+ * autosave, with NO store -> Yjs path, so an external raw body overwrite (a
+ * Finder/sync PUT or an MCP update) made during a live session would be
+ * silently discarded by the next co-editor autosave. Callers use this to refuse
+ * such a write with a conflict instead of losing it.
+ */
+export async function hasActiveCoEditors(postId: string): Promise<boolean> {
+  if (!db) return false;
+  return (await activePresence(postId)).length > 0;
+}
+
 export async function activePresence(postId: string): Promise<PresenceEntry[]> {
   if (!db) return [];
   const cutoff = new Date(Date.now() - PRESENCE_STALE_MS);

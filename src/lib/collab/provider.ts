@@ -10,7 +10,31 @@ const REMOTE_ORIGIN = "collab-remote";
 const CLIENT_ID_STORAGE_PREFIX = "write:collab:client:";
 const PUSH_DEBOUNCE_MS = 250;
 const PUSH_RETRY_MS = 1500;
+const PUSH_MAX_RETRY_MS = 30_000;
+const POLL_RETRY_MS = 2000;
+const POLL_MAX_RETRY_MS = 30_000;
 const MAX_PUSH_BATCH = 64;
+
+/** 401/403: this session no longer has access to the post. Retrying is futile
+ * and just hammers the server, so every collab loop must stop hard. */
+function isAccessLoss(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+/** A payload the server will never accept (malformed / too large / not an
+ * editor). Retrying the SAME batch loops forever; drop it instead. */
+function isPermanentPushError(status: number): boolean {
+  return status === 400 || status === 413 || status === 422;
+}
+
+/** Capped exponential backoff with equal jitter, so a flapping server or a
+ * network blip is retried gently instead of in a tight flat-interval loop. The
+ * first retry (attempt 1) lands within [base/2, base); each further attempt
+ * doubles, capped at maxMs. */
+function backoff(attempt: number, baseMs: number, maxMs: number): number {
+  const exp = Math.min(maxMs, baseMs * 2 ** Math.min(Math.max(attempt - 1, 0), 8));
+  return exp / 2 + Math.random() * (exp / 2);
+}
 
 function u8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -40,12 +64,21 @@ export type CollabProviderOptions = {
   onError?: (message: string) => void;
 };
 
+type OutboxSubscriber = {
+  onError?: CollabProviderOptions["onError"];
+  /** Called when the relay reports this session lost access (401/403), so the
+   * subscribing provider tears its poll/heartbeat loops down too. */
+  onFatal?: () => void;
+};
+
 type Outbox = {
   base: string;
   flushing: boolean;
   pending: Uint8Array[];
-  subscribers: Map<symbol, CollabProviderOptions["onError"]>;
+  subscribers: Map<symbol, OutboxSubscriber>;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Consecutive transient failures, for backoff. Reset on any success. */
+  retries: number;
 };
 
 // A provider is tied to a mounted editor, but unsent edits are tied to the
@@ -62,6 +95,7 @@ function outboxFor(postId: string, base: string): Outbox {
     pending: [],
     subscribers: new Map(),
     timer: null,
+    retries: 0,
   };
   outboxes.set(postId, created);
   return created;
@@ -93,6 +127,16 @@ async function flushOutbox(postId: string, outbox: Outbox) {
     return;
   }
 
+  const report = (message: string) => {
+    for (const sub of outbox.subscribers.values()) {
+      try {
+        sub.onError?.(message);
+      } catch {
+        // A reporting callback must not interrupt delivery retries.
+      }
+    }
+  };
+
   outbox.flushing = true;
   const batch = outbox.pending.slice(0, MAX_PUSH_BATCH);
   let nextDelay = PUSH_DEBOUNCE_MS;
@@ -102,19 +146,39 @@ async function flushOutbox(postId: string, outbox: Outbox) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ updates: batch.map(u8ToBase64) }),
     });
-    if (!res.ok) throw new Error(`push ${res.status}`);
-    outbox.pending.splice(0, batch.length);
-  } catch (error) {
-    nextDelay = PUSH_RETRY_MS;
-    const message =
-      error instanceof Error ? error.message : "collab push failed";
-    for (const onError of outbox.subscribers.values()) {
-      try {
-        onError?.(message);
-      } catch {
-        // A reporting callback must not interrupt delivery retries.
+    if (res.ok) {
+      outbox.pending.splice(0, batch.length);
+      outbox.retries = 0;
+    } else if (isAccessLoss(res.status)) {
+      // Fatal: this session lost access. Drop the queue (it can never be
+      // delivered) and stop every provider on this post, instead of spamming
+      // the relay every retry interval.
+      outbox.pending.length = 0;
+      report("You no longer have edit access to this item.");
+      for (const sub of outbox.subscribers.values()) {
+        try {
+          sub.onFatal?.();
+        } catch {
+          // teardown of one subscriber must not block the others
+        }
       }
+    } else if (isPermanentPushError(res.status)) {
+      // This batch will never be accepted (malformed / too large). Drop just
+      // it so it can never poison-pill the queue, and keep delivering the rest.
+      outbox.pending.splice(0, batch.length);
+      outbox.retries = 0;
+      report("Some edits could not be synced and were dropped.");
+    } else {
+      // Transient (5xx / rate limit): keep the batch and back off.
+      outbox.retries += 1;
+      nextDelay = backoff(outbox.retries, PUSH_RETRY_MS, PUSH_MAX_RETRY_MS);
+      report(`collab push failed (${res.status})`);
     }
+  } catch (error) {
+    // Network error: keep the batch and back off.
+    outbox.retries += 1;
+    nextDelay = backoff(outbox.retries, PUSH_RETRY_MS, PUSH_MAX_RETRY_MS);
+    report(error instanceof Error ? error.message : "collab push failed");
   } finally {
     outbox.flushing = false;
     if (outbox.pending.length > 0) {
@@ -156,6 +220,10 @@ export class CollabProvider {
   private readonly base: string;
   private readonly outboxSubscriber = Symbol("collab-provider");
   private outbox: Outbox | null = null;
+  // Aborts the in-flight 25s long-poll immediately on teardown so a destroyed
+  // provider does not hold a connection open for up to the full wait window.
+  private readonly abort = new AbortController();
+  private pollRetries = 0;
 
   constructor(
     private readonly doc: Y.Doc,
@@ -180,7 +248,12 @@ export class CollabProvider {
 
     const outbox = outboxFor(this.opts.postId, this.base);
     this.outbox = outbox;
-    outbox.subscribers.set(this.outboxSubscriber, this.opts.onError);
+    outbox.subscribers.set(this.outboxSubscriber, {
+      onError: this.opts.onError,
+      // A push that 401/403s means this session lost access; tear down this
+      // provider's poll + heartbeat loops too, not just the outbox.
+      onFatal: () => this.stop(),
+    });
     const hadPendingUpdates = outbox.pending.length > 0;
 
     // A remounted editor gets the still-local Yjs operations immediately.
@@ -200,15 +273,8 @@ export class CollabProvider {
   }
 
   destroy(): void {
-    if (this.stopped) return;
-    this.stopped = true;
-    if (this.started) this.doc.off("update", this.onDocUpdate);
-    if (this.presenceTimer) clearInterval(this.presenceTimer);
-    if (this.outbox) {
-      this.outbox.subscribers.delete(this.outboxSubscriber);
-      releaseOutbox(this.opts.postId, this.outbox);
-    }
-    // Best-effort leave so peers drop us promptly.
+    if (this.stopped) return; // already stopped (e.g. after an access-loss)
+    // Best-effort leave so peers drop us promptly. Sent before stop() aborts.
     if (
       this.opts.canPush &&
       typeof navigator !== "undefined" &&
@@ -218,6 +284,25 @@ export class CollabProvider {
         `${this.base}/presence`,
         JSON.stringify({ clientId: this.clientId, userName: this.opts.userName, color: this.opts.color, leave: true }),
       );
+    }
+    this.stop();
+  }
+
+  /** Tear down every loop and release shared state. Idempotent. Invoked by
+   * destroy() (editor unmount) and by an access-loss (401/403) on any loop, so
+   * a mid-session revoke stops the push/poll/heartbeat hammering at once. */
+  private stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.abort.abort();
+    if (this.started) this.doc.off("update", this.onDocUpdate);
+    if (this.presenceTimer) {
+      clearInterval(this.presenceTimer);
+      this.presenceTimer = null;
+    }
+    if (this.outbox) {
+      this.outbox.subscribers.delete(this.outboxSubscriber);
+      releaseOutbox(this.opts.postId, this.outbox);
     }
   }
 
@@ -277,7 +362,14 @@ export class CollabProvider {
     try {
       while (!this.stopped) {
         const previousSeq = this.lastSeq;
-        const res = await fetch(`${this.base}?since=${previousSeq}&wait=0`);
+        const res = await fetch(`${this.base}?since=${previousSeq}&wait=0`, {
+          signal: this.abort.signal,
+        });
+        if (isAccessLoss(res.status)) {
+          this.opts.onError?.("You no longer have access to this item.");
+          this.stop();
+          return { authoritative: false, remoteEmpty: false };
+        }
         if (!res.ok) {
           return { authoritative: false, remoteEmpty: false };
         }
@@ -321,21 +413,37 @@ export class CollabProvider {
     return { authoritative: false, remoteEmpty: false };
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
   private async pollLoop() {
     while (!this.stopped) {
       try {
-        const res = await fetch(`${this.base}?since=${this.lastSeq}&wait=25`);
+        const res = await fetch(`${this.base}?since=${this.lastSeq}&wait=25`, {
+          signal: this.abort.signal,
+        });
+        if (isAccessLoss(res.status)) {
+          this.opts.onError?.("You no longer have access to this item.");
+          this.stop();
+          return;
+        }
         if (!res.ok) {
-          await new Promise((r) => setTimeout(r, 2000));
+          this.pollRetries += 1;
+          await this.sleep(backoff(this.pollRetries, POLL_RETRY_MS, POLL_MAX_RETRY_MS));
           continue;
         }
+        this.pollRetries = 0;
         const data = (await res.json()) as { updates: Array<{ seq: number; update: string }>; seq: number };
         // Same corruption-tolerant path as catchUp: applyRow advances past a
         // row even if applying it throws, so one bad update can never stall
         // the loop by making it re-fetch the same seq forever.
         for (const row of data.updates) this.applyRow(row);
-      } catch {
-        await new Promise((r) => setTimeout(r, 2000));
+      } catch (error) {
+        // A torn-down provider's aborted fetch is expected, not a failure.
+        if (this.stopped || (error as { name?: string })?.name === "AbortError") return;
+        this.pollRetries += 1;
+        await this.sleep(backoff(this.pollRetries, POLL_RETRY_MS, POLL_MAX_RETRY_MS));
       }
     }
   }
@@ -346,12 +454,18 @@ export class CollabProvider {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: this.clientId, userName: this.opts.userName, color: this.opts.color }),
+        signal: this.abort.signal,
       });
+      if (isAccessLoss(res.status)) {
+        this.opts.onError?.("You no longer have access to this item.");
+        this.stop();
+        return;
+      }
       if (!res.ok) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
       this.opts.onPresence?.(data.presence);
     } catch {
-      // presence is best-effort
+      // presence is best-effort (an aborted heartbeat on teardown is expected)
     }
   }
 }

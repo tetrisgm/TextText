@@ -14,6 +14,7 @@ import {
   savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
+import { hasActiveCoEditors } from "@/lib/collab";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -103,6 +104,13 @@ export async function PUT(request: Request, { params }: Props) {
   const current = renderSyncFile(blog, post);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
+  }
+  // A live co-editing session owns the post body through its Yjs document, which
+  // this raw overwrite has no way to merge into; the next co-editor autosave
+  // would silently discard it. Refuse rather than lose the write. The sync
+  // client surfaces the 409 like any conflict and retries once the session ends.
+  if (post.id && (await hasActiveCoEditors(post.id))) {
+    return syncError(409, "This item is being co-edited right now; try again after the session ends");
   }
   // The If-Match check above is fast but check-then-write: two PUTs on the same
   // base both pass it before either commits. The base revision is carried into

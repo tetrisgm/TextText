@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   recordAction: vi.fn(),
   recordSlugChanged: vi.fn(),
   revalidateBlogPaths: vi.fn(),
+  hasActiveCoEditors: vi.fn(async () => false),
+  savePost: vi.fn(),
+  savePostContentPatch: vi.fn(),
 }));
 
 vi.mock("@/lib/store", () => ({
@@ -25,8 +28,8 @@ vi.mock("@/lib/store", () => ({
   markCapturePending: vi.fn(),
   movePostFile: mocks.movePostFile,
   PostConflictError: mocks.PostConflictError,
-  savePost: vi.fn(),
-  savePostContentPatch: vi.fn(),
+  savePost: mocks.savePost,
+  savePostContentPatch: mocks.savePostContentPatch,
 }));
 
 vi.mock("@/lib/permissions", () => ({
@@ -40,6 +43,10 @@ vi.mock("@/app/api/sync/v1/auth", () => ({
 vi.mock("@/lib/audit", () => ({
   recordAction: mocks.recordAction,
   recordSlugChanged: mocks.recordSlugChanged,
+}));
+
+vi.mock("@/lib/collab", () => ({
+  hasActiveCoEditors: mocks.hasActiveCoEditors,
 }));
 
 vi.mock("@/lib/revalidate-blog", () => ({
@@ -337,5 +344,44 @@ describe("sync file DELETE", () => {
 
     expect(response.status).toBe(412);
     expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("sync file PUT during a live co-editing session", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: true,
+    });
+  });
+
+  it("refuses a raw body overwrite with 409 while co-editors are present", async () => {
+    mocks.hasActiveCoEditors.mockResolvedValue(true);
+    const response = await PUT(
+      mutationRequest("PUT", `"${renderSyncFile(blog, post).hash}"`),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    // A live Yjs session owns the body; the overwrite would be lost. It must
+    // conflict (409) rather than clobber, and never reach the store.
+    expect(response.status).toBe(409);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(mocks.savePostContentPatch).not.toHaveBeenCalled();
+  });
+
+  it("saves normally when no one is co-editing", async () => {
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
+    mocks.savePost.mockResolvedValue({ ...post, body: "Body" });
+    const response = await PUT(
+      mutationRequest("PUT", `"${renderSyncFile(blog, post).hash}"`),
+      { params: Promise.resolve({ postId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 });

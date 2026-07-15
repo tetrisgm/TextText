@@ -193,4 +193,53 @@ describe("CollabProvider startup and outbox", () => {
     expect(target.getMap("body").get("text")).toBe("remote");
     provider.destroy();
   });
+
+  it("stops pushing and reports when a push loses access (403)", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
+    const never = new Promise<Response>(() => {});
+    const errors: string[] = [];
+    let pushes = 0;
+    let catchUpDone = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") {
+          pushes += 1;
+          return jsonResponse({ error: "revoked" }, 403);
+        }
+        // First GET (catch-up) returns empty/authoritative; the poll GET parks.
+        if (!catchUpDone) {
+          catchUpDone = true;
+          return jsonResponse({ updates: [], seq: 0 });
+        }
+        return never;
+      }),
+    );
+
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "revoked-mid-session",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+      onError: (m) => errors.push(m),
+    });
+    await provider.start();
+
+    doc.getMap("body").set("text", "first edit"); // queues a push
+    await vi.advanceTimersByTimeAsync(400); // flush debounce -> push -> 403
+    expect(pushes).toBe(1);
+    expect(errors.some((m) => /access/i.test(m))).toBe(true);
+
+    // After the access loss the provider is stopped: a further edit must not
+    // queue a new push, so the relay is never hammered post-revoke.
+    doc.getMap("body").set("text", "second edit");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(pushes).toBe(1);
+
+    provider.destroy();
+  });
 });
