@@ -161,6 +161,16 @@ export interface AppHealthReleaseEvaluation {
   alerts: AppHealthAlert[];
 }
 
+export type AppHealthOwnerReleaseBlockingCode =
+  | AppHealthAlert["code"]
+  | "exact_release_not_pass";
+
+export interface AppHealthOwnerReleaseGate {
+  requiredStatus: "pass";
+  passed: boolean;
+  blockingCodes: AppHealthOwnerReleaseBlockingCode[];
+}
+
 export function parseAppHealthReleaseTarget(
   value: unknown,
 ): AppHealthReleaseTarget | null {
@@ -173,6 +183,25 @@ export function parseAppHealthRollupRow(
 ): AppHealthRollupRow | null {
   const parsed = appHealthRollupRowSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+export function evaluateAppHealthOwnerReleaseGate(
+  evaluation: AppHealthReleaseEvaluation,
+): AppHealthOwnerReleaseGate {
+  if (evaluation.status === "pass" && evaluation.reportCount > 0) {
+    return { requiredStatus: "pass", passed: true, blockingCodes: [] };
+  }
+
+  const blockingCodes: AppHealthOwnerReleaseBlockingCode[] =
+    evaluation.alerts.map((alert) => alert.code);
+  if (evaluation.status === "warning" || blockingCodes.length === 0) {
+    blockingCodes.push("exact_release_not_pass");
+  }
+  return {
+    requiredStatus: "pass",
+    passed: false,
+    blockingCodes: [...new Set(blockingCodes)],
+  };
 }
 
 function round(value: number): number {

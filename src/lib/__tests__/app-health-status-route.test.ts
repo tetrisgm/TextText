@@ -47,6 +47,14 @@ function evaluation(releaseReady: boolean) {
   };
 }
 
+function warningEvaluation() {
+  return {
+    ...evaluation(true),
+    status: "warning",
+    reportCount: 1,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.APP_HEALTH_REVIEW_TOKEN = reviewToken;
@@ -117,6 +125,19 @@ describe("app health status route", () => {
       status: "fail",
       releaseReady: false,
       alerts: [{ code: "exact_release_missing" }],
+    });
+  });
+
+  it("keeps a non-regressing cohort warning non-blocking", async () => {
+    mocks.loadAppHealthReleaseEvaluation.mockResolvedValue(warningEvaluation());
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "warning",
+      releaseReady: true,
+      reportCount: 1,
+      alerts: [],
     });
   });
 

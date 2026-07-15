@@ -77,12 +77,16 @@ content, free-form errors, or database exception details.
 
 Supplying both `--version` and `--build` activates release mode. Release mode
 always fails closed; `--require-reports` and `--fail-on-failure` remain accepted
-for compatibility with existing ship commands but are not required. Exit code
-`2` means the exact release is missing. Exit code `3` means a blocking health
-alert was found. Invalid arguments, missing database configuration, query
-errors, and malformed stored exact-release rows exit `1` or block the release.
-The stderr values are stable machine codes such as
-`APP_HEALTH_EXACT_RELEASE_MISSING` rather than raw errors.
+for compatibility with existing ship commands but are not required. The owner
+release gate requires the exact cohort's aggregate status to be `pass`; an
+otherwise non-blocking `warning` fails this CLI gate. JSON output includes
+`releaseGate.requiredStatus`, `releaseGate.passed`, and stable
+`releaseGate.blockingCodes`. Exit code `2` means the exact release is missing.
+Exit code `3` means the release is failed, regressed, or warning-only. Invalid
+arguments, missing database configuration, query errors, and malformed stored
+exact-release rows exit `1` or block the release. Stderr uses stable machine
+codes such as `APP_HEALTH_EXACT_RELEASE_MISSING` and
+`APP_HEALTH_EXACT_RELEASE_NOT_PASS` rather than raw errors.
 
 ## Automatic triage
 
@@ -106,7 +110,8 @@ the pass rate drops by at least 10 percentage points with a two-proportion
 z-score of at least 1.96. The baseline is the most recent 200 reports for the
 same app received before the first report for the target release. Report and
 per-check rates are evaluated independently. Warnings remain visible but do
-not block unless they produce a significant pass-rate regression.
+not block the broader cohort evaluation unless they produce a significant
+pass-rate regression.
 
 The production machine endpoint is:
 
@@ -121,6 +126,13 @@ exact release is ready and `503` for missing reports, blocking alerts, missing
 database access, or missing review-token configuration. Invalid targets return
 `400`; invalid credentials return `401`. Every response is machine-readable,
 and operational failures use enumerated codes without exception text.
+
+The endpoint and owner CLI deliberately answer different policy questions.
+The endpoint reports cohort health and can return `200` with `status: "warning"`
+and `releaseReady: true` when no blocking alert exists. The exact version/build
+CLI used by `release/ship.sh` applies the stricter owner gate and exits nonzero
+for that same warning. Both consume the same content-blind summaries; neither
+loads or emits document content or installation identity.
 
 The existing app-health migration creates release/build and receipt-time
 indexes used by these live rollups. No rollup table or additional identifiers

@@ -2,6 +2,7 @@
 import * as nextEnv from "@next/env";
 
 import {
+  evaluateAppHealthOwnerReleaseGate,
   evaluateAppHealthRelease,
   parseAppHealthReleaseTarget,
   summarizeAppHealthRows,
@@ -204,15 +205,18 @@ async function main(): Promise<number> {
         limit: options.limit,
       });
     }
+    const releaseGate = evaluateAppHealthOwnerReleaseGate(evaluation);
+    const review = { ...evaluation, releaseGate };
 
     if (options.asJson) {
-      console.log(JSON.stringify(evaluation, null, 2));
+      console.log(JSON.stringify(review, null, 2));
     } else {
       console.log(
         `App health release: ${target.appVersion} (${target.buildNumber})`,
       );
       console.log(`Status: ${evaluation.status}`);
       console.log(`Reports: ${evaluation.reportCount}`);
+      console.log(`Release gate: ${releaseGate.passed ? "pass" : "fail"}`);
       printSummaries(evaluation.summaries);
       printAlerts(evaluation.alerts);
     }
@@ -221,8 +225,12 @@ async function main(): Promise<number> {
       console.error("APP_HEALTH_EXACT_RELEASE_MISSING");
       return 2;
     }
-    if (!evaluation.releaseReady) {
-      console.error("APP_HEALTH_RELEASE_BLOCKED");
+    if (!releaseGate.passed) {
+      console.error(
+        evaluation.status === "warning"
+          ? "APP_HEALTH_EXACT_RELEASE_NOT_PASS"
+          : "APP_HEALTH_RELEASE_BLOCKED",
+      );
       return 3;
     }
     return 0;

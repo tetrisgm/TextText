@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  evaluateAppHealthOwnerReleaseGate,
   evaluateAppHealthRelease,
   parseAppHealthRollupRow,
   summarizeAppHealthRows,
@@ -114,6 +115,11 @@ describe("app health rollups", () => {
         failureCount: 1,
       }),
     );
+    expect(evaluateAppHealthOwnerReleaseGate(evaluation)).toEqual({
+      requiredStatus: "pass",
+      passed: false,
+      blockingCodes: ["check_failed"],
+    });
   });
 
   it("blocks statistically significant report and check pass-rate drops", () => {
@@ -170,6 +176,26 @@ describe("app health rollups", () => {
     expect(evaluation.releaseReady).toBe(true);
     expect(evaluation.status).toBe("warning");
     expect(evaluation.alerts).toEqual([]);
+    expect(evaluateAppHealthOwnerReleaseGate(evaluation)).toEqual({
+      requiredStatus: "pass",
+      passed: false,
+      blockingCodes: ["exact_release_not_pass"],
+    });
+  });
+
+  it("passes the owner release gate only for an overall pass", () => {
+    const evaluation = evaluateAppHealthRelease(
+      [row({ receivedAt: "2026-07-21T10:00:00Z" })],
+      target,
+      { evaluatedAt: new Date("2026-07-21T10:01:00Z") },
+    );
+
+    expect(evaluation.status).toBe("pass");
+    expect(evaluateAppHealthOwnerReleaseGate(evaluation)).toEqual({
+      requiredStatus: "pass",
+      passed: true,
+      blockingCodes: [],
+    });
   });
 
   it("rejects rows that include full report metadata", () => {
