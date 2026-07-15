@@ -231,6 +231,18 @@ if [ -n "$ORIGIN" ]; then
   echo "   zip:      $PUBLIC_ZIP_URL"
   echo "   version:  $API_VERSION ($API_BUILD)"
   echo "   guest:    $GUEST_SMOKE_URL"
+
+  # Live-execute the shared workspace workflows against the just-deployed prod
+  # (an isolated scratch workspace, torn down in the script's finally), asserting
+  # the real mutation and its audit row. This is the executable complement to the
+  # content-blind capability receipts above. Needs DB access; skipped without it.
+  if [ -n "${DATABASE_URL:-}" ]; then
+    echo ">> verify workspace workflows on the live release"
+    WRITE_ORIGIN="$ORIGIN" DATABASE_URL="$DATABASE_URL" \
+      npx tsx "$ROOT/scripts/verify-workflow-live.ts"
+  else
+    echo "   (skipping live workflow probe: DATABASE_URL not set)"
+  fi
 fi
 
 echo ">> install verified Mac app"
