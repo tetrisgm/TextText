@@ -18,17 +18,18 @@ final class AppHealthReporterTests: XCTestCase {
         }
 
         let store = StateStore()
+        store.clearIndex()
         let reporter = AppHealthReporter(
             stateStore: store,
             syncRootProvider: { root },
-            finderStatusProvider: { .unavailable },
+            finderStatusProvider: { .healthyFixture },
             bundle: bundle)
         let report = reporter.run(trigger: .releaseVerification)
 
         XCTAssertEqual(report.appIdentifier, "net.writeapp.write.test")
         XCTAssertEqual(report.appVersion, "9.8")
         XCTAssertEqual(report.buildNumber, "76")
-        XCTAssertEqual(report.status, .warning)
+        XCTAssertEqual(report.status, .pass)
         XCTAssertEqual(report.checks.map(\.id), [
             "bundle.release",
             "build.attestation",

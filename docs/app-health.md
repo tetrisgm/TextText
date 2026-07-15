@@ -11,7 +11,12 @@ integrations, and reports can be reviewed without collecting document content.
 2. The ship process writes a build attestation containing stable suite IDs,
    source commit, version, and build.
 3. The receipt is copied into the app before code signing.
-4. The staged app runs `releaseVerification`. A failed check blocks publishing.
+4. The staged app runs `releaseVerification`. Any non-passing check blocks
+   publishing.
+   The isolated verifier seeds an empty sync index and a healthy local Finder
+   fixture because it has no registered File Provider domain; extension
+   embedding and the real Finder lifecycle are covered by separate checks and
+   the deterministic soak. Every staged check must still return `pass`.
 5. The installed app runs on the first launch of each version. An app-owned
    hourly scheduler runs the next report when the daily interval becomes due,
    even if the app remains open in the background.

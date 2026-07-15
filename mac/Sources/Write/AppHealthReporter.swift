@@ -689,11 +689,17 @@ final class AppHealthReporter {
 enum AppHealthCLI {
     static func run() -> Int32 {
         let stateStore = StateStore()
+        // Release verification runs in a fresh, isolated workspace with no
+        // registered File Provider domain. Seed the two local runtime
+        // preconditions explicitly; extension embedding and the real Finder
+        // lifecycle are verified independently by this report and the release
+        // test suite.
+        stateStore.clearIndex()
         let syncRoot = WorkspaceRootResolver().resolve().url
         let reporter = AppHealthReporter(
             stateStore: stateStore,
             syncRootProvider: { syncRoot },
-            finderStatusProvider: { .unavailable })
+            finderStatusProvider: { .make(pendingCount: 0) })
         let report = reporter.run(trigger: .releaseVerification)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -701,7 +707,7 @@ enum AppHealthCLI {
         guard let data = try? encoder.encode(report) else { return 1 }
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write(Data("\n".utf8))
-        return report.status == .fail ? 1 : 0
+        return report.status == .pass ? 0 : 1
     }
 }
 

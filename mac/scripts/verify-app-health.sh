@@ -48,13 +48,11 @@ assert report.get("schemaVersion") == 1, "unexpected health schema"
 assert report.get("appVersion") == version, "health report version mismatch"
 assert report.get("buildNumber") == build, "health report build mismatch"
 assert report.get("trigger") == "releaseVerification", "wrong health trigger"
-assert report.get("status") != "fail", "staged app health failed"
+assert report.get("status") == "pass", "staged app health is not pass"
 assert required <= ids, "staged app omitted required health checks"
-assert all(
-    check["status"] == "pass"
-    for check in report["checks"]
-    if check["id"].startswith("selftest.") or check["id"] == "build.attestation"
-), "staged app self-tests or build attestation failed"
+assert all(check["status"] == "pass" for check in report["checks"]), (
+    "staged app contains a non-passing check"
+)
 for check in report["checks"]:
     assert isinstance(check.get("durationMilliseconds"), int)
     assert all(isinstance(value, (int, float)) for value in check.get("metrics", {}).values())
