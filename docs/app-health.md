@@ -21,6 +21,14 @@ integrations, and reports can be reviewed without collecting document content.
    build to write and upload a report, then runs the fail-closed release review
    before declaring the release complete.
 
+Finder reliability has two complementary gates. The Swift suite runs a
+deterministic 20-cycle lifecycle through the real File Provider extension core:
+create, edit, rename, move, offline retry, delete, restore, relaunch, and fetch.
+The installed app also samples File Provider readiness for a bounded five-second
+window so the initial `checking` state can settle without hiding persistent
+pending work or provider failures. Runtime reports expose only sample counts and
+stable state flags.
+
 This follows the useful PartyParty pattern of a bounded local history, lifecycle
 probes, best-effort upload, and centralized review. Write uses a structured,
 content-blind report instead of an unstructured session log because document

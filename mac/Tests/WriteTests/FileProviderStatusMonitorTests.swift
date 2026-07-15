@@ -107,6 +107,66 @@ final class FileProviderStatusMonitorTests: XCTestCase {
         XCTAssertTrue(snapshot.detail.contains("Uploading 25%"))
     }
 
+    func testReadinessProbeAllowsTransientWorkingStateToSettle() {
+        var snapshots: [FileProviderStatusSnapshot] = [
+            .checking,
+            .make(pendingCount: 1),
+            .make(pendingCount: 0),
+        ]
+        var waits: [TimeInterval] = []
+        let probe = FileProviderReadinessProbe(
+            maximumSamples: 5,
+            interval: 0.25,
+            wait: { waits.append($0) })
+
+        let result = probe.run { snapshots.removeFirst() }
+
+        XCTAssertEqual(result.snapshot.severity, .healthy)
+        XCTAssertEqual(result.sampleCount, 3)
+        XCTAssertTrue(result.startedWorking)
+        XCTAssertTrue(result.becameHealthy)
+        XCTAssertFalse(result.exhausted)
+        XCTAssertEqual(waits, [0.25, 0.25])
+    }
+
+    func testReadinessProbeBoundsPersistentPendingWork() {
+        var sampleCount = 0
+        let probe = FileProviderReadinessProbe(
+            maximumSamples: 3, interval: 10, wait: { _ in })
+
+        let result = probe.run {
+            sampleCount += 1
+            return .make(pendingCount: 2)
+        }
+
+        XCTAssertEqual(sampleCount, 3)
+        XCTAssertEqual(result.sampleCount, 3)
+        XCTAssertEqual(result.snapshot.severity, .working)
+        XCTAssertFalse(result.becameHealthy)
+        XCTAssertTrue(result.exhausted)
+    }
+
+    func testReadinessProbeStopsImmediatelyOnProviderError() {
+        var snapshots: [FileProviderStatusSnapshot] = [
+            .checking,
+            .warning(TestStatusError.failed),
+            .make(pendingCount: 0),
+        ]
+        var waitCount = 0
+        let probe = FileProviderReadinessProbe(
+            maximumSamples: 5,
+            interval: 0,
+            wait: { _ in waitCount += 1 })
+
+        let result = probe.run { snapshots.removeFirst() }
+
+        XCTAssertEqual(result.snapshot.severity, .warning)
+        XCTAssertEqual(result.sampleCount, 2)
+        XCTAssertEqual(waitCount, 1)
+        XCTAssertFalse(result.exhausted)
+        XCTAssertEqual(snapshots.count, 1)
+    }
+
     func testRefreshesCoalesceWithoutPublishingAStaleIdleReset() {
         let provider = FakeFileProviderStatusProvider()
         let monitor = FileProviderStatusMonitor(

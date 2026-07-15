@@ -81,6 +81,89 @@ final class AppHealthReporterTests: XCTestCase {
             .fail)
     }
 
+    func testFinderHealthPassesAfterBoundedWorkingStateSettles() throws {
+        let root = try temporaryDirectory(name: "workspace-settle")
+        let state = try temporaryDirectory(name: "state-settle")
+        let bundle = try releaseBundle()
+        let previous = ProcessInfo.processInfo.environment["WRITE_STATE_DIR"]
+        setenv("WRITE_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("WRITE_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("WRITE_STATE_DIR")
+            }
+        }
+        var snapshots: [FileProviderStatusSnapshot] = [
+            .checking,
+            .workingFixture,
+            .healthyFixture,
+        ]
+        let reporter = AppHealthReporter(
+            stateStore: StateStore(),
+            syncRootProvider: { root },
+            finderStatusProvider: { snapshots.removeFirst() },
+            finderReadinessProbe: FileProviderReadinessProbe(
+                maximumSamples: 4, interval: 0, wait: { _ in }),
+            bundle: bundle)
+
+        let report = reporter.run(trigger: .manual)
+        let check = try XCTUnwrap(
+            report.checks.first(where: { $0.id == "finder.provider" }))
+
+        XCTAssertEqual(check.status, .pass)
+        XCTAssertEqual(check.metrics["healthy"], 1)
+        XCTAssertEqual(check.metrics["readiness_samples"], 3)
+        XCTAssertEqual(check.metrics["started_working"], 1)
+        XCTAssertEqual(check.metrics["became_healthy"], 1)
+        XCTAssertEqual(check.metrics["working_exhausted"], 0)
+    }
+
+    func testFinderHealthPreservesPendingWarningAndProviderFailure() throws {
+        let root = try temporaryDirectory(name: "workspace-pending")
+        let state = try temporaryDirectory(name: "state-pending")
+        let bundle = try releaseBundle()
+        let previous = ProcessInfo.processInfo.environment["WRITE_STATE_DIR"]
+        setenv("WRITE_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("WRITE_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("WRITE_STATE_DIR")
+            }
+        }
+        let store = StateStore()
+        let probe = FileProviderReadinessProbe(
+            maximumSamples: 3, interval: 0, wait: { _ in })
+        let pending = AppHealthReporter(
+            stateStore: store,
+            syncRootProvider: { root },
+            finderStatusProvider: { .workingFixture },
+            finderReadinessProbe: probe,
+            bundle: bundle
+        ).run(trigger: .manual)
+        let pendingCheck = try XCTUnwrap(
+            pending.checks.first(where: { $0.id == "finder.provider" }))
+
+        XCTAssertEqual(pendingCheck.status, .warning)
+        XCTAssertEqual(pendingCheck.metrics["readiness_samples"], 3)
+        XCTAssertEqual(pendingCheck.metrics["working_exhausted"], 1)
+
+        let failed = AppHealthReporter(
+            stateStore: store,
+            syncRootProvider: { root },
+            finderStatusProvider: { .warningFixture },
+            finderReadinessProbe: probe,
+            bundle: bundle
+        ).run(trigger: .manual)
+        let failedCheck = try XCTUnwrap(
+            failed.checks.first(where: { $0.id == "finder.provider" }))
+
+        XCTAssertEqual(failedCheck.status, .fail)
+        XCTAssertEqual(failedCheck.metrics["warning"], 1)
+        XCTAssertEqual(failedCheck.metrics["readiness_samples"], 1)
+    }
+
     private func temporaryDirectory(name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("write-health-\(name)-\(UUID().uuidString)", isDirectory: true)
@@ -144,4 +227,16 @@ private extension FileProviderStatusSnapshot {
         title: "Ready",
         detail: "Ready",
         severity: .healthy)
+
+    static let workingFixture = FileProviderStatusSnapshot(
+        symbolName: "arrow.triangle.2.circlepath.icloud",
+        title: "Working",
+        detail: "Working",
+        severity: .working)
+
+    static let warningFixture = FileProviderStatusSnapshot(
+        symbolName: "exclamationmark.icloud",
+        title: "Failed",
+        detail: "Failed",
+        severity: .warning)
 }

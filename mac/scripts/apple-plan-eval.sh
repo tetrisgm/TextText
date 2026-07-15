@@ -65,7 +65,8 @@ for suite in \
   "WriteItemMapperTests:File Provider item model + capability evals" \
   "BridgeTests:File Provider NSFileProviderItem bridging evals" \
   "EnumeratorAdapterTests:File Provider enumerator adapter evals" \
-  "FileProviderExtensionTests:File Provider read/write mapping evals"; do
+  "FileProviderExtensionTests:File Provider read/write mapping evals" \
+  "FinderReliabilitySoakTests:File Provider create/edit/rename/move/delete/restore/offline/relaunch soak"; do
   name="${suite%%:*}"; desc="${suite#*:}"
   check "suite:$name" "$desc" "grep -rq 'class $name' '$MAC/Tests'"
 done
@@ -141,6 +142,8 @@ check "fp.unlisted" "Invariant: folder-scoped create keeps the folder's kind (no
   "grep -q 'defaultPostTypeForFolderMode' '$ROOT/src/lib/store.ts'"
 check "health.runtime" "Reliability: installed app runs content-blind production self-tests" \
   "grep -q 'selftest.filename_codec' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_assets' '$MAC/Sources/Write/AppHealthReporter.swift'"
+check "health.finder-readiness" "Reliability: Finder health waits for transient startup work to settle" \
+  "grep -q 'FileProviderReadinessProbe' '$MAC/Sources/Write/FileProviderStatusMonitor.swift' && grep -q 'working_exhausted' '$MAC/Sources/Write/AppHealthReporter.swift'"
 check "health.attestation" "Reliability: release bundle carries a verified build attestation" \
   "grep -q 'AppHealthBuildAttestation.json' '$MAC/scripts/build-app.sh' && grep -q 'write-build-attestation.sh' '$ROOT/release/ship.sh'"
 

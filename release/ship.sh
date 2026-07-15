@@ -246,11 +246,15 @@ for attempt in {1..30}; do
 done
 [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] || { echo "Installed app did not write a $VERSION health report." >&2; exit 1; }
 [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app health build is $LOCAL_HEALTH_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
-[ "$LOCAL_HEALTH_STATUS" != "fail" ] || { echo "Installed app health reported a failure." >&2; exit 1; }
+[ "$LOCAL_HEALTH_STATUS" = "pass" ] || {
+  echo "Installed app health is $LOCAL_HEALTH_STATUS, expected pass." >&2
+  exit 1
+}
 echo "   local health: $LOCAL_HEALTH_STATUS"
 
 echo ">> verify uploaded app health"
 npm run health:review -- \
+  --app-identifier "$WRITE_BUNDLE_ID" \
   --version "$VERSION" \
   --build "$EXPECTED_BUILD" \
   --wait-seconds 30 \

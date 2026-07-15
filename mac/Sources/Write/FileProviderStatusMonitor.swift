@@ -71,6 +71,56 @@ struct FileProviderStatusSnapshot: Equatable {
     }
 }
 
+/// Samples a transient File Provider state for a short, fixed window. Health
+/// reporting uses this to avoid treating the monitor's initial `checking` state
+/// as a warning while still bounding how long genuine pending work can delay a
+/// report. Neutral and error states are terminal and are never retried here.
+struct FileProviderReadinessProbe {
+    struct Result: Equatable {
+        let snapshot: FileProviderStatusSnapshot
+        let sampleCount: Int
+        let startedWorking: Bool
+        let becameHealthy: Bool
+        let exhausted: Bool
+    }
+
+    let maximumSamples: Int
+    let interval: TimeInterval
+    private let wait: (TimeInterval) -> Void
+
+    init(
+        maximumSamples: Int = 11,
+        interval: TimeInterval = 0.5,
+        wait: @escaping (TimeInterval) -> Void = Thread.sleep(forTimeInterval:)
+    ) {
+        self.maximumSamples = max(1, maximumSamples)
+        self.interval = max(0, interval)
+        self.wait = wait
+    }
+
+    func run(
+        statusProvider: () -> FileProviderStatusSnapshot
+    ) -> Result {
+        var snapshot = statusProvider()
+        let startedWorking = snapshot.severity == .working
+        var sampleCount = 1
+
+        while snapshot.severity == .working, sampleCount < maximumSamples {
+            wait(interval)
+            snapshot = statusProvider()
+            sampleCount += 1
+        }
+
+        return Result(
+            snapshot: snapshot,
+            sampleCount: sampleCount,
+            startedWorking: startedWorking,
+            becameHealthy: startedWorking && snapshot.severity == .healthy,
+            exhausted: snapshot.severity == .working
+                && sampleCount == maximumSamples)
+    }
+}
+
 /// Reads File Provider's own pending set and global transfer progress. Finder is
 /// the authority for these states, so the app reports the same truth instead of
 /// maintaining a second, eventually inconsistent sync badge.

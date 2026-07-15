@@ -188,6 +188,7 @@ final class AppHealthReporter {
     private let healthStore: WriteHealthStore
     private let syncRootProvider: () -> URL
     private let finderStatusProvider: FinderStatusProvider
+    private let finderReadinessProbe: FileProviderReadinessProbe
     private let bundle: Bundle
     private let clock: () -> Date
     private let queue = DispatchQueue(label: "net.writeapp.write.health", qos: .utility)
@@ -202,6 +203,7 @@ final class AppHealthReporter {
         stateStore: StateStore,
         syncRootProvider: @escaping () -> URL,
         finderStatusProvider: @escaping FinderStatusProvider,
+        finderReadinessProbe: FileProviderReadinessProbe = FileProviderReadinessProbe(),
         bundle: Bundle = .main,
         clock: @escaping () -> Date = Date.init
     ) {
@@ -210,6 +212,7 @@ final class AppHealthReporter {
             root: stateStore.baseDir.appendingPathComponent("health", isDirectory: true))
         self.syncRootProvider = syncRootProvider
         self.finderStatusProvider = finderStatusProvider
+        self.finderReadinessProbe = finderReadinessProbe
         self.bundle = bundle
         self.clock = clock
     }
@@ -607,7 +610,9 @@ final class AppHealthReporter {
     }
 
     private func checkFinderProvider() -> (WriteHealthStatus, [String: Double]) {
-        let snapshot = finderStatusProvider()
+        let readiness = finderReadinessProbe.run(
+            statusProvider: finderStatusProvider)
+        let snapshot = readiness.snapshot
         let status: WriteHealthStatus
         switch snapshot.severity {
         case .healthy:
@@ -621,6 +626,10 @@ final class AppHealthReporter {
             "healthy": snapshot.severity == .healthy ? 1 : 0,
             "working": snapshot.severity == .working ? 1 : 0,
             "warning": snapshot.severity == .warning ? 1 : 0,
+            "readiness_samples": Double(readiness.sampleCount),
+            "started_working": readiness.startedWorking ? 1 : 0,
+            "became_healthy": readiness.becameHealthy ? 1 : 0,
+            "working_exhausted": readiness.exhausted ? 1 : 0,
         ])
     }
 
