@@ -186,13 +186,15 @@ enum Fixtures {
     static func item(
         id: String, file: String, kind: String, slug: String? = nil,
         title: String? = nil, hash: String = "h", url: String? = nil,
+        canonicalUrl: String? = nil,
         representation: WriteFileRepresentation = .markdown
     ) -> WriteManifestItem {
         WriteManifestItem(
             file: file, representation: representation, kind: kind,
             slug: slug ?? file.replacingOccurrences(of: ".md", with: ""),
             title: title ?? file, status: "draft", hash: hash, id: id, date: nil,
-            createdAt: nil, updatedAt: nil, url: url)
+            createdAt: nil, updatedAt: nil, url: url,
+            canonicalUrl: canonicalUrl)
     }
 
     static func workspace() -> WriteWorkspace {

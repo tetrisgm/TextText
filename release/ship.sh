@@ -97,22 +97,36 @@ if [ "$SKIP_TESTS" != "1" ]; then
   npx tsc --noEmit
   echo ">> test web"
   npm test
+  echo ">> clean Mac package"
+  swift package --package-path "$ROOT/mac" clean
   echo ">> test Mac package"
   swift test --package-path "$ROOT/mac"
   echo ">> verify Next build"
   npm run build
+  echo ">> evaluate Apple platform contract"
+  "$ROOT/mac/scripts/apple-plan-eval.sh" --skip-tests
+  export WRITE_RELEASE_GATES_VERIFIED=1
+elif [ "${WRITE_RELEASE_GATES_VERIFIED:-0}" != "1" ]; then
+  echo "Refusing --skip-tests without WRITE_RELEASE_GATES_VERIFIED=1." >&2
+  exit 1
 fi
 
 if [ "$NO_PUBLISH" = "1" ]; then
   echo ">> dry-run Mac app build"
   DRY_BUILD="$(( $("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist") + 1 ))"
+  DRY_ATTESTATION="$ROOT/mac/build/app-health-attestation.json"
+  "$ROOT/mac/scripts/write-build-attestation.sh" \
+    "$DRY_ATTESTATION" "$VERSION" "$DRY_BUILD"
   APP_VERSION="$VERSION" \
   APP_BUILD_NUMBER="$DRY_BUILD" \
+  WRITE_BUILD_ATTESTATION="$DRY_ATTESTATION" \
     "$ROOT/mac/scripts/build-app.sh"
   DRY_PLIST="$ROOT/mac/build/Write.app/Contents/Info.plist"
   [ "$("$PB" -c 'Print :CFBundleShortVersionString' "$DRY_PLIST")" = "$VERSION" ]
   [ "$("$PB" -c 'Print :CFBundleVersion' "$DRY_PLIST")" = "$DRY_BUILD" ]
   [ "$("$PB" -c 'Print :SUFeedURL' "$DRY_PLIST")" = "${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" ]
+  "$ROOT/mac/scripts/verify-app-health.sh" \
+    "$ROOT/mac/build/Write.app" "$VERSION" "$DRY_BUILD"
   echo
   echo "Verified Write $VERSION (not published)"
   echo "  web build: .next"
@@ -124,6 +138,8 @@ echo ">> migrate database: file representation"
 node "$ROOT/scripts/migrate-add-file-representation.mjs"
 echo ">> migrate database: slug history"
 node "$ROOT/scripts/migrate-add-slug-history.mjs"
+echo ">> migrate database: app health reports"
+node "$ROOT/scripts/migrate-add-app-health.mjs"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'
@@ -143,9 +159,9 @@ if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
 fi
 
 ORIGIN="${WRITE_PRODUCT_ORIGIN:-}"
+EXPECTED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist")"
 if [ -n "$ORIGIN" ]; then
   ORIGIN="${ORIGIN%/}"
-  EXPECTED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist")"
   echo ">> verify public release"
   PUBLIC_APPCAST=""
   PUBLIC_API=""
@@ -211,6 +227,35 @@ INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALL_PATH/Contents/Inf
 codesign --verify --strict --verbose=2 "$INSTALL_PATH"
 pgrep -x Write >/dev/null || { echo "Installed Write app did not launch." >&2; exit 1; }
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
+
+echo ">> verify installed app health"
+LOCAL_HEALTH="$HOME/Library/Application Support/Write/health/latest.json"
+LOCAL_HEALTH_VERSION=""
+LOCAL_HEALTH_BUILD=""
+LOCAL_HEALTH_STATUS=""
+for attempt in {1..30}; do
+  if [ -f "$LOCAL_HEALTH" ]; then
+    LOCAL_HEALTH_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("appVersion", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+    LOCAL_HEALTH_BUILD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("buildNumber", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+    LOCAL_HEALTH_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+  fi
+  if [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] && [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ]; then
+    break
+  fi
+  [ "$attempt" -eq 30 ] || sleep 1
+done
+[ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] || { echo "Installed app did not write a $VERSION health report." >&2; exit 1; }
+[ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app health build is $LOCAL_HEALTH_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
+[ "$LOCAL_HEALTH_STATUS" != "fail" ] || { echo "Installed app health reported a failure." >&2; exit 1; }
+echo "   local health: $LOCAL_HEALTH_STATUS"
+
+echo ">> verify uploaded app health"
+npm run health:review -- \
+  --version "$VERSION" \
+  --build "$EXPECTED_BUILD" \
+  --wait-seconds 30 \
+  --require-reports \
+  --fail-on-failure
 
 echo
 echo "Shipped Write $VERSION"

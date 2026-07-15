@@ -1,157 +1,131 @@
-# Write for macOS: File Provider plan
+# Write for macOS: File Provider status
 
-Replace the iCloud Drive/Write folder with a File Provider so Write is a
-first-class location in the Finder sidebar, with cloud badges, on-demand
-downloads, sync progress, and native conflict handling. write.ramine.net
-becomes the single source of truth; there is one sync system, not two.
+This document records the File Provider architecture that is shipped in Write.
+It replaces the earlier implementation plan.
 
-## 1. Why
+## Product contract
 
-Today the Mac app has two sync systems that do not coordinate: iCloud Drive
-moves files between the user's Macs, and the native SyncEngine mirrors those
-files to and from the server. The web view is a third surface. That split is
-the source of the friction (stale views, coordination bugs). A Replicated
-File Provider collapses this: the extension IS the folder AND the sync, it
-talks straight to the server, and Finder shows it natively.
+- Write appears as one normal Location in the Finder sidebar.
+- The root contains one folder per workspace and a separate `Data` tree for
+  Write-owned auxiliary files.
+- Workspace folders contain the person's ordinary content documents.
+- Every document is downloaded eagerly and kept on the Mac. Write does not
+  offer online-only files, eviction, or selective sync.
+- Finder's File Provider state is authoritative for pending uploads, pending
+  downloads, progress, and errors. The app does not invent a parallel badge.
+- Server sync is independent from iCloud Drive. The user may back up or export
+  files elsewhere, but two live sync engines never own the same File Provider
+  tree.
 
-## 2. Architecture
+## Native document formats
 
-- One `NSFileProviderDomain` per signed-in workspace, display name "Write".
-  It appears under Locations in the Finder sidebar; files live under
-  `~/Library/CloudStorage/Write`, materialized on demand.
-- An `NSFileProviderReplicatedExtension` backed by the EXISTING `/api/sync/v1`
-  API (workspace, folder manifests, file get/put/delete, the change cursor).
-  The extension is a new client of the same server contract the native engine
-  already uses, so the server needs little or no change.
-- The server is the source of truth. The extension enumerates from it, fetches
-  content on materialization, and pushes creates/edits/deletes/renames back
-  with the existing hash + If-Match conflict model.
-- The extension reads the `wsk_` sync token from the shared app group
-  container; the container app mints it (as it already does for the native
-  engine) and writes it there.
+Write-created rich documents use TextBundle packages. Their Markdown and
+assets travel as one Finder item, so a workspace folder stays readable and is
+not polluted by one visible asset folder per post.
 
-## 3. What it replaces
+Write also opens and imports ordinary `.md` and `.txt` files. When an imported
+plain file references assets, the plain file stays plain and its managed copies
+live under:
 
-- The `iCloud Drive/Write` folder as the canonical local store.
-- The native folder-mirroring `SyncEngine` and its FSEvents/NSMetadataQuery
-  watching. The File Provider framework owns materialization and change
-  observation.
-- WriteWorkspaceCore's iCloud root resolution / migration paths become
-  vestigial (kept until the File Provider path is proven, then retired).
+```text
+Write/
+  Data/
+    Attachments/
+      <workspace>/
+        <document>/
+          <asset files>
+```
 
-The web view, App Intents, Spotlight, Share extension, and Quick Look stay.
-Spotlight and Quick Look actually get easier: the File Provider surfaces real
-files the system indexes and previews.
+The `Data` hierarchy is read-only in Finder. Write-created TextBundles remain
+self-contained and do not also appear there.
 
-## 4. Migration (no data loss)
+Filenames are display metadata, not identity. Stable server IDs identify
+documents, while filename encoding preserves unsupported filesystem characters
+without changing the title shown in the app.
 
-The server already holds every item (the native engine has been syncing it),
-so there is nothing to upload. On first run the File Provider domain simply
-enumerates the workspace from the server and materializes on demand. The old
-`iCloud Drive/Write` folder is left in place, untouched; once the File
-Provider is proven the app offers to retire it (never auto-deletes user
-files). No file is ever moved or deleted as part of the switch.
+## Sync ownership
 
-## 5. Entitlements and portal (owner-gated, like Share/Quick Look)
+`NSFileProviderReplicatedExtension` owns the Finder surface. It uses the
+existing authenticated `/api/sync/v1` contract for:
 
-- New App ID `net.writeapp.write.mac.fileprovider` with the App Group
-  `group.net.writeapp.write` (already registered).
-- A Developer ID provisioning profile for it (one more `.provisionprofile`
-  into `mac/profiles/`).
-- The extension is sandboxed with the File Provider extension point, the app
-  group, and network access. The container app keeps the app group so it can
-  hand the token across.
+- workspace and folder enumeration
+- document and artifact materialization
+- edits with hash-based conflict checks
+- create, rename, move, and delete for documents
+- create and rename for folders
+- change cursors and working-set invalidation
 
-## 6. Phases
+Folder move and folder delete are not advertised as Finder capabilities. Those
+operations have workspace-level semantics and remain app actions.
 
-Owner's call on sequencing: build writes first and ship Phase 2+3 together as
-one editable release, then retire the native SyncEngine mirror at the cutover
-(once writes are proven against a throwaway workspace). Until that proven
-cutover, the File Provider coexists with the existing native mirror.
+The container app hands workspace origins and tokens to the extension through
+the signed app-group and keychain handoff. Credentials never enter filenames,
+Finder metadata, logs, health reports, or public URLs.
 
-Status legend below: DONE means built and unit-tested; BUILT means built and
-unit-tested but pending on-device verification; pending means not started.
+## Status and recovery
 
-### Phase 1: WriteFileProviderKit (pure Swift, headless-testable) - DONE
-`mac/Sources/WriteFileProviderKit`: a pure-Swift, framework-free core. The
-server client (`WriteSyncAPI` protocol + `LiveWriteSyncAPI`, an async
-URLSession client on the `wsk_` bearer), the item model (`WriteItemIdentifier`
-round-tripping through raw strings, with the three reserved cases pinned to
-Apple's literal constant values so bridging is free; `WriteItem` /
-`WriteItemMapper` carrying kind, capabilities, content type, hash, and
-timestamps), the `WorkspaceEnumerator` (root -> top-level folders, folder ->
-subfolders + files, working set, change cursor), and `FileProviderHandoff`
-(the {origin, token, handle} JSON the app writes into the shared app-group
-container and the extension reads). No extension yet. Fully unit-tested
-against a fake server.
+The app's Finder status monitor reads:
 
-### Phase 2: Read-only replicated extension + domain registration - DONE
-`mac/Sources/WriteFileProviderBridge` adapts the kit to the FileProvider
-framework (`WriteFileProviderItem: NSFileProviderItem`, identifier and
-capability bridges; note Apple aliases the capability bits, so
-`.allowsReading == .allowsContentEnumerating` and
-`.allowsWriting == .allowsAddingSubItems`).
-`mac/Extensions/WriteFileProviderExtension` is the
-`NSFileProviderReplicatedExtension` principal class `FileProviderExtension`
-(a class conforming to that protocol is what makes the extension replicated;
-extension point `com.apple.fileprovider-nonui`) plus `WriteEnumeratorAdapter`
-(`NSFileProviderEnumerator`): it enumerates the workspace and folders, exposes
-items, and materializes content on demand via `fetchContents`. The container
-app registers one `NSFileProviderDomain` (displayName "Write") per workspace
-on sign-in and removes it on sign-out via `NSFileProviderManager.add` /
-`remove` (the 2-arg init is the replicated variant), publishes the handoff,
-and signals the enumerator on remote change (reusing the app's existing
-long-poll, which stays in the app, not the extension). The appex is embedded
-and signed by `mac/scripts/embed-extensions.sh` with the Developer ID profile
-at `mac/profiles/Write_FileProvider_Developer_ID.provisionprofile`
-(App ID `net.writeapp.write.mac.fileprovider`), sandboxed with the app group
-and `com.apple.security.network.client` entitlements. Files appear under
-Locations in the Finder sidebar. Unit-tested; on-device verification against a
-throwaway workspace is still pending.
+- `enumeratorForPendingItems()` for the pending count
+- File Provider global upload progress
+- File Provider global download progress
+- provider availability and framework errors
 
-### Phase 3: Writes and conflicts - BUILT (unit-tested; on-device verification pending)
-The File Provider is an editable Finder surface. New server `/api/sync/v1`
-endpoints back the write path:
+The resulting states are `up to date`, `syncing`, `checking`, `not connected`,
+or `needs attention`. The detail includes transfer percentages when Finder
+provides them and states that all Markdown remains local.
 
-- `POST /files?folder=<id>` files a new item directly into a folder; the
-  folder's mode dictates the kind, keeping notes and bookmarks unlisted.
-- `PATCH /files/{id} {folder?, slug?}` moves and/or renames without re-sending
-  the body.
-- `PATCH /folders/{id} {name}` renames a folder.
+File Provider versions include both representation and server hash. A format
+change invalidates stale materializations without changing server identity.
+Reimport adopts an existing item by stable ID, then by an unambiguous
+parent-scoped filename or semantic title. This prevents a provider database
+reset from creating duplicates.
 
-PUT (content edit, If-Match) and DELETE already existed. The extension maps
-each Finder mutation onto these: edit -> PUT, create -> folder-scoped POST then
-a slug rename to the Finder name, delete -> DELETE, rename -> PATCH slug,
-move -> PATCH folder, folder rename -> renameFolder. Folder delete and folder
-move are deferred (not advertised as capabilities). The privacy invariant is
-preserved: notes and bookmarks stay unlisted, server-enforced via folder mode.
-Verified by unit tests (part of the 61 File Provider tests, 143 total mac
-tests, all green); on-device end-to-end verification against a throwaway
-workspace is still pending.
+The extension accepts legacy materialization markers and hides legacy bookmark
+asset sidecars while Finder rolls old caches forward. New rich bookmarks and
+posts materialize as TextBundles.
 
-### Phase 4: Native polish - pending
-Cloud badges, on-demand eviction (remove download), offline availability, sync
-progress, precise per-item change deltas (the current remote signal is
-coarse), and Finder context-menu actions.
+## Finder actions
 
-### Phase 5: Retire the old path - pending (gated on writes being proven)
-Once the File Provider writes are verified on-device against a throwaway
-workspace, retire the native folder SyncEngine so the File Provider is the
-single writer, and offer to clean up the old `iCloud Drive/Write` folder
-(never auto-deleting user files). Ship as the default. Explicitly gated: this
-phase does not start until Phase 3 writes are proven.
+Files expose these actions when a canonical public Write page exists:
 
-## 7. Risks
+- `Copy Write Link`
+- `Share`
+- `Manage Access`
 
-- File Provider is one of Apple's heavier APIs; correctness around
-  enumeration anchors, working set, and eviction is subtle.
-- It manages the user's files, so every phase runs against a throwaway test
-  workspace first; the real workspace is touched only at the ship step.
-- Developer ID File Provider extensions ship fine (Dropbox, etc.) but need the
-  portal setup in section 5 before Phase 2 can register a real domain.
+The sync manifest carries two distinct URLs:
 
-## 8. Non-goals
+- `url`: authenticated content transport for File Provider
+- `canonicalUrl`: public page used by Finder actions
 
-iOS/iPadOS File Provider, CloudKit as the backend (the server is the backend),
-a second sync system alongside this one, and any automatic deletion of the
-user's existing iCloud files.
+The extension refuses `/api/sync/` transport endpoints as public links. Older
+manifests that put a genuine public page in `url` remain compatible. Share and
+Manage Access open the signed Write app through a `write-app:` deep link; the
+app validates the destination against its linked server origin before sharing
+or loading access controls.
+
+## Release and runtime checks
+
+The app-owned health suite checks release identity and update configuration,
+embedded extensions, private state persistence, sync-index decoding, workspace
+storage, and Finder provider status. The same checks run:
+
+- against the staged app before release publication
+- on first launch of every version
+- once per day
+- on demand
+
+Reports are stored locally before best-effort submission. They contain stable
+check IDs and numeric metrics only. Health work never reloads the web view,
+replaces optimistic client state, or blocks editing and sync.
+
+## Provisioning
+
+The shipped extension identifier is `net.writeapp.write.mac.fileprovider`. It
+uses the existing `group.net.writeapp.write` app group and the checked local
+Developer ID provisioning profile at:
+
+`mac/profiles/Write_FileProvider_Developer_ID.provisionprofile`
+
+Release verification confirms the File Provider extension is embedded, signed,
+and present in the staged app before any artifact is uploaded.

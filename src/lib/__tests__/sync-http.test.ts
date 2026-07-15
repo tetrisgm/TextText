@@ -2,7 +2,7 @@
 // shape, and manifest item building. The bearer-auth + database glue is not
 // covered here (it needs a live db); see src/app/api/sync/v1/auth.ts.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   clientSaveError,
@@ -48,6 +48,10 @@ const post: Post = {
   folderId: "31b53543-f5de-4a46-937f-c645bfcaa9c3",
   revision: 42,
 };
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("ifMatchSatisfied", () => {
   const etag = '"abc123"';
@@ -207,9 +211,13 @@ describe("renderSyncFile", () => {
 
 describe("syncManifestItem", () => {
   it("points at the sync file url with the file's hash", () => {
+    vi.stubEnv("NEXT_PUBLIC_ROOT_DOMAIN", "write.example");
     const item = syncManifestItem(blog, post);
     expect(item.url).toBe(syncFileUrl(post.id ?? ""));
     expect(item.url).toBe(`/api/sync/v1/files/${post.id}`);
+    expect(item.canonicalUrl).toBe(
+      "https://write.example/t/demo/hello-sync",
+    );
     expect(item.hash).toBe(renderSyncFile(blog, post).hash);
     expect(item.id).toBe(post.id);
     expect(item.slug).toBe(post.slug);

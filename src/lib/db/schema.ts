@@ -147,6 +147,33 @@ export const actionAudit = pgTable("action_audit", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Content-blind health reports emitted by the installed app. The report JSON
+// schema accepts stable check IDs and numeric metrics only, so document text,
+// filenames, paths, and credentials cannot enter this diagnostics channel.
+export const appHealthReports = pgTable(
+  "app_health_reports",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    installationId: uuid("installation_id").notNull(),
+    appIdentifier: text("app_identifier").notNull(),
+    appVersion: text("app_version").notNull(),
+    buildNumber: text("build_number").notNull(),
+    trigger: text("trigger").notNull(),
+    status: text("status").notNull(),
+    report: jsonb("report").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("app_health_reports_user_received_idx").on(t.userId, t.receivedAt),
+    index("app_health_reports_installation_received_idx").on(
+      t.installationId,
+      t.receivedAt,
+    ),
+  ],
+);
+
 // Device-link handshake: an app shows a short code and opens the browser;
 // the signed-in owner approves; the app's poll then mints its api_token.
 // The row is the handshake state only: the raw token is never stored (it is

@@ -39,8 +39,10 @@ export type MarkdownFolderItem = {
   date?: string;
   createdAt?: string;
   updatedAt?: string;
-  /** public URL of the markdown file itself */
+  /** authenticated content transport URL used by sync clients */
   url?: string;
+  /** canonical human-facing page URL; never an authenticated API endpoint */
+  canonicalUrl?: string;
   /** sha256 hex of the rendered markdown file, for cheap change detection */
   hash: string;
   /** UTF-8 byte length of the rendered markdown file. The File Provider needs it
@@ -146,6 +148,9 @@ export function renderFolderManifest(
         ...(post.createdAt ? { createdAt: post.createdAt } : {}),
         ...(post.updatedAt ? { updatedAt: post.updatedAt } : {}),
         ...(options?.fileUrlFor ? { url: options.fileUrlFor(post) } : {}),
+        ...(options?.postUrlFor
+          ? { canonicalUrl: options.postUrlFor(post) }
+          : {}),
         hash: markdownFileHash(rendered),
         size: new TextEncoder().encode(rendered).length,
       };

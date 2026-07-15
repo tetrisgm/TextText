@@ -68,6 +68,14 @@ if [ -f "$MAC/AppIcon.icns" ]; then
 else
   echo "   (no AppIcon.icns yet; run mac/scripts/make-icon.sh)"
 fi
+if [ -n "${WRITE_BUILD_ATTESTATION:-}" ]; then
+  [ -f "$WRITE_BUILD_ATTESTATION" ] || {
+    echo "WRITE_BUILD_ATTESTATION does not exist: $WRITE_BUILD_ATTESTATION" >&2
+    exit 1
+  }
+  cp "$WRITE_BUILD_ATTESTATION" \
+    "$APP/Contents/Resources/AppHealthBuildAttestation.json"
+fi
 
 echo ">> App Intents metadata (xcodebuild const-values pass)"
 # SwiftPM cannot emit the .swiftconstvalues the App Intents metadata

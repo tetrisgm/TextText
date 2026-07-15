@@ -396,6 +396,7 @@ describe("folder manifest v2", () => {
     expect(item.title).toBe("The Everything Bagel");
     expect(item.status).toBe("published");
     expect(item.url).toBeUndefined();
+    expect(item.canonicalUrl).toBeUndefined();
     expect(item.hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -412,6 +413,9 @@ describe("folder manifest v2", () => {
     expect(item.updatedAt).toBe("2026-07-01T09:30:00.000Z");
     expect(item.url).toBe(
       "https://write.example/t/demo/everything-bagel/index.md",
+    );
+    expect(item.canonicalUrl).toBe(
+      "https://write.example/t/demo/everything-bagel",
     );
     expect(item.hash).toBe(
       markdownFileHash(

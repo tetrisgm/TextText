@@ -98,8 +98,11 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let createdAt: String?
     public let updatedAt: String?
     /// The authoritative item URL supplied by the manifest. It may be absolute
-    /// or origin-relative; clients must not rebuild it from `slug`.
+    /// or origin-relative and is the authenticated content transport URL.
     public let url: String?
+    /// The authoritative human-facing page URL. Finder actions must use this
+    /// instead of exposing the authenticated content transport URL.
+    public let canonicalUrl: String?
     /// UTF-8 byte length of the rendered file, when the server sends it. Used to
     /// set the File Provider item's documentSize at enumeration; optional so an
     /// older server (no `size`) still decodes.
@@ -109,7 +112,8 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         file: String, representation: WriteFileRepresentation = .markdown,
         kind: String, slug: String, title: String, status: String,
         hash: String, id: String?, date: String?, createdAt: String?,
-        updatedAt: String?, url: String?, size: Int? = nil
+        updatedAt: String?, url: String?, canonicalUrl: String? = nil,
+        size: Int? = nil
     ) {
         self.file = file
         self.representation = representation
@@ -123,6 +127,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.url = url
+        self.canonicalUrl = canonicalUrl
         self.size = size
     }
 
@@ -139,6 +144,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         case createdAt
         case updatedAt
         case url
+        case canonicalUrl
         case size
     }
 
@@ -160,6 +166,8 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
             createdAt: try values.decodeIfPresent(String.self, forKey: .createdAt),
             updatedAt: try values.decodeIfPresent(String.self, forKey: .updatedAt),
             url: try values.decodeIfPresent(String.self, forKey: .url),
+            canonicalUrl: try values.decodeIfPresent(
+                String.self, forKey: .canonicalUrl),
             size: try values.decodeIfPresent(Int.self, forKey: .size))
     }
 
@@ -177,6 +185,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         try values.encodeIfPresent(createdAt, forKey: .createdAt)
         try values.encodeIfPresent(updatedAt, forKey: .updatedAt)
         try values.encodeIfPresent(url, forKey: .url)
+        try values.encodeIfPresent(canonicalUrl, forKey: .canonicalUrl)
         try values.encodeIfPresent(size, forKey: .size)
     }
 }

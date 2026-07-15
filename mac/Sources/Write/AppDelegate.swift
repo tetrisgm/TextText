@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // The one File Provider domain registered for the signed-in workspace, if any.
     private var registeredFileProviderDomain: NSFileProviderDomain?
     private let fileProviderStatusMonitor = FileProviderStatusMonitor()
+    private var healthReporter: AppHealthReporter?
     private var fileProviderUserVisibleURL: URL?
     private var fileProviderDomainEpoch = 0
     private var fileProviderDesiredIdentity: String?
@@ -115,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         linkController.onLinked = { [weak self] _ in
             guard let self else { return }
             self.engine.syncNow()
+            self.healthReporter?.flushAsync()
             self.refreshUI()
             // Linking configures folder sync; bring the workspace forward.
             NSApp.activate(ignoringOtherApps: true)
@@ -144,6 +146,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderStatusMonitor.onChange = { [weak self] _ in
             self?.refreshUI()
         }
+        healthReporter = AppHealthReporter(
+            stateStore: store,
+            syncRootProvider: { [weak self] in
+                self?.syncRoot() ?? Self.defaultSyncRoot()
+            },
+            finderStatusProvider: { [weak self] in
+                guard let self else { return .unavailable }
+                if Thread.isMainThread { return self.fileProviderStatusMonitor.snapshot }
+                return DispatchQueue.main.sync {
+                    self.fileProviderStatusMonitor.snapshot
+                }
+            })
+        healthReporter?.start()
 
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         workspaceCenter.addObserver(
@@ -414,6 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastBackgroundRecoveryUptime: TimeInterval?
     func applicationDidBecomeActive(_ notification: Notification) {
         recoverBackgroundSync()
+        healthReporter?.runIfNeededAsync()
         guard Date().timeIntervalSince(lastForegroundCheck) > 300 else { return }
         lastForegroundCheck = Date()
         updater?.checkNow()
@@ -490,6 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // ordinary focus/resume passes keep Finder's current presentation.
         syncFileProviderDomain(
             signalExistingDomain: Self.shouldSignalFileProviderAfterSync(summary))
+        healthReporter?.runIfNeededAsync()
     }
 
     static func shouldSignalFileProviderAfterSync(_ summary: SyncSummary) -> Bool {

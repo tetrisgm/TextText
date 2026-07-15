@@ -292,7 +292,7 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(copied, ["https://links.example/current-write-link"])
     }
 
-    func testCopyWriteLinkResolvesOriginRelativeManifestURL() {
+    func testCopyWriteLinkNeverExposesAuthenticatedContentEndpoint() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.manifests["notes"] = [Fixtures.item(
             id: "p1", file: "a.md", kind: "note",
@@ -301,21 +301,25 @@ final class FileProviderExtensionTests: XCTestCase {
         let provider = ext(api, copyLinkHandler: { copied = $0; return true })
         let exp = expectation(description: "copy-relative-write-link")
 
+        var error: NSError?
         _ = provider.performAction(
             identifier: FileProviderExtension.copyWriteLinkActionIdentifier,
             onItemsWithIdentifiers: [NSFileProviderItemIdentifier(
                 rawValue: "file:demo:p1")]
-        ) { _ in exp.fulfill() }
+        ) { error = $0 as NSError?; exp.fulfill() }
         wait(for: [exp], timeout: 5)
 
-        XCTAssertEqual(copied, "https://example.test/api/sync/v1/files/p1")
+        XCTAssertNil(copied)
+        XCTAssertEqual(error?.domain, NSFileProviderErrorDomain)
+        XCTAssertEqual(error?.code, NSFileProviderError.cannotSynchronize.rawValue)
     }
 
     func testShareAndManageAccessOpenWriteAppDeepLinks() {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.manifests["notes"] = [Fixtures.item(
             id: "p1", file: "a.md", kind: "note",
-            url: "https://links.example/current-write-link")]
+            url: "/api/sync/v1/files/p1",
+            canonicalUrl: "https://links.example/current-write-link")]
         var opened: [URL] = []
         let provider = ext(api, openURLHandler: { opened.append($0); return true })
         let cases: [(NSFileProviderExtensionActionIdentifier, String)] = [

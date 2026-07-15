@@ -7,6 +7,7 @@
 # prints a green/red matrix. Exits non-zero if any row fails.
 #
 #   mac/scripts/apple-plan-eval.sh
+#   mac/scripts/apple-plan-eval.sh --skip-tests  # suite already ran in ship.sh
 #
 # This is the "is the Apple platform plan satisfied" gate. It reads the tree
 # structurally and runs tests; it does not touch the network, the real iCloud
@@ -15,6 +16,15 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."          # repo root
 ROOT="$(pwd)"
 MAC="$ROOT/mac"
+SKIP_TESTS=0
+if [ "${1:-}" = "--skip-tests" ]; then
+  SKIP_TESTS=1
+  shift
+fi
+if [ "$#" -gt 0 ]; then
+  echo "Usage: mac/scripts/apple-plan-eval.sh [--skip-tests]" >&2
+  exit 2
+fi
 
 PASS=0
 FAIL=0
@@ -30,13 +40,17 @@ check() { # $1=id $2=description ; body on stdin returns 0=pass
   if eval "$3" >/dev/null 2>&1; then record PASS "$id" "$desc"; else record FAIL "$id" "$desc"; fi
 }
 
-echo ">> Swift eval + regression suite"
-TEST_LOG="$(mktemp)"
-if swift test --package-path "$MAC" >"$TEST_LOG" 2>&1; then
-  SUMMARY="$(grep -E "Executed [0-9]+ tests" "$TEST_LOG" | tail -1 | sed 's/^[[:space:]]*//')"
-  record PASS "tests" "swift test green ($SUMMARY)"
+if [ "$SKIP_TESTS" = "1" ]; then
+  record PASS "tests" "swift test already passed in the owner-facing ship gate"
 else
-  record FAIL "tests" "swift test FAILED (see $TEST_LOG)"
+  echo ">> Swift eval + regression suite"
+  TEST_LOG="$(mktemp)"
+  if swift test --package-path "$MAC" >"$TEST_LOG" 2>&1; then
+    SUMMARY="$(grep -E "Executed [0-9]+ tests" "$TEST_LOG" | tail -1 | sed 's/^[[:space:]]*//')"
+    record PASS "tests" "swift test green ($SUMMARY)"
+  else
+    record FAIL "tests" "swift test FAILED (see $TEST_LOG)"
+  fi
 fi
 
 # --- Named eval suites exist and are wired in ---
@@ -99,8 +113,8 @@ check "inv.unlisted" "Invariant: publishing refuses notes and bookmarks at the i
   "grep -q 'unlistedKind' '$MAC/Sources/WriteAppIntents/WorkspaceIntentActions.swift'"
 check "inv.bookmark-links" "Invariant: bookmarks store the URL in the links list, not a dropped url: key" \
   "grep -q 'links: ' '$MAC/Sources/WriteAppIntents/WorkspaceIntentActions.swift'"
-check "inv.eviction" "Invariant: evicted iCloud files never become server deletes" \
-  "grep -q 'icloud' '$MAC/Sources/Write/SyncEngine.swift'"
+check "inv.local-authority" "Invariant: local edits win races with server downloads" \
+  "grep -q 'changed while it was downloading' '$MAC/Sources/Write/SyncEngine.swift'"
 
 # --- File Provider (Write as a Finder sidebar location; see docs/file-provider-plan.md) ---
 check "fp.kit" "File Provider: pure-Swift kit (enumerator + item model + sync client) present" \
@@ -117,12 +131,18 @@ check "fp.embed" "File Provider: appex is embedded/signed in the release build" 
   "grep -q 'WriteFileProviderExtension' '$MAC/scripts/embed-extensions.sh'"
 check "fp.domain" "File Provider: app registers/removes an NSFileProviderDomain" \
   "grep -q 'NSFileProviderManager.add' '$MAC/Sources/Write/AppDelegate.swift'"
+check "fp.eager" "File Provider: every document is eagerly materialized and kept local" \
+  "grep -q 'downloadEagerlyAndKeepDownloaded' '$MAC/Sources/Write/MountBridge.swift' && grep -q 'All Markdown is downloaded and kept on this Mac' '$MAC/Sources/Write/FileProviderStatusMonitor.swift'"
 check "fp.handoff" "File Provider: token handoff carries only the wsk_ bearer via the app group" \
   "test -f '$MAC/Sources/WriteFileProviderKit/FileProviderHandoff.swift'"
 check "fp.writes" "File Provider Phase 3: write path maps Finder edits to the sync API" \
   "grep -q 'func modifyItem' '$MAC/Extensions/WriteFileProviderExtension/FileProviderExtension.swift' && grep -q 'patchFile' '$MAC/Sources/WriteFileProviderKit/LiveWriteSyncAPI.swift'"
 check "fp.unlisted" "Invariant: folder-scoped create keeps the folder's kind (notes/bookmarks stay unlisted)" \
   "grep -q 'defaultPostTypeForFolderMode' '$ROOT/src/lib/store.ts'"
+check "health.runtime" "Reliability: installed app runs content-blind production self-tests" \
+  "grep -q 'selftest.filename_codec' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_assets' '$MAC/Sources/Write/AppHealthReporter.swift'"
+check "health.attestation" "Reliability: release bundle carries a verified build attestation" \
+  "grep -q 'AppHealthBuildAttestation.json' '$MAC/scripts/build-app.sh' && grep -q 'write-build-attestation.sh' '$ROOT/release/ship.sh'"
 
 # --- Explicit non-goals stay absent ---
 check "nongoal.cloudkit" "Non-goal: no CloudKit document storage" \

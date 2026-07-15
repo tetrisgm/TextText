@@ -54,7 +54,10 @@ BUILD="$(( $("$PB" -c 'Print :CFBundleVersion' "$MAC/Info.plist") + 1 ))"
 echo ">> version v$VERSION (build $BUILD)"
 
 echo ">> [1/5] build + sign"
-"$MAC/scripts/build-app.sh"
+ATTESTATION="$MAC/build/app-health-attestation.json"
+"$MAC/scripts/write-build-attestation.sh" "$ATTESTATION" "$VERSION" "$BUILD"
+WRITE_BUILD_ATTESTATION="$ATTESTATION" "$MAC/scripts/build-app.sh"
+"$MAC/scripts/verify-app-health.sh" "$MAC/build/Write.app" "$VERSION" "$BUILD"
 
 echo ">> [2/5] notarize + staple"
 "$MAC/scripts/notarize.sh"

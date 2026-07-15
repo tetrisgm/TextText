@@ -1,5 +1,12 @@
 import AppKit
 
+// App-owned release/runtime verification. This uses the same checks the
+// installed app runs on first launch and each day, without creating UI.
+if ProcessInfo.processInfo.environment["WRITE_HEALTH_CHECK"] == "1" {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    exit(AppHealthCLI.run())
+}
+
 // Headless verify mode (CI/agents, and the seed of a future CLI): no UI at
 // all, one real sync pass through the same engine the app uses, a one-line
 // JSON summary on stdout, exit 0/1.

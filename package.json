@@ -15,9 +15,10 @@
     "start": "next start",
     "lint": "eslint",
     "ship": "release/ship.sh",
+    "health:review": "node scripts/review-app-health.mjs",
     "test": "vitest run",
     "db:cleanup-bookmark-html": "node scripts/cleanup-bookmark-html.mjs",
-    "db:push": "drizzle-kit push && node scripts/migrate-add-file-representation.mjs && node scripts/migrate-add-slug-history.mjs",
+    "db:push": "drizzle-kit push && node scripts/migrate-add-file-representation.mjs && node scripts/migrate-add-slug-history.mjs && node scripts/migrate-add-app-health.mjs",
     "db:seed": "tsx src/lib/db/seed.ts"
   },
   "dependencies": {

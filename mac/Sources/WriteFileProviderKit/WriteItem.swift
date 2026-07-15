@@ -258,9 +258,22 @@ public enum WriteItemMapper {
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps,
-            manifestURL: entry.url,
+            manifestURL: publicManifestURL(for: entry),
             representation: entry.representation
         )
+    }
+
+    /// Before `canonicalUrl` existed, some manifests placed a public page URL
+    /// in `url`. Keep those clients working while refusing the authenticated
+    /// sync transport endpoint that caused Finder to copy a private API URL.
+    private static func publicManifestURL(for entry: WriteManifestItem) -> String? {
+        if let canonical = entry.canonicalUrl, !canonical.isEmpty {
+            return canonical
+        }
+        guard let legacy = entry.url, !legacy.isEmpty else { return nil }
+        let path = URLComponents(string: legacy)?.percentEncodedPath ?? legacy
+        guard !path.hasPrefix("/api/sync/") else { return nil }
+        return legacy
     }
 
 }

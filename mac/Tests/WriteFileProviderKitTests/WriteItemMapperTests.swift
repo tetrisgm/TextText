@@ -163,7 +163,8 @@ final class WriteItemMapperTests: XCTestCase {
         let entry = WriteManifestItem(
             file: "posts/a.md", kind: "note", slug: "stale-slug", title: "A",
             status: "draft", hash: "h", id: "p1", date: nil, createdAt: nil,
-            updatedAt: nil, url: "https://links.example/write/authoritative")
+            updatedAt: nil, url: "/api/sync/v1/files/p1",
+            canonicalUrl: "https://links.example/write/authoritative")
         let item = WriteItemMapper.item(
             for: entry, inFolder: "notes", handle: h, readOnly: false)!
 
