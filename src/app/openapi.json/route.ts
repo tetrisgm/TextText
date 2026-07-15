@@ -19,9 +19,11 @@ function openApiDocument(origin: string) {
       summary: "OAuth setup and markdown content actions for Write.",
       description:
         "Import this document into ChatGPT Actions or another AI connector. " +
-        "Use OAuth authorization code with PKCE and the sync scope. Content " +
-        "actions use the existing sync HTTP endpoints, which are the HTTP " +
-        "counterpart to the Write MCP tools.",
+        "These actions use the sync HTTP API and require the sync scope. " +
+        "Write also offers a read-only OAuth scope for the six read MCP tools, " +
+        "but this document is a smaller action surface, not the complete " +
+        "17-tool MCP contract. OAuth uses authorization code with PKCE S256, " +
+        "one-hour access tokens, and rotating refresh tokens.",
     },
     servers: [{ url: origin }],
     security: [{ writeOAuth: ["sync"] }],
@@ -49,7 +51,8 @@ function openApiDocument(origin: string) {
             "Registers a public OAuth client and stores its exact redirect_uri " +
             "allowlist. Redirect URIs must be HTTPS absolute URLs with no " +
             "fragment or userinfo. The client uses PKCE S256 and no client " +
-            "secret.",
+            "secret. Request exactly one scope, read or sync. Include the " +
+            "refresh_token grant type to advertise refresh support.",
           security: [],
           requestBody: {
             required: true,
@@ -59,14 +62,14 @@ function openApiDocument(origin: string) {
                   $ref: "#/components/schemas/OAuthClientRegistrationRequest",
                 },
                 examples: {
-                  chatgpt: {
-                    summary: "ChatGPT action registration",
+                  publicClient: {
+                    summary: "Public MCP client registration",
                     value: {
-                      client_name: "ChatGPT",
+                      client_name: "Example MCP Client",
                       redirect_uris: [
-                        "https://chat.openai.com/aip/oauth/callback",
+                        "https://client.example.com/oauth/callback",
                       ],
-                      grant_types: ["authorization_code"],
+                      grant_types: ["authorization_code", "refresh_token"],
                       response_types: ["code"],
                       token_endpoint_auth_method: "none",
                       scope: "sync",
@@ -329,13 +332,20 @@ function openApiDocument(origin: string) {
           type: "oauth2",
           description:
             "OAuth authorization code with PKCE S256. Register first at " +
-            `${origin}/oauth/register. The access token begins with wsk_.`,
+            `${origin}/oauth/register. Access tokens begin with wsk_, expire ` +
+            "after 3,600 seconds, and are renewed with rotating wrt_ refresh " +
+            "tokens. Reusing a consumed refresh token revokes its complete " +
+            "token family.",
           "x-registrationEndpoint": `${origin}/oauth/register`,
           flows: {
             authorizationCode: {
               authorizationUrl: `${origin}/oauth/authorize`,
               tokenUrl: `${origin}/oauth/token`,
+              refreshUrl: `${origin}/oauth/token`,
               scopes: {
+                read:
+                  "Call the six read-only MCP workspace tools. The sync HTTP " +
+                  "actions in this document do not accept this scope.",
                 sync: "Read and write the authenticated owner's workspace.",
               },
             },
@@ -539,8 +549,16 @@ function openApiDocument(origin: string) {
             },
             grant_types: {
               type: "array",
-              items: { type: "string", enum: ["authorization_code"] },
+              uniqueItems: true,
+              contains: { const: "authorization_code" },
+              items: {
+                type: "string",
+                enum: ["authorization_code", "refresh_token"],
+              },
               default: ["authorization_code"],
+              description:
+                "Must include authorization_code and may include " +
+                "refresh_token.",
             },
             response_types: {
               type: "array",
@@ -554,8 +572,12 @@ function openApiDocument(origin: string) {
             },
             scope: {
               type: "string",
-              enum: ["sync"],
+              enum: ["read", "sync"],
               default: "sync",
+              description:
+                "Request exactly one scope. read is MCP read-only access; " +
+                "sync grants read/write access and is required by every " +
+                "action in this document.",
             },
           },
         },
@@ -582,14 +604,17 @@ function openApiDocument(origin: string) {
             },
             grant_types: {
               type: "array",
-              items: { type: "string", enum: ["authorization_code"] },
+              items: {
+                type: "string",
+                enum: ["authorization_code", "refresh_token"],
+              },
             },
             response_types: {
               type: "array",
               items: { type: "string", enum: ["code"] },
             },
             token_endpoint_auth_method: { type: "string", enum: ["none"] },
-            scope: { type: "string", enum: ["sync"] },
+            scope: { type: "string", enum: ["read", "sync"] },
           },
         },
         WorkspaceResponse: {

@@ -6,13 +6,17 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import {
+  WORKSPACE_TOOL_DEFINITIONS,
+  WORKSPACE_TOOL_NAMES,
+} from "@/lib/ai/tools";
 import { rootDomainUrl } from "@/lib/site-url";
 import "@/styles/connect.css";
 
 export const metadata: Metadata = {
   title: "Connect your AI",
   description:
-    "Connect ChatGPT, Claude, Claude Code, Cursor, or any MCP client to Write. Paste one URL and click Approve.",
+    "Connect an MCP client to Write's shared 17-tool workspace command surface.",
 };
 
 const ACTIONS: Array<[name: string, what: string]> = [
@@ -24,16 +28,14 @@ const ACTIONS: Array<[name: string, what: string]> = [
   ["updateMarkdownItem", "Replace one markdown file with If-Match conflict checks."],
 ];
 
-const MCP_TOOLS: Array<[name: string, kind: "Read" | "Write", what: string]> = [
-  ["list_folders", "Read", "List the workspace folders with paths and modes."],
-  ["list_items", "Read", "List the markdown items in a folder."],
-  ["read_item", "Read", "Read one item as markdown with metadata."],
-  ["search", "Read", "Search items across the workspace."],
-  ["create_folder", "Write", "Create a subfolder under an existing folder."],
-  ["create_item", "Write", "Create a draft article, note, or bookmark."],
-  ["update_item", "Write", "Replace an item's markdown and metadata."],
-  ["append_to_item", "Write", "Append markdown to the end of an item."],
-];
+const MCP_TOOLS = WORKSPACE_TOOL_NAMES.map((name) => {
+  const definition = WORKSPACE_TOOL_DEFINITIONS[name];
+  return {
+    name,
+    scope: definition.mutability === "read" ? "read or sync" : "sync",
+    what: definition.description,
+  };
+});
 
 function base64(value: string): string {
   return Buffer.from(value, "utf8").toString("base64");
@@ -53,9 +55,9 @@ export default function AiDocsPage() {
 Content-Type: application/json
 
 {
-  "client_name": "ChatGPT",
-  "redirect_uris": ["https://chat.openai.com/aip/oauth/callback"],
-  "grant_types": ["authorization_code"],
+  "client_name": "Example MCP Client",
+  "redirect_uris": ["https://client.example.com/oauth/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "token_endpoint_auth_method": "none",
   "scope": "sync"
@@ -87,17 +89,23 @@ Content-Type: application/json
       <main className="connect-main connect-doc">
         <h1 className="connect-title">Connect your AI</h1>
         <p className="connect-lede">
-          Write speaks MCP. Give any AI this one URL and approve it once:{" "}
-          <code className="connect-inline-code">{mcpUrl}</code>. The AI can
-          then read and write your folders and markdown items. Every change it
-          makes is logged, notes and bookmarks stay unlisted, and you can
-          revoke access anytime from <Link href="/connect">Connect</Link>.
+          Write exposes the same 17 workspace commands to MCP clients and its
+          on-device Mac assistant. Give an MCP client this URL:{" "}
+          <code className="connect-inline-code">{mcpUrl}</code>. The client
+          requests either read-only <code className="connect-inline-code">read</code>{" "}
+          access or read/write <code className="connect-inline-code">sync</code>{" "}
+          access, and the approval page shows which one. Every change is logged,
+          notes and bookmarks stay unlisted, and you can revoke access from{" "}
+          <Link href="/connect">Connect</Link>.
         </p>
 
         <section className="connect-section">
           <h2 className="connect-section-title">ChatGPT</h2>
           <ul>
-            <li>Open Settings, then Connectors, then Create.</li>
+            <li>
+              Open Apps in ChatGPT and create a custom MCP app in developer
+              mode.
+            </li>
             <li>
               Paste{" "}
               <code className="connect-inline-code">{mcpUrl}</code> as the MCP
@@ -109,9 +117,9 @@ Content-Type: application/json
             </li>
           </ul>
           <p className="connect-body">
-            Creating and editing items requires connector write access, which
-            ChatGPT gates behind developer mode on paid plans. Read-only use
-            works everywhere connectors do.
+            Custom MCP app availability and admin approval depend on your
+            ChatGPT plan and workspace settings. Write mutations require the{" "}
+            <code className="connect-inline-code">sync</code> scope.
           </p>
         </section>
 
@@ -166,22 +174,29 @@ Content-Type: application/json
 
         <section className="connect-section">
           <h2 className="connect-section-title">What a connected AI can do</h2>
+          <p className="connect-body">
+            A <code className="connect-inline-code">read</code> token can call
+            the six read tools. A <code className="connect-inline-code">sync</code>{" "}
+            token can call all 17 tools.
+          </p>
           <div className="connect-table-wrap">
             <table className="connect-table">
               <thead>
                 <tr>
                   <th>Tool</th>
-                  <th>Access</th>
+                  <th>Required scope</th>
                   <th>What it does</th>
                 </tr>
               </thead>
               <tbody>
-                {MCP_TOOLS.map(([name, kind, what]) => (
+                {MCP_TOOLS.map(({ name, scope, what }) => (
                   <tr key={name}>
                     <td>
                       <code className="connect-inline-code">{name}</code>
                     </td>
-                    <td>{kind}</td>
+                    <td>
+                      <code className="connect-inline-code">{scope}</code>
+                    </td>
                     <td>{what}</td>
                   </tr>
                 ))}
@@ -195,7 +210,8 @@ Content-Type: application/json
           <p className="connect-body">
             If a client cannot open an approval page, mint a token manually
             from <Link href="/connect">Connect</Link> and pass it as a bearer
-            header:
+            header. Manual tokens carry <code className="connect-inline-code">sync</code>{" "}
+            access and remain valid until you revoke them.
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{tokenConfig}</pre>
@@ -230,13 +246,20 @@ Content-Type: application/json
               <code className="connect-inline-code">{origin}/oauth/register</code>{" "}
               and send you to{" "}
               <code className="connect-inline-code">{origin}/oauth/authorize</code>{" "}
-              to click Approve. PKCE S256, public client, scope{" "}
-              <code className="connect-inline-code">sync</code>.
+              to click Approve. The public-client flow uses PKCE S256 and
+              requests exactly one scope: <code className="connect-inline-code">read</code>{" "}
+              or <code className="connect-inline-code">sync</code>.
             </li>
             <li>
-              The resulting token is a Write{" "}
-              <code className="connect-inline-code">wsk_</code> bearer token
-              scoped to your workspace. Revoke it anytime from{" "}
+              Approval returns a <code className="connect-inline-code">wsk_</code>{" "}
+              access token that expires after one hour and a rotating{" "}
+              <code className="connect-inline-code">wrt_</code> refresh token.
+              Each refresh replaces both tokens. Reusing a consumed refresh
+              token revokes the complete token family.
+            </li>
+            <li>
+              Refresh access expires after 180 days total or 30 days without
+              use. Revoke a connection anytime from{" "}
               <Link href="/connect">Connect</Link>.
             </li>
           </ul>
@@ -258,11 +281,23 @@ Content-Type: application/json
           <ul>
             <li>
               Approval grants access to your one workspace, nothing else. The
-              consent page names the app requesting it.
+              consent page names the app and whether it requests read-only or
+              read/write access.
+            </li>
+            <li>
+              <code className="connect-inline-code">read</code> can only inspect
+              workspace content. <code className="connect-inline-code">sync</code>{" "}
+              also permits mutations. A read-only mutation is rejected before
+              its tool handler runs.
             </li>
             <li>
               Every change a connected AI makes is written to the audit log,
               and notes and bookmarks stay unlisted no matter who is calling.
+            </li>
+            <li>
+              <code className="connect-inline-code">delete_item</code> only moves
+              an item to Trash. Items can be listed and restored, and MCP has
+              no permanent-delete tool.
             </li>
             <li>
               Revoke any connection at any time from{" "}
@@ -270,20 +305,54 @@ Content-Type: application/json
             </li>
             <li>
               Content an AI reads can carry instructions (prompt injection).
-              Prefer clients that ask you to confirm each write, and treat
-              unexpected tool calls as a reason to stop and review.
+              Require confirmation for Move to Trash, restore, and publication
+              changes, and treat unexpected tool calls as a reason to stop and
+              review.
             </li>
             <li>
-              Only connect clients you trust: a connected AI can read and
-              write your workspace the way you can.
+              Only connect clients you trust. A connected AI can use every
+              workspace command allowed by its approved scope.
             </li>
           </ul>
         </section>
 
         <section className="connect-section">
+          <h2 className="connect-section-title">Assistant in Write</h2>
+          <p className="connect-body">
+            Write for Mac uses Apple&apos;s on-device Foundation Models runtime.
+            The assistant calls the same 17 workspace commands directly through
+            the signed-in page, so it does not connect back to Write over MCP.
+          </p>
+          <ul>
+            <li>
+              Agent commands and quick actions run locally when Apple
+              Intelligence is available on macOS 26 or later.
+            </li>
+            <li>
+              Quick actions can summarize, rewrite, suggest a title, suggest
+              tags, or suggest an excerpt. Editable results are previewed and
+              can be applied or undone.
+            </li>
+            <li>
+              The assistant carries workspace, folder, item, Trash, and exact
+              editor-selection context. Images can be processed with private
+              on-device OCR when available.
+            </li>
+          </ul>
+          <p className="connect-body">
+            The assistant is unavailable in the plain web app and does not
+            silently send content to a cloud model. OpenAI and Anthropic are not
+            in-app assistant providers. ChatGPT and Claude connect externally
+            through MCP using the setup above.
+          </p>
+        </section>
+
+        <section className="connect-section">
           <h2 className="connect-section-title">ChatGPT Actions</h2>
           <p className="connect-body">
-            Custom GPTs can import the OpenAPI description instead of MCP:
+            Custom GPTs can import the OpenAPI description instead of MCP. This
+            is a smaller sync-backed action surface and requires the{" "}
+            <code className="connect-inline-code">sync</code> scope:
           </p>
           <p>
             <code className="connect-inline-code">{origin}/openapi.json</code>
@@ -332,7 +401,10 @@ Content-Type: application/json
               <code className="connect-inline-code">bookmark</code>. Both stay
               private and unlisted.
             </li>
-            <li>Ask before publishing. Ask before deleting.</li>
+            <li>
+              Ask before publishing, moving an item to Trash, or restoring a
+              previously published item. MCP does not expose permanent delete.
+            </li>
           </ul>
         </section>
       </main>

@@ -1,121 +1,140 @@
-# The Write MCP: manipulate markdown files over folders
+# Write MCP workspace command reference
 
-Write's machine surface is deliberately simple: **a workspace is folders of
-markdown files**. The MCP server exposes exactly that. Any AI that can call
-MCP tools can list folders, read files, create files, and edit files, and
-that is the whole content model; there is nothing else to learn.
+Write exposes one file-backed workspace command surface to three consumers:
+the product UI, the on-device assistant in Write for Mac, and external agents
+over MCP. The application calls the commands directly. It does not call its
+own MCP endpoint.
 
-This document is the integration contract for third parties (Claude,
-ChatGPT, or anything speaking MCP over Streamable HTTP).
+`src/lib/ai/tools.ts` is the source of truth for the 17 tool names, schemas,
+mutability, confirmation requirements, and MCP annotations. The MCP adapter
+registers those definitions in `src/lib/mcp/tools.ts`.
 
 ## Endpoint and transport
 
-- Endpoint: `https://{host}/api/mcp` (Streamable HTTP; also served at
-  `/api/mcp/mcp` for clients that append the transport segment).
-- SSE is not offered. One POST per JSON-RPC message.
-- Server framework: `mcp-handler` + `@modelcontextprotocol/sdk`.
+- Endpoint: `https://{host}/api/mcp` using MCP Streamable HTTP.
+- `/api/mcp/mcp` is also served for clients that append a transport segment.
+- There is no legacy SSE endpoint. Send one POST per JSON-RPC message.
+- `/.well-known/mcp.json` provides zero-configuration server discovery.
+- An unauthenticated request returns a `WWW-Authenticate` challenge pointing
+  to `/.well-known/oauth-protected-resource`.
 
-## Authentication
+## Authentication and OAuth lifecycle
 
-Bearer tokens, minted by the human at `https://{host}/connect`:
+The normal connection flow is OAuth authorization code with PKCE S256:
 
-```
+1. The client follows the protected-resource and authorization-server
+   metadata advertised by Write.
+2. Public clients can register at `/oauth/register` and request exactly one
+   scope: `read` or `sync`.
+3. Write shows the signed-in owner a consent page naming the client and
+   requested access. The owner must click Approve.
+4. The authorization code exchange returns a `wsk_` bearer access token and a
+   `wrt_` refresh token. Access tokens expire after 3,600 seconds.
+5. Every refresh returns a new access token and a new refresh token. The old
+   refresh token is consumed. Reusing it is treated as a replay and revokes
+   the complete refresh-token family, including its access tokens.
+
+Refresh-token families have a 180-day absolute lifetime and expire after 30
+days without use. Owners can also revoke a connection immediately from
+`/connect`. Access and refresh secrets are stored only as SHA-256 hashes.
+
+Clients that cannot complete OAuth can create a manual `wsk_` token at
+`/connect` and send it as:
+
+```http
 Authorization: Bearer wsk_...
 ```
 
-- Tokens are stored hashed (SHA-256); a leaked database row cannot be
-  replayed. Revocation at `/connect` is immediate.
-- A token maps to its owner's ONE workspace. There is no cross-tenant
-  access and no way to name another workspace: tenant isolation is by
-  construction, not by checks inside tools.
-- Missing/invalid token: proper MCP 401 with `WWW-Authenticate`.
-- Scopes exist on the token (`sync` today) but all MCP tools currently
-  assume workspace access; finer scopes are roadmap.
+Manual tokens currently carry `sync` access and remain valid until revoked.
 
-Claude Code config example:
+## Scopes
 
-```json
-{
-  "mcpServers": {
-    "write": {
-      "type": "http",
-      "url": "https://{host}/api/mcp",
-      "headers": { "Authorization": "Bearer wsk_..." }
-    }
-  }
-}
-```
+| Scope | Access |
+|-------|--------|
+| `read` | Call the six read-only tools: `get_workspace`, `list_folders`, `list_items`, `list_trash`, `read_item`, and `search`. |
+| `sync` | Call all 17 tools, including the 11 mutations. It also grants every read operation. |
 
-## The content model (read this, skip the rest)
+A mutation attempted with a `read` token returns `403 insufficient_scope` and
+advertises `sync` as the required scope. The separate sync HTTP API requires
+`sync` for every endpoint, including its reads.
 
-- A workspace holds **folders**; each folder has a full slash `path`
-  ("blog", "notes", "bookmarks", "blog/ideas", ...) and a `mode`.
-- Modes: `blog` items can publish; `notes` and `bookmarks` items are
-  **unlisted forever** (enforced server-side at every layer; no agent can
-  publish a note, ever).
-- Subfolders inherit their parent's mode and act as categories. Nesting
-  caps at four levels.
-- An **item is a markdown file**: single-line JSON-ish frontmatter between
-  `---` fences, then the body. `read_item` returns exactly the bytes the
-  sync API serves; `create_item`/`update_item` accept the same format.
-- Every item has a content `hash` (sha256 of the rendered file). Pass it
-  back as `if_match_hash` on updates for conflict safety (compare-and-swap).
+Each token resolves only its owner's workspace. Tools do not accept a tenant
+or workspace selector that could cross that boundary.
 
-## Tools (8)
+## Content model
 
-| Tool | Input | Effect |
-|------|-------|--------|
-| `list_folders` | none | Folders (id, name, path, mode, parentId) + blog meta |
-| `create_folder` | `parent_path`, `name` | New subfolder (category) under an existing folder |
-| `list_items` | `folder_path?` (default "blog") | Manifest entries for one folder |
-| `read_item` | `id` | The markdown file, verbatim |
-| `create_item` | `folder_path`, `markdown` | New item (always created as draft) |
-| `update_item` | `id`, `markdown`, `if_match_hash?` | Replace the file (412-style error on hash mismatch) |
-| `append_to_item` | `id`, `markdown_fragment` | Append to the body, everything else untouched |
-| `search` | `query` | Substring search over title/excerpt/body, 25 results |
+- A workspace contains folders. Each folder has a stable id, full slash path,
+  mode, parent, and item count.
+- Folder modes are `blog`, `notes`, and `bookmarks`. Blog items can publish.
+  Notes and bookmarks are private and unlisted forever, enforced below the
+  tool layer.
+- An item is a Markdown file with optional metadata frontmatter between `---`
+  fences and a Markdown body.
+- Live item listings include a content `hash`. Pass it back as
+  `if_match_hash` on mutations. A stale hash rejects the write so the caller
+  can read, merge, and retry.
+- `delete_item` is a soft delete. It moves a live item to Trash.
+  `list_trash` lists restorable items, and `restore_item` restores the previous
+  status. Restoring a previously published item can make it public again.
+- There is no permanent-delete MCP tool. The current shared command surface
+  also does not delete or restore folders.
 
-There is deliberately no delete tool and no publish tool: destructive and
-audience-changing acts stay with the human (or the sync API where If-Match
-discipline is mandatory).
+## Tools (17)
 
-## Rules for agents (also served at /docs/ai and /llms.txt)
+| Tool | Scope | Main input | Effect |
+|------|-------|------------|--------|
+| `get_workspace` | `read` or `sync` | none | Return workspace identity, supported modes, scope capabilities, and effective access. |
+| `list_folders` | `read` or `sync` | none | List accessible folders with ids, paths, modes, parents, and counts. |
+| `list_items` | `read` or `sync` | `folder_path?`, `limit?` | List live items in one folder with metadata, revision, and hash. |
+| `list_trash` | `read` or `sync` | none | List the owner's soft-deleted, restorable items. |
+| `read_item` | `read` or `sync` | `id` | Return one live item as Markdown with metadata. |
+| `search` | `read` or `sync` | `query`, `limit?` | Search accessible live titles, excerpts, and bodies. |
+| `create_folder` | `sync` | `parent_path`, `name` | Create a subfolder that inherits its parent's mode and privacy rules. |
+| `rename_folder` | `sync` | `folder_id`, `name` | Change a folder's display name while preserving its stable id and path. |
+| `create_item` | `sync` | `folder_path` plus `markdown`, or structured fields | Create one unpinned draft in the target folder. |
+| `update_item` | `sync` | `id`, content, `if_match_hash?` | Update title, excerpt, and/or body without changing status, kind, folder, or pin state. |
+| `append_to_item` | `sync` | `id`, `markdown_fragment`, `if_match_hash?` | Append Markdown to the body without changing metadata. |
+| `move_item` | `sync` | `id`, `folder_path`, `if_match_hash?` | Move an item between folders of the same mode. |
+| `delete_item` | `sync` | `id`, `if_match_hash?` | Soft-delete an item by moving it to Trash. |
+| `restore_item` | `sync` | `id` | Restore one item from Trash with its previous status. |
+| `set_item_status` | `sync` | `id`, `status`, `if_match_hash?` | Publish or unpublish a blog item. Notes and bookmarks reject publication. |
+| `set_item_metadata` | `sync` | `id`, metadata, `if_match_hash?` | Update supported presentation metadata without changing content or status. |
+| `set_item_pinned` | `sync` | `id`, `pinned`, `if_match_hash?` | Pin or unpin an item in workspace and public listings. |
 
-1. Create as drafts; ask the human before publishing anything.
-2. Never try to publish notes or bookmarks (the server refuses anyway).
-3. Read-modify-write with `if_match_hash`; on conflict, re-read.
-4. Every mutation is audited (actor type `external_agent`, per-token
-   attribution). Assume the human reviews the log.
+The shared contract marks `delete_item`, `restore_item`, and
+`set_item_status` as requiring explicit human confirmation immediately before
+the call. External clients are responsible for presenting that confirmation.
+The in-app assistant gates those calls through its own confirmation callback.
 
-## The audit trail
+## Safety rules for agents
 
-Every mutation writes an `action_audit` row: actor user, actor type
-(`human` / `ai` / `external_agent`), action name (`mcp.create_item`, ...),
-target, and a clipped summary. Nothing an agent does is silent.
+1. Create new items as drafts. Use `set_item_status` only after the owner
+   explicitly confirms the audience change.
+2. Never try to publish notes or bookmarks. The server rejects it.
+3. Treat `delete_item` as Move to Trash, not permanent deletion. Confirm it
+   first, and use `restore_item` to undo it.
+4. Send the latest `if_match_hash` on every existing-item mutation. On a
+   conflict, read the item again, merge, and retry.
+5. Every mutation writes an `action_audit` row with external-agent identity,
+   action name, target, and a clipped summary.
 
-## Sibling surface: the sync API
+## In-app assistant status
 
-Bulk/file-level integrations (the Mac app, backup scripts) use the sync API
-instead: `GET /api/sync/v1/workspace`, per-folder manifests with ETags,
-file GET/POST/PUT/DELETE with mandatory `If-Match`, `GET /changes`
-long-poll for near-instant change signals, and the bookmark capture
-pipeline (`GET /captures`, `PUT /captures/{id}`). Same bearer tokens. The
-markdown format is byte-identical between both surfaces.
+Write for Mac currently runs the assistant through Apple's on-device
+Foundation Models bridge. The model receives the same 17 tool definitions,
+but calls execute in the signed-in page through the normal workspace actions.
+The assistant is unavailable in the plain web app and does not silently send
+workspace content to a cloud provider.
 
-## Native integrations roadmap (ChatGPT and friends)
+OpenAI and Anthropic are not implemented as in-app assistant providers.
+ChatGPT, Claude, Cursor, and other hosts can use Write as external MCP clients
+through the endpoint documented here.
 
-Bearer-token MCP works TODAY with any client that lets the user paste a
-header (Claude Code, Claude.ai custom connectors, local MCP hosts).
-Connector directories that require OAuth (ChatGPT connectors, some hosted
-agent platforms) need one addition on our side, in order:
+## Sibling surface: sync API
 
-1. OAuth 2.1 authorization-code + PKCE in front of token minting (the
-   /connect page already owns the consent surface; the grant should mint a
-   scoped `wsk_` token per authorization).
-2. Dynamic client registration (RFC 7591) if the target directory demands
-   it; otherwise a fixed client id per directory.
-3. MCP `WWW-Authenticate` OAuth metadata is already emitted by the auth
-   layer, so discovery mostly works once the endpoints exist.
-
-Until then, ChatGPT-side integration is possible through Actions (OpenAPI
-over the sync API with the bearer token), which needs only an OpenAPI file;
-see `docs/PLAN-2026-07-07.md` for where that sits in the queue.
+Bulk and file-level integrations use `/api/sync/v1`: workspace and folder
+manifests with ETags, file GET/POST/PUT/PATCH/DELETE, change polling, assets,
+and the bookmark capture pipeline. It uses the same `wsk_` bearer tokens but
+requires `sync`. Existing-file mutations require current validators such as
+`If-Match`. A sync DELETE also moves the item to Trash rather than permanently
+deleting it.
