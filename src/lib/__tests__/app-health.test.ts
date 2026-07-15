@@ -32,6 +32,18 @@ describe("parseAppHealthReport", () => {
     expect(
       parseAppHealthReport({
         ...valid,
+        appVersion: "https://private.example/version",
+      }),
+    ).toBeNull();
+    expect(
+      parseAppHealthReport({
+        ...valid,
+        operatingSystemVersion: "/Users/private/system.txt",
+      }),
+    ).toBeNull();
+    expect(
+      parseAppHealthReport({
+        ...valid,
         checks: [
           {
             ...valid.checks[0],
@@ -49,6 +61,12 @@ describe("parseAppHealthReport", () => {
             metrics: { "/Users/private/file.md": 1 },
           },
         ],
+      }),
+    ).toBeNull();
+    expect(
+      parseAppHealthReport({
+        ...valid,
+        checks: [valid.checks[0], valid.checks[0]],
       }),
     ).toBeNull();
   });

@@ -171,6 +171,16 @@ export const appHealthReports = pgTable(
       t.installationId,
       t.receivedAt,
     ),
+    index("app_health_reports_release_received_idx").on(
+      t.appVersion,
+      t.buildNumber,
+      t.receivedAt,
+    ),
+    index("app_health_reports_app_received_idx").on(
+      t.appIdentifier,
+      t.receivedAt,
+    ),
+    index("app_health_reports_received_idx").on(t.receivedAt),
   ],
 );
 

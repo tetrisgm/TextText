@@ -3,8 +3,27 @@ import { parseAppHealthReport } from "@/lib/app-health";
 import { db } from "@/lib/db/client";
 import { appHealthReports } from "@/lib/db/schema";
 
+function storageUnavailableResponse(): Response {
+  return Response.json(
+    {
+      accepted: false,
+      persisted: false,
+      rollupAvailable: false,
+      code: "health_storage_unavailable",
+    },
+    { status: 503 },
+  );
+}
+
 export async function POST(request: Request): Promise<Response> {
-  const identity = await resolveApiToken(request.headers.get("authorization"));
+  const identity = await (async () => {
+    try {
+      return await resolveApiToken(request.headers.get("authorization"));
+    } catch {
+      return undefined;
+    }
+  })();
+  if (identity === undefined) return storageUnavailableResponse();
   if (!identity) {
     return Response.json(
       { error: "A valid API token is required" },
@@ -39,24 +58,40 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Invalid health report" }, { status: 400 });
   }
   if (!db) {
-    return Response.json({ accepted: true, persisted: false }, { status: 202 });
+    return storageUnavailableResponse();
   }
 
-  await db
-    .insert(appHealthReports)
-    .values({
-      id: report.id,
-      userId: identity.userId,
-      installationId: report.installationId,
-      appIdentifier: report.appIdentifier,
-      appVersion: report.appVersion,
-      buildNumber: report.buildNumber,
-      trigger: report.trigger,
-      status: report.status,
-      report,
-      generatedAt: new Date(report.generatedAt),
-    })
-    .onConflictDoNothing({ target: appHealthReports.id });
+  try {
+    await db
+      .insert(appHealthReports)
+      .values({
+        id: report.id,
+        userId: identity.userId,
+        installationId: report.installationId,
+        appIdentifier: report.appIdentifier,
+        appVersion: report.appVersion,
+        buildNumber: report.buildNumber,
+        trigger: report.trigger,
+        status: report.status,
+        report,
+        generatedAt: new Date(report.generatedAt),
+      })
+      .onConflictDoNothing({ target: appHealthReports.id });
+  } catch {
+    return storageUnavailableResponse();
+  }
 
-  return Response.json({ accepted: true, persisted: true }, { status: 202 });
+  return Response.json(
+    {
+      accepted: true,
+      persisted: true,
+      rollupAvailable: true,
+      release: {
+        appIdentifier: report.appIdentifier,
+        appVersion: report.appVersion,
+        buildNumber: report.buildNumber,
+      },
+    },
+    { status: 202 },
+  );
 }

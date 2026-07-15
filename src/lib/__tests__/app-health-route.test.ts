@@ -66,6 +66,16 @@ describe("app health route", () => {
     );
 
     expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      accepted: true,
+      persisted: true,
+      rollupAvailable: true,
+      release: {
+        appIdentifier: report.appIdentifier,
+        appVersion: report.appVersion,
+        buildNumber: report.buildNumber,
+      },
+    });
     expect(mocks.values).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "f5c36f80-52a1-4ec9-8ef7-388f5cb4f16d",
@@ -76,5 +86,43 @@ describe("app health route", () => {
         userId: "000596.non-uuid-provider-subject.0435",
       }),
     );
+  });
+
+  it("does not accept a report that cannot enter a rollup", async () => {
+    mocks.onConflictDoNothing.mockRejectedValue(
+      new Error("postgres://private.example/path"),
+    );
+    const response = await POST(
+      new Request("https://write.example/api/app/health", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer wsk_test",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(report),
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    const body = await response.text();
+    expect(body).toContain("health_storage_unavailable");
+    expect(body).toContain('"accepted":false');
+    expect(body).not.toContain("private.example");
+  });
+
+  it("does not expose token-store failures", async () => {
+    mocks.resolveApiToken.mockRejectedValue(
+      new Error("postgres://private.example/token"),
+    );
+    const response = await POST(
+      new Request("https://write.example/api/app/health", {
+        method: "POST",
+        headers: { Authorization: "Bearer wsk_test" },
+        body: JSON.stringify(report),
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.text()).not.toContain("private.example");
   });
 });

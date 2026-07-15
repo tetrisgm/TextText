@@ -33,4 +33,16 @@ await sql.query(`
   CREATE INDEX IF NOT EXISTS app_health_reports_installation_received_idx
   ON app_health_reports (installation_id, received_at)
 `);
+await sql.query(`
+  CREATE INDEX IF NOT EXISTS app_health_reports_release_received_idx
+  ON app_health_reports (app_version, build_number, received_at)
+`);
+await sql.query(`
+  CREATE INDEX IF NOT EXISTS app_health_reports_app_received_idx
+  ON app_health_reports (app_identifier, received_at)
+`);
+await sql.query(`
+  CREATE INDEX IF NOT EXISTS app_health_reports_received_idx
+  ON app_health_reports (received_at)
+`);
 console.log("App health report table is ready.");
