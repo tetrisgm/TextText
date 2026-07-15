@@ -318,80 +318,702 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
     // MARK: Agent (on-device tool calling over the page's workspace commands)
 
-    /// The workspace tool surface the model may drive. The definitions live
-    /// here; the EXECUTION lives in the page (src/lib/ai/agent-tools.ts maps
-    /// each name onto the same pool commands the UI uses), so the model can
-    /// never touch anything the signed-in page could not. Keep this list in
-    /// sync with the page executor and the shared tool module.
-    private struct AgentToolSpec {
+    /// The model sees the same workspace command contract as MCP and the page
+    /// executor. Execution still happens in src/lib/ai/agent-tools.ts, so the
+    /// signed-in page remains the authority for validation, confirmation, and
+    /// privacy. A TS parity test compares this manifest with ai/tools.ts.
+    struct AgentToolSpec: Decodable, Sendable {
         let name: String
         let description: String
-        let properties: [(name: String, description: String, optional: Bool, choices: [String]?)]
+        let inputSchema: AgentObjectSchema
+
+        #if canImport(FoundationModels)
+            @available(macOS 26.0, *)
+            func makeGenerationSchema() throws -> GenerationSchema {
+                try inputSchema.makeGenerationSchema(named: name)
+            }
+        #endif
     }
 
-    private static let agentToolSpecs: [AgentToolSpec] = [
-        .init(
-            name: "list_folders",
-            description:
-                "List the workspace folders with their paths and item counts. Call this first when unsure where things live.",
-            properties: []),
-        .init(
-            name: "list_items",
-            description: "List the items in a folder (id, title, type, status).",
-            properties: [
-                ("folder", "Folder path, e.g. blog, notes, or bookmarks", false, nil)
-            ]),
-        .init(
-            name: "read_item",
-            description: "Read one item's title and markdown body by id.",
-            properties: [("id", "The item id", false, nil)]),
-        .init(
-            name: "create_item",
-            description:
-                "Create one new draft item. Call once per item. Write real content for the body when the user asked for content.",
-            properties: [
-                ("folder", "Destination folder path, e.g. blog or notes", false, nil),
-                ("title", "The item title", false, nil),
-                ("body", "Markdown body", true, nil),
-                ("kind", "Item kind", true, ["article", "note", "bookmark"]),
-            ]),
-        .init(
-            name: "update_item",
-            description:
-                "Update an existing item's title or replace its whole markdown body.",
-            properties: [
-                ("id", "The item id", false, nil),
-                ("title", "New title", true, nil),
-                ("excerpt", "New short description", true, nil),
-                ("body", "New full markdown body", true, nil),
-            ]),
-        .init(
-            name: "append_to_item",
-            description: "Append markdown to the end of an existing item.",
-            properties: [
-                ("id", "The item id", false, nil),
-                ("markdown", "Markdown to append", false, nil),
-            ]),
-        .init(
-            name: "move_item",
-            description: "Move an item to another folder.",
-            properties: [
-                ("id", "The item id", false, nil),
-                ("folder", "Destination folder path", false, nil),
-            ]),
-        .init(
-            name: "delete_item",
-            description: "Delete an item. Only when the user explicitly asked.",
-            properties: [("id", "The item id", false, nil)]),
-        .init(
-            name: "set_item_status",
-            description:
-                "Publish or unpublish an item. Only when the user explicitly asked.",
-            properties: [
-                ("id", "The item id", false, nil),
-                ("status", "The new status", false, ["published", "draft"]),
-            ]),
-    ]
+    struct AgentObjectSchema: Decodable, Sendable {
+        let type: String
+        let properties: [String: AgentPropertySchema]
+        let required: [String]?
+        let additionalProperties: Bool
+
+        #if canImport(FoundationModels)
+            @available(macOS 26.0, *)
+            func makeGenerationSchema(named name: String) throws -> GenerationSchema {
+                let required = Set(required ?? [])
+                guard type == "object", !additionalProperties,
+                      required.isSubset(of: Set(properties.keys))
+                else { throw AgentToolSchemaError.invalidObject(name) }
+
+                let generatedProperties = try properties.sorted { $0.key < $1.key }.map {
+                    propertyName, property in
+                    DynamicGenerationSchema.Property(
+                        name: propertyName,
+                        description: property.generationDescription,
+                        schema: try property.makeDynamicGenerationSchema(
+                            named: "\(name)_\(propertyName)"),
+                        isOptional: !required.contains(propertyName))
+                }
+                return try GenerationSchema(
+                    root: DynamicGenerationSchema(
+                        name: name, properties: generatedProperties),
+                    dependencies: [])
+            }
+        #endif
+    }
+
+    struct AgentPropertySchema: Decodable, Sendable {
+        let type: String?
+        let description: String?
+        let minLength: Int?
+        let maxLength: Int?
+        let minimum: Int?
+        let maximum: Int?
+        let pattern: String?
+        let choices: [String]?
+        let constant: String?
+        let anyOf: [AgentPropertySchema]?
+
+        enum CodingKeys: String, CodingKey {
+            case type, description, minLength, maxLength, minimum, maximum, pattern, anyOf
+            case choices = "enum"
+            case constant = "const"
+        }
+
+        var isNull: Bool { type == "null" }
+
+        var generationDescription: String? {
+            var parts = description.map { [$0] } ?? []
+            if minLength == 1 {
+                parts.append("Must not be empty.")
+            } else if let minLength {
+                parts.append("At least \(minLength) characters.")
+            }
+            if let maxLength { parts.append("At most \(maxLength) characters.") }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+        }
+
+        #if canImport(FoundationModels)
+            @available(macOS 26.0, *)
+            func makeDynamicGenerationSchema(named name: String) throws
+                -> DynamicGenerationSchema
+            {
+                if let anyOf {
+                    let schemas: [DynamicGenerationSchema]
+                    if #available(macOS 26.4, *) {
+                        schemas = try anyOf.enumerated().map { index, choice in
+                            if choice.isNull { return .null }
+                            return try choice.makeDynamicGenerationSchema(
+                                named: "\(name)_choice_\(index)")
+                        }
+                    } else {
+                        // Explicit null schemas arrived in macOS 26.4. On the
+                        // initial 26.x runtime the field stays optional; the
+                        // page validator remains the final contract authority.
+                        schemas = try anyOf.enumerated().compactMap { index, choice in
+                            guard !choice.isNull else { return nil }
+                            return try choice.makeDynamicGenerationSchema(
+                                named: "\(name)_choice_\(index)")
+                        }
+                    }
+                    guard let first = schemas.first else {
+                        throw AgentToolSchemaError.invalidProperty(name)
+                    }
+                    if schemas.count == 1 { return first }
+                    return DynamicGenerationSchema(name: name, anyOf: schemas)
+                }
+
+                switch type {
+                case "string":
+                    if let choices {
+                        guard !choices.isEmpty else {
+                            throw AgentToolSchemaError.invalidProperty(name)
+                        }
+                        return DynamicGenerationSchema(name: name, anyOf: choices)
+                    }
+                    if let constant {
+                        return DynamicGenerationSchema(name: name, anyOf: [constant])
+                    }
+                    if let pattern {
+                        return DynamicGenerationSchema(
+                            type: String.self, guides: [.pattern(try Regex(pattern))])
+                    }
+                    return DynamicGenerationSchema(type: String.self)
+
+                case "integer":
+                    let guides: [GenerationGuide<Int>]
+                    switch (minimum, maximum) {
+                    case (.some(let lower), .some(let upper)):
+                        guides = [.range(lower...upper)]
+                    case (.some(let lower), .none):
+                        guides = [.minimum(lower)]
+                    case (.none, .some(let upper)):
+                        guides = [.maximum(upper)]
+                    case (.none, .none):
+                        guides = []
+                    }
+                    return DynamicGenerationSchema(type: Int.self, guides: guides)
+
+                case "boolean":
+                    return DynamicGenerationSchema(type: Bool.self)
+
+                default:
+                    throw AgentToolSchemaError.invalidProperty(name)
+                }
+            }
+        #endif
+    }
+
+    private enum AgentToolSchemaError: LocalizedError {
+        case invalidObject(String)
+        case invalidProperty(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidObject(let name):
+                return "Invalid object schema for native tool \(name)."
+            case .invalidProperty(let name):
+                return "Unsupported property schema for native tool field \(name)."
+            }
+        }
+    }
+
+    // This literal is deliberately machine-readable. Keep its shape stable so
+    // native-tool-parity.test.ts can compare it to the canonical Zod schemas.
+    private static let agentToolContractJSON = #"""
+        [
+          {
+            "name": "get_workspace",
+            "description": "Return the current workspace identity, public handle, display name, supported folder modes, scope capabilities, and the caller's effective access.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_folders",
+            "description": "List accessible folders with ids, full paths, modes, parents, and item counts. Notes and bookmarks folders are private and always unlisted.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "create_folder",
+            "description": "Create a subfolder under an existing full folder path. It inherits the parent's mode and privacy rules.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "parent_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "The existing parent folder path."
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "The new display name."
+                }
+              },
+              "required": [
+                "parent_path",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "rename_folder",
+            "description": "Change a folder's display name. The stable folder id and path do not change.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "folder_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "required": [
+                "folder_id",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_items",
+            "description": "List live items in one folder with ids, titles, kinds, status, metadata, revision, and content hash.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "folder_path": {
+                  "description": "Defaults to \"blog\".",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "limit": {
+                  "description": "Defaults to 50.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_trash",
+            "description": "List soft-deleted items that can be restored. This never exposes permanent-delete operations.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "read_item",
+            "description": "Read one live item's markdown content and metadata. Server clients can use its current hash from list_items or search before a later write.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "search",
+            "description": "Search accessible live item titles, excerpts, and bodies. Drafts and private folders are included only when the caller can view them.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "limit": {
+                  "description": "Defaults to 25.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "create_item",
+            "description": "Create one draft in a target folder from structured fields or a complete Write markdown file. New items are never published or pinned; use the dedicated confirmed tools afterward.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "folder_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "The destination folder path."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 1000000
+                },
+                "excerpt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "article",
+                    "media_post",
+                    "video_post",
+                    "note",
+                    "bookmark"
+                  ]
+                },
+                "markdown": {
+                  "description": "A complete Write markdown file. Use this instead of title, body, excerpt, and kind.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000
+                }
+              },
+              "required": [
+                "folder_path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "update_item",
+            "description": "Update title, excerpt, and/or body without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "excerpt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 1000000
+                },
+                "markdown": {
+                  "description": "A complete Write markdown file. Metadata, status, kind, and pin changes in it are rejected; use their dedicated tools.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "append_to_item",
+            "description": "Append markdown to the end of an item's body, separated by a blank line, without changing metadata.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "markdown_fragment": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "markdown_fragment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "move_item",
+            "description": "Move an item to another folder of the same mode. Public kinds cannot cross into private folders, and notes or bookmarks cannot cross into public folders.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "folder_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "A full folder path from list_folders, such as \"blog/ideas\"."
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "folder_path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "delete_item",
+            "description": "Soft-delete one live item by moving it to Trash. It remains restorable; this tool never permanently deletes content. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "restore_item",
+            "description": "Restore one item from Trash with its previous status. Restoring a previously published item can make it public again. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "set_item_status",
+            "description": "Publish or unpublish one public item. Notes and bookmarks reject publication and remain unlisted forever. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "draft",
+                    "published"
+                  ]
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "set_item_metadata",
+            "description": "Update supported item metadata while preserving content, kind, folder, publication status, and pin state.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "excerpt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "accent": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cover": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cover_caption": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cover_height": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 180,
+                      "maximum": 860
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "date": {
+                  "description": "Publication date for an already-published item, as YYYY-MM-DD.",
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "set_item_pinned",
+            "description": "Set whether an item is pinned at the top of its workspace and public listings.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "pinned"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+        """#
+
+    static let agentToolSpecs: [AgentToolSpec] = {
+        do {
+            return try JSONDecoder().decode(
+                [AgentToolSpec].self, from: Data(agentToolContractJSON.utf8))
+        } catch {
+            preconditionFailure("Invalid native agent tool contract: \(error)")
+        }
+    }()
 
     private let toolCallLock = NSLock()
     private var pendingToolCalls: [String: CheckedContinuation<String, Error>] = [:]
@@ -484,20 +1106,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 self.description = spec.description
                 self.bridge = bridge
                 self.eventTag = eventTag
-                let properties = spec.properties.map { property in
-                    DynamicGenerationSchema.Property(
-                        name: property.name,
-                        description: property.description,
-                        schema: property.choices.map {
-                            DynamicGenerationSchema(
-                                name: "\(spec.name)_\(property.name)", anyOf: $0)
-                        } ?? DynamicGenerationSchema(type: String.self),
-                        isOptional: property.optional)
-                }
-                self.parameters = try GenerationSchema(
-                    root: DynamicGenerationSchema(
-                        name: spec.name, properties: properties),
-                    dependencies: [])
+                self.parameters = try spec.makeGenerationSchema()
             }
 
             func call(arguments: GeneratedContent) async throws -> String {
