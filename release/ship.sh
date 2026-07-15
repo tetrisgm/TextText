@@ -196,9 +196,27 @@ if [ -n "$ORIGIN" ]; then
   curl -fsSI "$ORIGIN/download/Write.zip" >/dev/null
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
+  GUEST_SMOKE_DIR="$(mktemp -d)"
+  GUEST_SMOKE_COOKIES="$GUEST_SMOKE_DIR/cookies"
+  GUEST_SMOKE_RESULT="$(
+    curl -sS -L \
+      -c "$GUEST_SMOKE_COOKIES" \
+      -b "$GUEST_SMOKE_COOKIES" \
+      -o /dev/null \
+      -w '%{http_code} %{url_effective}' \
+      "$ORIGIN/try?ship_verify=$VERIFY_QUERY"
+  )"
+  rm -rf "$GUEST_SMOKE_DIR"
+  GUEST_SMOKE_STATUS="${GUEST_SMOKE_RESULT%% *}"
+  GUEST_SMOKE_URL="${GUEST_SMOKE_RESULT#* }"
+  [ "$GUEST_SMOKE_STATUS" = "200" ] || {
+    echo "Guest start flow returned $GUEST_SMOKE_STATUS at $GUEST_SMOKE_URL." >&2
+    exit 1
+  }
   echo "   appcast:  $PUBLIC_VERSION ($PUBLIC_BUILD)"
   echo "   zip:      $PUBLIC_ZIP_URL"
   echo "   version:  $API_VERSION ($API_BUILD)"
+  echo "   guest:    $GUEST_SMOKE_URL"
 fi
 
 echo ">> install verified Mac app"
