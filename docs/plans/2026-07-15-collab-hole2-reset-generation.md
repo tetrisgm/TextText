@@ -138,6 +138,105 @@ needs a body-change check in `savePost` but avoids the revision entirely. Prefer
 supervised effort, not a fire-and-forget migration: it modifies a hot write path
 and ships an irreversible schema change for a rare edge.
 
+## REFINED design 2026-07-16 (chosen for the build): collab_state, no hot-path change
+
+To avoid touching `savePost` (the hot path) and the shared revision trigger,
+track provenance in a SEPARATE table rather than on `posts`:
+
+- `collab_state` { post_id uuid PK -> posts, epoch int NOT NULL DEFAULT 0,
+  materialized_revision bigint NULL, updated_at timestamptz }.
+- `collab_updates.epoch` int NOT NULL DEFAULT 0.
+
+Staleness detection uses `posts.revision` (already bumped on every write by the
+trigger) compared to a value the COLLAB layer records at materialization time -
+so no `savePost` change and no revision-trigger surgery:
+
+- Collab materialization (the Yjs-shell autosave `saveEditablePostAction`
+  `!canEdit` branch, and `POST /api/collab/{id}/materialize`): after
+  `savePostContentPatch` returns `saved.revision`, upsert
+  `collab_state.materialized_revision = saved.revision` for the current epoch.
+- External writes (owner save, sync PUT, MCP) do NOT touch `collab_state`, so
+  after any external write `posts.revision > collab_state.materialized_revision`.
+
+The catch-up GET is the single decision point AND is guarded so it can never
+retire a LIVE session's log:
+
+- On catch-up: if `!hasActiveCoEditors(postId)` AND (`materialized_revision` is
+  null OR `posts.revision !== materialized_revision`) -> stale -> CAS
+  `UPDATE collab_state SET epoch = epoch + 1 WHERE post_id = ? AND epoch = <read>`
+  and return an empty update list (client reseeds from `posts.body` via the
+  existing remoteEmpty seed path). Else -> serve `collab_updates WHERE epoch =
+  <current>`.
+- The `!hasActiveCoEditors` guard is the safety valve: a live session (fresh
+  presence) is never retired, so the benign non-atomicity of "write body then
+  write collab_state" cannot orphan a live log - during a materialize the
+  session is active, so no bump happens. It also matches the v0.77 invariant
+  (only act when no live session owns the doc).
+
+Append / relay / compaction become epoch-scoped (`WHERE epoch = <current>`); a
+push that lands in a just-retired epoch is ignored by the new-epoch relay and the
+client reseeds on its next catch-up (a full, valid old-generation row, never an
+orphan). No deletion, so no orphaned-delta race. Residual edges unchanged
+(pre-existing double-seed on simultaneous reseed; storage of retired epochs needs
+a lazy sweep). This variant is what the build implements.
+
+## REVIEW FINDINGS 2026-07-16: the refined design is FLAWED as written (do not build it yet)
+
+A 3-lens adversarial review of the collab_state design above found it unsafe. Do
+NOT implement it as written. The required corrections make it a materially larger,
+supervised build (a real client-provider change), not a fire-and-forget migration.
+
+- FATAL - retire CAS is a silent no-op on the backfill population. Existing posts
+  have no `collab_state` row, so `UPDATE collab_state SET epoch = epoch + 1 WHERE
+  post_id = ? AND epoch = <read>` matches zero rows: the epoch never advances, and
+  the reseed merges with the un-retired stale log, corrupting exactly the case
+  hole 2 must protect. FIX: the retire step must UPSERT (INSERT epoch = 1 when no
+  row, CAS-bump when present) with defined single-winner semantics for two
+  concurrent opens.
+- HIGH - the design is internally contradictory: "append tags each row with the
+  current epoch" defeats "a push in a retired epoch is ignored." After a bump, a
+  presence-lapsed-but-still-editing client (network blip > 15s; outbox retains
+  edits, retries to 30s) flushes its retained edits, which get tagged with the NEW
+  epoch, merge into the reseed-from-external-body doc, and overwrite the external
+  write - the exact regression. Also: a still-connected provider is epoch-unaware
+  and never re-runs catchUp, and BodyEditor's remoteEmpty seed only fires on an
+  empty fragment, so such a client can never cleanly reseed anyway. FIX:
+  epoch-FENCE the append on the client's asserted base epoch - the client sends
+  the epoch it caught up under; POST inserts only if it still equals
+  `collab_state.epoch`; on mismatch reject with a "retired" signal that makes the
+  client drop its outbox and re-catch-up. This requires threading an epoch through
+  the client provider (catchUp records it; poll/push carry it; a retirement
+  response tears the loop down) - materially more than "reuse the seed path."
+- HIGH - `!hasActiveCoEditors` (presence) is decoupled from edit-liveness. Presence
+  heartbeats are a best-effort 8s loop that stops silently on any hiccup, while the
+  outbox independently holds un-relayed edits. So a client can be genuinely
+  mid-edit with expired presence, and a catch-up GET will retire the epoch out from
+  under it. FIX: gate retirement on log QUIESCENCE (no new `collab_updates` rows
+  for a window strictly longer than the max outbox retention / reconnect window,
+  >= 30s) or a server-side lease a pushing client keeps alive, not presence.
+- HIGH - the reseed never sets `materialized_revision`, so `posts.revision`
+  permanently outruns it and the doc reseeds on essentially every open, discarding
+  the live log routinely (turns the rare sliver loss into a routine one). FIX: the
+  retire CAS must also set `materialized_revision` to the `posts.revision` it read.
+- MEDIUM - non-atomic "write body then write collab_state" opens a false-stale
+  window; the bump must be strictly gated to the `since = 0` catch-up (the poll
+  GET shares the endpoint and would self-retire a momentarily-stale live editor);
+  and the materialize's collab_state epoch predicate is unspecified (risks a double
+  reseed or mislabeling a bumped epoch).
+- MEDIUM - the NULL `materialized_revision` backfill forces a reseed on the first
+  reopen of every pre-existing co-edited post, losing any pre-feature log tail that
+  leads `posts.body`. FIX: a one-time controlled materialization of each existing
+  log into `posts.body` before enabling, or do not treat NULL as unconditionally
+  stale for a non-empty consistent log.
+
+Bottom line: closing hole 2 correctly needs epoch-fenced appends (client-provider
+change), quiescence/lease-based retirement, an upsert-and-set-materialized_revision
+retire, `since = 0` gating, and a backfill materialization - then a re-review
+before the prod migration. That is a supervised multi-day effort; it must not ship
+unattended. The schema (collab_updates.epoch + collab_state) and the migration
+were reverted after this review; rebuild them with the corrections when the build
+is done supervised.
+
 ## Cost
 
 - Schema: 3 columns + a backfill migration (run once on prod, like the revision
