@@ -1509,3 +1509,30 @@ export function registerWriteTools(server: McpServer): void {
     );
   }
 }
+
+/**
+ * Run a workspace tool for an in-app SESSION actor (the cloud assistant rung),
+ * reusing the exact same executor as the MCP server so every privacy, audit, and
+ * permission invariant is shared rather than re-implemented. The session is
+ * granted full workspace capability, but per-item access is still enforced from
+ * the resolved user (`accessUser`), so full-access scope does not bypass sharing.
+ *
+ * NOTE: the shared executor currently records `actorType: "external_agent"` for
+ * mutations. That mislabels the built-in assistant; giving the in-app assistant a
+ * distinct actor label is a small follow-up tracked in the BYO-cloud plan.
+ */
+export async function runWorkspaceToolForSession(
+  name: WorkspaceToolName,
+  args: Record<string, unknown>,
+  actor: { sub: string; userId: string | null },
+): Promise<CallToolResult> {
+  const extra: ToolContext = {
+    authInfo: {
+      token: "session",
+      clientId: "in-app-assistant",
+      scopes: [WORKSPACE_SCOPE_CAPABILITIES.fullAccess],
+      extra: { sub: actor.sub, userId: actor.userId },
+    },
+  };
+  return executeMcpTool(name, args, extra);
+}

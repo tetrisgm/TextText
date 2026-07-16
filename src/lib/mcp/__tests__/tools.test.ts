@@ -84,7 +84,11 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
-import { registerWriteTools, resolveMcpScopeAccess } from "@/lib/mcp/tools";
+import {
+  registerWriteTools,
+  resolveMcpScopeAccess,
+  runWorkspaceToolForSession,
+} from "@/lib/mcp/tools";
 
 type Registration = {
   name: string;
@@ -226,6 +230,22 @@ describe("MCP workspace tool adapter", () => {
     expect(result.isError).not.toBe(true);
     expect(mocks.createSubfolder).toHaveBeenCalledWith("local", "blog", "Ideas");
     expect(mocks.recordAction).toHaveBeenCalledOnce();
+  });
+
+  it("runs a tool for an in-app session actor with full workspace capability", async () => {
+    // The cloud assistant rung reuses the exact executor via a session actor.
+    // Full-access scope is granted, so unlike a read-scoped MCP connection the
+    // resolved access is editable; per-item sharing is still enforced downstream.
+    const result = await runWorkspaceToolForSession(
+      "get_workspace",
+      {},
+      { sub: "owner-sub", userId: "owner-uuid" },
+    );
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      workspace: { handle: "local", name: "Local Workspace" },
+      access: { canEdit: true },
+    });
   });
 
   it("returns identity and safe capabilities to a read-scoped connection", async () => {
