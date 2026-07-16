@@ -150,6 +150,8 @@ echo ">> migrate database: OAuth token lifecycle"
 node "$ROOT/scripts/migrate-add-oauth-token-lifecycle.mjs"
 echo ">> migrate database: item comments"
 node "$ROOT/scripts/migrate-add-item-comments.mjs"
+echo ">> migrate database: collab epoch (hole 2)"
+node "$ROOT/scripts/migrate-add-collab-epoch.mjs"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'
