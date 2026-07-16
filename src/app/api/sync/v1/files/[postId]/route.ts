@@ -12,6 +12,7 @@ import {
   PostConflictError,
   savePost,
   savePostContentPatch,
+  titleRevertsRecentRename,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
 import { hasActiveCoEditors } from "@/lib/collab";
@@ -133,6 +134,20 @@ export async function PUT(request: Request, { params }: Props) {
   const nextType = parsed.fields.type ?? post.type;
   if (folderPathForPostType(nextType) !== folderPathForPostType(post.type)) {
     return syncError(400, "This item cannot change type");
+  }
+
+  // Same rename-revert guard as PATCH, on the content path: a stale re-materialized
+  // text.md carries the OLD title in its frontmatter, and its base hash still
+  // matches, so the write would revert the title (and body) to a superseded value.
+  // Refuse when the file's title reverts a recent rename; the client re-fetches the
+  // current file and File Provider retries a genuine body edit against that base.
+  if (
+    post.id &&
+    typeof parsed.fields.title === "string" &&
+    parsed.fields.title !== post.title &&
+    (await titleRevertsRecentRename(post.id, parsed.fields.title))
+  ) {
+    return syncError(412, "This edit reverts a recent title change");
   }
 
   try {
@@ -297,6 +312,21 @@ export async function PATCH(request: Request, { params }: Props) {
   }
   if (post.revision === undefined) {
     return syncError(409, "This item has no version and cannot be safely changed");
+  }
+
+  // A File Provider rename derives the title from the display filename, which for
+  // a .textbundle package can trail a server-side rename until the framework
+  // re-materializes the directory name. In that window the client can synthesize
+  // a phantom rename back to the stale name, and because its base content hash
+  // already matches the server the If-Match and revision CAS above BOTH pass.
+  // Refuse a title that reverts to one this post held moments ago; the 412 makes
+  // the client re-materialize the current name instead of clobbering it in a loop.
+  if (
+    title !== undefined &&
+    title !== post.title &&
+    (await titleRevertsRecentRename(postId, title))
+  ) {
+    return syncError(412, "This rename reverts a recent title change");
   }
 
   // Validate the tenant-scoped identity up front so a foreign or unknown id is

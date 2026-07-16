@@ -140,19 +140,54 @@ export const blogs = pgTable(
 // Every mutation through the action layer records who did what to what,
 // so AI/agent edits stay auditable and reversible-by-inspection. actorType
 // distinguishes a human in the UI from the AI sidecar from an external agent.
-export const actionAudit = pgTable("action_audit", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  actorUserId: uuid("actor_user_id").references(() => users.id),
-  /** "human" | "ai" | "external_agent" */
-  actorType: text("actor_type").notNull().default("human"),
-  actionName: text("action_name").notNull(),
-  /** "workspace" | "folder" | "item" | "mode" */
-  targetType: text("target_type").notNull(),
-  targetId: text("target_id"),
-  inputSummary: text("input_summary"),
-  outputSummary: text("output_summary"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const actionAudit = pgTable(
+  "action_audit",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    /** "human" | "ai" | "external_agent" */
+    actorType: text("actor_type").notNull().default("human"),
+    actionName: text("action_name").notNull(),
+    /** "workspace" | "folder" | "item" | "mode" */
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id"),
+    inputSummary: text("input_summary"),
+    outputSummary: text("output_summary"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // Recent audit rows for one target as an index lookup, not a table scan.
+    index("action_audit_target_created_idx").on(t.targetId, t.createdAt),
+  ],
+);
+
+// Every title a post has been renamed AWAY from, with the moment it was
+// superseded. A File Provider .textbundle package's directory name lags a
+// server-side rename until the framework re-materializes it; during that lag a
+// phantom rename can push the STALE name back, and since the item's content hash
+// already matches the server both If-Match and the revision CAS pass. The sync
+// rename-revert guard (store.titleRevertsRecentRename) refuses a title the post
+// was superseded away from within the re-materialization window. Keyed on the
+// SUPERSEDE time (not when the title was first set) and holding the full recent
+// chain, so it catches a revert to the aged base of a rapid multi-step rename,
+// which a single previous-title slot or a set-time window would miss. Appended
+// and self-pruned by an AFTER UPDATE trigger; see migrate-add-rename-revert-guard.
+export const postTitleHistory = pgTable(
+  "post_title_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id").notNull(),
+    title: text("title").notNull(),
+    supersededAt: timestamp("superseded_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("post_title_history_lookup_idx").on(
+      t.postId,
+      t.title,
+      t.supersededAt,
+    ),
+  ],
+);
 
 // Content-blind health reports emitted by the installed app. The report JSON
 // schema accepts stable check IDs and numeric metrics only, so document text,
