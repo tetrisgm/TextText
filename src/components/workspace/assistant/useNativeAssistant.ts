@@ -32,6 +32,7 @@ import {
   type NativeAICapabilities,
 } from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
+import { cloudAssistantTurn } from "@/lib/ai/cloud-client";
 import {
   NATIVE_QUICK_ACTIONS,
   runNativeQuickAction,
@@ -378,7 +379,20 @@ export function useNativeAssistant({
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
-          appendToThread(thread, "assistant", unavailableExplanation(current));
+          // On-device is unavailable (plain web / ineligible device). Fall back
+          // to the cloud assistant when the owner has enabled it; otherwise keep
+          // the on-device explanation. Local-first: this only runs after the
+          // on-device probe reports unavailable.
+          const outcome = await cloudAssistantTurn(prompt, {
+            level: submittedView.level,
+            folderPath: submittedView.folderPath,
+            postId: submittedView.postId,
+          });
+          if ("disabled" in outcome) {
+            appendToThread(thread, "assistant", unavailableExplanation(current));
+          } else {
+            appendToThread(thread, "assistant", outcome.text || "Done.");
+          }
           updateAssistantJob(jobId, { status: "done" });
           return;
         }
