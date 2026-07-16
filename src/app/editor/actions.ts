@@ -87,6 +87,10 @@ import {
   tenantPostPath,
 } from "@/lib/public-paths";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
+import {
+  hasActiveCoEditors,
+  reconcileCollabLogAfterExternalWrite,
+} from "@/lib/collab";
 import { NO_COVER_VALUE } from "@/lib/cover";
 import {
   attachItemAsset,
@@ -233,6 +237,20 @@ function assertCurrentEditBase(input: unknown, existing: Post) {
   if (existingTime > baseTime) {
     throw new Error(
       "This item changed elsewhere. Your local draft is still available.",
+    );
+  }
+}
+
+// A pool-shell save (the blog owner or a workspace full member) writes
+// `posts.body` directly and never enters the shared Yjs document. Letting it
+// land while editors are live co-editing would be silently clobbered by their
+// next autosave (there is no store -> Yjs bridge), so refuse it with a conflict
+// exactly as the sync and MCP write paths do. Item-share collaborators editing
+// through the Yjs shell go down a different branch and are never guarded here.
+async function refuseWhileCoEdited(postId: string | undefined | null) {
+  if (postId && (await hasActiveCoEditors(postId))) {
+    throw new Error(
+      "This item is being co-edited right now. Open it in the shared editor to join, or try again once the live session ends.",
     );
   }
 }
@@ -561,6 +579,7 @@ export async function savePostAction(post: Post): Promise<Post> {
   if (post.id) {
     const existing = await getPostById(handle, post.id);
     if (!existing) throw new Error("Post not found");
+    await refuseWhileCoEdited(existing.id);
     const patch = editableInput(post, existing, existing.slug);
     const saved = await savePost(
       handle,
@@ -579,6 +598,7 @@ export async function savePostAction(post: Post): Promise<Post> {
       newSlug: saved.slug,
     });
     await auditEdit(access, "save_post", "item", saved.id, saved.title);
+    if (saved.id) await reconcileCollabLogAfterExternalWrite(saved.id);
     await revalidateBlog(handle, [existing.slug, saved.slug]);
     return saved;
   }
@@ -830,6 +850,7 @@ export async function saveEditablePostAction(
     return saved;
   }
 
+  await refuseWhileCoEdited(existing.id ?? id);
   const patch = editableInput(input, existing, existing.slug);
   const saved = await savePost(
     handle,
@@ -851,6 +872,7 @@ export async function saveEditablePostAction(
     newSlug: saved.slug,
   });
   await auditEdit(access, "save_post", "item", saved.id, saved.title);
+  if (saved.id) await reconcileCollabLogAfterExternalWrite(saved.id);
   if (options.revalidate !== false) {
     await revalidateBlog(handle, [existing.slug, saved.slug]);
   }

@@ -14,7 +14,10 @@ import {
   savePostContentPatch,
 } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../auth";
-import { hasActiveCoEditors } from "@/lib/collab";
+import {
+  hasActiveCoEditors,
+  reconcileCollabLogAfterExternalWrite,
+} from "@/lib/collab";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
 import { sanitizePostSlug } from "@/lib/post-slug";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -180,6 +183,9 @@ export async function PUT(request: Request, { params }: Props) {
       targetId: saved.id,
       inputSummary: saved.title,
     });
+    // This raw write went around any co-editing document; retire the now-stale
+    // log so a later editor open re-seeds from this body instead of replaying it.
+    if (saved.id) await reconcileCollabLogAfterExternalWrite(saved.id);
     revalidateBlogPaths(blog, [post.slug, saved.slug]);
     // The new manifest entry (with the NEW hash) lets the client update its
     // index without refetching the file it just wrote.

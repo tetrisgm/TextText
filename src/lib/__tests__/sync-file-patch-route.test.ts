@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   recordSlugChanged: vi.fn(),
   revalidateBlogPaths: vi.fn(),
   hasActiveCoEditors: vi.fn(async () => false),
+  reconcileCollabLogAfterExternalWrite: vi.fn(async () => {}),
   savePost: vi.fn(),
   savePostContentPatch: vi.fn(),
 }));
@@ -47,6 +48,7 @@ vi.mock("@/lib/audit", () => ({
 
 vi.mock("@/lib/collab", () => ({
   hasActiveCoEditors: mocks.hasActiveCoEditors,
+  reconcileCollabLogAfterExternalWrite: mocks.reconcileCollabLogAfterExternalWrite,
 }));
 
 vi.mock("@/lib/revalidate-blog", () => ({
@@ -371,9 +373,11 @@ describe("sync file PUT during a live co-editing session", () => {
     expect(response.status).toBe(409);
     expect(mocks.savePost).not.toHaveBeenCalled();
     expect(mocks.savePostContentPatch).not.toHaveBeenCalled();
+    // A refused write never orphaned a log, so nothing to reconcile.
+    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
   });
 
-  it("saves normally when no one is co-editing", async () => {
+  it("saves normally and retires the stale log when no one is co-editing", async () => {
     mocks.hasActiveCoEditors.mockResolvedValue(false);
     mocks.savePost.mockResolvedValue({ ...post, body: "Body" });
     const response = await PUT(
@@ -383,5 +387,10 @@ describe("sync file PUT during a live co-editing session", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
+    // This raw write went around any co-editing document; the now-stale log is
+    // retired so a later editor open re-seeds from this body, not the old log.
+    expect(mocks.reconcileCollabLogAfterExternalWrite).toHaveBeenCalledWith(
+      postId,
+    );
   });
 });

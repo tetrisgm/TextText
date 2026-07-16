@@ -253,3 +253,33 @@ export async function removePresence(
       ),
     );
 }
+
+/**
+ * Retire a post's co-editing append log entirely. The log is a transient
+ * session buffer: once no live session owns it, its Yjs history is no longer
+ * the source of truth (the canonical `posts.body` is), and keeping it around
+ * risks a stale replay clobbering a later external body write. A fresh session
+ * re-seeds its document from `posts.body` (the empty-log seed path in
+ * BodyEditor), so clearing the log loses nothing a live session still needs.
+ */
+export async function resetCollabLog(postId: string): Promise<void> {
+  if (!db) return;
+  await db.delete(collabUpdates).where(eq(collabUpdates.postId, postId));
+}
+
+/**
+ * Reconcile the co-editing log after an EXTERNAL (non-co-editing) write to
+ * `posts.body` (a pool-shell owner save, a Finder/sync PUT, an MCP update).
+ * Such a write makes any surviving log stale, so we retire it — but only when
+ * no live session still owns the document. While editors are active their
+ * updates remain authoritative and the external write is refused upstream
+ * (hasActiveCoEditors guards), so this is a no-op mid-session; it clears only
+ * the orphaned log left behind once a session has ended.
+ */
+export async function reconcileCollabLogAfterExternalWrite(
+  postId: string,
+): Promise<void> {
+  if (!db) return;
+  if (await hasActiveCoEditors(postId)) return;
+  await resetCollabLog(postId);
+}
