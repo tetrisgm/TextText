@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
   hasActiveCoEditors: vi.fn(async () => false),
   savePost: vi.fn(),
   savePostContentPatch: vi.fn(),
-  titleRevertsRecentRename: vi.fn(async () => false),
 }));
 
 vi.mock("@/lib/store", () => ({
@@ -31,7 +30,6 @@ vi.mock("@/lib/store", () => ({
   PostConflictError: mocks.PostConflictError,
   savePost: mocks.savePost,
   savePostContentPatch: mocks.savePostContentPatch,
-  titleRevertsRecentRename: mocks.titleRevertsRecentRename,
 }));
 
 vi.mock("@/lib/permissions", () => ({
@@ -170,74 +168,12 @@ describe("sync file PATCH", () => {
     );
   });
 
-  it("refuses a rename that reverts a recently superseded title", async () => {
-    // The File Provider re-materialization phantom: the client re-asserts a title
-    // the post just moved away from, and its base hash still matches so If-Match
-    // and the revision CAS both pass. The revert guard is the only thing that can
-    // tell this stale echo from a real rename.
-    mocks.titleRevertsRecentRename.mockResolvedValueOnce(true);
-
-    const response = await PATCH(patchRequest({ title: "omg rename party" }), {
-      params: Promise.resolve({ postId }),
-    });
-
-    expect(response.status).toBe(412);
-    expect(mocks.titleRevertsRecentRename).toHaveBeenCalledWith(
-      postId,
-      "omg rename party",
-    );
-    // Never reaches the write: the client turns the 412 into a conflict and
-    // re-materializes the current server name.
-    expect(mocks.movePostFile).not.toHaveBeenCalled();
-  });
-
-  it("skips the revert guard for a same-title no-op", async () => {
-    mocks.movePostFile.mockResolvedValue({
-      post,
-      changed: false,
-      previousSlug: post.slug,
-    });
-
-    const response = await PATCH(patchRequest({ title: post.title }), {
-      params: Promise.resolve({ postId }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(mocks.titleRevertsRecentRename).not.toHaveBeenCalled();
-  });
-
   it("rejects a wildcard content PUT instead of accepting an unknown base", async () => {
     const response = await PUT(mutationRequest("PUT", "*"), {
       params: Promise.resolve({ postId }),
     });
 
     expect(response.status).toBe(412);
-  });
-
-  it("refuses a content PUT whose frontmatter title reverts a recent rename", async () => {
-    mocks.titleRevertsRecentRename.mockResolvedValueOnce(true);
-    const headers = new Headers({ "Content-Type": "text/markdown" });
-    headers.set("If-Match", `"${renderSyncFile(blog, post).hash}"`);
-    const request = new Request(
-      `https://write.example/api/sync/v1/files/${postId}`,
-      {
-        method: "PUT",
-        headers,
-        body: '---\ntype: article\ntitle: "omg rename party"\n---\n\nBody',
-      },
-    );
-
-    const response = await PUT(request, {
-      params: Promise.resolve({ postId }),
-    });
-
-    expect(response.status).toBe(412);
-    expect(mocks.titleRevertsRecentRename).toHaveBeenCalledWith(
-      postId,
-      "omg rename party",
-    );
-    expect(mocks.savePost).not.toHaveBeenCalled();
-    expect(mocks.savePostContentPatch).not.toHaveBeenCalled();
   });
 
   it("rejects a stale validator after a newer folder move", async () => {

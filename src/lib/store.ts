@@ -8,7 +8,6 @@ import {
   asc,
   desc,
   eq,
-  gt,
   inArray,
   isNotNull,
   isNull,
@@ -59,7 +58,6 @@ import {
   idempotencyKeys,
   itemComments,
   posts,
-  postTitleHistory,
   users,
 } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
@@ -1418,65 +1416,6 @@ export async function setPostFolder(
     .where(eq(posts.id, row.id))
     .returning();
   return updated[0] ? mapPost(updated[0]) : null;
-}
-
-/**
- * The re-materialization window: how recently a post must have been renamed AWAY
- * from a title for a sync/agent write reverting to it to be treated as a stale
- * echo rather than a genuine rename. Covers the File Provider long-poll change
- * feed (waits up to 25s) plus re-materialization, with margin. A revert is also
- * self-limiting: the 412 it earns re-materializes the current name, ending the
- * lag, so this only needs to cover the first phantom after a rename.
- */
-export const TITLE_REVERT_GUARD_MS = 60_000;
-
-/**
- * True when this post was renamed AWAY from `title` within the guard window, i.e.
- * a sync/agent client is trying to REVERT to a value the post just moved off of
- * rather than make a genuine rename.
- *
- * A File Provider rename derives the new title from the display filename, and for
- * a `.textbundle` package the on-disk directory name trails a server-side rename
- * until the framework re-materializes it. In that window the framework can
- * synthesize a phantom "rename" back to the stale name it is still showing;
- * because the item's base content hash already matches the server, both the
- * If-Match check and the revision CAS pass, so the stale name silently clobbers
- * the newer title (see the revert loop in docs/plans and the audit trail). The
- * one thing separating this stale echo from a genuine rename is that its target
- * is a title the post held moments ago. The sync route rejects such a change with
- * 412; the client turns that into a conflict and re-materializes the current
- * server name, so the mount converges instead of looping.
- *
- * The signal is membership in `post_title_history`, which an AFTER UPDATE trigger
- * appends (post_id, OLD.title, now()) to on every title change. Keying on the
- * SUPERSEDE time and holding the whole recent chain (not just the direct
- * predecessor) is what makes it catch a revert to the AGED BASE of a rapid
- * multi-step rename: the base was current until the burst began, so it was
- * superseded within the window even though it was first set long ago. A window
- * on when a title was *set*, or a single previous-title slot, both miss that.
- *
- * A deliberate rename BACK to a title used within the window is also refused (the
- * two are indistinguishable from the server's view), but it can be retried once
- * the window passes. Preventing silent data loss wins that trade.
- */
-export async function titleRevertsRecentRename(
-  postId: string,
-  title: string,
-): Promise<boolean> {
-  if (!db) return false;
-  const since = new Date(Date.now() - TITLE_REVERT_GUARD_MS);
-  const rows = await db
-    .select({ id: postTitleHistory.id })
-    .from(postTitleHistory)
-    .where(
-      and(
-        eq(postTitleHistory.postId, postId),
-        eq(postTitleHistory.title, title),
-        gt(postTitleHistory.supersededAt, since),
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
 }
 
 /**
