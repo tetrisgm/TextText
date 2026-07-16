@@ -131,6 +131,12 @@ function toolText(result: CallToolResult): string {
 describe("MCP workspace tool adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks does not drain a mockResolvedValueOnce queue, and the
+    // title-only co-editing test intentionally never consumes its Once (the
+    // body-unchanged guard short-circuits). Reset the co-editor mock outright so
+    // no dangling Once leaks into a later test's default.
+    mocks.hasActiveCoEditors.mockReset();
+    mocks.hasActiveCoEditors.mockResolvedValue(false);
     mocks.getAccessibleFolders.mockResolvedValue([]);
     mocks.getTrashedFolders.mockResolvedValue([]);
     mocks.listItemAssetReferences.mockReturnValue([]);
@@ -367,6 +373,64 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
     // The body was untouched, so the live session's log stays intact.
     expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
+  });
+
+  it("refuses append_to_item while the item is being co-edited", async () => {
+    const id = "77777777-7777-4777-8777-777777777777";
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    mocks.getPostById.mockResolvedValue({
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "Before",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    });
+    // Append always rewrites the whole body, so it must refuse unconditionally
+    // while a live session owns the document.
+    mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
+    const appendItem = registrations().find((entry) => entry.name === "append_to_item");
+    const result = await appendItem!.callback(
+      { id, markdown_fragment: "More text" },
+      auth(["sync"]),
+    );
+    expect(result.isError).toBe(true);
+    expect(toolText(result)).toMatch(/co-edited/i);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
+  });
+
+  it("appends and retires the stale log when no one is co-editing", async () => {
+    const id = "88888888-8888-4888-8888-888888888888";
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "Before",
+      status: "draft",
+      pinned: false,
+      revision: 42,
+    } as const;
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.savePost.mockResolvedValue({ ...post, body: "Before\n\nMore", revision: 43 });
+    const appendItem = registrations().find((entry) => entry.name === "append_to_item");
+    const result = await appendItem!.callback(
+      { id, markdown_fragment: "More" },
+      auth(["sync"]),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcileCollabLogAfterExternalWrite).toHaveBeenCalledWith(id);
   });
 
   it("soft-deletes through the revision-guarded Trash operation", async () => {

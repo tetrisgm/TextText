@@ -294,4 +294,111 @@ describe("CollabProvider startup and outbox", () => {
 
     provider.destroy();
   });
+
+  // Shared harness for the beacon-invariant cases: a parked collab session whose
+  // pushes never resolve, so any queued edit stays in the outbox until a beacon
+  // (or the assertions) inspect it.
+  function beaconHarness(postId: string) {
+    const beacons: Array<{ url: string }> = [];
+    const pageListeners = new Map<string, Set<() => void>>();
+    vi.stubGlobal("window", {
+      addEventListener: (ev: string, fn: () => void) => {
+        (pageListeners.get(ev) ?? pageListeners.set(ev, new Set()).get(ev)!).add(fn);
+      },
+      removeEventListener: (ev: string, fn: () => void) => {
+        pageListeners.get(ev)?.delete(fn);
+      },
+      sessionStorage: { getItem: () => null, setItem: () => {} },
+    });
+    vi.stubGlobal("navigator", {
+      sendBeacon: vi.fn((url: string) => {
+        beacons.push({ url });
+        return true;
+      }),
+    });
+    let catchUpDone = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") return new Promise<Response>(() => {});
+        if (!catchUpDone) {
+          catchUpDone = true;
+          return jsonResponse({ updates: [], seq: 0 });
+        }
+        return new Promise<Response>(() => {});
+      }),
+    );
+    const firePageHide = () => {
+      for (const fn of pageListeners.get("pagehide") ?? []) fn();
+    };
+    return { beacons, firePageHide, base: `/api/collab/${postId}` };
+  }
+
+  it("skips the beacon for an over-limit payload so the normal flush keeps it", async () => {
+    vi.useFakeTimers();
+    const { beacons, firePageHide, base } = beaconHarness("beacon-big");
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "beacon-big",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+    });
+    await provider.start();
+    // An edit whose serialized update blows past the 60KB sendBeacon ceiling.
+    doc.getText("big").insert(0, "x".repeat(80_000));
+
+    firePageHide();
+    // Over-limit: nothing is beaconed to the push endpoint (the edit stays in
+    // the outbox for the chunked normal flush rather than being silently
+    // dropped by sendBeacon).
+    expect(beacons.some((b) => b.url === base)).toBe(false);
+
+    provider.destroy();
+  });
+
+  it("splices delivered edits so a second pagehide does not double-send", async () => {
+    vi.useFakeTimers();
+    const { beacons, firePageHide, base } = beaconHarness("beacon-splice");
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "beacon-splice",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+    });
+    await provider.start();
+    doc.getMap("body").set("text", "queued once");
+
+    firePageHide();
+    firePageHide();
+    // The first beacon delivered and spliced the outbox; the second finds an
+    // empty queue and sends nothing. Exactly one push-endpoint beacon.
+    expect(beacons.filter((b) => b.url === base)).toHaveLength(1);
+
+    provider.destroy();
+  });
+
+  it("destroy() leaves presence but never drains the outbox over a beacon", async () => {
+    vi.useFakeTimers();
+    const { beacons, base } = beaconHarness("beacon-destroy");
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "beacon-destroy",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+    });
+    await provider.start();
+    doc.getMap("body").set("text", "still queued");
+
+    provider.destroy();
+    // A React unmount with the tab still open: the module-level outbox survives,
+    // so destroy must NOT flush edits (that is pagehide's job). It DOES announce
+    // a presence leave.
+    expect(beacons.some((b) => b.url === base)).toBe(false);
+    expect(beacons.some((b) => b.url === `${base}/presence`)).toBe(true);
+  });
 });

@@ -1,5 +1,13 @@
 # Write for macOS: Apple platform plan
 
+> STATUS (updated 2026-07-15): SHIPPED and SUPERSEDED. Phases 1 to 5 shipped in
+> v0.21 to v0.25, and the workspace substrate has since moved from the
+> iCloud-Drive-canonical design below to the macOS File Provider (see
+> docs/file-provider-plan.md). This document is kept as the historical plan of
+> record; the "First execution task (Phase 1)" section is complete, not pending.
+> The only open Apple-platform work is File Provider Phase 5 (retire the native
+> ~/Write mirror at a proven cutover).
+
 Owner-approved plan of record (2026-07-12). This supersedes earlier
 File Provider scaffolding plans. macOS only; the web product and backend
 continue unchanged in their roles.
@@ -252,7 +260,7 @@ genuine non-goal (the server is the backend). The File Provider replaces the
 polling folder mirror rather than adding a second sync system; the native
 mirror is retired at the cutover, not run alongside permanently.
 
-## 19. First execution task (Phase 1, current)
+## 19. First execution task (Phase 1, shipped)
 
 Implement the iCloud workspace foundation for the existing macOS Write
 application:
