@@ -254,32 +254,12 @@ export async function removePresence(
     );
 }
 
-/**
- * Retire a post's co-editing append log entirely. The log is a transient
- * session buffer: once no live session owns it, its Yjs history is no longer
- * the source of truth (the canonical `posts.body` is), and keeping it around
- * risks a stale replay clobbering a later external body write. A fresh session
- * re-seeds its document from `posts.body` (the empty-log seed path in
- * BodyEditor), so clearing the log loses nothing a live session still needs.
- */
-export async function resetCollabLog(postId: string): Promise<void> {
-  if (!db) return;
-  await db.delete(collabUpdates).where(eq(collabUpdates.postId, postId));
-}
-
-/**
- * Reconcile the co-editing log after an EXTERNAL (non-co-editing) write to
- * `posts.body` (a pool-shell owner save, a Finder/sync PUT, an MCP update).
- * Such a write makes any surviving log stale, so we retire it — but only when
- * no live session still owns the document. While editors are active their
- * updates remain authoritative and the external write is refused upstream
- * (hasActiveCoEditors guards), so this is a no-op mid-session; it clears only
- * the orphaned log left behind once a session has ended.
- */
-export async function reconcileCollabLogAfterExternalWrite(
-  postId: string,
-): Promise<void> {
-  if (!db) return;
-  if (await hasActiveCoEditors(postId)) return;
-  await resetCollabLog(postId);
-}
+// NOTE: an earlier revision retired the append log after an external body write
+// (resetCollabLog + reconcileCollabLogAfterExternalWrite). An adversarial review
+// showed an unbounded delete is unsafe: it can drop a co-editor's final edits
+// that posts.body never absorbed (the autosave cannot flush on tab close) and
+// can corrupt a still-live-but-stale-presence session's log (orphaned deltas,
+// no snapshot preserved, unlike maybeCompactCollab). Retiring a stale log needs
+// a materialization/staleness marker so the next open prefers posts.body
+// without deleting; that is tracked as a follow-up. The live-session write guard
+// (hasActiveCoEditors, consulted by the editor/sync/MCP write paths) stays.

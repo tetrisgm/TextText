@@ -3,10 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import { recordAction, type AuditEntry } from "@/lib/audit";
-import {
-  hasActiveCoEditors,
-  reconcileCollabLogAfterExternalWrite,
-} from "@/lib/collab";
+import { hasActiveCoEditors } from "@/lib/collab";
 import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -814,11 +811,6 @@ async function executeMcpTool(
               { expectedRevision: revision },
             );
         await auditMcp(extra, "mcp.update_item", "item", saved.id, saved.title);
-        // A body rewrite went around any co-editing document; retire the stale
-        // log so a later editor open re-seeds from this body, not the old log.
-        if (saved.id && content.body !== post.body) {
-          await reconcileCollabLogAfterExternalWrite(saved.id);
-        }
         revalidateBlogPaths(blog, [post.slug, saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
       } catch (error) {
@@ -866,7 +858,6 @@ async function executeMcpTool(
               { expectedRevision: revision },
             );
         await auditMcp(extra, "mcp.append_to_item", "item", saved.id, saved.title);
-        if (saved.id) await reconcileCollabLogAfterExternalWrite(saved.id);
         revalidateBlogPaths(blog, [saved.slug]);
         return jsonResult({ item: itemEntry(blog, saved) });
       } catch (error) {

@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   getPostById: vi.fn(),
   getTrashedFolders: vi.fn(),
   hasActiveCoEditors: vi.fn(async () => false),
-  reconcileCollabLogAfterExternalWrite: vi.fn(async () => {}),
   importItemAssetFromUrl: vi.fn(),
   inviteScopeShare: vi.fn(),
   listItemAssetReferences: vi.fn(),
@@ -35,7 +34,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/collab", () => ({
   hasActiveCoEditors: mocks.hasActiveCoEditors,
-  reconcileCollabLogAfterExternalWrite: mocks.reconcileCollabLogAfterExternalWrite,
 }));
 vi.mock("@/lib/item-assets", () => ({
   attachItemAsset: mocks.attachItemAsset,
@@ -318,10 +316,9 @@ describe("MCP workspace tool adapter", () => {
     expect(result.isError).toBe(true);
     expect(toolText(result)).toMatch(/co-edited/i);
     expect(mocks.savePost).not.toHaveBeenCalled();
-    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
   });
 
-  it("retires the stale co-editing log after an out-of-band body change", async () => {
+  it("writes a body change when no one is co-editing", async () => {
     const id = "66666666-6666-4666-8666-666666666666";
     mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
@@ -339,13 +336,10 @@ describe("MCP workspace tool adapter", () => {
     } as const;
     mocks.getPostById.mockResolvedValue(post);
     mocks.savePost.mockResolvedValue({ ...post, body: "After", revision: 43 });
-    // No live session: the write lands, and the orphaned log is retired so a
-    // later editor open re-seeds from this body instead of replaying it.
     const updateItem = registrations().find((entry) => entry.name === "update_item");
     const result = await updateItem!.callback({ id, body: "After" }, auth(["sync"]));
     expect(result.isError).not.toBe(true);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
-    expect(mocks.reconcileCollabLogAfterExternalWrite).toHaveBeenCalledWith(id);
   });
 
   it("allows a title-only edit while co-edited (does not touch the body)", async () => {
@@ -371,8 +365,6 @@ describe("MCP workspace tool adapter", () => {
     const result = await updateItem!.callback({ id, title: "Renamed" }, auth(["sync"]));
     expect(result.isError).not.toBe(true);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
-    // The body was untouched, so the live session's log stays intact.
-    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
   });
 
   it("refuses append_to_item while the item is being co-edited", async () => {
@@ -402,10 +394,9 @@ describe("MCP workspace tool adapter", () => {
     expect(result.isError).toBe(true);
     expect(toolText(result)).toMatch(/co-edited/i);
     expect(mocks.savePost).not.toHaveBeenCalled();
-    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
   });
 
-  it("appends and retires the stale log when no one is co-editing", async () => {
+  it("appends when no one is co-editing", async () => {
     const id = "88888888-8888-4888-8888-888888888888";
     mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
@@ -430,7 +421,6 @@ describe("MCP workspace tool adapter", () => {
     );
     expect(result.isError).not.toBe(true);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
-    expect(mocks.reconcileCollabLogAfterExternalWrite).toHaveBeenCalledWith(id);
   });
 
   it("soft-deletes through the revision-guarded Trash operation", async () => {

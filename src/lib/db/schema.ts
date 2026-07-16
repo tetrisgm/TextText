@@ -517,9 +517,8 @@ export const idempotencyKeys = pgTable(
 // `seq` is a global monotonic cursor; a reader asks for everything after the
 // last seq it applied. Updates are stored base64-encoded (they are small
 // binary diffs). Compaction collapses the log into one equivalent snapshot past
-// a threshold (maybeCompactCollab in collab.ts), and an external body write
-// retires an orphaned log entirely (reconcileCollabLogAfterExternalWrite), so
-// the table stays bounded per active post.
+// a threshold (maybeCompactCollab in collab.ts), so an active post's log stays
+// bounded.
 export const collabUpdates = pgTable(
   "collab_updates",
   {

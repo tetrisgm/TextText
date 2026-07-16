@@ -3,10 +3,9 @@ import type { Post } from "@/lib/content";
 
 // The pool-shell save (blog owner / workspace full member) writes posts.body
 // directly and is external to any live Yjs co-editing session, so it is guarded
-// exactly like the sync and MCP write paths: refused while editors are live,
-// and it retires the orphaned log after a write no live session owns. The Yjs
-// participant (an item-share collaborator) goes down the content-patch branch
-// and is never guarded here.
+// exactly like the sync and MCP write paths: refused while editors are live. The
+// Yjs participant (an item-share collaborator) goes down the content-patch
+// branch and is never guarded here.
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -19,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   recordAction: vi.fn(),
   recordSlugChanged: vi.fn(),
   hasActiveCoEditors: vi.fn(async () => false),
-  reconcileCollabLogAfterExternalWrite: vi.fn(async () => {}),
   revalidateBlogPaths: vi.fn(),
 }));
 
@@ -53,8 +51,6 @@ vi.mock("@/lib/audit", async (importOriginal) => ({
 
 vi.mock("@/lib/collab", () => ({
   hasActiveCoEditors: mocks.hasActiveCoEditors,
-  reconcileCollabLogAfterExternalWrite:
-    mocks.reconcileCollabLogAfterExternalWrite,
 }));
 
 vi.mock("@/lib/revalidate-blog", () => ({
@@ -110,13 +106,11 @@ describe("saveEditablePostAction co-editing guard", () => {
     await expect(
       saveEditablePostAction(HANDLE, input, { revalidate: false }),
     ).rejects.toThrow(/co-edited/i);
-    // The blind overwrite never reached the store, and there was no write to
-    // reconcile.
+    // The blind overwrite never reached the store.
     expect(mocks.savePost).not.toHaveBeenCalled();
-    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
   });
 
-  it("saves and retires the stale log when no editors are live", async () => {
+  it("saves normally when no editors are live", async () => {
     mocks.getBlogEditAccess.mockResolvedValue({
       canEdit: true,
       isOwner: true,
@@ -131,9 +125,6 @@ describe("saveEditablePostAction co-editing guard", () => {
 
     expect(saved.body).toBe("After");
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
-    expect(mocks.reconcileCollabLogAfterExternalWrite).toHaveBeenCalledWith(
-      POST_ID,
-    );
   });
 
   it("never guards the Yjs participant (item-share collaborator) branch", async () => {
@@ -154,10 +145,8 @@ describe("saveEditablePostAction co-editing guard", () => {
 
     await saveEditablePostAction(HANDLE, input, { revalidate: false });
 
-    // The participant writes through the content-patch path and is not blocked;
-    // its own live log must not be reconciled away.
+    // The participant writes through the content-patch path and is not blocked.
     expect(mocks.savePostContentPatch).toHaveBeenCalledTimes(1);
     expect(mocks.savePost).not.toHaveBeenCalled();
-    expect(mocks.reconcileCollabLogAfterExternalWrite).not.toHaveBeenCalled();
   });
 });

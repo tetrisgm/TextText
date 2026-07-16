@@ -87,10 +87,7 @@ import {
   tenantPostPath,
 } from "@/lib/public-paths";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
-import {
-  hasActiveCoEditors,
-  reconcileCollabLogAfterExternalWrite,
-} from "@/lib/collab";
+import { hasActiveCoEditors } from "@/lib/collab";
 import { NO_COVER_VALUE } from "@/lib/cover";
 import {
   attachItemAsset,
@@ -598,7 +595,6 @@ export async function savePostAction(post: Post): Promise<Post> {
       newSlug: saved.slug,
     });
     await auditEdit(access, "save_post", "item", saved.id, saved.title);
-    if (saved.id) await reconcileCollabLogAfterExternalWrite(saved.id);
     await revalidateBlog(handle, [existing.slug, saved.slug]);
     return saved;
   }
@@ -872,7 +868,6 @@ export async function saveEditablePostAction(
     newSlug: saved.slug,
   });
   await auditEdit(access, "save_post", "item", saved.id, saved.title);
-  if (saved.id) await reconcileCollabLogAfterExternalWrite(saved.id);
   if (options.revalidate !== false) {
     await revalidateBlog(handle, [existing.slug, saved.slug]);
   }
