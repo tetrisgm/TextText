@@ -297,6 +297,28 @@ handling. Then an adversarial review of the IMPLEMENTATION, then the prod
 migration + ship. SETTLE_MS and the outbox retention constant must be read from
 the code, not assumed.
 
+## IMPLEMENTATION REVIEW 2026-07-16 (built + fixed)
+
+Built to the corrected spec, then a 3-lens implementation review of the code
+(SQL: sound; client: sound) found three issues in the concurrency lens, all
+fixed before ship:
+- HIGH: the 45s quiescence gate on retire created a 15s..45s clobber window
+  (external writes are allowed the instant presence goes stale at 15s, but retire
+  waited for 45s of quiescence, so a new joiner replayed the stale log and
+  clobbered the external write). FIXED by REMOVING quiescence entirely: retire
+  now fires the instant it is stale-and-idle; the append epoch fence already
+  protects a lapsed editor's late flush, so quiescence bought no correctness.
+- MEDIUM: the pagehide log beacon omitted the epoch, so its append was fenced out
+  on any retired post. FIXED: the beacon carries `epoch: outbox.epoch`.
+- LOW: `outbox.epoch = 0` could not distinguish "epoch unknown" from "genuinely
+  epoch 0", so a failed initial catch-up then a poll returning epoch >= 1 spuriously
+  retired (reload). FIXED with an `epochKnown` flag: a poll epoch is LEARNED until
+  catch-up has recorded one, and only a change after that retires.
+
+Verified: provider epoch/retirement unit tests + a live DB integration test
+(scripts/verify-collab-epoch-live.ts, 9/9) exercising the fenced append, the
+now-unquiesced retire, the materialize marker, and no-reseed-loop.
+
 ## Cost
 
 - Schema: 3 columns + a backfill migration (run once on prod, like the revision

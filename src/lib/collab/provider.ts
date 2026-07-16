@@ -90,6 +90,10 @@ type Outbox = {
   /** The log generation this client caught up under; sent on every push and
    * FENCED server-side. A push against a stale epoch is retired. */
   epoch: number;
+  /** Whether `epoch` has actually been learned from a server response. Until it
+   * has, a poll returning epoch >= 1 must be LEARNED, not mistaken for a
+   * generation change (which would spuriously retire an un-caught-up client). */
+  epochKnown: boolean;
 };
 
 // A provider is tied to a mounted editor, but unsent edits are tied to the
@@ -108,6 +112,7 @@ function outboxFor(postId: string, base: string): Outbox {
     timer: null,
     retries: 0,
     epoch: 0,
+    epochKnown: false,
   };
   outboxes.set(postId, created);
   return created;
@@ -169,7 +174,10 @@ async function flushOutbox(postId: string, outbox: Outbox) {
         // they can never merge over the reseeded body, and tell every provider on
         // this post to remount onto a fresh doc.
         outbox.pending.length = 0;
-        if (typeof data.epoch === "number") outbox.epoch = data.epoch;
+        if (typeof data.epoch === "number") {
+          outbox.epoch = data.epoch;
+          outbox.epochKnown = true;
+        }
         for (const sub of outbox.subscribers.values()) {
           try {
             sub.onRetired?.();
@@ -180,7 +188,10 @@ async function flushOutbox(postId: string, outbox: Outbox) {
       } else {
         outbox.pending.splice(0, batch.length);
         outbox.retries = 0;
-        if (typeof data.epoch === "number") outbox.epoch = data.epoch;
+        if (typeof data.epoch === "number") {
+          outbox.epoch = data.epoch;
+          outbox.epochKnown = true;
+        }
       }
     } else if (isAccessLoss(res.status)) {
       // Fatal: this session lost access. Drop the queue (it can never be
@@ -358,7 +369,12 @@ export class CollabProvider {
       return;
     }
     const batch = this.outbox.pending.slice(0, MAX_PUSH_BATCH);
-    const payload = JSON.stringify({ updates: batch.map(u8ToBase64) });
+    // Fence the unload append on the same generation as the normal push, or a
+    // retired post (epoch >= 1) would reject it (absent epoch is treated as 0).
+    const payload = JSON.stringify({
+      updates: batch.map(u8ToBase64),
+      epoch: this.outbox.epoch,
+    });
     // sendBeacon silently drops an over-limit body; skip so the normal flush
     // (which chunks and retries) still owns those bytes.
     if (payload.length > 60_000) return;
@@ -468,6 +484,7 @@ export class CollabProvider {
         // on it so a stale offline flush after a retirement is rejected.
         if (this.outbox && typeof data.epoch === "number") {
           this.outbox.epoch = data.epoch;
+          this.outbox.epochKnown = true;
         }
         if (data.updates.length === 0) {
           return {
@@ -528,18 +545,20 @@ export class CollabProvider {
           seq: number;
           epoch?: number;
         };
-        // The generation changed under us: our Y.Doc is based on the retired
-        // epoch. Do NOT apply the new epoch's rows into it (that would corrupt
-        // it); signal a remount onto a fresh doc and stop.
-        if (
-          !this.stopped &&
-          this.outbox &&
-          typeof data.epoch === "number" &&
-          data.epoch !== this.outbox.epoch
-        ) {
-          this.opts.onRetired?.();
-          this.stop();
-          return;
+        // Epoch handling. If we never recorded an epoch (a transient catch-up
+        // failure), LEARN it from the poll rather than mistake it for a change.
+        // Once known, a different epoch means the generation was retired under
+        // us: our Y.Doc is based on the retired epoch, so do NOT apply the new
+        // epoch's rows (that would corrupt it); signal a remount and stop.
+        if (!this.stopped && this.outbox && typeof data.epoch === "number") {
+          if (!this.outbox.epochKnown) {
+            this.outbox.epoch = data.epoch;
+            this.outbox.epochKnown = true;
+          } else if (data.epoch !== this.outbox.epoch) {
+            this.opts.onRetired?.();
+            this.stop();
+            return;
+          }
         }
         // Same corruption-tolerant path as catchUp: applyRow advances past a
         // row even if applying it throws, so one bad update can never stall

@@ -67,13 +67,6 @@ export async function collabAccess(
   return null;
 }
 
-// A log stays retirable only after it has been quiescent (no new rows) for
-// longer than the client outbox's maximum retention/reconnect window, so a
-// briefly-blipped editor has drained before we ever consider retiring its
-// generation. The epoch fence is the hard guarantee; this only avoids spurious
-// resets. Must stay comfortably larger than provider.ts PUSH_MAX_RETRY_MS (30s).
-export const COLLAB_SETTLE_MS = 45_000;
-
 /** The post's current revision (the sync CAS token), or null if gone. */
 export async function getPostRevision(postId: string): Promise<number | null> {
   if (!db) return null;
@@ -158,22 +151,6 @@ export async function latestCollabSeq(
   return rows[0]?.seq ?? 0;
 }
 
-/** True when the current generation's log has been quiescent for `settleMs`
- * (or is empty): no new rows, so any brief-blip editor has drained. */
-async function logQuiescent(postId: string, settleMs: number): Promise<boolean> {
-  if (!db) return true;
-  const epoch = await getCollabEpoch(postId);
-  const rows = await db
-    .select({ createdAt: collabUpdates.createdAt })
-    .from(collabUpdates)
-    .where(and(eq(collabUpdates.postId, postId), eq(collabUpdates.epoch, epoch)))
-    .orderBy(sql`${collabUpdates.createdAt} desc`)
-    .limit(1);
-  const newest = rows[0]?.createdAt;
-  if (!newest) return true;
-  return newest.getTime() < Date.now() - settleMs;
-}
-
 /**
  * Record that a collab autosave / session-end materialize wrote `revision` into
  * posts.body. Monotonic and epoch-untouched: it only advances the provenance
@@ -198,11 +175,18 @@ export async function markCollabMaterialized(
 /**
  * Retire a post's log generation when it is safe AND stale, so the next editor
  * reseeds from the authoritative posts.body instead of replaying a log left
- * stale between sessions (hole 2). Safe = no live co-editors AND the log has
- * settled (COLLAB_SETTLE_MS). Stale = no collab_state, or its
- * materialized_revision is null or behind the current posts.revision (an
- * external write happened since the log last materialized). Returns true when it
- * retired, so the caller serves an empty log and the client reseeds.
+ * stale between sessions (hole 2). Safe = no live co-editors. Stale = no
+ * collab_state, or its materialized_revision is null or behind the current
+ * posts.revision (an external write happened since the log last materialized).
+ * Returns true when it retired, so the caller serves an empty log and the client
+ * reseeds.
+ *
+ * There is NO quiescence delay on purpose: external writes become allowed the
+ * moment presence goes stale (hasActiveCoEditors=false), so any delay before
+ * retiring leaves a window in which a new joiner REPLAYS the stale log and
+ * clobbers that external write. Retiring the instant it is stale-and-idle closes
+ * that window; a lapsed editor that resumes and flushes retained edits is
+ * rejected by the append epoch fence, so no delay is needed for its safety.
  *
  * The bump is a single-writer upsert CAS: it INSERTs epoch 1 when there is no
  * row (existing/backfill posts) or bumps `epoch + 1` guarded on the read epoch,
@@ -216,7 +200,6 @@ export async function retireStaleCollabEpoch(
 ): Promise<boolean> {
   if (!db) return false;
   if (await hasActiveCoEditors(postId)) return false;
-  if (!(await logQuiescent(postId, COLLAB_SETTLE_MS))) return false;
   const rows = await db
     .select({
       epoch: collabState.epoch,
