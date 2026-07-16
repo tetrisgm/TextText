@@ -37,6 +37,7 @@
     "@tiptap/react": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",
     "@vercel/blob": "^2.5.0",
+    "ai": "^7.0.29",
     "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
     "mcp-handler": "^1.1.0",
