@@ -18,7 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
     private static let duplicateInstanceRecheckDelay: TimeInterval = 0.5
-    static let fileProviderSchemaVersion = 9
+    // Bumped 9 -> 10 to rebuild the File Provider replica once, converting posts
+    // from `.textbundle` packages to flat `<title>.md` files (the server default
+    // is now markdown). The rebuild waits for zero pending local edits, so no
+    // in-flight Finder change is stranded; existing packages have no local-only
+    // assets to lose. This retires the package name/body split that caused the
+    // rename revert-loop.
+    static let fileProviderSchemaVersion = 10
     private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()

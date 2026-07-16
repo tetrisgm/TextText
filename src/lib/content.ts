@@ -20,7 +20,16 @@ export type BlogCardStyle = "cover" | "minimal";
 export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
 export const FILE_REPRESENTATIONS = ["textbundle", "markdown", "text"] as const;
 export type FileRepresentation = (typeof FILE_REPRESENTATIONS)[number];
-export const DEFAULT_FILE_REPRESENTATION: FileRepresentation = "textbundle";
+// A post syncs as a single flat `<title>.md` file, NOT a `.textbundle` package.
+// A package's directory name and its inner text.md reconcile on separate File
+// Provider schedules, so a server rename could leave {content: new, dirname:
+// old} and the framework would push the stale name back, silently reverting the
+// rename in a loop (the "phantom rename"). A flat .md is one inode: filename and
+// content are two version fields of the SAME node and move together, so that
+// split state cannot exist and the phantom is structurally impossible. Images
+// resolve from the shared Data/Attachments tree. `textbundle` stays in the enum
+// for legacy/interchange reads only.
+export const DEFAULT_FILE_REPRESENTATION: FileRepresentation = "markdown";
 
 export function isFileRepresentation(
   value: string | null | undefined,

@@ -354,10 +354,15 @@ export const posts = pgTable(
       .references(() => blogs.id),
     /** owning folder; null only until the backfill/lazy-ensure touches it */
     folderId: uuid("folder_id").references(() => folders.id),
-    /** immutable local file representation selected when the post is created */
+    /**
+     * Local file representation selected when the post is created. Defaults to a
+     * flat `markdown` file (name = title) rather than a `.textbundle` package, so
+     * name and content are one inode and cannot drift — see
+     * DEFAULT_FILE_REPRESENTATION in content.ts.
+     */
     representation: fileRepresentation("file_representation")
       .notNull()
-      .default("textbundle"),
+      .default("markdown"),
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     /** previous public slugs, newest first; maintained atomically by a trigger */
