@@ -12,7 +12,10 @@
 //   DATABASE_URL=... npx tsx scripts/verify-workflow-live.ts
 //
 // Covers the five required workflow IDs: folder_trash_restore, comments,
-// cover_assets, sharing_access, bookmark_recapture.
+// cover_assets, sharing_access, bookmark_recapture. Plus two coverage add-ons
+// for store paths that have no fast unit test (they need a DB): folder_rename
+// (rename sanitization + CAS) and the access role lifecycle (set_access_role +
+// revoke_access).
 
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
@@ -154,6 +157,22 @@ async function main() {
         (await auditRows("mcp.restore_folder", folderId)).length > 0,
     );
 
+    // ---- Workflow: folder_rename (the store's rename sanitization + CAS) ----
+    const renamed = await tool("rename_folder", {
+      folder_id: folderId,
+      name: `Renamed ${STAMP}`,
+    });
+    const [afterRename] = await db.select().from(folders).where(eq(folders.id, folderId));
+    check(
+      "rename_folder changes the display name (id and path stable)",
+      renamed.ok && afterRename?.name === `Renamed ${STAMP}`,
+      `name=${afterRename?.name ?? renamed.error}`,
+    );
+    check(
+      "rename_folder leaves an audit row",
+      (await auditRows("mcp.rename_folder", folderId)).length > 0,
+    );
+
     // ---- Base article for the comment + cover workflows ----
     const article = await tool("create_item", {
       folder_path: "blog",
@@ -213,6 +232,41 @@ async function main() {
       `collaborators=${collabRows.length}`,
     );
     check("sharing_access workflow leaves an audit row", (await auditRows("mcp.grant_access")).length > 0);
+
+    // ---- Workflow: access role lifecycle (set role + revoke) ----
+    const accessId = (collabRows[0] as { id?: string })?.id ?? "";
+    const roleChanged = await tool("set_access_role", {
+      scope_type: "workspace",
+      access_id: accessId,
+      role: "guest",
+    });
+    const [afterRole] = await db
+      .select()
+      .from(collaborators)
+      .where(eq(collaborators.id, accessId));
+    check(
+      "set_access_role changes the grant's role",
+      roleChanged.ok && afterRole?.role === "guest",
+      `role=${afterRole?.role ?? roleChanged.error}`,
+    );
+    const revoked = await tool("revoke_access", {
+      scope_type: "workspace",
+      access_id: accessId,
+    });
+    const [afterRevoke] = await db
+      .select()
+      .from(collaborators)
+      .where(eq(collaborators.id, accessId));
+    check(
+      "revoke_access soft-revokes the grant (revoked_at set)",
+      revoked.ok && !!afterRevoke?.revokedAt,
+      `revokedAt=${!!afterRevoke?.revokedAt}`,
+    );
+    check(
+      "access role lifecycle leaves audit rows",
+      (await auditRows("mcp.set_access_role")).length > 0 &&
+        (await auditRows("mcp.revoke_access")).length > 0,
+    );
 
     // ---- Workflow: bookmark_recapture ----
     const bookmark = await tool("create_item", {

@@ -2,7 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
-import { recordAction, type AuditEntry } from "@/lib/audit";
+import { recordAction, type AuditActorType, type AuditEntry } from "@/lib/audit";
 import { hasActiveCoEditors } from "@/lib/collab";
 import {
   WORKSPACE_FOLDER_MODES,
@@ -174,6 +174,15 @@ function accessUser(extra: ToolContext): AccessUser {
   };
 }
 
+// The audit actor for this executor call. An external MCP connection audits as
+// external_agent; the in-app assistant (a session actor via
+// runWorkspaceToolForSession) passes actorType "ai", so its mutations are
+// labelled correctly in action_audit rather than looking like an outside agent.
+function mcpActorType(extra: ToolContext): AuditActorType {
+  const value = extra.authInfo?.extra?.actorType;
+  return value === "ai" || value === "human" ? value : "external_agent";
+}
+
 async function auditMcp(
   extra: ToolContext,
   actionName: string,
@@ -184,7 +193,7 @@ async function auditMcp(
   const userId = extra.authInfo?.extra?.userId;
   await recordAction({
     actorUserId: typeof userId === "string" ? userId : null,
-    actorType: "external_agent",
+    actorType: mcpActorType(extra),
     actionName,
     targetType,
     targetId,
@@ -204,7 +213,7 @@ function mcpAuditEntry(
   const userId = extra.authInfo?.extra?.userId;
   return {
     actorUserId: typeof userId === "string" ? userId : null,
-    actorType: "external_agent",
+    actorType: mcpActorType(extra),
     actionName,
     targetType,
     targetId,
@@ -1163,7 +1172,7 @@ async function executeMcpTool(
           email: input.email,
           role: input.role as ScopeShareRole,
           invitedBySub: sub,
-          actorType: "external_agent",
+          actorType: mcpActorType(extra),
           actorUserId: accessUser(extra).userId,
           auditActionName: "mcp.grant_access",
         });
@@ -1191,7 +1200,7 @@ async function executeMcpTool(
           shareId: input.access_id,
           role: input.role as ScopeShareRole,
           updatedBySub: sub,
-          actorType: "external_agent",
+          actorType: mcpActorType(extra),
           actorUserId: accessUser(extra).userId,
           auditActionName: "mcp.set_access_role",
         });
@@ -1221,7 +1230,7 @@ async function executeMcpTool(
           input.access_id,
           sub,
           {
-            actorType: "external_agent",
+            actorType: mcpActorType(extra),
             actorUserId: accessUser(extra).userId,
             auditActionName: "mcp.revoke_access",
           },
@@ -1272,7 +1281,7 @@ async function executeMcpTool(
         },
         {
           actorUserId: resolved.access.userId,
-          actorType: "external_agent",
+          actorType: mcpActorType(extra),
           actorName: "External agent",
         },
       );
@@ -1297,7 +1306,7 @@ async function executeMcpTool(
         resolved: input.resolved,
         actor: {
           actorUserId: resolved.access.userId,
-          actorType: "external_agent",
+          actorType: mcpActorType(extra),
           actorName: "External agent",
         },
       });
@@ -1517,9 +1526,9 @@ export function registerWriteTools(server: McpServer): void {
  * granted full workspace capability, but per-item access is still enforced from
  * the resolved user (`accessUser`), so full-access scope does not bypass sharing.
  *
- * NOTE: the shared executor currently records `actorType: "external_agent"` for
- * mutations. That mislabels the built-in assistant; giving the in-app assistant a
- * distinct actor label is a small follow-up tracked in the BYO-cloud plan.
+ * Mutations audit as `actorType: "ai"` (via the `actorType` passed in authInfo
+ * and read by `mcpActorType`), so the built-in assistant is distinguished from
+ * external MCP agents in `action_audit`.
  */
 export async function runWorkspaceToolForSession(
   name: WorkspaceToolName,
@@ -1531,7 +1540,7 @@ export async function runWorkspaceToolForSession(
       token: "session",
       clientId: "in-app-assistant",
       scopes: [WORKSPACE_SCOPE_CAPABILITIES.fullAccess],
-      extra: { sub: actor.sub, userId: actor.userId },
+      extra: { sub: actor.sub, userId: actor.userId, actorType: "ai" },
     },
   };
   return executeMcpTool(name, args, extra);

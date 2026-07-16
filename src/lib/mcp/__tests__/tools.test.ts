@@ -248,6 +248,35 @@ describe("MCP workspace tool adapter", () => {
     });
   });
 
+  it("audits an in-app session mutation as the ai actor, not external_agent", async () => {
+    const id = "99999999-9999-4999-8999-999999999999";
+    mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
+    mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "draft",
+      title: "Draft",
+      excerpt: "",
+      body: "Before",
+      status: "draft",
+      pinned: false,
+      revision: 5,
+    } as const;
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.savePost.mockResolvedValue({ ...post, body: "After", revision: 6 });
+    const result = await runWorkspaceToolForSession(
+      "update_item",
+      { id, body: "After" },
+      { sub: "owner-sub", userId: "owner-uuid" },
+    );
+    expect(result.isError).not.toBe(true);
+    expect(mocks.recordAction).toHaveBeenCalledWith(
+      expect.objectContaining({ actorType: "ai", actionName: "mcp.update_item" }),
+    );
+  });
+
   it("returns identity and safe capabilities to a read-scoped connection", async () => {
     const getWorkspace = registrations().find(
       (entry) => entry.name === "get_workspace",

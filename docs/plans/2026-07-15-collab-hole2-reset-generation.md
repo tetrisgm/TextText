@@ -121,6 +121,23 @@ Its row is a complete, valid update in an old generation, never an orphan.
   epochs below current for posts with no active presence (safe: no one reads old
   epochs). Low priority.
 
+## Implementation wrinkle found 2026-07-16 (revision is trigger-assigned)
+
+`posts.revision` is bumped by a `BEFORE UPDATE` trigger (`bump_revision()` sets
+`NEW.revision := nextval('write_change_seq')`), so the new revision does not
+exist at SET time. That means the "record the revision the log materialized from"
+variant cannot set `collab_materialized_revision = <new revision>` atomically in
+the same UPDATE. Two viable atomic options: (a) extend `bump_revision()` to also
+set `collab_materialized_revision := NEW.revision` when a per-transaction flag is
+present (`SET LOCAL write.collab_materialized = 'on'`, read via
+`current_setting(..., true)`) - atomic but touches the shared trigger that fires
+on every update; or (b) use the `collab_body_epoch` provenance variant instead
+(set to the epoch on collab materialize, NULL on external body change), which
+needs a body-change check in `savePost` but avoids the revision entirely. Prefer
+(b): it keeps the shared revision trigger untouched. This is why the build is a
+supervised effort, not a fire-and-forget migration: it modifies a hot write path
+and ships an irreversible schema change for a rare edge.
+
 ## Cost
 
 - Schema: 3 columns + a backfill migration (run once on prod, like the revision
