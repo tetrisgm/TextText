@@ -87,7 +87,7 @@ import {
   tenantPostPath,
 } from "@/lib/public-paths";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
-import { hasActiveCoEditors } from "@/lib/collab";
+import { hasActiveCoEditors, markCollabMaterialized } from "@/lib/collab";
 import { NO_COVER_VALUE } from "@/lib/cover";
 import {
   attachItemAsset,
@@ -832,6 +832,12 @@ export async function saveEditablePostAction(
     const saved = await savePostContentPatch(handle, existing, patch, {
       expectedRevision: existing.revision,
     });
+    // This is the Yjs-shell co-editing autosave: record that the live session
+    // materialized posts.body @ its new revision, so the catch-up staleness check
+    // never reseeds away the session's own body.
+    if (typeof saved.revision === "number" && saved.id) {
+      await markCollabMaterialized(saved.id, saved.revision).catch(() => {});
+    }
     await recordAction({
       actorUserId: itemAccess.userId ?? (user ? await getUserIdBySub(user.sub) : null),
       actorType: "human",

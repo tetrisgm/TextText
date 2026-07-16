@@ -1401,6 +1401,13 @@ export function PostEditLayer({
           uploadEndpoint={uploadEndpoint}
           collab={collab}
           onPresence={updatePresencePeers}
+          onCollabRetired={() => {
+            // The co-editing generation was retired (a stale between-sessions log
+            // reset from posts.body). This client's local doc is stale and its
+            // un-materialized edits were dropped server-side; reload to the
+            // authoritative content rather than merge stale state over it.
+            if (typeof window !== "undefined") window.location.reload();
+          }}
         />
       </div>
     ),

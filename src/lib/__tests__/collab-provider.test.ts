@@ -243,6 +243,96 @@ describe("CollabProvider startup and outbox", () => {
     provider.destroy();
   });
 
+  it("caught-up epoch is sent on every push, and a fenced push retires", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
+    const retired: boolean[] = [];
+    const pushed: Array<{ epoch?: number }> = [];
+    let pushes = 0;
+    let catchUpDone = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") {
+          pushes += 1;
+          pushed.push(JSON.parse(String(init.body)) as { epoch?: number });
+          // First push accepted; the second is fenced out (generation retired).
+          return pushes === 1
+            ? jsonResponse({ seq: 1, epoch: 5 })
+            : jsonResponse({ retired: true, epoch: 6 });
+        }
+        if (!catchUpDone) {
+          catchUpDone = true;
+          return jsonResponse({ updates: [], seq: 0, epoch: 5 });
+        }
+        return new Promise<Response>(() => {});
+      }),
+    );
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "epoch-fence",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+      onRetired: () => retired.push(true),
+    });
+    await provider.start();
+
+    doc.getMap("body").set("t", "one");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(pushed[0].epoch).toBe(5); // caught up under epoch 5
+
+    doc.getMap("body").set("t", "two");
+    await vi.advanceTimersByTimeAsync(400);
+    // The fenced push triggers a retirement (the editor will reload/reseed).
+    expect(retired).toEqual([true]);
+
+    provider.destroy();
+  });
+
+  it("retires on a poll that reports a new epoch and never applies its rows", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
+    const retired: boolean[] = [];
+    let catchUpDone = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (url.includes("wait=0")) {
+          catchUpDone = true;
+          return jsonResponse({ updates: [], seq: 0, epoch: 3 });
+        }
+        // The long-poll returns a DIFFERENT (advanced) epoch with a row: the
+        // generation was retired. The row must NOT be applied to the stale doc.
+        return jsonResponse({
+          updates: [{ seq: 9, update: "not-a-real-update" }],
+          seq: 9,
+          epoch: 4,
+        });
+      }),
+    );
+    const doc = new Y.Doc();
+    const provider = new CollabProvider(doc, {
+      postId: "epoch-poll",
+      userName: "Ada",
+      color: "#112233",
+      canPush: false, // a viewer follows along and still learns of retirement
+      onRetired: () => retired.push(true),
+    });
+    await provider.start();
+    expect(catchUpDone).toBe(true);
+    await vi.advanceTimersByTimeAsync(50); // let one poll iteration run
+    expect(retired).toEqual([true]);
+    // The doc was never mutated by the retired epoch's row.
+    expect(doc.getMap("body").size).toBe(0);
+
+    provider.destroy();
+  });
+
   it("delivers queued edits over sendBeacon on pagehide", async () => {
     vi.useFakeTimers();
     const beacons: string[] = [];

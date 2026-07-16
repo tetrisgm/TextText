@@ -237,6 +237,66 @@ unattended. The schema (collab_updates.epoch + collab_state) and the migration
 were reverted after this review; rebuild them with the corrections when the build
 is done supervised.
 
+## CORRECTED BUILD SPEC 2026-07-16 (supersedes the design above; this is what is built)
+
+Owner approved resetting existing co-editing data, which removes the backfill
+hazard: a post with no `collab_state` row (or NULL `materialized_revision`) is
+treated as "reseed once from posts.body" on next open, and its pre-existing log
+is simply ignored. No data-preserving backfill is attempted.
+
+Schema (unchanged shape): `collab_updates.epoch` int default 0; `collab_state`
+{ post_id PK, epoch int default 0, materialized_revision bigint null, updated_at }.
+
+Server:
+- EPOCH-FENCED APPEND (fixes the internal contradiction): the client sends the
+  `epoch` it caught up under. The POST inserts a row ONLY if that epoch still
+  equals the post's current `collab_state.epoch` (COALESCE 0). On mismatch it
+  does NOT append and returns `{ retired: true, epoch: <current> }`. So a
+  presence-lapsed / offline editor whose retained edits flush after a retirement
+  is REJECTED, never merged into the new epoch. Rows are tagged with the fenced
+  epoch.
+- RETIREMENT is gated by THREE conditions, only on the `since = 0` catch-up GET
+  (never a poll): (1) `!hasActiveCoEditors`, (2) log QUIESCENT - the newest
+  `collab_updates` row for the post is older than SETTLE_MS (>= 30s, longer than
+  the client outbox's max retention) so a briefly-blipped editor has drained,
+  and (3) stale - `collab_state` absent, or `materialized_revision` NULL, or
+  `posts.revision != materialized_revision`. The epoch-fence is the hard
+  correctness guarantee; quiescence just avoids spurious retirements.
+- RETIRE is a single UPSERT that advances the generation AND records provenance,
+  so it never reseed-loops: `INSERT INTO collab_state (post_id, epoch,
+  materialized_revision) VALUES (?, 1, <postRevision>) ON CONFLICT (post_id) DO
+  UPDATE SET epoch = collab_state.epoch + 1, materialized_revision =
+  <postRevision>, updated_at = now() WHERE collab_state.epoch = <readEpoch>`.
+  Single-winner under concurrent opens (insert-or-CAS). After retire, current
+  epoch's log is empty -> GET returns empty -> client seeds from posts.body, and
+  `materialized_revision == posts.revision` so the next open is NOT stale.
+- MATERIALIZE marks provenance: after the Yjs-shell autosave
+  (`saveEditablePostAction` !canEdit branch) and `POST /materialize` write the
+  body via `savePostContentPatch` and get `saved.revision`, upsert
+  `collab_state.materialized_revision = saved.revision` (epoch untouched). No
+  `savePost` change; the shared revision trigger is untouched.
+- The catch-up GET returns the current `epoch`; append/relay/compaction are
+  epoch-scoped (`WHERE epoch = <current>`).
+
+Client (`src/lib/collab/provider.ts` + `BodyEditor.tsx` + `PostEditLayerClient.tsx`):
+- The provider records the epoch from its catch-up response and sends it on every
+  push. A `{ retired: true }` push response (or a catch-up that returns a higher
+  epoch) fires an `onRetired` callback.
+- On retirement the client DISCARDS its stale Y.Doc and rebuilds from server
+  state: `BodyEditor`'s ydoc `useMemo` key includes a generation counter that
+  `PostEditLayerClient` bumps on `onRetired`, so a fresh empty Y.Doc + provider
+  re-runs catch-up and reseeds from posts.body via the existing remoteEmpty seed.
+  The offline editor's un-materialized edits are intentionally dropped (the
+  correct CRDT-vs-authoritative-store resolution: never merge stale edits over
+  the external write).
+
+Verification: unit tests for the fenced append (accept in-epoch, reject retired),
+the gated upsert-retire (idle+quiescent+stale only; sets materialized_revision;
+single-winner), the materialize provenance write, and the provider epoch/retire
+handling. Then an adversarial review of the IMPLEMENTATION, then the prod
+migration + ship. SETTLE_MS and the outbox retention constant must be read from
+the code, not assumed.
+
 ## Cost
 
 - Schema: 3 columns + a backfill migration (run once on prod, like the revision

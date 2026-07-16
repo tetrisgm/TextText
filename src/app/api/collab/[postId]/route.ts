@@ -1,13 +1,18 @@
 // Realtime co-editing relay for one post.
 //
-//   POST /api/collab/{postId}  {updates: base64[]}   -> {seq}   (editors only)
-//   GET  /api/collab/{postId}?since=N&wait=25         -> {updates, seq}
+//   POST /api/collab/{postId}  {updates: base64[], epoch}  -> {seq, epoch} | {retired, epoch}
+//   GET  /api/collab/{postId}?since=N&wait=25              -> {updates, seq, epoch}
 //
 // GET long-polls: it returns immediately when there are updates newer than
 // `since`, otherwise it holds up to `wait` seconds for one to arrive, then
 // returns the current seq with an empty list. Auth is the caller's session
 // (co-editors are always signed-in users); collabAccess enforces owner/editor
 // for pushes and owner/editor/viewer for reads.
+//
+// Generations (hole 2): every append is FENCED on the epoch the client caught up
+// under; a push against a retired epoch returns {retired} instead of landing.
+// The since=0 catch-up retires a stale between-sessions log (bumps the epoch) so
+// the client reseeds from posts.body. See collab.ts + the hole-2 plan.
 
 import * as Y from "yjs";
 import { getCurrentUser } from "@/lib/session";
@@ -15,8 +20,11 @@ import {
   appendCollabUpdate,
   collabAccess,
   collabUpdatesSince,
+  getCollabEpoch,
+  getPostRevision,
   latestCollabSeq,
   maybeCompactCollab,
+  retireStaleCollabEpoch,
 } from "@/lib/collab";
 
 export const dynamic = "force-dynamic";
@@ -58,12 +66,18 @@ export async function POST(
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
 
-  let body: { updates?: unknown };
+  let body: { updates?: unknown; epoch?: unknown };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
+  // The epoch the client caught up under. Absent (an old client) means epoch 0,
+  // which is correct for any post that has never been retired.
+  const clientEpoch =
+    typeof body.epoch === "number" && Number.isInteger(body.epoch) && body.epoch >= 0
+      ? body.epoch
+      : 0;
   const updates = Array.isArray(body.updates) ? body.updates : [];
   const candidates = updates
     .filter((u): u is string => typeof u === "string" && u.length > 0)
@@ -75,17 +89,24 @@ export async function POST(
     return Response.json({ error: "Invalid update payload" }, { status: 400 });
   }
   if (clean.length === 0) {
-    return Response.json({ seq: await latestCollabSeq(postId) });
+    return Response.json({ seq: await latestCollabSeq(postId, clientEpoch), epoch: clientEpoch });
   }
 
   let seq = 0;
   for (const update of clean) {
-    seq = await appendCollabUpdate(postId, update);
+    const result = await appendCollabUpdate(postId, update, clientEpoch);
+    if ("retired" in result) {
+      // The generation moved under this client (its log was retired while it was
+      // offline/lapsed). Reject the whole push so its stale edits never merge
+      // into the new epoch over an external write; the client reseeds.
+      return Response.json({ retired: true, epoch: await getCollabEpoch(postId) });
+    }
+    seq = result.seq;
   }
   // Keep the append log from growing without bound: once it is large, collapse
   // it to a single equivalent snapshot. Safe to run inline and best-effort.
   await maybeCompactCollab(postId).catch(() => {});
-  return Response.json({ seq });
+  return Response.json({ seq, epoch: clientEpoch });
 }
 
 export async function GET(
@@ -106,15 +127,27 @@ export async function GET(
     MAX_WAIT_SECONDS,
   );
 
-  let updates = await collabUpdatesSince(postId, since);
+  // ONLY the catch-up (since=0) retires a stale between-sessions log; a poll
+  // (since>0) never does, so a momentarily-stale live editor cannot self-retire.
+  // Editors can push, so retire only when the caller could be starting a session.
+  if (since === 0 && role === "editor") {
+    const revision = await getPostRevision(postId);
+    if (revision !== null) {
+      await retireStaleCollabEpoch(postId, revision).catch(() => {});
+    }
+  }
+  // Read the (possibly just-bumped) current generation and serve only its rows.
+  const epoch = await getCollabEpoch(postId);
+
+  let updates = await collabUpdatesSince(postId, since, epoch);
   if (updates.length === 0 && wait > 0) {
     const deadline = Date.now() + wait * 1000;
     while (updates.length === 0 && Date.now() < deadline) {
       if (request.signal?.aborted) break;
       await sleep(Math.min(POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
-      updates = await collabUpdatesSince(postId, since);
+      updates = await collabUpdatesSince(postId, since, epoch);
     }
   }
   const seq = updates.length > 0 ? updates[updates.length - 1].seq : since;
-  return Response.json({ updates, seq });
+  return Response.json({ updates, seq, epoch });
 }

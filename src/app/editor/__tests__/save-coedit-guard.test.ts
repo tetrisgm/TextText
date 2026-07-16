@@ -51,6 +51,7 @@ vi.mock("@/lib/audit", async (importOriginal) => ({
 
 vi.mock("@/lib/collab", () => ({
   hasActiveCoEditors: mocks.hasActiveCoEditors,
+  markCollabMaterialized: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/revalidate-blog", () => ({

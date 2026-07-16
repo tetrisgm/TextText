@@ -62,6 +62,12 @@ export type CollabProviderOptions = {
   canPush: boolean;
   onPresence?: (peers: PresencePeer[]) => void;
   onError?: (message: string) => void;
+  /** The server retired this document's log generation (its stale between-
+   * sessions log was reset from posts.body). The local Y.Doc is now stale and
+   * must be rebuilt: the editor discards it and remounts a fresh doc that
+   * re-catches-up and reseeds. Any un-materialized local edit is intentionally
+   * dropped rather than merged over the authoritative body. */
+  onRetired?: () => void;
 };
 
 type OutboxSubscriber = {
@@ -69,6 +75,8 @@ type OutboxSubscriber = {
   /** Called when the relay reports this session lost access (401/403), so the
    * subscribing provider tears its poll/heartbeat loops down too. */
   onFatal?: () => void;
+  /** Called when a push is fenced out because the log generation was retired. */
+  onRetired?: () => void;
 };
 
 type Outbox = {
@@ -79,6 +87,9 @@ type Outbox = {
   timer: ReturnType<typeof setTimeout> | null;
   /** Consecutive transient failures, for backoff. Reset on any success. */
   retries: number;
+  /** The log generation this client caught up under; sent on every push and
+   * FENCED server-side. A push against a stale epoch is retired. */
+  epoch: number;
 };
 
 // A provider is tied to a mounted editor, but unsent edits are tied to the
@@ -96,6 +107,7 @@ function outboxFor(postId: string, base: string): Outbox {
     subscribers: new Map(),
     timer: null,
     retries: 0,
+    epoch: 0,
   };
   outboxes.set(postId, created);
   return created;
@@ -144,11 +156,32 @@ async function flushOutbox(postId: string, outbox: Outbox) {
     const res = await fetch(outbox.base, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ updates: batch.map(u8ToBase64) }),
+      body: JSON.stringify({ updates: batch.map(u8ToBase64), epoch: outbox.epoch }),
     });
     if (res.ok) {
-      outbox.pending.splice(0, batch.length);
-      outbox.retries = 0;
+      const data = (await res.json().catch(() => ({}))) as {
+        retired?: boolean;
+        epoch?: number;
+      };
+      if (data.retired) {
+        // The log generation was retired (a stale between-sessions log reset from
+        // posts.body). This client's queued edits are now stale: drop them so
+        // they can never merge over the reseeded body, and tell every provider on
+        // this post to remount onto a fresh doc.
+        outbox.pending.length = 0;
+        if (typeof data.epoch === "number") outbox.epoch = data.epoch;
+        for (const sub of outbox.subscribers.values()) {
+          try {
+            sub.onRetired?.();
+          } catch {
+            // teardown of one subscriber must not block the others
+          }
+        }
+      } else {
+        outbox.pending.splice(0, batch.length);
+        outbox.retries = 0;
+        if (typeof data.epoch === "number") outbox.epoch = data.epoch;
+      }
     } else if (isAccessLoss(res.status)) {
       // Fatal: this session lost access. Drop the queue (it can never be
       // delivered) and stop every provider on this post, instead of spamming
@@ -259,6 +292,12 @@ export class CollabProvider {
       // A push that 401/403s means this session lost access; tear down this
       // provider's poll + heartbeat loops too, not just the outbox.
       onFatal: () => this.stop(),
+      // The generation was retired: signal the editor to remount onto a fresh
+      // doc (which reseeds from posts.body), then stop this provider.
+      onRetired: () => {
+        this.opts.onRetired?.();
+        this.stop();
+      },
     });
     const hadPendingUpdates = outbox.pending.length > 0;
 
@@ -420,9 +459,15 @@ export class CollabProvider {
         const data = (await res.json()) as {
           updates?: unknown;
           seq?: unknown;
+          epoch?: unknown;
         };
         if (!Array.isArray(data.updates) || !Number.isSafeInteger(data.seq)) {
           return { authoritative: false, remoteEmpty: false };
+        }
+        // Record the generation we are catching up under; every push is fenced
+        // on it so a stale offline flush after a retirement is rejected.
+        if (this.outbox && typeof data.epoch === "number") {
+          this.outbox.epoch = data.epoch;
         }
         if (data.updates.length === 0) {
           return {
@@ -478,7 +523,24 @@ export class CollabProvider {
           continue;
         }
         this.pollRetries = 0;
-        const data = (await res.json()) as { updates: Array<{ seq: number; update: string }>; seq: number };
+        const data = (await res.json()) as {
+          updates: Array<{ seq: number; update: string }>;
+          seq: number;
+          epoch?: number;
+        };
+        // The generation changed under us: our Y.Doc is based on the retired
+        // epoch. Do NOT apply the new epoch's rows into it (that would corrupt
+        // it); signal a remount onto a fresh doc and stop.
+        if (
+          !this.stopped &&
+          this.outbox &&
+          typeof data.epoch === "number" &&
+          data.epoch !== this.outbox.epoch
+        ) {
+          this.opts.onRetired?.();
+          this.stop();
+          return;
+        }
         // Same corruption-tolerant path as catchUp: applyRow advances past a
         // row even if applying it throws, so one bad update can never stall
         // the loop by making it re-fetch the same seq forever.

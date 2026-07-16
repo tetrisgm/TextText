@@ -56,6 +56,10 @@ type BodyEditorProps = {
   /** when present, the body is a shared Yjs document (realtime co-editing) */
   collab?: BodyEditorCollab | null;
   onPresence?: (peers: PresencePeer[]) => void;
+  /** The co-editing generation was retired (a stale between-sessions log reset
+   * from posts.body); the local Y.Doc is stale and the editor should reload to
+   * the authoritative content. */
+  onCollabRetired?: () => void;
   onNavigateField?: (direction: "previous" | "next") => void;
 };
 
@@ -167,6 +171,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       uploadEndpoint,
       collab,
       onPresence,
+      onCollabRetired,
       onNavigateField,
     },
     ref,
@@ -177,6 +182,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     const onChangeRef = useRef(onChange);
     const collabRef = useRef(collab);
     const onPresenceRef = useRef(onPresence);
+    const onCollabRetiredRef = useRef(onCollabRetired);
     const presencePostIdRef = useRef<string | null>(null);
     const presenceClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
       null,
@@ -199,6 +205,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
 
     collabRef.current = collab;
     onPresenceRef.current = onPresence;
+    onCollabRetiredRef.current = onCollabRetired;
     onNavigateFieldRef.current = onNavigateField;
 
     // One Y.Doc per co-edited post, created before the editor so the
@@ -350,6 +357,9 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         },
         onPresence: (list) => {
           if (!cancelled) onPresenceRef.current?.(list);
+        },
+        onRetired: () => {
+          if (!cancelled) onCollabRetiredRef.current?.();
         },
       });
       void provider.start().then((sync) => {

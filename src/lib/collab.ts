@@ -11,7 +11,13 @@
 import { and, asc, eq, gt, lt, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { db } from "@/lib/db/client";
-import { blogs, collabPresence, collabUpdates, posts } from "@/lib/db/schema";
+import {
+  blogs,
+  collabPresence,
+  collabState,
+  collabUpdates,
+  posts,
+} from "@/lib/db/schema";
 import { resolveItemAccess, type AccessUser } from "@/lib/permissions";
 
 export type CollabRole = "editor" | "viewer";
@@ -61,43 +67,181 @@ export async function collabAccess(
   return null;
 }
 
-/** Append one Yjs update (base64) and return its seq. */
+// A log stays retirable only after it has been quiescent (no new rows) for
+// longer than the client outbox's maximum retention/reconnect window, so a
+// briefly-blipped editor has drained before we ever consider retiring its
+// generation. The epoch fence is the hard guarantee; this only avoids spurious
+// resets. Must stay comfortably larger than provider.ts PUSH_MAX_RETRY_MS (30s).
+export const COLLAB_SETTLE_MS = 45_000;
+
+/** The post's current revision (the sync CAS token), or null if gone. */
+export async function getPostRevision(postId: string): Promise<number | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({ revision: posts.revision })
+    .from(posts)
+    .where(eq(posts.id, postId))
+    .limit(1);
+  return rows[0]?.revision ?? null;
+}
+
+/** The current log generation for a post (0 when it has no collab_state row). */
+export async function getCollabEpoch(postId: string): Promise<number> {
+  if (!db) return 0;
+  const rows = await db
+    .select({ epoch: collabState.epoch })
+    .from(collabState)
+    .where(eq(collabState.postId, postId))
+    .limit(1);
+  return rows[0]?.epoch ?? 0;
+}
+
+/**
+ * Append one Yjs update, FENCED on the epoch the client caught up under. The
+ * insert lands iff `clientEpoch` still equals the post's current generation
+ * (one atomic statement), so an offline/lapsed editor whose retained edits flush
+ * after the log was retired is rejected rather than merged into the new epoch
+ * over an external write. Returns the new seq, or `retired` when fenced out.
+ */
 export async function appendCollabUpdate(
   postId: string,
   updateBase64: string,
-): Promise<number> {
+  clientEpoch: number,
+): Promise<{ seq: number } | { retired: true }> {
   if (!db) throw new Error("collab needs a database");
-  const inserted = await db
-    .insert(collabUpdates)
-    .values({ postId, update: updateBase64 })
-    .returning({ seq: collabUpdates.seq });
-  return inserted[0].seq;
+  const result = await db.execute(sql`
+    INSERT INTO ${collabUpdates} (post_id, "update", epoch)
+    SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
+    WHERE ${clientEpoch}::int = COALESCE(
+      (SELECT epoch FROM ${collabState} WHERE post_id = ${postId}::uuid), 0)
+    RETURNING seq
+  `);
+  // A row means the fence matched and the append landed. `seq` is a bigserial,
+  // which neon-http returns as a string, so coerce rather than type-check.
+  const raw = (result.rows[0] as { seq?: number | string } | undefined)?.seq;
+  return raw != null ? { seq: Number(raw) } : { retired: true };
 }
 
-/** Updates for a post with seq greater than `since`, in order. */
+/** Updates for a post's CURRENT generation with seq greater than `since`. */
 export async function collabUpdatesSince(
   postId: string,
   since: number,
+  epoch: number,
 ): Promise<Array<{ seq: number; update: string }>> {
   if (!db) return [];
   return db
     .select({ seq: collabUpdates.seq, update: collabUpdates.update })
     .from(collabUpdates)
-    .where(and(eq(collabUpdates.postId, postId), gt(collabUpdates.seq, since)))
+    .where(
+      and(
+        eq(collabUpdates.postId, postId),
+        eq(collabUpdates.epoch, epoch),
+        gt(collabUpdates.seq, since),
+      ),
+    )
     .orderBy(asc(collabUpdates.seq))
     .limit(500);
 }
 
-/** The highest seq stored for a post (0 if none). */
-export async function latestCollabSeq(postId: string): Promise<number> {
+/** The highest seq stored for a post's current generation (0 if none). */
+export async function latestCollabSeq(
+  postId: string,
+  epoch: number,
+): Promise<number> {
   if (!db) return 0;
   const rows = await db
     .select({ seq: collabUpdates.seq })
     .from(collabUpdates)
-    .where(eq(collabUpdates.postId, postId))
+    .where(and(eq(collabUpdates.postId, postId), eq(collabUpdates.epoch, epoch)))
     .orderBy(sql`${collabUpdates.seq} desc`)
     .limit(1);
   return rows[0]?.seq ?? 0;
+}
+
+/** True when the current generation's log has been quiescent for `settleMs`
+ * (or is empty): no new rows, so any brief-blip editor has drained. */
+async function logQuiescent(postId: string, settleMs: number): Promise<boolean> {
+  if (!db) return true;
+  const epoch = await getCollabEpoch(postId);
+  const rows = await db
+    .select({ createdAt: collabUpdates.createdAt })
+    .from(collabUpdates)
+    .where(and(eq(collabUpdates.postId, postId), eq(collabUpdates.epoch, epoch)))
+    .orderBy(sql`${collabUpdates.createdAt} desc`)
+    .limit(1);
+  const newest = rows[0]?.createdAt;
+  if (!newest) return true;
+  return newest.getTime() < Date.now() - settleMs;
+}
+
+/**
+ * Record that a collab autosave / session-end materialize wrote `revision` into
+ * posts.body. Monotonic and epoch-untouched: it only advances the provenance
+ * marker so the catch-up staleness check (posts.revision vs this) does not fire
+ * for a body the live session itself produced.
+ */
+export async function markCollabMaterialized(
+  postId: string,
+  revision: number,
+): Promise<void> {
+  if (!db) return;
+  await db.execute(sql`
+    INSERT INTO ${collabState} (post_id, epoch, materialized_revision, updated_at)
+    VALUES (${postId}::uuid, 0, ${revision}, now())
+    ON CONFLICT (post_id) DO UPDATE
+      SET materialized_revision =
+            GREATEST(COALESCE(collab_state.materialized_revision, 0), ${revision}),
+          updated_at = now()
+  `);
+}
+
+/**
+ * Retire a post's log generation when it is safe AND stale, so the next editor
+ * reseeds from the authoritative posts.body instead of replaying a log left
+ * stale between sessions (hole 2). Safe = no live co-editors AND the log has
+ * settled (COLLAB_SETTLE_MS). Stale = no collab_state, or its
+ * materialized_revision is null or behind the current posts.revision (an
+ * external write happened since the log last materialized). Returns true when it
+ * retired, so the caller serves an empty log and the client reseeds.
+ *
+ * The bump is a single-writer upsert CAS: it INSERTs epoch 1 when there is no
+ * row (existing/backfill posts) or bumps `epoch + 1` guarded on the read epoch,
+ * and in BOTH cases records `materialized_revision = postRevision` so the next
+ * open is not stale (no reseed loop). Concurrent opens: one wins, the other's
+ * CAS misses harmlessly and the epoch is still advanced.
+ */
+export async function retireStaleCollabEpoch(
+  postId: string,
+  postRevision: number,
+): Promise<boolean> {
+  if (!db) return false;
+  if (await hasActiveCoEditors(postId)) return false;
+  if (!(await logQuiescent(postId, COLLAB_SETTLE_MS))) return false;
+  const rows = await db
+    .select({
+      epoch: collabState.epoch,
+      materializedRevision: collabState.materializedRevision,
+    })
+    .from(collabState)
+    .where(eq(collabState.postId, postId))
+    .limit(1);
+  const cur = rows[0];
+  const stale =
+    !cur ||
+    cur.materializedRevision == null ||
+    cur.materializedRevision !== postRevision;
+  if (!stale) return false;
+  const readEpoch = cur?.epoch ?? 0;
+  await db.execute(sql`
+    INSERT INTO ${collabState} (post_id, epoch, materialized_revision, updated_at)
+    VALUES (${postId}::uuid, 1, ${postRevision}, now())
+    ON CONFLICT (post_id) DO UPDATE
+      SET epoch = collab_state.epoch + 1,
+          materialized_revision = ${postRevision},
+          updated_at = now()
+      WHERE collab_state.epoch = ${readEpoch}
+  `);
+  return true;
 }
 
 // Compact the append log once it grows past this many rows. Compaction
@@ -123,10 +267,13 @@ function base64ToUpdate(b64: string): Uint8Array {
  */
 export async function maybeCompactCollab(postId: string): Promise<void> {
   if (!db) return;
+  // Compaction stays within the CURRENT generation: a retired epoch's rows are
+  // already ignored by the relay, so they are never merged or served.
+  const epoch = await getCollabEpoch(postId);
   const rows = await db
     .select({ seq: collabUpdates.seq, update: collabUpdates.update })
     .from(collabUpdates)
-    .where(eq(collabUpdates.postId, postId))
+    .where(and(eq(collabUpdates.postId, postId), eq(collabUpdates.epoch, epoch)))
     .orderBy(asc(collabUpdates.seq));
   if (rows.length < COMPACT_THRESHOLD) return;
 
@@ -139,15 +286,20 @@ export async function maybeCompactCollab(postId: string): Promise<void> {
     // A merge failure must never drop history; leave the log as-is.
     return;
   }
-  await db.insert(collabUpdates).values({ postId, update: snapshot });
-  // Delete ONLY what we merged. Safety depends on every append being a single
-  // atomic statement (INSERT ... RETURNING via neon-http): that guarantees no
-  // row exists with seq <= maxSeq that was not in the read set. If appends are
-  // ever wrapped in a multi-statement transaction, seq allocation could run
-  // ahead of commit and this delete could remove an un-merged row.
+  await db.insert(collabUpdates).values({ postId, update: snapshot, epoch });
+  // Delete ONLY what we merged, within this epoch. Safety depends on every
+  // append being a single atomic statement (the fenced INSERT ... RETURNING via
+  // neon-http): no row exists with seq <= maxSeq in this epoch that was not in
+  // the read set.
   await db
     .delete(collabUpdates)
-    .where(and(eq(collabUpdates.postId, postId), lte(collabUpdates.seq, maxSeq)));
+    .where(
+      and(
+        eq(collabUpdates.postId, postId),
+        eq(collabUpdates.epoch, epoch),
+        lte(collabUpdates.seq, maxSeq),
+      ),
+    );
 }
 
 export type PresenceEntry = { clientId: string; userName: string; color: string };

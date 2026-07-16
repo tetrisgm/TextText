@@ -528,10 +528,34 @@ export const collabUpdates = pgTable(
       .references(() => posts.id),
     /** base64 of a Yjs update (Y.encodeStateAsUpdate / update event) */
     update: text("update").notNull(),
+    /**
+     * The log GENERATION this row belongs to. Retiring a stale between-sessions
+     * log bumps collab_state.epoch; rows from a retired epoch are ignored by the
+     * relay (never deleted, so no orphaned delta), and an append fenced on an old
+     * epoch is rejected. See docs/plans/2026-07-15-collab-hole2-reset-generation.md.
+     */
+    epoch: integer("epoch").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [index("collab_updates_post_seq_idx").on(t.postId, t.seq)],
 );
+
+// Per-post co-editing generation + body provenance, so a log left stale between
+// sessions cannot overwrite an out-of-band body write (hole 2). `epoch` is the
+// current log generation; `materializedRevision` is the posts.revision the log
+// last wrote into posts.body (a collab autosave / session-end materialize). On
+// the catch-up GET, when no session is live, the log has been quiescent, and
+// posts.revision has moved past materializedRevision, the epoch is bumped
+// (single-writer upsert CAS) and the next editor reseeds from posts.body instead
+// of replaying the stale log. See the hole-2 plan for the full race analysis.
+export const collabState = pgTable("collab_state", {
+  postId: uuid("post_id")
+    .primaryKey()
+    .references(() => posts.id),
+  epoch: integer("epoch").notNull().default(0),
+  materializedRevision: bigint("materialized_revision", { mode: "number" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // Ephemeral presence for co-editing: who is in a post right now and where
 // their cursor is. Rows are upserted on a heartbeat and treated as stale

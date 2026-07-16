@@ -21,7 +21,11 @@
 // anything a stale beacon missed, recovered on the next editor open.
 
 import { getCurrentUser } from "@/lib/session";
-import { collabAccess, hasActiveCoEditors } from "@/lib/collab";
+import {
+  collabAccess,
+  hasActiveCoEditors,
+  markCollabMaterialized,
+} from "@/lib/collab";
 import {
   getPostById,
   getUserIdBySub,
@@ -88,8 +92,9 @@ export async function POST(
   // local Y.Doc, which may trail another co-editor's in-flight edits, so this is
   // best-effort: it never clobbers a newer revision, and the Yjs log (also
   // flushed on pagehide) still carries anything a stale beacon missed.
+  let saved;
   try {
-    await savePostContentPatch(handle, post, { body: nextBody }, {
+    saved = await savePostContentPatch(handle, post, { body: nextBody }, {
       expectedRevision: post.revision,
     });
   } catch (error) {
@@ -97,6 +102,12 @@ export async function POST(
       return Response.json({ ok: true, skipped: "superseded" });
     }
     throw error;
+  }
+  // Record that this collab body write produced posts.body @ its new revision, so
+  // the catch-up staleness check does not later reseed away a body the session
+  // itself materialized.
+  if (typeof saved.revision === "number" && saved.id) {
+    await markCollabMaterialized(saved.id, saved.revision).catch(() => {});
   }
   await recordAction({
     actorUserId: user ? user.userId ?? (await getUserIdBySub(user.sub)) : null,
