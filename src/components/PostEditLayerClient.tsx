@@ -688,6 +688,35 @@ export function PostEditLayer({
     [blog.handle, postId],
   );
 
+  // Unload-safe materialization. The autosave above is a server action that
+  // cannot complete during a tab close, so on pagehide beacon the current body
+  // to the collab materialize endpoint. Only for the co-editing shell, and only
+  // when there are unsaved changes; the server no-ops if the body already
+  // matches. Complements the CollabProvider's own pagehide beacon (which flushes
+  // the Yjs log) by keeping the canonical posts.body current too.
+  useEffect(() => {
+    if (!postId || !collab?.canEdit) return;
+    const onPageHide = () => {
+      if (lastSavedKeyRef.current === latestKeyRef.current) return;
+      if (
+        typeof navigator === "undefined" ||
+        typeof navigator.sendBeacon !== "function"
+      ) {
+        return;
+      }
+      const payload = JSON.stringify({
+        handle: blog.handle,
+        body: draftRef.current.body,
+      });
+      navigator.sendBeacon(
+        `/api/collab/${postId}/materialize`,
+        new Blob([payload], { type: "application/json" }),
+      );
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [postId, collab?.canEdit, blog.handle]);
+
   useEffect(() => {
     if (!postId) return;
     if (!draftHydrated) return;
