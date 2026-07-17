@@ -22,6 +22,7 @@ export type CommandWorkspaceLevel =
   | "section"
   | "trash"
   | "shared"
+  | "settings"
   | "post"
   | "edit";
 
@@ -67,6 +68,9 @@ export type CommandWorkspaceSurface = {
   openFolder: (folderPath: string) => void;
   navigateRoot: () => void;
   navigateUp: () => boolean;
+  escapeCurrent: () => boolean;
+  focusSearch: () => void;
+  openSettings: () => void;
   afterDelete: (postId: string) => void;
   startBookmarkCreate?: () => void;
 };

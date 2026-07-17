@@ -70,7 +70,7 @@
   visibility: visible;
   transition:
     transform 180ms ease,
-    opacity 140ms ease,
+    opacity 180ms ease,
     visibility 0s linear 0s;
 }
 
@@ -90,7 +90,7 @@
   visibility: hidden;
   transition:
     transform 180ms ease,
-    opacity 140ms ease,
+    opacity 180ms ease,
     visibility 0s linear 180ms;
 }
 
@@ -104,15 +104,20 @@
   box-shadow: -18px 0 44px -34px rgba(0, 0, 0, 0.58);
   transition:
     transform 180ms ease,
-    opacity 140ms ease,
+    opacity 180ms ease,
     visibility 0s linear 0s;
 }
 
-.launcher {
+.launcherWrap {
   position: absolute;
   top: 8px;
   right: 8px;
   z-index: 3;
+  pointer-events: auto;
+}
+
+.launcher {
+  position: relative;
   width: 36px;
   height: 36px;
   display: inline-flex;
@@ -128,11 +133,11 @@
   cursor: pointer;
   pointer-events: auto;
   transition:
-    background-color 140ms ease,
-    color 140ms ease;
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
-.root[data-layout="inline"][data-state="hidden"] .launcher {
+.root[data-layout="inline"][data-state="hidden"] .launcherWrap {
   right: 4px;
 }
 
@@ -177,8 +182,8 @@
   width: 1px;
   background: transparent;
   transition:
-    width 120ms ease,
-    background-color 120ms ease;
+    width 180ms ease,
+    background-color 180ms ease;
 }
 
 .resizer:hover::before,
@@ -247,9 +252,9 @@
   color: var(--ac-label-2, rgba(60, 60, 67, 0.72));
   cursor: pointer;
   transition:
-    background-color 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
+    background-color 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
 }
 
 .iconButton {
@@ -454,8 +459,8 @@
   border-radius: 8px;
   background: var(--ac-bg, #fff);
   transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease;
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .composerField:focus-within {

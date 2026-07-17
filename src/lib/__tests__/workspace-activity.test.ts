@@ -77,7 +77,7 @@ describe("workspace activity", () => {
     );
   });
 
-  it("opens a single calendar document and filters when a date has several", () => {
+  it("turns every calendar day into a date search", () => {
     const sameDay = post(
       "same-day",
       "Same day",
@@ -90,13 +90,19 @@ describe("workspace activity", () => {
     );
     expect(matches).toBeDefined();
     expect(calendarDocumentAction("2026-07-10", matches ?? [])).toEqual({
-      kind: "filter",
+      kind: "search",
       dateKey: "2026-07-10",
       postIds: ["opened", "same-day"],
     });
     expect(calendarDocumentAction("2026-07-11", [newlyEdited])).toEqual({
-      kind: "open",
-      postId: "edited",
+      kind: "search",
+      dateKey: "2026-07-11",
+      postIds: ["edited"],
+    });
+    expect(calendarDocumentAction("2026-07-12", [])).toEqual({
+      kind: "search",
+      dateKey: "2026-07-12",
+      postIds: [],
     });
   });
 });

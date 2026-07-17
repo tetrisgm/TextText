@@ -17,7 +17,7 @@ import {
   updatePost,
 } from "@/lib/pool/store";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
-import { blogHomePath, blogPostEditPath } from "@/lib/public-paths";
+import { blogPostEditPath } from "@/lib/public-paths";
 import type {
   AppCommand,
   CommandContext,
@@ -261,10 +261,17 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     shortcut: [
       { key: "k", meta: true, label: "⌘K", allowTypingTarget: true },
       { key: "k", ctrl: true, label: "Ctrl K", allowTypingTarget: true },
-      { key: "/", label: "/", requiresWorkspace: true },
     ],
     when: () => true,
     run: (ctx) => ctx.openPalette(),
+  },
+  {
+    id: "workspace.search",
+    label: "Search workspace",
+    group: "Command bar",
+    shortcut: { key: "/", label: "/", requiresWorkspace: true },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.workspace?.focusSearch(),
   },
   {
     id: "command.shortcuts",
@@ -292,7 +299,10 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "selection.previous",
     label: "Move up",
     group: "Navigate",
-    shortcut: { key: "ArrowUp", label: "↑" },
+    shortcut: [
+      { key: "ArrowUp", label: "↑" },
+      { key: "k", label: "K" },
+    ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.selectSpatial("up"),
   },
@@ -300,7 +310,10 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     id: "selection.next",
     label: "Move down",
     group: "Navigate",
-    shortcut: { key: "ArrowDown", label: "↓" },
+    shortcut: [
+      { key: "ArrowDown", label: "↓" },
+      { key: "j", label: "J" },
+    ],
     when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => ctx.workspace?.selectSpatial("down"),
   },
@@ -325,23 +338,34 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Open focused item",
     group: "Navigate",
     shortcut: { key: "Enter", label: "Enter" },
-    when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "post"),
+    when: (ctx) =>
+      Boolean(
+        ctx.workspace &&
+          ctx.workspace.viewLevel !== "post" &&
+          ctx.workspace.viewLevel !== "edit",
+      ),
     run: (ctx) => ctx.workspace?.openSelected(),
+  },
+  {
+    id: "navigation.escape",
+    label: "Close current view",
+    group: "Navigate",
+    shortcut: { key: "Escape", label: "Esc", allowTypingTarget: true },
+    when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
+    run: (ctx) => {
+      ctx.workspace?.escapeCurrent();
+    },
   },
   {
     id: "navigation.up",
     label: "Go up one level",
     group: "Navigate",
-    shortcut: [
-      { key: "Escape", label: "Esc", allowTypingTarget: true },
-      { key: "Backspace", label: "Backspace" },
-    ],
-    when: (ctx) => Boolean(ctx.workspace && ctx.workspace.viewLevel !== "root"),
+    shortcut: { key: "Backspace", label: "Backspace" },
+    // Keep this available at home so Backspace is consumed instead of falling
+    // through to the browser's history navigation.
+    when: (ctx) => Boolean(ctx.workspace),
     run: (ctx) => {
-      const workspace = ctx.workspace;
-      if (!workspace) return;
-      if (workspace.viewLevel === "edit") workspace.stopEditing();
-      else workspace.navigateUp();
+      ctx.workspace?.navigateUp();
     },
   },
   ...Array.from({ length: 9 }, (_, index): AppCommand => ({
@@ -511,10 +535,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     label: "Settings",
     group: "Workspace",
     when: (ctx) => Boolean(ctx.workspace),
-    run: (ctx) => {
-      const workspace = ctx.workspace;
-      if (workspace) ctx.navigate(blogHomePath(workspace.blog));
-    },
+    run: (ctx) => ctx.workspace?.openSettings(),
   },
 ];
 
@@ -600,14 +621,6 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
   const target = commandTargetPost(ctx);
   const blogPost = target && !isPrivatePostType(target.type);
 
-  const folderCommands = pool.folders.map((folder) => ({
-    id: `folder.open.${folder.id}`,
-    label: `Go to ${folder.name}`,
-    group: "Folders",
-    when: () => true,
-    run: () => workspace.openFolder(folder.path),
-  }));
-
   const moveCommands =
     target && workspace.canManagePost
       ? pool.folders
@@ -629,5 +642,26 @@ export function dynamicWorkspaceCommands(ctx: CommandContext): AppCommand[] {
           }))
       : [];
 
-  return [...folderCommands, ...moveCommands];
+  return moveCommands;
+}
+
+export function shouldSuppressWorkspaceSingleKeyShortcut(
+  ctx: CommandContext,
+  event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey">,
+): boolean {
+  const workspace = ctx.workspace;
+  if (
+    !workspace ||
+    workspace.viewLevel !== "edit" ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.key.length !== 1
+  ) {
+    return false;
+  }
+  const post = workspace.activePostId
+    ? workspace.getPost(workspace.activePostId)
+    : null;
+  return post?.type === "note";
 }

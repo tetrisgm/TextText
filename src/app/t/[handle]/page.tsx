@@ -69,8 +69,10 @@ interface Props {
 }
 type BlogHomeQuery = {
   card?: string | string[];
+  date?: string | string[];
   folder?: string | string[];
   layout?: string | string[];
+  view?: string | string[];
 };
 
 function blogStyle(blog: Blog): CSSProperties | undefined {
@@ -372,7 +374,7 @@ export async function BlogHomeForHandle({
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(sidebarCookie);
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
-    for (const key of ["card", "folder", "layout"] as const) {
+    for (const key of ["card", "date", "folder", "layout", "view"] as const) {
       const value = queryValue(query[key]);
       if (value) redirectParams.set(key, value);
     }
@@ -445,14 +447,9 @@ export async function BlogHomeForHandle({
   // folders returned by getAccessibleFolders, so no other workspace content
   // leaks through this route.
   const requestedFolder = queryValue(query.folder);
-  const defaultFolderPath =
-    sidebarCookie == null && hasBlogWorkspaceContent ? "blog" : null;
-  const activeFolder =
-    requestedFolder || defaultFolderPath
-      ? folders.find(
-          (folder) => folder.path === (requestedFolder ?? defaultFolderPath),
-        ) ?? null
-      : null;
+  const activeFolder = requestedFolder
+    ? folders.find((folder) => folder.path === requestedFolder) ?? null
+    : null;
   const activeSpecialFolder =
     requestedFolder === TRASH_FOLDER_PATH ||
     requestedFolder === SHARED_FOLDER_PATH
@@ -584,6 +581,8 @@ export async function BlogHomeForHandle({
       folders={folders}
       homePath={blogHomePath(blog)}
       initialSidebarCollapsed={initialSidebarCollapsed}
+      initialSearchQuery={queryValue(query.date) ?? ""}
+      initialSettingsOpen={queryValue(query.view) === "settings"}
       initialPool={initialPool}
       showGuestSignIn={isGuestWorkspace && isAuthConfigured}
     >

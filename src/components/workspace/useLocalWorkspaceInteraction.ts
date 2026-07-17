@@ -59,7 +59,7 @@ export function createOptimisticWorkspacePost(
   const folder = folderForCreateRequest(pool, request);
   const slug = `untitled-${token}`;
 
-  if (request.type === "bookmark") {
+  if (request.type === "bookmark" && !request.blank) {
     const { href, host } = bookmarkUrlParts(request.url);
     const title = request.title?.trim() || host || "Bookmark";
     const description = request.description?.trim();
@@ -88,7 +88,10 @@ export function createOptimisticWorkspacePost(
     folderId: folder?.id,
     type: request.type,
     slug,
-    title: request.type === "note" ? (request.title?.trim() ?? "") : "",
+    title:
+      request.type === "note" || request.type === "bookmark"
+        ? (request.title?.trim() ?? "")
+        : "",
     excerpt: "",
     status: "draft",
     pinned: false,
@@ -129,6 +132,13 @@ export function shouldOpenWorkspacePostInEdit(
     (post.gallery?.length ?? 0) === 0 &&
     !post.videoUrl?.trim()
   );
+}
+
+export function shouldAutofocusWorkspacePostEditor(
+  post: Pick<WorkspacePoolPost, "type">,
+): boolean {
+  void post.type;
+  return false;
 }
 
 export type WorkspaceItemIdentityRegistry = {

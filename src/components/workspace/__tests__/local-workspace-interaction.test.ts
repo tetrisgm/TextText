@@ -3,6 +3,7 @@ import {
   createOptimisticWorkspacePost,
   createWorkspaceItemIdentityRegistry,
   mergeCreatedWorkspacePost,
+  shouldAutofocusWorkspacePostEditor,
   shouldOpenWorkspacePostInEdit,
 } from "@/components/workspace/useLocalWorkspaceInteraction";
 import { NO_COVER_VALUE } from "@/lib/cover";
@@ -86,8 +87,15 @@ describe("local workspace optimistic creation", () => {
       },
       now,
     );
+    const blankBookmark = createOptimisticWorkspacePost(
+      pool,
+      { type: "bookmark", folderPath: "bookmarks", blank: true },
+      now,
+    );
 
-    expect(new Set([first.id, second.id, bookmark.id])).toHaveLength(3);
+    expect(
+      new Set([first.id, second.id, bookmark.id, blankBookmark.id]),
+    ).toHaveLength(4);
     expect(first).toMatchObject({
       folderId: "blog",
       title: "",
@@ -99,6 +107,12 @@ describe("local workspace optimistic creation", () => {
       capture: { url: "https://example.com/story" },
       title: "example.com",
     });
+    expect(blankBookmark).toMatchObject({
+      folderId: "bookmarks",
+      type: "bookmark",
+      title: "",
+    });
+    expect(blankBookmark.capture).toBeUndefined();
   });
 
   it("keeps the logical item and editor key stable across server identity", () => {
@@ -200,5 +214,11 @@ describe("local workspace direct edit routing", () => {
         "",
       ),
     ).toBe(false);
+  });
+
+  it("never focuses an editor field just because an item opened", () => {
+    expect(shouldAutofocusWorkspacePostEditor({ type: "note" })).toBe(false);
+    expect(shouldAutofocusWorkspacePostEditor({ type: "article" })).toBe(false);
+    expect(shouldAutofocusWorkspacePostEditor({ type: "bookmark" })).toBe(false);
   });
 });

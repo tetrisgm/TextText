@@ -145,6 +145,23 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain(">Apply<");
   });
 
+  it("offers concise prompt starters that fill the composer", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        capabilities: { available: true, ocr: true, imageUnderstanding: false },
+        messages: [],
+        submitting: false,
+        onUsePrompt: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-label="Prompt starters"');
+    expect(html).toContain("Private on this Mac");
+    expect(html).toContain("Improve title");
+    expect(html).toContain("Summarize page");
+    expect(html).toContain("Draft follow-ups");
+  });
+
   it("explains selected-text context and unavailable attachments", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantSidebar, {

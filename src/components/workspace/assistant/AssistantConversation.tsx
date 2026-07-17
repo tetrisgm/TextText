@@ -1,31 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
-import type { AssistantSkill } from "@/lib/ai/skills";
 import type { NativeAICapabilities } from "@/lib/ai/native";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import styles from "./AssistantConversation.module.css";
 
+const PROMPT_STARTERS = [
+  { label: "Improve title", prompt: "Give this page a better title" },
+  { label: "Summarize page", prompt: "Summarize this page" },
+  { label: "Draft follow-ups", prompt: "Draft three related posts" },
+] as const;
+
 // The transcript inside the assistant sidebar: user and assistant turns,
 // lightweight progress rows while the on-device model drives tools, a jobs
-// strip so background work stays visible from anywhere, and a skills panel
-// (always in the empty state, toggleable above an active thread) where
-// craft skills are toggled and new ones installed from skills.sh.
+// strip so background work stays visible from anywhere.
 export function AssistantConversation({
   capabilities,
   jobs,
   messages,
   quickActions,
-  skills,
   submitting,
   onApplyProposal,
-  onInstallSkill,
   onOpenJob,
+  onUsePrompt,
   onQuickAction,
-  onRemoveSkill,
-  onToggleSkill,
   onUndoProposal,
 }: {
   capabilities: NativeAICapabilities | null;
@@ -36,42 +36,18 @@ export function AssistantConversation({
     label: string;
     description?: string;
   }>;
-  skills?: Array<AssistantSkill & { enabled: boolean; source?: string }>;
   submitting: boolean;
   onApplyProposal?: (messageId: string) => Promise<void> | void;
-  onInstallSkill?: (reference: string) => Promise<unknown>;
   onOpenJob?: (job: AssistantJob) => void;
+  onUsePrompt?: (prompt: string) => void;
   onQuickAction?: (action: NativeQuickActionId) => Promise<void> | void;
-  onRemoveSkill?: (skillId: string) => void;
-  onToggleSkill?: (skillId: string, enabled: boolean) => void;
   onUndoProposal?: (messageId: string) => Promise<void> | void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
-  const [installValue, setInstallValue] = useState("");
-  const [installing, setInstalling] = useState(false);
-  const [installError, setInstallError] = useState<string | null>(null);
-  const [showSkills, setShowSkills] = useState(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, submitting]);
-
-  const install = async () => {
-    const reference = installValue.trim();
-    if (!reference || !onInstallSkill || installing) return;
-    setInstalling(true);
-    setInstallError(null);
-    try {
-      await onInstallSkill(reference);
-      setInstallValue("");
-    } catch (error) {
-      setInstallError(
-        error instanceof Error ? error.message : "Could not install",
-      );
-    } finally {
-      setInstalling(false);
-    }
-  };
 
   const visibleJobs = (jobs ?? []).slice(0, 6);
   const quickActionBar =
@@ -120,80 +96,6 @@ export function AssistantConversation({
       </div>
     ) : null;
 
-  const skillsBlock =
-    skills && skills.length > 0 ? (
-      <div className={styles.skills}>
-        <p className={styles.skillsHeading}>Skills</p>
-        {skills.map((skill) => (
-          <div className={styles.skillRow} key={skill.id}>
-            <label className={styles.skillControl}>
-              <input
-                type="checkbox"
-                checked={skill.enabled}
-                disabled={!onToggleSkill}
-                onChange={(event) =>
-                  onToggleSkill?.(skill.id, event.currentTarget.checked)
-                }
-              />
-              <span className={styles.skillCopy}>
-                <span className={styles.skillName}>{skill.name}</span>
-                <span className={styles.skillDescription}>
-                  {skill.description}
-                </span>
-              </span>
-            </label>
-            {skill.source && onRemoveSkill && (
-              <button
-                type="button"
-                className={styles.skillRemove}
-                aria-label={`Remove skill ${skill.name}`}
-                title="Remove skill"
-                onClick={() => onRemoveSkill(skill.id)}
-              >
-                Remove
-              </button>
-            )}
-          </div>
-        ))}
-        {onInstallSkill && (
-          <div className={styles.skillInstall}>
-            <input
-              className={styles.skillInstallInput}
-              type="text"
-              value={installValue}
-              aria-label="Skill URL"
-              placeholder="Paste a skills.sh link to install"
-              disabled={installing}
-              onChange={(event) => {
-                setInstallValue(event.currentTarget.value);
-                setInstallError(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void install();
-                }
-              }}
-            />
-            <button
-              type="button"
-              className={styles.skillInstallButton}
-              disabled={installing || !installValue.trim()}
-              title="Install skill"
-              onClick={() => void install()}
-            >
-              {installing ? "Installing" : "Install"}
-            </button>
-          </div>
-        )}
-        {installError && (
-          <p className={styles.skillInstallError} role="alert">
-            {installError}
-          </p>
-        )}
-      </div>
-    ) : null;
-
   if (messages.length === 0) {
     return (
       <div className={styles.empty}>
@@ -201,20 +103,39 @@ export function AssistantConversation({
         {quickActionBar}
         <p className={styles.emptyTitle}>
           {capabilities?.available
-            ? "Private, on this Mac"
+            ? "Private on this Mac"
             : "Ask about your workspace"}
         </p>
         <p className={styles.emptyBody}>
           {capabilities?.available
             ? "Answers and edits run on Apple's on-device model. Nothing leaves this Mac, and it works offline."
-            : "Inside the Mac app, the assistant runs on Apple's on-device model: private, offline, free."}
+            : "Open the Mac app to use Apple's private, offline model."}
         </p>
-        <ul className={styles.examples}>
-          <li>Give this post a better title</li>
-          <li>Summarize this article</li>
-          <li>Create three draft posts about...</li>
-        </ul>
-        {skillsBlock}
+        {onUsePrompt && (
+          <div className={styles.examples} aria-label="Prompt starters">
+            {PROMPT_STARTERS.map((starter) => (
+              <button
+                key={starter.label}
+                type="button"
+                disabled={submitting}
+                onClick={(event) => {
+                  const sidebar = event.currentTarget.closest<HTMLElement>(
+                    "[data-assistant-sidebar]",
+                  );
+                  onUsePrompt(starter.prompt);
+                  window.requestAnimationFrame(() => {
+                    sidebar
+                      ?.querySelector<HTMLTextAreaElement>("textarea")
+                      ?.focus({ preventScroll: true });
+                  });
+                }}
+              >
+                <span>{starter.label}</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -228,20 +149,6 @@ export function AssistantConversation({
     >
       {jobsStrip}
       {quickActionBar}
-      {skillsBlock && (
-        <div className={styles.skillsToggleRow}>
-          <button
-            type="button"
-            className={styles.skillsToggle}
-            aria-expanded={showSkills}
-            title={showSkills ? "Hide skills" : "Show skills"}
-            onClick={() => setShowSkills((current) => !current)}
-          >
-            {showSkills ? "Hide skills" : "Skills"}
-          </button>
-        </div>
-      )}
-      {showSkills && skillsBlock}
       {messages.map((message) => {
         if (message.role === "progress") {
           return (

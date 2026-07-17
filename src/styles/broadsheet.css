@@ -1483,7 +1483,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .write-landing-folders {
   width: min(100%, 1180px);
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 18px;
   margin: 0 auto;
 }
@@ -2239,13 +2239,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-assistant-shell[data-state="hidden"] {
   width: 52px !important;
 }
-.workspace-assistant-shell[data-state="hidden"]
-  button[aria-label="Open assistant"] {
-  top: 62px;
-}
-/* Hover-peek: approaching the collapsed rail widens the fixed shell so the
-   revealed panel fills it and overlays the page (it does not push, matching the
-   left sidebar's is-collapsed:hover). The launcher fades out under the panel. */
+/* Approaching the assistant rail reveals its panel without moving the page. */
 .workspace-assistant-shell[data-state="hidden"][data-peeking="true"] {
   width: min(var(--workspace-assistant-width, 360px), 100vw) !important;
 }
@@ -2329,8 +2323,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 10px 0;
+  gap: 4px;
+  min-height: 44px;
+  padding: 8px 8px 0;
+}
+.post-editor-sidebar-workspace-menu {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .post-editor-home-link {
   flex: 1 1 auto;
@@ -2350,16 +2349,22 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-editor-sidebar-toggle {
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+  border: 1px solid var(--ac-hairline);
+  border-radius: var(--ac-radius-control, 6px);
+  background: var(--ac-mat-bg);
   color: var(--muted);
   cursor: pointer;
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+  box-shadow: 0 8px 22px -14px rgba(0, 0, 0, 0.48);
+  transition:
+    background-color 0.18s var(--ease),
+    color 0.18s var(--ease);
 }
 .post-editor-sidebar-toggle:hover,
 .post-editor-sidebar-toggle:focus-visible {
@@ -2499,7 +2504,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: 12px;
   height: 12px;
   display: block;
-  transition: transform 120ms ease;
+  transition: transform 0.18s var(--ease);
 }
 .post-editor-disclosure-icon.is-open {
   transform: rotate(90deg);
@@ -2625,9 +2630,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-editor-special-folders {
   display: grid;
   gap: 2px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--ac-hairline);
+  margin-top: 2px;
+  padding-top: 0;
+}
+.post-editor-home-row {
+  padding-left: 26px;
 }
 .post-editor-special-row {
   padding-left: 26px;
@@ -2643,21 +2650,18 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   gap: 18px;
   padding: 4px 14px 18px;
 }
-.post-editor-calendar,
-.post-editor-documents {
+.post-editor-calendar {
   display: grid;
   gap: 9px;
 }
-.post-editor-calendar > header,
-.post-editor-documents > header {
+.post-editor-calendar > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
 }
-.post-editor-calendar > header strong,
-.post-editor-documents > header strong {
+.post-editor-calendar > header strong {
   color: var(--muted);
   font: 650 12px/1.2 var(--font-body);
   letter-spacing: 0;
@@ -2701,6 +2705,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   background: transparent;
   color: var(--muted);
   font: 550 11px/1 var(--font-body);
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--ease),
+    color 0.18s var(--ease);
 }
 .post-editor-calendar-grid button.is-outside {
   opacity: 0.3;
@@ -2708,7 +2716,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-editor-calendar-grid button.has-documents {
   background: color-mix(in srgb, var(--accent) 17%, transparent);
   color: var(--ink);
-  cursor: pointer;
 }
 .post-editor-calendar-grid button.has-documents::after {
   content: "";
@@ -2724,78 +2731,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-editor-calendar-grid button.is-today {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent);
 }
-.post-editor-calendar-grid button[aria-pressed="true"] {
-  background: var(--accent);
-  color: white;
+.post-editor-calendar-grid button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--ink);
 }
 .post-editor-calendar-grid button:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
-}
-.post-editor-document-controls {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-}
-.post-editor-document-controls > button {
-  min-height: 24px;
-  border: 0;
-  border-radius: 6px;
-  padding: 2px 6px;
-  background: transparent;
-  color: var(--accent);
-  font: 600 11px/1 var(--font-body);
-  cursor: pointer;
-}
-.post-editor-document-controls > button:hover,
-.post-editor-document-controls > button:focus-visible {
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
-  outline: none;
-}
-.post-editor-documents select {
-  max-width: 116px;
-  border: 0;
-  padding: 2px 18px 2px 4px;
-  background: transparent;
-  color: var(--muted);
-  font: 550 11px/1 var(--font-body);
-}
-.post-editor-document-list {
-  display: grid;
-  gap: 1px;
-}
-.post-editor-document-list button {
-  min-width: 0;
-  min-height: 28px;
-  display: flex;
-  align-items: center;
-  border: 0;
-  border-radius: 6px;
-  padding: 0 8px;
-  background: transparent;
-  color: var(--muted);
-  font: 520 12px/1.2 var(--font-body);
-  text-align: left;
-  cursor: pointer;
-}
-.post-editor-document-list button::before {
-  content: "•";
-  flex: 0 0 auto;
-  margin-right: 8px;
-  color: color-mix(in srgb, var(--muted) 55%, transparent);
-}
-.post-editor-document-list button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.post-editor-document-list button:hover,
-.post-editor-document-list button:focus-visible {
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-  color: var(--ink);
-  outline: none;
 }
 .post-workspace-sidebar-region {
   position: fixed;
@@ -2805,68 +2747,28 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   pointer-events: none;
 }
 .post-workspace-sidebar-region:not(.is-collapsed),
-.post-workspace-sidebar-region.is-preview-open {
+.post-workspace-sidebar-region.is-mobile-open {
   pointer-events: auto;
 }
 .post-workspace-sidebar-region.is-collapsed {
-  width: 39px;
-  pointer-events: auto;
-}
-.post-workspace-sidebar-region.is-preview-open {
-  width: var(--workspace-sidebar-width, 280px);
-}
-.post-workspace-sidebar-region.is-collapsed:hover {
-  width: var(--workspace-sidebar-width, 280px);
-}
-.post-workspace-sidebar-region.is-collapsed:hover
-  .post-editor-sidebar.is-collapsed,
-.post-workspace-sidebar-region.is-preview-open
-  .post-editor-sidebar.is-collapsed {
-  transform: translateX(0);
-  pointer-events: auto;
-  box-shadow: 16px 0 42px -34px rgba(0, 0, 0, 0.62);
-}
-.post-workspace-sidebar-region.is-collapsed:hover
-  .post-editor-sidebar.is-collapsed {
-  opacity: 0.95;
-}
-.post-workspace-sidebar-region.is-collapsed:hover .post-sidebar-reveal-button,
-.post-workspace-sidebar-region.is-preview-open .post-sidebar-reveal-button {
-  opacity: 0;
+  width: 0;
   pointer-events: none;
 }
-.post-sidebar-reveal-button {
+.workspace-history-chrome {
   position: fixed;
   top: 8px;
   left: 8px;
-  z-index: 204;
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
+  z-index: 208;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
   border: 0;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  cursor: pointer;
+  background: transparent;
+  color: var(--ink);
   pointer-events: auto;
-  transition: background 0.18s var(--ease);
 }
-.post-sidebar-reveal-button:hover,
-.post-sidebar-reveal-button:focus-visible {
-  background: rgba(0, 0, 0, 0.6);
-}
-.post-sidebar-reveal-button:focus-visible {
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-.post-sidebar-reveal-button svg {
-  width: 18px;
-  height: 18px;
-  display: block;
+.workspace-history-chrome.is-mobile-only {
+  display: none;
 }
 .post-sidebar-backdrop {
   display: none;
@@ -2885,7 +2787,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   inset: 0 auto 0 4px;
   width: 2px;
   background: transparent;
-  transition: background-color 0.14s var(--ease);
+  transition: background-color 0.18s var(--ease);
 }
 .post-sidebar-resize-handle:hover::after,
 .post-sidebar-resize-handle:focus-visible::after {
@@ -2893,6 +2795,12 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-sidebar-resize-handle:focus-visible {
   outline: none;
+}
+.workspace-menu-open .post-workspace-sidebar-region {
+  z-index: 520;
+}
+.workspace-menu-open .post-sidebar-resize-handle {
+  pointer-events: none;
 }
 .post-editor-shell.has-sidebar:not(.is-sidebar-collapsed)
   .post-back-action-bar.is-read {
@@ -2977,70 +2885,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-trash-actions .is-danger {
   color: #ff3b30;
 }
-.workspace-settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 520;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: color-mix(in srgb, #000 28%, transparent);
-  overscroll-behavior: contain;
-}
-.workspace-settings-dialog {
-  width: min(100%, 440px);
-  display: grid;
-  gap: 20px;
-  padding: 18px;
-  border: 1px solid var(--ac-separator);
-  border-radius: 12px;
-  background: var(--ac-mat-bg);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
-}
-.workspace-settings-dialog header,
-.workspace-settings-dialog footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.workspace-settings-dialog h2 {
-  margin: 0;
-  color: var(--ac-label);
-  font: 700 19px/1.2 var(--ac-font-text);
-  letter-spacing: 0;
-}
-.workspace-settings-dialog footer {
-  justify-content: flex-end;
-}
-.workspace-settings-field {
-  display: grid;
-  gap: 7px;
-  color: var(--ac-label-2);
-  font: 600 12px/1.2 var(--ac-font-text);
-  letter-spacing: 0;
-}
-.workspace-settings-field input {
-  width: 100%;
-  min-height: 38px;
-  border: 1px solid var(--ac-separator);
-  border-radius: 8px;
-  padding: 0 11px;
-  background: var(--ac-bg);
-  color: var(--ac-label);
-  font: 500 15px/1 var(--ac-font-text);
-  letter-spacing: 0;
-}
-.workspace-settings-field input:focus-visible {
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-
 @media (min-width: 681px) {
-  .post-workspace-sidebar-region:not(.is-collapsed)
-    .post-sidebar-reveal-button {
-    display: none;
-  }
   .post-editor-shell.has-sidebar .post-editor-content {
     margin-left: var(--workspace-sidebar-width, 280px);
   }
@@ -3067,6 +2912,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 
 @media (max-width: 680px) {
+  .workspace-history-chrome.is-mobile-only {
+    display: flex;
+  }
   .post-editor-shell.has-sidebar .post-editor-content,
   .post-editor-shell.has-sidebar.is-sidebar-collapsed .post-editor-content {
     margin-left: 0;
@@ -3074,13 +2922,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .post-editor-sidebar {
     box-shadow: 22px 0 58px -38px rgba(0, 0, 0, 0.72);
   }
-  .post-workspace-sidebar-region:not(.is-mobile-open),
-  .post-workspace-sidebar-region.is-collapsed:not(.is-mobile-open):hover {
-    width: 39px;
+  .post-workspace-sidebar-region:not(.is-mobile-open) {
+    width: 0;
   }
-  .post-workspace-sidebar-region:not(.is-mobile-open) .post-editor-sidebar,
-  .post-workspace-sidebar-region.is-collapsed:not(.is-mobile-open):hover
-    .post-editor-sidebar.is-collapsed {
+  .post-workspace-sidebar-region:not(.is-mobile-open) .post-editor-sidebar {
     transform: translateX(calc(-100% - 12px));
     pointer-events: none;
   }
@@ -3092,10 +2937,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .post-workspace-sidebar-region.is-mobile-open .post-editor-sidebar {
     transform: translateX(0);
     pointer-events: auto;
-  }
-  .post-workspace-sidebar-region.is-mobile-open .post-sidebar-reveal-button {
-    opacity: 0;
-    pointer-events: none;
   }
   .post-sidebar-backdrop {
     position: fixed;
@@ -3220,15 +3061,15 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   min-height: 100dvh;
   display: grid;
   align-content: start;
-  padding: 132px 48px 72px;
+  padding: 68px 48px 72px;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
 }
 .workspace-root-inner {
-  width: min(100%, 680px);
+  width: min(100%, 880px);
   display: grid;
-  gap: 12px;
+  gap: 18px;
   margin: 0 auto;
 }
 .workspace-root-eyebrow {
@@ -3244,7 +3085,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-root-inner h1 {
   color: var(--ink);
-  font-size: 44px;
+  font-size: 32px;
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0;
@@ -3258,10 +3099,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   line-height: 1.42;
 }
 .workspace-root-sections {
-  width: min(100%, 560px);
+  width: 100%;
   display: grid;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .workspace-root-section {
   display: grid;
@@ -3277,6 +3119,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: var(--ink);
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
 }
 .workspace-root-section:hover {
   background: color-mix(in srgb, var(--ink) 5%, var(--bg));
@@ -3335,6 +3181,217 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: 0;
+}
+.workspace-search-wrap {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+}
+.workspace-search-field {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 0 13px;
+  background: var(--bg);
+  color: var(--muted);
+  box-shadow: 0 12px 32px -28px color-mix(in srgb, var(--ink) 60%, transparent);
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+.workspace-search-field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--ink));
+  box-shadow: var(--ac-focus);
+}
+.workspace-search-field svg {
+  width: 20px;
+  height: 20px;
+}
+.workspace-search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 600 16px/1.2 var(--font-body);
+}
+.workspace-search-field input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.workspace-search-field kbd {
+  min-width: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 3px 6px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font: 650 12px/1 var(--font-body);
+  text-align: center;
+}
+.workspace-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 5px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+  box-shadow: 0 20px 54px -32px color-mix(in srgb, var(--ink) 70%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+.workspace-search-results > p {
+  padding: 14px;
+}
+.workspace-search-results button,
+.workspace-recent-list button {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+.workspace-search-results button:hover,
+.workspace-search-results button.is-selected,
+.workspace-recent-list button:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-soft));
+}
+.workspace-search-results button.is-selected,
+.workspace-recent-list button.is-command-selected {
+  box-shadow: inset 0 0 0 2px
+    color-mix(in srgb, var(--accent) 60%, var(--ink));
+}
+.workspace-search-results button > span,
+.workspace-recent-list button > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.workspace-search-results strong,
+.workspace-recent-list strong {
+  overflow: hidden;
+  color: var(--ink);
+  font: 650 14px/1.25 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-search-results small,
+.workspace-recent-list small {
+  overflow: hidden;
+  color: var(--muted);
+  font: 500 12px/1.35 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-search-results em,
+.workspace-recent-list time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font: 600 11px/1 var(--font-body);
+  font-style: normal;
+}
+.workspace-search-results mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: color-mix(in srgb, var(--accent) 60%, var(--ink));
+}
+.workspace-date-results,
+.workspace-recent {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.workspace-date-results > header,
+.workspace-recent > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workspace-date-results > header {
+  align-items: flex-start;
+  flex-direction: column;
+}
+.workspace-date-results > header button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 60%, var(--ink));
+  font: 650 13px/1 var(--font-body);
+  cursor: pointer;
+}
+.workspace-recent h2 {
+  margin: 0;
+  color: var(--ink);
+  font: 750 22px/1.2 var(--font-body);
+}
+.workspace-recent select {
+  min-height: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  padding: 0 28px 0 9px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 600 12px/1 var(--font-body);
+}
+.workspace-recent-list {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 5px;
+}
+.workspace-recent-empty {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+}
+.workspace-recent-empty span,
+.post-folder-empty-shortcut {
+  color: var(--muted);
+  font: 600 13px/1.4 var(--font-body);
+  letter-spacing: 0;
+}
+.workspace-recent-empty kbd,
+.post-folder-empty-shortcut kbd {
+  min-width: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 3px 5px;
+  background: var(--bg-soft);
+  color: var(--ink);
+  font: 700 11px/1 var(--font-body);
+}
+.workspace-search-results button:focus-visible,
+.workspace-recent-list button:focus-visible,
+.workspace-date-results > header button:focus-visible,
+.workspace-recent select:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
 }
 .post-folder-page-header {
   width: min(100%, 760px);
@@ -3504,12 +3561,17 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   min-width: 0;
   border-radius: 16px;
   outline: none;
+  transition:
+    box-shadow 0.18s var(--ease),
+    outline-color 0.18s var(--ease);
 }
 .post-folder-card-option.is-command-selected {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
+  outline: 2px solid
+    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  outline-offset: 2px;
 }
 .post-folder-card-option:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 48%, transparent);
+  box-shadow: var(--ac-focus);
 }
 .post-folder-page-card {
   display: grid;
@@ -3530,6 +3592,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-size: 17px;
   font-weight: 600;
   line-height: 1.42;
+}
+.post-folder-page-card .post-folder-empty-shortcut {
+  font-size: 13px;
 }
 /* Folder item lists (Notes, Bookmarks): the quiet blog-index rhythm, with
    every color read from the workspace tokens so both themes hold. */
@@ -3609,6 +3674,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   min-width: 0;
   border-bottom: 1px solid var(--hairline);
   border-radius: 8px;
+  transition:
+    background-color 0.18s var(--ease),
+    outline-color 0.18s var(--ease);
 }
 .post-folder-row-shell .post-folder-row {
   border-bottom: 0;
@@ -3616,7 +3684,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-folder-row-shell.is-command-selected {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 46%, transparent);
+  outline: 2px solid
+    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
+  outline-offset: -2px;
 }
 .folder-item-actions {
   position: absolute;
@@ -3626,6 +3696,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .folder-item-actions-trigger {
   opacity: 0;
+  transition: opacity 0.18s var(--ease);
 }
 .post-folder-row-shell:hover .folder-item-actions-trigger,
 .post-folder-row-shell:focus-within .folder-item-actions-trigger,
@@ -4127,8 +4198,11 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 @media (prefers-reduced-motion: reduce) {
   .post-editor-content,
   .post-editor-sidebar,
-  .post-sidebar-reveal-button,
-  .post-sidebar-backdrop {
+  .post-editor-sidebar-toggle,
+  .post-sidebar-backdrop,
+  .post-folder-card-option,
+  .post-folder-row-shell,
+  .folder-item-actions-trigger {
     transition: none;
   }
   .post-save-pill.is-saved {
@@ -5449,10 +5523,16 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     padding: 84px 24px 56px;
   }
   .workspace-root-page {
-    padding: 94px 24px 56px;
+    padding: 68px 24px 56px;
   }
   .workspace-root-inner h1 {
-    font-size: 34px;
+    font-size: 30px;
+  }
+  .workspace-root-sections {
+    grid-template-columns: 1fr;
+  }
+  .workspace-search-field input {
+    font-size: 15px;
   }
   .post-folder-page-header h1 {
     font-size: 44px;

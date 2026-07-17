@@ -22,12 +22,14 @@ import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
 import {
   WorkspaceSidebarChrome,
-  closeExpandedWorkspaceSidebar,
   finishEditTransition,
   sidebarFolderPathForPostType,
   useWorkspaceSidebarCollapsed,
 } from "@/components/PostWorkspaceShell";
 import type { SidebarFolderId } from "@/components/PostWorkspaceShell";
+import { shouldAutofocusWorkspacePostEditor } from "@/components/workspace/useLocalWorkspaceInteraction";
+import { hasActiveEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { isTypingTarget } from "@/components/keyboard/typing-target";
 import type { Blog, Folder, GalleryItem, Post } from "@/lib/content";
 import { isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
 import {
@@ -457,7 +459,11 @@ function patchEditSession(id: string | undefined, patch: Partial<EditSession>) {
 }
 
 function shouldFocusTitleOnEdit(post: Post): boolean {
-  return isUnsetTitle(post.title);
+  return (
+    post.type !== "note" &&
+    shouldAutofocusWorkspacePostEditor({ type: post.type }) &&
+    isUnsetTitle(post.title)
+  );
 }
 
 export type PostEditLayerProps = {
@@ -1085,6 +1091,7 @@ export function PostEditLayer({
   useEffect(() => {
     const onPopState = () => {
       const nextMode =
+        post.type === "note" ||
         new URL(window.location.href).searchParams.get("edit") === "1"
           ? "edit"
           : "read";
@@ -1096,11 +1103,24 @@ export function PostEditLayer({
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [changeSurfaceMode, saveDraftNow]);
+  }, [changeSurfaceMode, post.type, saveDraftNow]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+
+      if (
+        post.type === "note" &&
+        surfaceModeRef.current === "edit" &&
+        !isTypingTarget(event.target) &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        event.key.length === 1
+      ) {
+        event.stopImmediatePropagation();
+        return;
+      }
 
       // Cmd/Ctrl-E toggles back to reading (the reader binds the same chord to
       // enter edit), so one key flips edit and read in both directions.
@@ -1113,32 +1133,51 @@ export function PostEditLayer({
         if (hasOpenEditMenu()) return;
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (post.type === "note") return;
         if (leavingEditRef.current) return;
         if (surfaceModeRef.current === "edit") stopEditingLocally();
         else startEditingLocally();
         return;
       }
 
-      if (event.key !== "Escape") return;
-      if (hasOpenEditMenu()) return;
-
-      // An expanded sidebar consumes Escape first; exiting edit is the last resort.
-      if (closeExpandedWorkspaceSidebar()) {
+      if (event.key === "Backspace" && !isTypingTarget(event.target)) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (leavingEditRef.current) return;
+        if (surfaceModeRef.current === "edit") {
+          void saveDraftNow({}, { navigatePath: containingFolderHref });
+        } else {
+          router.push(containingFolderHref);
+        }
         return;
       }
-      if (surfaceModeRef.current === "read") return;
+
+      if (event.key !== "Escape") return;
+      if (hasActiveEscapeLayer()) return;
+      if (hasOpenEditMenu()) return;
 
       event.preventDefault();
       event.stopImmediatePropagation();
       if (leavingEditRef.current) return;
-      stopEditingLocally();
+      if (surfaceModeRef.current === "read") {
+        router.push(containingFolderHref);
+      } else if (post.type === "note") {
+        void saveDraftNow({}, { navigatePath: containingFolderHref });
+      } else {
+        stopEditingLocally();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [startEditingLocally, stopEditingLocally]);
+  }, [
+    containingFolderHref,
+    post.type,
+    router,
+    saveDraftNow,
+    startEditingLocally,
+    stopEditingLocally,
+  ]);
 
   const uploadCover = useCallback(
     async (file: File) => {
@@ -1594,28 +1633,35 @@ export function PostEditLayer({
         counts={counts}
         folders={folders}
         homePath={homePath}
+        onSearchDate={(dateKey) =>
+          router.push(`${homePath}?date=${encodeURIComponent(dateKey)}`)
+        }
         onSelectFolder={selectSidebarFolder}
+        onSelectRoot={() => router.push(homePath)}
+        onSettings={() => router.push(`${homePath}?view=settings`)}
         onToggleCollapsed={toggleSidebarCollapsed}
       />
       <div className="post-editor-content">
-        <div hidden={surfaceMode === "edit"}>
-          <PostActionBar
-            mode="read"
-            owner={canManagePost}
-            canCommentPost={canCommentPost}
-            canEditPost
-            canManagePost={canManagePost}
-            blog={blog}
-            post={displayPost}
-            adjacent={adjacent}
-            homePath={containingFolderHref}
-            postPath={renderedPostPath}
-            presencePeers={collab ? presencePeers : []}
-            onNavigate={navigateFromRead}
-          />
-          <SaveStatusPill saveState={saveState} error={error} />
-          <ReaderComponent blog={blog} post={displayPost} />
-        </div>
+        {post.type !== "note" && (
+          <div hidden={surfaceMode === "edit"}>
+            <PostActionBar
+              mode="read"
+              owner={canManagePost}
+              canCommentPost={canCommentPost}
+              canEditPost
+              canManagePost={canManagePost}
+              blog={blog}
+              post={displayPost}
+              adjacent={adjacent}
+              homePath={containingFolderHref}
+              postPath={renderedPostPath}
+              presencePeers={collab ? presencePeers : []}
+              onNavigate={navigateFromRead}
+            />
+            <SaveStatusPill saveState={saveState} error={error} />
+            <ReaderComponent blog={blog} post={displayPost} />
+          </div>
+        )}
         <div ref={editSurfaceRef} hidden={surfaceMode === "read"}>
           <PostActionBar
             mode="edit"

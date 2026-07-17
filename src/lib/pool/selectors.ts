@@ -32,6 +32,8 @@ export function narrowPostFromPost(
     slug: post.slug,
     title: post.title,
     excerpt: post.excerpt,
+    bodyPreview:
+      post.bodyPreview ?? (post.type === "note" ? post.body : undefined),
     accent: post.accent,
     cover: post.cover,
     coverCaption: post.coverCaption,
@@ -64,6 +66,7 @@ export function postFromPoolPost(
     slug: post.slug,
     title: post.title,
     excerpt: post.excerpt,
+    bodyPreview: post.bodyPreview,
     accent: post.accent,
     cover: post.cover,
     coverCaption: post.coverCaption,

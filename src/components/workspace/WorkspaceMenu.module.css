@@ -17,6 +17,10 @@
   background: transparent;
   color: var(--ac-label);
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
 
 .trigger:hover,
@@ -78,30 +82,6 @@
   padding: var(--ac-sp-3) var(--ac-sp-3) var(--ac-sp-2);
 }
 
-.primaryActions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 0 var(--ac-sp-3) var(--ac-sp-2);
-}
-
-.primaryAction {
-  min-height: 34px;
-  border: 1px solid var(--ac-separator);
-  border-radius: var(--ac-radius-control);
-  background: var(--ac-fill-4);
-  color: var(--ac-label);
-  font: 550 var(--ac-fs-footnote) / 1 var(--ac-font-text);
-  letter-spacing: 0;
-  cursor: pointer;
-}
-
-.primaryAction:hover,
-.primaryAction:focus-visible {
-  background: var(--ac-fill-3);
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
 
 .headerName,
 .headerEmail {
@@ -141,6 +121,11 @@
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
 }
 
 .menuItem:hover,
@@ -174,4 +159,12 @@
   color: var(--ac-label);
   font: 500 var(--ac-fs-subheadline) / 1 var(--ac-font-text);
   letter-spacing: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger,
+  .menuItem,
+  .signOutButton {
+    transition: none;
+  }
 }

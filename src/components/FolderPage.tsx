@@ -32,6 +32,7 @@ import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder, updatePost } from "@/lib/pool/store";
+import { workspaceMouseMoved } from "@/lib/workspace-hover";
 
 export type FolderCreateRequest =
   | { type: "article"; folderPath: string }
@@ -39,6 +40,13 @@ export type FolderCreateRequest =
   | {
       type: "bookmark";
       folderPath: string;
+      blank: true;
+      title?: string;
+    }
+  | {
+      type: "bookmark";
+      folderPath: string;
+      blank?: false;
       description?: string;
       url: string;
       title?: string;
@@ -218,15 +226,22 @@ function FolderEmptyCard({
   busy = false,
   children,
   onAction,
+  shortcutHint,
 }: {
   actionLabel?: ReactNode;
   busy?: boolean;
   children: string;
   onAction?: () => void;
+  shortcutHint?: string;
 }) {
   return (
     <article className="post-folder-page-card">
       <p>{children}</p>
+      {shortcutHint && (
+        <p className="post-folder-empty-shortcut">
+          Press <kbd>C</kbd> {shortcutHint}
+        </p>
+      )}
       {actionLabel && onAction && (
         <button
           type="button"
@@ -418,6 +433,7 @@ function FolderActionBar({
             <button
               type="button"
               className="ac-btn ac-btn-filled folder-action-create"
+              aria-keyshortcuts="C"
               onClick={onCreate}
             >
               <span className="shortcut-label"><span className="shortcut-letter">C</span>{createLabel.slice(1)}</span>
@@ -792,7 +808,9 @@ function NotesFolderContents({
       )}
       <section className="post-folder-page-items" aria-label="Notes">
         {notes.length === 0 ? (
-          <FolderEmptyCard>
+          <FolderEmptyCard
+            shortcutHint={canEditItems ? "to create a note." : undefined}
+          >
             Write your first private note.
           </FolderEmptyCard>
         ) : (
@@ -817,7 +835,14 @@ function NotesFolderContents({
                   tabIndex={selected ? 0 : -1}
                   data-workspace-post-id={note.id}
                   onFocus={() => note.id && onSelectPost?.(note.id)}
-                  onMouseEnter={() => note.id && onSelectPost?.(note.id)}
+                  onMouseMove={(event) => {
+                    if (
+                      note.id &&
+                      workspaceMouseMoved(event.clientX, event.clientY)
+                    ) {
+                      onSelectPost?.(note.id);
+                    }
+                  }}
                 >
                   <Link
                     className="post-folder-row"
@@ -1063,7 +1088,9 @@ function BookmarksFolderContents({
       )}
       <section className="post-folder-page-items" aria-label="Bookmarks">
         {bookmarks.length === 0 ? (
-          <FolderEmptyCard>
+          <FolderEmptyCard
+            shortcutHint={canCreateItems ? "to create a bookmark." : undefined}
+          >
             Save your first link.
           </FolderEmptyCard>
         ) : (
@@ -1184,8 +1211,10 @@ function BlogFolderContents({
       )}
       <section className="post-folder-page-items" aria-label="Folder items">
         {sorted.length === 0 ? (
-          <FolderEmptyCard>
-              Start the first article in this folder.
+          <FolderEmptyCard
+            shortcutHint={canEditItems ? "to create a post." : undefined}
+          >
+            Start the first post in this folder.
           </FolderEmptyCard>
         ) : (
           <div
@@ -1208,7 +1237,14 @@ function BlogFolderContents({
                   tabIndex={selected ? 0 : -1}
                   data-workspace-post-id={post.id}
                   onFocus={() => post.id && onSelectPost?.(post.id)}
-                  onMouseEnter={() => post.id && onSelectPost?.(post.id)}
+                  onMouseMove={(event) => {
+                    if (
+                      post.id &&
+                      workspaceMouseMoved(event.clientX, event.clientY)
+                    ) {
+                      onSelectPost?.(post.id);
+                    }
+                  }}
                 >
                   <PostCard
                     blog={blog}

@@ -20,6 +20,7 @@ import {
 } from "@/components/keyboard/CommandPalette";
 import {
   availableWorkspaceCommands,
+  shouldSuppressWorkspaceSingleKeyShortcut,
   shortcutList,
   shortcutMatches,
 } from "@/lib/commands/workspace";
@@ -29,6 +30,7 @@ import type {
   CommandWorkspaceSurface,
 } from "@/lib/commands/types";
 import { useWorkspacePool } from "@/lib/pool/store";
+import { disarmWorkspaceHover } from "@/lib/workspace-hover";
 
 export type KeyBinding = CommandShortcut & {
   label: string;
@@ -48,6 +50,12 @@ type ToastState = {
   message: string;
   action?: { label: string; run: () => void };
 };
+
+let activeEscapeLayerCount = 0;
+
+export function hasActiveEscapeLayer(): boolean {
+  return activeEscapeLayerCount > 0;
+}
 
 type CommandLayerValue = {
   registerKey: (binding: KeyBinding) => () => void;
@@ -113,6 +121,16 @@ export function CommandLayer({ children }: { children: ReactNode }) {
     [],
   );
 
+  useEffect(() => {
+    const disarm = () => disarmWorkspaceHover();
+    window.addEventListener("scroll", disarm, true);
+    window.addEventListener("popstate", disarm);
+    return () => {
+      window.removeEventListener("scroll", disarm, true);
+      window.removeEventListener("popstate", disarm);
+    };
+  }, []);
+
   const closePalette = useCallback(() => {
     setPaletteOpen(false);
     setShortcutsOpen(false);
@@ -176,10 +194,17 @@ export function CommandLayer({ children }: { children: ReactNode }) {
     };
     nextEscapeIdRef.current += 1;
     escapeStackRef.current = [...escapeStackRef.current, layer];
+    activeEscapeLayerCount += 1;
     return () => {
+      const wasActive = escapeStackRef.current.some(
+        (candidate) => candidate.id === layer.id,
+      );
       escapeStackRef.current = escapeStackRef.current.filter(
         (candidate) => candidate.id !== layer.id,
       );
+      if (wasActive) {
+        activeEscapeLayerCount = Math.max(0, activeEscapeLayerCount - 1);
+      }
     };
   }, []);
 
@@ -187,6 +212,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
     const layer = escapeStackRef.current.at(-1);
     if (!layer) return false;
     escapeStackRef.current = escapeStackRef.current.slice(0, -1);
+    activeEscapeLayerCount = Math.max(0, activeEscapeLayerCount - 1);
     layer.close();
     return true;
   }, []);
@@ -212,6 +238,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   const dispatchCommandShortcut = useCallback(
     (event: KeyboardEvent, typingTarget: boolean) => {
       const ctx = commandContext();
+      if (shouldSuppressWorkspaceSingleKeyShortcut(ctx, event)) return false;
       for (const command of availableWorkspaceCommands(ctx)) {
         const shortcut = shortcutList(command).find((candidate) =>
           shortcutMatches(candidate, event),
@@ -259,6 +286,12 @@ export function CommandLayer({ children }: { children: ReactNode }) {
       // do not let background shortcuts (scroll, navigation) fire behind it.
       if (paletteOpenRef.current) return;
 
+      // An open note is deliberately neutral until the user focuses an editor
+      // field. Printable keys must not leak into either command registry.
+      if (shouldSuppressWorkspaceSingleKeyShortcut(commandContext(), event)) {
+        return;
+      }
+
       if (!typingTarget && isKeyboardShortcutsKey(event)) {
         event.preventDefault();
         openShortcuts();
@@ -277,6 +310,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
   }, [
     dispatchCommandShortcut,
     dispatchRegisteredKey,
+    commandContext,
     openShortcuts,
     popEscapeLayer,
   ]);

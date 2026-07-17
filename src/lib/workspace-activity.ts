@@ -17,9 +17,9 @@ export function sidebarDocumentTitle(post: WorkspacePoolPost): string {
   return post.title.trim() || "Untitled";
 }
 
-export function localDateKey(value: string | undefined): string | null {
+export function localDateKey(value: string | Date | undefined): string | null {
   if (!value) return null;
-  const parsed = new Date(value);
+  const parsed = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(parsed.getTime())) return null;
   const year = parsed.getFullYear();
   const month = String(parsed.getMonth() + 1).padStart(2, "0");
@@ -154,18 +154,14 @@ export function groupDocumentsByCreatedDate(
 }
 
 export type CalendarDocumentAction =
-  | { kind: "none" }
-  | { kind: "open"; postId: string }
-  | { kind: "filter"; dateKey: string; postIds: string[] };
+  { kind: "search"; dateKey: string; postIds: string[] };
 
 export function calendarDocumentAction(
   date: string,
   documents: WorkspacePoolPost[],
 ): CalendarDocumentAction {
-  if (documents.length === 0) return { kind: "none" };
-  if (documents.length === 1) return { kind: "open", postId: documents[0].id };
   return {
-    kind: "filter",
+    kind: "search",
     dateKey: date,
     postIds: documents.map((post) => post.id),
   };

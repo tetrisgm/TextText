@@ -13,6 +13,8 @@ import {
   dynamicWorkspaceCommands,
   workspaceShortcutRows,
 } from "@/lib/commands/workspace";
+import { dedupePaletteEntries } from "@/lib/commands/palette";
+import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import type { AppCommand, CommandContext } from "@/lib/commands/types";
 import type {
   WorkspacePoolPayload,
@@ -112,18 +114,6 @@ type ShortcutSheetGroup = {
   group: string;
   rows: ShortcutSheetRow[];
 };
-
-// Reader line-scrolling reuses the selection keys (arrows and j / k) with a
-// context switch in the shell, so it has no standalone command. Surface it in
-// the sheet as its own row so the full reading scheme is discoverable.
-const READER_SCROLL_ROWS: ShortcutSheetRow[] = [
-  {
-    id: "read.scroll",
-    group: "Read",
-    label: "Scroll line by line",
-    shortcut: "↑ ↓ or J K",
-  },
-];
 
 function postResult(
   post: WorkspacePoolPost,
@@ -286,10 +276,15 @@ export function CommandPalette({
           ]
         : [];
 
-    return [...contextualFilter, ...commandRows, ...navigationRows]
-      .sort((a, b) => a.score - b.score || a.result.label.localeCompare(b.result.label))
-      .slice(0, 12)
-      .map((entry) => entry.result);
+    return dedupePaletteEntries(
+        [...contextualFilter, ...commandRows, ...navigationRows]
+          .sort(
+            (a, b) =>
+              a.score - b.score || a.result.label.localeCompare(b.result.label),
+          )
+          .slice(0, 12)
+          .map((entry) => entry.result),
+    );
   }, [ctx, pool, query]);
 
   const shortcutGroups = useMemo<ShortcutSheetGroup[]>(() => {
@@ -302,11 +297,8 @@ export function CommandPalette({
       "Workspace",
     ];
     const registryRows = workspaceShortcutRows();
-    const readRows = registryRows.filter((row) => row.group === "Read");
-    const otherRows = registryRows.filter((row) => row.group !== "Read");
-    const rows = [...otherRows, ...READER_SCROLL_ROWS, ...readRows];
     const byGroup = new Map<string, ShortcutSheetRow[]>();
-    for (const row of rows) {
+    for (const row of registryRows) {
       const list = byGroup.get(row.group);
       if (list) list.push(row);
       else byGroup.set(row.group, [row]);
@@ -391,7 +383,7 @@ export function CommandPalette({
                 className="command-sheet-done"
                 onClick={closeDialog}
               >
-                Done
+                Close
               </button>
             </div>
             <div className="command-sheet-columns" role="list">
@@ -460,7 +452,11 @@ export function CommandPalette({
                     }`}
                     role="option"
                     aria-selected={index === selectedIndex}
-                    onMouseEnter={() => setSelected(index)}
+                    onMouseMove={(event) => {
+                      if (workspaceMouseMoved(event.clientX, event.clientY)) {
+                        setSelected(index);
+                      }
+                    }}
                     onClick={() => {
                       closeDialog();
                       void Promise.resolve(result.run());

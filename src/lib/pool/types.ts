@@ -20,6 +20,7 @@ export type WorkspacePoolPost = {
   slug: string;
   title: string;
   excerpt?: string;
+  bodyPreview?: string;
   accent?: string;
   cover?: string;
   coverCaption?: string;

@@ -22,12 +22,45 @@
 }
 
 .examples {
-  margin: 6px 0 0;
-  padding: 0 0 0 16px;
+  margin-top: 6px;
   display: grid;
-  gap: 4px;
-  font: 500 var(--ac-fs-footnote) / 1.35 var(--ac-font-text);
+  gap: 5px;
+}
+
+.examples button {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
   letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.examples button:hover:not(:disabled) {
+  background: var(--ac-fill-3);
+}
+
+.examples button:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.examples button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .thread {
@@ -54,6 +87,10 @@
   font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
   letter-spacing: 0;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
 
 .quickAction:hover:not(:disabled) {
@@ -62,10 +99,6 @@
 
 .quickAction:focus-visible,
 .jobRow:focus-visible,
-.skillRemove:focus-visible,
-.skillInstallInput:focus-visible,
-.skillInstallButton:focus-visible,
-.skillsToggle:focus-visible,
 .proposalPrimary:focus-visible,
 .proposalSecondary:focus-visible {
   outline: none;
@@ -253,6 +286,9 @@
   background: transparent;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .jobRow:hover {
@@ -282,6 +318,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .examples button,
+  .quickAction,
+  .jobRow {
+    transition: none;
+  }
+
   .jobRow[data-status="running"] .jobDot {
     animation: none;
   }

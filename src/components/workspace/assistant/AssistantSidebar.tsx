@@ -4,12 +4,14 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type {
   ChangeEvent,
   CSSProperties,
+  FocusEvent as ReactFocusEvent,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import type { AssistantContext } from "./context";
 import styles from "./AssistantSidebar.module.css";
 
@@ -219,11 +221,10 @@ export function AssistantSidebar({
   const focusOnOpenRef = useRef(true);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const [resizing, setResizing] = useState(false);
-  // Hover-peek: approaching the collapsed right rail reveals the panel as an
-  // interactive overlay (mirrors the left sidebar's is-collapsed:hover). It
-  // retracts when the pointer leaves, unless focus moved inside, in which case
-  // it promotes to a persistent "open" so a mouse-out mid-edit is not jarring.
+  // Approaching the collapsed right rail reveals an interactive overlay. It
+  // retracts unless focus moves inside, which promotes it to persistent open.
   const [peeking, setPeeking] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
 
   const { resolvedMaxWidth, resolvedMinWidth, resolvedWidth } =
@@ -269,10 +270,14 @@ export function AssistantSidebar({
     else showAssistant();
   }, [hideAssistant, revealed, showAssistant]);
 
-  useEscapeLayer(revealed, "Assistant", () => {
-    if (peekingHidden) setPeeking(false);
-    else hideAssistant();
-  });
+  useEscapeLayer(
+    state === "open" || peekingHidden || (pinned && focusWithin),
+    "Assistant",
+    () => {
+      if (peekingHidden) setPeeking(false);
+      else hideAssistant();
+    },
+  );
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -422,10 +427,18 @@ export function AssistantSidebar({
   };
 
   const handlePanelFocus = () => {
+    setFocusWithin(true);
     if (!peekingHidden) return;
     focusOnOpenRef.current = false;
     setPeeking(false);
     onStateChange("open");
+  };
+
+  const handlePanelBlur = (event: ReactFocusEvent<HTMLElement>) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+      setFocusWithin(false);
+    }
   };
 
   return (
@@ -441,24 +454,30 @@ export function AssistantSidebar({
       onPointerLeave={handleRootPointerLeave}
     >
       {state === "hidden" && (
-        <button
-          ref={launcherRef}
-          className={styles.launcher}
-          type="button"
-          aria-controls={panelId}
-          aria-expanded="false"
-          aria-keyshortcuts="Meta+Shift+A Control+Shift+A"
-          aria-label={
-            launcherBusy ? "Open assistant (working)" : "Open assistant"
-          }
-          title={launcherBusy ? "Assistant is working" : "Open assistant"}
-          onClick={showAssistant}
+        <ShortcutTooltip
+          className={styles.launcherWrap}
+          label={launcherBusy ? "Assistant is working" : "Open assistant"}
+          keys="⌘⇧A"
+          placement="bottom"
         >
-          <SidebarIcon />
-          {launcherBusy && (
-            <span className={styles.launcherBusy} aria-hidden="true" />
-          )}
-        </button>
+          <button
+            ref={launcherRef}
+            className={styles.launcher}
+            type="button"
+            aria-controls={panelId}
+            aria-expanded="false"
+            aria-keyshortcuts="Meta+Shift+A Control+Shift+A"
+            aria-label={
+              launcherBusy ? "Open assistant (working)" : "Open assistant"
+            }
+            onClick={showAssistant}
+          >
+            <SidebarIcon />
+            {launcherBusy && (
+              <span className={styles.launcherBusy} aria-hidden="true" />
+            )}
+          </button>
+        </ShortcutTooltip>
       )}
 
       <aside
@@ -469,6 +488,7 @@ export function AssistantSidebar({
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : titleId}
         inert={revealed ? undefined : true}
+        onBlurCapture={handlePanelBlur}
         onFocusCapture={handlePanelFocus}
         onKeyDown={handlePanelKeyDown}
       >

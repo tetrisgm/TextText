@@ -26,6 +26,7 @@ import {
 } from "@/lib/cover";
 import { useCaptureStatus } from "./useCaptureStatus";
 import { updatePost } from "@/lib/pool/store";
+import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import styles from "./BookmarkCard.module.css";
 
 function classNames(...names: Array<string | false | undefined>): string {
@@ -377,7 +378,9 @@ export function BookmarkCard({
       tabIndex={optionTabIndex}
       data-workspace-post-id={post.id}
       onFocus={onSelect}
-      onMouseEnter={onSelect}
+      onMouseMove={(event) => {
+        if (workspaceMouseMoved(event.clientX, event.clientY)) onSelect?.();
+      }}
     >
       <div className={styles.body}>
         <Link
