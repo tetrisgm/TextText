@@ -795,6 +795,8 @@ public final class FileProviderExtension: NSObject,
                 ) {
                 case .failure(let error): done(nil, Self.nsError(from: error))
                 case .success(let initial):
+                    let core = makeCore(
+                        api, handle: handle, name: descriptorName(for: handle))
                     var created = initial
                     if hasLocalAssets, let packageContents {
                         guard let postId = initial.id, !postId.isEmpty,
@@ -828,11 +830,17 @@ public final class FileProviderExtension: NSObject,
                         filename, representation: representation)
                     guard let id = created.id, !created.hash.isEmpty,
                           !title.isEmpty, created.title != title else {
-                        done(Self.fileItem(created, parentId: parentId, handle: handle), nil); return
+                        await finishCreatedFile(
+                            created, parentId: parentId, handle: handle,
+                            core: core, done: done)
+                        return
                     }
                     guard !Task.isCancelled else { return }
                     switch await api.patchFile(postId: id, folderId: nil, slug: nil, title: title, ifMatch: created.hash) {
-                    case .success(let renamed): done(Self.fileItem(renamed, parentId: parentId, handle: handle), nil)
+                    case .success(let renamed):
+                        await finishCreatedFile(
+                            renamed, parentId: parentId, handle: handle,
+                            core: core, done: done)
                     case .failure(let error) where Self.canDefer(error):
                         // The body exists server-side. Keep that successful create
                         // and ask File Provider to retry only the title/filename.
@@ -842,12 +850,57 @@ public final class FileProviderExtension: NSObject,
                     case .failure:
                         // A permanent title rejection cannot be retried. Return the
                         // created server item so Finder adopts its authoritative name.
-                        done(Self.fileItem(created, parentId: parentId, handle: handle), nil)
+                        await finishCreatedFile(
+                            created, parentId: parentId, handle: handle,
+                            core: core, done: done)
                     }
                 }
             }
         }
         requestState.install(task)
+    }
+
+    /// A create completion and the next enumeration must describe the same
+    /// server item with the same version. In particular, mapping a POST/PATCH
+    /// response alone skips the enumerator's sibling-aware filename
+    /// disambiguation, so a duplicate title can return `Name.textpack` here but
+    /// `Name [id].textpack` from enumerateChanges. Because filename is part of
+    /// metadataVersion, File Provider then keeps the local create pending.
+    /// Re-read the parent through the canonical child path. When the committed
+    /// item is visible, return that exact enumerated value. A test double or a
+    /// briefly lagging read that omits it still gets the write response run
+    /// through the same sibling disambiguation before completion.
+    private func finishCreatedFile(
+        _ entry: WriteManifestItem, parentId: String, handle: String,
+        core: WorkspaceEnumerator,
+        done: @escaping (NSFileProviderItem?, (any Error)?) -> Void
+    ) async {
+        guard let responseItem = WriteItemMapper.item(
+            for: entry, inFolder: parentId, handle: handle, readOnly: false
+        ) else {
+            done(nil, Self.fpError(.cannotSynchronize))
+            return
+        }
+        switch await core.children(of: .folder(handle: handle, id: parentId)) {
+        case .failure(let error):
+            done(nil, Self.nsError(from: error))
+        case .success(let children):
+            if let canonical = children.first(where: {
+                $0.identifier == responseItem.identifier
+            }) {
+                done(WriteFileProviderItem(canonical), nil)
+                return
+            }
+            var canonicalChildren = children
+            canonicalChildren.append(responseItem)
+            let canonical = WriteFilename.disambiguate(canonicalChildren)
+                .first { $0.identifier == responseItem.identifier }
+            guard let canonical else {
+                done(nil, Self.fpError(.cannotSynchronize))
+                return
+            }
+            done(WriteFileProviderItem(canonical), nil)
+        }
     }
 
     // MARK: Modify (content edit, rename, move)

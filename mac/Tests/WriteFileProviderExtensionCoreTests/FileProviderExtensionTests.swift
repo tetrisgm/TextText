@@ -748,6 +748,57 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.createFileCalls.first?.idempotencyKey, "file:demo:tmp")
     }
 
+    func testCreateVersionConvergesWithEnumerationForCollidingTextPack() async throws {
+        let existing = Fixtures.item(
+            id: "p1", file: "posts/twin.textpack", kind: "note",
+            slug: "twin-one", title: "Twin", hash: "old-hash",
+            representation: .textpack)
+        let created = Fixtures.item(
+            id: "n9", file: "posts/twin.textpack", kind: "note",
+            slug: "twin-two", title: "Twin", hash: "new-hash",
+            representation: .textpack)
+        let api = FakeExtensionAPI(
+            workspace: Fixtures.workspace(), manifests: ["notes": [existing, created]])
+        api.createFileResult = .success(created)
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let package = try textBundle(
+            in: directory, filename: "Twin.textbundle",
+            markdown: "# Twin\n", assets: [:])
+        let textpack = try WriteTextBundlePackage.zipToTextPack(
+            packageURL: package, in: directory)
+        let template = fileItem(
+            id: "tmp", file: "Twin.textpack", folder: "notes",
+            representation: .textpack)
+
+        let returned: (filename: String?, content: Data?, metadata: Data?, error: String?) =
+            await withCheckedContinuation { continuation in
+                _ = ext(api, temporaryDirectory: directory).createItem(
+                    basedOn: template, fields: [.filename, .contents],
+                    contents: textpack, options: [], request: NSFileProviderRequest()
+                ) { item, _, _, error in
+                    continuation.resume(returning: (
+                        item?.filename,
+                        item?.itemVersion?.contentVersion,
+                        item?.itemVersion?.metadataVersion,
+                        error.map(String.init(describing:))))
+                }
+            }
+
+        XCTAssertNil(returned.error)
+        let enumerated = try await WorkspaceEnumerator(
+            api: api, handle: "demo", workspaceName: "Demo", readOnly: false
+        ).children(of: .folder(handle: "demo", id: "notes")).get()
+        let serverItem = try XCTUnwrap(enumerated.first {
+            $0.identifier == .file(handle: "demo", id: "n9")
+        })
+        let enumeratedVersion = WriteFileProviderItem(serverItem).itemVersion
+
+        XCTAssertEqual(returned.filename, "Twin [n9].textpack")
+        XCTAssertEqual(returned.content, enumeratedVersion.contentVersion)
+        XCTAssertEqual(returned.metadata, enumeratedVersion.metadataVersion)
+    }
+
     func testCreateTextBundleUploadsAssetsBeforeCommittingMarkdown() throws {
         let api = FakeExtensionAPI(workspace: Fixtures.workspace())
         api.createFileResult = .success(Fixtures.item(
