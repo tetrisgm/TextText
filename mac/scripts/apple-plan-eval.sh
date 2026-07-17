@@ -133,7 +133,7 @@ check "fp.embed" "File Provider: appex is embedded/signed in the release build" 
 check "fp.domain" "File Provider: app registers/removes an NSFileProviderDomain" \
   "grep -q 'NSFileProviderManager.add' '$MAC/Sources/Write/AppDelegate.swift'"
 check "fp.eager" "File Provider: every document is eagerly materialized and kept local" \
-  "grep -q 'downloadEagerlyAndKeepDownloaded' '$MAC/Sources/Write/MountBridge.swift' && grep -q 'All Markdown is downloaded and kept on this Mac' '$MAC/Sources/Write/FileProviderStatusMonitor.swift'"
+  "grep -q 'downloadEagerlyAndKeepDownloaded' '$MAC/Sources/WriteFileProviderBridge/WriteFileProviderItem.swift' && grep -q 'All Markdown is downloaded and kept on this Mac' '$MAC/Sources/Write/FileProviderStatusMonitor.swift'"
 check "fp.handoff" "File Provider: token handoff carries only the wsk_ bearer via the app group" \
   "test -f '$MAC/Sources/WriteFileProviderKit/FileProviderHandoff.swift'"
 check "fp.writes" "File Provider Phase 3: write path maps Finder edits to the sync API" \
