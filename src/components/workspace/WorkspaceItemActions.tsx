@@ -11,11 +11,12 @@ import { useRouter } from "next/navigation";
 import {
   deleteEditablePostAction,
   setEditablePostCreatedAtAction,
+  toggleEditablePostPinnedAction,
   toggleEditablePostStarredAction,
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
-import type { Blog, Post } from "@/lib/content";
+import { isPrivatePostType, type Blog, type Post } from "@/lib/content";
 import { updatePost } from "@/lib/pool/store";
 import { blogPostPath } from "@/lib/public-paths";
 
@@ -116,6 +117,35 @@ export function WorkspaceItemActions({
       .finally(() => setBusy(false));
   };
 
+  const togglePin = (event: MouseEvent<HTMLButtonElement>) => {
+    stop(event);
+    if (!post.id || busy) return;
+    const previous = Boolean(post.pinned);
+    const previousUpdatedAt = post.updatedAt;
+    setBusy(true);
+    setError(null);
+    updatePost(post.id, {
+      pinned: !previous,
+      updatedAt: new Date().toISOString(),
+    });
+    void toggleEditablePostPinnedAction(handle, post.id)
+      .then((saved) => {
+        updatePost(post.id!, {
+          pinned: saved.pinned,
+          updatedAt: saved.updatedAt,
+        });
+        setOpen(false);
+      })
+      .catch((actionError) => {
+        updatePost(post.id!, {
+          pinned: previous,
+          updatedAt: previousUpdatedAt,
+        });
+        setError(actionErrorMessage(actionError, "Could not update pin"));
+      })
+      .finally(() => setBusy(false));
+  };
+
   const share = (event: MouseEvent<HTMLButtonElement>) => {
     stop(event);
     const target = href ?? (blog ? blogPostPath(blog, post) : window.location.href);
@@ -202,6 +232,16 @@ export function WorkspaceItemActions({
           <button type="button" role="menuitem" disabled={busy} onClick={toggleStar}>
             {post.starred ? "Unstar" : "Star"}
           </button>
+          {!isPrivatePostType(post.type) && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={togglePin}
+            >
+              {post.pinned ? "Unpin from blog" : "Pin to blog"}
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={share}>
             {copied ? "Link copied" : "Share"}
           </button>
