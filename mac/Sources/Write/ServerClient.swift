@@ -36,6 +36,7 @@ struct ManifestItem: Codable {
     let createdAt: String?
     let updatedAt: String?
     let url: String?
+    var canonicalUrl: String? = nil
 }
 
 private struct ManifestEnvelope: Codable {

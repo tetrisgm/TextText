@@ -15,10 +15,18 @@ private struct CaptureExtractionResult: Decodable {
 @MainActor
 private final class CaptureFixtureNavigationDelegate: NSObject, WKNavigationDelegate {
     private var continuation: CheckedContinuation<Void, Error>?
+    private var timeoutTask: Task<Void, Never>?
 
     func load(_ html: String, in webView: WKWebView) async throws {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
+            timeoutTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled, let self, self.continuation != nil else {
+                    return
+                }
+                self.finish(.failure(URLError(.timedOut)))
+            }
             webView.navigationDelegate = self
             webView.loadHTMLString(
                 html,
@@ -28,8 +36,7 @@ private final class CaptureFixtureNavigationDelegate: NSObject, WKNavigationDele
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        continuation?.resume()
-        continuation = nil
+        finish(.success(()))
     }
 
     func webView(
@@ -37,8 +44,7 @@ private final class CaptureFixtureNavigationDelegate: NSObject, WKNavigationDele
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
-        continuation?.resume(throwing: error)
-        continuation = nil
+        finish(.failure(error))
     }
 
     func webView(
@@ -46,7 +52,13 @@ private final class CaptureFixtureNavigationDelegate: NSObject, WKNavigationDele
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
-        continuation?.resume(throwing: error)
+        finish(.failure(error))
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        continuation?.resume(with: result)
         continuation = nil
     }
 }
@@ -107,7 +119,11 @@ final class BookmarkCaptureRegressionTests: XCTestCase {
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1280, height: 900))
         let navigation = CaptureFixtureNavigationDelegate()
-        try await navigation.load(html, in: webView)
+        do {
+            try await navigation.load(html, in: webView)
+        } catch {
+            throw XCTSkip("WKWebView is unavailable in this test environment: \(error)")
+        }
         let value = try await webView.evaluateJavaScript(readableExtractionScript)
         let json = try XCTUnwrap(value as? String)
         let result = try JSONDecoder().decode(

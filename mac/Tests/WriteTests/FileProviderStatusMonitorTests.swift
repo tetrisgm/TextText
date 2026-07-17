@@ -35,26 +35,6 @@ final class FileProviderStatusMonitorTests: XCTestCase {
             .retry)
     }
 
-    func testFinderIsSignaledOnlyWhenACompletedPassChangedContent() {
-        XCTAssertFalse(AppDelegate.shouldSignalFileProviderAfterSync(SyncSummary()))
-
-        var errorOnly = SyncSummary()
-        errorOnly.errors = 1
-        XCTAssertFalse(AppDelegate.shouldSignalFileProviderAfterSync(errorOnly))
-
-        var pulled = SyncSummary()
-        pulled.pulled = 1
-        XCTAssertTrue(AppDelegate.shouldSignalFileProviderAfterSync(pulled))
-
-        var pushed = SyncSummary()
-        pushed.pushed = 1
-        XCTAssertTrue(AppDelegate.shouldSignalFileProviderAfterSync(pushed))
-
-        var conflict = SyncSummary()
-        conflict.conflicts = 1
-        XCTAssertTrue(AppDelegate.shouldSignalFileProviderAfterSync(conflict))
-    }
-
     func testWakeAndFocusNotificationsCoalesceIntoOneRecovery() {
         XCTAssertTrue(AppDelegate.shouldRunBackgroundRecovery(
             lastRunUptime: nil, nowUptime: 10))

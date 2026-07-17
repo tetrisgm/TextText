@@ -113,8 +113,38 @@ public final class WorkspaceFileCoordinator: NSObject, NSFilePresenter {
                 return .written
             }
         }
-        if let coordinationError { throw coordinationError }
-        return try result.get()
+        if let coordinationError {
+            if isLocalFilesystem(url) {
+                return try writeDataUncoordinated(
+                    data, to: url, ifUnchangedFrom: expectedData)
+            }
+            throw coordinationError
+        }
+        do {
+            return try result.get()
+        } catch {
+            if isLocalFilesystem(url) {
+                return try writeDataUncoordinated(
+                    data, to: url, ifUnchangedFrom: expectedData)
+            }
+            throw error
+        }
+    }
+
+    private func writeDataUncoordinated(
+        _ data: Data, to url: URL, ifUnchangedFrom expectedData: Data?
+    ) throws -> WorkspaceConditionalWriteResult {
+        let fileManager = FileManager.default
+        if let expectedData {
+            guard fileManager.fileExists(atPath: url.path),
+                  try Data(contentsOf: url) == expectedData else {
+                return .changed
+            }
+        } else if fileManager.fileExists(atPath: url.path) {
+            return .changed
+        }
+        try data.write(to: url, options: .atomic)
+        return .written
     }
 
     public func removeItem(at url: URL) throws {

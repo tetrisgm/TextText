@@ -1,15 +1,11 @@
 import Foundation
 import WriteFileProviderKit
 import WriteShareCore
-import WriteWorkspaceCore
 
 enum InboxFilerError: LocalizedError, Equatable {
     case missingURL
     case invalidURL(String)
     case missingAppendTarget
-    case documentNotFound(String)
-    case invalidMarkdown(String)
-    case missingPayload
 
     var errorDescription: String? {
         switch self {
@@ -19,12 +15,6 @@ enum InboxFilerError: LocalizedError, Equatable {
             return "The shared URL is invalid: \(value)"
         case .missingAppendTarget:
             return "Append requires a target Write document id"
-        case .documentNotFound(let id):
-            return "No Write document found for \(id)"
-        case .invalidMarkdown(let path):
-            return "\(path) is not valid UTF-8 markdown"
-        case .missingPayload:
-            return "The shared item did not include file data"
         }
     }
 }
@@ -49,11 +39,9 @@ enum PreparedInboxItem: Equatable {
 }
 
 final class InboxFiler {
-    let root: URL
     private let now: () -> Date
 
-    init(root: URL, now: @escaping () -> Date = { Date() }) {
-        self.root = root
+    init(now: @escaping () -> Date = { Date() }) {
         self.now = now
     }
 

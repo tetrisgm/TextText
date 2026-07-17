@@ -104,4 +104,38 @@ final class WorkspaceIntentActionsTests: XCTestCase {
             XCTAssertEqual($0 as? WorkspaceIntentError, .notSignedIn)
         }
     }
+
+    func testInvalidFolderPathsNeverFallBackToNotes() throws {
+        let (actions, server) = make()
+
+        XCTAssertThrowsError(
+            try actions.createDocument(
+                title: "Misfiled", folderPath: "Notes/Does Not Exist")
+        ) { error in
+            XCTAssertEqual(
+                error as? WorkspaceIntentError,
+                .invalidFolderPath("Notes/Does Not Exist"))
+        }
+        XCTAssertTrue(server.created.isEmpty)
+
+        let note = try actions.createDocument(
+            title: "Existing", folderPath: "Notes")
+        XCTAssertThrowsError(
+            try actions.moveDocument(id: note.id, toFolder: "Bogus")
+        ) { error in
+            XCTAssertEqual(
+                error as? WorkspaceIntentError,
+                .invalidFolderPath("Bogus"))
+        }
+        XCTAssertTrue(server.moved.isEmpty)
+
+        XCTAssertThrowsError(
+            try actions.createFolder(name: "Child", parentPath: "Bogus")
+        ) { error in
+            XCTAssertEqual(
+                error as? WorkspaceIntentError,
+                .invalidFolderPath("Bogus"))
+        }
+        XCTAssertTrue(server.createdFolders.isEmpty)
+    }
 }

@@ -485,9 +485,11 @@ final class FileProviderExtensionTests: XCTestCase {
             forKeys: [.isDirectoryKey]).isDirectory == true)
         let materializedItem = try XCTUnwrap(fetchedItem)
         XCTAssertNil(materializedItem.documentSize ?? nil)
-        XCTAssertEqual(
-            try XCTUnwrap(materializedItem.contentType).identifier,
-            WriteItem.textBundleTypeIdentifier)
+        let contentType = try XCTUnwrap(materializedItem.contentType)
+        XCTAssertTrue(contentType.conforms(to: .package))
+        XCTAssertTrue(
+            contentType == .package
+                || contentType.identifier == WriteItem.textBundleTypeIdentifier)
         let contents = try WriteTextBundlePackage.read(
             from: XCTUnwrap(fetchedURL), in: directory)
         XCTAssertEqual(contents.markdown, canonical)
@@ -498,6 +500,40 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(api.artifactDataCalls, 1)
         XCTAssertTrue(api.putCalls.isEmpty,
                       "materialization must never mutate canonical server Markdown")
+    }
+
+    func testTextpackFetchReturnsLeafWithExactArchiveSize() throws {
+        let api = FakeExtensionAPI(workspace: Fixtures.workspace())
+        api.manifests["notes"] = [Fixtures.item(
+            id: "p1", file: "posts/a.textpack", kind: "note", title: "A",
+            hash: "h1", representation: .textpack)]
+        api.fileTextResults = [
+            .success(WriteFileContent(text: "# A", hash: "h1")),
+        ]
+        let directory = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let exp = expectation(description: "fetch-textpack")
+        var fetchedURL: URL?
+        var fetchedItem: NSFileProviderItem?
+        var fetchedError: Error?
+
+        _ = ext(api, temporaryDirectory: directory).fetchContents(
+            for: NSFileProviderItemIdentifier(rawValue: "file:demo:p1"),
+            version: nil, request: NSFileProviderRequest()
+        ) { url, item, error in
+            fetchedURL = url; fetchedItem = item; fetchedError = error; exp.fulfill()
+        }
+        wait(for: [exp], timeout: 5)
+
+        XCTAssertNil(fetchedError)
+        let url = try XCTUnwrap(fetchedURL)
+        XCTAssertFalse(try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory ?? true)
+        let size = try XCTUnwrap(
+            url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        XCTAssertGreaterThan(size, 0)
+        let item = try XCTUnwrap(fetchedItem)
+        let documentSize = try XCTUnwrap(item.documentSize ?? nil)
+        XCTAssertEqual(documentSize.intValue, size)
     }
 
     func testFetchCancellationUsesUserCancelledErrorAndCompletesOnce() {
@@ -730,7 +766,7 @@ final class FileProviderExtensionTests: XCTestCase {
         let image = Data([0x89, 0x50, 0x4e, 0x47])
         let package = try textBundle(
             in: directory, filename: "My Note.textbundle",
-            markdown: "# My Note\n\n![Photo](assets/photo.png)",
+            markdown: "# My Note\n\n![Photo](./assets/photo.png)",
             assets: ["photo.png": image])
         let exp = expectation(description: "create-textbundle")
         var returnedError: NSError?

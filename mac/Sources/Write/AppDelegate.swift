@@ -9,10 +9,8 @@ import WriteWorkspaceCore
 
 /// Regular Dock app + a menu-bar status item (menu rebuilt on open, the
 /// partyparty shape; SwiftUI MenuBarExtra is deliberately avoided). The app
-/// is never walled behind sign-in: the local folder opens and edits fine
-/// signed out; only sync waits for a link.
+/// keeps the File Provider workspace and web app available from one process.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private static let syncRootKey = "WriteSyncRootPath"
     private static let loginItemAppliedKey = "WriteLoginItemDefaultApplied"
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
@@ -47,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var spotlightWatcher: WorkspaceFolderWatcher?
     private var spotlightIndexRootPath: String?
     private var spotlightIndexedIds = Set<String>()
-    private var spotlightIndexedHashes: [String: String] = [:]
+    private var spotlightIndexedSignatures: [String: String] = [:]
     // Spotlight indexes from the server manifest (the mount's .textpack bodies are
     // zipped and carry no writeId). Cache per-folder etags + items so an unchanged
     // folder is a cheap 304 and a transient failure reuses the last good list.
@@ -61,11 +59,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let shareInboxQueue = DispatchQueue(label: "com.example.write.mac.share-inbox", qos: .utility)
     private var activityLog: [String] = []
     private var wasBusy = false
-    private let workspaceLocationLock = NSLock()
-    private var workspaceLocation: WorkspaceLocation?
     // The one File Provider domain registered for the signed-in workspace, if any.
     private var registeredFileProviderDomain: NSFileProviderDomain?
     private let fileProviderStatusMonitor = FileProviderStatusMonitor()
+    // Main-thread generations for remote workspace metadata refreshes. A slower
+    // older response may fill the cache after a newer request fails, but may not
+    // overwrite a newer response that already landed.
+    private var workspaceMetadataRefreshGeneration: UInt64 = 0
+    private var workspaceMetadataAppliedGeneration: UInt64 = 0
     private var healthReporter: AppHealthReporter?
     private var fileProviderUserVisibleURL: URL?
     private var fileProviderDomainEpoch = 0
@@ -103,10 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = buildMainMenu()
 
         linkController = LinkController(store: store)
-        setWorkspaceLocation(syncRootLocation())
-        if let workspaceLocation = currentWorkspaceLocation(), !workspaceLocation.iCloudAvailable {
-            appendActivity(workspaceLocation.statusMessage)
-        }
         // Sole-writer cutover: the File Provider mount is the ONLY sync path in
         // the GUI. There is no legacy `~/Write` mirror engine here anymore (it
         // survives only for the headless CLI, which builds its own SyncEngine in
@@ -142,8 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncFileProviderDomain()
 
         // Near-instant remote sync: a change on the web (edit, delete, new
-        // bookmark) triggers a pass within seconds; the engine's 60s timer
-        // stays as the fallback. The capture agent rides the same signal.
+        // bookmark) triggers a pass within seconds. The capture agent rides the
+        // same signal.
         captureAgent = CaptureAgent(store: store)
         captureAgent.onActivity = { [weak self] message in self?.appendActivity(message) }
         changeListener = ChangeListener(store: store)
@@ -151,8 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.captureAgent.poke()
             // The File Provider mount is the sole writer: a remote change means
-            // re-materialize it (signal the enumerators + re-download).
-            self.signalFileProviderChange(serverReachable: true)
+            // re-materialize it and refresh the workspace metadata the retired
+            // SyncEngine used to keep current.
+            self.refreshWorkspaceMetadataAfterRemoteChange()
         }
         changeListener.start()
         captureAgent.start()
@@ -502,45 +500,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return nowUptime - lastRunUptime >= coalescingWindow
     }
 
-    static func shouldSignalFileProviderAfterSync(_ summary: SyncSummary) -> Bool {
-        summary.pulled > 0 || summary.pushed > 0 || summary.conflicts > 0
-    }
-
-    // MARK: Sync root
-
-    static func defaultSyncRoot() -> URL {
-        WorkspaceRootResolver().resolve().url
-    }
-
-    private func syncRootLocation() -> WorkspaceLocation {
-        if let path = UserDefaults.standard.string(forKey: Self.syncRootKey), !path.isEmpty {
-            let url = URL(fileURLWithPath: path, isDirectory: true)
-            return WorkspaceRootResolver(overrideRoot: url).resolve()
-        }
-        return WorkspaceRootResolver().resolve()
-    }
-
-    private func syncRoot() -> URL {
-        if let location = currentWorkspaceLocation() {
-            return location.url
-        }
-        let location = syncRootLocation()
-        setWorkspaceLocation(location)
-        return location.url
-    }
-
-    private func currentWorkspaceLocation() -> WorkspaceLocation? {
-        workspaceLocationLock.lock()
-        defer { workspaceLocationLock.unlock() }
-        return workspaceLocation
-    }
-
-    private func setWorkspaceLocation(_ location: WorkspaceLocation?) {
-        workspaceLocationLock.lock()
-        workspaceLocation = location
-        workspaceLocationLock.unlock()
-    }
-
     // MARK: Share inbox
 
     private func configureShareInbox() {
@@ -677,7 +636,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        let filer = InboxFiler(root: syncRoot())
+        let filer = InboxFiler()
         var filed = 0
         for record in records {
             do {
@@ -794,9 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.baseDir.appendingPathComponent("spotlight-index.json")
     }
 
-    /// Resolve the Spotlight root, then configure indexing against it. The
-    /// File Provider mount is the sole source now; the legacy syncRoot() mirror
-    /// is used only in the no-domain fallback (where the engine still writes it).
+    /// Resolve the File Provider root, then configure indexing against it.
     private func configureSpotlightIndexing() {
         resolveFileProviderRoot { [weak self] root in
             guard let self, let root else { return }
@@ -804,10 +761,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Resolve the workspace root Spotlight should index: the File Provider
-    /// user-visible mount when a domain owns the workspace, else the legacy
-    /// mirror when the engine is still the writer. Completion runs on the main
-    /// thread; nil means "nothing to index yet" (wait for materialization).
+    /// Completion runs on the main thread. nil means the domain has not
+    /// materialized yet.
     private func resolveFileProviderRoot(completion: @escaping (URL?) -> Void) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
@@ -845,9 +800,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             self.spotlightWatcher?.stop()
-            self.spotlightIndexer = WorkspaceSpotlightIndexer(root: root)
+            self.spotlightIndexer = WorkspaceSpotlightIndexer()
             self.spotlightIndexRootPath = rootPath
-            self.spotlightIndexedHashes = [:]
+            self.spotlightIndexedSignatures = [:]
             // Reconcile with what earlier runs indexed: a changed root drops
             // the whole domain; the same root seeds the known-id set so items
             // deleted while the app was not running get removed on the first
@@ -884,12 +839,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         spotlightQueue.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
-    /// spotlightQueue only. Incremental: rebuild the identity index directly
-    /// from the File Provider mount (each flat .md carries its own writeId), then
-    /// submit only added/changed/removed ids. A partial or evicted scan (any
-    /// unreadable file or unenumerable folder) sets healthy=false, which skips
-    /// removals and UNIONS the ids it did see with the prior set, so a cold or
-    /// half-materialized pass can never look like a mass deletion.
+    /// spotlightQueue only. Build the identity index from server manifests and
+    /// submit only added, changed, or removed ids. A partial manifest pass skips
+    /// removals and unions the ids it did see with the prior set.
     private func refreshSpotlightIndex() {
         guard let indexer = spotlightIndexer else { return }
         // Source of truth is the server manifest, not a file scan: the mount's
@@ -905,7 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         var documents: [WorkspaceSpotlightDocument] = []
-        var hashes: [String: String] = [:]
+        var signatures: [String: String] = [:]
         // A degenerate empty folder list must never compute removed = everything.
         var healthy = !workspace.folders.isEmpty
         for folder in workspace.folders {
@@ -927,28 +879,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for item in items {
                 guard let id = item.id, !id.isEmpty else { continue }
                 documents.append(makeSpotlightDocument(
-                    item: item, folder: folder, mountRoot: mountRoot))
-                hashes[id] = item.hash
+                    item: item, folder: folder, workspace: workspace,
+                    mountRoot: mountRoot))
+                signatures[id] = Self.spotlightSignature(
+                    item: item, folder: folder, workspace: workspace)
             }
         }
 
-        let currentIds = Set(hashes.keys)
+        let currentIds = Set(signatures.keys)
         let changed = documents.filter {
-            spotlightIndexedHashes[$0.writeId] != hashes[$0.writeId]
+            spotlightIndexedSignatures[$0.writeId] != signatures[$0.writeId]
         }
         // Only a fully-healthy pass may remove ids, so a transient manifest
         // failure never drops still-present posts.
         let removed = healthy ? spotlightIndexedIds.subtracting(currentIds) : []
         if !removed.isEmpty {
             indexer.remove(ids: Array(removed))
-            // Forget removed hashes so a reappearing id (unchanged hash) reindexes.
-            for id in removed { spotlightIndexedHashes[id] = nil }
+            // Forget removed signatures so a reappearing id is indexed again.
+            for id in removed { spotlightIndexedSignatures[id] = nil }
         }
         if !changed.isEmpty { indexer.indexDocuments(changed) }
 
         let knownIds = healthy ? currentIds : spotlightIndexedIds.union(currentIds)
         spotlightIndexedIds = knownIds
-        for (id, hash) in hashes { spotlightIndexedHashes[id] = hash }
+        for (id, signature) in signatures {
+            spotlightIndexedSignatures[id] = signature
+        }
         let persisted = SpotlightPersistedState(
             rootPath: spotlightIndexRootPath ?? "",
             indexedIds: Array(knownIds)
@@ -963,10 +919,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// manifest (title/kind/status/slug); a Spotlight click routes by writeId to
     /// openWriteItem(id:), so no on-disk body or resolved URL is required.
     private func makeSpotlightDocument(
-        item: ManifestItem, folder: WorkspaceFolder, mountRoot: URL?
+        item: ManifestItem, folder: WorkspaceFolder, workspace: Workspace,
+        mountRoot: URL?
     ) -> WorkspaceSpotlightDocument {
-        let relativePath = folder.path.isEmpty
-            ? item.file : "\(folder.path)/\(item.file)"
+        let relativePath = Self.spotlightRelativePath(
+            item: item, folder: folder, workspace: workspace)
         let fileURL = (mountRoot ?? URL(fileURLWithPath: "/"))
             .appendingPathComponent(relativePath)
         let markdown = """
@@ -975,6 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         kind: \(jsonEncodedString(item.kind))
         status: \(jsonEncodedString(item.status))
         slug: \(jsonEncodedString(item.slug))
+        canonical_url: \(jsonEncodedString(item.canonicalUrl ?? ""))
         ---
         """
         return WorkspaceSpotlightDocument(
@@ -985,6 +943,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             relativePath: relativePath,
             fileURL: fileURL,
             markdown: markdown)
+    }
+
+    /// Spotlight metadata changes when an item moves even if its Markdown hash
+    /// does not. Include every manifest field used to build the searchable item,
+    /// plus its reconstructed File Provider path.
+    static func spotlightSignature(
+        item: ManifestItem, folder: WorkspaceFolder, workspace: Workspace
+    ) -> String {
+        [
+            item.hash, item.title, item.kind, item.status, item.slug,
+            item.canonicalUrl ?? "", folder.id,
+            spotlightRelativePath(item: item, folder: folder, workspace: workspace),
+        ].map { "\($0.utf8.count):\($0)" }.joined()
+    }
+
+    /// Reconstruct the File Provider mount path from user-visible workspace,
+    /// folder, and title components. The sync manifest's `posts/<slug>` path is
+    /// a transport path and does not exist in Finder.
+    static func spotlightRelativePath(
+        item: ManifestItem, folder: WorkspaceFolder, workspace: Workspace
+    ) -> String {
+        let foldersById = Dictionary(
+            uniqueKeysWithValues: workspace.folders.map { ($0.id, $0) })
+        var chain: [String] = []
+        var current: WorkspaceFolder? = folder
+        var visited = Set<String>()
+        while let value = current, visited.insert(value.id).inserted {
+            chain.append(WriteFilename.encodeComponent(value.name))
+            current = value.parentId.flatMap { foldersById[$0] }
+        }
+        let representation = WriteFileRepresentation.inferred(
+            fromFilename: item.file) ?? .textpack
+        let filename = WriteFilename.filename(
+            title: item.title, slug: item.slug, representation: representation)
+        let workspaceName = WriteFilename.encodeComponent(workspace.blog.name)
+        return ([workspaceName] + Array(chain.reversed()) + [filename])
+            .joined(separator: "/")
     }
 
     private func jsonEncodedString(_ value: String) -> String {
@@ -1152,6 +1147,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: File Provider domain
+
+    /// Signal content immediately, then refresh account.json from the server.
+    /// The GUI no longer runs SyncEngine, so without this refresh newly-created
+    /// folders and workspace renames remain absent from Spotlight and the File
+    /// Provider handoff until the app relaunches.
+    private func refreshWorkspaceMetadataAfterRemoteChange() {
+        signalFileProviderChange(serverReachable: true)
+        guard let credentials = store.loadCredentials() else { return }
+
+        workspaceMetadataRefreshGeneration &+= 1
+        let generation = workspaceMetadataRefreshGeneration
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let client = ServerClient(
+                origin: resolveServerOrigin(credentials: credentials),
+                token: credentials.token)
+            guard case .success(let (_, data)) = client.workspace() else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      generation > self.workspaceMetadataAppliedGeneration,
+                      let current = self.store.loadCredentials(),
+                      current.token == credentials.token,
+                      current.serverOrigin == credentials.serverOrigin else { return }
+                self.workspaceMetadataAppliedGeneration = generation
+                self.store.cacheWorkspace(data)
+                // Refresh the extension handoff, including workspace name and
+                // folder-aware signals, then rebuild Spotlight from live metadata.
+                self.syncFileProviderDomain(signalExistingDomain: true)
+                self.scheduleSpotlightReindex()
+                self.refreshUI()
+            }
+        }
+    }
 
     /// One stable "Write" File Provider domain now spans every workspace: the
     /// root lists a folder per workspace, so the Finder Locations entry is a
@@ -1982,7 +2010,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         importExternalNote(ExternalNoteImport(
             title: "Untitled",
             body: "",
-            representation: .textbundle,
+            representation: .textpack,
             idempotencyKey: "new-note:\(UUID().uuidString)"
         ))
     }

@@ -135,8 +135,10 @@ final class BridgeTests: XCTestCase {
 
         let textbundle = WriteFileProviderItem(fileItem(representation: .textbundle))
         XCTAssertEqual(textbundle.filename, "Hello.textbundle")
-        XCTAssertEqual(textbundle.contentType.identifier, WriteItem.textBundleTypeIdentifier)
         XCTAssertTrue(textbundle.contentType.conforms(to: .package))
+        XCTAssertTrue(
+            textbundle.contentType == .package
+                || textbundle.contentType.identifier == WriteItem.textBundleTypeIdentifier)
 
         let textpack = WriteFileProviderItem(fileItem(representation: .textpack))
         XCTAssertEqual(textpack.filename, "Hello.textpack")

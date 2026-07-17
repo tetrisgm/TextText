@@ -39,7 +39,7 @@ final class WriteShareCoreTests: XCTestCase {
     }
 
     func testPrepareRendersEachKindForServerCreation() throws {
-        let filer = InboxFiler(root: try temporaryDirectory(), now: fixedDate)
+        let filer = InboxFiler(now: fixedDate)
 
         // Note -> create in the notes folder; server assigns the id, so none is
         // injected into the body.
@@ -86,7 +86,7 @@ final class WriteShareCoreTests: XCTestCase {
     }
 
     func testPrepareAppendCarriesTargetAndText() throws {
-        let filer = InboxFiler(root: try temporaryDirectory(), now: fixedDate)
+        let filer = InboxFiler(now: fixedDate)
         guard case let .append(targetWriteId, text) =
             try filer.prepare(record(InboxItem(
                 kind: .append, text: "Appended body", targetWriteId: "target-id")))
@@ -96,7 +96,7 @@ final class WriteShareCoreTests: XCTestCase {
     }
 
     func testPrepareUsesRecordIdForIdempotency() throws {
-        let filer = InboxFiler(root: try temporaryDirectory(), now: fixedDate)
+        let filer = InboxFiler(now: fixedDate)
         let item = InboxItem(kind: .note, title: "Same", text: "New")
         let keyA = createKey(try filer.prepare(record(item, id: "rec-1")))
         let keyB = createKey(try filer.prepare(record(item, id: "rec-1")))

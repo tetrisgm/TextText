@@ -34,6 +34,23 @@ final class DocumentAssetsTests: XCTestCase {
             canonical)
     }
 
+    func testCanonicalMarkdownDoesNotRewriteInsideInsertedOrExistingURLs() {
+        let short =
+            "https://write.public.blob.vercel-storage.com/documents/demo/post-1/assets/photo.png"
+        let long =
+            "https://write.public.blob.vercel-storage.com/documents/demo/post-1/assets/photo.png.png"
+        let local = "![A](./assets/photo.png)\n![B](assets/photo.png.png)\n![C](\(short))\n![D](assets/photo.png.bak)"
+
+        let canonical = WriteDocumentAssets.canonicalMarkdown(
+            local: local,
+            remoteURLsByFilename: ["photo.png": short, "photo.png.png": long])
+
+        XCTAssertEqual(
+            canonical,
+            "![A](\(short))\n![B](\(long))\n![C](\(short))\n![D](assets/photo.png.bak)")
+        XCTAssertFalse(canonical.contains("/post-1/https://"))
+    }
+
     func testValidationRejectsForeignDuplicateScreenshotAndUnsafeAssets() {
         let manifest = WriteArtifactManifest(
             postId: "post-1", slug: "bookmark", fileHash: "hash-1",

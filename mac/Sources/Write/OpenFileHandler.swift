@@ -4,12 +4,6 @@ import WriteFileProviderKit
 import WriteShareCore
 import WriteWorkspaceCore
 
-enum OpenFileKind: Equatable {
-    case workspace
-    case external
-    case unsupported
-}
-
 struct WriteItemOpenTarget: Equatable {
     let handle: String
     let itemId: String?
@@ -58,25 +52,12 @@ struct ExternalNoteImport: Equatable {
 /// Classifies files delivered by Launch Services. Write workspace files retain
 /// their metadata-aware behavior, while ordinary text files open literally.
 enum OpenFileHandler {
-    static func kind(for url: URL, syncRoot: URL) -> OpenFileKind {
-        guard supportedExtensions.contains(url.pathExtension.lowercased()) else {
-            return .unsupported
-        }
-        if let relativePath = WorkspaceLayout.relativePath(for: url, under: syncRoot) {
-            return WorkspaceLayout.isInternal(relativePath: relativePath)
-                ? .unsupported
-                : .workspace
-        }
-        return .external
-    }
-
     static func isWriteFileProviderItem(_ rawIdentifier: String?) -> Bool {
         writeFileProviderReference(rawIdentifier) != nil
     }
 
-    /// Whether a file's extension is one Write can open at all. The old
-    /// syncRoot()/kind() workspace-vs-external split is gone (the File Provider
-    /// now decides ownership); callers use this only to reject unsupported types.
+    /// Whether a file's extension is one Write can open at all. File Provider
+    /// decides whether a supported file is managed or an external import.
     static func isSupported(_ url: URL) -> Bool {
         supportedExtensions.contains(url.pathExtension.lowercased())
     }

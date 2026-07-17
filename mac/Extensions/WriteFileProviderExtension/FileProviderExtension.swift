@@ -346,10 +346,14 @@ public final class FileProviderExtension: NSObject,
                             let textpackURL = try WriteTextBundlePackage.zipToTextPack(
                                 packageURL: package.url, in: dir)
                             try? FileManager.default.removeItem(at: package.url)
-                            let zipped = (try? Data(contentsOf: textpackURL))?.count
+                            guard let zipped = try textpackURL.resourceValues(
+                                forKeys: [.fileSizeKey]).fileSize else {
+                                throw WriteTextBundleError.invalidPackage(
+                                    "Textpack size is unavailable")
+                            }
                             destination = textpackURL
                             materializedSize = zipped
-                            deliveredByteCount = zipped ?? package.logicalSize
+                            deliveredByteCount = zipped
                         } else {
                             // File Provider owns package transport. Returning the real
                             // directory lets the framework preserve package semantics;
@@ -1249,6 +1253,7 @@ public final class FileProviderExtension: NSObject,
         api: WriteSyncAPI
     ) async -> Result<String, WriteSyncError> {
         var markdown = contents.markdown
+        var remoteURLsByFilename: [String: String] = [:]
         for asset in contents.assets
             .filter({ $0.remoteURL == nil })
             .sorted(by: { $0.filename < $1.filename }) {
@@ -1275,12 +1280,10 @@ public final class FileProviderExtension: NSObject,
                     url, handle: handle, postId: postId) else {
                 return .failure(.rejected("Server returned an invalid asset URL"))
             }
-            let relative = "assets/\(asset.filename)"
-            markdown = markdown.replacingOccurrences(
-                of: "./\(relative)", with: uploaded.url)
-            markdown = markdown.replacingOccurrences(
-                of: relative, with: uploaded.url)
+            remoteURLsByFilename[asset.filename] = uploaded.url
         }
+        markdown = WriteDocumentAssets.canonicalMarkdown(
+            local: markdown, remoteURLsByFilename: remoteURLsByFilename)
         return .success(markdown)
     }
 

@@ -22,29 +22,10 @@ public struct WorkspaceSpotlightDocument: Equatable {
 public final class WorkspaceSpotlightIndexer {
     public static let domainIdentifier = "write-workspace"
 
-    public let root: URL
     private let index: CSSearchableIndex
-    private let coordinator: WorkspaceFileCoordinator
 
-    public init(root: URL, index: CSSearchableIndex = .default()) {
-        self.root = root
+    public init(index: CSSearchableIndex = .default()) {
         self.index = index
-        self.coordinator = WorkspaceFileCoordinator(rootURL: root)
-    }
-
-    public func reindex(entries: [String: IndexEntry], completion: ((Error?) -> Void)? = nil) {
-        guard CSSearchableIndex.isIndexingAvailable() else {
-            completion?(nil)
-            return
-        }
-        let items = entries.compactMap { writeId, entry -> CSSearchableItem? in
-            makeSearchableItem(writeId: writeId, entry: entry)
-        }
-        guard !items.isEmpty else {
-            completion?(nil)
-            return
-        }
-        index.indexSearchableItems(items) { error in completion?(error) }
     }
 
     /// Index pre-built documents whose metadata comes from the server manifest
@@ -84,34 +65,6 @@ public final class WorkspaceSpotlightIndexer {
         index.deleteSearchableItems(withDomainIdentifiers: [Self.domainIdentifier]) { error in
             completion?(error)
         }
-    }
-
-    public func makeSearchableItem(writeId: String, entry: IndexEntry) -> CSSearchableItem? {
-        guard !WorkspaceLayout.isInternal(relativePath: entry.relativePath) else { return nil }
-        let url = root.appendingPathComponent(entry.relativePath)
-        // Indexing must never force-download an evicted iCloud file, and an
-        // unreadable or evicted file is still a real item: fall back to a
-        // metadata-only entry instead of dropping it.
-        let markdown: String
-        switch coordinator.materializationState(for: url) {
-        case .local, .current, .downloaded, .unknown:
-            if let data = try? coordinator.readData(at: url),
-               let text = String(data: data, encoding: .utf8) {
-                markdown = text
-            } else {
-                markdown = ""
-            }
-        case .notDownloaded, .downloading, .failed:
-            markdown = ""
-        }
-        let document = WorkspaceSpotlightDocument(
-            writeId: writeId,
-            entry: entry,
-            relativePath: entry.relativePath,
-            fileURL: url,
-            markdown: markdown
-        )
-        return Self.searchableItem(for: document)
     }
 
     public static func searchableItem(for document: WorkspaceSpotlightDocument) -> CSSearchableItem? {

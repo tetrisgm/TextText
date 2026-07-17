@@ -51,6 +51,35 @@ public enum WriteDocumentAssets {
         transform(local, manifest: manifest, handle: handle, toLocal: false)
     }
 
+    /// Replace package-local asset references without matching the same path
+    /// inside an already-absolute URL. In particular, replacing `./assets/x`
+    /// and then `assets/x` naively rewrites the hosted URL inserted by the first
+    /// pass. Sorting longest names first also keeps prefix-sharing filenames
+    /// from consuming one another.
+    public static func canonicalMarkdown(
+        local: String, remoteURLsByFilename: [String: String]
+    ) -> String {
+        var result = local
+        let mappings = remoteURLsByFilename.sorted {
+            if $0.key.count != $1.key.count { return $0.key.count > $1.key.count }
+            return $0.key < $1.key
+        }
+        for (filename, remoteURL) in mappings {
+            guard isSafeFilename(filename) else { continue }
+            let escaped = NSRegularExpression.escapedPattern(for: filename)
+            guard let expression = try? NSRegularExpression(
+                pattern: "(?<![A-Za-z0-9_./:-])(?:\\./)?assets/\(escaped)(?=$|[^A-Za-z0-9_.-])"
+            ) else { continue }
+            let matches = expression.matches(
+                in: result, range: NSRange(result.startIndex..., in: result))
+            for match in matches.reversed() {
+                guard let range = Range(match.range, in: result) else { continue }
+                result.replaceSubrange(range, with: remoteURL)
+            }
+        }
+        return result
+    }
+
     public static func isSafeFilename(_ filename: String) -> Bool {
         guard !filename.isEmpty, filename != ".", filename != "..",
               filename.utf8.count <= 255,
@@ -94,11 +123,13 @@ public enum WriteDocumentAssets {
             let relative = "assets/\(artifact.filename)"
             if toLocal {
                 result = result.replacingOccurrences(of: artifact.url, with: relative)
-            } else {
-                result = result.replacingOccurrences(
-                    of: "./\(relative)", with: artifact.url)
-                result = result.replacingOccurrences(of: relative, with: artifact.url)
             }
+        }
+        if !toLocal {
+            result = canonicalMarkdown(
+                local: result,
+                remoteURLsByFilename: Dictionary(
+                    uniqueKeysWithValues: artifacts.map { ($0.filename, $0.url) }))
         }
         return result
     }

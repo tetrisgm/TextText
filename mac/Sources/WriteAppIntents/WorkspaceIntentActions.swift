@@ -136,20 +136,25 @@ public struct WorkspaceIntentActions {
         let server = try requireServer()
         let folders = try server.folders()
         let (folder, kind) = targetFolder(for: folderPath, folders: folders, defaultMode: "notes")
+        guard let folder else {
+            throw WorkspaceIntentError.invalidFolderPath(folderPath ?? "Notes")
+        }
         let slug = slugForTitle(trimmedTitle)
         let date = isoString(now())
         let markdown = renderMarkdown(
             title: trimmedTitle, slug: slug, kind: kind, status: "draft",
             createdAt: date, updatedAt: date, extraFrontMatter: [:], body: body)
         let item = try server.createDocument(
-            body: markdown, folderId: folder?.id, idempotencyKey: nil)
+            body: markdown, folderId: folder.id, idempotencyKey: nil)
         return record(from: item, folder: folder, folders: folders)
     }
 
     public func createBookmark(from url: URL, title: String? = nil) throws -> WorkspaceDocumentRecord {
         let server = try requireServer()
         let folders = try server.folders()
-        let folder = folders.first { $0.mode == "bookmarks" }
+        guard let folder = folders.first(where: { $0.mode == "bookmarks" }) else {
+            throw WorkspaceIntentError.invalidFolderPath("Bookmarks")
+        }
         let date = now()
         let displayTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -168,7 +173,7 @@ public struct WorkspaceIntentActions {
             rawFrontMatterLines: ["links: \(linksJSON)"],
             body: "[\(displayTitle)](\(url.absoluteString))\n")
         let item = try server.createDocument(
-            body: markdown, folderId: folder?.id, idempotencyKey: nil)
+            body: markdown, folderId: folder.id, idempotencyKey: nil)
         return record(from: item, folder: folder, folders: folders)
     }
 
@@ -177,7 +182,9 @@ public struct WorkspaceIntentActions {
         guard !trimmed.isEmpty else { throw WorkspaceIntentError.emptyFolderName }
         let server = try requireServer()
         let folders = try server.folders()
-        let parent = resolveParentPath(parentPath, folders: folders)
+        guard let parent = resolveParentPath(parentPath, folders: folders) else {
+            throw WorkspaceIntentError.invalidFolderPath(parentPath ?? "Notes")
+        }
         let created = try server.createFolder(
             parentPath: parent, name: trimmed, idempotencyKey: nil)
         return folderRecord(from: created)
@@ -375,34 +382,44 @@ public struct WorkspaceIntentActions {
         for folderPath: String?, folders: [WorkspaceServerFolder], defaultMode: String
     ) -> (WorkspaceServerFolder?, String) {
         let raw = folderPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        // Prefer an exact server path match (so "notes"/"blog" resolve directly);
-        // otherwise map the leading component to a system mode.
+        // Prefer an exact server path match. A single system-folder alias is
+        // accepted too, but a nonexistent nested path must not fall back.
+        if raw.isEmpty {
+            let folder = folders.first { $0.mode == defaultMode }
+            return (folder, kindForMode(defaultMode))
+        }
         if !raw.isEmpty, let exact = folders.first(where: { $0.path.lowercased() == raw.lowercased() }) {
             return (exact, kindForMode(exact.mode))
         }
-        let mode = modeForFolderPath(raw, defaultMode: defaultMode)
+        guard let mode = systemModeAlias(raw) else {
+            return (nil, kindForMode(defaultMode))
+        }
         let folder = folders.first { $0.mode == mode }
         return (folder, kindForMode(mode))
     }
 
-    private func resolveParentPath(_ raw: String?, folders: [WorkspaceServerFolder]) -> String {
+    private func resolveParentPath(
+        _ raw: String?, folders: [WorkspaceServerFolder]
+    ) -> String? {
         let path = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if path.isEmpty { return folders.first { $0.mode == "notes" }?.path ?? "notes" }
+        if path.isEmpty { return folders.first { $0.mode == "notes" }?.path }
         if let exact = folders.first(where: { $0.path.lowercased() == path.lowercased() }) {
             return exact.path
         }
-        let mode = modeForFolderPath(path, defaultMode: "notes")
-        return folders.first { $0.mode == mode }?.path ?? path.lowercased()
+        guard let mode = systemModeAlias(path) else { return nil }
+        return folders.first { $0.mode == mode }?.path
     }
 
-    private func modeForFolderPath(_ path: String, defaultMode: String) -> String {
-        let first = path.split(separator: "/", omittingEmptySubsequences: true)
-            .first.map(String.init)?.lowercased() ?? ""
-        switch first {
+    private func systemModeAlias(_ path: String) -> String? {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard components.count == 1, let component = components.first else {
+            return nil
+        }
+        switch component.lowercased() {
         case "notes": return "notes"
         case "bookmarks": return "bookmarks"
         case "blogs", "blog", "drafts": return "blog"
-        default: return defaultMode
+        default: return nil
         }
     }
 

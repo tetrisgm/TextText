@@ -33,11 +33,10 @@ struct ChangeListenerBackoff {
 /// Near-instant remote sync: long-polls GET /api/sync/v1/changes and fires
 /// `onRemoteChange` whenever the workspace's change cursor moves, so a post
 /// deleted or edited on the web reaches this Mac within a couple of seconds
-/// instead of waiting for the 60s timer (which stays as the fallback).
+/// instead of waiting for a periodic refresh.
 ///
 /// Self-contained on purpose: it keeps its own URLSession and reads
-/// credentials per cycle, so it never contends with SyncEngine/ServerClient
-/// edits and simply idles (10s recheck) while the app is unlinked.
+/// credentials per cycle and simply idles (10s recheck) while the app is unlinked.
 final class ChangeListener {
     /// Called on the main queue whenever the cursor moves.
     var onRemoteChange: (() -> Void)?

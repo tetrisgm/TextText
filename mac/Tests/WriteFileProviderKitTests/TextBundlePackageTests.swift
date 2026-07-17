@@ -60,6 +60,26 @@ final class TextBundlePackageTests: XCTestCase {
         XCTAssertEqual(decoded.assets.first?.remoteURL, remoteURL)
     }
 
+    func testReadCanonicalizesDotSlashAssetReferenceExactlyOnce() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let remoteURL = "https://example.public.blob.vercel-storage.com/documents/demo/post/assets/p.png"
+        let package = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: "![P](\(remoteURL))",
+            assets: [.init(
+                filename: "p.png", data: Data([1, 2, 3]),
+                remoteURL: remoteURL, contentType: "image/png")],
+            sourceURL: nil, in: root)
+        let textURL = package.url.appendingPathComponent("text.md")
+        try Data("![P](./assets/p.png)".utf8).write(to: textURL)
+
+        let decoded = try WriteTextBundlePackage.read(from: package.url, in: root)
+
+        XCTAssertEqual(decoded.markdown, "![P](\(remoteURL))")
+    }
+
     func testReadRejectsUnsupportedInfo() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

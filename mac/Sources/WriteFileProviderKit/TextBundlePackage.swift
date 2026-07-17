@@ -173,6 +173,12 @@ public enum WriteTextBundlePackage {
 
     public static func read(from suppliedURL: URL, in temporaryDirectory: URL) throws
         -> WriteTextBundleContents {
+        var extractionRootToRemove: URL?
+        defer {
+            if let extractionRootToRemove {
+                try? FileManager.default.removeItem(at: extractionRootToRemove)
+            }
+        }
         let packageRoot: URL
         let values = try suppliedURL.resourceValues(forKeys: [.isDirectoryKey])
         if values.isDirectory == true {
@@ -180,6 +186,7 @@ public enum WriteTextBundlePackage {
         } else {
             let extractionRoot = temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            extractionRootToRemove = extractionRoot
             try FileManager.default.createDirectory(
                 at: extractionRoot, withIntermediateDirectories: true)
             try extractArchive(at: suppliedURL, to: extractionRoot)
@@ -196,11 +203,12 @@ public enum WriteTextBundlePackage {
         }
 
         let markdownData = try Data(contentsOf: markdownURL)
-        guard var markdown = String(data: markdownData, encoding: .utf8) else {
+        guard let markdown = String(data: markdownData, encoding: .utf8) else {
             throw WriteTextBundleError.invalidPackage("text.md is not UTF-8")
         }
         var logicalSize = markdownData.count + (try Data(contentsOf: infoURL)).count
         var assets: [WriteTextBundleAsset] = []
+        var remoteURLsByFilename: [String: String] = [:]
         let assetsURL = packageRoot.appendingPathComponent("assets", isDirectory: true)
         let assetURLs = (try? FileManager.default.contentsOfDirectory(
             at: assetsURL,
@@ -219,10 +227,7 @@ public enum WriteTextBundlePackage {
                 $0 == WriteStableDigest.sha256Hex(data)
             } ?? (mapping != nil)
             if matchesRemote, let remoteURL = mapping?.url {
-                markdown = markdown.replacingOccurrences(
-                    of: "./assets/\(assetURL.lastPathComponent)", with: remoteURL)
-                markdown = markdown.replacingOccurrences(
-                    of: "assets/\(assetURL.lastPathComponent)", with: remoteURL)
+                remoteURLsByFilename[assetURL.lastPathComponent] = remoteURL
             }
             assets.append(WriteTextBundleAsset(
                 filename: assetURL.lastPathComponent,
@@ -231,7 +236,9 @@ public enum WriteTextBundlePackage {
                 remoteURL: matchesRemote ? mapping?.url : nil))
         }
         return WriteTextBundleContents(
-            markdown: markdown, assets: assets, logicalSize: logicalSize)
+            markdown: WriteDocumentAssets.canonicalMarkdown(
+                local: markdown, remoteURLsByFilename: remoteURLsByFilename),
+            assets: assets, logicalSize: logicalSize)
     }
 
     public static func isSafeAssetFilename(_ filename: String) -> Bool {
@@ -255,17 +262,18 @@ public enum WriteTextBundlePackage {
         var uncompressedSize: UInt64 = 0
         for entry in archive {
             entryCount += 1
-            uncompressedSize += entry.uncompressedSize
             guard entryCount <= maximumEntryCount,
-                  uncompressedSize <= maximumUncompressedSize else {
+                  entry.uncompressedSize
+                    <= maximumUncompressedSize - uncompressedSize else {
                 throw WriteTextBundleError.packageTooLarge
             }
+            uncompressedSize += entry.uncompressedSize
             guard entry.type != .symlink,
                   isSafeArchivePath(entry.path) else {
                 throw WriteTextBundleError.invalidPackage("Unsafe TextBundle archive path")
             }
             let outputURL = destination.appendingPathComponent(entry.path)
-            try archive.extract(entry, to: outputURL)
+            _ = try archive.extract(entry, to: outputURL)
         }
     }
 

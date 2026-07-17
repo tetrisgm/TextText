@@ -1,9 +1,9 @@
 // swift-tools-version: 5.10
 import PackageDescription
 
-// The native Mac sync client for the Write platform: a pure AppKit shell that
-// mirrors the workspace's folders to a local directory of markdown files via
-// /api/sync/v1. Built with SwiftPM (no .xcodeproj) so CI is one command:
+// The native Mac client for the Write platform: a pure AppKit shell whose File
+// Provider extension materializes the server-backed workspace in Finder.
+// Built with SwiftPM (no .xcodeproj) so CI is one command:
 //   swift build --package-path mac
 // The .app bundle is assembled by mac/scripts/build-app.sh. Sparkle is the
 // app dependencies are vendored or statically linked where required.

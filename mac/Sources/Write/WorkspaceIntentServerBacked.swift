@@ -46,10 +46,12 @@ struct ServerBackedWorkspaceIntentServer: WorkspaceIntentServer {
     func createDocument(
         body: String, folderId: String?, idempotencyKey: String?
     ) throws -> WorkspaceServerItem {
-        // No explicit representation: the server assigns its create-format
-        // default (.textpack), keeping the client from pinning a format.
+        // SyncClient's representation-free overload is legacy and sends
+        // markdown. Pin Write's create format here so App Intents create the
+        // same .textpack leaf files as every other first-party surface.
         let reply = client.postFile(
-            body: body, folderId: folderId, idempotencyKey: idempotencyKey)
+            body: body, folderId: folderId, representation: .textpack,
+            idempotencyKey: idempotencyKey)
         return try Self.item(from: reply, folderId: folderId, id: nil)
     }
 
@@ -104,7 +106,7 @@ struct ServerBackedWorkspaceIntentServer: WorkspaceIntentServer {
         return .transport(error.description)
     }
 
-    private static func serverItem(
+    static func serverItem(
         from item: ManifestItem, folderId: String?
     ) -> WorkspaceServerItem? {
         guard let id = item.id, !id.isEmpty else { return nil }
@@ -116,7 +118,7 @@ struct ServerBackedWorkspaceIntentServer: WorkspaceIntentServer {
             status: item.status,
             folderId: folderId,
             folderPath: nil,
-            canonicalURL: item.url.flatMap(URL.init(string:)),
+            canonicalURL: item.canonicalUrl.flatMap(URL.init(string:)),
             hash: item.hash,
             modifiedDate: parseDate(item.updatedAt ?? item.createdAt ?? item.date)
         )

@@ -62,9 +62,14 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     public var contentType: UTType {
         if item.isFolder { return .folder }
         if item.representation == .textbundle {
-            return UTType(
+            let textBundle = UTType(
                 importedAs: WriteItem.textBundleTypeIdentifier,
                 conformingTo: .package)
+            // Some hosts already register org.textbundle.package without its
+            // package conformance. File Provider must still receive a package
+            // type or it can reconcile the directory name and contents as
+            // separate nodes. The filename retains the TextBundle association.
+            return textBundle.conforms(to: .package) ? textBundle : .package
         }
         // A .textpack is a zipped textbundle - a single LEAF file. Prefer the
         // registered `org.textbundle.pack` UTI (the app bundle declares it,
