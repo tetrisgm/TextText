@@ -16,7 +16,7 @@ import {
 import { createAssistantConfirmationController } from "@/components/workspace/assistant/confirmation";
 import type { AssistantAttachment } from "@/components/workspace/assistant/AssistantSidebar";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
-import { nativeAgent } from "@/lib/ai/native";
+import { isNativeModelAssetError, nativeAgent } from "@/lib/ai/native";
 import { runNativeQuickAction } from "@/lib/ai/quick-actions";
 import {
   patchOpenWorkspaceItemDraft,
@@ -74,6 +74,17 @@ function pool(): WorkspacePoolPayload {
 }
 
 describe("native assistant submissions", () => {
+  it("recognizes framework model-asset copy for defensive remapping", () => {
+    expect(
+      isNativeModelAssetError(
+        new Error("Resource (Local Model Asset) unavailable error."),
+      ),
+    ).toBe(true);
+    expect(isNativeModelAssetError(new Error("No folder at path ideas"))).toBe(
+      false,
+    );
+  });
+
   it("includes local text attachments in the native agent prompt", async () => {
     const file = new File(["Local-only source text"], "source.md", {
       type: "text/markdown",

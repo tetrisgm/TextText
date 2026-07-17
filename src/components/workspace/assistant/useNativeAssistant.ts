@@ -26,6 +26,7 @@ import {
 } from "react";
 import {
   hasNativeAI,
+  isNativeModelAssetError,
   nativeAgent,
   nativeAICapabilities,
   registerNativeAgentTools,
@@ -422,12 +423,21 @@ export function useNativeAssistant({
         appendToThread(thread, "assistant", reply.text || "Done.");
         updateAssistantJob(jobId, { status: "done" });
       } catch (error) {
+        let message =
+          error instanceof Error && error.message
+            ? error.message
+            : "The assistant could not finish that.";
+        if (isNativeModelAssetError(error)) {
+          const latest = await nativeAICapabilities();
+          setCapabilities(latest);
+          message = latest.available
+            ? "The Assistant could not complete that request. Try again."
+            : unavailableExplanation(latest);
+        }
         appendToThread(
           thread,
           "error",
-          error instanceof Error && error.message
-            ? error.message
-            : "The assistant could not finish that.",
+          message,
         );
         updateAssistantJob(jobId, { status: "error" });
       } finally {

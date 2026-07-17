@@ -159,6 +159,98 @@ describe("native workspace tool adapter", () => {
     });
   });
 
+  it("defaults root requests to Blog and creates every requested post", async () => {
+    actions.createWorkspacePostAction
+      .mockResolvedValueOnce({
+        id: "new-1",
+        blogId: "blog-1",
+        folderId: "blog",
+        type: "article",
+        slug: "untitled",
+        title: "Untitled",
+        status: "draft",
+      })
+      .mockResolvedValueOnce({
+        id: "new-2",
+        blogId: "blog-1",
+        folderId: "blog",
+        type: "article",
+        slug: "untitled-2",
+        title: "Untitled",
+        status: "draft",
+      });
+    actions.saveEditablePostAction
+      .mockResolvedValueOnce({
+        id: "new-1",
+        blogId: "blog-1",
+        folderId: "blog",
+        type: "article",
+        slug: "top-nes-games",
+        title: "The top 10 NES games",
+        status: "draft",
+      })
+      .mockResolvedValueOnce({
+        id: "new-2",
+        blogId: "blog-1",
+        folderId: "blog",
+        type: "article",
+        slug: "chipzel-chiptunes",
+        title: "Chipzel and modern chiptunes",
+        status: "draft",
+      });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+    });
+
+    await expect(
+      tools.executor(
+        "create_item",
+        {
+          kind: "article",
+          title: "The top 10 NES games",
+          body: "Complete NES article",
+        },
+        "root-request",
+      ),
+    ).resolves.toMatchObject({
+      id: "new-1",
+      folder_path: "blog",
+      status: "draft",
+    });
+    await expect(
+      tools.executor(
+        "create_item",
+        {
+          kind: "article",
+          title: "Chipzel and modern chiptunes",
+          body: "Complete chiptunes article",
+        },
+        "root-request",
+      ),
+    ).resolves.toMatchObject({
+      id: "new-2",
+      folder_path: "blog",
+      status: "draft",
+    });
+
+    expect(actions.createWorkspacePostAction).toHaveBeenNthCalledWith(
+      1,
+      "local",
+      "article",
+      "blog",
+    );
+    expect(actions.createWorkspacePostAction).toHaveBeenNthCalledWith(
+      2,
+      "local",
+      "article",
+      "blog",
+    );
+    expect(tools.describeContext({ level: "root" })).toContain(
+      'Blog folder at path "blog"',
+    );
+  });
+
   it("fails closed for an audience-changing restore without confirmation", async () => {
     const tools = createWorkspaceAgentTools({
       handle: "local",

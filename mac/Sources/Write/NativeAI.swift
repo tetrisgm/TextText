@@ -186,6 +186,81 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         return result
     }
 
+    #if canImport(FoundationModels)
+        @available(macOS 26.0, *)
+        static func unavailableModelMessage(
+            for availability: SystemLanguageModel.Availability
+        ) -> String? {
+            switch availability {
+            case .available:
+                return nil
+            case .unavailable(let reason):
+                switch reason {
+                case .deviceNotEligible:
+                    return "The on-device model is unavailable because this Mac does not support Apple Intelligence. Add a cloud AI key in Workspace Settings to use the Assistant."
+                case .appleIntelligenceNotEnabled:
+                    return "The on-device model is unavailable because Apple Intelligence is turned off. Enable it in System Settings, then try again, or add a cloud AI key in Workspace Settings."
+                case .modelNotReady:
+                    return "The on-device model is unavailable because it is still downloading. Try again after the download finishes, or add a cloud AI key in Workspace Settings."
+                @unknown default:
+                    return "The on-device model is unavailable right now. Try again later, or add a cloud AI key in Workspace Settings."
+                }
+            @unknown default:
+                return "The on-device model is unavailable right now. Try again later, or add a cloud AI key in Workspace Settings."
+            }
+        }
+
+        @available(macOS 26.0, *)
+        static func agentSessionErrorMessage(
+            _ error: Error,
+            modelAvailability: SystemLanguageModel.Availability,
+            toolFailure: String? = nil
+        ) -> String {
+            if let toolFailure = toolFailure?.trimmingCharacters(
+                in: .whitespacesAndNewlines), !toolFailure.isEmpty
+            {
+                return toolFailure
+            }
+            if let unavailable = unavailableModelMessage(for: modelAvailability) {
+                return unavailable
+            }
+            guard let generationError =
+                error as? LanguageModelSession.GenerationError
+            else {
+                let message = error.localizedDescription
+                if message.localizedCaseInsensitiveContains("Local Model Asset")
+                    || message.localizedCaseInsensitiveContains("assets unavailable")
+                {
+                    return "The Assistant could not access a required local resource while running this request. Try again."
+                }
+                return message
+            }
+
+            switch generationError {
+            case .exceededContextWindowSize:
+                return "This request is too large for the on-device Assistant. Shorten it or split it into smaller requests."
+            case .assetsUnavailable:
+                return "The Assistant could not access a required local resource while running this request. Try again."
+            case .guardrailViolation:
+                return "The on-device Assistant could not complete this request because of its safety checks."
+            case .unsupportedGuide:
+                return "The on-device Assistant could not follow the requested response format. Try a simpler request."
+            case .unsupportedLanguageOrLocale:
+                return "The on-device Assistant does not support the language or locale in this request."
+            case .decodingFailure:
+                return "The Assistant could not understand a workspace tool response. No model availability problem occurred."
+            case .rateLimited:
+                return "The on-device Assistant is busy. Wait a moment, then try again."
+            case .concurrentRequests:
+                return "Another on-device Assistant request is running. Wait for it to finish, then try again."
+            case .refusal:
+                return "The on-device Assistant declined this request."
+            @unknown default:
+                return "The on-device Assistant could not complete this request."
+            }
+        }
+    #endif
+
     private func trimmedText(_ payload: [String: Any], key: String = "text") throws -> (
         text: String, truncated: Bool
     ) {
@@ -668,15 +743,15 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "create_item",
-            "description": "Create one draft in a target folder from structured fields or a complete Write markdown file. New items are never published or pinned; use the dedicated confirmed tools afterward.",
+            "description": "Create one draft in a target folder from structured fields or a complete Write markdown file. If no folder is supplied, create it in the Blog folder. New items are never published or pinned; use the dedicated confirmed tools afterward.",
             "inputSchema": {
               "type": "object",
               "properties": {
                 "folder_path": {
+                  "description": "The destination folder path. Defaults to the Blog folder at \"blog\".",
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 256,
-                  "description": "The destination folder path."
+                  "maxLength": 256
                 },
                 "title": {
                   "type": "string",
@@ -715,9 +790,6 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   "maxLength": 1000000
                 }
               },
-              "required": [
-                "folder_path"
-              ],
               "additionalProperties": false
             }
           },
@@ -1496,6 +1568,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
     private let toolCallLock = NSLock()
     private var pendingToolCalls: [String: CheckedContinuation<String, Error>] = [:]
+    private var agentToolFailures: [String: String] = [:]
 
     private func takeToolCall(callId: String) -> CheckedContinuation<String, Error>? {
         toolCallLock.lock()
@@ -1509,6 +1582,18 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         toolCallLock.lock()
         defer { toolCallLock.unlock() }
         pendingToolCalls[callId] = continuation
+    }
+
+    fileprivate func recordToolFailure(tag: String, error: Error) {
+        toolCallLock.lock()
+        defer { toolCallLock.unlock() }
+        agentToolFailures[tag] = error.localizedDescription
+    }
+
+    private func takeToolFailure(tag: String) -> String? {
+        toolCallLock.lock()
+        defer { toolCallLock.unlock() }
+        return agentToolFailures.removeValue(forKey: tag)
     }
 
     private func resolveWebToolCall(callId: String, ok: Bool, result: String) {
@@ -1590,11 +1675,16 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
             func call(arguments: GeneratedContent) async throws -> String {
                 let argsJSON = arguments.jsonString
-                bridge.countToolCall(tag: eventTag)
+                await bridge.countToolCall(tag: eventTag)
                 await bridge.emitAgentEvent(
                     tag: eventTag, event: ["type": "tool", "name": name])
-                return try await bridge.callWebTool(
-                    name: name, argsJSON: argsJSON, eventTag: eventTag)
+                do {
+                    return try await bridge.callWebTool(
+                        name: name, argsJSON: argsJSON, eventTag: eventTag)
+                } catch {
+                    await bridge.recordToolFailure(tag: eventTag, error: error)
+                    throw error
+                }
             }
         }
 
@@ -1631,8 +1721,14 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
         @available(macOS 26.0, *)
         private func agentOp(_ payload: [String: Any]) async throws -> [String: Any] {
+            let model = SystemLanguageModel.default
+            if let unavailable = Self.unavailableModelMessage(
+                for: model.availability)
+            {
+                throw BridgeError(message: unavailable)
+            }
             let (prompt, truncated) = try trimmedText(payload, key: "prompt")
-            let eventTag = payload["eventTag"] as? String ?? ""
+            let eventTag = payload["eventTag"] as? String ?? UUID().uuidString
             let enabled = payload["tools"] as? [String]
             let specs = Self.agentToolSpecs.filter {
                 enabled == nil || enabled!.contains($0.name)
@@ -1665,14 +1761,25 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             // self-check turn measurably DUPLICATES the last item instead of
             // detecting completion (the page executor also dedupes create_item
             // per request as the deterministic safety net).
-            let session = LanguageModelSession(tools: tools, instructions: instructions)
-            let response = try await session.respond(to: prompt)
-            _ = takeToolCallCount(tag: eventTag)
-            return [
-                "text": response.content.trimmingCharacters(
-                    in: .whitespacesAndNewlines),
-                "truncated": truncated,
-            ]
+            let session = LanguageModelSession(
+                model: model, tools: tools, instructions: instructions)
+            do {
+                let response = try await session.respond(to: prompt)
+                _ = takeToolCallCount(tag: eventTag)
+                _ = takeToolFailure(tag: eventTag)
+                return [
+                    "text": response.content.trimmingCharacters(
+                        in: .whitespacesAndNewlines),
+                    "truncated": truncated,
+                ]
+            } catch {
+                _ = takeToolCallCount(tag: eventTag)
+                let message = Self.agentSessionErrorMessage(
+                    error,
+                    modelAvailability: SystemLanguageModel.default.availability,
+                    toolFailure: takeToolFailure(tag: eventTag))
+                throw BridgeError(message: message)
+            }
         }
     #else
         @MainActor

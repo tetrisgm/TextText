@@ -125,10 +125,26 @@ function normalizeFolderPath(
   return prefix?.path ?? raw;
 }
 
+function defaultBlogFolderPath(
+  folders: Array<{ path: string; mode?: string }>,
+): string {
+  const exact = folders.find(
+    (folder) => folder.path === "blog" && folder.mode === "blog",
+  );
+  if (exact) return exact.path;
+  const blogFolders = folders
+    .filter((folder) => folder.mode === "blog")
+    .sort((left, right) => {
+      const depth = left.path.split("/").length - right.path.split("/").length;
+      return depth || left.path.localeCompare(right.path);
+    });
+  return blogFolders[0]?.path ?? "blog";
+}
+
 function normalizeLegacyNativeArgs(
   name: WorkspaceToolName,
   args: ToolArgs,
-  folders: Array<{ path: string }>,
+  folders: Array<{ path: string; mode?: string }>,
 ): ToolArgs {
   const normalized = { ...args };
   if (
@@ -137,6 +153,13 @@ function normalizeLegacyNativeArgs(
     typeof normalized.folder === "string"
   ) {
     normalized.folder_path = normalizeFolderPath(normalized.folder, folders);
+  }
+  if (
+    name === "create_item" &&
+    (typeof normalized.folder_path !== "string" ||
+      !normalized.folder_path.trim())
+  ) {
+    normalized.folder_path = defaultBlogFolderPath(folders);
   }
   if (
     name === "append_to_item" &&
@@ -681,7 +704,10 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
 
       case "create_item": {
         const input = args as WorkspaceToolInput<"create_item">;
-        const folderPath = normalizeFolderPath(input.folder_path, pool().folders);
+        const folderPath = normalizeFolderPath(
+          input.folder_path ?? defaultBlogFolderPath(pool().folders),
+          pool().folders,
+        );
         const folder = pool().folders.find(
           (candidate) => candidate.path === folderPath,
         );
@@ -1098,7 +1124,8 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     toolDefinitions: WORKSPACE_AGENT_TOOL_DEFINITIONS,
     describeContext: (view) => {
       if (!view || view.level === "root" || !view.level) {
-        return "The user is at the workspace root, looking at the folder list.";
+        const blogPath = defaultBlogFolderPath(pool().folders);
+        return `The user is at the workspace root, looking at the folder list. When no destination is named, create blog posts and other public items in the Blog folder at path "${blogPath}".`;
       }
       if (view.level === "section") {
         return `The user is looking at the "${view.folderPath ?? ""}" folder.`;

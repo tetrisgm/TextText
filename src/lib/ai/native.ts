@@ -32,6 +32,11 @@ export function hasNativeAI(): boolean {
   return bridge() !== null;
 }
 
+export function isNativeModelAssetError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /local model asset|assets unavailable/i.test(message);
+}
+
 async function request<T>(
   op: string,
   payload?: Record<string, unknown>,

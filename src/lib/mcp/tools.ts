@@ -692,7 +692,11 @@ async function executeMcpTool(
       const input = args as WorkspaceToolInput<"create_item">;
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
-      const folder = await accessibleFolder(blog, extra, input.folder_path);
+      const folder = await accessibleFolder(
+        blog,
+        extra,
+        input.folder_path ?? "blog",
+      );
       if (isToolResult(folder)) return folder;
       const folderAccess = await resolveFolderAccess({
         handle: blog.handle,

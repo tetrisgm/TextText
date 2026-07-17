@@ -52,6 +52,40 @@ final class NativeAIToolParityTests: XCTestCase {
 
     #if canImport(FoundationModels)
         @available(macOS 26.0, *)
+        func testAgentChecksEveryUnavailableModelReasonWithHelpfulCopy() {
+            let disabled = NativeAIBridge.unavailableModelMessage(
+                for: .unavailable(.appleIntelligenceNotEnabled))
+            let downloading = NativeAIBridge.unavailableModelMessage(
+                for: .unavailable(.modelNotReady))
+            let ineligible = NativeAIBridge.unavailableModelMessage(
+                for: .unavailable(.deviceNotEligible))
+
+            XCTAssertNil(NativeAIBridge.unavailableModelMessage(for: .available))
+            XCTAssertTrue(disabled?.contains("Enable it in System Settings") == true)
+            XCTAssertTrue(downloading?.contains("still downloading") == true)
+            XCTAssertTrue(ineligible?.contains("does not support") == true)
+            XCTAssertTrue(disabled?.contains("cloud AI key") == true)
+        }
+
+        @available(macOS 26.0, *)
+        func testToolFailureWinsOverMisleadingModelAssetError() {
+            let frameworkError = LanguageModelSession.GenerationError.assetsUnavailable(
+                .init(debugDescription: "Resource (Local Model Asset) unavailable error."))
+            let toolMessage = NativeAIBridge.agentSessionErrorMessage(
+                frameworkError,
+                modelAvailability: .available,
+                toolFailure: "No folder at path ideas")
+            let modelMessage = NativeAIBridge.agentSessionErrorMessage(
+                frameworkError,
+                modelAvailability: .available)
+
+            XCTAssertEqual(toolMessage, "No folder at path ideas")
+            XCTAssertFalse(modelMessage.contains("Local Model Asset"))
+            XCTAssertFalse(modelMessage.localizedCaseInsensitiveContains(
+                "model is unavailable"))
+        }
+
+        @available(macOS 26.0, *)
         func testEveryNativeToolBuildsAFoundationModelsSchema() throws {
             for spec in NativeAIBridge.agentToolSpecs {
                 _ = try spec.makeGenerationSchema()

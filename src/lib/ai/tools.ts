@@ -168,7 +168,9 @@ function validateAccessTarget(
 
 const createItemInput = z
   .object({
-    folder_path: folderPath.describe("The destination folder path."),
+    folder_path: folderPath
+      .optional()
+      .describe('The destination folder path. Defaults to the Blog folder at "blog".'),
     title: z.string().trim().min(1).max(300).optional(),
     body: z.string().max(1_000_000).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
@@ -363,7 +365,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   create_item: defineTool("create_item", {
     title: "Create item",
     description:
-      "Create one draft in a target folder from structured fields or a complete Write markdown file. New items are never published or pinned; use the dedicated confirmed tools afterward.",
+      "Create one draft in a target folder from structured fields or a complete Write markdown file. If no folder is supplied, create it in the Blog folder. New items are never published or pinned; use the dedicated confirmed tools afterward.",
     inputSchema: createItemInput,
     mutability: "write",
   }),
