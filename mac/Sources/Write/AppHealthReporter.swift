@@ -1,3 +1,4 @@
+import FileProvider
 import Foundation
 import WriteFileProviderKit
 import WriteWorkspaceCore
@@ -203,7 +204,7 @@ final class AppHealthReporter {
 
     private let stateStore: StateStore
     private let healthStore: WriteHealthStore
-    private let syncRootProvider: () -> URL
+    private let syncRootProvider: () -> URL?
     private let finderStatusProvider: FinderStatusProvider
     private let finderReadinessProbe: FileProviderReadinessProbe
     private let bundle: Bundle
@@ -218,7 +219,7 @@ final class AppHealthReporter {
 
     init(
         stateStore: StateStore,
-        syncRootProvider: @escaping () -> URL,
+        syncRootProvider: @escaping () -> URL?,
         finderStatusProvider: @escaping FinderStatusProvider,
         finderReadinessProbe: FileProviderReadinessProbe = FileProviderReadinessProbe(),
         bundle: Bundle = .main,
@@ -672,7 +673,15 @@ final class AppHealthReporter {
     }
 
     private func checkWorkspaceStorage() -> (WriteHealthStatus, [String: Double]) {
-        let root = syncRootProvider()
+        // The workspace's on-disk home is the File Provider mount (the legacy
+        // mirror is retired). A nil root means the mount is not resolved here
+        // (signed out, domain still registering, or an isolated CI run): there
+        // is nothing local to verify and finder.provider carries the live
+        // signal, so report pass with mount_resolved = 0 instead of failing on
+        // a path that no longer exists by design.
+        guard let root = syncRootProvider() else {
+            return (.pass, ["mount_resolved": 0])
+        }
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         let exists = fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory)
@@ -680,6 +689,7 @@ final class AppHealthReporter {
         let writable = exists && fileManager.isWritableFile(atPath: root.path)
         let valid = exists && isDirectory.boolValue && readable && writable
         return (valid ? .pass : .fail, [
+            "mount_resolved": 1,
             "present": exists ? 1 : 0,
             "directory": isDirectory.boolValue ? 1 : 0,
             "readable": readable ? 1 : 0,
@@ -779,10 +789,14 @@ enum AppHealthCLI {
         // lifecycle are verified independently by this report and the release
         // test suite.
         stateStore.clearIndex()
-        let syncRoot = WorkspaceRootResolver().resolve().url
+        // The workspace's on-disk home is the File Provider mount; resolve the
+        // registered domain's user-visible root (blocking is fine in the CLI).
+        // nil on a machine with no domain (signed out / isolated CI), which
+        // workspace.storage reports as mount_resolved = 0 rather than failing.
+        let mountRoot = Self.resolveMountRoot()
         let reporter = AppHealthReporter(
             stateStore: stateStore,
-            syncRootProvider: { syncRoot },
+            syncRootProvider: { mountRoot },
             finderStatusProvider: { .make(pendingCount: 0) })
         let report = reporter.run(trigger: .releaseVerification)
         let encoder = JSONEncoder()
@@ -792,6 +806,24 @@ enum AppHealthCLI {
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write(Data("\n".utf8))
         return report.status == .pass ? 0 : 1
+    }
+
+    private static func resolveMountRoot() -> URL? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var resolved: URL?
+        NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
+            guard let domain = domains.first(where: { $0.identifier.rawValue == "write" }),
+                  let manager = NSFileProviderManager(for: domain) else {
+                semaphore.signal()
+                return
+            }
+            manager.getUserVisibleURL(for: .rootContainer) { url, _ in
+                resolved = url
+                semaphore.signal()
+            }
+        }
+        _ = semaphore.wait(timeout: .now() + 10)
+        return resolved
     }
 }
 

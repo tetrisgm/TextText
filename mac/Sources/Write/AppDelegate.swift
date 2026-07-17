@@ -173,10 +173,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         healthReporter = AppHealthReporter(
             stateStore: store,
             syncRootProvider: { [weak self] in
-                // Prefer the live File Provider mount; fall back to the legacy
-                // mirror only when no domain is registered (the CLI/no-FP case).
+                // The File Provider mount is the only on-disk home; nil until
+                // the domain resolves (workspace.storage treats that as
+                // nothing-to-verify, never a failure on a retired path).
                 self?.fileProviderUserVisibleURL
-                    ?? self?.syncRoot() ?? Self.defaultSyncRoot()
             },
             finderStatusProvider: { [weak self] in
                 guard let self else { return .unavailable }
