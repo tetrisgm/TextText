@@ -14,6 +14,11 @@ portfolio this was extracted from; it stays its own thing).
   rule, the 60% ink contrast floor, and the motion rule are contracts.
 - Every color decision is checked in BOTH light and dark mode.
 - Never commit credentials. Apple/DB secrets are owner-created, env only.
+- Conserve money and tokens. Batch commits into coherent units (never one per
+  micro-edit); push and deploy a unit ONCE, never per commit; never re-deploy a
+  no-op or re-run a passing build; no redundant builds/migrations/verification
+  passes/duplicate agents. Each push and `vercel --prod` is a paid build. Ship
+  verified work promptly, but batched. (Global rule, all projects.)
 
 ## Verify
 
