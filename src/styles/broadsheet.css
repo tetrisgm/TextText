@@ -3924,6 +3924,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   right: 0;
   translate: none;
 }
+.workspace-item-pin {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  pointer-events: none;
+  color: var(--post-accent, var(--ink));
+}
+.workspace-item-pin svg {
+  width: 14px;
+  height: 14px;
+}
 .workspace-item-star,
 .workspace-item-actions-trigger {
   width: 30px;

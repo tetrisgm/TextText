@@ -30,6 +30,14 @@ function itemTitle(post: Post): string {
   return post.title.trim() || "Untitled";
 }
 
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M9.53 1.53a1 1 0 0 1 1.41 0l3.53 3.53a1 1 0 0 1-.7 1.7 3.6 3.6 0 0 0-2.2.75l-.5.4-.02 2.06a1 1 0 0 1-.3.7l-1.2 1.2a.75.75 0 0 1-1.06 0L6.6 11.64l-3.07 3.07a.75.75 0 1 1-1.06-1.06l3.07-3.07-2.02-2.02a.75.75 0 0 1 0-1.06l1.2-1.2a1 1 0 0 1 .7-.3l2.06-.02.4-.5a3.6 3.6 0 0 0 .75-2.2 1 1 0 0 1 .5-.9Z" />
+    </svg>
+  );
+}
+
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg viewBox="0 0 20 20" fill={filled ? "currentColor" : "none"} aria-hidden="true">
@@ -199,6 +207,11 @@ export function WorkspaceItemActions({
       ref={rootRef}
       onClick={stop}
     >
+      {post.pinned && (
+        <span className="workspace-item-pin" title="Pinned" aria-hidden="true">
+          <PinIcon />
+        </span>
+      )}
       <button
         type="button"
         className="workspace-item-star"
