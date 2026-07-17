@@ -106,6 +106,7 @@ public struct WriteItem: Equatable, Sendable {
     // the pure kit. The bridge imports TextBundle as a package explicitly.
     public static let folderTypeIdentifier = "public.folder"
     public static let textBundleTypeIdentifier = WriteFileRepresentation.textbundle.typeIdentifier
+    public static let textPackTypeIdentifier = WriteFileRepresentation.textpack.typeIdentifier
     public static let markdownTypeIdentifier = WriteFileRepresentation.markdown.typeIdentifier
     public static let plainTextTypeIdentifier = WriteFileRepresentation.text.typeIdentifier
 
@@ -250,11 +251,12 @@ public enum WriteItemMapper {
             typeIdentifier: entry.representation.typeIdentifier,
             serverId: id,
             contentHash: entry.hash,
-            // A package has no single stable byte length: Finder and File Provider
-            // choose the package transport encoding. The manifest size describes
-            // canonical Markdown, not that transport, so advertising it corrupts
-            // package reconciliation. Regular files retain their exact body size.
-            documentSize: entry.representation == .textbundle ? nil : entry.size,
+            // A textbundle package and a textpack zip have no manifest-known byte
+            // length: the manifest size describes canonical Markdown, not the
+            // package transport or the compressed zip. Advertising it would
+            // mismatch the materialized bytes, so leave it nil and let fetch set
+            // the real size. Regular files retain their exact body size.
+            documentSize: entry.representation.isTextBundleFamily ? nil : entry.size,
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps,

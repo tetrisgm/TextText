@@ -137,6 +137,15 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(textbundle.filename, "Hello.textbundle")
         XCTAssertEqual(textbundle.contentType.identifier, WriteItem.textBundleTypeIdentifier)
         XCTAssertTrue(textbundle.contentType.conforms(to: .package))
+
+        let textpack = WriteFileProviderItem(fileItem(representation: .textpack))
+        XCTAssertEqual(textpack.filename, "Hello.textpack")
+        // Phantom-freeness invariant: a .textpack is a single LEAF zip, NOT a
+        // package. If it ever conformed to .package, its directory name and body
+        // would reconcile separately and the rename revert-loop would return.
+        XCTAssertEqual(textpack.contentType, .zip)
+        XCTAssertTrue(textpack.contentType.conforms(to: .zip))
+        XCTAssertFalse(textpack.contentType.conforms(to: .package))
     }
 
     func testFolderItemIsAFolderType() {

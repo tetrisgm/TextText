@@ -9,10 +9,11 @@ final class FileProviderStatusMonitorTests: XCTestCase {
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 6))
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 7))
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 8))
-        // Schema 10 (posts as flat .md): 9 is now an older schema and must rebuild.
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 9))
-        XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 10))
+        // Schema 11 (posts as .textpack): 10 is now an older schema and must rebuild.
+        XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 10))
         XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 11))
+        XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 12))
     }
 
     func testFileProviderSchemaRepairRequiresASettledPendingSet() {

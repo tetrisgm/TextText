@@ -28,6 +28,7 @@ const SYNC_FILE_EXTENSIONS: Record<FileRepresentation, string> = {
   textbundle: ".textbundle",
   markdown: ".md",
   text: ".txt",
+  textpack: ".textpack",
 };
 
 const UUID_RE =

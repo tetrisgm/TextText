@@ -58,6 +58,15 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
                 importedAs: WriteItem.textBundleTypeIdentifier,
                 conformingTo: .package)
         }
+        // A .textpack is a zipped textbundle - a single LEAF file. Use the concrete
+        // zip type so the framework unambiguously treats it as one atomic node: its
+        // name and content move together, which is what makes the rename phantom
+        // structurally impossible for created posts. (Declaring `org.textbundle.pack`
+        // dynamically did NOT reliably conform to .zip.) The `.textpack` filename is
+        // what Bear/Ulysses key on for import.
+        if item.representation == .textpack {
+            return .zip
+        }
         return UTType(item.typeIdentifier)
             ?? item.representation.flatMap {
                 UTType(filenameExtension: $0.filenameExtension)

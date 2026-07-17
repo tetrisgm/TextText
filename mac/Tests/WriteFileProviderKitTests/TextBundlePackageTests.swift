@@ -32,6 +32,34 @@ final class TextBundlePackageTests: XCTestCase {
         XCTAssertGreaterThan(decoded.logicalSize, 4)
     }
 
+    func testTextPackZipsToASingleLeafFileAndReadsBack() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let remoteURL = "https://example.public.blob.vercel-storage.com/documents/demo/post/assets/p.png"
+        let package = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: "# Hi\n\n![P](\(remoteURL))\n",
+            assets: [.init(
+                filename: "p.png", data: Data([0x89, 0x50, 0x4e, 0x47]),
+                remoteURL: remoteURL, contentType: "image/png")],
+            sourceURL: nil, in: root)
+
+        let textpack = try WriteTextBundlePackage.zipToTextPack(
+            packageURL: package.url, in: root)
+        // A .textpack is a SINGLE FILE (leaf), never a directory - that is what
+        // keeps it phantom-free (name and content are one node).
+        XCTAssertEqual(textpack.pathExtension, "textpack")
+        let isDir = (try textpack.resourceValues(forKeys: [.isDirectoryKey])).isDirectory ?? true
+        XCTAssertFalse(isDir)
+
+        // read() auto-detects the zip, unzips it, and round-trips markdown + assets.
+        let decoded = try WriteTextBundlePackage.read(from: textpack, in: root)
+        XCTAssertEqual(decoded.markdown, "# Hi\n\n![P](\(remoteURL))\n")
+        XCTAssertEqual(decoded.assets.map(\.filename), ["p.png"])
+        XCTAssertEqual(decoded.assets.first?.remoteURL, remoteURL)
+    }
+
     func testReadRejectsUnsupportedInfo() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

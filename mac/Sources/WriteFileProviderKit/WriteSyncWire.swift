@@ -12,12 +12,20 @@ public enum WriteFileRepresentation: String, Codable, CaseIterable, Sendable {
     case textbundle
     case markdown
     case text
+    /// A zipped textbundle: a SINGLE flat file (`<title>.textpack`). Unlike
+    /// `.textbundle` (a directory whose name and body reconcile separately -> the
+    /// rename phantom), a `.textpack` is one leaf file, so name and content move
+    /// together and the phantom is structurally impossible, while it still bundles
+    /// assets and imports into Bear/Ulysses. MUST materialize as a leaf zip, never
+    /// a package (see WriteFileProviderItem.contentType).
+    case textpack
 
     public var filenameExtension: String {
         switch self {
         case .textbundle: return "textbundle"
         case .markdown: return "md"
         case .text: return "txt"
+        case .textpack: return "textpack"
         }
     }
 
@@ -28,8 +36,13 @@ public enum WriteFileRepresentation: String, Codable, CaseIterable, Sendable {
         case .textbundle: return "org.textbundle.package"
         case .markdown: return "net.daringfireball.markdown"
         case .text: return "public.plain-text"
+        case .textpack: return "org.textbundle.pack"
         }
     }
+
+    /// A textbundle-family package (bundles a text.md + assets), whether the open
+    /// directory form (`.textbundle`) or the zipped single-file form (`.textpack`).
+    public var isTextBundleFamily: Bool { self == .textbundle || self == .textpack }
 
     /// Infer the representation of an external file without rewriting its
     /// extension. Manifest mapping never uses this: the wire value is explicit.

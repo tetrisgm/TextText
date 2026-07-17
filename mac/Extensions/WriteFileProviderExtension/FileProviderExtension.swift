@@ -293,7 +293,7 @@ public final class FileProviderExtension: NSObject,
                 let deliveredByteCount: Int
                 do {
                     switch representation {
-                    case .textbundle:
+                    case .textbundle, .textpack:
                         let manifest: WriteArtifactManifest
                         switch await api.documentArtifacts(postId: postId) {
                         case .failure(.notFound) where revision.item.kind != .bookmark:
@@ -338,13 +338,27 @@ public final class FileProviderExtension: NSObject,
                             assets: assets,
                             sourceURL: revision.item.manifestURL,
                             in: dir)
-                        // File Provider owns package transport. Returning the real
-                        // directory lets the framework preserve package semantics;
-                        // manually returning a coordinated ZIP leaves Finder with a
-                        // regular file carrying a package UTI and corrupts its cache.
-                        destination = package.url
-                        materializedSize = nil
-                        deliveredByteCount = package.logicalSize
+                        if representation == .textpack {
+                            // A .textpack is a single leaf zip file: zip the
+                            // textbundle and return the FILE, so its name and
+                            // content are one node (phantom-free), unlike the open
+                            // package. It carries a zip UTI, so no cache corruption.
+                            let textpackURL = try WriteTextBundlePackage.zipToTextPack(
+                                packageURL: package.url, in: dir)
+                            try? FileManager.default.removeItem(at: package.url)
+                            let zipped = (try? Data(contentsOf: textpackURL))?.count
+                            destination = textpackURL
+                            materializedSize = zipped
+                            deliveredByteCount = zipped ?? package.logicalSize
+                        } else {
+                            // File Provider owns package transport. Returning the real
+                            // directory lets the framework preserve package semantics;
+                            // manually returning a coordinated ZIP leaves Finder with a
+                            // regular file carrying a package UTI and corrupts its cache.
+                            destination = package.url
+                            materializedSize = nil
+                            deliveredByteCount = package.logicalSize
+                        }
                     case .markdown, .text:
                         var text = revision.content.text
                         if representation == .markdown {
@@ -739,10 +753,12 @@ public final class FileProviderExtension: NSObject,
                 var packageContents: WriteTextBundleContents?
                 if let url {
                     do {
-                        if representation == .textbundle {
+                        if representation.isTextBundleFamily {
                             guard let temporaryDirectory = fpTemporaryDirectory() else {
                                 done(nil, Self.fpError(.serverUnreachable)); return
                             }
+                            // read() auto-detects an open `.textbundle` directory vs
+                            // a zipped `.textpack` and unzips the latter.
                             let contents = try WriteTextBundlePackage.read(
                                 from: url, in: temporaryDirectory)
                             packageContents = contents
@@ -1012,10 +1028,11 @@ public final class FileProviderExtension: NSObject,
                     done(nil, Self.unreadableContentsError(nil)); return
                 }
                 do {
-                    if currentItem?.representation == .textbundle {
+                    if currentItem?.representation?.isTextBundleFamily == true {
                         guard let temporaryDirectory = fpTemporaryDirectory() else {
                             done(nil, Self.fpError(.serverUnreachable)); return
                         }
+                        // read() unzips a `.textpack` and reads an open `.textbundle`.
                         let contents = try WriteTextBundlePackage.read(
                             from: newContents, in: temporaryDirectory)
                         switch await uploadLocalPackageAssets(

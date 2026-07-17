@@ -154,6 +154,23 @@ public enum WriteTextBundlePackage {
         return MaterializedPackage(url: packageURL, logicalSize: logicalSize)
     }
 
+    /// Zip a materialized textbundle directory into a single `.textpack` leaf file
+    /// (the zipped, single-file textbundle form Bear/Ulysses read). `read`
+    /// auto-detects the archive and unzips it, so the round-trip is symmetric.
+    /// `shouldKeepParent` keeps the `<name>.textbundle` directory as the archive
+    /// root, which `findPackageRoot` then locates during read.
+    public static func zipToTextPack(
+        packageURL: URL, in temporaryDirectory: URL
+    ) throws -> URL {
+        let textpackURL = temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("textpack")
+        try FileManager.default.zipItem(
+            at: packageURL, to: textpackURL,
+            shouldKeepParent: true, compressionMethod: .deflate)
+        return textpackURL
+    }
+
     public static func read(from suppliedURL: URL, in temporaryDirectory: URL) throws
         -> WriteTextBundleContents {
         let packageRoot: URL
@@ -256,7 +273,12 @@ public enum WriteTextBundlePackage {
         guard !path.isEmpty, !path.hasPrefix("/"), !path.contains("\\") else {
             return false
         }
-        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        // A zip directory entry legitimately ends in "/" (e.g. "assets/" or the
+        // "<name>.textbundle/" parent a .textpack keeps). Drop that trailing marker
+        // before validating components; traversal ("..") and absolute paths are
+        // still rejected.
+        let normalized = path.hasSuffix("/") ? String(path.dropLast()) : path
+        let components = normalized.split(separator: "/", omittingEmptySubsequences: false)
         return components.allSatisfy { component in
             !component.isEmpty && component != "." && component != ".."
         }

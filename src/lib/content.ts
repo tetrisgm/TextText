@@ -18,18 +18,24 @@ export interface Blog {
 
 export type BlogCardStyle = "cover" | "minimal";
 export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
-export const FILE_REPRESENTATIONS = ["textbundle", "markdown", "text"] as const;
+export const FILE_REPRESENTATIONS = [
+  "textbundle",
+  "markdown",
+  "text",
+  "textpack",
+] as const;
 export type FileRepresentation = (typeof FILE_REPRESENTATIONS)[number];
-// A post syncs as a single flat `<title>.md` file, NOT a `.textbundle` package.
-// A package's directory name and its inner text.md reconcile on separate File
-// Provider schedules, so a server rename could leave {content: new, dirname:
-// old} and the framework would push the stale name back, silently reverting the
-// rename in a loop (the "phantom rename"). A flat .md is one inode: filename and
-// content are two version fields of the SAME node and move together, so that
-// split state cannot exist and the phantom is structurally impossible. Images
-// resolve from the shared Data/Attachments tree. `textbundle` stays in the enum
-// for legacy/interchange reads only.
-export const DEFAULT_FILE_REPRESENTATION: FileRepresentation = "markdown";
+// A post we create syncs as a `.textpack`: a ZIPPED textbundle, i.e. a single
+// flat file (`<title>.textpack`), the Bear/Ulysses/iA Writer interchange format.
+// It is a single inode, so its filename and content move together and the
+// `.textbundle` package rename phantom (a directory name that drifts from its
+// content on separate File Provider schedules, reverting renames in a loop) is
+// structurally impossible - same guarantee flat `.md` gave, but it bundles
+// assets and drags into Bear. It MUST materialize as a leaf zip file, never a
+// package. `markdown`/`text`/`textbundle` remain valid for files we did NOT
+// create (imports keep their own format; the per-post representation is
+// immutable).
+export const DEFAULT_FILE_REPRESENTATION: FileRepresentation = "textpack";
 
 export function isFileRepresentation(
   value: string | null | undefined,

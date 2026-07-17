@@ -27,6 +27,7 @@ export const fileRepresentation = pgEnum("file_representation", [
   "textbundle",
   "markdown",
   "text",
+  "textpack",
 ]);
 // article/project/talk live in the Blog folder; note and bookmark are the
 // item kinds of the Notes and Bookmarks folders (always unlisted).
@@ -321,13 +322,14 @@ export const posts = pgTable(
     folderId: uuid("folder_id").references(() => folders.id),
     /**
      * Local file representation selected when the post is created. Defaults to a
-     * flat `markdown` file (name = title) rather than a `.textbundle` package, so
-     * name and content are one inode and cannot drift — see
-     * DEFAULT_FILE_REPRESENTATION in content.ts.
+     * `.textpack` (a single zipped textbundle) - one inode, so name and content
+     * cannot drift (phantom-free) while still bundling assets and importing into
+     * Bear/Ulysses. See DEFAULT_FILE_REPRESENTATION in content.ts. Immutable per
+     * post, so files we did not create keep their own format.
      */
     representation: fileRepresentation("file_representation")
       .notNull()
-      .default("markdown"),
+      .default("textpack"),
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     /** previous public slugs, newest first; maintained atomically by a trigger */

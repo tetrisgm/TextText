@@ -154,6 +154,8 @@ echo ">> migrate database: collab epoch (hole 2)"
 node "$ROOT/scripts/migrate-add-collab-epoch.mjs"
 echo ">> migrate database: flip post representation to flat markdown"
 node "$ROOT/scripts/migrate-flip-representation-to-markdown.mjs"
+echo ">> migrate database: flip post representation to textpack"
+node "$ROOT/scripts/migrate-flip-representation-to-textpack.mjs"
 echo ">> migrate database: drop the retired rename-revert guard"
 node "$ROOT/scripts/migrate-drop-rename-revert-guard.mjs"
 
