@@ -148,7 +148,14 @@ function sortedByTimestampDesc(
   items: Post[],
   timestamp: (post: Post) => string,
 ): Post[] {
-  return [...items].sort((a, b) => timestamp(b).localeCompare(timestamp(a)));
+  // Pinned items float to the top of every folder list (all item types), then
+  // most-recent first. Pin is a personal "keep on top" that works everywhere.
+  return [...items].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+      return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+    }
+    return timestamp(b).localeCompare(timestamp(a));
+  });
 }
 
 function firstBodyLine(body: string): string {

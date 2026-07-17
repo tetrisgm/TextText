@@ -16,7 +16,7 @@ import {
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
-import { isPrivatePostType, type Blog, type Post } from "@/lib/content";
+import type { Blog, Post } from "@/lib/content";
 import { updatePost } from "@/lib/pool/store";
 import { blogPostPath } from "@/lib/public-paths";
 
@@ -232,16 +232,9 @@ export function WorkspaceItemActions({
           <button type="button" role="menuitem" disabled={busy} onClick={toggleStar}>
             {post.starred ? "Unstar" : "Star"}
           </button>
-          {!isPrivatePostType(post.type) && (
-            <button
-              type="button"
-              role="menuitem"
-              disabled={busy}
-              onClick={togglePin}
-            >
-              {post.pinned ? "Unpin from blog" : "Pin to blog"}
-            </button>
-          )}
+          <button type="button" role="menuitem" disabled={busy} onClick={togglePin}>
+            {post.pinned ? "Unpin" : "Pin"}
+          </button>
           <button type="button" role="menuitem" onClick={share}>
             {copied ? "Link copied" : "Share"}
           </button>
