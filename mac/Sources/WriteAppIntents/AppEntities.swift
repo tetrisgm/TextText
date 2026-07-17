@@ -240,21 +240,20 @@ public struct WriteBlogEntityQuery: EntityStringQuery {
     }
 
     private func blogEntities() -> [WriteBlogEntity] {
-        let root = WorkspaceIntentActions().root.appendingPathComponent("Blogs", isDirectory: true)
-        let children = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        return children.filter { url in
-            var isDirectory: ObjCBool = false
-            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
-        }.map { url in
-            let path = "Blogs/\(url.lastPathComponent)"
-            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-            return WriteBlogEntity(
-                id: url.lastPathComponent,
-                title: url.lastPathComponent,
-                kind: "blog",
-                folderPath: path,
-                modifiedDate: date
-            )
-        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        // Blog folders come from the server workspace (mode "blog"), not a
+        // filesystem scan of the mount.
+        let folders = (try? WorkspaceIntentActions().folders()) ?? []
+        return folders
+            .filter { $0.kind == "blog" }
+            .map { folder in
+                WriteBlogEntity(
+                    id: folder.id,
+                    title: folder.title,
+                    kind: "blog",
+                    folderPath: folder.folderPath,
+                    modifiedDate: folder.modifiedDate
+                )
+            }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 }

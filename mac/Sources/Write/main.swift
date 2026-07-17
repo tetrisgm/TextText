@@ -1,4 +1,11 @@
 import AppKit
+import WriteAppIntents
+
+// App Intents run in THIS process; give them server-backed workspace access so
+// create/list/search/open/append/move go through the sync API (the source of
+// truth), never by scanning or writing the File Provider mount. Registered
+// before the run loop so it is always in place before any intent runs.
+WorkspaceIntentServerRegistry.makeServer = { WorkspaceIntentServerFactory.make() }
 
 // App-owned release/runtime verification. This uses the same checks the
 // installed app runs on first launch and each day, without creating UI.

@@ -1,5 +1,4 @@
 import Foundation
-import WriteWorkspaceCore
 
 public struct WorkspaceDocumentRecord: Equatable, Identifiable, Sendable {
     public var id: String
@@ -73,6 +72,7 @@ public struct WorkspacePublicationRecord: Equatable, Identifiable, Sendable {
 }
 
 public enum WorkspaceIntentError: Error, LocalizedError, Equatable {
+    case notSignedIn
     case emptyTitle
     case emptyText
     case emptyFolderName
@@ -83,6 +83,8 @@ public enum WorkspaceIntentError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
+        case .notSignedIn:
+            return "Sign in to Write to use this shortcut"
         case .emptyTitle:
             return "A title is required"
         case .emptyText:
@@ -101,151 +103,170 @@ public enum WorkspaceIntentError: Error, LocalizedError, Equatable {
     }
 }
 
+/// App Intents workspace operations, backed by the SERVER (the source of truth),
+/// not the File Provider mount or the retired iCloud mirror. Create goes through
+/// `postFile`; open/list/search/append/move/publish resolve through
+/// `workspace()` + folder manifests + `fileText`/`putFile`/`patchFile`, all keyed
+/// by the server post id (the same id the `write-app://item/{id}` deep link and
+/// the File Provider item use). Nothing here reads or writes a `.md` file.
 public struct WorkspaceIntentActions {
-    public let root: URL
-    private let coordinator: WorkspaceFileCoordinator
+    private let server: WorkspaceIntentServer?
     private let now: @Sendable () -> Date
 
-    public init(root: URL = WorkspaceRootResolver().resolve().url, now: @escaping @Sendable () -> Date = { Date() }) {
-        self.root = root
-        self.coordinator = WorkspaceFileCoordinator(rootURL: root)
+    /// The default server comes from the startup-registered factory; tests inject
+    /// a fake. No filesystem root is involved anymore.
+    public init(
+        server: WorkspaceIntentServer? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.server = server ?? WorkspaceIntentServerRegistry.makeServer()
         self.now = now
     }
+
+    private func requireServer() throws -> WorkspaceIntentServer {
+        guard let server else { throw WorkspaceIntentError.notSignedIn }
+        return server
+    }
+
+    // MARK: Create
 
     public func createDocument(title: String, body: String = "", folderPath: String? = nil) throws -> WorkspaceDocumentRecord {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { throw WorkspaceIntentError.emptyTitle }
-        let directory = try normalizedDirectory(folderPath, defaultPath: "Notes")
-        let kind = kindForDirectory(directory)
-        let id = UUID().uuidString
-        let date = isoString(now())
+        let server = try requireServer()
+        let folders = try server.folders()
+        let (folder, kind) = targetFolder(for: folderPath, folders: folders, defaultMode: "notes")
         let slug = slugForTitle(trimmedTitle)
-        let url = uniqueMarkdownURL(directory: directory, slug: slug)
-        let markdown = MarkdownIdentityCodec.inject(
-            into: renderMarkdown(
-                title: trimmedTitle,
-                slug: slug,
-                kind: kind,
-                status: "draft",
-                createdAt: date,
-                updatedAt: date,
-                extraFrontMatter: [:],
-                body: body
-            ),
-            itemId: id,
-            folderId: nil,
-            kind: kind
-        )
-        try coordinator.writeData(Data(markdown.utf8), to: url)
-        return try saveAndRecord(url: url, itemId: id)
+        let date = isoString(now())
+        let markdown = renderMarkdown(
+            title: trimmedTitle, slug: slug, kind: kind, status: "draft",
+            createdAt: date, updatedAt: date, extraFrontMatter: [:], body: body)
+        let item = try server.createDocument(
+            body: markdown, folderId: folder?.id, idempotencyKey: nil)
+        return record(from: item, folder: folder, folders: folders)
     }
 
-    public func openDocument(id: String) throws -> URL {
-        try document(id: id).deepLink
+    public func createBookmark(from url: URL, title: String? = nil) throws -> WorkspaceDocumentRecord {
+        let server = try requireServer()
+        let folders = try server.folders()
+        let folder = folders.first { $0.mode == "bookmarks" }
+        let date = now()
+        let displayTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
+            : (url.host ?? url.absoluteString)
+        let slug = slugForTitle(displayTitle)
+        let dateText = isoString(date)
+        // The server keeps a bookmark's URL only in the links list; a bare url:
+        // scalar is dropped, syncing the bookmark with no link. Emit the links
+        // list matching the server's JSON.stringify render (slashes not escaped,
+        // so the hashes agree) VERBATIM.
+        let linksJSON = "[{\"label\":\(jsonStringNoSlashEscape(displayTitle)),\"href\":\(jsonStringNoSlashEscape(url.absoluteString))}]"
+        let markdown = renderMarkdown(
+            title: displayTitle, slug: slug, kind: "bookmark", status: "draft",
+            createdAt: dateText, updatedAt: dateText,
+            extraFrontMatter: ["type": "bookmark", "created_at": dateText],
+            rawFrontMatterLines: ["links: \(linksJSON)"],
+            body: "[\(displayTitle)](\(url.absoluteString))\n")
+        let item = try server.createDocument(
+            body: markdown, folderId: folder?.id, idempotencyKey: nil)
+        return record(from: item, folder: folder, folders: folders)
     }
+
+    public func createFolder(name: String, parentPath: String? = nil) throws -> WorkspaceFolderRecord {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw WorkspaceIntentError.emptyFolderName }
+        let server = try requireServer()
+        let folders = try server.folders()
+        let parent = resolveParentPath(parentPath, folders: folders)
+        let created = try server.createFolder(
+            parentPath: parent, name: trimmed, idempotencyKey: nil)
+        return folderRecord(from: created)
+    }
+
+    // MARK: Read / open
+
+    public func openDocument(id: String) throws -> URL {
+        // The deep link is keyed by the server post id; the app's URL handler
+        // resolves it through the File Provider. No server round-trip needed.
+        guard !id.isEmpty,
+              let url = URL(string: "write-app://item/\(id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id)") else {
+            throw WorkspaceIntentError.documentNotFound(id)
+        }
+        return url
+    }
+
+    public func document(id: String) throws -> WorkspaceDocumentRecord {
+        guard let match = try allLocated().first(where: { $0.id == id }) else {
+            throw WorkspaceIntentError.documentNotFound(id)
+        }
+        return match
+    }
+
+    public func allDocuments() throws -> [WorkspaceDocumentRecord] {
+        try allLocated().sorted(by: documentSort)
+    }
+
+    public func recentDocuments(limit: Int = 10) throws -> [WorkspaceDocumentRecord] {
+        Array(try allDocuments().prefix(max(0, limit)))
+    }
+
+    public func bookmarkDocuments(limit: Int = 20) throws -> [WorkspaceDocumentRecord] {
+        Array(try allDocuments()
+            .filter { $0.kind == "bookmark" || $0.relativePath.hasPrefix("Bookmarks/") }
+            .prefix(max(0, limit)))
+    }
+
+    public func searchDocuments(query: String, limit: Int = 10) throws -> [WorkspaceDocumentRecord] {
+        let server = try requireServer()
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = try allLocated(server)
+        let matches: [WorkspaceDocumentRecord]
+        if normalizedQuery.isEmpty {
+            matches = all
+        } else {
+            matches = all.filter { record in
+                if record.title.lowercased().contains(normalizedQuery) { return true }
+                // Only fetch the body for documents whose title did not match.
+                guard let (text, _) = try? server.fileText(id: record.id) else { return false }
+                return ParsedMarkdown(markdown: text).body.lowercased().contains(normalizedQuery)
+            }
+        }
+        return Array(matches.sorted(by: documentSort).prefix(max(0, limit)))
+    }
+
+    public func folders() throws -> [WorkspaceFolderRecord] {
+        try requireServer().folders()
+            .map(folderRecord(from:))
+            .sorted { $0.folderPath < $1.folderPath }
+    }
+
+    // MARK: Mutate
 
     @discardableResult
     public func appendText(_ text: String, toDocument id: String) throws -> WorkspaceDocumentRecord {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw WorkspaceIntentError.emptyText
         }
-        let located = try locateDocument(id: id)
-        var markdown = located.markdown
+        let server = try requireServer()
+        let (existing, hash) = try fileText(id: id, server: server)
+        var markdown = existing
         if !markdown.hasSuffix("\n") { markdown += "\n" }
         markdown += text
         if !markdown.hasSuffix("\n") { markdown += "\n" }
         markdown = setFrontMatterValue(key: "updated_at", value: isoString(now()), in: markdown)
-        try coordinator.writeData(Data(markdown.utf8), to: located.url)
-        return try saveAndRecord(url: located.url, itemId: id)
-    }
-
-    public func searchDocuments(query: String, limit: Int = 10) throws -> [WorkspaceDocumentRecord] {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let records = try allLocatedDocuments()
-        let matches: [LocatedDocument]
-        if normalizedQuery.isEmpty {
-            matches = records
-        } else {
-            matches = records.filter { located in
-                let parsed = ParsedMarkdown(markdown: located.markdown)
-                return located.record.title.lowercased().contains(normalizedQuery)
-                    || parsed.body.lowercased().contains(normalizedQuery)
-            }
-        }
-        return Array(matches
-            .map(\.record)
-            .sorted(by: documentSort)
-            .prefix(max(0, limit)))
-    }
-
-    public func createFolder(name: String, parentPath: String? = nil) throws -> WorkspaceFolderRecord {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw WorkspaceIntentError.emptyFolderName }
-        let parent = try normalizedDirectory(parentPath, defaultPath: "Notes")
-        let child = safePathComponent(trimmed)
-        let path = join(parent, child)
-        guard !WorkspaceLayout.isInternal(relativePath: path) else {
-            throw WorkspaceIntentError.invalidFolderPath(path)
-        }
-        let url = root.appendingPathComponent(path, isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return folderRecord(path: path, url: url)
+        let item = try server.updateDocument(id: id, body: markdown, ifMatch: hash)
+        return record(from: item, folder: nil, folders: try server.folders())
     }
 
     @discardableResult
     public func moveDocument(id: String, toFolder folderPath: String) throws -> WorkspaceDocumentRecord {
-        let located = try locateDocument(id: id)
-        let directory = try normalizedDirectory(folderPath, defaultPath: "Notes")
-        let destination = uniqueMarkdownURL(
-            directory: directory,
-            slug: located.url.deletingPathExtension().lastPathComponent
-        )
-        try coordinator.moveItem(at: located.url, to: destination)
-        var markdown = try readMarkdown(destination)
-        let slug = destination.deletingPathExtension().lastPathComponent
-        markdown = setFrontMatterValue(key: "slug", value: slug, in: markdown)
-        markdown = setFrontMatterValue(key: "updated_at", value: isoString(now()), in: markdown)
-        try coordinator.writeData(Data(markdown.utf8), to: destination)
-        return try saveAndRecord(url: destination, itemId: id)
-    }
-
-    public func createBookmark(from url: URL, title: String? = nil) throws -> WorkspaceDocumentRecord {
-        let date = now()
-        let year = Calendar(identifier: .gregorian).component(.year, from: date)
-        let directory = "Bookmarks/\(year)"
-        let displayTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
-            : (url.host ?? url.absoluteString)
-        let id = UUID().uuidString
-        let slug = slugForTitle(displayTitle)
-        let target = uniqueMarkdownURL(directory: directory, slug: slug)
-        let dateText = isoString(date)
-        // The server keeps a bookmark's URL only in the links list; a bare
-        // url: scalar is dropped, syncing the bookmark with no link. Emit the
-        // links list matching the server's JSON.stringify render (slashes not
-        // escaped, so the hashes agree).
-        let linksJSON = "[{\"label\":\(jsonStringNoSlashEscape(displayTitle)),\"href\":\(jsonStringNoSlashEscape(url.absoluteString))}]"
-        let markdown = MarkdownIdentityCodec.inject(
-            into: renderMarkdown(
-                title: displayTitle,
-                slug: slug,
-                kind: "bookmark",
-                status: "draft",
-                createdAt: dateText,
-                updatedAt: dateText,
-                extraFrontMatter: [
-                    "type": "bookmark",
-                    "created_at": dateText,
-                ],
-                rawFrontMatterLines: ["links: \(linksJSON)"],
-                body: "[\(displayTitle)](\(url.absoluteString))\n"
-            ),
-            itemId: id,
-            folderId: "bookmarks",
-            kind: "bookmark"
-        )
-        try coordinator.writeData(Data(markdown.utf8), to: target)
-        return try saveAndRecord(url: target, itemId: id)
+        let server = try requireServer()
+        let folders = try server.folders()
+        let (destination, _) = targetFolder(for: folderPath, folders: folders, defaultMode: "notes")
+        guard let destination else { throw WorkspaceIntentError.invalidFolderPath(folderPath) }
+        let (_, hash) = try fileText(id: id, server: server)
+        let item = try server.moveDocument(id: id, toFolder: destination.id, ifMatch: hash)
+        return record(from: item, folder: destination, folders: folders)
     }
 
     @discardableResult
@@ -259,198 +280,156 @@ public struct WorkspaceIntentActions {
         try setPublicationStatus("draft", forDocument: id)
     }
 
-    public func recentDocuments(limit: Int = 10) throws -> [WorkspaceDocumentRecord] {
-        Array(try allLocatedDocuments()
-            .map(\.record)
-            .sorted(by: documentSort)
-            .prefix(max(0, limit)))
-    }
-
-    public func document(id: String) throws -> WorkspaceDocumentRecord {
-        try locateDocument(id: id).record
-    }
-
-    public func allDocuments() throws -> [WorkspaceDocumentRecord] {
-        try allLocatedDocuments().map(\.record).sorted(by: documentSort)
-    }
-
-    public func bookmarkDocuments(limit: Int = 20) throws -> [WorkspaceDocumentRecord] {
-        Array(try allLocatedDocuments()
-            .map(\.record)
-            .filter { $0.kind == "bookmark" || $0.relativePath.hasPrefix("Bookmarks/") }
-            .sorted(by: documentSort)
-            .prefix(max(0, limit)))
-    }
-
-    public func folders() throws -> [WorkspaceFolderRecord] {
-        let roots = ["Notes", "Drafts", "Bookmarks", "Blogs"]
-        var records: [WorkspaceFolderRecord] = []
-        for rootName in roots {
-            let url = root.appendingPathComponent(rootName, isDirectory: true)
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            records.append(folderRecord(path: rootName, url: url))
-            guard let enumerator = FileManager.default.enumerator(
-                at: url,
-                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            for case let child as URL in enumerator {
-                var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: child.path, isDirectory: &isDirectory),
-                      isDirectory.boolValue,
-                      let path = WorkspaceLayout.relativePath(for: child, under: root),
-                      !WorkspaceLayout.isInternal(relativePath: path) else { continue }
-                records.append(folderRecord(path: path, url: child))
-            }
-        }
-        return records.sorted { $0.folderPath < $1.folderPath }
-    }
-
     private func setPublicationStatus(_ status: String, forDocument id: String) throws -> WorkspaceDocumentRecord {
-        let located = try locateDocument(id: id)
-        // Notes and bookmarks are unlisted forever; the invariant holds at
-        // every layer, not just server-side, so publishing them is refused
-        // here before any byte changes.
-        if status == "published" {
-            let kind = located.record.kind.lowercased()
-            if kind == "note" || kind == "bookmark" {
-                throw WorkspaceIntentError.unlistedKind(kind)
-            }
+        let server = try requireServer()
+        let (text, hash) = try fileText(id: id, server: server)
+        // Notes and bookmarks are unlisted forever; refuse before any byte
+        // changes on the server. Derive the kind from the fetched markdown so no
+        // extra round-trip is needed.
+        let parsed = ParsedMarkdown(markdown: text)
+        let kind = (parsed.frontMatter["kind"] ?? parsed.frontMatter["type"] ?? "document").lowercased()
+        if status == "published", kind == "note" || kind == "bookmark" {
+            throw WorkspaceIntentError.unlistedKind(kind)
         }
-        var markdown = setFrontMatterValue(key: "status", value: status, in: located.markdown)
+        var markdown = setFrontMatterValue(key: "status", value: status, in: text)
         markdown = setFrontMatterValue(key: "updated_at", value: isoString(now()), in: markdown)
-        try coordinator.writeData(Data(markdown.utf8), to: located.url)
-        return try saveAndRecord(url: located.url, itemId: id)
+        let item = try server.updateDocument(id: id, body: markdown, ifMatch: hash)
+        return record(from: item, folder: nil, folders: try server.folders())
     }
 
-    private func locateDocument(id: String) throws -> LocatedDocument {
-        if let located = try allLocatedDocuments().first(where: { $0.record.id == id }) {
-            return located
+    // MARK: Server helpers
+
+    private func fileText(id: String, server: WorkspaceIntentServer) throws -> (text: String, hash: String) {
+        do {
+            return try server.fileText(id: id)
+        } catch let error as WorkspaceIntentServerError {
+            if case .notFound = error { throw WorkspaceIntentError.documentNotFound(id) }
+            throw error
         }
-        throw WorkspaceIntentError.documentNotFound(id)
     }
 
-    private func allLocatedDocuments() throws -> [LocatedDocument] {
-        let index = WorkspaceIndexStore.rebuild(
-            root: root,
-            readData: { url in try coordinator.readData(at: url) }
-        )
-        return try index.entries.compactMap { itemId, entry in
-            guard !WorkspaceLayout.isInternal(relativePath: entry.relativePath) else { return nil }
-            let url = root.appendingPathComponent(entry.relativePath)
-            let markdown = try readMarkdown(url)
-            guard let identity = MarkdownIdentityCodec.extract(from: markdown) else {
-                return nil
+    private func allLocated(_ injected: WorkspaceIntentServer? = nil) throws -> [WorkspaceDocumentRecord] {
+        let server = try injected ?? requireServer()
+        let folders = try server.folders()
+        var records: [WorkspaceDocumentRecord] = []
+        for folder in folders {
+            for item in try server.items(inFolder: folder.id) {
+                records.append(record(from: item, folder: folder, folders: folders))
             }
-            return LocatedDocument(
-                url: url,
-                markdown: markdown,
-                record: record(
-                    itemId: itemId,
-                    identity: identity,
-                    relativePath: entry.relativePath,
-                    url: url,
-                    markdown: markdown
-                )
-            )
         }
-    }
-
-    private func saveAndRecord(url: URL, itemId: String) throws -> WorkspaceDocumentRecord {
-        let markdown = try readMarkdown(url)
-        guard let relativePath = WorkspaceLayout.relativePath(for: url, under: root) else {
-            throw WorkspaceIntentError.invalidFolderPath(url.path)
-        }
-        let identity = MarkdownIdentityCodec.extract(from: markdown)
-        let data = Data(markdown.utf8)
-        var index = WorkspaceIndexStore.load(root: root) ?? SyncIndex()
-        index.entries[itemId] = IndexEntry(
-            hash: MarkdownIdentityCodec.syncHash(for: data),
-            relativePath: relativePath,
-            fileMtime: fileMtime(url),
-            folderId: identity?.folderId,
-            kind: identity?.kind
-        )
-        try WorkspaceIndexStore.save(index, root: root)
-        return record(
-            itemId: itemId,
-            identity: identity,
-            relativePath: relativePath,
-            url: url,
-            markdown: markdown
-        )
+        return records
     }
 
     private func record(
-        itemId: String,
-        identity: MarkdownIdentity?,
-        relativePath: String,
-        url: URL,
-        markdown: String
+        from item: WorkspaceServerItem,
+        folder: WorkspaceServerFolder?,
+        folders: [WorkspaceServerFolder]
     ) -> WorkspaceDocumentRecord {
-        let parsed = ParsedMarkdown(markdown: markdown)
-        let title = parsed.frontMatter["title"] ?? url.deletingPathExtension().lastPathComponent
-        let kind = identity?.kind ?? parsed.frontMatter["kind"] ?? parsed.frontMatter["type"] ?? "document"
-        let folderPath = deletingLastPathComponent(relativePath)
-        let publishedURL = (parsed.frontMatter["published_url"] ?? parsed.frontMatter["url"]).flatMap(URL.init(string:))
+        let owningFolder = folder
+            ?? item.folderId.flatMap { fid in folders.first { $0.id == fid } }
+            ?? folders.first { $0.mode == modeForKind(item.kind) }
+        let folderPath = owningFolder?.path ?? item.folderPath ?? ""
+        let relativePath = folderPath.isEmpty
+            ? "\(item.slug).md"
+            : "\(displayFolderPath(owningFolder, fallback: folderPath))/\(item.slug).md"
         return WorkspaceDocumentRecord(
-            id: itemId,
-            title: title,
-            kind: kind,
+            id: item.id,
+            title: item.title,
+            kind: item.kind,
             folderPath: folderPath,
             relativePath: relativePath,
-            modifiedDate: fileMtime(url).map(Date.init(timeIntervalSince1970:)),
-            status: parsed.frontMatter["status"],
-            publishedURL: publishedURL
+            modifiedDate: item.modifiedDate,
+            status: item.status,
+            publishedURL: item.canonicalURL
         )
     }
 
-    private func readMarkdown(_ url: URL) throws -> String {
-        let data = try coordinator.readData(at: url)
-        guard let markdown = String(data: data, encoding: .utf8) else {
-            let relative = WorkspaceLayout.relativePath(for: url, under: root) ?? url.path
-            throw WorkspaceIntentError.invalidMarkdown(relative)
+    /// A capitalized, mirror-style folder label so downstream `hasPrefix`
+    /// checks (e.g. bookmarks) keep working even though the server folder path
+    /// is lowercase. Bookmarks map to "Bookmarks/{year}".
+    private func displayFolderPath(_ folder: WorkspaceServerFolder?, fallback: String) -> String {
+        switch folder?.mode {
+        case "bookmarks":
+            let year = Calendar(identifier: .gregorian).component(.year, from: now())
+            return "Bookmarks/\(year)"
+        case "notes":
+            return "Notes"
+        case "blog":
+            return folder?.path == "blog" ? "Blogs" : (folder?.name ?? "Blogs")
+        default:
+            return fallback
         }
-        return markdown
     }
 
-    private func normalizedDirectory(_ raw: String?, defaultPath: String) throws -> String {
-        let source = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = source?.isEmpty == false ? source! : defaultPath
-        let normalized = value
-            .replacingOccurrences(of: "\\", with: "/")
-            .split(separator: "/", omittingEmptySubsequences: true)
-            .map(String.init)
-        guard !normalized.isEmpty,
-              !normalized.contains("."),
-              !normalized.contains("..") else {
-            throw WorkspaceIntentError.invalidFolderPath(value)
-        }
-        var parts = normalized
-        switch parts[0].lowercased() {
-        case "notes": parts[0] = "Notes"
-        case "drafts": parts[0] = "Drafts"
-        case "bookmarks": parts[0] = "Bookmarks"
-        case "blogs": parts[0] = "Blogs"
-        default: break
-        }
-        let result = parts.map(safePathComponent).joined(separator: "/")
-        guard !WorkspaceLayout.isInternal(relativePath: result) else {
-            throw WorkspaceIntentError.invalidFolderPath(value)
-        }
-        return result
+    private func folderRecord(from folder: WorkspaceServerFolder) -> WorkspaceFolderRecord {
+        WorkspaceFolderRecord(
+            id: folder.id,
+            title: folder.name,
+            kind: folder.mode == "blog" ? "blog" : "folder",
+            folderPath: folder.path,
+            modifiedDate: nil
+        )
     }
 
-    private func uniqueMarkdownURL(directory: String, slug: String) -> URL {
-        let directoryURL = root.appendingPathComponent(directory, isDirectory: true)
-        var candidate = directoryURL.appendingPathComponent("\(slug).md")
-        var counter = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = directoryURL.appendingPathComponent("\(slug)-\(counter).md")
-            counter += 1
+    private func targetFolder(
+        for folderPath: String?, folders: [WorkspaceServerFolder], defaultMode: String
+    ) -> (WorkspaceServerFolder?, String) {
+        let raw = folderPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // Prefer an exact server path match (so "notes"/"blog" resolve directly);
+        // otherwise map the leading component to a system mode.
+        if !raw.isEmpty, let exact = folders.first(where: { $0.path.lowercased() == raw.lowercased() }) {
+            return (exact, kindForMode(exact.mode))
         }
-        return candidate
+        let mode = modeForFolderPath(raw, defaultMode: defaultMode)
+        let folder = folders.first { $0.mode == mode }
+        return (folder, kindForMode(mode))
     }
+
+    private func resolveParentPath(_ raw: String?, folders: [WorkspaceServerFolder]) -> String {
+        let path = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if path.isEmpty { return folders.first { $0.mode == "notes" }?.path ?? "notes" }
+        if let exact = folders.first(where: { $0.path.lowercased() == path.lowercased() }) {
+            return exact.path
+        }
+        let mode = modeForFolderPath(path, defaultMode: "notes")
+        return folders.first { $0.mode == mode }?.path ?? path.lowercased()
+    }
+
+    private func modeForFolderPath(_ path: String, defaultMode: String) -> String {
+        let first = path.split(separator: "/", omittingEmptySubsequences: true)
+            .first.map(String.init)?.lowercased() ?? ""
+        switch first {
+        case "notes": return "notes"
+        case "bookmarks": return "bookmarks"
+        case "blogs", "blog", "drafts": return "blog"
+        default: return defaultMode
+        }
+    }
+
+    private func kindForMode(_ mode: String) -> String {
+        switch mode {
+        case "notes": return "note"
+        case "bookmarks": return "bookmark"
+        default: return "article"
+        }
+    }
+
+    private func modeForKind(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "note": return "notes"
+        case "bookmark": return "bookmarks"
+        default: return "blog"
+        }
+    }
+
+    private func documentSort(_ lhs: WorkspaceDocumentRecord, _ rhs: WorkspaceDocumentRecord) -> Bool {
+        let left = lhs.modifiedDate ?? .distantPast
+        let right = rhs.modifiedDate ?? .distantPast
+        if left != right { return left > right }
+        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+    }
+
+    // MARK: Markdown formatting (pure helpers)
 
     private func renderMarkdown(
         title: String,
@@ -510,29 +489,6 @@ public struct WorkspaceIntentActions {
         return text
     }
 
-    private func folderRecord(path: String, url: URL) -> WorkspaceFolderRecord {
-        WorkspaceFolderRecord(
-            id: path,
-            title: url.lastPathComponent,
-            kind: path.hasPrefix("Blogs/") ? "blog" : "folder",
-            folderPath: path,
-            modifiedDate: fileMtime(url).map(Date.init(timeIntervalSince1970:))
-        )
-    }
-
-    private func documentSort(_ lhs: WorkspaceDocumentRecord, _ rhs: WorkspaceDocumentRecord) -> Bool {
-        let left = lhs.modifiedDate ?? .distantPast
-        let right = rhs.modifiedDate ?? .distantPast
-        if left != right { return left > right }
-        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-    }
-
-    private func kindForDirectory(_ directory: String) -> String {
-        if directory.hasPrefix("Bookmarks") { return "bookmark" }
-        if directory.hasPrefix("Blogs") || directory.hasPrefix("Drafts") { return "article" }
-        return "note"
-    }
-
     private func slugForTitle(_ title: String) -> String {
         let folded = title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         var output = ""
@@ -548,26 +504,6 @@ public struct WorkspaceIntentActions {
         }
         let trimmed = output.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return trimmed.isEmpty ? "untitled" : trimmed
-    }
-
-    private func safePathComponent(_ value: String) -> String {
-        value.replacingOccurrences(of: "/", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func deletingLastPathComponent(_ path: String) -> String {
-        let value = (path as NSString).deletingLastPathComponent
-        return value == "." ? "" : value
-    }
-
-    private func join(_ parts: String...) -> String {
-        parts.flatMap { $0.split(separator: "/", omittingEmptySubsequences: true).map(String.init) }
-            .joined(separator: "/")
-    }
-
-    private func fileMtime(_ url: URL) -> Double? {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        return (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970
     }
 
     private func isoString(_ date: Date) -> String {
@@ -595,13 +531,7 @@ public struct WorkspaceIntentActions {
     }
 }
 
-private struct LocatedDocument {
-    var url: URL
-    var markdown: String
-    var record: WorkspaceDocumentRecord
-}
-
-private struct ParsedMarkdown {
+struct ParsedMarkdown {
     var frontMatter: [String: String]
     var body: String
 
