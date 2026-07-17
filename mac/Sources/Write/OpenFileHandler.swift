@@ -74,6 +74,13 @@ enum OpenFileHandler {
         writeFileProviderReference(rawIdentifier) != nil
     }
 
+    /// Whether a file's extension is one Write can open at all. The old
+    /// syncRoot()/kind() workspace-vs-external split is gone (the File Provider
+    /// now decides ownership); callers use this only to reject unsupported types.
+    static func isSupported(_ url: URL) -> Bool {
+        supportedExtensions.contains(url.pathExtension.lowercased())
+    }
+
     static func managedTarget(
         for url: URL,
         fallbackHandle: String?,

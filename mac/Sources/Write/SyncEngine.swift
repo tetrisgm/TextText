@@ -208,6 +208,15 @@ final class SyncEngine {
         SyncEngine.defaultIsInsideWriteFileProviderMount($0)
     }
 
+    /// When this returns true the engine stands every pass down to an idle
+    /// no-op before it touches the legacy mirror: no `~/Write` directory is
+    /// created, no client call is made, and status settles to `.idle`. The app
+    /// sets this once a File Provider domain is the sole writer. It defaults to
+    /// false so the Headless CLI and the no-File-Provider fallback keep
+    /// mirroring exactly as before. Read on the engine's serial queue; the app
+    /// backs it with monotonic main-thread state (benign for a Bool read).
+    var isPaused: () -> Bool = { false }
+
     /// Test seam: when set and it returns true for a moved file's relative path,
     /// the post-move convergence read is treated as if the local file were
     /// unreadable (localHash nil), to exercise the "needs pull" sentinel path.
@@ -548,6 +557,25 @@ final class SyncEngine {
             expectedEpoch: expectedEpoch,
             schedulesBackgroundWork: schedulesBackgroundRetry
         ) else {
+            return SyncSummary()
+        }
+        // Sole-writer cutover: when a File Provider domain owns the mirror the
+        // engine must never write. Stand down BEFORE client.workspace() or
+        // ensureSkeleton so no `~/Write` directory is created, cancel any
+        // pending retry/follow-up so the process never loops, and settle to
+        // .idle so the status UI does not stick on "Syncing".
+        if isPaused() {
+            stateLock.lock()
+            let stateChanged = _status != .idle
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            retryGeneration &+= 1
+            retryBackoff.reset()
+            unresolvedErrorCount = 0
+            pendingPass = nil
+            _status = .idle
+            stateLock.unlock()
+            if stateChanged { notifyStateChange() }
             return SyncSummary()
         }
         guard let client = makeClient() else {

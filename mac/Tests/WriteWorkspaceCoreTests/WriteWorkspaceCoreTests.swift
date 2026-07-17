@@ -208,45 +208,6 @@ final class WriteWorkspaceCoreTests: XCTestCase {
         ]))
     }
 
-    func testLegacyMigrationRemapsOldLayoutAndPreservesConflictingUserFiles() throws {
-        let legacy = try temporaryDirectory()
-        let workspace = try temporaryDirectory()
-        let descriptor = fixtureWorkspace()
-        try FileManager.default.createDirectory(at: legacy.appendingPathComponent("blog"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: legacy.appendingPathComponent("notes"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: legacy.appendingPathComponent("bookmarks"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: workspace.appendingPathComponent("Notes"), withIntermediateDirectories: true)
-        try Data("blog edit".utf8).write(to: legacy.appendingPathComponent("blog/post.md"))
-        try Data("---\nstatus: draft\n---\n\nDraft\n".utf8)
-            .write(to: legacy.appendingPathComponent("blog/draft.md"))
-        try Data("---\ncreatedAt: \"2024-02-01T00:00:00Z\"\n---\n\nBookmark\n".utf8)
-            .write(to: legacy.appendingPathComponent("bookmarks/link.md"))
-        try Data("same".utf8).write(to: legacy.appendingPathComponent("notes/same.md"))
-        try Data("same".utf8).write(to: workspace.appendingPathComponent("Notes/same.md"))
-        try Data("legacy".utf8).write(to: legacy.appendingPathComponent("notes/conflict.md"))
-        try Data("workspace".utf8).write(to: workspace.appendingPathComponent("Notes/conflict.md"))
-        try Data("new".utf8).write(to: legacy.appendingPathComponent("notes/new.md"))
-        try Data("marker".utf8).write(to: legacy.appendingPathComponent(".write-sync"))
-
-        let summary = WorkspaceMigrator.migrateLegacyMirror(from: legacy, to: workspace, workspace: descriptor)
-
-        XCTAssertEqual(summary.errors, [])
-        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("Notes/new.md").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("Blogs/demo/Posts/post.md").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("Drafts/draft.md").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("Bookmarks/2024/link.md").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("blog/post.md").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: workspace.appendingPathComponent(".write-sync").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent(".write-local.nosync/state/sync-marker.txt").path))
-        XCTAssertEqual(
-            try String(contentsOf: workspace.appendingPathComponent("Notes/conflict.md")),
-            "workspace"
-        )
-        let notes = try FileManager.default.contentsOfDirectory(atPath: workspace.appendingPathComponent("Notes").path)
-        XCTAssertTrue(notes.contains { $0.contains("conflicted copy migration") })
-        XCTAssertGreaterThanOrEqual(summary.conflicts, 1)
-    }
-
     func testSkeletonAndIndexWritesAreStableWhenBytesDoNotChange() throws {
         let root = try temporaryDirectory()
         let workspace = fixtureWorkspace()

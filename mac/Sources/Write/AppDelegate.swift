@@ -13,7 +13,6 @@ import WriteWorkspaceCore
 /// signed out; only sync waits for a link.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let syncRootKey = "WriteSyncRootPath"
-    private static let workspaceMigrationAppliedKey = "WriteWorkspaceICloudPhase1MigrationApplied"
     private static let loginItemAppliedKey = "WriteLoginItemDefaultApplied"
     private static let productionBundleIdentifier = "net.writeapp.write.mac"
     private static let moveToApplicationsRelaunchArgument = "--write-moved-to-applications"
@@ -24,11 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // of the interim flat `.md` (name and content are one node) while bundling
     // assets and importing into Bear/Ulysses. (9->10 was the flat `.md` step.) The
     // rebuild waits for zero pending local edits, so no in-flight edit is stranded.
+    // 11 -> 12: refill leaf .textpack files that materialized as 0 bytes (a leaf
+    // must advertise documentSize; see WriteItem).
     static let fileProviderSchemaVersion = 12
     private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()
-    private var engine: SyncEngine!
     private var changeListener: ChangeListener!
     private var captureAgent: CaptureAgent!
     private var linkController: LinkController!
@@ -48,6 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var spotlightIndexRootPath: String?
     private var spotlightIndexedIds = Set<String>()
     private var spotlightIndexedHashes: [String: String] = [:]
+    // Spotlight indexes from the server manifest (the mount's .textpack bodies are
+    // zipped and carry no writeId). Cache per-folder etags + items so an unchanged
+    // folder is a cheap 304 and a transient failure reuses the last good list.
+    private var spotlightFolderETags: [String: String] = [:]
+    private var spotlightManifestCache: [String: [ManifestItem]] = [:]
     private let spotlightQueue = DispatchQueue(label: "com.example.write.mac.spotlight", qos: .utility)
     private var spotlightDebounce: DispatchWorkItem?
     private var shareInboxWatcher: WorkspaceFolderWatcher?
@@ -91,38 +96,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Only when the build carries a real feed + key; otherwise the
         // updater stays dormant and invisible (no Sparkle, no launch alert).
         if Updater.isConfigured {
-            updater = Updater(isBusy: { [weak self] in self?.engine?.isSyncing ?? false })
+            updater = Updater(isBusy: { [weak self] in
+                self?.fileProviderStatusMonitor.snapshot.severity == .working })
         }
         registerLoginItemByDefault()
         NSApp.mainMenu = buildMainMenu()
 
         linkController = LinkController(store: store)
         setWorkspaceLocation(syncRootLocation())
-        migrateLegacySyncFolderIfNeeded()
         if let workspaceLocation = currentWorkspaceLocation(), !workspaceLocation.iCloudAvailable {
             appendActivity(workspaceLocation.statusMessage)
         }
-        engine = SyncEngine(store: store)
-        engine.makeClient = { [weak self] in
-            guard let self, let credentials = self.store.loadCredentials() else { return nil }
-            return ServerClient(origin: resolveServerOrigin(credentials: credentials),
-                                token: credentials.token)
-        }
-        engine.syncRootProvider = { [weak self] in self?.syncRoot() ?? Self.defaultSyncRoot() }
-        engine.workspaceLocationProvider = { [weak self] in self?.currentWorkspaceLocation() ?? self?.syncRootLocation() }
-        engine.onActivity = { [weak self] message in self?.appendActivity(message) }
-        engine.onStateChange = { [weak self] in self?.syncStateChanged() }
-        engine.onPassCompleted = { [weak self] summary in
-            self?.syncPassCompleted(summary)
-        }
-        engine.onServerAppVersion = { [weak self] version in self?.serverAdvertisedAppVersion(version) }
+        // Sole-writer cutover: the File Provider mount is the ONLY sync path in
+        // the GUI. There is no legacy `~/Write` mirror engine here anymore (it
+        // survives only for the headless CLI, which builds its own SyncEngine in
+        // Headless.swift). Sign-in seeds+registers the domain; the extension owns
+        // create/rename/move/delete/body; a remote change re-materializes the
+        // mount. This removes the double-writer and the races that let a stray
+        // engine pass re-create the iCloud mirror.
 
         linkController.onChange = { [weak self] in self?.refreshUI() }
         linkController.onActivity = { [weak self] message in self?.appendActivity(message) }
         linkController.onLinked = { [weak self] _ in
             guard let self else { return }
-            self.engine.syncNow()
+            // Fetch+cache the workspace, then register the File Provider domain
+            // (never a mirror pass). seedCachedWorkspaceIfNeeded calls
+            // syncFileProviderDomain() once account.json is cached.
+            self.seedCachedWorkspaceIfNeeded()
             self.healthReporter?.flushAsync()
+            // Shared items filed while signed out could not reach the server;
+            // drain them now that credentials exist.
+            self.retryShareInboxDrain()
             self.refreshUI()
             // Linking configures folder sync; bring the workspace forward.
             NSApp.activate(ignoringOtherApps: true)
@@ -130,7 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setupStatusItem()
-        engine.start()
+        // Warm account.json for a returning user so the File Provider domain can
+        // register on launch. Best effort and file-free.
+        seedCachedWorkspaceIfNeeded()
         configureSpotlightIndexing()
         configureShareInbox()
         syncFileProviderDomain()
@@ -142,20 +148,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureAgent.onActivity = { [weak self] message in self?.appendActivity(message) }
         changeListener = ChangeListener(store: store)
         changeListener.onRemoteChange = { [weak self] in
-            self?.engine.syncNow()
-            self?.captureAgent.poke()
-            self?.signalFileProviderChange(serverReachable: true)
+            guard let self else { return }
+            self.captureAgent.poke()
+            // The File Provider mount is the sole writer: a remote change means
+            // re-materialize it (signal the enumerators + re-download).
+            self.signalFileProviderChange(serverReachable: true)
         }
         changeListener.start()
         captureAgent.start()
 
-        fileProviderStatusMonitor.onChange = { [weak self] _ in
-            self?.refreshUI()
+        fileProviderStatusMonitor.onChange = { [weak self] snapshot in
+            guard let self else { return }
+            // The mount is the sole writer, so its status drives what the engine's
+            // onStateChange used to: let a Sparkle update deferred mid-sync surface
+            // once sync settles, and reindex Spotlight after content lands.
+            let busy = snapshot.severity == .working
+            if self.wasBusy && !busy {
+                self.updater?.busyDidEnd()
+                self.scheduleSpotlightReindex()
+            }
+            self.wasBusy = busy
+            self.refreshUI()
         }
         healthReporter = AppHealthReporter(
             stateStore: store,
             syncRootProvider: { [weak self] in
-                self?.syncRoot() ?? Self.defaultSyncRoot()
+                // Prefer the live File Provider mount; fall back to the legacy
+                // mirror only when no domain is registered (the CLI/no-FP case).
+                self?.fileProviderUserVisibleURL
+                    ?? self?.syncRoot() ?? Self.defaultSyncRoot()
             },
             finderStatusProvider: { [weak self] in
                 guard let self else { return .unavailable }
@@ -183,16 +204,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let fileURLs = urls.filter { $0.scheme != "write-app" }
         guard !fileURLs.isEmpty else { return }
-        let root = syncRoot()
+        // The legacy syncRoot()/kind() classification is gone: with the File
+        // Provider as the sole writer, every managed file lives in the mount, so
+        // ask the system which items it owns. openExternalOrFileProviderItem
+        // routes Write items to the managed opener and everything else to
+        // external import.
         for url in fileURLs {
-            switch OpenFileHandler.kind(for: url, syncRoot: root) {
-            case .workspace:
-                resolveAndOpenManagedFile(url)
-            case .external:
-                openExternalOrFileProviderItem(url)
-            case .unsupported:
+            guard OpenFileHandler.isSupported(url) else {
                 appendActivity("Could not open \(url.lastPathComponent): unsupported file type")
+                continue
             }
+            openExternalOrFileProviderItem(url)
         }
     }
 
@@ -334,7 +356,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 kind: "note"
             )
             DispatchQueue.main.async { [weak self] in
-                self?.engine.syncNow()
+                // The note now lives on the server; re-materialize the mount
+                // (a signed-in workspace is always File-Provider-backed).
+                self?.signalFileProviderChange(serverReachable: true)
                 self?.openInMainWindow(target)
             }
         }
@@ -460,8 +484,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             nowUptime: uptime
         ) else { return }
         lastBackgroundRecoveryUptime = uptime
+        // Recover a domain that never registered (e.g. a transient sign-in fetch);
+        // a no-op once the workspace is cached and the domain is up.
+        seedCachedWorkspaceIfNeeded()
         changeListener?.nudge()
-        engine?.syncNow()
+        signalFileProviderChange(serverReachable: true)
         captureAgent?.poke()
         fileProviderStatusMonitor.refresh()
     }
@@ -473,46 +500,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ) -> Bool {
         guard let lastRunUptime else { return true }
         return nowUptime - lastRunUptime >= coalescingWindow
-    }
-
-    // Push channel: the server advertises its latest app build; when it is
-    // STRICTLY newer component-wise, trigger a background check, throttled to
-    // one per 120s so a rolled-back marker cannot hammer the feed.
-    private var lastPushCheck = Date.distantPast
-    private func serverAdvertisedAppVersion(_ version: String) {
-        guard versionNewer(version, appVersion) else { return }
-        guard Date().timeIntervalSince(lastPushCheck) > 120 else { return }
-        lastPushCheck = Date()
-        updater?.checkNow()
-    }
-
-    private func syncStateChanged() {
-        if !Thread.isMainThread {
-            DispatchQueue.main.async { [weak self] in self?.syncStateChanged() }
-            return
-        }
-        let busy = engine.isSyncing
-        // An update Sparkle offered mid-pass was deferred; the moment the
-        // engine goes idle, let it surface.
-        if wasBusy && !busy { updater?.busyDidEnd() }
-        if wasBusy && !busy { scheduleSpotlightReindex() }
-        wasBusy = busy
-        refreshUI()
-    }
-
-    private func syncPassCompleted(_ summary: SyncSummary) {
-        if !Thread.isMainThread {
-            DispatchQueue.main.async { [weak self] in
-                self?.syncPassCompleted(summary)
-            }
-            return
-        }
-        // The workspace identity is first known after a completed pass. Signal
-        // an existing domain only when that exact pass changed mirrored content;
-        // ordinary focus/resume passes keep Finder's current presentation.
-        syncFileProviderDomain(
-            signalExistingDomain: Self.shouldSignalFileProviderAfterSync(summary))
-        healthReporter?.runIfNeededAsync()
     }
 
     static func shouldSignalFileProviderAfterSync(_ summary: SyncSummary) -> Bool {
@@ -552,54 +539,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workspaceLocationLock.lock()
         workspaceLocation = location
         workspaceLocationLock.unlock()
-    }
-
-    private func migrateLegacySyncFolderIfNeeded() {
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: Self.workspaceMigrationAppliedKey) else { return }
-        if let custom = defaults.string(forKey: Self.syncRootKey), !custom.isEmpty {
-            defaults.set(true, forKey: Self.workspaceMigrationAppliedKey)
-            appendActivity("Keeping custom sync folder \(custom)")
-            return
-        }
-        let destinationLocation = currentWorkspaceLocation() ?? syncRootLocation()
-        guard destinationLocation.kind != .documentsFallback else {
-            return
-        }
-        let destination = destinationLocation.url
-        let legacy = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write", isDirectory: true)
-        if legacy.standardizedFileURL.path == destination.standardizedFileURL.path {
-            return
-        }
-        let summary = WorkspaceMigrator.migrateLegacyMirror(
-            from: legacy,
-            to: destination,
-            workspace: store.cachedWorkspace().map(descriptor(for:))
-        )
-        if summary.errors.isEmpty {
-            defaults.set(true, forKey: Self.workspaceMigrationAppliedKey)
-        }
-        if summary.moved + summary.adopted + summary.conflicts > 0 {
-            appendActivity("Adopted legacy sync folder into \(destination.path)")
-        }
-        for message in summary.errors.prefix(3) {
-            appendActivity("Workspace migration issue: \(message)")
-        }
-    }
-
-    private func descriptor(for workspace: Workspace) -> WorkspaceDescriptor {
-        WorkspaceDescriptor(
-            blog: WorkspaceBlogDescriptor(handle: workspace.blog.handle, name: workspace.blog.name),
-            folders: workspace.folders.map {
-                WorkspaceFolderDescriptor(
-                    id: $0.id,
-                    name: $0.name,
-                    path: $0.path,
-                    mode: $0.mode,
-                    parentId: $0.parentId
-                )
-            }
-        )
     }
 
     // MARK: Share inbox
@@ -695,39 +634,127 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         shareInboxQueue.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// Re-drive the share inbox after credentials arrive (called from sign-in).
+    private func retryShareInboxDrain() {
+        guard let container = shareInboxContainerURL() else { return }
+        scheduleShareInboxDrain(containerURL: container, delay: 0)
+    }
+
+    /// Drain shared items straight to the server (the sole writer now creates
+    /// nothing in the legacy mirror). Runs on shareInboxQueue, so the
+    /// synchronous ServerClient calls are safe here.
     private func drainShareInbox(containerURL: URL) {
-        let root = syncRoot()
         let reader = InboxReader(containerURL: containerURL)
         let records: [InboxRecord]
         do {
             records = try reader.completeItems()
         } catch {
-            DispatchQueue.main.async { [weak self] in
-                self?.appendActivity("Share inbox read failed: \(error.localizedDescription)")
-            }
+            appendActivity("Share inbox read failed: \(error.localizedDescription)")
             return
         }
         guard !records.isEmpty else { return }
 
-        let filer = InboxFiler(root: root)
+        // Signed out: keep the items (do NOT deleteConsumed) so they drain after
+        // the next sign-in via retryShareInboxDrain().
+        guard let credentials = store.loadCredentials() else {
+            appendActivity("Sign in to file shared items")
+            return
+        }
+        let client = ServerClient(
+            origin: resolveServerOrigin(credentials: credentials),
+            token: credentials.token)
+        let workspace: Workspace
+        if let cached = store.cachedWorkspace() {
+            workspace = cached
+        } else {
+            switch client.workspace() {
+            case .success(let (ws, data)):
+                workspace = ws
+                store.cacheWorkspace(data)
+            case .failure(let error):
+                appendActivity("Share inbox filing failed: \(error.description)")
+                return
+            }
+        }
+
+        let filer = InboxFiler(root: syncRoot())
         var filed = 0
         for record in records {
             do {
-                _ = try filer.file(record)
-                try reader.deleteConsumed(record)
-                filed += 1
-            } catch {
-                DispatchQueue.main.async { [weak self] in
-                    self?.appendActivity("Share inbox filing failed: \(error.localizedDescription)")
+                switch try filer.prepare(record) {
+                case let .create(folderMode, body, representation, idempotencyKey):
+                    let folderId = workspace.folders.first { $0.mode == folderMode }?.id
+                    switch client.postFile(
+                        body: body, folderId: folderId,
+                        representation: representation, idempotencyKey: idempotencyKey
+                    ) {
+                    case .success(.saved):
+                        try reader.deleteConsumed(record)
+                        filed += 1
+                    case .success(.conflict):
+                        // Do not drop it; the next drain retries the POST.
+                        appendActivity("A shared item conflicted on the server; will retry")
+                    case .success(.rejected(let message)):
+                        appendActivity("Shared item rejected: \(message)")
+                        try reader.deleteConsumed(record) // unchanged retry is futile
+                    case .failure(let error):
+                        appendActivity("Could not file a shared item: \(error.description)")
+                    }
+                case let .append(targetWriteId, text):
+                    if appendSharedText(text, toDocument: targetWriteId, client: client) {
+                        try reader.deleteConsumed(record)
+                        filed += 1
+                    }
+                case let .unsupported(reason):
+                    appendActivity("Skipped a shared item: \(reason)")
+                    try reader.deleteConsumed(record)
                 }
+            } catch {
+                appendActivity("Share inbox filing failed: \(error.localizedDescription)")
             }
         }
         guard filed > 0 else { return }
         DispatchQueue.main.async { [weak self] in
             self?.appendActivity("Filed \(filed) shared item\(filed == 1 ? "" : "s")")
-            self?.engine.syncNow()
+            // A signed-in workspace is always File-Provider-backed; re-materialize.
+            self?.signalFileProviderChange(serverReachable: true)
             self?.scheduleSpotlightReindex()
             self?.refreshUI()
+        }
+    }
+
+    /// Append shared text to an existing server document with If-Match, so a
+    /// stale hash surfaces as a conflict (retried next drain) rather than a
+    /// silent drop. Returns true only when the append landed.
+    private func appendSharedText(
+        _ text: String, toDocument id: String, client: ServerClient
+    ) -> Bool {
+        switch client.fileText(postId: id) {
+        case .failure(let error):
+            appendActivity("Could not load the shared target: \(error.description)")
+            return false
+        case .success(let (existing, hash)):
+            guard let hash else {
+                appendActivity("Could not append shared text: the server sent no version")
+                return false
+            }
+            var body = existing
+            if !body.hasSuffix("\n") { body += "\n" }
+            body += text
+            if !body.hasSuffix("\n") { body += "\n" }
+            switch client.putFile(postId: id, body: body, ifMatch: hash) {
+            case .success(.saved):
+                return true
+            case .success(.conflict):
+                appendActivity("The shared target changed on the server; will retry the append")
+                return false
+            case .success(.rejected(let message)):
+                appendActivity("Append rejected: \(message)")
+                return false
+            case .failure(let error):
+                appendActivity("Could not append shared text: \(error.description)")
+                return false
+            }
         }
     }
 
@@ -742,11 +769,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.baseDir.appendingPathComponent("spotlight-index.json")
     }
 
+    /// Resolve the Spotlight root, then configure indexing against it. The
+    /// File Provider mount is the sole source now; the legacy syncRoot() mirror
+    /// is used only in the no-domain fallback (where the engine still writes it).
     private func configureSpotlightIndexing() {
-        let root = syncRoot()
+        resolveFileProviderRoot { [weak self] root in
+            guard let self, let root else { return }
+            self.configureSpotlightIndexing(root: root)
+        }
+    }
+
+    /// Resolve the workspace root Spotlight should index: the File Provider
+    /// user-visible mount when a domain owns the workspace, else the legacy
+    /// mirror when the engine is still the writer. Completion runs on the main
+    /// thread; nil means "nothing to index yet" (wait for materialization).
+    private func resolveFileProviderRoot(completion: @escaping (URL?) -> Void) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.resolveFileProviderRoot(completion: completion)
+            }
+            return
+        }
+        if let cached = fileProviderUserVisibleURL {
+            completion(cached)
+            return
+        }
+        guard let domain = registeredFileProviderDomain,
+              let manager = NSFileProviderManager(for: domain) else {
+            // No File Provider domain yet: the mount is the sole writer, so there
+            // is no mirror to index; wait for the domain to materialize.
+            completion(nil)
+            return
+        }
+        manager.getUserVisibleURL(for: .rootContainer) { [weak self] url, _ in
+            DispatchQueue.main.async {
+                if let url { self?.fileProviderUserVisibleURL = url }
+                completion(url)
+            }
+        }
+    }
+
+    private func configureSpotlightIndexing(root: URL) {
         spotlightQueue.async { [weak self] in
             guard let self else { return }
             let rootPath = root.standardizedFileURL.path
+            // Same root already wired: a cheap incremental reindex, no rebuild
+            // of the indexer/watcher. Covers the re-drive on every remote change.
+            if self.spotlightIndexRootPath == rootPath, self.spotlightIndexer != nil {
+                self.scheduleSpotlightReindexOnQueue()
+                return
+            }
             self.spotlightWatcher?.stop()
             self.spotlightIndexer = WorkspaceSpotlightIndexer(root: root)
             self.spotlightIndexRootPath = rootPath
@@ -787,30 +859,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         spotlightQueue.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
-    /// spotlightQueue only. Incremental: the engine's index is the source of
-    /// truth (it reflects server state, so evicted or unreadable local files
-    /// can never look like deletions), and only added, changed, or removed
-    /// ids are submitted rather than the whole workspace on every event.
+    /// spotlightQueue only. Incremental: rebuild the identity index directly
+    /// from the File Provider mount (each flat .md carries its own writeId), then
+    /// submit only added/changed/removed ids. A partial or evicted scan (any
+    /// unreadable file or unenumerable folder) sets healthy=false, which skips
+    /// removals and UNIONS the ids it did see with the prior set, so a cold or
+    /// half-materialized pass can never look like a mass deletion.
     private func refreshSpotlightIndex() {
         guard let indexer = spotlightIndexer else { return }
-        let entries = store.loadIndex().entries
-        let currentIds = Set(entries.keys)
-        let removed = spotlightIndexedIds.subtracting(currentIds)
-        var changed: [String: IndexEntry] = [:]
-        for (id, entry) in entries where spotlightIndexedHashes[id] != entry.hash {
-            changed[id] = entry
+        // Source of truth is the server manifest, not a file scan: the mount's
+        // .textpack bodies are zipped and carry no writeId. Skip (never destroy
+        // the existing index) when signed out or the workspace cache is cold.
+        guard let credentials = store.loadCredentials(),
+              let workspace = store.cachedWorkspace() else { return }
+        let client = ServerClient(
+            origin: resolveServerOrigin(credentials: credentials),
+            token: credentials.token)
+        let mountRoot = spotlightIndexRootPath.map {
+            URL(fileURLWithPath: $0, isDirectory: true)
         }
-        if !removed.isEmpty { indexer.remove(ids: Array(removed)) }
-        if !changed.isEmpty { indexer.reindex(entries: changed) }
-        spotlightIndexedIds = currentIds
-        spotlightIndexedHashes = entries.mapValues(\.hash)
+
+        var documents: [WorkspaceSpotlightDocument] = []
+        var hashes: [String: String] = [:]
+        // A degenerate empty folder list must never compute removed = everything.
+        var healthy = !workspace.folders.isEmpty
+        for folder in workspace.folders {
+            let items: [ManifestItem]
+            switch client.manifest(
+                folderId: folder.id, etag: spotlightFolderETags[folder.id]
+            ) {
+            case .success(.manifest(let fetched, let etag)):
+                spotlightFolderETags[folder.id] = etag
+                spotlightManifestCache[folder.id] = fetched
+                items = fetched
+            case .success(.notModified):
+                items = spotlightManifestCache[folder.id] ?? []
+            case .failure:
+                // Keep the last good list; a transient failure must not drop ids.
+                healthy = false
+                items = spotlightManifestCache[folder.id] ?? []
+            }
+            for item in items {
+                guard let id = item.id, !id.isEmpty else { continue }
+                documents.append(makeSpotlightDocument(
+                    item: item, folder: folder, mountRoot: mountRoot))
+                hashes[id] = item.hash
+            }
+        }
+
+        let currentIds = Set(hashes.keys)
+        let changed = documents.filter {
+            spotlightIndexedHashes[$0.writeId] != hashes[$0.writeId]
+        }
+        // Only a fully-healthy pass may remove ids, so a transient manifest
+        // failure never drops still-present posts.
+        let removed = healthy ? spotlightIndexedIds.subtracting(currentIds) : []
+        if !removed.isEmpty {
+            indexer.remove(ids: Array(removed))
+            // Forget removed hashes so a reappearing id (unchanged hash) reindexes.
+            for id in removed { spotlightIndexedHashes[id] = nil }
+        }
+        if !changed.isEmpty { indexer.indexDocuments(changed) }
+
+        let knownIds = healthy ? currentIds : spotlightIndexedIds.union(currentIds)
+        spotlightIndexedIds = knownIds
+        for (id, hash) in hashes { spotlightIndexedHashes[id] = hash }
         let persisted = SpotlightPersistedState(
             rootPath: spotlightIndexRootPath ?? "",
-            indexedIds: Array(currentIds)
+            indexedIds: Array(knownIds)
         )
         if let data = try? JSONEncoder().encode(persisted) {
             try? data.write(to: spotlightStateURL, options: .atomic)
         }
+    }
+
+    /// Build a Spotlight document from a manifest item. Its markdown is the
+    /// frontmatter the indexer expects, synthesized from the authoritative
+    /// manifest (title/kind/status/slug); a Spotlight click routes by writeId to
+    /// openWriteItem(id:), so no on-disk body or resolved URL is required.
+    private func makeSpotlightDocument(
+        item: ManifestItem, folder: WorkspaceFolder, mountRoot: URL?
+    ) -> WorkspaceSpotlightDocument {
+        let relativePath = folder.path.isEmpty
+            ? item.file : "\(folder.path)/\(item.file)"
+        let fileURL = (mountRoot ?? URL(fileURLWithPath: "/"))
+            .appendingPathComponent(relativePath)
+        let markdown = """
+        ---
+        title: \(jsonEncodedString(item.title))
+        kind: \(jsonEncodedString(item.kind))
+        status: \(jsonEncodedString(item.status))
+        slug: \(jsonEncodedString(item.slug))
+        ---
+        """
+        return WorkspaceSpotlightDocument(
+            writeId: item.id ?? "",
+            entry: IndexEntry(
+                hash: item.hash, relativePath: relativePath,
+                fileMtime: nil, folderId: folder.id, kind: item.kind),
+            relativePath: relativePath,
+            fileURL: fileURL,
+            markdown: markdown)
+    }
+
+    private func jsonEncodedString(_ value: String) -> String {
+        if let data = try? JSONEncoder().encode(value),
+           let string = String(data: data, encoding: .utf8) { return string }
+        return "\"\(value)\""
     }
 
     /// Main thread. Resolution happens off-main and only through the known
@@ -885,29 +1040,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         webWindow?.load(path: path)
     }
 
+    /// Main thread. Resolve a Write deep link through the File Provider: the
+    /// item's stable identifier maps to a user-visible URL the managed opener
+    /// then interprets. A cold, freshly-created item may not be enumerated yet,
+    /// so a nil URL nudges the enumerator and retries briefly before giving up.
     private func openWriteItem(id: String) {
         guard isValidWriteItemId(id) else {
             appendActivity("Ignored Write link with an invalid item id")
             return
         }
-        let root = syncRoot()
-        spotlightQueue.async { [weak self] in
+        guard let handle = store.cachedWorkspace()?.blog.handle, !handle.isEmpty,
+              let domain = registeredFileProviderDomain,
+              let manager = NSFileProviderManager(for: domain) else {
+            appendActivity("No item found for Write link")
+            return
+        }
+        let identifier = NSFileProviderItemIdentifier(
+            rawValue: WriteItemIdentifier.file(handle: handle, id: id).rawValue)
+        resolveWriteFileProviderURL(identifier, manager: manager) { [weak self] url in
             guard let self else { return }
-            var target: URL?
-            if let entry = self.store.loadIndex().entries[id] {
-                let candidate = root.appendingPathComponent(entry.relativePath)
-                if FileManager.default.fileExists(atPath: candidate.path) { target = candidate }
+            guard let url else {
+                self.appendActivity("No item found for Write link")
+                return
             }
-            if target == nil, let entry = WorkspaceIndexStore.load(root: root)?.entries[id] {
-                let candidate = root.appendingPathComponent(entry.relativePath)
-                if FileManager.default.fileExists(atPath: candidate.path) { target = candidate }
+            self.resolveAndOpenManagedFile(url, fileProviderIdentifier: identifier.rawValue)
+        }
+    }
+
+    /// Ask the File Provider for an item's user-visible URL, nudging the
+    /// enumerator and retrying a couple of times for a just-created cold item.
+    /// Completion runs on the main thread.
+    private func resolveWriteFileProviderURL(
+        _ identifier: NSFileProviderItemIdentifier,
+        manager: NSFileProviderManager,
+        attempt: Int = 0,
+        completion: @escaping (URL?) -> Void
+    ) {
+        manager.getUserVisibleURL(for: identifier) { [weak self] url, _ in
+            if let url {
+                DispatchQueue.main.async { completion(url) }
+                return
             }
-            DispatchQueue.main.async {
-                guard let target else {
-                    self.appendActivity("No item found for Write link")
-                    return
-                }
-                self.resolveAndOpenManagedFile(target)
+            guard let self, attempt < 2 else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            // Not enumerated yet: nudge the working set and retry shortly.
+            manager.signalEnumerator(for: .workingSet) { _ in }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                self.resolveWriteFileProviderURL(
+                    identifier, manager: manager,
+                    attempt: attempt + 1, completion: completion)
             }
         }
     }
@@ -937,7 +1120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Local-only by design: the server-side revoke route may not exist
         // yet; degrade gracefully. The folder and its files stay put.
         store.deleteCredentials()
-        engine.resetForSignOut()
+        store.clearIndex()
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
         refreshUI()
@@ -950,6 +1133,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// single "Write" and the workspace name lives on the folder inside it.
     private static let fileProviderDomainId = "write"
     private static let fileProviderDomainName = "Write"
+
+    /// Warm account.json so the File Provider domain can register: syncFileProvider-
+    /// Domain() needs a cached workspace handle, which a fresh sign-in does not yet
+    /// have (the retired mirror engine's first pass used to populate it). A
+    /// lightweight workspace fetch, no local writes; on success it drives the
+    /// File Provider domain forward now that the identity is known.
+    ///
+    /// The GUI no longer has the mirror engine's 60s timer to auto-recover a
+    /// transient sign-in fetch failure, so retry with bounded backoff; otherwise a
+    /// single hiccup at sign-in would leave the user unsynced (no mount, no mirror)
+    /// for the whole session. When identity is already cached, just (re)drive the
+    /// domain - this also makes "Sync Now"/wake a recovery lever.
+    private func seedCachedWorkspaceIfNeeded(attempt: Int = 0) {
+        guard let credentials = store.loadCredentials() else { return }
+        guard store.cachedWorkspace() == nil else {
+            syncFileProviderDomain()
+            return
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let client = ServerClient(
+                origin: resolveServerOrigin(credentials: credentials),
+                token: credentials.token)
+            switch client.workspace() {
+            case .success(let (_, data)):
+                self.store.cacheWorkspace(data)
+                DispatchQueue.main.async { [weak self] in
+                    self?.syncFileProviderDomain()
+                }
+            case .failure(let error):
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.store.loadCredentials() != nil,
+                          self.store.cachedWorkspace() == nil else { return }
+                    guard attempt < 5 else {
+                        self.appendActivity(
+                            "Could not reach Write to set up sync (\(error.description)); "
+                            + "use Sync Now to retry")
+                        return
+                    }
+                    let delay = pow(2, Double(attempt)) // 1, 2, 4, 8, 16s
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        self?.seedCachedWorkspaceIfNeeded(attempt: attempt + 1)
+                    }
+                }
+            }
+        }
+    }
 
     /// Reconcile the single "Write" File Provider domain with sign-in + cached
     /// workspace state, and (re)publish the credential handoff for the extension.
@@ -1388,6 +1619,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let self, activeGeneration == self.materializationEpoch else { return }
                 guard let root = rootURL else { self.isMaterializing = false; return }
                 self.fileProviderUserVisibleURL = root
+                // The mount is the sole content source now: (re)point Spotlight
+                // at it here so the launch race and every remote change re-drive
+                // indexing against the freshly-resolved root.
+                self.configureSpotlightIndexing(root: root)
                 self.refreshUI()
                 DispatchQueue.global(qos: .utility).async {
                 let scoped = root.startAccessingSecurityScopedResource()
@@ -1651,7 +1886,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let sync = item("Sync Now", #selector(syncNowAction))
-        sync.isEnabled = store.loadCredentials() != nil && !engine.isSyncing
+        sync.isEnabled = store.loadCredentials() != nil
+            && fileProviderStatusMonitor.snapshot.severity != .working
         menu.addItem(sync)
         menu.addItem(item("Open Folder", #selector(openFolderAction)))
         if let blog = store.cachedWorkspace()?.blog {
@@ -1691,27 +1927,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func lastSyncLine() -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        switch engine.status {
-        case .syncing:
-            return "Syncing now…"
-        case .error(let count, let retryScheduled):
-            let noun = count == 1 ? "error" : "errors"
-            let when = engine.lastSyncAt.map {
-                " \(formatter.localizedString(for: $0, relativeTo: Date()))"
-            } ?? ""
-            let retry = retryScheduled ? ", retrying" : ""
-            return "Sync failed\(when) (\(count) \(noun)\(retry))"
-        case .idle:
-            guard let at = engine.lastSyncAt else { return "Not synced yet" }
-            return "Last sync \(formatter.localizedString(for: at, relativeTo: Date()))"
+        // The File Provider mount is the sole writer, so its live status is the
+        // sync status. (The full snapshot is also surfaced as finderStatus.)
+        guard store.loadCredentials() != nil else { return "Not synced yet" }
+        let snapshot = fileProviderStatusMonitor.snapshot
+        switch snapshot.severity {
+        case .working: return "Syncing now…"
+        case .warning: return snapshot.detail.isEmpty ? snapshot.title : snapshot.detail
+        case .healthy, .neutral:
+            return snapshot.detail.isEmpty ? snapshot.title : snapshot.detail
         }
     }
 
     // MARK: Menu actions
 
-    @objc private func syncNowAction() { engine.syncNow() }
+    @objc private func syncNowAction() { requestSyncNow() }
+
+    /// "Sync Now" from the menu/status window. The File Provider mount is the
+    /// sole writer, so poll the server and re-materialize the mount. Also re-drives
+    /// domain registration: if a transient sign-in fetch left the domain
+    /// unregistered, this is the manual recovery lever.
+    private func requestSyncNow() {
+        seedCachedWorkspaceIfNeeded()
+        changeListener?.nudge()
+        signalFileProviderChange(serverReachable: true)
+    }
 
     @objc private func newNoteAction() {
         importExternalNote(ExternalNoteImport(
@@ -1723,32 +1963,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openFolderAction() {
+        // Only ever open the File Provider mount (the sole location now). Never
+        // create/open a legacy `~/Write` mirror.
         if let fileProviderUserVisibleURL {
             NSWorkspace.shared.open(fileProviderUserVisibleURL)
             return
         }
-        if let domain = registeredFileProviderDomain,
-           let manager = NSFileProviderManager(for: domain) {
-            manager.getUserVisibleURL(for: .rootContainer) { [weak self] url, _ in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    if let url {
-                        self.fileProviderUserVisibleURL = url
-                        NSWorkspace.shared.open(url)
-                    } else {
-                        self.openLocalMirrorFolder()
-                    }
-                }
-            }
+        guard let domain = registeredFileProviderDomain,
+              let manager = NSFileProviderManager(for: domain) else {
+            appendActivity(store.loadCredentials() == nil
+                ? "Sign in to open your Write folder"
+                : "Write folder is still setting up; try again in a moment")
+            materializeWorkspace()
             return
         }
-        openLocalMirrorFolder()
-    }
-
-    private func openLocalMirrorFolder() {
-        let root = syncRoot()
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(root)
+        manager.getUserVisibleURL(for: .rootContainer) { [weak self] url, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let url {
+                    self.fileProviderUserVisibleURL = url
+                    NSWorkspace.shared.open(url)
+                } else {
+                    self.appendActivity(
+                        "Write folder is still setting up; try again in a moment")
+                    self.materializeWorkspace()
+                }
+            }
+        }
     }
 
     @objc private func openBlogAction() {
@@ -1820,8 +2061,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             tokenName: "Write.app on \(device)",
             linkedAt: Date()))
         appendActivity("Linked this Mac")
-        engine.syncNow()
+        // Fetch+cache the workspace, then register the File Provider domain
+        // (the sole writer); no legacy mirror pass.
+        seedCachedWorkspaceIfNeeded()
         captureAgent.poke()
+        // Drain anything shared before this Mac was linked.
+        retryShareInboxDrain()
         let pending = pendingExternalImports
         pendingExternalImports.removeAll()
         for item in pending { importExternalNote(item) }
@@ -1838,7 +2083,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 cancelLink: { [weak self] in self?.linkController.cancel() },
                 reopenApproval: { [weak self] in self?.linkController.reopenApproval() },
                 openFolder: { [weak self] in self?.openFolderAction() },
-                syncNow: { [weak self] in self?.engine.syncNow() },
+                syncNow: { [weak self] in self?.requestSyncNow() },
                 makeDefaultMarkdown: { [weak self] in self?.makeWriteDefaultForMarkdown() }
             ))
         }
@@ -1909,7 +2154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             folderStatus: "All Markdown files are kept on this Mac.",
             lastSyncLine: lastSyncLine(),
             finderStatus: fileProviderStatusMonitor.snapshot,
-            busy: engine.isSyncing,
+            busy: fileProviderStatusMonitor.snapshot.severity == .working,
             activity: activityLog,
             isDefaultForMarkdown: MarkdownDefaultHandler.isDefault()
         ))

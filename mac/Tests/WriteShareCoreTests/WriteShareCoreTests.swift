@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Write
+import WriteFileProviderKit
 import WriteQuickLookCore
 import WriteShareCore
 import WriteShareExtensionCore
@@ -37,97 +38,71 @@ final class WriteShareCoreTests: XCTestCase {
         XCTAssertEqual(try InboxReader(containerURL: container).completeItems(), [])
     }
 
-    func testFilingEachKindCreatesExpectedWorkspaceFiles() throws {
-        let root = try temporaryDirectory()
-        let payload = try temporaryDirectory().appendingPathComponent("photo.png")
-        try Data([0, 1, 2, 3]).write(to: payload)
-        let filer = InboxFiler(root: root, now: fixedDate)
+    func testPrepareRendersEachKindForServerCreation() throws {
+        let filer = InboxFiler(root: try temporaryDirectory(), now: fixedDate)
 
-        let note = try filer.file(InboxItem(kind: .note, title: "Meeting Notes", text: "Body"))
-        XCTAssertEqual(relative(note, root: root), "Notes/meeting-notes.md")
-        let noteText = try String(contentsOf: note)
-        XCTAssertTrue(noteText.contains("title: \"Meeting Notes\""))
-        XCTAssertTrue(noteText.contains("writeKind: \"note\""))
+        // Note -> create in the notes folder; server assigns the id, so none is
+        // injected into the body.
+        guard case let .create(noteMode, noteBody, noteRep, noteKey) =
+            try filer.prepare(record(InboxItem(kind: .note, title: "Meeting Notes", text: "Body")))
+        else { return XCTFail("note should prepare as .create") }
+        XCTAssertEqual(noteMode, "notes")
+        XCTAssertEqual(noteRep, .textpack)
+        XCTAssertTrue(noteBody.contains("title: \"Meeting Notes\""))
+        XCTAssertTrue(noteBody.contains("kind: \"note\""))
+        XCTAssertFalse(noteBody.contains("writeId"), "the server assigns the id; none is injected")
+        XCTAssertFalse(noteKey.isEmpty)
 
-        let bookmark = try filer.file(InboxItem(
-            kind: .bookmark,
-            title: "Example Link",
-            text: "Selected quote",
-            urlString: "https://example.invalid/article"
-        ))
-        XCTAssertEqual(relative(bookmark, root: root), "Bookmarks/2026/example-link.md")
-        let bookmarkText = try String(contentsOf: bookmark)
-        XCTAssertTrue(bookmarkText.contains("type: \"bookmark\""))
-        // The URL must ride in the links list the server round-trips, not a
-        // bare url: key it would drop.
+        // Bookmark -> create in bookmarks with the links: list rendered verbatim
+        // so the server round-trip hash agrees; no bare url: key.
+        guard case let .create(bookmarkMode, bookmarkBody, _, _) =
+            try filer.prepare(record(InboxItem(
+                kind: .bookmark, title: "Example Link", text: "Selected quote",
+                urlString: "https://example.invalid/article")))
+        else { return XCTFail("bookmark should prepare as .create") }
+        XCTAssertEqual(bookmarkMode, "bookmarks")
+        XCTAssertTrue(bookmarkBody.contains("type: \"bookmark\""))
         XCTAssertTrue(
-            bookmarkText.contains("links: [{\"label\":\"Example Link\",\"href\":\"https://example.invalid/article\"}]"),
-            bookmarkText
+            bookmarkBody.contains("links: [{\"label\":\"Example Link\",\"href\":\"https://example.invalid/article\"}]"),
+            bookmarkBody
         )
-        XCTAssertFalse(bookmarkText.contains("\nurl: "), "bare url: is dropped by the server")
-        XCTAssertTrue(bookmarkText.contains("created_at: \"2026-07-11T12:34:56Z\""))
-        XCTAssertTrue(bookmarkText.contains("Selected quote"))
+        XCTAssertFalse(bookmarkBody.contains("\nurl: "), "bare url: is dropped by the server")
+        XCTAssertTrue(bookmarkBody.contains("created_at: \"2026-07-11T12:34:56Z\""))
+        XCTAssertTrue(bookmarkBody.contains("Selected quote"))
+        XCTAssertFalse(bookmarkBody.contains("writeId"))
 
-        let draft = try filer.file(InboxItem(kind: .draft, title: "Draft Title", text: "Draft body"))
-        XCTAssertEqual(relative(draft, root: root), "Drafts/draft-title.md")
-        let draftText = try String(contentsOf: draft)
-        XCTAssertTrue(draftText.contains("kind: \"article\""))
-        XCTAssertTrue(draftText.contains("Draft body"))
+        // Draft -> create in the blog folder as an article.
+        guard case let .create(draftMode, draftBody, _, _) =
+            try filer.prepare(record(InboxItem(kind: .draft, title: "Draft Title", text: "Draft body")))
+        else { return XCTFail("draft should prepare as .create") }
+        XCTAssertEqual(draftMode, "blog")
+        XCTAssertTrue(draftBody.contains("kind: \"article\""))
+        XCTAssertTrue(draftBody.contains("Draft body"))
 
-        let savedFile = try filer.file(
-            InboxItem(kind: .file, title: "Photo", payloadFilename: "photo.png"),
-            payloadURL: payload
-        )
-        XCTAssertEqual(relative(savedFile, root: root), "Media/photo.png")
-        XCTAssertEqual(try Data(contentsOf: savedFile), Data([0, 1, 2, 3]))
+        // File -> unsupported (no server home post-cutover).
+        guard case .unsupported =
+            try filer.prepare(record(InboxItem(kind: .file, title: "Photo", payloadFilename: "photo.png")))
+        else { return XCTFail("file should prepare as .unsupported") }
     }
 
-    func testAppendPreservesExistingBody() throws {
-        let root = try temporaryDirectory()
-        let target = root.appendingPathComponent("Notes/target.md")
-        let markdown = MarkdownIdentityCodec.inject(
-            into: "---\ntitle: \"Target\"\n---\n\nOriginal body\n",
-            itemId: "target-id",
-            folderId: "notes",
-            kind: "note"
-        )
-        try write(markdown, to: target)
-        try WorkspaceIndexStore.save(SyncIndex(entries: [
-            "target-id": IndexEntry(
-                hash: MarkdownIdentityCodec.syncHash(for: markdown),
-                relativePath: "Notes/target.md",
-                folderId: "notes",
-                kind: "note"
-            )
-        ]), root: root)
-
-        let filed = try InboxFiler(root: root, now: fixedDate).file(InboxItem(
-            kind: .append,
-            text: "Appended body",
-            targetWriteId: "target-id"
-        ))
-
-        XCTAssertEqual(filed.path, target.path)
-        let result = try String(contentsOf: target)
-        XCTAssertTrue(result.contains("Original body\nAppended body\n"))
-        XCTAssertTrue(result.contains("updated_at: \"2026-07-11T12:34:56Z\""))
+    func testPrepareAppendCarriesTargetAndText() throws {
+        let filer = InboxFiler(root: try temporaryDirectory(), now: fixedDate)
+        guard case let .append(targetWriteId, text) =
+            try filer.prepare(record(InboxItem(
+                kind: .append, text: "Appended body", targetWriteId: "target-id")))
+        else { return XCTFail("append should prepare as .append") }
+        XCTAssertEqual(targetWriteId, "target-id")
+        XCTAssertEqual(text, "Appended body\n")
     }
 
-    func testFilenameCollisionsGetUniqueSuffixes() throws {
-        let root = try temporaryDirectory()
-        let filer = InboxFiler(root: root, now: fixedDate)
-        try write("existing", to: root.appendingPathComponent("Notes/same.md"))
-        let note = try filer.file(InboxItem(kind: .note, title: "Same", text: "New"))
-        XCTAssertEqual(relative(note, root: root), "Notes/same-2.md")
-
-        let payload = try temporaryDirectory().appendingPathComponent("report.pdf")
-        try Data("pdf".utf8).write(to: payload)
-        try write("existing", to: root.appendingPathComponent("Media/report.pdf"))
-        let saved = try filer.file(
-            InboxItem(kind: .file, payloadFilename: "report.pdf"),
-            payloadURL: payload
-        )
-        XCTAssertEqual(relative(saved, root: root), "Media/report-2.pdf")
+    func testPrepareUsesRecordIdForIdempotency() throws {
+        let filer = InboxFiler(root: try temporaryDirectory(), now: fixedDate)
+        let item = InboxItem(kind: .note, title: "Same", text: "New")
+        let keyA = createKey(try filer.prepare(record(item, id: "rec-1")))
+        let keyB = createKey(try filer.prepare(record(item, id: "rec-1")))
+        let keyC = createKey(try filer.prepare(record(item, id: "rec-2")))
+        XCTAssertEqual(keyA, keyB, "the same record must produce a stable idempotency key")
+        XCTAssertNotEqual(keyA, keyC, "different records must produce different keys")
     }
 
     func testShareInboxPosterWritesHeadlessInboxItems() throws {
@@ -285,6 +260,18 @@ final class WriteShareCoreTests: XCTestCase {
 
     private func fixedDate() -> Date {
         ISO8601DateFormatter().date(from: "2026-07-11T12:34:56Z")!
+    }
+
+    private func record(_ item: InboxItem, id: String = "rec-1") -> InboxRecord {
+        InboxRecord(
+            id: id, item: item,
+            directoryURL: URL(fileURLWithPath: "/tmp/write-share-\(id)", isDirectory: true),
+            payloadURL: nil)
+    }
+
+    private func createKey(_ prepared: PreparedInboxItem) -> String? {
+        if case let .create(_, _, _, key) = prepared { return key }
+        return nil
     }
 
     private func temporaryDirectory() throws -> URL {

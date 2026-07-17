@@ -131,69 +131,38 @@ final class SyncEngineRegressionTests: XCTestCase {
         XCTAssertEqual(store.loadIndex().entries["p1"]?.relativePath, "Notes/media/research.md")
     }
 
-    func testLegacyMigrationThenEnginePassPutsUnpushedDraftAndNoteWithoutDeleteOrPost() throws {
-        let legacy = try temporaryDirectory()
+    func testPausedEngineWritesNothingAndSettlesIdle() throws {
+        // Sole-writer cutover: when isPaused() is true the engine must do a
+        // no-op pass, create no ~/Write directory, make no client call, and
+        // leave status at .idle.
         let root = try temporaryDirectory()
         let state = try temporaryDirectory()
-        let workspace = fixtureWorkspace()
-        try write(markdown(title: "A", body: "local note edit"), to: legacy.appendingPathComponent("notes/a.md"))
-        try write(
-            markdown(title: "Draft", slug: "draft-post", status: "draft", body: "local draft edit"),
-            to: legacy.appendingPathComponent("blog/draft-post.md")
-        )
-
-        let migration = WorkspaceMigrator.migrateLegacyMirror(
-            from: legacy,
-            to: root,
-            workspace: descriptor(for: workspace)
-        )
-        XCTAssertEqual(migration.errors, [])
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Notes/a.md").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Drafts/draft-post.md").path))
-
-        let noteServer = markdown(title: "A", body: "server note")
-        let draftServer = markdown(title: "Draft", slug: "draft-post", status: "draft", body: "server draft")
-        let noteHash = MarkdownIdentityCodec.syncHash(for: noteServer)
-        let draftHash = MarkdownIdentityCodec.syncHash(for: draftServer)
+        // Point the engine at a child path that does NOT exist yet, so we can
+        // prove the pass never creates it.
+        let mirror = root.appendingPathComponent("Write", isDirectory: true)
         let fake = FakeSyncClient()
-        fake.workspaceValue = workspace
+        fake.workspaceValue = fixtureWorkspace()
         fake.manifestReplies["notes"] = .manifest([
-            item(id: "n1", kind: "note", slug: "a", status: "draft", hash: noteHash)
+            item(id: "p1", kind: "note", slug: "a", status: "draft",
+                 hash: MarkdownIdentityCodec.syncHash(for: markdown(title: "A", body: "server")))
         ], etag: nil)
-        fake.manifestReplies["blog"] = .manifest([
-            item(id: "p1", kind: "article", slug: "draft-post", status: "draft", hash: draftHash)
-        ], etag: nil)
-        fake.putHandler = { postId, body, ifMatch in
-            switch postId {
-            case "n1":
-                XCTAssertEqual(ifMatch, noteHash)
-                XCTAssertTrue(body.contains("local note edit"))
-                return .saved(self.item(id: "n1", kind: "note", slug: "a", status: "draft", hash: MarkdownIdentityCodec.syncHash(for: body)))
-            case "p1":
-                XCTAssertEqual(ifMatch, draftHash)
-                XCTAssertTrue(body.contains("local draft edit"))
-                return .saved(self.item(id: "p1", kind: "article", slug: "draft-post", status: "draft", hash: MarkdownIdentityCodec.syncHash(for: body)))
-            default:
-                XCTFail("unexpected PUT \(postId)")
-                return .saved(self.item(id: postId, kind: "note", slug: postId, status: "draft", hash: MarkdownIdentityCodec.syncHash(for: body)))
-            }
+
+        var engineRef: SyncEngine?
+        let (_, summary) = try runEngine(root: mirror, state: state, client: fake) { engine in
+            engine.isPaused = { true }
+            engineRef = engine
         }
 
-        let (store, summary) = try runEngine(root: root, state: state, client: fake) {
-            $0.saveIndex(SyncIndex(entries: [
-                "n1": IndexEntry(hash: noteHash, relativePath: "notes/a.md", folderId: "notes", kind: "note"),
-                "p1": IndexEntry(hash: draftHash, relativePath: "blog/draft-post.md", folderId: "blog", kind: "article"),
-            ]))
-        }
-
-        XCTAssertEqual(summary.errors, 0, fake.activities.joined(separator: " | "))
-        XCTAssertEqual(fake.deletedIds, [])
-        XCTAssertEqual(fake.posts.count, 0)
-        XCTAssertEqual(Set(fake.puts.map(\.postId)), ["n1", "p1"])
-        XCTAssertEqual(store.loadIndex().entries["n1"]?.relativePath, "Notes/a.md")
-        XCTAssertEqual(store.loadIndex().entries["p1"]?.relativePath, "Drafts/draft-post.md")
-        let notes = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Notes").path)
-        XCTAssertFalse(notes.contains { $0.contains("conflicted copy") })
+        XCTAssertEqual(summary.pulled, 0)
+        XCTAssertEqual(summary.pushed, 0)
+        XCTAssertEqual(summary.conflicts, 0)
+        XCTAssertEqual(summary.errors, 0)
+        XCTAssertEqual(engineRef?.status, .idle)
+        XCTAssertFalse(engineRef?.isSyncing ?? true)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: mirror.path),
+            "a paused pass must not create the mirror directory")
+        XCTAssertEqual(fake.workspaceCallCount, 0, "a paused pass must not call the server")
     }
 
     func testCorruptRootIndexDoesNotBaselineAndOverwriteUnsyncedEdit() throws {
@@ -1477,8 +1446,10 @@ private final class FakeSyncClient: SyncClient {
     var patches: [(postId: String, folderId: String?, slug: String?, ifMatch: String?)] = []
     var activities: [String] = []
     var unreachable = false
+    var workspaceCallCount = 0
 
     func workspace() -> Result<(Workspace, Data), ClientFailure> {
+        workspaceCallCount += 1
         if unreachable { return .failure(.network("offline")) }
         let data = (try? JSONEncoder().encode(workspaceValue)) ?? Data()
         return .success((workspaceValue, data))

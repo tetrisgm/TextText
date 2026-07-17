@@ -104,6 +104,70 @@ final class WorkspaceSpotlightIndexerTests: XCTestCase {
         XCTAssertEqual(attributes.kind, "note")
     }
 
+    func testRebuildFromFlatMarkdownProducesOneSearchableItemPerPost() throws {
+        // The File Provider mount presents each post as a flat .md carrying its
+        // own identity marker: rebuild -> makeSearchableItem must yield exactly
+        // one item per post with the right uniqueIdentifier and deep-link URL.
+        let root = try temporaryDirectory()
+        try writeMarkdown(
+            into: root.appendingPathComponent("note-a.md"),
+            title: "Note A", itemId: "id-a", kind: "note", body: "Alpha body")
+        try writeMarkdown(
+            into: root.appendingPathComponent("post-b.md"),
+            title: "Post B", itemId: "id-b", kind: "article", body: "Beta body")
+
+        let index = WorkspaceIndexStore.rebuild(root: root)
+        XCTAssertEqual(Set(index.entries.keys), ["id-a", "id-b"])
+
+        let indexer = WorkspaceSpotlightIndexer(root: root)
+        var items: [String: CSSearchableItem] = [:]
+        for (id, entry) in index.entries {
+            let item = try XCTUnwrap(indexer.makeSearchableItem(writeId: id, entry: entry))
+            items[item.uniqueIdentifier] = item
+        }
+        XCTAssertEqual(Set(items.keys), ["id-a", "id-b"])
+        XCTAssertEqual(items["id-a"]?.attributeSet.title, "Note A")
+        XCTAssertEqual(items["id-a"]?.attributeSet.url, URL(string: "write-app://item/id-a"))
+        XCTAssertEqual(items["id-b"]?.attributeSet.url, URL(string: "write-app://item/id-b"))
+    }
+
+    func testRebuildReportsUnreadableFilesSoTheHealthyGuardCanHold() throws {
+        try XCTSkipIf(getuid() == 0, "file permission bits do not block the superuser")
+        let root = try temporaryDirectory()
+        try writeMarkdown(
+            into: root.appendingPathComponent("readable.md"),
+            title: "Readable", itemId: "ok", kind: "note", body: "body")
+        let blocked = root.appendingPathComponent("blocked.md")
+        try writeMarkdown(
+            into: blocked, title: "Blocked", itemId: "blocked", kind: "note", body: "body")
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000], ofItemAtPath: blocked.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o644], ofItemAtPath: blocked.path)
+        }
+
+        // The app's refreshSpotlightIndex sets healthy=false on any onUnreadable
+        // callback and then unions ids instead of removing; assert rebuild fires
+        // that signal while still surfacing the readable siblings.
+        var healthy = true
+        let index = WorkspaceIndexStore.rebuild(
+            root: root, onUnreadable: { _, _ in healthy = false })
+        XCTAssertFalse(healthy, "an unreadable file must trip the unreadable signal")
+        XCTAssertTrue(index.entries.keys.contains("ok"), "readable siblings are still indexed")
+    }
+
+    private func writeMarkdown(
+        into url: URL, title: String, itemId: String, kind: String, body: String
+    ) throws {
+        let markdown = MarkdownIdentityCodec.inject(
+            into: "---\ntitle: \"\(title)\"\nstatus: \"draft\"\n---\n\n\(body)\n",
+            itemId: itemId, folderId: nil, kind: kind)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(markdown.utf8).write(to: url)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("WriteSpotlightEval-\(UUID().uuidString)", isDirectory: true)

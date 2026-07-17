@@ -47,6 +47,26 @@ public final class WorkspaceSpotlightIndexer {
         index.indexSearchableItems(items) { error in completion?(error) }
     }
 
+    /// Index pre-built documents whose metadata comes from the server manifest
+    /// (the authoritative source of a post's id + title). The File Provider mount
+    /// is the sole writer now, and its `.textpack` bodies are zipped and carry no
+    /// writeId, so they cannot be scanned into an index - the manifest is.
+    public func indexDocuments(
+        _ documents: [WorkspaceSpotlightDocument],
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        guard CSSearchableIndex.isIndexingAvailable() else {
+            completion?(nil)
+            return
+        }
+        let items = documents.compactMap { Self.searchableItem(for: $0) }
+        guard !items.isEmpty else {
+            completion?(nil)
+            return
+        }
+        index.indexSearchableItems(items) { error in completion?(error) }
+    }
+
     public func remove(ids: [String], completion: ((Error?) -> Void)? = nil) {
         guard CSSearchableIndex.isIndexingAvailable(), !ids.isEmpty else {
             completion?(nil)
