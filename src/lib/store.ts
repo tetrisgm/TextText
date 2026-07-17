@@ -53,6 +53,7 @@ import { db } from "./db/client";
 import {
   blogs,
   collabPresence,
+  collabState,
   collabUpdates,
   folders,
   idempotencyKeys,
@@ -2305,6 +2306,37 @@ export async function getPostById(
   return getPostByIdCached(handle, id);
 }
 
+export type PostStoreContext = {
+  blogId: string;
+  handle: string;
+  post: Post;
+};
+
+/** Resolve an item and its tenant for authenticated routes that start with an
+ * opaque item id. Content routes use this instead of querying posts directly,
+ * keeping deletion filtering and stored-content mapping inside the store. */
+export async function getPostStoreContext(
+  id: string,
+): Promise<PostStoreContext | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({ blogId: blogs.id, handle: blogs.handle, post: posts })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(posts.id, id),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  return row
+    ? { blogId: row.blogId, handle: row.handle, post: mapPost(row.post) }
+    : null;
+}
+
 function cleanItemCommentActorType(value: string): AuditActorType {
   if (value === "human" || value === "ai" || value === "external_agent") {
     return value;
@@ -2955,14 +2987,40 @@ export async function restorePost(handle: string, id: string): Promise<Post> {
   return mapPost(updated[0]);
 }
 
+async function deleteCollabDataForPostIds(ids: string[]): Promise<void> {
+  if (!db) return;
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    await db.delete(collabPresence).where(inArray(collabPresence.postId, chunk));
+    await db.delete(collabUpdates).where(inArray(collabUpdates.postId, chunk));
+    // collab_state has its own post foreign key. It must be removed too, or a
+    // post that has ever joined a collab epoch cannot be permanently deleted.
+    await db.delete(collabState).where(inArray(collabState.postId, chunk));
+  }
+}
+
 export async function permanentlyDeletePost(
   handle: string,
   id: string,
 ): Promise<void> {
   if (!db) throw new Error("permanentlyDeletePost requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
-  await db.delete(collabPresence).where(eq(collabPresence.postId, id));
-  await db.delete(collabUpdates).where(eq(collabUpdates.postId, id));
+  const target = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNotNull(posts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!target[0]) return;
+  // Scope the post before touching its dependent rows. Deleting collab rows by
+  // the caller-provided id first would let a valid owner disrupt another
+  // tenant's active document by submitting its opaque id.
+  await deleteCollabDataForPostIds([id]);
   await db
     .delete(posts)
     .where(
@@ -2982,11 +3040,7 @@ export async function emptyTrash(handle: string): Promise<number> {
     .from(posts)
     .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
   const ids = trashed.map((row) => row.id);
-  for (let i = 0; i < ids.length; i += 500) {
-    const chunk = ids.slice(i, i + 500);
-    await db.delete(collabPresence).where(inArray(collabPresence.postId, chunk));
-    await db.delete(collabUpdates).where(inArray(collabUpdates.postId, chunk));
-  }
+  await deleteCollabDataForPostIds(ids);
   await db
     .delete(posts)
     .where(and(eq(posts.blogId, blogId), isNotNull(posts.deletedAt)));
@@ -3127,15 +3181,26 @@ export async function permanentlyDeleteFolder(
     );
   const ids = descendants.map((entry) => entry.id);
   if (ids.length === 0) return;
-  const trashedPosts = await db
-    .select({ id: posts.id })
+  const folderPosts = await db
+    .select({ id: posts.id, deletedAt: posts.deletedAt })
     .from(posts)
     .where(and(eq(posts.blogId, blogId), inArray(posts.folderId, ids)));
-  for (const post of trashedPosts) {
-    await db.delete(collabPresence).where(eq(collabPresence.postId, post.id));
-    await db.delete(collabUpdates).where(eq(collabUpdates.postId, post.id));
+  // A live item must never be collateral damage of purging a trashed folder.
+  // This is normally prevented by the Trash UI, but the store still fails safe
+  // against a restore race or a direct caller that revived a child first.
+  if (folderPosts.some((post) => post.deletedAt === null)) {
+    throw new Error("The folder contains a restored item and cannot be deleted");
   }
-  await db.delete(posts).where(and(eq(posts.blogId, blogId), inArray(posts.folderId, ids)));
+  await deleteCollabDataForPostIds(folderPosts.map((post) => post.id));
+  await db
+    .delete(posts)
+    .where(
+      and(
+        eq(posts.blogId, blogId),
+        inArray(posts.folderId, ids),
+        isNotNull(posts.deletedAt),
+      ),
+    );
   await db.delete(folders).where(and(eq(folders.blogId, blogId), inArray(folders.id, ids)));
 }
 

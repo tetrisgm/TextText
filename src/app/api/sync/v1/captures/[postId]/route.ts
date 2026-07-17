@@ -15,6 +15,7 @@
 
 import type { BookmarkCapture } from "@/lib/content";
 import { remoteMarkdownImageUrls } from "@/lib/bookmark-capture-generation";
+import { fetchPublicResource } from "@/lib/bookmark-fetch";
 import { recordAction } from "@/lib/audit";
 import { resolveItemAccess } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
@@ -205,10 +206,11 @@ async function fetchReadableAsset(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
-      const response = await fetch(candidate, {
+      const response = await fetchPublicResource(candidate, {
         headers: { Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
         signal: controller.signal,
       });
+      if (!response) continue;
       if (!response.ok) continue;
       const contentLength = Number(response.headers.get("content-length") ?? "0");
       if (contentLength > MAX_ASSET_BYTES) continue;

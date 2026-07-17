@@ -1,8 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@/lib/db/client";
-import { blogs, posts } from "@/lib/db/schema";
 import { isUuid, resolveItemAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
+import { getPostStoreContext } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -21,26 +19,9 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
-  if (!db || !isUuid(id)) return notFound();
+  if (!isUuid(id)) return notFound();
 
-  const rows = await db
-    .select({
-      blogId: blogs.id,
-      handle: blogs.handle,
-      body: posts.body,
-      updatedAt: posts.updatedAt,
-    })
-    .from(posts)
-    .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(
-      and(
-        eq(posts.id, id),
-        isNull(posts.deletedAt),
-        isNull(blogs.deletedAt),
-      ),
-    )
-    .limit(1);
-  const item = rows[0];
+  const item = await getPostStoreContext(id);
   if (!item) return notFound();
 
   const user = await getCurrentUser();
@@ -55,8 +36,8 @@ export async function GET(
     {
       blogId: item.blogId,
       postId: id,
-      body: item.body,
-      updatedAt: item.updatedAt.toISOString(),
+      body: item.post.body,
+      updatedAt: item.post.updatedAt,
       fetchedAt: new Date().toISOString(),
     },
     { headers: { "Cache-Control": "private, no-store" } },

@@ -96,6 +96,37 @@ export async function hostResolvesToPublicOnly(host: string): Promise<boolean> {
   }
 }
 
+/** Fetch one public HTTP resource while validating every redirect hop. Returning
+ * null means the URL was malformed, resolved privately, or exceeded the redirect
+ * limit. Callers still own timeouts, response type checks, and size limits. */
+export async function fetchPublicResource(
+  input: string | URL,
+  init: RequestInit = {},
+): Promise<Response | null> {
+  let current: URL;
+  try {
+    current = input instanceof URL ? new URL(input.href) : new URL(input);
+  } catch {
+    return null;
+  }
+
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
+    if (!isFetchableBookmarkUrl(current)) return null;
+    if (!(await hostResolvesToPublicOnly(current.hostname))) return null;
+    const response = await fetch(current, { ...init, redirect: "manual" });
+    if (response.status < 300 || response.status >= 400) return response;
+
+    const location = response.headers.get("location");
+    if (!location) return null;
+    try {
+      current = new URL(location, current);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function decodeEntities(value: string): string {
   return value
     .replace(/&amp;/g, "&")
@@ -155,28 +186,11 @@ export async function lightCaptureBookmark(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      // Follow redirects by hand so every hop is re-validated: redirect:
-      // "follow" would chase a 302 to an internal address unchecked.
-      let current = new URL(url);
-      let response: Response | null = null;
-      for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-        if (!isFetchableBookmarkUrl(current)) return;
-        if (!(await hostResolvesToPublicOnly(current.hostname))) return;
-        const hopResponse = await fetch(current, {
-          signal: controller.signal,
-          redirect: "manual",
-          headers: { accept: "text/html,*/*", "user-agent": "write-bookmark/1" },
-        });
-        if (hopResponse.status >= 300 && hopResponse.status < 400) {
-          const location = hopResponse.headers.get("location");
-          if (!location) return;
-          current = new URL(location, current);
-          continue;
-        }
-        response = hopResponse;
-        break;
-      }
-      if (!response) return; // too many redirects
+      const response = await fetchPublicResource(url, {
+        signal: controller.signal,
+        headers: { accept: "text/html,*/*", "user-agent": "write-bookmark/1" },
+      });
+      if (!response) return;
       const type = response.headers.get("content-type") ?? "";
       if (response.ok && type.includes("html")) {
         meta = extractPageMeta(await response.text());

@@ -87,6 +87,7 @@ function createRequest(
 describe("sync file POST representation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.releaseIdempotencyKey.mockResolvedValue(undefined);
     mocks.resolveSyncWorkspace.mockResolvedValue({
       blog,
       userId: "owner-id",
@@ -153,5 +154,21 @@ describe("sync file POST representation", () => {
     expect(mocks.createDraftInFolder).not.toHaveBeenCalled();
     expect(mocks.savePost).not.toHaveBeenCalled();
     expect(mocks.recordAction).not.toHaveBeenCalled();
+  });
+
+  it("releases a claimed idempotency key when placeholder creation fails", async () => {
+    mocks.claimIdempotencyKey.mockResolvedValue({ status: "claimed" });
+    mocks.createDraftInFolder.mockRejectedValue(new Error("Folder not found"));
+    const request = createRequest("textpack", "missing-folder");
+    request.headers.set("Idempotency-Key", "create-123");
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(mocks.releaseIdempotencyKey).toHaveBeenCalledWith(
+      blog.handle,
+      "create-123",
+    );
+    expect(mocks.savePost).not.toHaveBeenCalled();
   });
 });

@@ -93,6 +93,12 @@ export async function POST(request: Request) {
       );
     }
   } catch (error) {
+    // The key was claimed before the placeholder create. If folder validation
+    // or the initial insert fails, release it now so an immediate corrected
+    // retry is not misreported as an in-flight create for 30 seconds.
+    if (idempotencyKey) {
+      await releaseIdempotencyKey(blog.handle, idempotencyKey).catch(() => {});
+    }
     return syncError(400, errorMessage(error, "Could not create the file"));
   }
   try {

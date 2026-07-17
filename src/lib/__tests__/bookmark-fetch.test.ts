@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractPageMeta,
+  fetchPublicResource,
   isFetchableBookmarkUrl,
   isPrivateIPv4,
   isPrivateIPv6,
 } from "@/lib/bookmark-fetch";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("isFetchableBookmarkUrl (SSRF floor)", () => {
   const ok = (u: string) => expect(isFetchableBookmarkUrl(new URL(u))).toBe(true);
@@ -72,6 +77,26 @@ describe("isPrivateIPv4 (the DNS-resolution gate's classifier)", () => {
   it("rejects malformed literals defensively", () => {
     expect(isPrivateIPv4("999.1.1.1")).toBe(true);
     expect(isPrivateIPv4("1.2.3")).toBe(true);
+  });
+});
+
+describe("fetchPublicResource", () => {
+  it("refuses a redirect from a public URL to a private address", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: "http://169.254.169.254/latest/meta-data" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await fetchPublicResource("https://93.184.216.34/image.jpg");
+
+    expect(response).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "https://93.184.216.34/image.jpg",
+    );
   });
 });
 

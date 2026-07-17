@@ -130,6 +130,31 @@ function releaseOutbox(postId: string, outbox: Outbox) {
   }
 }
 
+function removePendingBatch(outbox: Outbox, batch: Uint8Array[]) {
+  for (const update of batch) {
+    const index = outbox.pending.indexOf(update);
+    if (index >= 0) outbox.pending.splice(index, 1);
+  }
+}
+
+function retireOutbox(outbox: Outbox, epoch: number) {
+  outbox.pending.length = 0;
+  outbox.retries = 0;
+  outbox.epoch = epoch;
+  outbox.epochKnown = true;
+  if (outbox.timer) {
+    clearTimeout(outbox.timer);
+    outbox.timer = null;
+  }
+  for (const sub of outbox.subscribers.values()) {
+    try {
+      sub.onRetired?.();
+    } catch {
+      // teardown of one subscriber must not block the others
+    }
+  }
+}
+
 function scheduleOutbox(postId: string, outbox: Outbox, delay: number) {
   if (outbox.timer || outbox.flushing || outbox.pending.length === 0) return;
   outbox.timer = setTimeout(() => {
@@ -143,6 +168,10 @@ async function flushOutbox(postId: string, outbox: Outbox) {
     releaseOutbox(postId, outbox);
     return;
   }
+  // A new provider can capture edits before its initial catch-up returns. Keep
+  // them queued until the relay tells us which epoch to fence them on, or a
+  // retired post would reject fresh edits sent with the default epoch 0.
+  if (!outbox.epochKnown) return;
 
   const report = (message: string) => {
     for (const sub of outbox.subscribers.values()) {
@@ -156,37 +185,35 @@ async function flushOutbox(postId: string, outbox: Outbox) {
 
   outbox.flushing = true;
   const batch = outbox.pending.slice(0, MAX_PUSH_BATCH);
+  const batchEpoch = outbox.epoch;
   let nextDelay = PUSH_DEBOUNCE_MS;
   try {
     const res = await fetch(outbox.base, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ updates: batch.map(u8ToBase64), epoch: outbox.epoch }),
+      body: JSON.stringify({ updates: batch.map(u8ToBase64), epoch: batchEpoch }),
     });
     if (res.ok) {
       const data = (await res.json().catch(() => ({}))) as {
         retired?: boolean;
         epoch?: number;
       };
-      if (data.retired) {
+      // A poll or catch-up may have observed a retirement while this request was
+      // in flight. Its response belongs to the old generation and must not
+      // restore that epoch or remove newer queued edits.
+      if (outbox.epoch !== batchEpoch) {
+        // retirement already handled by the response that advanced the epoch
+      } else if (data.retired) {
         // The log generation was retired (a stale between-sessions log reset from
         // posts.body). This client's queued edits are now stale: drop them so
         // they can never merge over the reseeded body, and tell every provider on
         // this post to remount onto a fresh doc.
-        outbox.pending.length = 0;
-        if (typeof data.epoch === "number") {
-          outbox.epoch = data.epoch;
-          outbox.epochKnown = true;
-        }
-        for (const sub of outbox.subscribers.values()) {
-          try {
-            sub.onRetired?.();
-          } catch {
-            // teardown of one subscriber must not block the others
-          }
-        }
+        retireOutbox(outbox, typeof data.epoch === "number" ? data.epoch : batchEpoch);
       } else {
-        outbox.pending.splice(0, batch.length);
+        // A pagehide beacon can remove this in-flight batch while the request is
+        // pending. Remove the exact update objects that this response delivered,
+        // never a positional prefix that may now contain newer edits.
+        removePendingBatch(outbox, batch);
         outbox.retries = 0;
         if (typeof data.epoch === "number") {
           outbox.epoch = data.epoch;
@@ -209,7 +236,7 @@ async function flushOutbox(postId: string, outbox: Outbox) {
     } else if (isPermanentPushError(res.status)) {
       // This batch will never be accepted (malformed / too large). Drop just
       // it so it can never poison-pill the queue, and keep delivering the rest.
-      outbox.pending.splice(0, batch.length);
+      removePendingBatch(outbox, batch);
       outbox.retries = 0;
       report("Some edits could not be synced and were dropped.");
     } else {
@@ -322,7 +349,7 @@ export class CollabProvider {
         // entry queued so it is never silently discarded.
       }
     }
-    scheduleOutbox(this.opts.postId, outbox, 0);
+    if (outbox.epochKnown) scheduleOutbox(this.opts.postId, outbox, 0);
 
     this.startPromise = this.finishStart(hadPendingUpdates);
     return this.startPromise;
@@ -362,6 +389,7 @@ export class CollabProvider {
     if (
       !this.opts.canPush ||
       !this.outbox ||
+      !this.outbox.epochKnown ||
       this.outbox.pending.length === 0 ||
       typeof navigator === "undefined" ||
       typeof navigator.sendBeacon !== "function"
@@ -495,10 +523,24 @@ export class CollabProvider {
           return { authoritative: false, remoteEmpty: false };
         }
         // Record the generation we are catching up under; every push is fenced
-        // on it so a stale offline flush after a retirement is rejected.
-        if (this.outbox && typeof data.epoch === "number") {
-          this.outbox.epoch = data.epoch;
+        // on it so a stale offline flush after a retirement is rejected. A
+        // shared outbox that already knows a different epoch contains edits
+        // from the retired document and must be discarded, never relabeled as
+        // belonging to the new generation.
+        if (this.outbox) {
+          const responseEpoch =
+            typeof data.epoch === "number" &&
+            Number.isSafeInteger(data.epoch) &&
+            data.epoch >= 0
+              ? data.epoch
+              : 0;
+          if (this.outbox.epochKnown && responseEpoch !== this.outbox.epoch) {
+            retireOutbox(this.outbox, responseEpoch);
+            return { authoritative: false, remoteEmpty: false };
+          }
+          this.outbox.epoch = responseEpoch;
           this.outbox.epochKnown = true;
+          scheduleOutbox(this.opts.postId, this.outbox, 0);
         }
         if (data.updates.length === 0) {
           return {
@@ -568,9 +610,9 @@ export class CollabProvider {
           if (!this.outbox.epochKnown) {
             this.outbox.epoch = data.epoch;
             this.outbox.epochKnown = true;
+            scheduleOutbox(this.opts.postId, this.outbox, 0);
           } else if (data.epoch !== this.outbox.epoch) {
-            this.opts.onRetired?.();
-            this.stop();
+            retireOutbox(this.outbox, data.epoch);
             return;
           }
         }

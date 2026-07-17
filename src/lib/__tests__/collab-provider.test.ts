@@ -39,7 +39,7 @@ describe("CollabProvider startup and outbox", () => {
     vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
     const initial = deferred<Response>();
     const never = new Promise<Response>(() => {});
-    const pushed: Array<{ updates: string[] }> = [];
+    const pushed: Array<{ updates: string[]; epoch?: number }> = [];
     let initialRequested = false;
     vi.stubGlobal(
       "fetch",
@@ -49,8 +49,8 @@ describe("CollabProvider startup and outbox", () => {
           return jsonResponse({ presence: [] });
         }
         if (init?.method === "POST") {
-          pushed.push(JSON.parse(String(init.body)) as { updates: string[] });
-          return jsonResponse({ seq: 1 });
+          pushed.push(JSON.parse(String(init.body)) as { updates: string[]; epoch?: number });
+          return jsonResponse({ seq: 1, epoch: 5 });
         }
         if (!initialRequested) {
           initialRequested = true;
@@ -65,7 +65,12 @@ describe("CollabProvider startup and outbox", () => {
     const started = provider.start();
     doc.getMap("body").set("text", "written while loading");
 
-    initial.resolve(jsonResponse({ updates: [], seq: 0 }));
+    // The debounce expires while the initial epoch is still unknown. The edit
+    // must remain queued instead of being sent with epoch 0 and fenced out.
+    await vi.advanceTimersByTimeAsync(400);
+    expect(pushed).toHaveLength(0);
+
+    initial.resolve(jsonResponse({ updates: [], seq: 0, epoch: 5 }));
     await expect(started).resolves.toEqual({
       authoritative: true,
       remoteEmpty: false,
@@ -75,6 +80,7 @@ describe("CollabProvider startup and outbox", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(pushed).toHaveLength(1);
     expect(pushed[0].updates).toHaveLength(1);
+    expect(pushed[0].epoch).toBe(5);
 
     const replayed = new Y.Doc();
     Y.applyUpdate(
@@ -134,6 +140,54 @@ describe("CollabProvider startup and outbox", () => {
 
     await vi.advanceTimersByTimeAsync(1500);
     expect(pushAttempts).toBe(2);
+  });
+
+  it("drops a remounted outbox when catch-up reports that its epoch retired", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
+    const retired: boolean[] = [];
+    let epoch = 5;
+    const pushed: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") {
+          pushed.push((JSON.parse(String(init.body)) as { epoch: number }).epoch);
+          return jsonResponse({ error: "offline" }, 503);
+        }
+        if (url.includes("wait=0")) {
+          return jsonResponse({ updates: [], seq: 0, epoch });
+        }
+        return new Promise<Response>(() => {});
+      }),
+    );
+
+    const firstDoc = new Y.Doc();
+    const first = providerFor(firstDoc, "retired-remount");
+    await first.start();
+    firstDoc.getMap("body").set("text", "stale queued edit");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(pushed).toEqual([5]);
+    first.destroy();
+
+    epoch = 6;
+    const remounted = new CollabProvider(new Y.Doc(), {
+      postId: "retired-remount",
+      userName: "Ada",
+      color: "#112233",
+      canPush: true,
+      onRetired: () => retired.push(true),
+    });
+    await expect(remounted.start()).resolves.toEqual({
+      authoritative: false,
+      remoteEmpty: false,
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(retired).toEqual([true]);
+    expect(pushed).toEqual([5]);
+    remounted.destroy();
   });
 
   it("reports a failed initial fetch as non-authoritative", async () => {
@@ -468,6 +522,67 @@ describe("CollabProvider startup and outbox", () => {
     // empty queue and sends nothing. Exactly one push-endpoint beacon.
     expect(beacons.filter((b) => b.url === base)).toHaveLength(1);
 
+    provider.destroy();
+  });
+
+  it("does not remove a newer edit when an in-flight push finishes after a beacon", async () => {
+    vi.useFakeTimers();
+    const pageListeners = new Map<string, Set<() => void>>();
+    vi.stubGlobal("window", {
+      addEventListener: (ev: string, fn: () => void) => {
+        (pageListeners.get(ev) ?? pageListeners.set(ev, new Set()).get(ev)!).add(fn);
+      },
+      removeEventListener: (ev: string, fn: () => void) => {
+        pageListeners.get(ev)?.delete(fn);
+      },
+      sessionStorage: { getItem: () => null, setItem: () => {} },
+    });
+    vi.stubGlobal("navigator", { sendBeacon: vi.fn(() => true) });
+    const firstPush = deferred<Response>();
+    const pushed: Array<{ updates: string[] }> = [];
+    let caughtUp = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
+        if (init?.method === "POST") {
+          pushed.push(JSON.parse(String(init.body)) as { updates: string[] });
+          return pushed.length === 1
+            ? firstPush.promise
+            : jsonResponse({ seq: 2, epoch: 0 });
+        }
+        if (!caughtUp) {
+          caughtUp = true;
+          return jsonResponse({ updates: [], seq: 0, epoch: 0 });
+        }
+        return new Promise<Response>(() => {});
+      }),
+    );
+
+    const doc = new Y.Doc();
+    const provider = providerFor(doc, "beacon-inflight-race");
+    await provider.start();
+    doc.getMap("body").set("first", "in flight");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(pushed).toHaveLength(1);
+
+    for (const fn of pageListeners.get("pagehide") ?? []) fn();
+    doc.getMap("body").set("second", "newer edit");
+    firstPush.resolve(jsonResponse({ seq: 1, epoch: 0 }));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(pushed).toHaveLength(2);
+    const replayed = new Y.Doc();
+    for (const payload of [pushed[0], pushed[1]]) {
+      for (const update of payload.updates) {
+        Y.applyUpdate(
+          replayed,
+          new Uint8Array(Buffer.from(update, "base64")),
+        );
+      }
+    }
+    expect(replayed.getMap("body").get("second")).toBe("newer edit");
     provider.destroy();
   });
 
