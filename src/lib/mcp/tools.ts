@@ -409,6 +409,7 @@ function markdownContentUpdate(
     ["coverCaption", post.coverCaption],
     ["coverHeight", post.coverHeight],
     ["pinned", Boolean(post.pinned)],
+    ["starred", Boolean(post.starred)],
     ["gallery", post.gallery],
     ["links", post.links],
     ["videoUrl", post.videoUrl],
@@ -418,7 +419,9 @@ function markdownContentUpdate(
   for (const [key, stored] of protectedFields) {
     if (!Object.prototype.hasOwnProperty.call(parsed.fields, key)) continue;
     const incoming =
-      key === "pinned" ? Boolean(parsed.fields.pinned) : parsed.fields[key];
+      key === "pinned" || key === "starred"
+        ? Boolean(parsed.fields[key])
+        : parsed.fields[key];
     if (!sameValue(incoming, stored)) {
       return errorResult(
         `update_item cannot change ${key}. Use its dedicated workspace tool.`,

@@ -2,6 +2,7 @@ import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
 import { postBodyPreview, type Post } from "@/lib/content";
 import { resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -26,8 +27,7 @@ export async function GET(_request: Request, { params }: Props) {
     language: "en",
     items: posts.map((post) => {
       const url = postUrl(baseUrl, post.slug);
-      const summary =
-        post.excerpt?.trim() || plainTextSummary(postBodyPreview(post));
+      const summary = postSubtitle(post) || plainTextSummary(postBodyPreview(post));
       const image = resolveCoverUrl(post, baseUrl);
 
       return {

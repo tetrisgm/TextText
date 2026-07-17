@@ -8,6 +8,10 @@ import {
   renderPostMarkdownFile,
   type ParsedPostFields,
 } from "@/lib/markdown-files";
+import {
+  markdownSubtitle,
+  postBodyWithSubtitle,
+} from "@/lib/markdown-subtitle";
 
 const blog: Blog = {
   handle: "demo",
@@ -40,6 +44,7 @@ const fullArticle: Post = {
   date: "2026-07-01",
   status: "published",
   pinned: true,
+  starred: true,
   createdAt: "2026-06-30T08:00:00.000Z",
   updatedAt: "2026-07-01T09:30:00.000Z",
 };
@@ -113,13 +118,15 @@ function expectedFields(post: Post): ParsedPostFields {
     status: post.status,
   };
   if (post.title) fields.title = post.title;
-  if (post.excerpt) fields.excerpt = post.excerpt.trim();
+  const subtitle = markdownSubtitle(postBodyWithSubtitle(post));
+  if (subtitle) fields.excerpt = subtitle;
   if (post.date) fields.date = post.date;
   if (post.accent) fields.accent = post.accent;
   if (post.cover) fields.cover = post.cover;
   if (post.coverCaption) fields.coverCaption = post.coverCaption;
   if (post.coverHeight !== undefined) fields.coverHeight = post.coverHeight;
   if (post.pinned) fields.pinned = true;
+  if (post.starred) fields.starred = true;
   if (post.gallery && post.gallery.length > 0) {
     fields.gallery = post.gallery.map((item) => ({
       src: item.src,
@@ -155,7 +162,8 @@ describe("render -> parse round trip", () => {
     expect(parsed.fields).toEqual(expectedFields(post));
     // The trim contract: render trims the body and appends one newline;
     // parse eats the blank separator lines, so an empty body comes back "".
-    expect(parsed.body).toBe(post.body.trim() ? `${post.body.trim()}\n` : "");
+    const body = postBodyWithSubtitle(post).trim();
+    expect(parsed.body).toBe(body ? `${body}\n` : "");
     expect(parsed.unknownKeys).toEqual([]);
   });
 
@@ -170,6 +178,16 @@ describe("render -> parse round trip", () => {
       post: { ...fullArticle, status: "draft" },
     });
     expect(draft).not.toContain("\ndate:");
+  });
+
+  it("keeps personal stars out of public Markdown", () => {
+    const file = renderPostMarkdownFile({
+      blog,
+      includePersonalMetadata: false,
+      post: fullArticle,
+    });
+    expect(file).toContain("\npinned: true\n");
+    expect(file).not.toContain("\nstarred:");
   });
 
   it("keeps the body byte-identical through a second render", () => {
@@ -195,6 +213,7 @@ describe("hand-written human frontmatter", () => {
         "excerpt: Colons: fine in the middle",
         "coverHeight: 420",
         "pinned: true",
+        "starred: true",
         "accent: #065ec6",
         "---",
         "",
@@ -211,6 +230,7 @@ describe("hand-written human frontmatter", () => {
       excerpt: "Colons: fine in the middle",
       coverHeight: 420,
       pinned: true,
+      starred: true,
       accent: "#065ec6",
     });
     expect(parsed.body).toBe("Hello from a plain text editor.\n");
@@ -255,6 +275,12 @@ describe("wrong types throw, naming the key", () => {
   it("rejects a non-boolean pinned", () => {
     expect(() => parsePostMarkdownFile('---\npinned: "yes"\n---\nx')).toThrow(
       /pinned/,
+    );
+  });
+
+  it("rejects a non-boolean starred", () => {
+    expect(() => parsePostMarkdownFile('---\nstarred: "yes"\n---\nx')).toThrow(
+      /starred/,
     );
   });
 

@@ -63,6 +63,7 @@ import {
 } from "./db/schema";
 import { folderModeForPostType } from "./markdown-files";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
+import { markdownSubtitle } from "./markdown-subtitle";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import { rootDomainUrl } from "./site-url";
 import {
@@ -119,6 +120,7 @@ type PostListRow = Pick<
   | "captureStatus"
   | "status"
   | "pinned"
+  | "starred"
   | "publishedAt"
   | "createdAt"
   | "updatedAt"
@@ -278,6 +280,7 @@ function mapPost(row: PostRow): Post {
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
     pinned: row.pinned,
+    starred: row.starred,
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -328,10 +331,17 @@ function mapPostList(row: PostListRow): Post {
     date: toISODate(row.publishedAt ?? row.createdAt),
     status: row.status,
     pinned: row.pinned,
+    starred: row.starred,
     folderId: row.folderId ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function withoutPersonalWorkspaceMetadata(post: Post): Post {
+  if (post.starred === undefined) return post;
+  const { starred: _starred, ...publicPost } = post;
+  return publicPost;
 }
 
 const BODY_PREVIEW_LENGTH = 2048;
@@ -373,6 +383,7 @@ function postListSelection() {
     captureStatus: posts.captureStatus,
     status: posts.status,
     pinned: posts.pinned,
+    starred: posts.starred,
     publishedAt: posts.publishedAt,
     createdAt: posts.createdAt,
     updatedAt: posts.updatedAt,
@@ -472,7 +483,10 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return rows.map(mapPostList);
+  const mapped = rows.map(mapPostList);
+  return publishedOnly
+    ? mapped.map(withoutPersonalWorkspaceMetadata)
+    : mapped;
 }
 
 function pinnedFirst(items: Post[]): Post[] {
@@ -490,11 +504,12 @@ function pinnedFirst(items: Post[]): Post[] {
 async function getPostsUncached(handle: string): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
-    return pinnedFirst(
+    const selected = pinnedFirst(
       DEMO_POSTS.filter(
         (p) => p.status === "published" && !isPrivatePostType(p.type),
       ),
     );
+    return selected.map(withoutPersonalWorkspaceMetadata);
   }
   return selectPosts(handle, true);
 }
@@ -1863,9 +1878,12 @@ async function getFolderPostsUncached(
         folderPathForPostType(post.type) === folderPath &&
         (!publishedOnly || post.status === "published"),
     );
-    return pinnedFirst(
+    const selected = pinnedFirst(
       excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
     );
+    return publishedOnly
+      ? selected.map(withoutPersonalWorkspaceMetadata)
+      : selected;
   }
 
   // The blog home ("blog") is the additive view of everything blog-mode: the
@@ -1903,10 +1921,13 @@ async function getFolderPostsUncached(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return excludePrivateTypesFromBlogBucket(
+  const selected = excludePrivateTypesFromBlogBucket(
     folderPath,
     rows.map(mapPostList),
   );
+  return publishedOnly
+    ? selected.map(withoutPersonalWorkspaceMetadata)
+    : selected;
 }
 
 const getFolderPostsCached = cache(getFolderPostsUncached);
@@ -1947,17 +1968,21 @@ async function selectFullPosts(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return rows.map((r) => mapPost(r.posts));
+  const mapped = rows.map((r) => mapPost(r.posts));
+  return publishedOnly
+    ? mapped.map(withoutPersonalWorkspaceMetadata)
+    : mapped;
 }
 
 async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
-    return pinnedFirst(
+    const selected = pinnedFirst(
       DEMO_POSTS.filter(
         (p) => p.status === "published" && !isPrivatePostType(p.type),
       ),
     );
+    return selected.map(withoutPersonalWorkspaceMetadata);
   }
   return selectFullPosts(handle, true);
 }
@@ -1994,9 +2019,12 @@ async function getFolderPostFilesUncached(
         folderPathForPostType(post.type) === folderPath &&
         (!publishedOnly || post.status === "published"),
     );
-    return pinnedFirst(
+    const selected = pinnedFirst(
       excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
     );
+    return publishedOnly
+      ? selected.map(withoutPersonalWorkspaceMetadata)
+      : selected;
   }
 
   // The blog root normally absorbs its descendants (the public blog view lists
@@ -2036,10 +2064,13 @@ async function getFolderPostFilesUncached(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  return excludePrivateTypesFromBlogBucket(
+  const selected = excludePrivateTypesFromBlogBucket(
     folderPath,
     rows.map((r) => mapPost(r.posts)),
   );
+  return publishedOnly
+    ? selected.map(withoutPersonalWorkspaceMetadata)
+    : selected;
 }
 
 const getFolderPostFilesCached = cache(getFolderPostFilesUncached);
@@ -3237,6 +3268,30 @@ export async function setPostPinned(
   return mapPost(updated[0]);
 }
 
+export async function setPostStarred(
+  handle: string,
+  id: string,
+  starred: boolean,
+): Promise<Post> {
+  if (!db) throw new Error("setPostStarred requires DATABASE_URL");
+  const blogId = await blogIdFor(handle);
+  const updated = await db
+    .update(posts)
+    // Personal stars participate in sync and the local-first pool, so they
+    // advance the same mutation cursor as every other post change.
+    .set({ starred, updatedAt: new Date() })
+    .where(
+      and(
+        eq(posts.id, id),
+        eq(posts.blogId, blogId),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Post not found");
+  return mapPost(updated[0]);
+}
+
 export async function setPostCreatedAt(
   handle: string,
   id: string,
@@ -3346,7 +3401,7 @@ export async function savePost(
   const base = {
     type: post.type,
     title: post.title,
-    excerpt: post.excerpt ?? null,
+    excerpt: markdownSubtitle(post.body) || post.excerpt || null,
     accent: post.accent ?? null,
     cover: post.cover ?? null,
     coverCaption: post.coverCaption ?? null,
@@ -3360,6 +3415,7 @@ export async function savePost(
     wordCount,
     status,
     pinned: post.pinned ?? false,
+    starred: post.starred ?? false,
     updatedAt: new Date(),
     // revision is assigned by the posts_bump_revision trigger (updates) and the
     // column default (inserts); no mutation path has to remember to bump it.
@@ -3446,6 +3502,7 @@ export async function savePostContentPatch(
     slug: existing.slug,
     status: existing.status,
     pinned: existing.pinned,
+    starred: existing.starred,
     folderId: existing.folderId,
     date: existing.date,
   };

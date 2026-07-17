@@ -18,6 +18,7 @@ export type SlashCommandItem = {
   id: string;
   action:
     | "paragraph"
+    | "subtitle"
     | "heading1"
     | "heading2"
     | "heading3"

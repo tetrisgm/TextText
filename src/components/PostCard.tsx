@@ -1,17 +1,10 @@
 "use client";
 
 import type { CSSProperties, MouseEvent, PointerEvent } from "react";
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  deleteEditablePostAction,
-  setEditablePostCreatedAtAction,
-  toggleEditablePostPinnedAction,
-} from "@/app/editor/actions";
-import { ConfirmationDialog } from "@/components/ConfirmationDialog";
-import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
-import type { Blog, Post, PostType } from "@/lib/content";
+import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
+import type { Blog, Post } from "@/lib/content";
 import {
   isVideoFile,
   postBodyPreview,
@@ -19,15 +12,8 @@ import {
 } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
 import { blogPostPath } from "@/lib/public-paths";
-import { updatePost } from "@/lib/pool/store";
-
-const TYPE_LABELS: Record<PostType, string> = {
-  article: "Article",
-  project: "Media",
-  talk: "Video",
-  note: "Note",
-  bookmark: "Bookmark",
-};
+import { WORKSPACE_ITEM_TYPE_LABELS } from "@/lib/workspace-item-presentation";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 function PlayBadge() {
   return (
@@ -77,11 +63,7 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function postDesc(post: Post): string {
-  return post.excerpt?.trim() || plainTextExcerpt(postBodyPreview(post));
-}
-
-function actionErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return postSubtitle(post) || plainTextExcerpt(postBodyPreview(post));
 }
 
 function videoMimeType(src: string): string {
@@ -106,6 +88,7 @@ export function PostCard({
   post,
   owner,
   categoryLabel,
+  showTypeChip = false,
 }: {
   blog: Blog;
   handle: string;
@@ -116,18 +99,11 @@ export function PostCard({
   owner: boolean;
   /** name of the subfolder this post lives in, shown as a quiet chip */
   categoryLabel?: string | null;
+  showTypeChip?: boolean;
 }) {
-  const router = useRouter();
   const ref = useRef<HTMLAnchorElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [pinning, setPinning] = useState(false);
-  const [menuError, setMenuError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const title = postTitle(post);
   const desc = postDesc(post);
@@ -138,7 +114,6 @@ export function PostCard({
   const isCaptureCover = coverSource.kind === "bookmark-screenshot";
   const isFaviconCover = coverSource.kind === "bookmark-favicon";
   const accent = postAccent(blog, post);
-  const showUnlisted = owner && post.status === "draft";
   const showPinned = Boolean(post.pinned);
 
   const attachVideo = useCallback((node: HTMLVideoElement | null) => {
@@ -215,23 +190,6 @@ export function PostCard({
     [],
   );
 
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const onPointerDown = (event: globalThis.PointerEvent) => {
-      const menu = menuRef.current;
-      if (!menu || !(event.target instanceof Node)) return;
-      if (!menu.contains(event.target)) setMenuOpen(false);
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-    };
-  }, [menuOpen]);
-
-  useEscapeLayer(menuOpen, "Post menu", () => setMenuOpen(false));
-
   const endHover = () => {
     setHovered(false);
     tiltTarget.current = { ...NEUTRAL };
@@ -292,99 +250,6 @@ export function PostCard({
   const onPointerLeave = (e: PointerEvent<HTMLAnchorElement>) => {
     if (e.pointerType !== "mouse") return;
     endHover();
-  };
-
-  const stopMenuNavigation = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
-    stopMenuNavigation(event);
-    setMenuError(null);
-    setMenuOpen((open) => !open);
-  };
-
-  const onDelete = (event: MouseEvent<HTMLButtonElement>) => {
-    stopMenuNavigation(event);
-    const postId = post.id;
-    if (!owner || !postId || deleting) return;
-    setMenuError(null);
-    setMenuOpen(false);
-    setDeleteDialogOpen(true);
-  };
-
-  const confirmDelete = useCallback(() => {
-    const postId = post.id;
-    if (!owner || !postId || deleting) return;
-    setDeleting(true);
-    startTransition(() => {
-      void Promise.resolve(
-        onDeletePost ? onDeletePost(post) : deleteEditablePostAction(handle, postId),
-      )
-        .then(() => {
-          setDeleteDialogOpen(false);
-          setMenuOpen(false);
-          if (!onDeletePost) router.refresh();
-        })
-        .catch((error) => {
-          setDeleting(false);
-          setDeleteDialogOpen(false);
-          setMenuOpen(true);
-          setMenuError(actionErrorMessage(error, "Could not delete"));
-        });
-    });
-  }, [deleting, handle, onDeletePost, owner, post, router]);
-
-  const onTogglePinned = (event: MouseEvent<HTMLButtonElement>) => {
-    stopMenuNavigation(event);
-    const postId = post.id;
-    if (!owner || !postId || pinning) return;
-
-    setMenuError(null);
-    setPinning(true);
-    const previousPinned = Boolean(post.pinned);
-    updatePost(postId, { pinned: !previousPinned });
-    startTransition(() => {
-      void toggleEditablePostPinnedAction(handle, postId)
-        .then(() => {
-          setMenuOpen(false);
-          setPinning(false);
-        })
-        .catch((error) => {
-          updatePost(postId, { pinned: previousPinned });
-          setPinning(false);
-          setMenuOpen(true);
-          setMenuError(actionErrorMessage(error, "Could not update pin"));
-        });
-    });
-  };
-
-  const sharePost = (event: MouseEvent<HTMLButtonElement>) => {
-    stopMenuNavigation(event);
-    const url = new URL(href ?? blogPostPath(blog, post), window.location.origin);
-    void navigator.clipboard.writeText(url.toString()).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
-    });
-  };
-
-  const changeCreatedDate = (value: string) => {
-    const postId = post.id;
-    if (!postId || !value || pinning) return;
-    const previous = post.createdAt;
-    setPinning(true);
-    updatePost(postId, { createdAt: `${value}T12:00:00.000Z` });
-    void setEditablePostCreatedAtAction(handle, postId, value)
-      .then((saved) => {
-        updatePost(postId, { createdAt: saved.createdAt });
-        setMenuOpen(false);
-      })
-      .catch((error) => {
-        updatePost(postId, { createdAt: previous });
-        setMenuError(actionErrorMessage(error, "Could not change date"));
-      })
-      .finally(() => setPinning(false));
   };
 
   const className = [
@@ -454,19 +319,18 @@ export function PostCard({
             )}
             <span className="tvcard-body">
               <span className="tvcard-chip-row">
-                <span
-                  className="tvcard-chip"
-                  style={{ background: accent ?? "var(--ink)" }}
-                >
-                  {TYPE_LABELS[post.type]}
-                </span>
+                {showTypeChip && (
+                  <span
+                    className="tvcard-chip"
+                    style={{ background: accent ?? "var(--ink)" }}
+                  >
+                    {WORKSPACE_ITEM_TYPE_LABELS[post.type]}
+                  </span>
+                )}
                 {categoryLabel && (
                   <span className="tvcard-category">{categoryLabel}</span>
                 )}
-                {showPinned && <span className="tvcard-pinned">Starred</span>}
-                {showUnlisted && (
-                  <span className="tvcard-unlisted">Unlisted</span>
-                )}
+                {showPinned && <span className="tvcard-pinned">Pinned</span>}
               </span>
               <span className="tvcard-title">{title}</span>
               <span className="tvcard-desc">{desc}</span>
@@ -474,80 +338,15 @@ export function PostCard({
           </span>
         </span>
       </Link>
-      {owner && (
-        <div
-          ref={menuRef}
-          className={`tvcard-menu-wrap${menuOpen ? " is-open" : ""}`}
-          onClick={stopMenuNavigation}
-        >
-          <button
-            type="button"
-            className="tvcard-menu-button"
-            aria-label="Post options"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={toggleMenu}
-          >
-            ...
-          </button>
-          {menuOpen && (
-            <div className="tvcard-menu" role="menu" aria-label="Post options">
-              <button
-                type="button"
-                className="tvcard-menu-item"
-                role="menuitem"
-                disabled={!post.id || pinning}
-                onClick={onTogglePinned}
-              >
-                {pinning ? "Updating" : post.pinned ? "Unstar" : "Star"}
-              </button>
-              <button
-                type="button"
-                className="tvcard-menu-item"
-                role="menuitem"
-                onClick={sharePost}
-              >
-                {copied ? "Link copied" : "Share"}
-              </button>
-              <label className="tvcard-menu-date">
-                <span>Created</span>
-                <input
-                  type="date"
-                  value={(post.createdAt ?? post.date ?? "").slice(0, 10)}
-                  disabled={pinning}
-                  onChange={(event) => changeCreatedDate(event.currentTarget.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="tvcard-menu-item is-danger"
-                role="menuitem"
-                disabled={!post.id || deleting}
-                onClick={onDelete}
-              >
-                {deleting ? "Deleting" : "Delete"}
-              </button>
-              {menuError && (
-                <span className="tvcard-menu-error" role="alert">
-                  {menuError}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      {owner && (
-        <ConfirmationDialog
-          open={deleteDialogOpen}
-          title="Delete post?"
-          message="This moves the Markdown file to Trash. You can restore it later."
-          confirmLabel="Delete"
-          confirmingLabel="Deleting"
-          confirming={deleting}
-          onCancel={() => setDeleteDialogOpen(false)}
-          onConfirm={confirmDelete}
-        />
-      )}
+      <WorkspaceItemActions
+        blog={blog}
+        className="is-card"
+        handle={handle}
+        href={href}
+        onDeletePost={onDeletePost}
+        owner={owner}
+        post={post}
+      />
     </div>
   );
 }

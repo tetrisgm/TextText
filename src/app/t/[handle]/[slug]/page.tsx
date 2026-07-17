@@ -32,6 +32,7 @@ import { PostEditLayer } from "@/components/PostEditLayer";
 import { PostReadWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { PostShortcuts } from "@/components/PostShortcuts";
 import { isNoCoverValue } from "@/lib/cover";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 import {
   blogHomePath,
   blogPostEditPath,
@@ -89,7 +90,7 @@ function isEmptyOwnedPost(post: Post): boolean {
   const title = post.title.trim().toLowerCase();
   return (
     (!title || title === "untitled") &&
-    !post.excerpt?.trim() &&
+    !postSubtitle(post) &&
     !post.body.trim() &&
     (!post.cover?.trim() || isNoCoverValue(post.cover)) &&
     !(post.gallery && post.gallery.length > 0) &&
@@ -111,7 +112,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
-      post.excerpt?.trim() || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
+      postSubtitle(post) || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
     alternates: {
       types: blogFeedAlternateTypes(blog, blog.name),
     },
@@ -174,6 +175,9 @@ export async function PostPageForHandle({
   const canEditPost = canEdit || Boolean(itemAccess?.canEditContent);
   const canCommentPost = Boolean(viewer && (canEdit || itemAccess?.canView));
   const editMode = canEditPost && editRequested;
+  if (!canEdit && post.starred !== undefined) {
+    post = { ...post, starred: undefined };
+  }
   if (slugResolution.kind === "history") {
     const path = postPathForRequest(blog, post, tenantHandle);
     redirect(

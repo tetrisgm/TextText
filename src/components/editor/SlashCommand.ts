@@ -36,6 +36,14 @@ const textCommands: SlashCommandItem[] = [
     aliases: ["paragraph", "body"],
   },
   {
+    id: "slash-command-subtitle",
+    action: "subtitle",
+    label: "Subtitle",
+    hint: "Description below the title",
+    icon: "ST",
+    aliases: ["dek", "description", "standfirst"],
+  },
+  {
     id: "slash-command-heading-1",
     action: "heading1",
     label: "Heading 1",
@@ -49,7 +57,7 @@ const textCommands: SlashCommandItem[] = [
     label: "Heading 2",
     hint: "Medium section title",
     icon: "H2",
-    aliases: ["h2", "subtitle"],
+    aliases: ["h2"],
   },
   {
     id: "slash-command-heading-3",
@@ -118,13 +126,13 @@ const blockCommands: SlashCommandItem[] = [
 const imageCommand: SlashCommandItem = {
   id: "slash-command-image",
   action: "image",
-  label: "Image",
-  hint: "Upload from device",
+  label: "Image or video",
+  hint: "Upload media",
   icon: "IMG",
-  aliases: ["photo", "picture", "media"],
+  aliases: ["photo", "picture", "media", "video"],
 };
 
-function commandItems(mediaEnabled: boolean): SlashCommandItem[] {
+export function commandItems(mediaEnabled: boolean): SlashCommandItem[] {
   const items = [...textCommands, ...listCommands, ...blockCommands];
   return mediaEnabled ? [...items, imageCommand] : items;
 }
@@ -164,7 +172,7 @@ function setList(editor: Editor, range: Range, list: SlashCommandItem["action"])
   chain.run();
 }
 
-function runCommand({
+export function runCommand({
   editor,
   range,
   item,
@@ -178,6 +186,9 @@ function runCommand({
   switch (item.action) {
     case "paragraph":
       deleteQuery(editor, range).setParagraph().run();
+      return;
+    case "subtitle":
+      deleteQuery(editor, range).setNode("subtitle").run();
       return;
     case "heading1":
       deleteQuery(editor, range).setHeading({ level: 1 }).run();

@@ -5,6 +5,7 @@ import { blogFeedAlternateTypes } from "@/lib/feed-links";
 import { usernamePostPath } from "@/lib/public-paths";
 import { getBlogByUsername, getPost } from "@/lib/store";
 import { redirectDirectUsernameHit } from "@/lib/username-routes";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 interface Props {
   params: Promise<{ username: string; slug: string }>;
@@ -42,7 +43,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
-      post.excerpt?.trim() || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
+      postSubtitle(post) || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
     alternates: {
       canonical: usernamePostPath(blog.username ?? username, post.slug),
       types: blogFeedAlternateTypes(blog, blog.name),

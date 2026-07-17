@@ -42,6 +42,7 @@ import {
   setPostFolder,
   setPostCreatedAt,
   setPostPinned,
+  setPostStarred,
   setItemCommentResolved,
   trashBlogPosts,
   trashFolder,
@@ -87,6 +88,7 @@ import {
   tenantPostPath,
 } from "@/lib/public-paths";
 import { recordAction, recordSlugChanged } from "@/lib/audit";
+import { markdownSubtitle } from "@/lib/markdown-subtitle";
 import { hasActiveCoEditors, markCollabMaterialized } from "@/lib/collab";
 import { NO_COVER_VALUE } from "@/lib/cover";
 import {
@@ -352,11 +354,12 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
   const type = hasInputKey(values, "type")
     ? cleanEditablePostType(values.type, existing.type)
     : existing.type;
+  const body = cleanBody(values.body);
   return {
     id: cleanPostId(values.id),
     type,
     title: cleanLine(values.title, "Title"),
-    excerpt: cleanLine(values.excerpt ?? "", "Excerpt") || undefined,
+    excerpt: markdownSubtitle(body) || undefined,
     cover: hasInputKey(values, "cover")
       ? cleanOptionalLine(values.cover, "Cover")
       : existing.cover,
@@ -366,7 +369,7 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
     coverHeight: hasInputKey(values, "coverHeight")
       ? cleanCoverHeight(values.coverHeight)
       : existing.coverHeight,
-    body: cleanBody(values.body),
+    body,
     // A note or bookmark is unlisted forever: whatever the client sends, its
     // status stays draft (cross-group type changes are refused above, so the
     // resolved type covers the existing type too).
@@ -1593,6 +1596,29 @@ export async function toggleEditablePostPinnedAction(
   await auditEdit(
     access,
     saved.pinned ? "pin_post" : "unpin_post",
+    "item",
+    saved.id,
+    saved.title,
+  );
+  await revalidateBlog(handle, [existing.slug]);
+  return saved;
+}
+
+export async function toggleEditablePostStarredAction(
+  handleOrId: unknown,
+  maybeId?: unknown,
+): Promise<Post> {
+  const { handle, access } = await editableHandleFor(
+    maybeId === undefined ? undefined : handleOrId,
+  );
+  const id = maybeId === undefined ? handleOrId : maybeId;
+  const postId = cleanPostId(id);
+  const existing = await getPostById(handle, postId);
+  if (!existing) throw new Error("Post not found");
+  const saved = await setPostStarred(handle, postId, !existing.starred);
+  await auditEdit(
+    access,
+    saved.starred ? "star_post" : "unstar_post",
     "item",
     saved.id,
     saved.title,

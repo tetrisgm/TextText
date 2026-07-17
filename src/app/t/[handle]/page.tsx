@@ -51,7 +51,7 @@ import {
   postReadingTimeMin,
   youtubeThumb,
 } from "@/lib/content";
-import type { Blog, BlogCardStyle, BlogHomeLayout, Post, PostType } from "@/lib/content";
+import type { Blog, BlogCardStyle, BlogHomeLayout, Post } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
 import { blogHomePath, blogPostPath } from "@/lib/public-paths";
 import {
@@ -60,6 +60,7 @@ import {
 } from "@/lib/workspace-sidebar-state";
 import {
   SHARED_FOLDER_PATH,
+  STARRED_FOLDER_PATH,
   TRASH_FOLDER_PATH,
 } from "@/lib/workspace-paths";
 
@@ -72,6 +73,7 @@ type BlogHomeQuery = {
   date?: string | string[];
   folder?: string | string[];
   layout?: string | string[];
+  q?: string | string[];
   view?: string | string[];
 };
 
@@ -109,14 +111,6 @@ function isDefaultBlogName(name: string): boolean {
     normalized === DEFAULT_ANONYMOUS_BLOG_NAME.toLowerCase()
   );
 }
-
-const TYPE_LABELS: Record<PostType, string> = {
-  article: "Article",
-  project: "Media",
-  talk: "Video",
-  note: "Note",
-  bookmark: "Bookmark",
-};
 
 function postTitle(post: Post): string {
   return post.title.trim() || "Untitled";
@@ -182,11 +176,9 @@ function postStyle(blog: Blog, post: Post): CSSProperties | undefined {
 function BlogTimeline({
   blog,
   posts,
-  owner,
 }: {
   blog: Blog;
   posts: Post[];
-  owner: boolean;
 }) {
   return (
     <div className="blog-timeline" aria-label="Posts">
@@ -196,7 +188,6 @@ function BlogTimeline({
         const meta = timelineMeta(post);
         const excerpt = timelineExcerpt(post);
         const thumbnail = cover ? timelineImageSrc(cover) : "";
-        const showUnlisted = owner && post.status === "draft";
 
         return (
           <Link
@@ -208,14 +199,8 @@ function BlogTimeline({
           >
             <span className="blog-timeline-copy">
               <span className="blog-timeline-chip-row">
-                <span className="blog-timeline-chip">
-                  {TYPE_LABELS[post.type]}
-                </span>
                 {post.pinned && (
                   <span className="blog-timeline-marker">Pinned</span>
-                )}
-                {showUnlisted && (
-                  <span className="blog-timeline-marker">Unlisted</span>
                 )}
               </span>
               <span className="blog-timeline-title">{title}</span>
@@ -257,16 +242,13 @@ function BlogTimeline({
 function BlogIndex({
   blog,
   posts,
-  owner,
 }: {
   blog: Blog;
   posts: Post[];
-  owner: boolean;
 }) {
   return (
     <div className="blog-index-list" aria-label="Posts">
       {posts.map((post) => {
-        const showUnlisted = owner && post.status === "draft";
         return (
           <Link
             key={post.slug}
@@ -277,11 +259,8 @@ function BlogIndex({
           >
             <span className="blog-index-title">{postTitle(post)}</span>
             <span className="blog-index-meta">
-              {[formatArticleDate(post.date), TYPE_LABELS[post.type]]
-                .filter(Boolean)
-                .join(" / ")}
+              {formatArticleDate(post.date)}
               {post.pinned ? " / Pinned" : ""}
-              {showUnlisted ? " / Unlisted" : ""}
             </span>
           </Link>
         );
@@ -374,7 +353,14 @@ export async function BlogHomeForHandle({
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(sidebarCookie);
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
-    for (const key of ["card", "date", "folder", "layout", "view"] as const) {
+    for (const key of [
+      "card",
+      "date",
+      "folder",
+      "layout",
+      "q",
+      "view",
+    ] as const) {
       const value = queryValue(query[key]);
       if (value) redirectParams.set(key, value);
     }
@@ -452,7 +438,8 @@ export async function BlogHomeForHandle({
     : null;
   const activeSpecialFolder =
     requestedFolder === TRASH_FOLDER_PATH ||
-    requestedFolder === SHARED_FOLDER_PATH
+    requestedFolder === SHARED_FOLDER_PATH ||
+    requestedFolder === STARRED_FOLDER_PATH
       ? requestedFolder
       : null;
   const folderItemsPromise = activeFolder
@@ -483,10 +470,17 @@ export async function BlogHomeForHandle({
   const singlePost = initialPool
     ? undefined
     : posts.find((post) => post.status === "published") ?? posts[0];
-  const singleReaderPost =
+  const singleReaderPostRaw =
     singlePost && displayBlog.homeLayout === "single"
       ? (await getPost(handle, singlePost.slug)) ?? singlePost
       : singlePost;
+  // `starred` is personal metadata; never expose it to a non-owner (matches the
+  // explicit strip on the standalone /[slug] page). No leak today, but keep the
+  // guarantee explicit rather than relying on the reader not emitting it.
+  const singleReaderPost =
+    singleReaderPostRaw && !canEdit
+      ? { ...singleReaderPostRaw, starred: undefined }
+      : singleReaderPostRaw;
   const feedHref = blogFeedHref(blog);
   const isUnnamedBlog = isDefaultBlogName(blog.name);
   const editableBlogName = isUnnamedBlog ? "" : blog.name;
@@ -526,7 +520,6 @@ export async function BlogHomeForHandle({
         <BlogTimeline
           blog={displayBlog}
           posts={posts}
-          owner={canEdit}
         />
       )}
 
@@ -540,13 +533,14 @@ export async function BlogHomeForHandle({
               post={post}
               owner={canEdit}
               categoryLabel={categoryLabelFor(post)}
+              showTypeChip={false}
             />
           ))}
         </div>
       )}
 
       {posts.length > 0 && displayBlog.homeLayout === "index" && (
-        <BlogIndex blog={displayBlog} posts={posts} owner={canEdit} />
+        <BlogIndex blog={displayBlog} posts={posts} />
       )}
 
       {posts.length > 0 && !inWriteApp && (
@@ -581,7 +575,8 @@ export async function BlogHomeForHandle({
       folders={folders}
       homePath={blogHomePath(blog)}
       initialSidebarCollapsed={initialSidebarCollapsed}
-      initialSearchQuery={queryValue(query.date) ?? ""}
+      initialSearchQuery={queryValue(query.date) ?? queryValue(query.q) ?? ""}
+      initialSearchSource={queryValue(query.date) ? "date" : "query"}
       initialSettingsOpen={queryValue(query.view) === "settings"}
       initialPool={initialPool}
       showGuestSignIn={isGuestWorkspace && isAuthConfigured}

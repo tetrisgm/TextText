@@ -212,6 +212,7 @@ function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null 
     publishedAt: post.status === "published" ? post.date : undefined,
     status: post.status,
     pinned: post.pinned,
+    starred: post.starred,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
   };
@@ -733,6 +734,9 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           throw new Error("New items must start as drafts");
         }
         if (parsed.fields.pinned) throw new Error("New items cannot start pinned");
+        if (parsed.fields.starred) {
+          throw new Error("New items cannot start starred; star them in the workspace");
+        }
         if (parsed.fields.date) {
           throw new Error("A draft cannot have a publication date");
         }
@@ -810,6 +814,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             ["coverCaption", post.coverCaption],
             ["coverHeight", post.coverHeight],
             ["pinned", Boolean(post.pinned)],
+            ["starred", Boolean(post.starred)],
             ["gallery", post.gallery],
             ["links", post.links],
             ["videoUrl", post.videoUrl],
@@ -819,7 +824,9 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           for (const [key, stored] of protectedFields) {
             if (!Object.prototype.hasOwnProperty.call(parsed.fields, key)) continue;
             const incoming =
-              key === "pinned" ? Boolean(parsed.fields.pinned) : parsed.fields[key];
+              key === "pinned" || key === "starred"
+                ? Boolean(parsed.fields[key])
+                : parsed.fields[key];
             if (!sameValue(incoming, stored)) {
               throw new Error(`update_item cannot change ${key}`);
             }

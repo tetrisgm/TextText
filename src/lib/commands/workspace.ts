@@ -4,7 +4,7 @@ import {
   createWorkspacePostAction,
   movePostToFolderAction,
   setEditablePostStatusAction,
-  toggleEditablePostPinnedAction,
+  toggleEditablePostStarredAction,
 } from "@/app/editor/actions";
 import { BLOG_FOLDER_PATH, isPrivatePostType } from "@/lib/content";
 import type { Folder, Post } from "@/lib/content";
@@ -28,7 +28,6 @@ import type {
 function commandTargetPost(ctx: CommandContext): WorkspacePoolPost | null {
   const workspace = ctx.workspace;
   if (!workspace) return null;
-  if (workspace.viewLevel === "root") return null;
   const postId = workspace.selectedPostId ?? workspace.activePostId;
   return postId ? workspace.getPost(postId) : null;
 }
@@ -81,6 +80,7 @@ function optimisticPost(
     excerpt: "",
     status: "draft",
     pinned: false,
+    starred: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -131,6 +131,7 @@ function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null 
     publishedAt: post.status === "published" ? post.date : undefined,
     status: post.status,
     pinned: post.pinned,
+    starred: post.starred,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
   };
@@ -206,15 +207,33 @@ function createCommand(kind: CreatePostKind): AppCommand {
   };
 }
 
-function togglePinSelected(ctx: CommandContext) {
+function toggleStarSelected(ctx: CommandContext) {
   const post = commandTargetPost(ctx);
   const workspace = ctx.workspace;
   if (!post?.id || !workspace?.canManagePost) return;
-  updatePost(post.id, { pinned: !post.pinned });
-  void toggleEditablePostPinnedAction(workspace.handle, post.id).catch((error) => {
-    updatePost(post.id, { pinned: post.pinned });
-    ctx.toast(error instanceof Error ? error.message : "Could not update pin");
+  if (workspace.selectedPostIds.length > 1) {
+    workspace.toggleStarSelected();
+    return;
+  }
+  const previousUpdatedAt = post.updatedAt;
+  updatePost(post.id, {
+    starred: !post.starred,
+    updatedAt: new Date().toISOString(),
   });
+  void toggleEditablePostStarredAction(workspace.handle, post.id)
+    .then((saved) => {
+      updatePost(post.id, {
+        starred: saved.starred,
+        updatedAt: saved.updatedAt,
+      });
+    })
+    .catch((error) => {
+      updatePost(post.id, {
+        starred: post.starred,
+        updatedAt: previousUpdatedAt,
+      });
+      ctx.toast(error instanceof Error ? error.message : "Could not update star");
+    });
 }
 
 function togglePublishSelected(ctx: CommandContext) {
@@ -295,6 +314,22 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
   createCommand("article"),
   createCommand("note"),
   createCommand("bookmark"),
+  {
+    id: "selection.extend-previous",
+    label: "Extend selection up",
+    group: "Navigate",
+    shortcut: { key: "ArrowUp", shift: true, label: "Shift ↑" },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.workspace?.extendSelection(-1),
+  },
+  {
+    id: "selection.extend-next",
+    label: "Extend selection down",
+    group: "Navigate",
+    shortcut: { key: "ArrowDown", shift: true, label: "Shift ↓" },
+    when: (ctx) => Boolean(ctx.workspace),
+    run: (ctx) => ctx.workspace?.extendSelection(1),
+  },
   {
     id: "selection.previous",
     label: "Move up",
@@ -483,12 +518,12 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     run: (ctx) => ctx.workspace?.requestDeleteTarget(),
   },
   {
-    id: "post.pin",
+    id: "post.star",
     label: "Star or unstar focused item",
     group: "Act",
     shortcut: { key: "s", label: "S" },
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
-    run: togglePinSelected,
+    run: toggleStarSelected,
   },
   {
     id: "post.saved-status",

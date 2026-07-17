@@ -23,6 +23,7 @@ import { shortcutLabelForCommand } from "@/lib/commands/workspace";
 import { preloadPostEditLayer } from "@/components/preloadPostEditLayer";
 import { CommentsDialog } from "@/components/workspace/CommentsDialog";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
+import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
 import {
@@ -48,6 +49,7 @@ type CommonProps = {
   canCommentPost?: boolean;
   onBookmarkCaptureChange?: (post: Post) => void;
   onNavigate?: (path: string) => Promise<void> | void;
+  onSearch?: () => void;
   presencePeers?: PresencePeer[];
 };
 
@@ -1024,6 +1026,7 @@ export function PostActionBar(props: Props) {
       />
     ) : null;
   const showTopActionBar =
+    Boolean(props.onSearch) ||
     canEditPost ||
     canCommentPost ||
     showPostNav ||
@@ -1168,6 +1171,9 @@ export function PostActionBar(props: Props) {
           aria-label="Post controls"
         >
           <div className="post-action-toolbar ac-chrome">
+            {props.onSearch && (
+              <WorkspaceSearchButton onSearch={props.onSearch} />
+            )}
             {(canEditPost ||
               canCommentPost ||
               bookmarkControls ||

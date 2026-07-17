@@ -13,6 +13,10 @@ import { isSafeLinkHref } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { isNoCoverValue } from "@/lib/cover";
 import { sanitizePostSlug } from "@/lib/post-slug";
+import {
+  markdownSubtitle,
+  postBodyWithSubtitle,
+} from "@/lib/markdown-subtitle";
 
 export const WRITE_FOLDER_SCHEMA = "write.folder.v1";
 export const WRITE_MARKDOWN_FILE_SCHEMA = "write.markdown-file.v1";
@@ -68,6 +72,8 @@ export type MarkdownFolderManifest = {
 
 export type RenderFolderManifestOptions = {
   folder?: Folder;
+  /** include workspace-only metadata such as personal stars in file hashes */
+  includePersonalMetadata?: boolean;
   /** public URL of the post's markdown file (index.md) */
   fileUrlFor?: (post: Post) => string;
   /** canonical public URL of the post, baked into each file's frontmatter */
@@ -135,6 +141,7 @@ export function renderFolderManifest(
         renderPostMarkdownFile({
           blog,
           canonicalUrl: options?.postUrlFor?.(post),
+          includePersonalMetadata: options?.includePersonalMetadata,
           post,
         });
       return {
@@ -161,11 +168,14 @@ export function renderFolderManifest(
 export function renderPostMarkdownFile({
   blog,
   canonicalUrl,
+  includePersonalMetadata = true,
   post,
   syncRevision,
 }: {
   blog: Blog;
   canonicalUrl?: string;
+  /** false for public Markdown; authenticated sync keeps the default */
+  includePersonalMetadata?: boolean;
   post: Post;
   /** reserved sync validator; omitted from every public Markdown surface */
   syncRevision?: number;
@@ -186,7 +196,6 @@ export function renderPostMarkdownFile({
     status: post.status,
   };
 
-  addOptional(frontmatter, "excerpt", post.excerpt);
   // A draft's date is derived display state (createdAt, or the date of an
   // earlier publish), never authored: rendering it into the file would make a
   // later publish-by-file backdate the post instead of stamping now.
@@ -196,6 +205,7 @@ export function renderPostMarkdownFile({
   // content.ts), so it renders as accent: "" rather than disappearing.
   if (post.accent !== undefined) frontmatter.accent = post.accent;
   if (post.pinned) frontmatter.pinned = true;
+  if (includePersonalMetadata && post.starred) frontmatter.starred = true;
   addOptional(frontmatter, "cover", cleanCover(post.cover));
   addOptional(frontmatter, "coverCaption", post.coverCaption);
   addOptionalNumber(frontmatter, "coverHeight", post.coverHeight);
@@ -205,7 +215,7 @@ export function renderPostMarkdownFile({
   addOptional(frontmatter, "venue", post.venue);
   addOptional(frontmatter, "duration", post.duration);
 
-  return `---\n${renderFrontmatter(frontmatter)}---\n\n${post.body.trim()}\n`;
+  return `---\n${renderFrontmatter(frontmatter)}---\n\n${postBodyWithSubtitle(post).trim()}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +245,7 @@ export type ParsedPostFields = Partial<
     | "coverCaption"
     | "coverHeight"
     | "pinned"
+    | "starred"
     | "gallery"
     | "links"
     | "videoUrl"
@@ -338,6 +349,9 @@ export function parsePostMarkdownFile(fileText: string): ParsedPostMarkdownFile 
       case "pinned":
         fields.pinned = fieldBoolean(value, key);
         break;
+      case "starred":
+        fields.starred = fieldBoolean(value, key);
+        break;
       case "gallery":
         fields.gallery = fieldGallery(value);
         break;
@@ -351,6 +365,8 @@ export function parsePostMarkdownFile(fileText: string): ParsedPostMarkdownFile 
 
   const type = typeType ?? kindType;
   if (type) fields.type = type;
+  const subtitle = markdownSubtitle(split.body);
+  if (subtitle) fields.excerpt = subtitle;
 
   return { fields, body: split.body, unknownKeys };
 }

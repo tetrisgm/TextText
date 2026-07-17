@@ -64,6 +64,7 @@ import {
 } from "@/components/editor/EditReaderPreview";
 import { EditableCover, randomCover } from "@/components/editor/EditableCover";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
+import { markdownSubtitle } from "@/lib/markdown-subtitle";
 import { COVER_PILE } from "@/lib/cover-pile";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { ANONYMOUS_MEDIA_UPLOAD_COPY } from "@/lib/product-limits";
@@ -112,18 +113,6 @@ function focusTextareaEnd(node: HTMLTextAreaElement | null) {
   if (!node) return;
   node.focus({ preventScroll: true });
   node.setSelectionRange(node.value.length, node.value.length);
-}
-
-function textareaCaretOnFirstLine(node: HTMLTextAreaElement): boolean {
-  const selectionStart = node.selectionStart ?? 0;
-  const firstBreak = node.value.indexOf("\n");
-  return firstBreak === -1 || selectionStart <= firstBreak;
-}
-
-function textareaCaretOnLastLine(node: HTMLTextAreaElement): boolean {
-  const selectionEnd = node.selectionEnd ?? 0;
-  const lastBreak = node.value.lastIndexOf("\n");
-  return lastBreak === -1 || selectionEnd > lastBreak;
 }
 
 function editableCaretOnFirstLine(container: HTMLElement): boolean {
@@ -526,15 +515,11 @@ export function PostEditLayer({
   const [galleryUploadError, setGalleryUploadError] = useState<string | null>(
     null,
   );
-  const [bodyToolbarHost, setBodyToolbarHost] = useState<HTMLDivElement | null>(
-    null,
-  );
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const [surfaceMode, setSurfaceMode] = useState<"read" | "edit">("edit");
   const { sidebarCollapsed, toggleSidebarCollapsed } =
     useWorkspaceSidebarCollapsed(initialSidebarCollapsed);
   const titleRef = useRef<HTMLTextAreaElement>(null);
-  const excerptRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<BodyEditorHandle>(null);
   const editSurfaceRef = useRef<HTMLDivElement>(null);
   const lastEditFocusRef = useRef<HTMLElement | null>(null);
@@ -596,10 +581,6 @@ export function PostEditLayer({
     focusTextareaEnd(titleRef.current);
   }, []);
 
-  const focusExcerpt = useCallback(() => {
-    focusTextareaEnd(excerptRef.current);
-  }, []);
-
   const focusBody = useCallback(() => {
     bodyRef.current?.focus();
   }, []);
@@ -613,10 +594,6 @@ export function PostEditLayer({
   useEffect(() => {
     autoGrow(titleRef.current);
   }, [draft.title, draft.type]);
-
-  useEffect(() => {
-    autoGrow(excerptRef.current);
-  }, [draft.excerpt, draft.type]);
 
   const shouldAutoFocusTitle = shouldFocusTitleOnEdit(post);
 
@@ -1294,7 +1271,7 @@ export function PostEditLayer({
       ...post,
       type: draft.type,
       title: draft.title,
-      excerpt: draft.excerpt || undefined,
+      excerpt: markdownSubtitle(draft.body) || undefined,
       cover: draft.cover || undefined,
       coverCaption: draft.coverCaption || undefined,
       coverHeight: draft.coverHeight ?? undefined,
@@ -1316,16 +1293,6 @@ export function PostEditLayer({
       : displayPost.type === "talk"
         ? "talk-detail-title edit-title-field"
         : "reader-title edit-title-field";
-  const excerptClass =
-    displayPost.type === "project"
-      ? "reader-dek project-dek edit-excerpt-field"
-      : displayPost.type === "talk"
-        ? "reader-dek talk-detail-dek edit-excerpt-field"
-        : "reader-dek edit-excerpt-field";
-  const excerptPlaceholder =
-    displayPost.type === "bookmark"
-      ? "Add a description"
-      : "Add a short description";
   const titleText = displayPost.title.trim() || "Untitled";
   const resolvedHeaderCover = resolveCover(displayPost);
   const hasArticleHeaderImage =
@@ -1354,50 +1321,16 @@ export function PostEditLayer({
 
       if (event.key === "Tab" && !event.shiftKey) {
         event.preventDefault();
-        focusExcerpt();
+        focusBody();
         return;
       }
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        focusExcerpt();
-      }
-    },
-    [deriveSlugFromTitle, focusBody, focusExcerpt],
-  );
-
-  const onExcerptKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      if (event.key === "Tab") {
-        event.preventDefault();
-        if (event.shiftKey) {
-          focusTitle();
-        } else {
-          focusBody();
-        }
-        return;
-      }
-
-      if (
-        event.key === "ArrowDown" &&
-        textareaCaretOnLastLine(event.currentTarget)
-      ) {
-        event.preventDefault();
         focusBody();
-        return;
-      }
-
-      if (
-        event.key === "ArrowUp" &&
-        textareaCaretOnFirstLine(event.currentTarget)
-      ) {
-        event.preventDefault();
-        focusTitle();
       }
     },
-    [focusBody, focusTitle],
+    [deriveSlugFromTitle, focusBody],
   );
 
   const onBodyKeyDown = useCallback(
@@ -1406,7 +1339,7 @@ export function PostEditLayer({
 
       if (event.key === "Tab" && event.shiftKey) {
         event.preventDefault();
-        focusExcerpt();
+        focusTitle();
         return;
       }
 
@@ -1415,10 +1348,10 @@ export function PostEditLayer({
         editableCaretOnFirstLine(event.currentTarget)
       ) {
         event.preventDefault();
-        focusExcerpt();
+        focusTitle();
       }
     },
-    [focusExcerpt],
+    [focusTitle],
   );
 
   const slots = {
@@ -1440,30 +1373,15 @@ export function PostEditLayer({
         onKeyDown={onTitleKeyDown}
       />
     ),
-    excerpt: (
-      <textarea
-        ref={excerptRef}
-        className={excerptClass}
-        aria-label="Excerpt"
-        placeholder={excerptPlaceholder}
-        rows={1}
-        value={draft.excerpt}
-        onChange={(event) =>
-          updateDraft({ excerpt: event.currentTarget.value })
-        }
-        onKeyDown={onExcerptKeyDown}
-      />
-    ),
     body: (
       <div onKeyDown={onBodyKeyDown}>
-        <div ref={setBodyToolbarHost} className="body-editor-toolbar-anchor" />
         <BodyEditor
           ref={bodyRef}
           value={draft.body}
-          onChange={(body) => updateDraft({ body })}
+          onChange={(body) =>
+            updateDraft({ body, excerpt: markdownSubtitle(body) })
+          }
           mediaEnabled={mediaEnabled}
-          postType={displayPost.type}
-          toolbarHost={bodyToolbarHost}
           uploadEndpoint={uploadEndpoint}
           collab={collab}
           onPresence={updatePresencePeers}

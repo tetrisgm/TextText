@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 import {
   calendarDocumentAction,
+  documentsForActivityDate,
+  groupDocumentsByActivityDate,
   groupDocumentsByCreatedDate,
   readWorkspaceDocumentOpenHistory,
   sortSidebarDocuments,
+  sortWorkspaceFoldersByActivity,
   writeWorkspaceDocumentOpen,
 } from "@/lib/workspace-activity";
 
@@ -104,5 +107,80 @@ describe("workspace activity", () => {
       dateKey: "2026-07-12",
       postIds: [],
     });
+  });
+
+  it("splits a date into created and edited sections without duplicates", () => {
+    const createdAndEdited = post(
+      "same",
+      "Same day",
+      "2026-07-13T08:00:00.000Z",
+      "2026-07-13T18:00:00.000Z",
+    );
+    const editedOnly = post(
+      "edited-only",
+      "Edited only",
+      "2026-07-10T08:00:00.000Z",
+      "2026-07-13T12:00:00.000Z",
+    );
+    const activity = documentsForActivityDate(
+      [createdAndEdited, editedOnly],
+      "2026-07-13",
+    );
+    expect(activity.created.map((entry) => entry.id)).toEqual(["same"]);
+    expect(activity.edited.map((entry) => entry.id)).toEqual(["edited-only"]);
+    expect(
+      groupDocumentsByActivityDate([createdAndEdited, editedOnly]).get(
+        "2026-07-13",
+      )?.map((entry) => entry.id),
+    ).toEqual(["same", "edited-only"]);
+  });
+
+  it("orders root folders by the selected document activity sort", () => {
+    const folders = [
+      {
+        id: "blog",
+        name: "Blog",
+        path: "blog",
+        mode: "blog" as const,
+        position: 0,
+      },
+      {
+        id: "notes",
+        name: "Notes",
+        path: "notes",
+        mode: "notes" as const,
+        position: 1,
+      },
+    ];
+    const nested = {
+      id: "ideas",
+      name: "Ideas",
+      path: "blog/ideas",
+      mode: "blog" as const,
+      parentId: "blog",
+      position: 0,
+    };
+    const article = {
+      ...olderButOpened,
+      id: "article",
+      type: "article" as const,
+      folderId: "ideas",
+    };
+    const note = { ...newlyEdited, id: "note", folderId: "notes" };
+    expect(
+      sortWorkspaceFoldersByActivity(folders, [article, note], "recent", {
+        article: Date.parse("2026-07-16T12:00:00.000Z"),
+        note: Date.parse("2026-07-15T12:00:00.000Z"),
+      }, [...folders, nested]).map((folder) => folder.id),
+    ).toEqual(["blog", "notes"]);
+    expect(
+      sortWorkspaceFoldersByActivity(
+        folders,
+        [article, note],
+        "edited",
+        {},
+        [...folders, nested],
+      ).map((folder) => folder.id),
+    ).toEqual(["notes", "blog"]);
   });
 });

@@ -1,6 +1,6 @@
 import type { Folder } from "@/lib/content";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
-import { localDateKey } from "@/lib/workspace-activity";
+import { documentsForActivityDate } from "@/lib/workspace-activity";
 
 export type WorkspaceSearchResult =
   | {
@@ -80,6 +80,22 @@ export function parseWorkspaceDateQuery(
   );
 }
 
+export function workspaceRootBodyMode(
+  query: string,
+  now = new Date(),
+): "date" | "home" | "search" {
+  if (!query.trim()) return "home";
+  return parseWorkspaceDateQuery(query, now) ? "date" : "search";
+}
+
+export function workspaceSearchHandoffIndex(
+  itemCount: number,
+  direction: "down" | "up",
+): number | null {
+  if (itemCount <= 0) return null;
+  return direction === "down" ? 0 : itemCount - 1;
+}
+
 function cleanText(value: string | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -131,10 +147,8 @@ export function searchWorkspace({
   if (!cleanQuery) return [];
   const parsedDate = parseWorkspaceDateQuery(cleanQuery, now);
   if (parsedDate) {
-    return posts
-      .filter(
-        (post) => localDateKey(post.createdAt ?? post.date) === parsedDate,
-      )
+    const activity = documentsForActivityDate([...posts], parsedDate);
+    return [...activity.created, ...activity.edited]
       .sort((a, b) => updatedTimestamp(b) - updatedTimestamp(a))
       .slice(0, limit)
       .map((post, index) => ({

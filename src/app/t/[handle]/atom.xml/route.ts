@@ -3,6 +3,7 @@ import type { Blog, Post } from "@/lib/content";
 import { postBodyPreview } from "@/lib/content";
 import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -39,8 +40,7 @@ function renderAtom(
     .map((post) => {
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toISOString();
-      const summary =
-        post.excerpt?.trim() || plainTextSummary(postBodyPreview(post));
+      const summary = postSubtitle(post) || plainTextSummary(postBodyPreview(post));
       const imageUrl = resolveCoverUrl(post, baseUrl);
       const enclosure = imageUrl
         ? `    <link rel="enclosure" type="${escapeXml(coverMimeType(imageUrl))}" href="${escapeXml(imageUrl)}" />`

@@ -24,6 +24,7 @@ import {
   renderFolderManifest,
   renderPostMarkdownFile,
 } from "@/lib/markdown-files";
+import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
 
 const blog: Blog = {
   handle: "demo",
@@ -173,7 +174,7 @@ describe("renderSyncFile", () => {
     const parsed = parsePostMarkdownFile(renderSyncFile(blog, post).text);
     expect(parsed.fields.slug).toBe(post.slug);
     expect(parsed.fields.title).toBe(post.title);
-    expect(parsed.body.trim()).toBe(post.body.trim());
+    expect(parsed.body.trim()).toBe(postBodyWithSubtitle(post).trim());
     expect(parsed.unknownKeys).not.toContain("syncRevision");
   });
 

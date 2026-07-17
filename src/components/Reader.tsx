@@ -14,6 +14,7 @@ import {
   isRemoteImageUrl,
   localizeRemoteMarkdownImages,
 } from "@/lib/markdown-images";
+import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
 
 // The public reader: top cover hero, centered masthead, byline, and prose.
 // Server component; markdown renders on the server. The post's accent rides in
@@ -23,7 +24,6 @@ import {
 type ReaderSlots = {
   toolbar?: ReactNode;
   title?: ReactNode;
-  excerpt?: ReactNode;
   cover?: ReactNode;
   body?: ReactNode;
 };
@@ -66,7 +66,6 @@ export function Reader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const titleId = "reader-title";
-  const excerpt = post.excerpt?.trim();
   const coverSource = resolveCoverSource(post);
   const resolvedCover = coverSource.src;
   const coverCaption = post.coverCaption?.trim();
@@ -78,9 +77,10 @@ export function Reader({
       .map((asset) => [asset.originalUrl, asset.url] as const),
   );
   const allowedBodyImageUrls = new Set(bodyImageReplacements.values());
+  const sourceBody = postBodyWithSubtitle(post);
   const bodyMarkdown = hideRemoteBodyImages
-    ? localizeRemoteMarkdownImages(post.body, bodyImageReplacements)
-    : post.body;
+    ? localizeRemoteMarkdownImages(sourceBody, bodyImageReplacements)
+    : sourceBody;
   const coverStyle = post.coverHeight
     ? ({ "--reader-cover-height": `${post.coverHeight}px` } as CSSProperties)
     : undefined;
@@ -131,18 +131,15 @@ export function Reader({
       {cover}
       {slots?.toolbar}
       <header className="reader-masthead">
-        {slots?.title ?? (
-          <h1 className="reader-title" id={titleId}>
-            {title}
-          </h1>
-        )}
-        {slots?.excerpt ?? (
-          excerpt && <p className="reader-dek">{excerpt}</p>
-        )}
         {post.type === "bookmark" ? (
           <BookmarkMeta post={post} />
         ) : (
           <PostByline blog={blog} post={post} />
+        )}
+        {slots?.title ?? (
+          <h1 className="reader-title" id={titleId}>
+            {title}
+          </h1>
         )}
       </header>
       <div className="reader-prose">
@@ -151,6 +148,9 @@ export function Reader({
             remarkPlugins={[remarkGfm]}
             components={{
               h1: "h2",
+              h6: ({ children }) => (
+                <p className="reader-subtitle">{children}</p>
+              ),
               // Inline figures: ![caption](src); the alt doubles as the caption.
         img: ({ src, alt }) => {
                 const imageSrc = typeof src === "string" ? src : undefined;

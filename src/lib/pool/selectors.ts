@@ -10,6 +10,7 @@ import type {
   WorkspacePoolPost,
 } from "@/lib/pool/types";
 import type { AdjacentPublishedPosts } from "@/lib/store";
+import { markdownSubtitle, postSubtitle } from "@/lib/markdown-subtitle";
 
 function fallbackFolderPathForType(type: WorkspacePoolPost["type"]): string {
   if (type === "note") return "notes";
@@ -31,7 +32,7 @@ export function narrowPostFromPost(
     capture: post.capture,
     slug: post.slug,
     title: post.title,
-    excerpt: post.excerpt,
+    excerpt: postSubtitle(post) || undefined,
     bodyPreview:
       post.bodyPreview ?? (post.type === "note" ? post.body : undefined),
     accent: post.accent,
@@ -49,6 +50,7 @@ export function narrowPostFromPost(
     publishedAt: post.status === "published" ? post.date : undefined,
     status: post.status,
     pinned: post.pinned,
+    starred: post.starred,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
   };
@@ -65,7 +67,7 @@ export function postFromPoolPost(
     capture: post.capture,
     slug: post.slug,
     title: post.title,
-    excerpt: post.excerpt,
+    excerpt: markdownSubtitle(body) || post.excerpt,
     bodyPreview: post.bodyPreview,
     accent: post.accent,
     cover: post.cover,
@@ -86,10 +88,24 @@ export function postFromPoolPost(
     date: post.date,
     status: post.status,
     pinned: post.pinned,
+    starred: post.starred,
     folderId: post.folderId,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
   };
+}
+
+export function starredPoolPosts(
+  pool: Pick<WorkspacePoolPayload, "posts">,
+): WorkspacePoolPost[] {
+  return pool.posts
+    .filter((post) => Boolean(post.starred))
+    .slice()
+    .sort((left, right) =>
+      (right.updatedAt ?? right.createdAt ?? "").localeCompare(
+        left.updatedAt ?? left.createdAt ?? "",
+      ),
+    );
 }
 
 export function workspacePoolFromParts({

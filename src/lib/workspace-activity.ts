@@ -1,3 +1,4 @@
+import type { Folder } from "@/lib/content";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 
 export type SidebarDocumentSort =
@@ -139,6 +140,67 @@ export function sortSidebarDocuments(
   );
 }
 
+function fallbackRootMode(post: WorkspacePoolPost): Folder["mode"] {
+  if (post.type === "note") return "notes";
+  if (post.type === "bookmark") return "bookmarks";
+  return "blog";
+}
+
+export function sortWorkspaceFoldersByActivity(
+  folders: Folder[],
+  documents: WorkspacePoolPost[],
+  sort: SidebarDocumentSort,
+  openHistory: WorkspaceDocumentOpenHistory,
+  workspaceFolders: Folder[] = folders,
+): Folder[] {
+  const folderById = new Map(
+    workspaceFolders.map((folder) => [folder.id, folder]),
+  );
+  const documentsFor = (folder: Folder) =>
+    documents.filter((post) => {
+      const postFolder = post.folderId
+        ? folderById.get(post.folderId)
+        : workspaceFolders.find(
+            (candidate) =>
+              !candidate.parentId && candidate.mode === fallbackRootMode(post),
+          );
+      return Boolean(
+        postFolder &&
+          (postFolder.path === folder.path ||
+            postFolder.path.startsWith(`${folder.path}/`)),
+      );
+    });
+  const activity = (folder: Folder) => {
+    const posts = documentsFor(folder);
+    if (sort === "recent") {
+      return Math.max(
+        0,
+        ...posts.map((post) =>
+          Math.max(
+            openHistory[post.id] ?? 0,
+            timestamp(post.updatedAt ?? post.date),
+          ),
+        ),
+      );
+    }
+    const field = sort === "created" ? "createdAt" : "updatedAt";
+    return Math.max(
+      0,
+      ...posts.map((post) => timestamp(post[field] ?? post.date)),
+    );
+  };
+
+  return [...folders].sort((a, b) => {
+    if (sort === "alphabetical") {
+      return a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    }
+    return activity(b) - activity(a) || a.position - b.position;
+  });
+}
+
 export function groupDocumentsByCreatedDate(
   documents: WorkspacePoolPost[],
 ): Map<string, WorkspacePoolPost[]> {
@@ -149,6 +211,43 @@ export function groupDocumentsByCreatedDate(
     const list = byDate.get(key) ?? [];
     list.push(post);
     byDate.set(key, list);
+  }
+  return byDate;
+}
+
+export function documentsForActivityDate(
+  documents: WorkspacePoolPost[],
+  dateKey: string,
+): { created: WorkspacePoolPost[]; edited: WorkspacePoolPost[] } {
+  const created = documents.filter(
+    (post) => localDateKey(post.createdAt ?? post.date) === dateKey,
+  );
+  const createdIds = new Set(created.map((post) => post.id));
+  const edited = documents.filter(
+    (post) =>
+      !createdIds.has(post.id) && localDateKey(post.updatedAt) === dateKey,
+  );
+  return {
+    created: sortSidebarDocuments(created, "created", {}),
+    edited: sortSidebarDocuments(edited, "edited", {}),
+  };
+}
+
+export function groupDocumentsByActivityDate(
+  documents: WorkspacePoolPost[],
+): Map<string, WorkspacePoolPost[]> {
+  const byDate = new Map<string, WorkspacePoolPost[]>();
+  for (const post of documents) {
+    const keys = new Set([
+      localDateKey(post.createdAt ?? post.date),
+      localDateKey(post.updatedAt),
+    ]);
+    for (const key of keys) {
+      if (!key) continue;
+      const list = byDate.get(key) ?? [];
+      list.push(post);
+      byDate.set(key, list);
+    }
   }
   return byDate;
 }

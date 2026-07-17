@@ -10,10 +10,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
 import { mergeAttributes } from "@tiptap/core";
 import type { AnyExtension, Editor } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
+import { TextSelection } from "@tiptap/pm/state";
 import type { SelectionBookmark } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -25,7 +25,12 @@ import Collaboration from "@tiptap/extension-collaboration";
 import * as Y from "yjs";
 import { Markdown } from "tiptap-markdown";
 import { BodyEditorToolbar } from "@/components/BodyEditorToolbar";
+import {
+  BlockInsertMenu,
+  type BlockInsertPosition,
+} from "@/components/editor/BlockInsertMenu";
 import { SlashCommand } from "@/components/editor/SlashCommand";
+import { Subtitle } from "@/components/editor/Subtitle";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
 import { CollabProvider } from "@/lib/collab/provider";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -49,8 +54,6 @@ export type BodyEditorCollab = {
 type BodyEditorProps = {
   value: string;
   onChange: (value: string) => void;
-  toolbarHost?: HTMLElement | null;
-  postType?: "article" | "project" | "talk" | "note" | "bookmark";
   mediaEnabled?: boolean;
   uploadEndpoint?: string;
   /** when present, the body is a shared Yjs document (realtime co-editing) */
@@ -118,6 +121,7 @@ function buildEditorExtensions(
       heading: { levels: [1, 2, 3] },
       ...(ydoc ? { history: false } : {}),
     }),
+    Subtitle,
     MediaImage,
     Link.configure({
       autolink: true,
@@ -125,8 +129,12 @@ function buildEditorExtensions(
       openOnClick: false,
     }),
     Placeholder.configure({
-      placeholder: ({ editor }) =>
-        editor.isEmpty ? "Write, or press / for commands" : "Start writing",
+      placeholder: ({ editor, node }) =>
+        node.type.name === "subtitle"
+          ? "Add a subtitle"
+          : editor.isEmpty
+            ? "Write, or press / for commands"
+            : "Start writing",
     }),
     TaskList,
     TaskItem.configure({
@@ -165,8 +173,6 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     {
       value,
       onChange,
-      toolbarHost,
-      postType,
       mediaEnabled = true,
       uploadEndpoint,
       collab,
@@ -177,6 +183,7 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     ref,
   ) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const bodyEditorRef = useRef<HTMLDivElement>(null);
     const slashChooseImageRef = useRef<() => void>(() => {});
     const lastEmittedRef = useRef(value);
     const onChangeRef = useRef(onChange);
@@ -198,6 +205,9 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const [gutterPosition, setGutterPosition] =
+      useState<BlockInsertPosition | null>(null);
+    const [insertMenuOpen, setInsertMenuOpen] = useState(false);
     const collabPostId = collab?.postId ?? null;
     const mountingPlaceholder = value.trim()
       ? "Start writing"
@@ -300,6 +310,57 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
         },
       },
     );
+
+    const updateGutterPosition = useCallback(() => {
+      if (!editor || !bodyEditorRef.current || !editor.isFocused) {
+        if (!insertMenuOpen) setGutterPosition(null);
+        return;
+      }
+
+      const root = bodyEditorRef.current;
+      const domAtSelection = editor.view.domAtPos(editor.state.selection.from);
+      const origin =
+        domAtSelection.node instanceof HTMLElement
+          ? domAtSelection.node
+          : domAtSelection.node.parentElement;
+      const block = origin?.closest<HTMLElement>(
+        "p,h1,h2,h3,h6,li,blockquote,pre,hr,img,video",
+      );
+      const rootRect = root.getBoundingClientRect();
+      const blockRect = block?.getBoundingClientRect();
+      const caret = editor.view.coordsAtPos(editor.state.selection.from);
+      const leftEdge = blockRect?.left ?? caret.left;
+      const topEdge = blockRect?.top ?? caret.top;
+      const next = {
+        left: Math.max(2, leftEdge - rootRect.left - 36),
+        top: Math.max(0, topEdge - rootRect.top),
+      };
+      setGutterPosition((current) =>
+        current && current.left === next.left && current.top === next.top
+          ? current
+          : next,
+      );
+    }, [editor, insertMenuOpen]);
+
+    useEffect(() => {
+      if (!editor) return;
+      const update = () => updateGutterPosition();
+      editor.on("selectionUpdate", update);
+      editor.on("focus", update);
+      editor.on("blur", update);
+      editor.on("update", update);
+      window.addEventListener("resize", update);
+      window.addEventListener("scroll", update, true);
+      update();
+      return () => {
+        editor.off("selectionUpdate", update);
+        editor.off("focus", update);
+        editor.off("blur", update);
+        editor.off("update", update);
+        window.removeEventListener("resize", update);
+        window.removeEventListener("scroll", update, true);
+      };
+    }, [editor, updateGutterPosition]);
 
     useEffect(() => {
       // In collab mode Yjs is the source of truth; never push `value` into the
@@ -451,20 +512,8 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       [editor],
     );
 
-    const toolbar = (
-      <BodyEditorToolbar
-        editor={editor}
-        postType={postType}
-        mediaEnabled={mediaEnabled}
-        uploading={uploading}
-        uploadError={uploadError}
-        onChooseImage={chooseImage}
-      />
-    );
-
     return (
       <>
-        {mounted && (toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar)}
         <input
           ref={fileInputRef}
           type="file"
@@ -477,9 +526,62 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
             for (const file of files) void insertMedia(file);
           }}
         />
-        <div className="body-editor">
+        <div ref={bodyEditorRef} className="body-editor">
           {mounted && editor ? (
-            <EditorContent editor={editor} />
+            <>
+              <BubbleMenu
+                editor={editor}
+                updateDelay={40}
+                tippyOptions={{
+                  duration: [180, 180],
+                  maxWidth: "none",
+                  placement: "top",
+                }}
+                shouldShow={({ editor: current, from, to }) =>
+                  current.isEditable &&
+                  current.isFocused &&
+                  from !== to &&
+                  current.state.selection instanceof TextSelection
+                }
+              >
+                <BodyEditorToolbar editor={editor} />
+              </BubbleMenu>
+              {gutterPosition && editor.isEditable && (
+                <button
+                  type="button"
+                  className={`body-editor-gutter-add${
+                    insertMenuOpen ? " is-open" : ""
+                  }`}
+                  style={{
+                    left: gutterPosition.left,
+                    top: gutterPosition.top,
+                  }}
+                  aria-label="Insert block"
+                  aria-haspopup="listbox"
+                  aria-expanded={insertMenuOpen}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    saveSelectionBookmark(editor);
+                  }}
+                  onClick={() => setInsertMenuOpen((open) => !open)}
+                >
+                  <span aria-hidden="true">+</span>
+                </button>
+              )}
+              {gutterPosition && insertMenuOpen && (
+                <BlockInsertMenu
+                  editor={editor}
+                  mediaEnabled={mediaEnabled}
+                  onChooseImage={chooseImage}
+                  onClose={() => setInsertMenuOpen(false)}
+                  position={{
+                    left: gutterPosition.left,
+                    top: gutterPosition.top + 30,
+                  }}
+                />
+              )}
+              <EditorContent editor={editor} />
+            </>
           ) : (
             <div
               className="body-editor-content is-mounting"
@@ -488,6 +590,16 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
             />
           )}
         </div>
+        {uploadError && (
+          <div className="body-editor-upload-error" role="alert">
+            {uploadError}
+          </div>
+        )}
+        {uploading && (
+          <div className="body-editor-uploading" role="status">
+            Uploading
+          </div>
+        )}
       </>
     );
   },

@@ -22,6 +22,7 @@ export type CommandWorkspaceLevel =
   | "section"
   | "trash"
   | "shared"
+  | "starred"
   | "settings"
   | "post"
   | "edit";
@@ -40,12 +41,14 @@ export type CommandWorkspaceSurface = {
   activePostId: string | null;
   selectedSectionPath: string | null;
   selectedPostId: string | null;
+  selectedPostIds: readonly string[];
   getRootSectionPaths: () => string[];
   getVisiblePostIds: () => string[];
   getPost: (postId: string) => WorkspacePoolPost | null;
   selectPost: (postId: string | null) => void;
   selectSection: (folderPath: string | null) => void;
   selectSpatial: (direction: SpatialDirection) => void;
+  extendSelection: (direction: -1 | 1) => void;
   selectNext: () => void;
   selectPrevious: () => void;
   openSelected: () => void;
@@ -55,6 +58,7 @@ export type CommandWorkspaceSurface = {
   editCurrent: () => void;
   stopEditing: () => void;
   requestDeleteTarget: () => void;
+  toggleStarSelected: () => void;
   scrollReader: (direction: "up" | "down", amount: "line" | "half" | "page") => void;
   scrollReaderEdge: (edge: "top" | "bottom") => void;
   readerTapG: () => void;

@@ -19,11 +19,11 @@ import {
   isRemoteImageUrl,
   localizeRemoteMarkdownImages,
 } from "@/lib/markdown-images";
+import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
 
 type EditReaderSlots = {
   toolbar?: ReactNode;
   title?: ReactNode;
-  excerpt?: ReactNode;
   cover?: ReactNode;
   body?: ReactNode;
   gallery?: ReactNode;
@@ -71,6 +71,9 @@ function MarkdownBody({
       remarkPlugins={[remarkGfm]}
       components={{
         h1: "h2",
+        h6: ({ children }) => (
+          <p className="reader-subtitle">{children}</p>
+        ),
         img: ({ src, alt }) => {
           const imageSrc = typeof src === "string" ? src : undefined;
           if (
@@ -130,7 +133,6 @@ export function EditReaderPreview({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const titleId = "reader-title";
-  const excerpt = post.excerpt?.trim();
   const coverSource = resolveCoverSource(post);
   const resolvedCover = coverSource.src;
   const coverCaption = post.coverCaption?.trim();
@@ -178,10 +180,11 @@ export function EditReaderPreview({
       .filter((asset) => asset.originalUrl && asset.url)
       .map((asset) => [asset.originalUrl, asset.url] as const),
   );
+  const sourceBody = postBodyWithSubtitle(post);
   const bodyMarkdown =
     post.type === "bookmark"
-      ? localizeRemoteMarkdownImages(post.body, bodyImageReplacements)
-      : post.body;
+      ? localizeRemoteMarkdownImages(sourceBody, bodyImageReplacements)
+      : sourceBody;
 
   return (
     <article
@@ -192,19 +195,16 @@ export function EditReaderPreview({
       {cover}
       {slots?.toolbar}
       <header className="reader-masthead">
-        {slots?.title ?? (
-          <h1 className="reader-title" id={titleId}>
-            {title}
-          </h1>
-        )}
-        {slots?.excerpt ?? (
-          excerpt && <p className="reader-dek">{excerpt}</p>
-        )}
         {slots?.byline ?? (post.type === "bookmark" ? (
           <BookmarkMeta post={post} />
         ) : (
           <PostByline blog={blog} post={post} />
         ))}
+        {slots?.title ?? (
+          <h1 className="reader-title" id={titleId}>
+            {title}
+          </h1>
+        )}
       </header>
       <div className="reader-prose">
         {slots?.body ?? (
@@ -235,7 +235,7 @@ export function EditProjectReaderPreview({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const titleId = "project-title";
-  const excerpt = post.excerpt?.trim();
+  const body = postBodyWithSubtitle(post);
   const className = `project-split${
     slots?.toolbar ? " has-editor-toolbar" : ""
   }`;
@@ -248,22 +248,19 @@ export function EditProjectReaderPreview({
         aria-labelledby={slots?.title ? undefined : titleId}
       >
         <div className="project-split-inner">
-          {slots?.title ?? (
-            <h1 className="project-title" id={titleId}>
-              {title}
-            </h1>
-          )}
-          {slots?.excerpt ?? (
-            excerpt && <p className="reader-dek project-dek">{excerpt}</p>
-          )}
           {slots?.byline ?? <PostByline
             blog={blog}
             post={post}
             className="project-byline"
           />}
-          {(slots?.body || post.body) && (
+          {slots?.title ?? (
+            <h1 className="project-title" id={titleId}>
+              {title}
+            </h1>
+          )}
+          {(slots?.body || body) && (
             <div className="reader-prose project-prose">
-              {slots?.body ?? <MarkdownBody body={post.body} />}
+              {slots?.body ?? <MarkdownBody body={body} />}
             </div>
           )}
         </div>
@@ -335,6 +332,7 @@ export function EditTalkReaderPreview({
       : []),
     ...(post.links ?? []),
   ];
+  const body = postBodyWithSubtitle(post);
 
   const className = `reader talk-detail${
     slots?.toolbar ? " has-editor-toolbar" : ""
@@ -380,12 +378,6 @@ export function EditTalkReaderPreview({
         ))}
 
       <div className="talk-detail-meta">
-        {slots?.title ?? (
-          <h1 className="talk-detail-title" id={titleId}>
-            {title}
-          </h1>
-        )}
-        {slots?.excerpt}
         {slots?.talkMeta ?? slots?.byline ?? (
           <PostByline
             blog={blog}
@@ -394,9 +386,14 @@ export function EditTalkReaderPreview({
             metaItems={bylineMetaItems}
           />
         )}
-        {(slots?.body || post.body) && (
+        {slots?.title ?? (
+          <h1 className="talk-detail-title" id={titleId}>
+            {title}
+          </h1>
+        )}
+        {(slots?.body || body) && (
           <div className="talk-detail-desc reader-prose">
-            {slots?.body ?? <MarkdownBody body={post.body} />}
+            {slots?.body ?? <MarkdownBody body={body} />}
           </div>
         )}
         <LinksRow links={links} />

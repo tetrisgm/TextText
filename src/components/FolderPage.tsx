@@ -20,18 +20,18 @@ import {
   createFolderItemAction,
   createWorkspacePostAction,
   renameFolderAction,
-  setEditablePostCreatedAtAction,
-  toggleEditablePostPinnedAction,
 } from "@/app/editor/actions";
 import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { PostCard } from "@/components/PostCard";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
+import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
+import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
 import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
-import { updateFolder, updatePost } from "@/lib/pool/store";
+import { updateFolder } from "@/lib/pool/store";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
 
 export type FolderCreateRequest =
@@ -214,6 +214,7 @@ function optimisticBookmarkPost({
     body: "",
     status: "draft",
     pinned: false,
+    starred: false,
     links: [{ label: host || resolvedTitle, href }],
     date: now.slice(0, 10),
     createdAt: now,
@@ -272,6 +273,7 @@ function FolderActionBar({
   onChangeView,
   onCreate,
   onEdit,
+  onSearch,
   onDeleteFolder,
 }: {
   blog: Blog;
@@ -283,6 +285,7 @@ function FolderActionBar({
   onChangeView: (mode: FolderViewMode) => void;
   onCreate: () => void;
   onEdit: () => void;
+  onSearch?: () => void;
   onDeleteFolder?: FolderDeleteFolder;
 }) {
   const viewRef = useRef<HTMLDivElement | null>(null);
@@ -334,6 +337,7 @@ function FolderActionBar({
     <>
       <div className="folder-top-action-bar applecms" aria-label="Folder actions">
         <div className="folder-action-toolbar ac-chrome">
+          {onSearch && <WorkspaceSearchButton onSearch={onSearch} />}
           {canShare && (
             <button
               type="button"
@@ -570,166 +574,6 @@ function FolderTitleEditor({
   );
 }
 
-function FolderItemActions({
-  blog,
-  handle,
-  onDeleteItem,
-  post,
-}: {
-  blog: Blog;
-  handle: string;
-  onDeleteItem?: FolderDeleteItem;
-  post: Post;
-}) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const close = useCallback(() => setOpen(false), []);
-  useEscapeLayer(open, "Item actions", close);
-
-  useEffect(() => {
-    if (!open) return;
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        close();
-      }
-    };
-    document.addEventListener("pointerdown", dismiss, true);
-    return () => document.removeEventListener("pointerdown", dismiss, true);
-  }, [close, open]);
-
-  const stop = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const toggleStar = (event: MouseEvent<HTMLButtonElement>) => {
-    stop(event);
-    if (!post.id || busy) return;
-    const previous = Boolean(post.pinned);
-    setBusy(true);
-    setError(null);
-    updatePost(post.id, { pinned: !previous });
-    void toggleEditablePostPinnedAction(handle, post.id)
-      .then(() => setOpen(false))
-      .catch((actionError) => {
-        updatePost(post.id!, { pinned: previous });
-        setError(actionErrorMessage(actionError, "Could not update star"));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  const share = (event: MouseEvent<HTMLButtonElement>) => {
-    stop(event);
-    const url = new URL(blogPostPath(blog, post), window.location.origin);
-    void navigator.clipboard.writeText(url.toString()).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
-    });
-  };
-
-  const setCreatedDate = (value: string) => {
-    if (!post.id || !value || busy) return;
-    const previous = post.createdAt;
-    setBusy(true);
-    setError(null);
-    updatePost(post.id, { createdAt: `${value}T12:00:00.000Z` });
-    void setEditablePostCreatedAtAction(handle, post.id, value)
-      .then((saved) => {
-        updatePost(post.id!, { createdAt: saved.createdAt });
-        setOpen(false);
-      })
-      .catch((actionError) => {
-        updatePost(post.id!, { createdAt: previous });
-        setError(actionErrorMessage(actionError, "Could not change date"));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  const confirmDelete = () => {
-    if (!post.id || !onDeleteItem || busy) return;
-    setBusy(true);
-    void Promise.resolve(onDeleteItem(post))
-      .then(() => {
-        setDeleteOpen(false);
-        setOpen(false);
-      })
-      .catch((actionError) => {
-        setError(actionErrorMessage(actionError, "Could not move to Trash"));
-        setDeleteOpen(false);
-        setOpen(true);
-      })
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <div className="folder-item-actions" ref={rootRef} onClick={stop}>
-      <button
-        type="button"
-        className="folder-item-actions-trigger ac-icon-btn"
-        aria-label="Item actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={(event) => {
-          stop(event);
-          setError(null);
-          setOpen((value) => !value);
-        }}
-      >
-        ···
-      </button>
-      {open && (
-        <div className="folder-item-actions-menu" role="menu" data-post-edit-menu-open="true">
-          <button type="button" role="menuitem" disabled={busy} onClick={toggleStar}>
-            {post.pinned ? "Unstar" : "Star"}
-          </button>
-          <button type="button" role="menuitem" onClick={share}>
-            {copied ? "Link copied" : "Share"}
-          </button>
-          <label className="folder-item-date">
-            <span>Created</span>
-            <input
-              type="date"
-              value={(post.createdAt ?? post.date ?? "").slice(0, 10)}
-              disabled={busy}
-              onChange={(event) => setCreatedDate(event.currentTarget.value)}
-            />
-          </label>
-          {onDeleteItem && (
-            <button
-              type="button"
-              role="menuitem"
-              className="is-danger"
-              disabled={busy}
-              onClick={(event) => {
-                stop(event);
-                setOpen(false);
-                setDeleteOpen(true);
-              }}
-            >
-              Move to Trash
-            </button>
-          )}
-          {error && <span className="post-folder-error" role="alert">{error}</span>}
-        </div>
-      )}
-      <ConfirmationDialog
-        open={deleteOpen}
-        title={`Move ${itemTitle(post)} to Trash?`}
-        message="You can restore it later from Trash."
-        confirmLabel="Move to Trash"
-        confirmingLabel="Moving"
-        confirming={busy}
-        onCancel={() => setDeleteOpen(false)}
-        onConfirm={confirmDelete}
-      />
-    </div>
-  );
-}
-
 function NotesFolderContents({
   blog,
   handle,
@@ -739,9 +583,11 @@ function NotesFolderContents({
   folderPath,
   onCreateItem,
   onDeleteItem,
+  onItemClick,
   onOpenPost,
   onSelectPost,
   selectedPostId,
+  selectedPostIds,
 }: {
   blog: Blog;
   handle: string;
@@ -751,9 +597,11 @@ function NotesFolderContents({
   folderPath: string;
   onCreateItem?: FolderCreateItem;
   onDeleteItem?: FolderDeleteItem;
+  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
+  selectedPostIds?: ReadonlySet<string>;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -822,7 +670,9 @@ function NotesFolderContents({
           >
             {notes.map((note) => {
               const preview = previewLine(postBodyPreview(note));
-              const selected = note.id === selectedPostId;
+              const selected = Boolean(
+                note.id && (selectedPostIds?.has(note.id) ?? note.id === selectedPostId),
+              );
               return (
                 <div
                   key={itemKey(note)}
@@ -832,12 +682,15 @@ function NotesFolderContents({
                   }`}
                   role="option"
                   aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
+                  tabIndex={note.id === selectedPostId ? 0 : -1}
                   data-workspace-post-id={note.id}
                   onFocus={() => note.id && onSelectPost?.(note.id)}
                   onMouseMove={(event) => {
                     if (
                       note.id &&
+                      !event.metaKey &&
+                      !event.ctrlKey &&
+                      !event.shiftKey &&
                       workspaceMouseMoved(event.clientX, event.clientY)
                     ) {
                       onSelectPost?.(note.id);
@@ -855,6 +708,14 @@ function NotesFolderContents({
                     }
                     prefetch={onOpenPost ? false : undefined}
                     onClick={(event) => {
+                      if (
+                        note.id &&
+                        onItemClick &&
+                        !onItemClick(note.id, event)
+                      ) {
+                        event.preventDefault();
+                        return;
+                      }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
                       event.preventDefault();
                       onOpenPost(note);
@@ -873,11 +734,13 @@ function NotesFolderContents({
                     )}
                   </Link>
                   {canEditItems && (
-                    <FolderItemActions
+                    <WorkspaceItemActions
                       blog={blog}
                       handle={handle}
+                      href={blogPostPath(blog, note)}
+                      owner
                       post={note}
-                      onDeleteItem={onDeleteItem}
+                      onDeletePost={onDeleteItem}
                     />
                   )}
                 </div>
@@ -901,9 +764,11 @@ function BookmarksFolderContents({
   onCaptureResolved,
   onCreateItem,
   onDeleteItem,
+  onItemClick,
   onOpenPost,
   onSelectPost,
   selectedPostId,
+  selectedPostIds,
 }: {
   blog: Blog;
   handle: string;
@@ -915,9 +780,11 @@ function BookmarksFolderContents({
   onCaptureResolved?: FolderCaptureResolved;
   onCreateItem?: FolderCreateItem;
   onDeleteItem?: FolderDeleteItem;
+  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
+  selectedPostIds?: ReadonlySet<string>;
 }) {
   const router = useRouter();
   const urlRef = useRef<HTMLInputElement>(null);
@@ -1101,14 +968,18 @@ function BookmarksFolderContents({
             aria-activedescendant={postOptionId(selectedPostId)}
           >
             {bookmarks.map((bookmark) => {
-              const selected = bookmark.id === selectedPostId;
+              const selected = Boolean(
+                bookmark.id &&
+                  (selectedPostIds?.has(bookmark.id) ??
+                    bookmark.id === selectedPostId),
+              );
               return (
                 <BookmarkCard
                   key={itemKey(bookmark)}
                   post={bookmark}
                   selected={selected}
                   optionId={postOptionId(bookmark.id)}
-                  optionTabIndex={selected ? 0 : -1}
+                  optionTabIndex={bookmark.id === selectedPostId ? 0 : -1}
                   owner={canEditItems}
                   handle={handle}
                   editPath={
@@ -1121,6 +992,11 @@ function BookmarksFolderContents({
                   onCaptureResolved={onCaptureResolved}
                   onDeletePost={onDeleteItem}
                   onOpenPost={onOpenPost}
+                  onItemClick={(event) =>
+                    bookmark.id
+                      ? (onItemClick?.(bookmark.id, event) ?? true)
+                      : true
+                  }
                   onSelect={() => bookmark.id && onSelectPost?.(bookmark.id)}
                 />
               );
@@ -1141,9 +1017,11 @@ function BlogFolderContents({
   folderPath,
   onCreateItem,
   onDeleteItem,
+  onItemClick,
   onOpenPost,
   onSelectPost,
   selectedPostId,
+  selectedPostIds,
 }: {
   blog: Blog;
   handle: string;
@@ -1153,9 +1031,11 @@ function BlogFolderContents({
   folderPath: string;
   onCreateItem?: FolderCreateItem;
   onDeleteItem?: FolderDeleteItem;
+  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
+  selectedPostIds?: ReadonlySet<string>;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -1224,7 +1104,9 @@ function BlogFolderContents({
             aria-activedescendant={postOptionId(selectedPostId)}
           >
             {sorted.map((post) => {
-              const selected = post.id === selectedPostId;
+              const selected = Boolean(
+                post.id && (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
+              );
               return (
                 <div
                   key={itemKey(post)}
@@ -1234,12 +1116,15 @@ function BlogFolderContents({
                   }`}
                   role="option"
                   aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
+                  tabIndex={post.id === selectedPostId ? 0 : -1}
                   data-workspace-post-id={post.id}
                   onFocus={() => post.id && onSelectPost?.(post.id)}
                   onMouseMove={(event) => {
                     if (
                       post.id &&
+                      !event.metaKey &&
+                      !event.ctrlKey &&
+                      !event.shiftKey &&
                       workspaceMouseMoved(event.clientX, event.clientY)
                     ) {
                       onSelectPost?.(post.id);
@@ -1251,6 +1136,7 @@ function BlogFolderContents({
                     handle={handle}
                     post={post}
                     owner={canEditItems}
+                    showTypeChip={false}
                     href={
                       canEditItems
                         ? blogPostPath(blog, post)
@@ -1259,6 +1145,14 @@ function BlogFolderContents({
                     onOpen={
                       onOpenPost
                         ? (event) => {
+                            if (
+                              post.id &&
+                              onItemClick &&
+                              !onItemClick(post.id, event)
+                            ) {
+                              event.preventDefault();
+                              return;
+                            }
                             if (!shouldOpenLocally(event)) return;
                             event.preventDefault();
                             onOpenPost(post);
@@ -1287,11 +1181,14 @@ export function FolderPage({
   onCaptureResolved,
   onCreateItem,
   onDeleteItem,
+  onItemClick,
   onOpenPost,
   createBookmarkRequestKey,
   editRequestKey = 0,
   onSelectPost,
+  onSearch,
   selectedPostId,
+  selectedPostIds,
   onDeleteFolder,
   canShareFolders = true,
 }: {
@@ -1304,11 +1201,14 @@ export function FolderPage({
   onCaptureResolved?: FolderCaptureResolved;
   onCreateItem?: FolderCreateItem;
   onDeleteItem?: FolderDeleteItem;
+  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
   createBookmarkRequestKey?: number;
   editRequestKey?: number;
   onSelectPost?: (postId: string) => void;
+  onSearch?: () => void;
   selectedPostId?: string | null;
+  selectedPostIds?: ReadonlySet<string>;
   onDeleteFolder?: FolderDeleteFolder;
   canShareFolders?: boolean;
 }) {
@@ -1365,7 +1265,7 @@ export function FolderPage({
   const visibleSelectedPostId =
     selectedPostId && filteredItems.some((post) => post.id === selectedPostId)
       ? selectedPostId
-      : (filteredItems[0]?.id ?? null);
+      : null;
 
   return (
     <main
@@ -1382,6 +1282,7 @@ export function FolderPage({
         onChangeView={changeView}
         onCreate={() => dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)}
         onEdit={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
+        onSearch={onSearch}
         onDeleteFolder={onDeleteFolder}
       />
       <header className="post-folder-page-header">
@@ -1413,9 +1314,11 @@ export function FolderPage({
           folderPath={folder.path}
           onCreateItem={onCreateItem}
           onDeleteItem={onDeleteItem}
+          onItemClick={onItemClick}
           onOpenPost={onOpenPost}
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
+          selectedPostIds={selectedPostIds}
         />
       ) : folder.mode === "bookmarks" ? (
         <BookmarksFolderContents
@@ -1429,9 +1332,11 @@ export function FolderPage({
           onCaptureResolved={onCaptureResolved}
           onCreateItem={onCreateItem}
           onDeleteItem={onDeleteItem}
+          onItemClick={onItemClick}
           onOpenPost={onOpenPost}
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
+          selectedPostIds={selectedPostIds}
         />
       ) : (
         <NotesFolderContents
@@ -1443,9 +1348,11 @@ export function FolderPage({
           folderPath={folder.path}
           onCreateItem={onCreateItem}
           onDeleteItem={onDeleteItem}
+          onItemClick={onItemClick}
           onOpenPost={onOpenPost}
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
+          selectedPostIds={selectedPostIds}
         />
       )}
     </main>

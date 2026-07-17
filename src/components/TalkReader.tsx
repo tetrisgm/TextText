@@ -12,12 +12,12 @@ import {
   youtubeEmbedUrl,
 } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
+import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
 
 type ReaderSlots = {
   toolbar?: ReactNode;
   stage?: ReactNode;
   title?: ReactNode;
-  excerpt?: ReactNode;
   talkMeta?: ReactNode;
   body?: ReactNode;
 };
@@ -81,6 +81,7 @@ export function TalkReader({
       : []),
     ...(post.links ?? []),
   ];
+  const body = postBodyWithSubtitle(post);
 
   const className = `reader talk-detail${
     slots?.toolbar ? " has-editor-toolbar" : ""
@@ -127,12 +128,6 @@ export function TalkReader({
         ))}
 
       <div className="talk-detail-meta">
-        {slots?.title ?? (
-          <h1 className="talk-detail-title" id={titleId}>
-            {title}
-          </h1>
-        )}
-        {slots?.excerpt}
         {slots?.talkMeta ?? (
           <PostByline
             blog={blog}
@@ -141,13 +136,23 @@ export function TalkReader({
             metaItems={bylineMetaItems}
           />
         )}
-        {(slots?.body || post.body) && (
+        {slots?.title ?? (
+          <h1 className="talk-detail-title" id={titleId}>
+            {title}
+          </h1>
+        )}
+        {(slots?.body || body) && (
           <div className="talk-detail-desc reader-prose">
             {slots?.body ?? (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
                   h1: "h2",
+                  h6: ({ children }) => (
+                    <p className="reader-subtitle talk-detail-subtitle">
+                      {children}
+                    </p>
+                  ),
                   img: ({ src, alt }) => (
                     <span className="reader-figure">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -165,7 +170,7 @@ export function TalkReader({
                   ),
                 }}
               >
-                {post.body}
+                {body}
               </ReactMarkdown>
             )}
           </div>

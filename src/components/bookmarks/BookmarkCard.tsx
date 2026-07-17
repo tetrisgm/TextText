@@ -3,21 +3,12 @@
 import {
   type MouseEvent,
   type SyntheticEvent,
-  useCallback,
   useEffect,
-  useRef,
   useState,
-  useTransition,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  deleteEditablePostAction,
-  setEditablePostCreatedAtAction,
-  toggleEditablePostPinnedAction,
-} from "@/app/editor/actions";
-import { ConfirmationDialog } from "@/components/ConfirmationDialog";
-import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
 import type { Post } from "@/lib/content";
 import { isSafeLinkHref, isVideoFile, postBodyPreview } from "@/lib/content";
 import {
@@ -25,8 +16,8 @@ import {
   resolveCoverSource,
 } from "@/lib/cover";
 import { useCaptureStatus } from "./useCaptureStatus";
-import { updatePost } from "@/lib/pool/store";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 import styles from "./BookmarkCard.module.css";
 
 function classNames(...names: Array<string | false | undefined>): string {
@@ -138,6 +129,7 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  onItemClick,
   onSelect,
   onCaptureResolved,
   onDeletePost,
@@ -150,6 +142,7 @@ export function BookmarkCard({
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  onItemClick?: (event: MouseEvent<HTMLElement>) => boolean;
   onSelect?: () => void;
   onCaptureResolved?: (post: Post) => void;
   onDeletePost?: (post: Post) => Promise<void> | void;
@@ -174,23 +167,14 @@ export function BookmarkCard({
       else router.refresh();
     },
   });
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuError, setMenuError] = useState<string | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [pinning, setPinning] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [, startTransition] = useTransition();
   const title = itemTitle(post);
   const host = bookmarkHost(post);
   const faviconSrc = bookmarkFaviconUrl(post);
   const description =
-    previewLine(post.excerpt) ||
+    previewLine(postSubtitle(post)) ||
     previewLine(post.capture?.description) ||
     previewLine(postBodyPreview(post));
   const isFailed = captureStatus === "failed";
-  const canDelete = owner && Boolean(post.id) && Boolean(onDeletePost || handle);
   const thumbnailSource = resolveCoverSource(post);
   const thumbnailUrl = thumbnailSource.src;
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
@@ -200,21 +184,6 @@ export function BookmarkCard({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [thumbnailUrl]);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        menuRef.current?.contains(event.target)
-      ) {
-        return;
-      }
-      setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [menuOpen]);
-  useEscapeLayer(menuOpen, "Bookmark options", () => setMenuOpen(false));
   const thumbnailIsCapture = thumbnailSource.kind === "bookmark-screenshot";
   const thumbnailIsFavicon = thumbnailSource.kind === "bookmark-favicon";
   const thumbnailLinkClass = classNames(
@@ -228,86 +197,6 @@ export function BookmarkCard({
     event.currentTarget.hidden = true;
     setThumbnailFailed(true);
   };
-  const stopMenuNavigation = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
-    stopMenuNavigation(event);
-    setMenuError(null);
-    setMenuOpen((open) => !open);
-  };
-  const confirmDelete = useCallback(() => {
-    if (!post.id || deleting) return;
-    setDeleting(true);
-    startTransition(() => {
-      const request = onDeletePost
-        ? Promise.resolve(onDeletePost(post))
-        : handle
-          ? deleteEditablePostAction(handle, post.id).then(() => {
-              router.refresh();
-            })
-          : Promise.reject(new Error("You cannot edit this blog"));
-      void request
-        .then(() => {
-          setDeleteDialogOpen(false);
-          setMenuOpen(false);
-        })
-        .catch((error) => {
-          setMenuOpen(true);
-          setMenuError(
-            error instanceof Error && error.message
-              ? error.message
-              : "Could not delete",
-          );
-        })
-        .finally(() => setDeleting(false));
-    });
-  }, [deleting, handle, onDeletePost, post, router]);
-  const toggleStar = useCallback(() => {
-    if (!post.id || !handle || pinning) return;
-    const previous = Boolean(post.pinned);
-    setPinning(true);
-    setMenuError(null);
-    updatePost(post.id, { pinned: !previous });
-    void toggleEditablePostPinnedAction(handle, post.id)
-      .then(() => setMenuOpen(false))
-      .catch((error) => {
-        updatePost(post.id!, { pinned: previous });
-        setMenuError(
-          error instanceof Error ? error.message : "Could not update star",
-        );
-      })
-      .finally(() => setPinning(false));
-  }, [handle, pinning, post.id, post.pinned]);
-  const shareBookmark = useCallback(() => {
-    const url = new URL(editPath, window.location.origin).toString();
-    void navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
-    });
-  }, [editPath]);
-  const changeCreatedDate = useCallback(
-    (value: string) => {
-      if (!post.id || !handle || !value || pinning) return;
-      const previous = post.createdAt;
-      setPinning(true);
-      updatePost(post.id, { createdAt: `${value}T12:00:00.000Z` });
-      void setEditablePostCreatedAtAction(handle, post.id, value)
-        .then((saved) => {
-          updatePost(post.id!, { createdAt: saved.createdAt });
-          setMenuOpen(false);
-        })
-        .catch((error) => {
-          updatePost(post.id!, { createdAt: previous });
-          setMenuError(
-            error instanceof Error ? error.message : "Could not change date",
-          );
-        })
-        .finally(() => setPinning(false));
-    },
-    [handle, pinning, post.createdAt, post.id],
-  );
   const thumbnailMedia = thumbnailFailed ? (
     thumbnailFallback
   ) : isVideoFile(thumbnailUrl) ? (
@@ -368,6 +257,15 @@ export function BookmarkCard({
         )}
       </span>
   );
+  const openItem = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (onItemClick && !onItemClick(event)) {
+      event.preventDefault();
+      return;
+    }
+    if (!onOpenPost || !shouldOpenLocally(event)) return;
+    event.preventDefault();
+    onOpenPost(post);
+  };
 
   return (
     <article
@@ -379,7 +277,14 @@ export function BookmarkCard({
       data-workspace-post-id={post.id}
       onFocus={onSelect}
       onMouseMove={(event) => {
-        if (workspaceMouseMoved(event.clientX, event.clientY)) onSelect?.();
+        if (
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          workspaceMouseMoved(event.clientX, event.clientY)
+        ) {
+          onSelect?.();
+        }
       }}
     >
       <div className={styles.body}>
@@ -387,92 +292,10 @@ export function BookmarkCard({
           className={styles.main}
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
-          onClick={(event) => {
-            if (!onOpenPost || !shouldOpenLocally(event)) return;
-            event.preventDefault();
-            onOpenPost(post);
-          }}
+          onClick={openItem}
         >
           {mainContent}
         </Link>
-        {canDelete && (
-          <div
-            ref={menuRef}
-            className={classNames(styles.menuWrap, menuOpen && styles.menuOpen)}
-            onClick={stopMenuNavigation}
-          >
-            <button
-              type="button"
-              className={styles.menuButton}
-              aria-label="Bookmark options"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={toggleMenu}
-            >
-              ...
-            </button>
-            {menuOpen && (
-              <div
-                className={styles.menu}
-                role="menu"
-                aria-label="Bookmark options"
-              >
-                <button
-                  type="button"
-                  className={styles.menuItem}
-                  role="menuitem"
-                  disabled={pinning}
-                  onClick={(event) => {
-                    stopMenuNavigation(event);
-                    toggleStar();
-                  }}
-                >
-                  {pinning ? "Updating" : post.pinned ? "Unstar" : "Star"}
-                </button>
-                <button
-                  type="button"
-                  className={styles.menuItem}
-                  role="menuitem"
-                  onClick={(event) => {
-                    stopMenuNavigation(event);
-                    shareBookmark();
-                  }}
-                >
-                  {copied ? "Link copied" : "Share"}
-                </button>
-                <label className={styles.menuDate}>
-                  <span>Created</span>
-                  <input
-                    type="date"
-                    value={(post.createdAt ?? post.date ?? "").slice(0, 10)}
-                    disabled={pinning}
-                    onChange={(event) =>
-                      changeCreatedDate(event.currentTarget.value)
-                    }
-                  />
-                </label>
-                <button
-                  type="button"
-                  className={classNames(styles.menuItem, styles.dangerItem)}
-                  role="menuitem"
-                  disabled={deleting}
-                  onClick={(event) => {
-                    stopMenuNavigation(event);
-                    setMenuOpen(false);
-                    setDeleteDialogOpen(true);
-                  }}
-                >
-                  {deleting ? "Deleting" : "Delete"}
-                </button>
-                {menuError && (
-                  <span className={styles.menuError} role="alert">
-                    {menuError}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
       {isFailed && (
         <div
@@ -487,11 +310,7 @@ export function BookmarkCard({
           className={thumbnailLinkClass}
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
-          onClick={(event) => {
-            if (!onOpenPost || !shouldOpenLocally(event)) return;
-            event.preventDefault();
-            onOpenPost(post);
-          }}
+          onClick={openItem}
           aria-label={`Open ${title}`}
         >
           {thumbnailMedia}
@@ -502,11 +321,7 @@ export function BookmarkCard({
           className={thumbnailLinkClass}
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
-          onClick={(event) => {
-            if (!onOpenPost || !shouldOpenLocally(event)) return;
-            event.preventDefault();
-            onOpenPost(post);
-          }}
+          onClick={openItem}
           aria-label={`Open ${title}`}
         >
           {thumbnailMedia}
@@ -517,25 +332,19 @@ export function BookmarkCard({
           className={thumbnailLinkClass}
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
-          onClick={(event) => {
-            if (!onOpenPost || !shouldOpenLocally(event)) return;
-            event.preventDefault();
-            onOpenPost(post);
-          }}
+          onClick={openItem}
           aria-label={`Open ${title}`}
         >
           {thumbnailFallback}
         </Link>
       )}
-      <ConfirmationDialog
-        open={deleteDialogOpen}
-        title="Delete bookmark?"
-        message="This moves the Markdown file to Trash. You can restore it later."
-        confirmLabel="Delete"
-        confirmingLabel="Deleting"
-        confirming={deleting}
-        onCancel={() => setDeleteDialogOpen(false)}
-        onConfirm={confirmDelete}
+      <WorkspaceItemActions
+        className="is-bookmark"
+        handle={handle ?? ""}
+        href={editPath}
+        onDeletePost={onDeletePost}
+        owner={owner && Boolean(handle)}
+        post={post}
       />
     </article>
   );

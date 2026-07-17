@@ -47,6 +47,7 @@ export async function GET(request: Request, { params }: Props) {
     renderPostMarkdownFile({
       blog,
       canonicalUrl: postUrl(baseUrl, post.slug),
+      includePersonalMetadata: false,
       post,
     }),
     {

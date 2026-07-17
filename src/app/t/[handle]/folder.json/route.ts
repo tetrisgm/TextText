@@ -29,6 +29,7 @@ export async function GET(request: Request, { params }: Props) {
   const manifest = renderFolderManifest(blog, publishedNewestFirst(posts), {
     folder,
     fileUrlFor: (post) => postMarkdownUrl(baseUrl, post.slug),
+    includePersonalMetadata: false,
     postUrlFor: (post) => postUrl(baseUrl, post.slug),
   });
 

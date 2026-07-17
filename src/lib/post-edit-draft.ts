@@ -1,4 +1,8 @@
 import type { GalleryItem, Post } from "@/lib/content";
+import {
+  ensureMarkdownSubtitle,
+  markdownSubtitle,
+} from "@/lib/markdown-subtitle";
 
 export type DraftState = {
   type: Post["type"];
@@ -26,17 +30,22 @@ export function isUnsetTitle(value: string): boolean {
 }
 
 export function initialDraft(post: Post): DraftState {
+  const body = ensureMarkdownSubtitle(
+    post.body,
+    post.excerpt,
+    post.type === "article",
+  );
   return {
     type: post.type,
     title:
       isUnsetTitle(post.title) && isPlaceholderSlug(post.slug)
         ? ""
         : post.title,
-    excerpt: post.excerpt ?? "",
+    excerpt: markdownSubtitle(body),
     cover: post.cover ?? "",
     coverCaption: post.coverCaption ?? "",
     coverHeight: post.coverHeight ?? null,
-    body: post.body,
+    body,
     status: post.status,
     slug: post.slug,
     accent: post.accent ?? "",
@@ -97,7 +106,9 @@ export function payloadFor(
     id,
     type: draft.type,
     title: draft.title,
-    excerpt: draft.excerpt,
+    // Kept in the legacy column as a derived cache for older clients. Markdown
+    // remains the only authored source.
+    excerpt: markdownSubtitle(draft.body),
     cover: draft.cover || null,
     coverCaption: draft.coverCaption || null,
     coverHeight: draft.coverHeight,

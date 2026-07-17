@@ -6,7 +6,12 @@ import type { ReactNode } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 
-type BodyEditorBlock = "body" | "heading1" | "heading2" | "heading3";
+type BodyEditorBlock =
+  | "body"
+  | "subtitle"
+  | "heading1"
+  | "heading2"
+  | "heading3";
 
 const BLOCK_OPTIONS: Array<{
   value: BodyEditorBlock;
@@ -14,12 +19,14 @@ const BLOCK_OPTIONS: Array<{
   keys: string;
 }> = [
   { value: "body", label: "Body", keys: "⌘⌥0" },
+  { value: "subtitle", label: "Subtitle", keys: "⌘⌥4" },
   { value: "heading1", label: "Heading 1", keys: "⌘⌥1" },
   { value: "heading2", label: "Heading 2", keys: "⌘⌥2" },
   { value: "heading3", label: "Heading 3", keys: "⌘⌥3" },
 ];
 
 function bodyEditorBlock(editor: Editor): BodyEditorBlock {
+  if (editor.isActive("subtitle")) return "subtitle";
   if (editor.isActive("heading", { level: 1 })) return "heading1";
   if (editor.isActive("heading", { level: 2 })) return "heading2";
   if (editor.isActive("heading", { level: 3 })) return "heading3";
@@ -38,6 +45,11 @@ function applyBlock(editor: Editor, block: BodyEditorBlock) {
 
   if (block === "body") {
     chain.setParagraph().run();
+    return;
+  }
+
+  if (block === "subtitle") {
+    chain.setNode("subtitle").run();
     return;
   }
 
@@ -137,67 +149,6 @@ function StrikeIcon() {
   );
 }
 
-function BulletListIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <circle cx="4.25" cy="5" r="1.05" fill="currentColor" />
-      <circle cx="4.25" cy="9" r="1.05" fill="currentColor" />
-      <circle cx="4.25" cy="13" r="1.05" fill="currentColor" />
-      <path
-        d="M7.15 5h6.6M7.15 9h6.6M7.15 13h6.6"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.45"
-      />
-    </svg>
-  );
-}
-
-function OrderedListIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <path
-        d="M3.55 4.1h1.3v3M3.5 7.1h2.1M3.55 9.1h1.2c.55 0 .9.3.9.75 0 .3-.14.53-.43.74l-1.63 1.31h2.2M3.6 13.4h1.18c.53 0 .88.28.88.72 0 .42-.34.72-.86.72H3.58m0-1.44.02-1.22h2.02"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.15"
-      />
-      <path
-        d="M8.1 5h6.35M8.1 9h6.35M8.1 13h6.35"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.45"
-      />
-    </svg>
-  );
-}
-
-function ChecklistIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <path
-        d="M3.15 4.95 4.1 5.9l1.7-2M3.15 9 4.1 9.95l1.7-2M3.15 13.05 4.1 14l1.7-2"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.25"
-      />
-      <path
-        d="M8 5h6.7M8 9h6.7M8 13h6.7"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.45"
-      />
-    </svg>
-  );
-}
-
 function LinkIcon() {
   return (
     <svg viewBox="0 0 18 18" aria-hidden="true">
@@ -213,39 +164,10 @@ function LinkIcon() {
   );
 }
 
-function ImageIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <path
-        d="M4.25 4.25h9.5v9.5h-9.5v-9.5Z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.35"
-      />
-      <path
-        d="m5.7 12.1 2.15-2.35 1.45 1.52 1.88-2.35 1.42 3.18H5.7Z"
-        fill="currentColor"
-      />
-      <circle cx="11.55" cy="6.65" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-
 export function BodyEditorToolbar({
   editor,
-  postType,
-  mediaEnabled,
-  uploading,
-  uploadError,
-  onChooseImage,
 }: {
   editor: Editor | null;
-  postType?: "article" | "project" | "talk" | "note" | "bookmark";
-  mediaEnabled: boolean;
-  uploading: boolean;
-  uploadError: string | null;
-  onChooseImage: () => void;
 }) {
   const editorDisabled = !editor;
   const activeBlock = editor ? bodyEditorBlock(editor) : "body";
@@ -276,7 +198,6 @@ export function BodyEditorToolbar({
     <div className="body-editor-toolbar-shell">
       <div
         className="body-editor-toolbar applecms"
-        data-post-type={postType}
         role="toolbar"
         aria-label="Body formatting"
       >
@@ -367,36 +288,7 @@ export function BodyEditorToolbar({
             <StrikeIcon />
           </ToolbarButton>
         </div>
-        <div className="body-editor-toolgroup" aria-label="Lists">
-          <ToolbarButton
-            label="Bulleted list"
-            keys="⌘⇧8"
-            active={editor?.isActive("bulletList")}
-            disabled={editorDisabled}
-            onPress={() => editor?.chain().focus().toggleBulletList().run()}
-          >
-            <BulletListIcon />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Numbered list"
-            keys="⌘⇧7"
-            active={editor?.isActive("orderedList")}
-            disabled={editorDisabled}
-            onPress={() => editor?.chain().focus().toggleOrderedList().run()}
-          >
-            <OrderedListIcon />
-          </ToolbarButton>
-          <ToolbarButton
-            label="Checklist"
-            keys="⌘⇧9"
-            active={editor?.isActive("taskList")}
-            disabled={editorDisabled}
-            onPress={() => editor?.chain().focus().toggleTaskList().run()}
-          >
-            <ChecklistIcon />
-          </ToolbarButton>
-        </div>
-        <div className="body-editor-toolgroup" aria-label="Insert">
+        <div className="body-editor-toolgroup" aria-label="Link">
           <ToolbarButton
             label="Link"
             keys="⌘K"
@@ -408,23 +300,8 @@ export function BodyEditorToolbar({
           >
             <LinkIcon />
           </ToolbarButton>
-          {mediaEnabled && (
-            <ToolbarButton
-              label="Insert photo or video"
-              keys="Drop or paste"
-              disabled={editorDisabled || uploading}
-              onPress={onChooseImage}
-            >
-              {uploading ? <span className="body-editor-spinner" /> : <ImageIcon />}
-            </ToolbarButton>
-          )}
         </div>
       </div>
-      {uploadError && (
-        <div className="body-editor-upload-error" role="alert">
-          {uploadError}
-        </div>
-      )}
     </div>
   );
 }

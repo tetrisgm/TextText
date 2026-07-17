@@ -25,7 +25,7 @@ export type AssistantViewSnapshot = {
 
 export type AssistantWorkspaceView =
   | { level: "root" }
-  | { folderPath: string; level: "section" | "trash" | "shared" }
+  | { folderPath: string; level: "section" | "trash" | "shared" | "starred" }
   | { folderPath: string; level: "post" | "edit"; postId: string };
 
 export type ResolvedAssistantContext = {
@@ -87,7 +87,7 @@ export function resolveWorkspaceAssistantContext({
   const itemId =
     view.level === "post" || view.level === "edit"
       ? view.postId
-      : view.level === "section"
+      : view.level === "section" || view.level === "starred"
         ? selectedPostId
         : null;
   const item = itemId ? findPoolPostById(pool, itemId) : null;
@@ -101,7 +101,7 @@ export function resolveWorkspaceAssistantContext({
         detail:
           view.level === "edit"
             ? "Editing"
-            : view.level === "section"
+            : view.level === "section" || view.level === "starred"
               ? "Selected item"
               : "Item",
       },
@@ -132,8 +132,17 @@ export function resolveWorkspaceAssistantContext({
     };
   }
 
-  if (view.level === "trash" || view.level === "shared") {
-    const label = view.level === "trash" ? "Trash" : "Shared with me";
+  if (
+    view.level === "trash" ||
+    view.level === "shared" ||
+    view.level === "starred"
+  ) {
+    const label =
+      view.level === "trash"
+        ? "Trash"
+        : view.level === "shared"
+          ? "Shared with me"
+          : "Starred";
     return {
       chip: { kind: "folder", label },
       contextKey: folderPlaceKey(homePath, view.folderPath),

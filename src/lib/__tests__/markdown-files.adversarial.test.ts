@@ -100,7 +100,9 @@ describe("CRLF files", () => {
     const fromLf = parsePostMarkdownFile(lfFile);
     const fromCrlf = parsePostMarkdownFile(crlfFile);
     expect(fromCrlf.fields).toEqual(fromLf.fields);
-    expect(fromCrlf.body).toBe("One.\r\n\r\nTwo.\r\n");
+    expect(fromCrlf.body).toBe(
+      "###### A dek\\.\r\n\r\nOne.\r\n\r\nTwo.\r\n",
+    );
   });
 });
 

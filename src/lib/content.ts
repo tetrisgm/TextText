@@ -187,6 +187,8 @@ export interface Post {
   status: "draft" | "published";
   /** owner-curated placement at the top of public and owner lists */
   pinned?: boolean;
+  /** owner-only personal favorite; never affects public listing or visibility */
+  starred?: boolean;
   gallery?: GalleryItem[];
   links?: LinkRef[];
   videoUrl?: string;

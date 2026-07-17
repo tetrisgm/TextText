@@ -36,6 +36,7 @@ export type WorkspacePoolPost = {
   publishedAt?: string;
   status: Post["status"];
   pinned?: boolean;
+  starred?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

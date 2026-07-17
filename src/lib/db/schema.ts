@@ -367,6 +367,8 @@ export const posts = pgTable(
     capture: jsonb("capture").$type<BookmarkCapture>(),
     status: postStatus("status").notNull().default("draft"),
     pinned: boolean("pinned").notNull().default(false),
+    /** Personal workspace favorite. Deliberately independent from public pinning. */
+    starred: boolean("starred").notNull().default(false),
     publishedAt: timestamp("published_at"),
     /**
      * Monotonic per-mutation version from the shared `write_change_seq`
@@ -397,6 +399,9 @@ export const posts = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index("posts_blog_workspace_order_idx")
       .on(t.blogId, t.pinned.desc(), t.updatedAt.desc(), t.createdAt.desc())
+      .where(sql`${t.deletedAt} is null`),
+    index("posts_blog_starred_order_idx")
+      .on(t.blogId, t.starred.desc(), t.updatedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
   ],
 );

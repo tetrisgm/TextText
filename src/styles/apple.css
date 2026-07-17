@@ -228,19 +228,6 @@
       0 10px 28px rgba(0, 0, 0, 0.26);
   }
 }
-.applecms .body-editor-toolbar-anchor {
-  position: relative;
-  top: auto;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  width: 100%;
-  max-width: 680px;
-  min-height: 34px;
-  margin: 0 auto 20px;
-  padding: 0;
-  pointer-events: none;
-}
 .applecms .body-editor-toolbar-shell {
   display: flex;
   flex-direction: column;
@@ -563,11 +550,6 @@
   color: var(--ac-label-2);
 }
 @media (max-width: 560px) {
-  .applecms .body-editor-toolbar-anchor {
-    max-width: none;
-    margin-bottom: 16px;
-  }
-
   .applecms .body-editor-toolbar {
     width: 100%;
   }

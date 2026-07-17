@@ -5,11 +5,11 @@ import { PostByline } from "@/components/PostByline";
 import { ProjectGallery } from "@/components/ProjectGallery";
 import type { Blog, Post } from "@/lib/content";
 import { postAccent } from "@/lib/content";
+import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
 
 type ReaderSlots = {
   toolbar?: ReactNode;
   title?: ReactNode;
-  excerpt?: ReactNode;
   body?: ReactNode;
   gallery?: ReactNode;
 };
@@ -29,7 +29,7 @@ export function ProjectReader({
     : undefined;
   const title = post.title.trim() || "Untitled";
   const titleId = "project-title";
-  const excerpt = post.excerpt?.trim();
+  const body = postBodyWithSubtitle(post);
   const className = `project-split${
     slots?.toolbar ? " has-editor-toolbar" : ""
   }`;
@@ -42,26 +42,28 @@ export function ProjectReader({
         aria-labelledby={slots?.title ? undefined : titleId}
       >
         <div className="project-split-inner">
-          {slots?.title ?? (
-            <h1 className="project-title" id={titleId}>
-              {title}
-            </h1>
-          )}
-          {slots?.excerpt ?? (
-            excerpt && <p className="reader-dek project-dek">{excerpt}</p>
-          )}
           <PostByline
             blog={blog}
             post={post}
             className="project-byline"
           />
-          {(slots?.body || post.body) && (
+          {slots?.title ?? (
+            <h1 className="project-title" id={titleId}>
+              {title}
+            </h1>
+          )}
+          {(slots?.body || body) && (
             <div className="reader-prose project-prose">
               {slots?.body ?? (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
                     h1: "h2",
+                    h6: ({ children }) => (
+                      <p className="reader-subtitle project-subtitle">
+                        {children}
+                      </p>
+                    ),
                     img: ({ src, alt }) => (
                       <span className="reader-figure">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -79,7 +81,7 @@ export function ProjectReader({
                     ),
                   }}
                 >
-                  {post.body}
+                  {body}
                 </ReactMarkdown>
               )}
             </div>

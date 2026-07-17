@@ -8,6 +8,7 @@ import {
   type Post,
 } from "@/lib/content";
 import { coverMimeType, resolveCover } from "@/lib/cover";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 // Shared OpenGraph card rendering for the /t/{handle} and /u/{username}
 // (canonical /@{username}) route trees. The route-level opengraph-image
@@ -121,7 +122,7 @@ function renderPostImage(blog: Blog, post: Post, coverSrc: string) {
   const titleSize = postTitleSize(post.title);
   const ruleColor = hairlineColor(postAccent(blog, post));
   const hasCover = Boolean(coverSrc);
-  const meta = [post.excerpt, formatArticleDate(post.date)]
+  const meta = [postSubtitle(post), formatArticleDate(post.date)]
     .filter(Boolean)
     .join(" / ");
 

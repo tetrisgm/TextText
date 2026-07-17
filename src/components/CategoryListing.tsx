@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { PostCard } from "@/components/PostCard";
 import styles from "@/components/CategoryListing.module.css";
-import type { Blog, Folder, Post, PostType } from "@/lib/content";
+import type { Blog, Folder, Post } from "@/lib/content";
 import {
   formatArticleDate,
   isVideoFile,
@@ -19,14 +19,7 @@ import {
   categoryChipForPost,
 } from "@/lib/categories";
 import { blogPostPath } from "@/lib/public-paths";
-
-const TYPE_LABELS: Record<PostType, string> = {
-  article: "Article",
-  project: "Media",
-  talk: "Video",
-  note: "Note",
-  bookmark: "Bookmark",
-};
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 function blogStyle(blog: Blog): CSSProperties | undefined {
   return blog.accent
@@ -81,7 +74,7 @@ function plainTextExcerpt(markdown: string | undefined): string {
 }
 
 function timelineExcerpt(post: Post): string {
-  return post.excerpt?.trim() || plainTextExcerpt(postBodyPreview(post));
+  return postSubtitle(post) || plainTextExcerpt(postBodyPreview(post));
 }
 
 function timelineMeta(post: Post): string {
@@ -132,9 +125,6 @@ function CategoryTimeline({
             </Link>
             <span className={`blog-timeline-copy ${styles.timelineCopy}`}>
               <span className="blog-timeline-chip-row">
-                <span className="blog-timeline-chip">
-                  {TYPE_LABELS[post.type]}
-                </span>
                 {category && (
                   <Link
                     className={styles.categoryChip}
@@ -219,9 +209,7 @@ function CategoryIndex({
               {title}
             </span>
             <span className={`blog-index-meta ${styles.indexMeta}`}>
-              {[formatArticleDate(post.date), TYPE_LABELS[post.type]]
-                .filter(Boolean)
-                .join(" / ")}
+              {formatArticleDate(post.date)}
               {post.pinned ? " / Pinned" : ""}
               {category && (
                 <Link
@@ -266,6 +254,7 @@ function CategoryGrid({
           handle={handle}
           post={post}
           owner={false}
+          showTypeChip={false}
         />
       ))}
     </div>

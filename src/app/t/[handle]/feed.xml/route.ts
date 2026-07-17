@@ -3,6 +3,7 @@ import type { Blog, Post } from "@/lib/content";
 import { postBodyPreview } from "@/lib/content";
 import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPosts } from "@/lib/store";
+import { postSubtitle } from "@/lib/markdown-subtitle";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -38,8 +39,7 @@ function renderRss(
     .map((post) => {
       const url = postUrl(baseUrl, post.slug);
       const published = postDate(post).toUTCString();
-      const summary =
-        post.excerpt?.trim() || plainTextSummary(postBodyPreview(post));
+      const summary = postSubtitle(post) || plainTextSummary(postBodyPreview(post));
       const imageUrl = resolveCoverUrl(post, baseUrl);
       const mediaContent = imageUrl
         ? `      <media:content url="${escapeXml(imageUrl)}" medium="image" type="${escapeXml(coverMimeType(imageUrl))}" />`

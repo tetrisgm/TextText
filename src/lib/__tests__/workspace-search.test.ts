@@ -4,6 +4,8 @@ import type { WorkspacePoolPost } from "@/lib/pool/types";
 import {
   parseWorkspaceDateQuery,
   searchWorkspace,
+  workspaceRootBodyMode,
+  workspaceSearchHandoffIndex,
 } from "@/lib/workspace-search";
 
 const folders: Folder[] = [
@@ -30,6 +32,17 @@ function post(
 }
 
 describe("workspace search", () => {
+  it("uses search results as the home body and hands arrow focus into it", () => {
+    expect(workspaceRootBodyMode("")).toBe("home");
+    expect(workspaceRootBodyMode("cedar")).toBe("search");
+    expect(
+      workspaceRootBodyMode("2026-07-13", new Date(2026, 6, 17, 12)),
+    ).toBe("date");
+    expect(workspaceSearchHandoffIndex(4, "down")).toBe(0);
+    expect(workspaceSearchHandoffIndex(4, "up")).toBe(3);
+    expect(workspaceSearchHandoffIndex(0, "down")).toBeNull();
+  });
+
   it("ranks title matches before excerpts, previews, and hydrated bodies", () => {
     const results = searchWorkspace({
       folders,
@@ -58,15 +71,21 @@ describe("workspace search", () => {
     expect(parseWorkspaceDateQuery("2026-02-30", now)).toBeNull();
   });
 
-  it("returns only items created on the requested local day", () => {
+  it("returns items created or edited on the requested local day once", () => {
     const results = searchWorkspace({
       folders,
       posts: [
         post("day", "Created that day", "2026-07-13T18:00:00.000Z"),
+        post("edited", "Edited that day", "2026-07-12T18:00:00.000Z", {
+          updatedAt: "2026-07-13T20:00:00.000Z",
+        }),
         post("other", "Created later", "2026-07-14T18:00:00.000Z"),
       ],
       query: "2026-07-13",
     });
-    expect(results.map((result) => result.id)).toEqual(["post:day"]);
+    expect(results.map((result) => result.id)).toEqual([
+      "post:edited",
+      "post:day",
+    ]);
   });
 });

@@ -71,7 +71,7 @@
 .talk-detail-byline.post-byline {
   justify-content: flex-start;
   max-width: none;
-  margin: 12px 0 0;
+  margin: 0 0 20px;
   padding-bottom: 0;
   border-bottom: 0;
 }
@@ -82,9 +82,9 @@
   font-size: 13px;
 }
 
-.talk-detail-dek.reader-dek {
+.talk-detail-desc.reader-prose > .reader-subtitle {
   max-width: 760px;
-  margin: 8px 0 0;
+  margin: 0 0 20px;
   text-align: left;
   font-size: clamp(1.05rem, 0.98rem + 0.45vw, 1.25rem);
 }
@@ -101,6 +101,7 @@
 .talk-detail-desc.reader-prose > p,
 .talk-detail-desc.reader-prose > h2,
 .talk-detail-desc.reader-prose > h3,
+.talk-detail-desc.reader-prose > h6,
 .talk-detail-desc.reader-prose > ul,
 .talk-detail-desc.reader-prose > ol,
 .talk-detail-desc.reader-prose > pre,
@@ -115,14 +116,6 @@
 
 .talk-detail-desc.reader-prose > p:last-child {
   margin-bottom: 0;
-}
-
-.talk-detail-desc.reader-prose > p:first-child {
-  color: var(--ink-2);
-  font-size: inherit;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: inherit;
 }
 
 .talk-detail-desc.reader-prose h2 {
@@ -164,6 +157,7 @@
 .talk-detail-desc.reader-prose .body-editor-content > p,
 .talk-detail-desc.reader-prose .body-editor-content > h2,
 .talk-detail-desc.reader-prose .body-editor-content > h3,
+.talk-detail-desc.reader-prose .body-editor-content > h6,
 .talk-detail-desc.reader-prose .body-editor-content > ul,
 .talk-detail-desc.reader-prose .body-editor-content > ol,
 .talk-detail-desc.reader-prose .body-editor-content > pre,
@@ -177,12 +171,11 @@
 .talk-detail-desc.reader-prose .body-editor-content > p:last-child {
   margin-bottom: 0;
 }
-.talk-detail-desc.reader-prose .body-editor-content > p:first-child {
-  color: var(--ink-2);
-  font-size: inherit;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: inherit;
+.talk-detail-desc.reader-prose .body-editor-content > h6.body-editor-subtitle {
+  max-width: none;
+  margin: 0 0 20px;
+  text-align: left;
+  font-size: clamp(1.05rem, 0.98rem + 0.45vw, 1.25rem);
 }
 .talk-detail-desc.reader-prose .body-editor-content h2 {
   margin: 28px 0 10px;
@@ -316,10 +309,6 @@
 @media (max-width: 720px) {
   .reader.talk-detail {
     padding: 24px 20px 48px;
-  }
-
-  .reader.talk-detail.has-editor-toolbar {
-    padding-top: 118px;
   }
 
   .talk-detail-stage {

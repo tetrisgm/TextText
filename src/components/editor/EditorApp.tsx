@@ -1237,19 +1237,6 @@ export function EditorApp({
 
                   <div className="ac-form-grid ac-details-grid">
                     <label className="ac-field-label">
-                      <span className="ac-label-text">Excerpt</span>
-                      <input
-                        className="ac-field"
-                        value={selectedPost.excerpt ?? ""}
-                        onChange={(event) =>
-                          updateSelected({
-                            excerpt: optionalValue(event.currentTarget.value),
-                          })
-                        }
-                      />
-                    </label>
-
-                    <label className="ac-field-label">
                       <span className="ac-label-text">Date</span>
                       <input
                         className="ac-field"
