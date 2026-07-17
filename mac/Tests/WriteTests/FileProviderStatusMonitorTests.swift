@@ -12,8 +12,11 @@ final class FileProviderStatusMonitorTests: XCTestCase {
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 9))
         // Schema 11 (posts as .textpack): 10 is now an older schema and must rebuild.
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 10))
-        XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 11))
+        // v12 rebuilds so the post-.textpack mount recreates fresh placeholders
+        // that materialize with a non-nil documentSize (v11 left them 0-byte).
+        XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 11))
         XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 12))
+        XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 13))
     }
 
     func testFileProviderSchemaRepairRequiresASettledPendingSet() {

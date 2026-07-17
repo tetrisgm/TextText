@@ -159,6 +159,22 @@ final class WriteItemMapperTests: XCTestCase {
         XCTAssertNil(item?.documentSize)
     }
 
+    func testTextPackAdvertisesManifestSizeSoItsLeafMaterializes() {
+        // A .textpack is a single leaf file, unlike the .textbundle directory.
+        // It MUST carry a non-nil documentSize at enumeration: a leaf enumerated
+        // with nil size reads as materialized-empty and a later fetch is delivered
+        // but never persisted, leaving a permanent 0-byte file on the mount.
+        let entry = WriteManifestItem(
+            file: "posts/a.textpack", representation: .textpack,
+            kind: "note", slug: "a", title: "A", status: "draft",
+            hash: "h", id: "p1", date: nil, createdAt: nil, updatedAt: nil,
+            url: nil, size: 4096)
+        let item = WriteItemMapper.item(
+            for: entry, inFolder: "notes", handle: h, readOnly: false)
+
+        XCTAssertEqual(item?.documentSize, 4096)
+    }
+
     func testManifestURLIsAuthoritativeAndSurvivesLocalCopies() {
         let entry = WriteManifestItem(
             file: "posts/a.md", kind: "note", slug: "stale-slug", title: "A",

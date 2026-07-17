@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // of the interim flat `.md` (name and content are one node) while bundling
     // assets and importing into Bear/Ulysses. (9->10 was the flat `.md` step.) The
     // rebuild waits for zero pending local edits, so no in-flight edit is stranded.
-    static let fileProviderSchemaVersion = 11
+    static let fileProviderSchemaVersion = 12
     private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()

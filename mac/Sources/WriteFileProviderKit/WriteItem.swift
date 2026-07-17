@@ -251,12 +251,16 @@ public enum WriteItemMapper {
             typeIdentifier: entry.representation.typeIdentifier,
             serverId: id,
             contentHash: entry.hash,
-            // A textbundle package and a textpack zip have no manifest-known byte
-            // length: the manifest size describes canonical Markdown, not the
-            // package transport or the compressed zip. Advertising it would
-            // mismatch the materialized bytes, so leave it nil and let fetch set
-            // the real size. Regular files retain their exact body size.
-            documentSize: entry.representation.isTextBundleFamily ? nil : entry.size,
+            // Only the `.textbundle` DIRECTORY keeps documentSize nil: the
+            // framework transports a package and owns its size. A `.textpack` is a
+            // single leaf file and MUST advertise a size like every other leaf -
+            // a leaf enumerated with nil size reads to the framework as
+            // materialized-empty, so a read-triggered fetch is delivered but never
+            // persisted (the file stays 0 bytes). The manifest size (canonical
+            // Markdown length) is only a pre-download hint; documentSize is
+            // informational and never truncates the fetched bytes, so fetch still
+            // sets the exact zip size. Regular files retain their exact body size.
+            documentSize: entry.representation == .textbundle ? nil : entry.size,
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps,
