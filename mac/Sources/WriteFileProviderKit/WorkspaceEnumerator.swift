@@ -157,6 +157,8 @@ public struct WorkspaceEnumerator: Sendable {
 
     /// Canonical item-set fingerprint shared by per-workspace and aggregate
     /// enumerators. It is always 32 bytes, below File Provider's anchor limit.
+    /// MUST stay byte-stable across releases: anchors derived from it are held
+    /// by the system between launches.
     public static func fingerprint(_ items: [WriteItem]) -> Data {
         var canonical = Data()
         let sorted = items.sorted {
@@ -169,27 +171,41 @@ public struct WorkspaceEnumerator: Sendable {
             return $0.filename < $1.filename
         }
         for item in sorted {
-            let fields = [
-                item.identifier.rawValue,
-                item.parentIdentifier.rawValue,
-                item.filename.precomposedStringWithCanonicalMapping,
-                item.isFolder ? "folder" : "file",
-                item.typeIdentifier,
-                item.serverId ?? "",
-                item.contentHash ?? "",
-                item.documentSize.map(String.init) ?? "",
-                item.creationDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "",
-                item.contentModificationDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "",
-                String(item.capabilities.rawValue),
-            ]
-            for field in fields {
-                let data = Data(field.utf8)
-                canonical.append(contentsOf: "\(data.count):".utf8)
-                canonical.append(data)
-            }
-            canonical.append(0x0A)
+            canonical.append(canonicalEncoding(item))
         }
         return WriteStableDigest.sha256(canonical)
+    }
+
+    /// One item's contribution to the set fingerprint: length-prefixed fields
+    /// plus a record terminator, exactly the bytes fingerprint() always hashed.
+    static func canonicalEncoding(_ item: WriteItem) -> Data {
+        var canonical = Data()
+        let fields = [
+            item.identifier.rawValue,
+            item.parentIdentifier.rawValue,
+            item.filename.precomposedStringWithCanonicalMapping,
+            item.isFolder ? "folder" : "file",
+            item.typeIdentifier,
+            item.serverId ?? "",
+            item.contentHash ?? "",
+            item.documentSize.map(String.init) ?? "",
+            item.creationDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "",
+            item.contentModificationDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "",
+            String(item.capabilities.rawValue),
+        ]
+        for field in fields {
+            let data = Data(field.utf8)
+            canonical.append(contentsOf: "\(data.count):".utf8)
+            canonical.append(data)
+        }
+        canonical.append(0x0A)
+        return canonical
+    }
+
+    /// Per-item digest for change-delta snapshots: two items with equal digests
+    /// are identical for enumeration purposes (same fields the anchor hashes).
+    public static func itemDigest(_ item: WriteItem) -> String {
+        WriteStableDigest.sha256Hex(canonicalEncoding(item))
     }
 
     // MARK: - internals

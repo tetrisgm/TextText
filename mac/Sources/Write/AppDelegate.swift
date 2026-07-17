@@ -695,13 +695,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         // Do not drop it; the next drain retries the POST.
                         appendActivity("A shared item conflicted on the server; will retry")
                     case .success(.rejected(let message)):
-                        appendActivity("Shared item rejected: \(message)")
-                        try reader.deleteConsumed(record) // unchanged retry is futile
+                        // Retrying identical bytes is futile, but the shared text
+                        // may be the user's only copy: park it, never destroy it.
+                        appendActivity("Shared item rejected: \(message); kept in Inbox Rejected")
+                        try reader.moveToDeadLetter(record)
                     case .failure(let error):
                         appendActivity("Could not file a shared item: \(error.description)")
                     }
                 case let .append(targetWriteId, text):
-                    if appendSharedText(text, toDocument: targetWriteId, client: client) {
+                    if appendSharedText(
+                        text, toDocument: targetWriteId, client: client,
+                        appliedMarkerURL: record.directoryURL
+                            .appendingPathComponent(".append-applied")
+                    ) {
                         try reader.deleteConsumed(record)
                         filed += 1
                     }
@@ -727,8 +733,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// stale hash surfaces as a conflict (retried next drain) rather than a
     /// silent drop. Returns true only when the append landed.
     private func appendSharedText(
-        _ text: String, toDocument id: String, client: ServerClient
+        _ text: String, toDocument id: String, client: ServerClient,
+        appliedMarkerURL: URL? = nil
     ) -> Bool {
+        // A prior drain PUT this record's text and crashed before consuming the
+        // record: the applied marker is definitive proof, so consume without
+        // appending again. (Content is never sniffed; a deliberate second share
+        // of identical text has its own record directory and no marker.)
+        if let appliedMarkerURL,
+           FileManager.default.fileExists(atPath: appliedMarkerURL.path) {
+            return true
+        }
         switch client.fileText(postId: id) {
         case .failure(let error):
             appendActivity("Could not load the shared target: \(error.description)")
@@ -744,6 +759,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !body.hasSuffix("\n") { body += "\n" }
             switch client.putFile(postId: id, body: body, ifMatch: hash) {
             case .success(.saved):
+                // Record that THIS record's append landed, before the caller's
+                // deleteConsumed. A crash in between re-drains the record, and
+                // the marker (definitive, keyed to this record, never inferred
+                // from document content) lets the retry consume it without
+                // doubling the text. A crash mid-PUT leaves no marker and the
+                // retry simply PUTs again: the residual double-append window is
+                // the local marker write, not the network round-trip.
+                if let appliedMarkerURL {
+                    try? Data("applied".utf8).write(to: appliedMarkerURL)
+                }
                 return true
             case .success(.conflict):
                 appendActivity("The shared target changed on the server; will retry the append")

@@ -8,14 +8,21 @@ import WriteFileProviderBridge
 /// enumerated in a single page. Change tracking re-lists the container and
 /// fingerprints its actual mapped children; the long-poll that decides WHEN to
 /// re-enumerate lives in the container app (ChangeListener -> signalEnumerator),
-/// not here.
+/// not here. A persisted id->digest snapshot (AnchorSnapshotStore) turns an
+/// anchor mismatch into a precise didUpdate/didDeleteItems delta; only a
+/// missing snapshot falls back to the full syncAnchorExpired re-list.
 final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
     private let container: WriteItemIdentifier
     private let core: WorkspaceEnumerator
+    private let snapshots: AnchorSnapshotStore?
 
-    init(container: WriteItemIdentifier, core: WorkspaceEnumerator) {
+    init(
+        container: WriteItemIdentifier, core: WorkspaceEnumerator,
+        snapshots: AnchorSnapshotStore? = nil
+    ) {
         self.container = container
         self.core = core
+        self.snapshots = snapshots
     }
 
     func invalidate() {
@@ -44,9 +51,14 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
     ) {
         let container = self.container
         let core = self.core
+        let snapshots = self.snapshots
         Task {
-            switch await core.containerAnchor(for: container) {
-            case .success(let anchor):
+            switch await core.children(of: container) {
+            case .success(let items):
+                let anchor = WorkspaceEnumerator.fingerprint(items)
+                // The snapshot must describe EXACTLY the list this anchor
+                // fingerprints, or a later delta would diff against the wrong base.
+                snapshots?.save(container: container, anchor: anchor, items: items)
                 completionHandler(NSFileProviderSyncAnchor(anchor))
             case .failure:
                 completionHandler(nil) // the system retries
@@ -59,21 +71,40 @@ final class WriteEnumeratorAdapter: NSObject, NSFileProviderEnumerator {
         from syncAnchor: NSFileProviderSyncAnchor
     ) {
         // Anchors fingerprint this container's actual mapped child set. A global
-        // workspace cursor made an unrelated edit expire every folder. We still
-        // expire on a real child-set difference so deletions reconcile cleanly.
+        // workspace cursor made an unrelated edit expire every folder. With a
+        // stored snapshot matching the system's anchor we emit a precise delta;
+        // without one we still expire so deletions reconcile via a full re-list.
         let container = self.container
         let core = self.core
+        let snapshots = self.snapshots
         Task {
             let expired = NSError(
                 domain: NSFileProviderErrorDomain,
                 code: NSFileProviderError.syncAnchorExpired.rawValue)
-            switch await core.containerAnchor(for: container) {
-            case .success(let anchor):
+            switch await core.children(of: container) {
+            case .success(let items):
+                let anchor = WorkspaceEnumerator.fingerprint(items)
                 if syncAnchor.rawValue == anchor {
                     observer.finishEnumeratingChanges(upTo: syncAnchor, moreComing: false)
-                } else {
-                    observer.finishEnumeratingWithError(expired)
+                    return
                 }
+                guard let previous = snapshots?.loadSnapshot(
+                    container: container, matching: syncAnchor.rawValue) else {
+                    // Cursor base unknown: deletion-correct full reconcile.
+                    observer.finishEnumeratingWithError(expired)
+                    return
+                }
+                let delta = WriteContainerDelta.compute(previous: previous, current: items)
+                if !delta.updated.isEmpty {
+                    observer.didUpdate(delta.updated.map(WriteFileProviderItem.init))
+                }
+                if !delta.deletedIdentifiers.isEmpty {
+                    observer.didDeleteItems(withIdentifiers:
+                        delta.deletedIdentifiers.map(NSFileProviderItemIdentifier.init(rawValue:)))
+                }
+                snapshots?.save(container: container, anchor: anchor, items: items)
+                observer.finishEnumeratingChanges(
+                    upTo: NSFileProviderSyncAnchor(anchor), moreComing: false)
             case .failure:
                 // Cursor unknown: fall back to the deletion-correct full reconcile.
                 observer.finishEnumeratingWithError(expired)

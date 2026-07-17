@@ -442,7 +442,9 @@ public final class FileProviderExtension: NSObject,
         case .workspace(let handle), .folder(let handle, _):
             guard let api = apiFactory(handle) else { throw Self.fpError(.notAuthenticated) }
             return WriteEnumeratorAdapter(
-                container: wid, core: makeCore(api, handle: handle, name: descriptorName(for: handle)))
+                container: wid,
+                core: makeCore(api, handle: handle, name: descriptorName(for: handle)),
+                snapshots: Self.anchorSnapshotStore())
         case .file, .attachmentFile:
             throw Self.fpError(.noSuchItem)
         }
@@ -1625,6 +1627,17 @@ public final class FileProviderExtension: NSObject,
     private func fpTemporaryDirectory() -> URL? {
         if let temporaryDirectoryProvider { return temporaryDirectoryProvider() }
         return try? NSFileProviderManager(for: domain)?.temporaryDirectoryURL()
+    }
+
+    /// The per-container anchor snapshots that turn an anchor mismatch into a
+    /// precise change delta. Lives in the sandboxed Caches (a pure cache: loss
+    /// just falls back to the full-reconcile expiry), NOT the FP temporary
+    /// directory, which sweepStaleTemporaries prunes on a 10-minute horizon.
+    static func anchorSnapshotStore() -> AnchorSnapshotStore? {
+        guard let caches = FileManager.default.urls(
+            for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        return AnchorSnapshotStore(
+            directory: caches.appendingPathComponent("write-anchor-snapshots", isDirectory: true))
     }
 
     private func sweepStaleTemporaries() {

@@ -696,6 +696,18 @@ export function PostEditLayer({
   // the Yjs log) by keeping the canonical posts.body current too.
   useEffect(() => {
     if (!postId || !collab?.canEdit) return;
+    const url = `/api/collab/${postId}/materialize`;
+    const makePayload = () =>
+      JSON.stringify({ handle: blog.handle, body: draftRef.current.body });
+
+    // Deliberately pagehide-only, no visibilitychange trigger: the debounced
+    // autosave still runs in a hidden tab (timers are throttled, not stopped),
+    // and a mid-session materialize bumps updated_at underneath this SAME
+    // tab's pending autosave, wedging it on the changed-elsewhere base check.
+    // For a body past the beacon/keepalive ~64KB quota the final delta still
+    // survives: the collab provider's prefix-fit beacon carries the last Yjs
+    // updates (deltas, always small), and the next open materializes from the
+    // log. Only posts.body lags until then, the documented best-effort window.
     const onPageHide = () => {
       if (lastSavedKeyRef.current === latestKeyRef.current) return;
       if (
@@ -704,17 +716,32 @@ export function PostEditLayer({
       ) {
         return;
       }
-      const payload = JSON.stringify({
-        handle: blog.handle,
-        body: draftRef.current.body,
-      });
-      navigator.sendBeacon(
-        `/api/collab/${postId}/materialize`,
+      const payload = makePayload();
+      const sent = navigator.sendBeacon(
+        url,
         new Blob([payload], { type: "application/json" }),
       );
+      if (!sent) {
+        // Over the beacon quota (or queue full): try keepalive, which survives
+        // unload for bodies under its own ~64KB cap. Chromium throws on an
+        // over-quota keepalive body; nothing more can be done at pagehide, and
+        // the hidden-tab materialize above has usually landed the body already.
+        try {
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {});
+        } catch {
+          // best-effort only
+        }
+      }
     };
     window.addEventListener("pagehide", onPageHide);
-    return () => window.removeEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, [postId, collab?.canEdit, blog.handle]);
 
   useEffect(() => {

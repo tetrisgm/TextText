@@ -186,8 +186,31 @@ public final class InboxReader {
         try fileManager.removeItem(at: record.directoryURL)
     }
 
+    /// Park a record the server REJECTED (HTTP 400) where a retry of identical
+    /// bytes is futile but the user's shared text may be their only copy.
+    /// Moving it out of the inbox stops the retry loop without destroying it;
+    /// the dead-letter folder sits next to the inbox in the app-group container.
+    public func moveToDeadLetter(_ record: InboxRecord) throws {
+        guard fileManager.fileExists(atPath: record.directoryURL.path) else { return }
+        let deadLetter = Self.deadLetterURL(containerURL: containerURL)
+        try fileManager.createDirectory(at: deadLetter, withIntermediateDirectories: true)
+        let destination = deadLetter.appendingPathComponent(
+            record.directoryURL.lastPathComponent, isDirectory: true)
+        if fileManager.fileExists(atPath: destination.path) {
+            // Same record parked twice (crash between move and the caller's
+            // bookkeeping): the copies are identical, keep the existing one.
+            try fileManager.removeItem(at: record.directoryURL)
+            return
+        }
+        try fileManager.moveItem(at: record.directoryURL, to: destination)
+    }
+
     public static func inboxURL(containerURL: URL) -> URL {
         InboxWriter.inboxURL(containerURL: containerURL)
+    }
+
+    public static func deadLetterURL(containerURL: URL) -> URL {
+        containerURL.appendingPathComponent("Inbox Rejected", isDirectory: true)
     }
 
     private func modificationDate(_ url: URL) -> Date {

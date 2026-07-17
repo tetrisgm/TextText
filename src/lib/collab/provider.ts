@@ -369,18 +369,32 @@ export class CollabProvider {
       return;
     }
     const batch = this.outbox.pending.slice(0, MAX_PUSH_BATCH);
+    // sendBeacon silently drops an over-limit body. Instead of skipping the
+    // whole batch (which loses every queued edit when the tab dies), deliver
+    // the largest PREFIX that fits: updates are ordered, so a prefix is always
+    // a consistent partial flush and strictly better than nothing. Size the
+    // prefix analytically from the base64 lengths (envelope + per-item quotes
+    // and comma) instead of re-stringifying per candidate.
+    const encoded = batch.map(u8ToBase64);
+    const envelope = JSON.stringify({ updates: [], epoch: this.outbox.epoch }).length;
+    let fit = 0;
+    let size = envelope;
+    for (const b64 of encoded) {
+      const next = size + b64.length + 3; // quotes + comma
+      if (next > 60_000) break;
+      size = next;
+      fit += 1;
+    }
+    if (fit === 0) return;
     // Fence the unload append on the same generation as the normal push, or a
     // retired post (epoch >= 1) would reject it (absent epoch is treated as 0).
     const payload = JSON.stringify({
-      updates: batch.map(u8ToBase64),
+      updates: encoded.slice(0, fit),
       epoch: this.outbox.epoch,
     });
-    // sendBeacon silently drops an over-limit body; skip so the normal flush
-    // (which chunks and retries) still owns those bytes.
-    if (payload.length > 60_000) return;
     const blob = new Blob([payload], { type: "application/json" });
     if (navigator.sendBeacon(this.base, blob)) {
-      this.outbox.pending.splice(0, batch.length);
+      this.outbox.pending.splice(0, fit);
     }
   }
 

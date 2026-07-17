@@ -224,6 +224,17 @@ export async function retireStaleCollabEpoch(
           updated_at = now()
       WHERE collab_state.epoch = ${readEpoch}
   `);
+  // Storage sweep: rows from retired epochs are dead forever. The relay only
+  // serves the CURRENT epoch and the append fence rejects stale writers, so
+  // nothing can ever read or extend an older epoch's rows; deleting them is
+  // race-free at any time after the bump. The subquery (not our read epoch)
+  // keeps this correct even when a concurrent retire won the CAS.
+  await db.execute(sql`
+    DELETE FROM ${collabUpdates}
+    WHERE post_id = ${postId}::uuid
+      AND epoch < COALESCE(
+        (SELECT epoch FROM ${collabState} WHERE post_id = ${postId}::uuid), 0)
+  `);
   return true;
 }
 
