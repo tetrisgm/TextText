@@ -424,7 +424,7 @@ final class FileProviderExtensionTests: XCTestCase {
         let fetchedVersion = try XCTUnwrap(try XCTUnwrap(fetchedItem).itemVersion)
         XCTAssertEqual(
             String(decoding: fetchedVersion.contentVersion, as: UTF8.self),
-            "native-local-v3:markdown:h2")
+            WriteFileProviderItem.nativeMaterializationVersion + "markdown:h2")
     }
 
     func testStrictFetchReportsRequestedRevisionNoLongerAvailable() {
@@ -1191,7 +1191,7 @@ final class FileProviderExtensionTests: XCTestCase {
         XCTAssertEqual(result?.filename, "a.md")
         XCTAssertEqual(
             String(decoding: try XCTUnwrap(result?.itemVersion?.contentVersion), as: UTF8.self),
-            "native-local-v3:markdown:puthash")
+            WriteFileProviderItem.nativeMaterializationVersion + "markdown:puthash")
         XCTAssertEqual(api.putCalls.count, 1)
         XCTAssertEqual(api.patchCalls.count, 1)
     }

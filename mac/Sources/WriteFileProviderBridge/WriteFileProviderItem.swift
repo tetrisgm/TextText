@@ -19,7 +19,15 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     /// Current content versions identify both the native representation and the
     /// canonical server hash. Bump this marker whenever local materialization
     /// changes so already-downloaded content is fetched again after an upgrade.
-    public static let nativeMaterializationVersion = "native-local-v3:"
+    /// v4 forces one re-fetch of every item after the `.textpack` cutover, so a
+    /// mount left holding stale zero-byte replicas refills from the server.
+    public static let nativeMaterializationVersion = "native-local-v4:"
+
+    /// Accepted marker from the release just before the `.textpack` create-format
+    /// cutover (posts materialized as `.md`/`.textbundle`). Never emit it again;
+    /// accept it only so a dirty replica still versioned with it can recover its
+    /// If-Match server hash across the upgrade.
+    public static let priorNativeMaterializationVersion = "native-local-v3:"
 
     /// Accepted marker from the release that manually returned ZIP snapshots for
     /// TextBundle fetches. Never emit it again; the framework now owns package
@@ -58,13 +66,22 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
                 importedAs: WriteItem.textBundleTypeIdentifier,
                 conformingTo: .package)
         }
-        // A .textpack is a zipped textbundle - a single LEAF file. Use the concrete
-        // zip type so the framework unambiguously treats it as one atomic node: its
-        // name and content move together, which is what makes the rename phantom
-        // structurally impossible for created posts. (Declaring `org.textbundle.pack`
-        // dynamically did NOT reliably conform to .zip.) The `.textpack` filename is
-        // what Bear/Ulysses key on for import.
+        // A .textpack is a zipped textbundle - a single LEAF file. Prefer the
+        // registered `org.textbundle.pack` UTI (the app bundle declares it,
+        // conforming to public.zip-archive with the `textpack` extension) so a
+        // double-clicked .textpack opens in Write, its declared Owner, instead of
+        // Archive Utility, which owns the generic public.zip-archive. Accept that
+        // resolved type ONLY when it is a zip leaf and NOT a package: a package
+        // conformance would let its directory name and body reconcile separately
+        // and revive the rename revert-loop. Fall back to the concrete zip type
+        // (still a leaf) when the UTI is unregistered - e.g. in unit tests that do
+        // not load the app bundle's type declarations, where an `importedAs`
+        // placeholder does NOT reliably conform to .zip.
         if item.representation == .textpack {
+            if let pack = UTType(WriteItem.textPackTypeIdentifier),
+               pack.conforms(to: .zip), !pack.conforms(to: .package) {
+                return pack
+            }
             return .zip
         }
         return UTType(item.typeIdentifier)
@@ -129,16 +146,13 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
         guard let value = String(data: contentVersion, encoding: .utf8),
               !value.isEmpty else { return nil }
 
-        if value.hasPrefix(nativeMaterializationVersion)
-            || value.hasPrefix(previousNativeMaterializationVersion)
-            || value.hasPrefix(legacyNativeMaterializationVersion) {
-            let prefix = if value.hasPrefix(nativeMaterializationVersion) {
-                nativeMaterializationVersion
-            } else if value.hasPrefix(previousNativeMaterializationVersion) {
-                previousNativeMaterializationVersion
-            } else {
-                legacyNativeMaterializationVersion
-            }
+        let nativeMarkers = [
+            nativeMaterializationVersion,
+            priorNativeMaterializationVersion,
+            previousNativeMaterializationVersion,
+            legacyNativeMaterializationVersion,
+        ]
+        if let prefix = nativeMarkers.first(where: { value.hasPrefix($0) }) {
             let payload = value.dropFirst(prefix.count)
             guard let separator = payload.firstIndex(of: ":"),
                   WriteFileRepresentation(rawValue: String(payload[..<separator])) != nil else {

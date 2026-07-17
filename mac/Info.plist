@@ -31,6 +31,18 @@
 				<string>org.textbundle.package</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>TextPack document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.textbundle.pack</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>Write</string>
@@ -115,6 +127,27 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/vnd.textbundle</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>TextPack document</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.textbundle.pack</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>textpack</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.textpack</string>
 				</array>
 			</dict>
 		</dict>

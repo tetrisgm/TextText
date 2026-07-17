@@ -143,9 +143,15 @@ final class BridgeTests: XCTestCase {
         // Phantom-freeness invariant: a .textpack is a single LEAF zip, NOT a
         // package. If it ever conformed to .package, its directory name and body
         // would reconcile separately and the rename revert-loop would return.
-        XCTAssertEqual(textpack.contentType, .zip)
+        // The resolved type is `org.textbundle.pack` when that UTI is registered
+        // (the app bundle declares it, conforming to public.zip-archive so Write
+        // owns the double-click) and the concrete `public.zip-archive` otherwise;
+        // both are zip leaves, which is the property that actually matters here.
         XCTAssertTrue(textpack.contentType.conforms(to: .zip))
         XCTAssertFalse(textpack.contentType.conforms(to: .package))
+        XCTAssertTrue(
+            textpack.contentType == .zip
+                || textpack.contentType.identifier == WriteItem.textPackTypeIdentifier)
     }
 
     func testFolderItemIsAFolderType() {
@@ -230,6 +236,11 @@ final class BridgeTests: XCTestCase {
                 (WriteFileProviderItem.previousNativeMaterializationVersion
                     + "textbundle:previous-native-hash").utf8)),
             "previous-native-hash")
+        XCTAssertEqual(
+            WriteFileProviderItem.serverHash(from: Data(
+                (WriteFileProviderItem.priorNativeMaterializationVersion
+                    + "textpack:prior-native-hash").utf8)),
+            "prior-native-hash")
         XCTAssertNil(WriteFileProviderItem.serverHash(from: Data(
             (WriteFileProviderItem.nativeMaterializationVersion + "unknown:hash").utf8)))
     }

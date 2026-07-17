@@ -140,11 +140,16 @@ enum OpenFileHandler {
 
     private static let markdownType = UTType(importedAs: "net.daringfireball.markdown")
     private static let supportedExtensions: Set<String> = [
-        "md", "markdown", "txt", "textbundle",
+        "md", "markdown", "txt", "textbundle", "textpack",
     ]
 
     private static func text(at url: URL) throws -> String {
-        guard url.pathExtension.lowercased() == "textbundle" else {
+        // `.textpack` is a zipped textbundle and `.textbundle` an open directory;
+        // both carry the markdown in text.md, so route them through the package
+        // reader (it auto-detects the archive vs the directory). Everything else
+        // is a plain text file read literally.
+        let ext = url.pathExtension.lowercased()
+        guard ext == "textbundle" || ext == "textpack" else {
             return try String(contentsOf: url, encoding: .utf8)
         }
         let temporaryDirectory = FileManager.default.temporaryDirectory

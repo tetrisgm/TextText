@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import WriteWorkspaceCore
+import WriteFileProviderKit
 @testable import Write
 
 final class OpenFileHandlerTests: XCTestCase {
@@ -219,6 +220,42 @@ final class OpenFileHandlerTests: XCTestCase {
 
         XCTAssertEqual(first.idempotencyKey, second.idempotencyKey)
         XCTAssertNotEqual(first.idempotencyKey, changed.idempotencyKey)
+    }
+
+    func testTextPackWorkspaceFileOpensAsManagedTarget() throws {
+        // A double-clicked `.textpack` (zipped textbundle) must resolve to its
+        // post, not garble as raw bytes: text(at:) routes it through the package
+        // reader, and managedTarget then parses the text.md frontmatter.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let markdown = """
+        ---
+        slug: "hello-textpack"
+        title: "Hello TextPack"
+        kind: "article"
+        status: "draft"
+        ---
+
+        Body inside a zipped textbundle.
+        """
+        let bundle = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: markdown, assets: [], sourceURL: nil, in: root)
+        let zipped = try WriteTextBundlePackage.zipToTextPack(
+            packageURL: bundle.url, in: root)
+        let named = root.appendingPathComponent("Hello TextPack.textpack")
+        try FileManager.default.moveItem(at: zipped, to: named)
+
+        let target = OpenFileHandler.managedTarget(
+            for: named,
+            fallbackHandle: "demo",
+            fileProviderIdentifier: "file:demo:item-99")
+        XCTAssertEqual(target?.handle, "demo")
+        XCTAssertEqual(target?.itemId, "item-99")
+        XCTAssertEqual(target?.slug, "hello-textpack")
+        XCTAssertEqual(target?.kind, "article")
     }
 
     private func temporaryFile(named name: String, contents: String) throws -> URL {
