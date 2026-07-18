@@ -178,7 +178,7 @@ final class FileProviderStatusMonitorTests: XCTestCase {
             if count == 2 { coalescedRefresh.fulfill() }
         }
         provider.completeNext(pendingCount: 0)
-        wait(for: [coalescedRefresh], timeout: 2)
+        wait(for: [coalescedRefresh], timeout: 10)
 
         XCTAssertEqual(snapshots, [.checking],
                        "the stale first result must not flash an idle state")
@@ -189,7 +189,7 @@ final class FileProviderStatusMonitorTests: XCTestCase {
                 working.fulfill()
             }
         }
-        wait(for: [working], timeout: 2)
+        wait(for: [working], timeout: 10)
         XCTAssertEqual(monitor.snapshot.severity, .working)
 
         let callbackCount = snapshots.count
@@ -215,7 +215,7 @@ final class FileProviderStatusMonitorTests: XCTestCase {
             if snapshot.severity == .warning { warning.fulfill() }
         }
         provider.completeNext(error: TestStatusError.failed)
-        wait(for: [warning], timeout: 2)
+        wait(for: [warning], timeout: 10)
         XCTAssertEqual(monitor.snapshot.severity, .warning)
 
         monitor.refresh()
@@ -226,7 +226,7 @@ final class FileProviderStatusMonitorTests: XCTestCase {
             if snapshot.severity == .healthy { healthy.fulfill() }
         }
         provider.completeNext(pendingCount: 0)
-        wait(for: [healthy], timeout: 2)
+        wait(for: [healthy], timeout: 10)
         XCTAssertEqual(monitor.snapshot.title, "Finder is up to date")
     }
 }

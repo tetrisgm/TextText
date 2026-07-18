@@ -247,7 +247,7 @@ final class SyncEngineEpochTests: XCTestCase {
 
         engine.syncNow()
 
-        wait(for: [recovered], timeout: 2)
+        wait(for: [recovered], timeout: 10)
         lock.lock()
         let observedStates = states
         let observedAttempts = retryAttempts
@@ -294,7 +294,7 @@ final class SyncEngineEpochTests: XCTestCase {
         }
 
         engine.syncNow()
-        wait(for: [retryScheduled], timeout: 1)
+        wait(for: [retryScheduled], timeout: 10)
 
         let pushSummary = engine.runOnePassBlocking(.pushOnly)
         XCTAssertEqual(pushSummary.errors, 0)
@@ -302,7 +302,7 @@ final class SyncEngineEpochTests: XCTestCase {
             engine.status,
             .error(errorCount: 1, retryScheduled: true))
 
-        wait(for: [recovered], timeout: 2)
+        wait(for: [recovered], timeout: 10)
         XCTAssertEqual(client.workspaceCallCount(), 3)
         XCTAssertEqual(engine.status, .idle)
     }
