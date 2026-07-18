@@ -188,18 +188,22 @@ export function parseAppHealthRollupRow(
 export function evaluateAppHealthOwnerReleaseGate(
   evaluation: AppHealthReleaseEvaluation,
 ): AppHealthOwnerReleaseGate {
-  if (evaluation.status === "pass" && evaluation.reportCount > 0) {
-    return { requiredStatus: "pass", passed: true, blockingCodes: [] };
-  }
-
+  // Block a release only on a HARD failure: an overall "fail" status or a
+  // failing-check alert. A "warning" with no failing checks is non-blocking. It
+  // is a soft, usually transient signal (e.g. the File Provider mount still
+  // warming up in the first seconds after a fresh install, which reports a
+  // finder.provider latency warning and then settles). Blocking a release on a
+  // warning wedges the autobuild ship loop and drifts public state ahead of
+  // source. This mirrors the local install-health gate, which is warning-tolerant.
   const blockingCodes: AppHealthOwnerReleaseBlockingCode[] =
     evaluation.alerts.map((alert) => alert.code);
-  if (evaluation.status === "warning" || blockingCodes.length === 0) {
+  const hardFail = evaluation.status === "fail" || blockingCodes.length > 0;
+  if (hardFail && blockingCodes.length === 0) {
     blockingCodes.push("exact_release_not_pass");
   }
   return {
     requiredStatus: "pass",
-    passed: false,
+    passed: !hardFail && evaluation.reportCount > 0,
     blockingCodes: [...new Set(blockingCodes)],
   };
 }

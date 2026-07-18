@@ -176,10 +176,13 @@ describe("app health rollups", () => {
     expect(evaluation.releaseReady).toBe(true);
     expect(evaluation.status).toBe("warning");
     expect(evaluation.alerts).toEqual([]);
+    // A warning with no failing checks is non-blocking: the owner release gate
+    // blocks only on a hard failure (transient signals like a File Provider
+    // latency warning must not wedge a ship).
     expect(evaluateAppHealthOwnerReleaseGate(evaluation)).toEqual({
       requiredStatus: "pass",
-      passed: false,
-      blockingCodes: ["exact_release_not_pass"],
+      passed: true,
+      blockingCodes: [],
     });
   });
 

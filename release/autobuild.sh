@@ -62,9 +62,22 @@ kill_process_tree() {
 
 log "autobuild started (git-derived); HEAD $(git rev-parse --short HEAD)"
 
+# A commit that fails to ship MAX_FAILS times in a row is HELD: stop re-shipping
+# it (each retry is a full paid build + notarize + deploy) until a NEW commit
+# lands. This prevents an unbounded paid-retry loop drifting public state for
+# hours on a deterministic failure. A held commit is released the moment HEAD
+# advances (a fix or any new commit).
+MAX_FAILS=3
+last_failed_head=""
+fail_count=0
+held_head=""
+
 while true; do
   sleep "$POLL"
   needs_ship || continue
+  if [ -n "$held_head" ] && [ "$(git rev-parse HEAD)" = "$held_head" ]; then
+    continue # this commit failed repeatedly; wait for a new commit
+  fi
   if ! clean; then
     continue # work in progress; wait for the commit
   fi
@@ -119,7 +132,19 @@ while true; do
     log "shipped $ver and pushed"
   else
     restore_bump
-    log "ship $ver FAILED (exit $ship_rc); bump restored, retrying in ${FAIL_BACKOFF}s"
-    sleep "$FAIL_BACKOFF"
+    if [ "$stable" = "$last_failed_head" ]; then
+      fail_count=$((fail_count + 1))
+    else
+      last_failed_head="$stable"
+      fail_count=1
+    fi
+    if [ "$fail_count" -ge "$MAX_FAILS" ]; then
+      held_head="$stable"
+      log "ship $ver FAILED (exit $ship_rc) ${fail_count}x on HEAD $stable; HOLDING this commit, not retrying until a new commit lands (each retry is a paid build). Owner action needed."
+      osascript -e "display notification \"Ship of $ver failed ${fail_count}x; holding $stable. Fix the cause and commit.\" with title \"Write autobuild\"" >/dev/null 2>&1 || true
+    else
+      log "ship $ver FAILED (exit $ship_rc) ${fail_count}/${MAX_FAILS} on HEAD $stable; bump restored, retrying in ${FAIL_BACKOFF}s"
+      sleep "$FAIL_BACKOFF"
+    fi
   fi
 done

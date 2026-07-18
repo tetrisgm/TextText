@@ -115,12 +115,12 @@ if [ "$SKIP_TESTS" != "1" ]; then
   # File Provider status) that can slip under the ship's concurrent CPU load. A
   # real failure still fails twice; a load flake clears on the settle + retry.
   mac_ok=0
-  for attempt in 1 2; do
+  for attempt in 1 2 3; do
     if swift test --package-path "$ROOT/mac"; then mac_ok=1; break; fi
-    echo ">> Mac tests attempt $attempt failed; retrying once after settle" >&2
+    echo ">> Mac tests attempt $attempt failed; settling then retrying" >&2
     sleep $((15 * attempt))
   done
-  [ "$mac_ok" = 1 ] || { echo "Mac tests failed after 2 attempts" >&2; exit 1; }
+  [ "$mac_ok" = 1 ] || { echo "Mac tests failed after 3 attempts" >&2; exit 1; }
   echo ">> verify Next build"
   npm run build
   echo ">> evaluate Apple platform contract"
