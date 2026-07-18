@@ -10,12 +10,13 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
-    // The suite runs 70+ files in parallel and a few tests spawn Node
-    // subprocesses (e.g. the native-tool-contract parity check) or do heavy
-    // setup. The 5s/10s defaults are too tight under that parallel load and
-    // produce false timeout failures in the autobuild ship gate even though
-    // every assertion passes in isolation. Give the suite generous headroom.
-    testTimeout: 30000,
-    hookTimeout: 30000,
+    // The suite runs 70+ files and a few tests spawn Node subprocesses (e.g.
+    // the native-tool-contract parity check) or do heavy setup. Under heavy
+    // concurrent machine load (a parallel Codex build on another project, a
+    // ship in flight) imports and hooks can run 10x+ slower, so even 30s
+    // produced false timeout failures in the autobuild ship gate. Give very
+    // generous headroom; the ship gate also serialises files and retries.
+    testTimeout: 120000,
+    hookTimeout: 120000,
   },
 });
