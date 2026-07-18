@@ -140,7 +140,12 @@ let package = Package(
         ),
         .testTarget(
             name: "WriteTests",
-            dependencies: ["Write"],
+            dependencies: [
+                "Write",
+                "WriteFileProviderExtensionCore",
+                "WriteFileProviderBridge",
+                "WriteFileProviderKit",
+            ],
             path: "Tests/WriteTests"
         ),
         .testTarget(
