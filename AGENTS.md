@@ -56,20 +56,23 @@ agent working here follows:
 
 # Changelog (binding)
 
-Ramine reads a running changelog INSIDE Write: the "Write Changelog" note in his
-workspace (Shoku's Space / My Notes), which is the canonical, user-facing copy.
-The repo mirror is `Notes/write-changelog.md` (body-only, no frontmatter).
+Ramine reads a running changelog INSIDE Write. It is NOT a repo file: the
+changelog is the "Write Changelog" note in his workspace (Shoku's Space / My
+Notes), and that note IS the single source of truth. It is content, so it lives
+in the product, in the product's own format (a `.textpack`, whose inner
+`text.md` is markdown). Do not add a parallel `.md` copy in the repo; that
+drifts and violates the "content is a note" rule.
 
-Every unit of meaningful, user-facing work appends a newest-on-top entry to
-`Notes/write-changelog.md`, in the SAME commit as the work (not separate, not
-later). Group by shipped version; plain language you can act on ("type # in the
-tag field to..."), sentence case, no em dashes, no engineering detail.
+Every unit of meaningful, user-facing work prepends a newest-on-top entry to
+that note. Group by shipped version; plain language you can act on ("type # in
+the tag field to..."), sentence case, no em dashes, no engineering detail.
 Internal-only churn (refactors, test/infra fixes, release-pipeline tweaks) does
 not need an entry.
 
-The app note is updated from the repo mirror by a Mac-side step (the owner or the
-integrator), since only a process on the owner's Mac can write the File Provider
-mount. To update the note by hand: unzip
+Only a process on the owner's Mac can write the File Provider mount, so the
+owner or the integrator updates the note (Codex in a sandbox cannot reach it and
+should instead put its user-facing entry in its final report for the integrator
+to prepend). To edit by hand: unzip
 `~/Library/CloudStorage/Write-Write/Shoku's Space/My Notes/Write Changelog.textpack`,
 edit the inner `text.md` body (preserve the frontmatter block byte-for-byte),
 rezip preserving the `.textbundle` structure, and copy it back over the same
