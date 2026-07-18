@@ -121,7 +121,7 @@ describe("native assistant submissions", () => {
       kind: "fallback",
       message: {
         role: "assistant",
-        text: "The on-device model is still downloading. Try again in a few minutes.",
+        text: "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Write will use it as soon as it is ready.",
       },
     });
     expect(retryNative).toHaveBeenCalledTimes(2);
@@ -129,7 +129,7 @@ describe("native assistant submissions", () => {
     expect(onPreparing).toHaveBeenNthCalledWith(2, "downloading", 2, 2);
     expect(result?.kind === "fallback" && result.message).toEqual({
       role: "assistant",
-      text: "The on-device model is still downloading. Try again in a few minutes.",
+      text: "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Write will use it as soon as it is ready.",
     });
   });
 

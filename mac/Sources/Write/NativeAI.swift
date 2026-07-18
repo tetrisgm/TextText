@@ -225,7 +225,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 case .appleIntelligenceNotEnabled:
                     return "The on-device model is unavailable because Apple Intelligence is turned off. Enable it in System Settings, then try again, or add a cloud AI key in Workspace Settings."
                 case .modelNotReady:
-                    return "The on-device model is still downloading. Write will retry automatically, or you can add a cloud AI key in Workspace Settings."
+                    return "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Write will keep checking until it is ready."
                 @unknown default:
                     return "The on-device model is unavailable right now. Try again later, or add a cloud AI key in Workspace Settings."
                 }

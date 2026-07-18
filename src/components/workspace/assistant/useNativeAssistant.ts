@@ -155,6 +155,23 @@ const TOOL_PROGRESS_LABELS: Record<string, string> = {
   set_item_status: "Changing publish status",
 };
 
+const MODEL_READINESS_POLL_MS = 10_000;
+
+function sameNativeCapabilities(
+  left: NativeAICapabilities | null,
+  right: NativeAICapabilities,
+): boolean {
+  return (
+    left?.available === right.available &&
+    left?.reason === right.reason &&
+    left?.os === right.os &&
+    left?.ocr === right.ocr &&
+    left?.imageUnderstanding === right.imageUnderstanding &&
+    (left?.textOps ?? []).join("\u0000") ===
+      (right.textOps ?? []).join("\u0000")
+  );
+}
+
 // ---- Per-context transcript store (module scope, sessionStorage mirror) ----
 
 const MAX_MESSAGES_PER_THREAD = 200;
@@ -270,9 +287,7 @@ function proposalEdit(
   return edit;
 }
 
-type NativeQuickActionResult = Awaited<
-  ReturnType<typeof runNativeQuickAction>
->;
+type NativeQuickActionResult = Awaited<ReturnType<typeof runNativeQuickAction>>;
 
 function appendQuickActionResult(
   thread: string,
@@ -323,8 +338,9 @@ export function useNativeAssistant({
   applyItemPatch,
   confirmDestructive,
 }: UseNativeAssistantOptions) {
-  const [capabilities, setCapabilities] =
-    useState<NativeAICapabilities | null>(null);
+  const [capabilities, setCapabilities] = useState<NativeAICapabilities | null>(
+    null,
+  );
   const [cloudProvider, setCloudProvider] =
     useState<CloudAssistantProviderLabel | null>(null);
   const getPoolRef = useRef(getPool);
@@ -369,6 +385,14 @@ export function useNativeAssistant({
     [applyItemPatch, confirmDestructive, getPool, handle, readItemText],
   );
 
+  const refreshCapabilities = useCallback(async () => {
+    const result = await nativeAICapabilities();
+    setCapabilities((current) =>
+      sameNativeCapabilities(current, result) ? current : result,
+    );
+    return result;
+  }, []);
+
   // Registration is deliberately sticky (no unregister on unmount): a job
   // started here must keep executing its tool calls while the user is on the
   // full-editor route, where this shell is unmounted. The pool store and the
@@ -380,12 +404,36 @@ export function useNativeAssistant({
   useEffect(() => {
     let cancelled = false;
     void nativeAICapabilities().then((result) => {
-      if (!cancelled) setCapabilities(result);
+      if (!cancelled) {
+        setCapabilities((current) =>
+          sameNativeCapabilities(current, result) ? current : result,
+        );
+      }
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (capabilities?.reason !== "modelNotReady") return;
+
+    const check = () => {
+      void refreshCapabilities().catch(() => undefined);
+    };
+    const interval = window.setInterval(check, MODEL_READINESS_POLL_MS);
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [capabilities?.reason, refreshCapabilities]);
 
   useEffect(() => {
     let cancelled = false;
@@ -467,7 +515,7 @@ export function useNativeAssistant({
   );
 
   const recoverNativeAssetFailure = useCallback(
-    async <T,>({
+    async <T>({
       error,
       jobId,
       prompt,
@@ -502,8 +550,8 @@ export function useNativeAssistant({
         onPreparing: (state, attempt, maximumAttempts) => {
           const activity =
             state === "downloading"
-              ? "Downloading the on-device model"
-              : "Preparing the on-device model";
+              ? "Waiting for macOS to prepare Apple Intelligence"
+              : "Preparing Apple Intelligence on this Mac";
           if (!preparationAnnounced) {
             preparationAnnounced = true;
             appendToThread(thread, "progress", activity);
@@ -535,27 +583,20 @@ export function useNativeAssistant({
   );
 
   const submit = useCallback(
-    async (
-      text: string,
-      attachments: readonly AssistantAttachment[] = [],
-    ) => {
+    async (text: string, attachments: readonly AssistantAttachment[] = []) => {
       const prompt = text.trim();
       // One request per thread at a time; different threads run in parallel.
       // Replies and job updates land in the thread that asked, even if the
       // user navigates away while the model works.
       const thread = threadKey;
-      if (
-        (!prompt && attachments.length === 0) ||
-        busyThreads.has(thread)
-      ) {
+      if ((!prompt && attachments.length === 0) || busyThreads.has(thread)) {
         return;
       }
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
       const submittedView = getViewRef.current();
       let fallbackPrompt = prompt;
-      let retryNativeAgent:
-        | (() => ReturnType<typeof nativeAgent>)
-        | null = null;
+      let retryNativeAgent: (() => ReturnType<typeof nativeAgent>) | null =
+        null;
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
       const jobId = startAssistantJob({
@@ -623,11 +664,7 @@ export function useNativeAssistant({
           : null;
         if (recovery) {
           if (recovery.kind === "recovered") {
-            appendToThread(
-              thread,
-              "assistant",
-              recovery.value.text || "Done.",
-            );
+            appendToThread(thread, "assistant", recovery.value.text || "Done.");
           }
           updateAssistantJob(jobId, { status: "done" });
           return;
@@ -668,8 +705,7 @@ export function useNativeAssistant({
       setThreadBusy(thread, true);
       let fallbackPrompt = `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
       let retryNativeAction:
-        | (() => ReturnType<typeof runNativeQuickAction>)
-        | null = null;
+        (() => ReturnType<typeof runNativeQuickAction>) | null = null;
       try {
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
@@ -970,6 +1006,7 @@ export function useNativeAssistant({
     jobs,
     messages,
     quickActions,
+    refreshCapabilities,
     runQuickAction,
     runningJobs,
     skills,

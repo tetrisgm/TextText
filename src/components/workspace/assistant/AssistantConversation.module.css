@@ -21,6 +21,81 @@
   letter-spacing: 0;
 }
 
+.modelStatus {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 8px;
+  padding: 11px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+}
+
+.modelStatusHeading,
+.modelStatusFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modelStatusHeading {
+  font: 650 var(--ac-fs-footnote) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.modelStatusLocation {
+  flex-shrink: 0;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+}
+
+.modelStatusBody {
+  margin: 0;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-footnote) / 1.42 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.modelStatusProgress {
+  width: 100%;
+  height: 4px;
+  accent-color: var(--ac-accent);
+}
+
+.modelStatusFooter {
+  align-items: baseline;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
+  letter-spacing: 0;
+}
+
+.modelStatusFooter button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: transparent;
+  color: var(--ac-accent);
+  font: 650 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.modelStatusFooter button:hover:not(:disabled) {
+  background: var(--ac-fill-3);
+}
+
+.modelStatusFooter button:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.modelStatusFooter button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .examples {
   margin-top: 6px;
   display: grid;
@@ -342,12 +417,18 @@
 }
 
 @keyframes assistant-job-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .examples button,
+  .modelStatusFooter button,
   .quickAction,
   .jobRow {
     transition: none;
@@ -376,7 +457,8 @@
 .jobMeta {
   overflow: hidden;
   color: var(--ac-label-2);
-  font: 500 var(--ac-fs-caption2, var(--ac-fs-caption1)) / 1.3 var(--ac-font-text);
+  font: 500 var(--ac-fs-caption2, var(--ac-fs-caption1)) / 1.3
+    var(--ac-font-text);
   letter-spacing: 0;
   text-overflow: ellipsis;
   white-space: nowrap;

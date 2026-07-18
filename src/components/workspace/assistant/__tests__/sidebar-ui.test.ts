@@ -205,6 +205,42 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("Thinking on this Mac");
   });
 
+  it("shows honest system-managed readiness without claiming cloud execution", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        capabilities: {
+          available: false,
+          reason: "modelNotReady",
+          ocr: false,
+          imageUnderstanding: false,
+        },
+        messages: [
+          {
+            id: "legacy-model-message",
+            role: "assistant",
+            text: "The on-device model is still downloading. Try again in a few minutes.",
+          },
+        ],
+        submitting: false,
+        onRefreshCapabilities: async () => ({
+          available: false,
+          reason: "modelNotReady" as const,
+          ocr: false,
+          imageUnderstanding: false,
+        }),
+      }),
+    );
+
+    expect(html).toContain("Preparing Apple Intelligence");
+    expect(html).toContain("On this Mac");
+    expect(html).toContain("Apple Intelligence runs locally");
+    expect(html).toContain("Exact progress is not exposed to apps");
+    expect(html).toContain("<progress");
+    expect(html).toContain(">Check now<");
+    expect(html).not.toContain("still downloading");
+    expect(html).not.toContain("off this Mac");
+  });
+
   it("offers concise prompt starters that fill the composer", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
@@ -244,9 +280,7 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain(
-      'aria-label="Context: Draft, Selected body text"',
-    );
+    expect(html).toContain('aria-label="Context: Draft, Selected body text"');
     expect(html).toContain(
       'title="Attachments require the on-device assistant"',
     );

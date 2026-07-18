@@ -56,7 +56,7 @@ export function unavailableExplanation(
     case "appleIntelligenceNotEnabled":
       return "Apple Intelligence is turned off. Enable it in System Settings, then try again.";
     case "modelNotReady":
-      return "The on-device model is still downloading. Try again in a few minutes.";
+      return "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Write will use it as soon as it is ready.";
     case "deviceNotEligible":
       return "This Mac does not support Apple Intelligence.";
     case "osTooOld":

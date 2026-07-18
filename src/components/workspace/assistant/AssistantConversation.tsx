@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeAICapabilities } from "@/lib/ai/native";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
+import { unavailableExplanation } from "./unavailable-fallback";
 import styles from "./AssistantConversation.module.css";
 
 const PROMPT_STARTERS = [
@@ -13,6 +14,75 @@ const PROMPT_STARTERS = [
   { label: "Summarize page", prompt: "Summarize this page" },
   { label: "Draft follow-ups", prompt: "Draft three related posts" },
 ] as const;
+
+const LEGACY_MODEL_NOT_READY_COPY =
+  "The on-device model is still downloading. Try again in a few minutes.";
+
+function displayedMessageText(message: AssistantMessage): string {
+  if (message.text === LEGACY_MODEL_NOT_READY_COPY) {
+    return unavailableExplanation({
+      available: false,
+      reason: "modelNotReady",
+      ocr: false,
+      imageUnderstanding: false,
+    });
+  }
+  if (message.text === "Downloading the on-device model") {
+    return "Waiting for macOS to prepare Apple Intelligence";
+  }
+  if (message.text === "Preparing the on-device model") {
+    return "Preparing Apple Intelligence on this Mac";
+  }
+  return message.text;
+}
+
+function NativeModelReadiness({
+  capabilities,
+  onRefresh,
+}: {
+  capabilities: NativeAICapabilities | null;
+  onRefresh?: () => Promise<NativeAICapabilities>;
+}) {
+  const [checking, setChecking] = useState(false);
+  if (capabilities?.reason !== "modelNotReady") return null;
+
+  return (
+    <section className={styles.modelStatus} aria-label="On-device model status">
+      <div className={styles.modelStatusHeading}>
+        <span>Preparing Apple Intelligence</span>
+        <span className={styles.modelStatusLocation}>On this Mac</span>
+      </div>
+      <p className={styles.modelStatusBody}>
+        Apple Intelligence runs locally. macOS installs and manages its model
+        separately from Write, so first use can require a system download.
+      </p>
+      <progress
+        className={styles.modelStatusProgress}
+        aria-label="macOS is preparing the on-device model"
+      />
+      <div className={styles.modelStatusFooter}>
+        <span>
+          macOS is preparing it automatically. Exact progress is not exposed to
+          apps.
+        </span>
+        {onRefresh && (
+          <button
+            type="button"
+            disabled={checking}
+            onClick={() => {
+              setChecking(true);
+              void onRefresh()
+                .catch(() => undefined)
+                .finally(() => setChecking(false));
+            }}
+          >
+            {checking ? "Checking..." : "Check now"}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
 
 // The transcript inside the assistant sidebar: user and assistant turns,
 // lightweight progress rows while the on-device model drives tools, a jobs
@@ -27,6 +97,7 @@ export function AssistantConversation({
   submitting,
   onApplyProposal,
   onOpenJob,
+  onRefreshCapabilities,
   onUsePrompt,
   onQuickAction,
   onUndoProposal,
@@ -44,6 +115,7 @@ export function AssistantConversation({
   submitting: boolean;
   onApplyProposal?: (messageId: string) => Promise<void> | void;
   onOpenJob?: (job: AssistantJob) => void;
+  onRefreshCapabilities?: () => Promise<NativeAICapabilities>;
   onUsePrompt?: (prompt: string) => void;
   onQuickAction?: (action: NativeQuickActionId) => Promise<void> | void;
   onUndoProposal?: (messageId: string) => Promise<void> | void;
@@ -55,6 +127,12 @@ export function AssistantConversation({
   }, [messages.length, submitting]);
 
   const visibleJobs = (jobs ?? []).slice(0, 6);
+  const nativeModelReadiness = (
+    <NativeModelReadiness
+      capabilities={capabilities}
+      onRefresh={onRefreshCapabilities}
+    />
+  );
   const quickActionBar =
     quickActions && quickActions.length > 0 ? (
       <div className={styles.quickActions} aria-label="Assistant actions">
@@ -106,6 +184,7 @@ export function AssistantConversation({
       <div className={styles.empty}>
         {jobsStrip}
         {quickActionBar}
+        {nativeModelReadiness}
         <p className={styles.emptyTitle}>
           {capabilities?.available
             ? "Private on this Mac"
@@ -120,7 +199,7 @@ export function AssistantConversation({
               }`
             : cloudProvider
               ? `${cloudProvider} is configured as an off-device fallback. It runs only when Apple's private on-device model is unavailable.`
-              : "Open the Mac app to use Apple's private, offline model."}
+              : unavailableExplanation(capabilities)}
         </p>
         {onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">
@@ -160,11 +239,12 @@ export function AssistantConversation({
     >
       {jobsStrip}
       {quickActionBar}
+      {nativeModelReadiness}
       {messages.map((message) => {
         if (message.role === "progress") {
           return (
             <div key={message.id} className={styles.progress} role="status">
-              {message.text}
+              {displayedMessageText(message)}
             </div>
           );
         }
@@ -197,7 +277,9 @@ export function AssistantConversation({
                     proposal.afterTags.map((tag) => (
                       <span
                         key={tag}
-                        data-added={proposal.addedTags.includes(tag) || undefined}
+                        data-added={
+                          proposal.addedTags.includes(tag) || undefined
+                        }
                       >
                         #{tag}
                       </span>
@@ -216,7 +298,9 @@ export function AssistantConversation({
                     <pre>{proposal.before || "Empty"}</pre>
                   </div>
                   <div className={styles.proposalValue} data-kind="after">
-                    <span className={styles.proposalValueLabel}>Replacement</span>
+                    <span className={styles.proposalValueLabel}>
+                      Replacement
+                    </span>
                     <pre>{proposal.after || "Empty"}</pre>
                   </div>
                 </div>
@@ -284,7 +368,7 @@ export function AssistantConversation({
                 Answered by {message.provider} (off this Mac)
               </span>
             )}
-            <span>{message.text}</span>
+            <span>{displayedMessageText(message)}</span>
           </div>
         );
       })}

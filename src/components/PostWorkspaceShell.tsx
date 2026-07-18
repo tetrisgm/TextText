@@ -7006,6 +7006,7 @@ function LocalWorkspaceShell({
               navigatePath(job.contextKey.slice("place:".length));
             }
           }}
+          onRefreshCapabilities={assistant.refreshCapabilities}
           onUsePrompt={assistantComposer.setText}
           onQuickAction={assistant.runQuickAction}
           onUndoProposal={assistant.undoProposal}

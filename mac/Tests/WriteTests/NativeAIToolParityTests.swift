@@ -57,7 +57,7 @@ final class NativeAIToolParityTests: XCTestCase {
 
             XCTAssertNil(NativeAIBridge.unavailableModelMessage(for: .available))
             XCTAssertTrue(disabled?.contains("Enable it in System Settings") == true)
-            XCTAssertTrue(downloading?.contains("still downloading") == true)
+            XCTAssertTrue(downloading?.contains("macOS is preparing") == true)
             XCTAssertTrue(ineligible?.contains("does not support") == true)
             XCTAssertTrue(disabled?.contains("cloud AI key") == true)
         }
