@@ -93,7 +93,9 @@
 }
 
 .nameForm input,
-.install input {
+.install input,
+.aiForm input,
+.aiForm select {
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--ac-separator);
@@ -106,9 +108,59 @@
 
 .nameForm input:focus-visible,
 .install input:focus-visible,
+.aiForm input:focus-visible,
+.aiForm select:focus-visible,
 .back:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
+}
+
+.aiForm {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.45fr) minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.aiForm label {
+  display: grid;
+  gap: 7px;
+  color: var(--ac-label-2);
+  font: 600 12px/1.2 var(--ac-font-text);
+}
+
+.aiForm select {
+  appearance: auto;
+}
+
+.aiStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.aiStatus > span {
+  display: grid;
+  gap: 3px;
+}
+
+.aiStatus strong {
+  color: var(--ac-label);
+  font: 650 14px/1.25 var(--ac-font-text);
+}
+
+.aiStatus small,
+.aiNotConfigured {
+  color: var(--ac-label-2);
+  font: 500 12px/1.4 var(--ac-font-text);
+}
+
+.aiActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .skills {
@@ -264,11 +316,13 @@
   }
 
   .nameForm,
-  .install {
+  .install,
+  .aiForm {
     grid-template-columns: 1fr;
   }
 
   .sectionHeader,
+  .aiStatus,
   .connect :global(.connect-form),
   .connect :global(.connect-fresh-row),
   .connect :global(.connect-row-actions),

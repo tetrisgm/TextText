@@ -1,9 +1,6 @@
-// Cloud assistant rung (BYO-cloud via Vercel AI Gateway). The web assistant, when
-// the on-device model is unavailable, runs a turn here: the cloud model answers
-// and calls the same workspace commands as the MCP server, through
-// runWorkspaceToolForSession, so every privacy/audit/permission invariant is
-// inherited. Off by default: disabled unless AI_GATEWAY_API_KEY is set (owner,
-// env). Local-first: the client only falls back here when the bridge is absent.
+// Cloud assistant rung. A workspace key uses its provider directly; the owner's
+// server AI Gateway key remains the default fallback. Both paths are off until
+// explicitly configured, and both call the same filtered workspace tools.
 //
 // MVP: non-streaming (returns the final reply). The cloud tool set excludes
 // confirmation-gated destructive/sharing/publish tools until an interactive
@@ -11,14 +8,24 @@
 
 import { generateText, stepCountIs } from "ai";
 import type { ModelMessage } from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { getCurrentUser } from "@/lib/session";
 import { getOwnedBlog, getUserIdBySub } from "@/lib/store";
 import { cloudAssistantTools } from "@/lib/ai/cloud-tools";
+import { cloudEnabled } from "@/lib/ai/cloud-gate";
+import {
+  cloudProviderLabel,
+  getWorkspaceAiConfigForOwner,
+  getWorkspaceAiConfigStatusForOwner,
+} from "@/lib/ai/workspace-ai-config.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MODEL = "anthropic/claude-sonnet-5";
+const GATEWAY_MODEL = "anthropic/claude-sonnet-5";
+const ANTHROPIC_MODEL = "claude-sonnet-5";
+const OPENAI_MODEL = "gpt-5.5";
 const MAX_STEPS = 8;
 const MAX_HISTORY = 20;
 // Bound one request's input tokens: a single oversized message cannot balloon
@@ -58,10 +65,6 @@ const SYSTEM =
   "publishing) are not available to you; if the user asks for one, say they can do " +
   "it from the app's own controls.";
 
-function cloudEnabled(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY);
-}
-
 function coerceMessages(value: unknown): ModelMessage[] {
   if (!Array.isArray(value)) return [];
   const messages: ModelMessage[] = [];
@@ -98,21 +101,24 @@ function buildSystem(context: unknown): string {
   return bits.length ? `${SYSTEM}\n\nCurrent view: ${bits.join(", ")}.` : SYSTEM;
 }
 
-// Probe: reports whether the cloud fallback would run for this caller (key set
-// and signed in). The client may use it to decide whether to surface the cloud
-// assistant; enabling the rung is the owner's env-level opt-in.
 export async function GET() {
   const user = await getCurrentUser();
-  return Response.json({ enabled: cloudEnabled() && Boolean(user) });
+  if (!user) return Response.json({ enabled: false, provider: null });
+  const workspace = await getOwnedBlog(user.sub);
+  if (!workspace) return Response.json({ enabled: false, provider: null });
+  const status = await getWorkspaceAiConfigStatusForOwner(user.sub);
+  const enabled = status.configured || Boolean(process.env.AI_GATEWAY_API_KEY);
+  return Response.json({
+    enabled,
+    provider: enabled
+      ? status.provider
+        ? cloudProviderLabel(status.provider)
+        : "Anthropic"
+      : null,
+  });
 }
 
 export async function POST(request: Request) {
-  if (!cloudEnabled()) {
-    return Response.json(
-      { error: "The cloud assistant is not enabled." },
-      { status: 404 },
-    );
-  }
   const user = await getCurrentUser();
   if (!user) {
     return Response.json(
@@ -128,6 +134,13 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "You do not have a workspace to assist with." },
       { status: 403 },
+    );
+  }
+  const config = await getWorkspaceAiConfigForOwner(user.sub);
+  if (!cloudEnabled(config)) {
+    return Response.json(
+      { error: "The cloud assistant is not enabled." },
+      { status: 404 },
     );
   }
   if (rateLimited(user.sub)) {
@@ -150,18 +163,26 @@ export async function POST(request: Request) {
 
   const userId = user.userId ?? (await getUserIdBySub(user.sub));
   const actor = { sub: user.sub, userId: userId ?? null };
+  const provider = config ? cloudProviderLabel(config.provider) : "Anthropic";
+  const model = config
+    ? config.provider === "anthropic"
+      ? createAnthropic({ apiKey: config.apiKey })(ANTHROPIC_MODEL)
+      : createOpenAI({ apiKey: config.apiKey })(OPENAI_MODEL)
+    : GATEWAY_MODEL;
 
   try {
     const result = await generateText({
-      model: MODEL,
+      model,
       system: buildSystem(body.context),
       messages,
       tools: cloudAssistantTools(actor),
       stopWhen: stepCountIs(MAX_STEPS),
     });
-    return Response.json({ text: result.text });
-  } catch (error) {
-    console.error("cloud assistant turn failed", error);
+    return Response.json({ text: result.text, provider });
+  } catch {
+    // Provider errors can carry request metadata. Do not log the error object,
+    // because a user-supplied API key must never reach logs.
+    console.error("cloud assistant turn failed");
     return Response.json(
       { error: "The assistant could not complete that." },
       { status: 502 },

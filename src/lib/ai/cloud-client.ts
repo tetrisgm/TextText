@@ -1,9 +1,9 @@
-// Client for the cloud assistant fallback (POST /api/ai). Used on the plain web
-// when the on-device bridge is unavailable and the owner has enabled the cloud
-// rung (AI_GATEWAY_API_KEY set on the server). Local-first is preserved: this is
-// only reached after the on-device capability probe reports unavailable.
-//
-// MVP: a single text turn (no attachments/OCR yet), non-streaming.
+// Client for the opt-in cloud assistant fallback. The status probe exposes only
+// enabled/provider metadata, never the configured key. Content is posted only
+// after the native capability probe has failed and the server confirms a cloud
+// provider is configured for this owner.
+
+export type CloudAssistantProviderLabel = "Anthropic" | "OpenAI";
 
 export type CloudAssistantContext = {
   level?: string;
@@ -11,9 +11,31 @@ export type CloudAssistantContext = {
   postId?: string;
 };
 
+export type CloudAssistantStatus = {
+  enabled: boolean;
+  provider: CloudAssistantProviderLabel | null;
+};
+
 export type CloudAssistantOutcome =
-  | { text: string }
+  | { text: string; provider: CloudAssistantProviderLabel }
   | { disabled: true };
+
+export async function cloudAssistantStatus(): Promise<CloudAssistantStatus> {
+  const response = await fetch("/api/ai", {
+    method: "GET",
+    cache: "no-store",
+  });
+  if (!response.ok) return { enabled: false, provider: null };
+  const data = (await response.json()) as {
+    enabled?: unknown;
+    provider?: unknown;
+  };
+  const provider =
+    data.provider === "Anthropic" || data.provider === "OpenAI"
+      ? data.provider
+      : null;
+  return { enabled: data.enabled === true && Boolean(provider), provider };
+}
 
 export async function cloudAssistantTurn(
   prompt: string,
@@ -27,7 +49,7 @@ export async function cloudAssistantTurn(
       context,
     }),
   });
-  // 404 is the off-by-default gate: the owner has not enabled the cloud rung.
+  // 404 is the off-by-default gate: this owner has no configured cloud rung.
   if (response.status === 404) return { disabled: true };
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as {
@@ -35,6 +57,15 @@ export async function cloudAssistantTurn(
     } | null;
     throw new Error(data?.error || "The assistant could not finish that.");
   }
-  const data = (await response.json()) as { text?: unknown };
-  return { text: typeof data.text === "string" ? data.text : "" };
+  const data = (await response.json()) as {
+    text?: unknown;
+    provider?: unknown;
+  };
+  if (data.provider !== "Anthropic" && data.provider !== "OpenAI") {
+    throw new Error("The cloud provider could not be identified.");
+  }
+  return {
+    text: typeof data.text === "string" ? data.text : "",
+    provider: data.provider,
+  };
 }

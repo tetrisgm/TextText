@@ -5,6 +5,7 @@ import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeAICapabilities } from "@/lib/ai/native";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
+import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
 import styles from "./AssistantConversation.module.css";
 
 const PROMPT_STARTERS = [
@@ -17,7 +18,9 @@ const PROMPT_STARTERS = [
 // lightweight progress rows while the on-device model drives tools, a jobs
 // strip so background work stays visible from anywhere.
 export function AssistantConversation({
+  activeCloudProvider,
   capabilities,
+  cloudProvider,
   jobs,
   messages,
   quickActions,
@@ -28,7 +31,9 @@ export function AssistantConversation({
   onQuickAction,
   onUndoProposal,
 }: {
+  activeCloudProvider?: CloudAssistantProviderLabel | null;
   capabilities: NativeAICapabilities | null;
+  cloudProvider?: CloudAssistantProviderLabel | null;
   jobs?: AssistantJob[];
   messages: AssistantMessage[];
   quickActions?: ReadonlyArray<{
@@ -52,7 +57,7 @@ export function AssistantConversation({
   const visibleJobs = (jobs ?? []).slice(0, 6);
   const quickActionBar =
     quickActions && quickActions.length > 0 ? (
-      <div className={styles.quickActions} aria-label="On-device actions">
+      <div className={styles.quickActions} aria-label="Assistant actions">
         {quickActions.map((action) => (
           <button
             key={action.id}
@@ -108,8 +113,14 @@ export function AssistantConversation({
         </p>
         <p className={styles.emptyBody}>
           {capabilities?.available
-            ? "Answers and edits run on Apple's on-device model. Nothing leaves this Mac, and it works offline."
-            : "Open the Mac app to use Apple's private, offline model."}
+            ? `Answers and edits run on Apple's on-device model. Nothing leaves this Mac, and it works offline.${
+                cloudProvider
+                  ? ` ${cloudProvider} is configured as an off-device fallback and runs only if the on-device model is unavailable.`
+                  : ""
+              }`
+            : cloudProvider
+              ? `${cloudProvider} is configured as an off-device fallback. It runs only when Apple's private on-device model is unavailable.`
+              : "Open the Mac app to use Apple's private, offline model."}
         </p>
         {onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">
@@ -268,13 +279,20 @@ export function AssistantConversation({
                   : styles.assistantTurn
             }
           >
-            {message.text}
+            {message.provider && (
+              <span className={styles.providerLabel}>
+                Answered by {message.provider} (off this Mac)
+              </span>
+            )}
+            <span>{message.text}</span>
           </div>
         );
       })}
       {submitting && (
         <div className={styles.progress} role="status">
-          Thinking on this Mac
+          {activeCloudProvider
+            ? `Thinking with ${activeCloudProvider} (off this Mac)`
+            : "Thinking on this Mac"}
         </div>
       )}
       <div ref={endRef} aria-hidden="true" />

@@ -19,10 +19,12 @@
     "verify:workflows": "tsx scripts/verify-workflow-live.ts",
     "test": "vitest run",
     "db:cleanup-bookmark-html": "node scripts/cleanup-bookmark-html.mjs",
-    "db:push": "drizzle-kit push && node scripts/migrate-add-file-representation.mjs && node scripts/migrate-add-slug-history.mjs && node scripts/migrate-add-tags.mjs && node scripts/migrate-add-app-health.mjs && node scripts/migrate-add-oauth-token-lifecycle.mjs && node scripts/migrate-add-item-comments.mjs",
+    "db:push": "drizzle-kit push && node scripts/migrate-add-file-representation.mjs && node scripts/migrate-add-slug-history.mjs && node scripts/migrate-add-tags.mjs && node scripts/migrate-add-app-health.mjs && node scripts/migrate-add-oauth-token-lifecycle.mjs && node scripts/migrate-add-item-comments.mjs && node scripts/migrate-add-workspace-ai-config.mjs",
     "db:seed": "tsx src/lib/db/seed.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.15",
+    "@ai-sdk/openai": "^4.0.16",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@neondatabase/serverless": "^1.1.0",
     "@tiptap/core": "^2.27.2",

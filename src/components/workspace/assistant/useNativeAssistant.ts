@@ -12,9 +12,9 @@
 // route), and pool refreshes. A reply always lands in the thread that
 // SUBMITTED it, even if the user navigates elsewhere while the model works.
 //
-// When the bridge or model is unavailable (plain web, old macOS, Apple
-// Intelligence off) the transcript explains why instead of silently routing
-// workspace content to another provider.
+// When the bridge or model is unavailable, the hook uses the owner's explicit
+// cloud setting when present and otherwise explains the local state calmly.
+// Every cloud reply is marked as off-device in the transcript.
 
 import {
   useCallback,
@@ -25,15 +25,16 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
-  hasNativeAI,
-  isNativeModelAssetError,
   nativeAgent,
   nativeAICapabilities,
   registerNativeAgentTools,
   type NativeAICapabilities,
 } from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
-import { cloudAssistantTurn } from "@/lib/ai/cloud-client";
+import {
+  cloudAssistantStatus,
+  type CloudAssistantProviderLabel,
+} from "@/lib/ai/cloud-client";
 import {
   NATIVE_QUICK_ACTIONS,
   runNativeQuickAction,
@@ -76,6 +77,10 @@ import {
   appendAssistantSelectionContext,
   type AssistantViewSnapshot,
 } from "./context";
+import {
+  fallbackForNativeAssetError,
+  runUnavailableAssistantFallback,
+} from "./unavailable-fallback";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -114,6 +119,7 @@ export type AssistantMessage = {
   id: string;
   role: AssistantMessageRole;
   text: string;
+  provider?: CloudAssistantProviderLabel;
   proposal?: AssistantProposal;
 };
 
@@ -154,6 +160,7 @@ const TOOL_PROGRESS_LABELS: Record<string, string> = {
 const MAX_MESSAGES_PER_THREAD = 200;
 const transcripts = new Map<string, AssistantMessage[]>();
 const busyThreads = new Set<string>();
+const cloudProviderByThread = new Map<string, CloudAssistantProviderLabel>();
 const listeners = new Set<() => void>();
 let messageCounter = 0;
 
@@ -189,10 +196,11 @@ function appendToThread(
   role: AssistantMessageRole,
   text: string,
   proposal?: AssistantProposal,
+  provider?: CloudAssistantProviderLabel,
 ) {
   const next = [
     ...threadFor(threadKey),
-    { id: nextMessageId(), role, text, proposal },
+    { id: nextMessageId(), role, text, proposal, provider },
   ].slice(-MAX_MESSAGES_PER_THREAD);
   transcripts.set(threadKey, next);
   try {
@@ -226,6 +234,15 @@ function setThreadBusy(threadKey: string, busy: boolean) {
   notify();
 }
 
+function setThreadCloudProvider(
+  threadKey: string,
+  provider: CloudAssistantProviderLabel | null,
+) {
+  if (provider) cloudProviderByThread.set(threadKey, provider);
+  else cloudProviderByThread.delete(threadKey);
+  notify();
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -253,28 +270,6 @@ function proposalEdit(
   return edit;
 }
 
-// ---- Unavailability copy ----
-
-function unavailableExplanation(
-  capabilities: NativeAICapabilities | null,
-): string {
-  if (!hasNativeAI()) {
-    return "The on-device assistant is available inside Write for Mac.";
-  }
-  switch (capabilities?.reason) {
-    case "appleIntelligenceNotEnabled":
-      return "Apple Intelligence is turned off. Enable it in System Settings, then try again.";
-    case "modelNotReady":
-      return "The on-device model is still downloading. Try again in a few minutes.";
-    case "deviceNotEligible":
-      return "This Mac does not support Apple Intelligence.";
-    case "osTooOld":
-      return "On-device AI needs macOS 26 or later.";
-    default:
-      return "On-device AI is unavailable right now.";
-  }
-}
-
 export function useNativeAssistant({
   handle,
   contextKey,
@@ -286,6 +281,8 @@ export function useNativeAssistant({
 }: UseNativeAssistantOptions) {
   const [capabilities, setCapabilities] =
     useState<NativeAICapabilities | null>(null);
+  const [cloudProvider, setCloudProvider] =
+    useState<CloudAssistantProviderLabel | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
   const readItemTextRef = useRef(readItemText);
@@ -308,6 +305,11 @@ export function useNativeAssistant({
     subscribe,
     () => busyThreads.has(threadKey),
     () => false,
+  );
+  const activeCloudProvider = useSyncExternalStore(
+    subscribe,
+    () => cloudProviderByThread.get(threadKey) ?? null,
+    () => null,
   );
 
   const tools = useMemo(
@@ -341,6 +343,22 @@ export function useNativeAssistant({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void cloudAssistantStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setCloudProvider(status.enabled ? status.provider : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCloudProvider(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const contextLabel = useCallback(() => {
     const view = getViewRef.current();
     if (view.level === "post" || view.level === "edit") {
@@ -359,6 +377,68 @@ export function useNativeAssistant({
     return "Workspace";
   }, []);
 
+  const runGracefulFallback = useCallback(
+    async ({
+      capabilities: current,
+      error,
+      jobId,
+      prompt,
+      thread,
+      view,
+    }: {
+      capabilities?: NativeAICapabilities;
+      error?: unknown;
+      jobId?: string;
+      prompt: string;
+      thread: string;
+      view: AssistantViewSnapshot;
+    }): Promise<boolean> => {
+      const context = {
+        level: view.level,
+        folderPath: view.folderPath,
+        postId: view.postId,
+      };
+      const onCloudStart = (provider: CloudAssistantProviderLabel) => {
+        setCloudProvider(provider);
+        setThreadCloudProvider(thread, provider);
+        if (jobId) {
+          updateAssistantJob(jobId, {
+            activity: `Thinking with ${provider}`,
+          });
+        }
+      };
+      const result =
+        error === undefined
+          ? {
+              capabilities: current ?? null,
+              message: await runUnavailableAssistantFallback({
+                capabilities: current ?? null,
+                context,
+                onCloudStart,
+                prompt,
+              }),
+            }
+          : await fallbackForNativeAssetError({
+              context,
+              error,
+              onCloudStart,
+              prompt,
+              reprobe: nativeAICapabilities,
+            });
+      if (!result) return false;
+      if (result.capabilities) setCapabilities(result.capabilities);
+      appendToThread(
+        thread,
+        result.message.role,
+        result.message.text,
+        undefined,
+        result.message.provider,
+      );
+      return true;
+    },
+    [],
+  );
+
   const submit = useCallback(
     async (
       text: string,
@@ -376,6 +456,8 @@ export function useNativeAssistant({
         return;
       }
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
+      const submittedView = getViewRef.current();
+      let fallbackPrompt = prompt;
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
       const jobId = startAssistantJob({
@@ -385,7 +467,6 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
-        const submittedView = getViewRef.current();
         const editingItem =
           submittedView.level === "edit" && submittedView.postId
             ? await readItemTextRef.current(submittedView.postId)
@@ -393,24 +474,18 @@ export function useNativeAssistant({
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
-          // On-device is unavailable (plain web / ineligible device). Fall back
-          // to the cloud assistant when the owner has enabled it; otherwise keep
-          // the on-device explanation. Local-first: this only runs after the
-          // on-device probe reports unavailable.
-          const outcome = await cloudAssistantTurn(prompt, {
-            level: submittedView.level,
-            folderPath: submittedView.folderPath,
-            postId: submittedView.postId,
+          await runGracefulFallback({
+            capabilities: current,
+            jobId,
+            prompt: fallbackPrompt,
+            thread,
+            view: submittedView,
           });
-          if ("disabled" in outcome) {
-            appendToThread(thread, "assistant", unavailableExplanation(current));
-          } else {
-            appendToThread(thread, "assistant", outcome.text || "Done.");
-          }
           updateAssistantJob(jobId, { status: "done" });
           return;
         }
         const prepared = await buildNativeAssistantPrompt(prompt, attachments);
+        fallbackPrompt = prepared.prompt;
         const baseContext = tools.describeContext(submittedView);
         const context = editingItem
           ? appendAssistantSelectionContext(baseContext, editingItem)
@@ -436,28 +511,31 @@ export function useNativeAssistant({
         appendToThread(thread, "assistant", reply.text || "Done.");
         updateAssistantJob(jobId, { status: "done" });
       } catch (error) {
-        let message =
-          error instanceof Error && error.message
-            ? error.message
-            : "The assistant could not finish that.";
-        if (isNativeModelAssetError(error)) {
-          const latest = await nativeAICapabilities();
-          setCapabilities(latest);
-          message = latest.available
-            ? "The Assistant could not complete that request. Try again."
-            : unavailableExplanation(latest);
+        const handled = await runGracefulFallback({
+          error,
+          jobId,
+          prompt: fallbackPrompt,
+          thread,
+          view: submittedView,
+        });
+        if (handled) {
+          updateAssistantJob(jobId, { status: "done" });
+          return;
         }
         appendToThread(
           thread,
           "error",
-          message,
+          error instanceof Error && error.message
+            ? error.message
+            : "The assistant could not finish that.",
         );
         updateAssistantJob(jobId, { status: "error" });
       } finally {
+        setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
     },
-    [contextKey, contextLabel, handle, threadKey, tools],
+    [contextKey, contextLabel, handle, runGracefulFallback, threadKey, tools],
   );
 
   const runQuickAction = useCallback(
@@ -470,6 +548,7 @@ export function useNativeAssistant({
         NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
           ?.label ?? action;
       setThreadBusy(thread, true);
+      let fallbackPrompt = `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
       try {
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
@@ -481,10 +560,18 @@ export function useNativeAssistant({
             ? `${actionLabel} selection`
             : actionLabel,
         );
+        if (selection && selectionAction) {
+          fallbackPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.\n\n${selection.text}`;
+        }
         const current = await nativeAICapabilities();
         setCapabilities(current);
         if (!current.available) {
-          appendToThread(thread, "assistant", unavailableExplanation(current));
+          await runGracefulFallback({
+            capabilities: current,
+            prompt: fallbackPrompt,
+            thread,
+            view,
+          });
           return;
         }
         if (current.textOps && !current.textOps.includes(action)) {
@@ -530,6 +617,13 @@ export function useNativeAssistant({
           status: "pending",
         });
       } catch (error) {
+        const handled = await runGracefulFallback({
+          error,
+          prompt: fallbackPrompt,
+          thread,
+          view,
+        });
+        if (handled) return;
         appendToThread(
           thread,
           "error",
@@ -538,10 +632,11 @@ export function useNativeAssistant({
             : "The on-device action could not finish.",
         );
       } finally {
+        setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
     },
-    [threadKey],
+    [runGracefulFallback, threadKey],
   );
 
   const applyProposalValue = useCallback(
@@ -702,10 +797,15 @@ export function useNativeAssistant({
 
   const textOps = capabilities?.textOps;
   const quickActions =
-    getView().postId && capabilities?.available
-      ? NATIVE_QUICK_ACTIONS.filter(
-          (action) => !textOps || textOps.includes(action.id),
-        )
+    getView().postId && (capabilities?.available || cloudProvider)
+      ? capabilities?.available
+        ? NATIVE_QUICK_ACTIONS.filter(
+            (action) => !textOps || textOps.includes(action.id),
+          )
+        : NATIVE_QUICK_ACTIONS.map((action) => ({
+            ...action,
+            description: `${action.label} with ${cloudProvider} off this Mac`,
+          }))
       : [];
   const attachmentsAvailable = capabilities?.available === true;
   const attachmentTitle = attachmentsAvailable
@@ -761,11 +861,13 @@ export function useNativeAssistant({
 
   return {
     addSkill,
+    activeCloudProvider,
     attachmentAccept: assistantAttachmentAccept(capabilities),
     attachmentsAvailable,
     attachmentTitle,
     applyProposal,
     capabilities,
+    cloudProvider,
     deleteSkill,
     jobs,
     messages,

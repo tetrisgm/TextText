@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
   ),
   getUserIdBySub: vi.fn(async () => "user-uuid"),
   cloudAssistantTools: vi.fn(() => ({ get_workspace: {} })),
+  getWorkspaceAiConfigForOwner: vi.fn(),
+  getWorkspaceAiConfigStatusForOwner: vi.fn(),
+  createAnthropic: vi.fn(() => vi.fn(() => "anthropic-model")),
+  createOpenAI: vi.fn(() => vi.fn(() => "openai-model")),
 }));
 
 vi.mock("ai", () => ({
@@ -22,6 +26,17 @@ vi.mock("@/lib/store", () => ({
 }));
 vi.mock("@/lib/ai/cloud-tools", () => ({
   cloudAssistantTools: mocks.cloudAssistantTools,
+}));
+vi.mock("@ai-sdk/anthropic", () => ({
+  createAnthropic: mocks.createAnthropic,
+}));
+vi.mock("@ai-sdk/openai", () => ({ createOpenAI: mocks.createOpenAI }));
+vi.mock("@/lib/ai/workspace-ai-config.server", () => ({
+  cloudProviderLabel: (provider: string) =>
+    provider === "anthropic" ? "Anthropic" : "OpenAI",
+  getWorkspaceAiConfigForOwner: mocks.getWorkspaceAiConfigForOwner,
+  getWorkspaceAiConfigStatusForOwner:
+    mocks.getWorkspaceAiConfigStatusForOwner,
 }));
 
 import { GET, POST } from "@/app/api/ai/route";
@@ -41,6 +56,11 @@ describe("/api/ai cloud assistant route", () => {
     process.env.AI_GATEWAY_API_KEY = "test-key";
     mocks.getCurrentUser.mockResolvedValue(user);
     mocks.getOwnedBlog.mockResolvedValue({ handle: "demo-blog" });
+    mocks.getWorkspaceAiConfigForOwner.mockResolvedValue(null);
+    mocks.getWorkspaceAiConfigStatusForOwner.mockResolvedValue({
+      configured: false,
+      provider: null,
+    });
     mocks.generateText.mockResolvedValue({ text: "Here is a summary." });
   });
   afterEach(() => {
@@ -77,7 +97,10 @@ describe("/api/ai cloud assistant route", () => {
   it("runs a turn with the workspace tools and returns the reply", async () => {
     const res = await POST(post(turn));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ text: "Here is a summary." });
+    expect(await res.json()).toEqual({
+      text: "Here is a summary.",
+      provider: "Anthropic",
+    });
     // The session actor is threaded into the tool factory.
     expect(mocks.cloudAssistantTools).toHaveBeenCalledWith({
       sub: "editor-sub",
@@ -92,6 +115,26 @@ describe("/api/ai cloud assistant route", () => {
     ]);
   });
 
+  it("uses a workspace OpenAI key directly when the gateway key is absent", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
+    mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({
+      provider: "openai",
+      apiKey: "workspace-secret-key",
+    });
+
+    const res = await POST(post(turn));
+
+    expect(res.status).toBe(200);
+    expect(mocks.createOpenAI).toHaveBeenCalledWith({
+      apiKey: "workspace-secret-key",
+    });
+    expect(mocks.generateText.mock.calls[0][0].model).toBe("openai-model");
+    expect(await res.json()).toEqual({
+      text: "Here is a summary.",
+      provider: "OpenAI",
+    });
+  });
+
   it("maps a model failure to 502 without leaking details", async () => {
     mocks.generateText.mockRejectedValue(new Error("gateway exploded"));
     const res = await POST(post(turn));
@@ -100,7 +143,19 @@ describe("/api/ai cloud assistant route", () => {
   });
 
   it("GET reports enabled only when keyed and signed in", async () => {
-    expect((await (await GET()).json()).enabled).toBe(true);
+    expect(await (await GET()).json()).toEqual({
+      enabled: true,
+      provider: "Anthropic",
+    });
+    delete process.env.AI_GATEWAY_API_KEY;
+    mocks.getWorkspaceAiConfigStatusForOwner.mockResolvedValue({
+      configured: true,
+      provider: "openai",
+    });
+    expect(await (await GET()).json()).toEqual({
+      enabled: true,
+      provider: "OpenAI",
+    });
     mocks.getCurrentUser.mockResolvedValue(null);
     expect((await (await GET()).json()).enabled).toBe(false);
   });

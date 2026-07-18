@@ -135,6 +135,14 @@
   color: var(--ac-label);
 }
 
+.providerLabel {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ac-label-2);
+  font: 650 11px/1.25 var(--ac-font-text);
+  letter-spacing: 0.01em;
+}
+
 .errorTurn {
   justify-self: start;
   border: 1px solid var(--ac-hairline);

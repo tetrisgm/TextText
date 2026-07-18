@@ -2,11 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { updateBlogNameAction } from "@/app/editor/actions";
+import {
+  getWorkspaceAiSettingsAction,
+  removeWorkspaceAiSettingsAction,
+  saveWorkspaceAiSettingsAction,
+  type WorkspaceAiSettingsState,
+} from "@/app/editor/ai-config-actions";
 import { listApiTokensAction } from "@/app/editor/token-actions";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import type { AssistantSkill } from "@/lib/ai/skills";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
+import type { CloudAiProvider } from "@/lib/ai/workspace-ai-config.server";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
 import { ShareDialog } from "./ShareDialog";
 import styles from "./WorkspaceSettings.module.css";
@@ -38,6 +45,14 @@ export function WorkspaceSettings({
   const [installValue, setInstallValue] = useState("");
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [aiSettings, setAiSettings] =
+    useState<WorkspaceAiSettingsState | null>(null);
+  const [aiProvider, setAiProvider] =
+    useState<CloudAiProvider>("anthropic");
+  const [aiKey, setAiKey] = useState("");
+  const [aiEditing, setAiEditing] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +67,18 @@ export function WorkspaceSettings({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getWorkspaceAiSettingsAction(blog.handle).then((next) => {
+      if (cancelled) return;
+      setAiSettings(next);
+      if (next.provider) setAiProvider(next.provider);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [blog.handle]);
 
   const saveName = async () => {
     const clean = name.trim().replace(/\s+/g, " ");
@@ -84,6 +111,45 @@ export function WorkspaceSettings({
       );
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const saveAi = async () => {
+    if (!aiKey.trim() || aiSaving) return;
+    setAiSaving(true);
+    setAiError(null);
+    try {
+      const next = await saveWorkspaceAiSettingsAction(
+        blog.handle,
+        aiProvider,
+        aiKey,
+      );
+      setAiSettings(next);
+      setAiKey("");
+      setAiEditing(false);
+    } catch (error) {
+      setAiError(
+        error instanceof Error ? error.message : "Could not save cloud AI",
+      );
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
+  const removeAi = async () => {
+    if (aiSaving) return;
+    setAiSaving(true);
+    setAiError(null);
+    try {
+      setAiSettings(await removeWorkspaceAiSettingsAction(blog.handle));
+      setAiKey("");
+      setAiEditing(false);
+    } catch (error) {
+      setAiError(
+        error instanceof Error ? error.message : "Could not remove cloud AI",
+      );
+    } finally {
+      setAiSaving(false);
     }
   };
 
@@ -143,6 +209,115 @@ export function WorkspaceSettings({
             </p>
           )}
         </section>
+
+        {aiSettings?.allowed && (
+          <section className={styles.section} aria-labelledby="settings-ai">
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 id="settings-ai">AI</h2>
+                <p>
+                  Keep Apple&apos;s private on-device model as the default. Add
+                  your own provider key only as an off-device fallback.
+                </p>
+              </div>
+            </div>
+            {aiSettings.configured && !aiEditing ? (
+              <div className={styles.aiStatus}>
+                <span>
+                  <strong>Configured</strong>
+                  <small>
+                    {aiSettings.provider === "anthropic"
+                      ? "Anthropic"
+                      : "OpenAI"}
+                    . The saved key is write-only and cannot be viewed here.
+                  </small>
+                </span>
+                <div className={styles.aiActions}>
+                  <button
+                    type="button"
+                    className="ac-btn ac-btn-gray"
+                    onClick={() => setAiEditing(true)}
+                  >
+                    Replace key
+                  </button>
+                  <button
+                    type="button"
+                    className="ac-btn ac-btn-plain"
+                    disabled={aiSaving}
+                    onClick={() => void removeAi()}
+                  >
+                    {aiSaving ? "Removing" : "Remove"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                className={styles.aiForm}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveAi();
+                }}
+              >
+                <label>
+                  <span>Provider</span>
+                  <select
+                    value={aiProvider}
+                    onChange={(event) =>
+                      setAiProvider(event.currentTarget.value as CloudAiProvider)
+                    }
+                  >
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                  </select>
+                </label>
+                <label className={styles.aiKeyField}>
+                  <span>API key</span>
+                  <input
+                    type="password"
+                    value={aiKey}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    placeholder="Paste a provider API key"
+                    onChange={(event) => setAiKey(event.currentTarget.value)}
+                  />
+                </label>
+                <div className={styles.aiActions}>
+                  {aiSettings.configured && (
+                    <button
+                      type="button"
+                      className="ac-btn ac-btn-plain"
+                      onClick={() => {
+                        setAiKey("");
+                        setAiEditing(false);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="ac-btn ac-btn-filled"
+                    disabled={!aiKey.trim() || aiSaving}
+                  >
+                    {aiSaving
+                      ? "Saving"
+                      : aiSettings.configured
+                        ? "Replace key"
+                        : "Add key"}
+                  </button>
+                </div>
+              </form>
+            )}
+            {!aiSettings.configured && !aiEditing && (
+              <p className={styles.aiNotConfigured}>Not configured</p>
+            )}
+            {aiError && (
+              <p className={styles.error} role="alert">
+                {aiError}
+              </p>
+            )}
+          </section>
+        )}
 
         <section className={styles.section} aria-labelledby="settings-skills">
           <div className={styles.sectionHeader}>

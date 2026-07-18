@@ -138,6 +138,29 @@ export const blogs = pgTable(
   ],
 );
 
+// Workspace-scoped cloud AI credentials. The raw key never enters this table:
+// workspace-ai-config.server.ts encrypts it with a server secret before storage
+// and is the only module that decrypts it for a provider request.
+export const workspaceAiConfigs = pgTable(
+  "workspace_ai_config",
+  {
+    blogId: uuid("blog_id")
+      .primaryKey()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    /** "anthropic" | "openai" */
+    provider: text("provider").notNull(),
+    apiKeyCiphertext: text("api_key_ciphertext").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      "workspace_ai_config_provider_valid",
+      sql`${t.provider} in ('anthropic', 'openai')`,
+    ),
+  ],
+);
+
 // Every mutation through the action layer records who did what to what,
 // so AI/agent edits stay auditable and reversible-by-inspection. actorType
 // distinguishes a human in the UI from the AI sidecar from an external agent.

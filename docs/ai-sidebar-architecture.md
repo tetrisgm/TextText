@@ -139,7 +139,9 @@ Current assistant behavior includes:
   submitted it even if the user navigates elsewhere
 
 On the plain web, or when the bridge or model is unavailable, the assistant
-explains why it cannot run. It does not silently fall through to a cloud model.
+uses a workspace owner's configured cloud provider when present. Without that
+explicit setting it explains why the local model cannot run. Cloud replies and
+progress are marked as off-device.
 
 ## Provider ladder
 
@@ -149,17 +151,19 @@ agents third. Only the following states are implemented today:
 1. **Apple on-device: shipped.** This is the in-app assistant provider in
    Write for Mac. Utility operations and agent commands run locally through
    `mac/Sources/Write/NativeAI.swift` and the `nativeAI` bridge.
-2. **Bring-your-own cloud: not shipped.** There is no in-app OpenAI or
-   Anthropic provider setting, key store, provider adapter, assistant API
-   route, automatic cloud fallback, or provider-hosted web search. Public
-   documentation must not imply otherwise.
+2. **Bring-your-own cloud: shipped.** A workspace owner can add an Anthropic or
+   OpenAI key in Settings. The encrypted key stays server-side and is never
+   returned to the browser. The assistant uses it only when the on-device model
+   is unavailable, labels that work as off-device, and exposes only tools that
+   need no confirmation and cannot fetch a model-chosen URL. The existing owner
+   AI Gateway key remains available when configured on the server.
 3. **External agents over MCP: shipped.** ChatGPT, Claude, Cursor, Claude
    Code, and other MCP hosts can connect to `/api/mcp`. Their model and billing
    remain in the external client. That is not an in-app provider integration.
 
-No provider secret is stored in a Markdown folder. A future cloud rung must
-remain opt-in, preserve the local-first default, and execute the same workspace
-contract rather than create a parallel command system.
+No provider secret is stored in a Markdown folder. The cloud rung remains
+opt-in, preserves the local-first default, and executes the same workspace
+contract rather than creating a parallel command system.
 
 ## Context model
 

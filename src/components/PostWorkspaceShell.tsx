@@ -7038,6 +7038,8 @@ function LocalWorkspaceShell({
         composerPlaceholder={
           assistant.capabilities?.available
             ? "Ask or act, on this Mac"
+            : assistant.cloudProvider
+              ? `Ask with ${assistant.cloudProvider} (off this Mac)`
             : "Ask about this page"
         }
         accept={assistant.attachmentAccept}
@@ -7045,7 +7047,9 @@ function LocalWorkspaceShell({
         attachmentTitle={assistant.attachmentTitle}
       >
         <AssistantConversation
+          activeCloudProvider={assistant.activeCloudProvider}
           capabilities={assistant.capabilities}
+          cloudProvider={assistant.cloudProvider}
           jobs={assistant.jobs}
           messages={assistant.messages}
           quickActions={assistant.quickActions}

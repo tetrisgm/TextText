@@ -18,6 +18,10 @@ import type { AssistantAttachment } from "@/components/workspace/assistant/Assis
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import { isNativeModelAssetError, nativeAgent } from "@/lib/ai/native";
 import { runNativeQuickAction } from "@/lib/ai/quick-actions";
+import {
+  fallbackForNativeAssetError,
+  runUnavailableAssistantFallback,
+} from "@/components/workspace/assistant/unavailable-fallback";
 import { saveEditablePostAction } from "@/app/editor/actions";
 import {
   patchOpenWorkspaceItemDraft,
@@ -84,6 +88,67 @@ describe("native assistant submissions", () => {
     expect(isNativeModelAssetError(new Error("No folder at path ideas"))).toBe(
       false,
     );
+  });
+
+  it("turns a mid-flight asset failure into a calm assistant message", async () => {
+    vi.stubGlobal("window", { writeNativeAI: { request: vi.fn() } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ enabled: false, provider: null })),
+      ),
+    );
+
+    const result = await fallbackForNativeAssetError({
+      error: new Error("Resource (Local Model Asset) unavailable error."),
+      prompt: "Summarize this",
+      reprobe: async () => ({
+        available: false,
+        reason: "modelNotReady",
+        ocr: false,
+        imageUnderstanding: false,
+      }),
+    });
+
+    expect(result?.message).toEqual({
+      role: "assistant",
+      text: "The on-device model is still downloading. Try again in a few minutes.",
+    });
+    expect(result?.message.role).not.toBe("error");
+  });
+
+  it("marks a cloud fallback answer with its off-device provider", async () => {
+    vi.stubGlobal("window", { writeNativeAI: { request: vi.fn() } });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ enabled: true, provider: "Anthropic" }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ text: "Cloud answer", provider: "Anthropic" }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      runUnavailableAssistantFallback({
+        capabilities: {
+          available: false,
+          reason: "modelNotReady",
+          ocr: false,
+          imageUnderstanding: false,
+        },
+        prompt: "Answer this",
+      }),
+    ).resolves.toEqual({
+      role: "assistant",
+      text: "Cloud answer",
+      provider: "Anthropic",
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("includes local text attachments in the native agent prompt", async () => {

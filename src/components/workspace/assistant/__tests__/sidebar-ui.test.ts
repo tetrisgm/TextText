@@ -165,7 +165,7 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain('aria-label="On-device actions"');
+    expect(html).toContain('aria-label="Assistant actions"');
     expect(html).toContain('title="Summarize selected text on this Mac"');
     expect(html).toContain('role="log"');
     expect(html).toContain("Summarize");
@@ -175,6 +175,34 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Replacement");
     expect(html).toContain("A clearer title");
     expect(html).toContain(">Apply<");
+  });
+
+  it("labels cloud work and answers as off-device", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        activeCloudProvider: "OpenAI",
+        capabilities: {
+          available: false,
+          reason: "modelNotReady",
+          ocr: false,
+          imageUnderstanding: false,
+        },
+        cloudProvider: "OpenAI",
+        messages: [
+          {
+            id: "cloud-1",
+            role: "assistant",
+            text: "Cloud answer",
+            provider: "OpenAI",
+          },
+        ],
+        submitting: true,
+      }),
+    );
+
+    expect(html).toContain("Answered by OpenAI (off this Mac)");
+    expect(html).toContain("Thinking with OpenAI (off this Mac)");
+    expect(html).not.toContain("Thinking on this Mac");
   });
 
   it("offers concise prompt starters that fill the composer", () => {
