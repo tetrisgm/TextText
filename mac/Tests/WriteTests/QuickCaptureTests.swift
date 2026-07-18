@@ -73,7 +73,8 @@ final class QuickCaptureTests: XCTestCase {
 
         let failed = drainer.drain(workspace: workspace(), client: client)
         XCTAssertTrue(failed.shouldRetry)
-        XCTAssertEqual(outbox.pendingRecords(), [record])
+        XCTAssertEqual(outbox.pendingRecords().first?.id, record.id)
+        XCTAssertEqual(outbox.pendingRecords().first?.attempts, 1)
 
         let retried = drainer.drain(workspace: workspace(), client: client)
         XCTAssertFalse(retried.shouldRetry)
@@ -82,6 +83,53 @@ final class QuickCaptureTests: XCTestCase {
             client.requests.map(\.idempotencyKey),
             ["quick-capture:stable-capture", "quick-capture:stable-capture"]
         )
+    }
+
+    func testBookmarkCaptureUsesBookmarksFolderAndKind() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        let record = try outbox.enqueue(
+            QuickCaptureContent(title: "Saved link", body: ""),
+            id: "bookmark-capture",
+            target: .bookmarks)
+        let client = QuickCaptureSyncClient(results: [
+            .success(.saved(savedItem(id: "bookmark-1")))
+        ])
+
+        let summary = QuickCaptureOutboxDrainer(outbox: outbox).drain(
+            workspace: workspace(), client: client)
+
+        XCTAssertEqual(summary.savedItems.count, 1)
+        XCTAssertEqual(client.requests.first?.folderId, "bookmarks-folder")
+        XCTAssertTrue(record.markdown.contains("kind: bookmark"))
+    }
+
+    func testPermanentFailureDeadLettersAfterBoundedAttempts() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        try outbox.enqueue(
+            QuickCaptureContent(title: "Keep me", body: "Recoverable bytes"),
+            id: "bounded-retry")
+        let client = QuickCaptureSyncClient(results: Array(
+            repeating: .failure(.badResponse("permanent failure")),
+            count: 5))
+        let drainer = QuickCaptureOutboxDrainer(outbox: outbox)
+
+        for attempt in 1...5 {
+            let summary = drainer.drain(workspace: workspace(), client: client)
+            XCTAssertEqual(summary.shouldRetry, attempt < 5)
+        }
+
+        XCTAssertTrue(outbox.pendingRecords().isEmpty)
+        XCTAssertEqual(outbox.rejectedRecordCount(), 1)
+        let rejected = try FileManager.default.contentsOfDirectory(
+            at: outbox.rejectedDirectory,
+            includingPropertiesForKeys: nil)
+        let data = try Data(contentsOf: try XCTUnwrap(rejected.first))
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(text.contains("Recoverable bytes"))
+        XCTAssertTrue(text.contains("permanent failure"))
+        XCTAssertTrue(text.contains("\"attempts\" : 5"))
     }
 
     func testRejectedCaptureMovesToDeadLetterInsteadOfDeletingBytes() throws {
@@ -107,6 +155,33 @@ final class QuickCaptureTests: XCTestCase {
         )
         let data = try Data(contentsOf: try XCTUnwrap(rejected.first))
         XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Preserve me"))
+    }
+
+    func testCachedWorkspaceRejectionCanRetryWithFreshFolder() throws {
+        let root = try temporaryDirectory()
+        let outbox = try QuickCaptureOutbox(baseDirectory: root)
+        try outbox.enqueue(
+            QuickCaptureContent(title: "Fresh folder", body: "Keep me"),
+            id: "stale-folder")
+        let client = QuickCaptureSyncClient(results: [
+            .success(.rejected("folder not found")),
+            .success(.saved(savedItem(id: "note-fresh"))),
+        ])
+        let drainer = QuickCaptureOutboxDrainer(outbox: outbox)
+
+        let cached = drainer.drain(
+            workspace: workspace(notesFolderId: "stale-notes"),
+            client: client,
+            deferRejections: true)
+        XCTAssertTrue(cached.shouldRetry)
+        XCTAssertEqual(outbox.pendingRecords().first?.attempts, 1)
+
+        let fresh = drainer.drain(workspace: workspace(), client: client)
+        XCTAssertFalse(fresh.shouldRetry)
+        XCTAssertTrue(outbox.pendingRecords().isEmpty)
+        XCTAssertEqual(
+            client.requests.map(\.folderId),
+            ["stale-notes", "notes-folder"])
     }
 
     private func temporaryDirectory() throws -> URL {
@@ -201,7 +276,7 @@ private final class QuickCaptureSyncClient: SyncClient {
     func advertisedAppVersion() -> String? { nil }
 }
 
-private func workspace() -> Workspace {
+private func workspace(notesFolderId: String = "notes-folder") -> Workspace {
     Workspace(
         blog: WorkspaceBlog(handle: "demo", name: "Demo", username: nil),
         folders: [
@@ -209,8 +284,11 @@ private func workspace() -> Workspace {
                 id: "blog-folder", name: "Blog", path: "Blog",
                 mode: "blog", parentId: nil),
             WorkspaceFolder(
-                id: "notes-folder", name: "Notes", path: "Notes",
+                id: notesFolderId, name: "Notes", path: "Notes",
                 mode: "notes", parentId: nil),
+            WorkspaceFolder(
+                id: "bookmarks-folder", name: "Bookmarks", path: "Bookmarks",
+                mode: "bookmarks", parentId: nil),
         ]
     )
 }

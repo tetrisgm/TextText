@@ -406,6 +406,20 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     },
   },
   ...Array.from({ length: 9 }, (_, index): AppCommand => ({
+    id: `navigation.target.${index + 1}`,
+    label: `Open navigation target ${index + 1}`,
+    group: "Navigate",
+    shortcut: {
+      key: String(index + 1),
+      meta: true,
+      label: `⌘${index + 1}`,
+      allowTypingTarget: true,
+    },
+    when: (ctx) =>
+      Boolean(ctx.workspace?.getNavigationTargetPaths()[index] !== undefined),
+    run: (ctx) => ctx.workspace?.navigateToNavTargetByIndex(index),
+  })),
+  ...Array.from({ length: 9 }, (_, index): AppCommand => ({
     id: `navigation.item.${index + 1}`,
     label: `Open visible item ${index + 1}`,
     group: "Navigate",
@@ -414,7 +428,7 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
       const workspace = ctx.workspace;
       if (!workspace) return false;
       return workspace.viewLevel === "root"
-        ? Boolean(workspace.getRootSectionPaths()[index])
+        ? Boolean(workspace.getVisiblePostIds()[index])
         : workspace.viewLevel === "section"
           ? Boolean(workspace.getVisiblePostIds()[index])
           : false;

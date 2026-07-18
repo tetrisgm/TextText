@@ -74,6 +74,8 @@ export type AssistantSidebarProps = {
   panelId?: string;
   className?: string;
   style?: CSSProperties;
+  edgePeeking?: boolean;
+  onEdgePeekEngage?: () => void;
 };
 
 type ResizeSession = {
@@ -204,6 +206,8 @@ export function AssistantSidebar({
   panelId: panelIdProp,
   className,
   style,
+  edgePeeking,
+  onEdgePeekEngage,
 }: AssistantSidebarProps) {
   const generatedPanelId = useId();
   const titleId = useId();
@@ -239,7 +243,7 @@ export function AssistantSidebar({
   const pinned = state === "pinned";
   // Revealed = actually usable: the persistent open/pinned states, or a
   // transient hover-peek of the hidden rail.
-  const peekingHidden = state === "hidden" && peeking;
+  const peekingHidden = state === "hidden" && (edgePeeking ?? peeking);
   const revealed = visible || peekingHidden;
   const canSubmit =
     !disabled &&
@@ -317,9 +321,10 @@ export function AssistantSidebar({
   }, [disabled, state, visible]);
 
   const handleRootPointerEnter = () => {
-    if (state === "hidden") setPeeking(true);
+    if (edgePeeking === undefined && state === "hidden") setPeeking(true);
   };
   const handleRootPointerLeave = () => {
+    if (edgePeeking !== undefined) return;
     if (state !== "hidden") return;
     // Keep the panel up if the pointer left while focus is inside it (e.g. the
     // user clicked into the composer): promote to a persistent open instead of
@@ -431,7 +436,16 @@ export function AssistantSidebar({
     if (!peekingHidden) return;
     focusOnOpenRef.current = false;
     setPeeking(false);
-    onStateChange("open");
+    if (onEdgePeekEngage) onEdgePeekEngage();
+    else onStateChange("open");
+  };
+
+  const handlePanelPointerDown = () => {
+    if (!peekingHidden) return;
+    focusOnOpenRef.current = false;
+    setPeeking(false);
+    if (onEdgePeekEngage) onEdgePeekEngage();
+    else onStateChange("open");
   };
 
   const handlePanelBlur = (event: ReactFocusEvent<HTMLElement>) => {
@@ -490,6 +504,7 @@ export function AssistantSidebar({
         inert={revealed ? undefined : true}
         onBlurCapture={handlePanelBlur}
         onFocusCapture={handlePanelFocus}
+        onPointerDownCapture={handlePanelPointerDown}
         onKeyDown={handlePanelKeyDown}
       >
         <div

@@ -51,6 +51,63 @@ function StarIcon({ filled }: { filled: boolean }) {
   );
 }
 
+export function WorkspaceItemStar({
+  className = "",
+  handle,
+  owner,
+  post,
+}: {
+  className?: string;
+  handle: string;
+  owner: boolean;
+  post: Post;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!owner) return null;
+
+  const toggleStar = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!post.id || busy) return;
+    const previous = Boolean(post.starred);
+    const previousUpdatedAt = post.updatedAt;
+    setBusy(true);
+    updatePost(post.id, {
+      starred: !previous,
+      updatedAt: new Date().toISOString(),
+    });
+    void toggleEditablePostStarredAction(handle, post.id)
+      .then((saved) => {
+        updatePost(post.id!, {
+          starred: saved.starred,
+          updatedAt: saved.updatedAt,
+        });
+      })
+      .catch(() => {
+        updatePost(post.id!, {
+          starred: previous,
+          updatedAt: previousUpdatedAt,
+        });
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <button
+      type="button"
+      className={`workspace-item-star workspace-item-leading-star${
+        className ? ` ${className}` : ""
+      }`}
+      aria-label={post.starred ? "Unstar" : "Star"}
+      aria-pressed={Boolean(post.starred)}
+      disabled={!post.id || busy}
+      onClick={toggleStar}
+    >
+      <StarIcon filled={Boolean(post.starred)} />
+    </button>
+  );
+}
+
 export function WorkspaceItemActions({
   blog,
   className = "",
@@ -212,16 +269,6 @@ export function WorkspaceItemActions({
           <PinIcon />
         </span>
       )}
-      <button
-        type="button"
-        className="workspace-item-star"
-        aria-label={post.starred ? "Unstar" : "Star"}
-        aria-pressed={Boolean(post.starred)}
-        disabled={!post.id || busy}
-        onClick={toggleStar}
-      >
-        <StarIcon filled={Boolean(post.starred)} />
-      </button>
       <button
         type="button"
         className="workspace-item-actions-trigger"

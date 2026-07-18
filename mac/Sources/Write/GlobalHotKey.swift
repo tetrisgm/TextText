@@ -19,8 +19,10 @@ enum GlobalHotKeyError: LocalizedError {
 /// Accessibility permission nor an event tap.
 final class GlobalHotKey {
     private static let signature: OSType = 0x57524954 // WRIT
+    private static var nextIdentifier: UInt32 = 1
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
+    private let identifier: EventHotKeyID
     private let action: () -> Void
 
     init(
@@ -28,6 +30,9 @@ final class GlobalHotKey {
         modifiers: UInt32 = UInt32(cmdKey | shiftKey),
         action: @escaping () -> Void
     ) throws {
+        identifier = EventHotKeyID(
+            signature: Self.signature, id: Self.nextIdentifier)
+        Self.nextIdentifier &+= 1
         self.action = action
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -35,10 +40,27 @@ final class GlobalHotKey {
         )
         let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, _, userData in
-                guard let userData else { return OSStatus(eventNotHandledErr) }
+            { _, event, userData in
+                guard let event, let userData else {
+                    return OSStatus(eventNotHandledErr)
+                }
                 let owner = Unmanaged<GlobalHotKey>.fromOpaque(userData)
                     .takeUnretainedValue()
+                var received = EventHotKeyID()
+                let parameterStatus = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &received
+                )
+                guard parameterStatus == noErr,
+                      received.signature == owner.identifier.signature,
+                      received.id == owner.identifier.id else {
+                    return OSStatus(eventNotHandledErr)
+                }
                 owner.action()
                 return noErr
             },
@@ -51,7 +73,6 @@ final class GlobalHotKey {
             throw GlobalHotKeyError.install(installStatus)
         }
 
-        let identifier = EventHotKeyID(signature: Self.signature, id: 1)
         let registerStatus = RegisterEventHotKey(
             keyCode,
             modifiers,

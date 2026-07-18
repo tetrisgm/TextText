@@ -58,6 +58,20 @@ describe("workspace hierarchy navigation", () => {
     ).toEqual({ kind: "home" });
   });
 
+  it("returns a Recent-opened item to Home", () => {
+    expect(
+      workspaceHierarchyUpTarget(
+        {
+          level: "post",
+          folderPath: "blog/ideas",
+          postId: "recent-post",
+          openedFrom: "root",
+        },
+        folders,
+      ),
+    ).toEqual({ kind: "home" });
+  });
+
   it("treats Starred as a personal virtual location below home", () => {
     expect(
       workspaceHierarchyUpTarget(

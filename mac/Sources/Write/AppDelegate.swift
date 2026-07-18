@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import CoreSpotlight
 import FileProvider
 import ServiceManagement
@@ -38,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sharingServicePicker: NSSharingServicePicker?
     private var quickCaptureController: QuickCaptureController?
     private var quickCaptureHotKey: GlobalHotKey?
+    private var quickBookmarkHotKey: GlobalHotKey?
+    private var toggleWindowHotKey: GlobalHotKey?
+    private var clipboardCaptureHotKey: GlobalHotKey?
     private var quickCaptureOutbox: QuickCaptureOutbox?
     private var quickCaptureRetry: DispatchWorkItem?
     private let quickCaptureQueue = DispatchQueue(
@@ -396,6 +400,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileProviderRetry?.cancel()
         quickCaptureRetry?.cancel()
         quickCaptureHotKey?.unregister()
+        quickBookmarkHotKey?.unregister()
+        toggleWindowHotKey?.unregister()
+        clipboardCaptureHotKey?.unregister()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -528,6 +535,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             appendActivity(error.localizedDescription)
         }
 
+        quickBookmarkHotKey = registerQuickCaptureHotKey(
+            keyCode: UInt32(kVK_ANSI_B)) { [weak self] in
+                self?.newBookmarkAction()
+            }
+        toggleWindowHotKey = registerQuickCaptureHotKey(
+            keyCode: UInt32(kVK_ANSI_W)) { [weak self] in
+                self?.toggleMainWindowAction()
+            }
+        clipboardCaptureHotKey = registerQuickCaptureHotKey(
+            keyCode: UInt32(kVK_ANSI_V)) { [weak self] in
+                self?.captureClipboardAction()
+            }
+
         // A prior offline session may have left durable records. A returning
         // signed-in app should file them without requiring another capture.
         retryQuickCaptureDrain()
@@ -535,6 +555,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func quickCaptureAction() {
         presentQuickCapture()
+    }
+
+    private func registerQuickCaptureHotKey(
+        keyCode: UInt32,
+        action: @escaping () -> Void
+    ) -> GlobalHotKey? {
+        do {
+            return try GlobalHotKey(keyCode: keyCode) {
+                DispatchQueue.main.async(execute: action)
+            }
+        } catch {
+            appendActivity(error.localizedDescription)
+            return nil
+        }
+    }
+
+    @objc private func newBookmarkAction() {
+        enqueueQuickCapture(
+            QuickCaptureContent(title: "Untitled", body: ""),
+            target: .bookmarks)
+    }
+
+    @objc private func captureClipboardAction() {
+        guard let text = NSPasteboard.general.string(forType: .string),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        enqueueQuickCapture(QuickCaptureContent.parse(text), target: .notes)
+    }
+
+    private func enqueueQuickCapture(
+        _ content: QuickCaptureContent,
+        target: QuickCaptureTarget
+    ) {
+        guard let outbox = quickCaptureOutbox else {
+            appendActivity("The capture outbox is unavailable")
+            return
+        }
+        do {
+            try outbox.enqueue(content, target: target)
+            retryQuickCaptureDrain()
+        } catch {
+            appendActivity(error.localizedDescription)
+        }
     }
 
     private func presentQuickCapture() {
@@ -582,12 +646,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             origin: resolveServerOrigin(credentials: credentials),
             token: credentials.token)
         let workspace: Workspace
+        let usedCachedWorkspace: Bool
         if let cached = store.cachedWorkspace() {
             workspace = cached
+            usedCachedWorkspace = true
         } else {
             switch client.workspace() {
             case .success(let (fetched, data)):
                 workspace = fetched
+                usedCachedWorkspace = false
                 store.cacheWorkspace(data)
             case .failure(let error):
                 appendActivity("Could not file capture: \(error.description)")
@@ -596,10 +663,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        let summary = QuickCaptureOutboxDrainer(outbox: outbox).drain(
+        let drainer = QuickCaptureOutboxDrainer(outbox: outbox)
+        var summary = drainer.drain(
             workspace: workspace,
-            client: client
+            client: client,
+            deferRejections: usedCachedWorkspace
         )
+        if usedCachedWorkspace && summary.shouldRetry {
+            switch client.workspace() {
+            case .success(let (freshWorkspace, data)):
+                store.cacheWorkspace(data)
+                let refreshed = drainer.drain(
+                    workspace: freshWorkspace,
+                    client: client)
+                summary.savedItems.append(contentsOf: refreshed.savedItems)
+                summary.rejectedMessages.append(
+                    contentsOf: refreshed.rejectedMessages)
+                summary.retryMessages = refreshed.retryMessages
+            case .failure:
+                break
+            }
+        }
         if !summary.savedItems.isEmpty {
             appendActivity(
                 "Filed \(summary.savedItems.count) capture\(summary.savedItems.count == 1 ? "" : "s")")
@@ -2052,9 +2136,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         // The primary action: the full workspace in a native window.
-        let openWrite = item("Open Write", #selector(showMainWindowAction))
-        menu.addItem(openWrite)
-        menu.addItem(item("New note", #selector(quickCaptureAction)))
+        let windowVisible = webWindow?.window?.isVisible == true
+        menu.addItem(item(
+            windowVisible ? "Hide Write" : "Open Write",
+            #selector(toggleMainWindowAction),
+            keyEquivalent: "w",
+            modifiers: [.command, .shift]))
+        menu.addItem(item(
+            "New note", #selector(quickCaptureAction),
+            keyEquivalent: " ", modifiers: [.command, .shift]))
+        menu.addItem(item(
+            "New bookmark", #selector(newBookmarkAction),
+            keyEquivalent: "b", modifiers: [.command, .shift]))
+        menu.addItem(item(
+            "New note from clipboard", #selector(captureClipboardAction),
+            keyEquivalent: "v", modifiers: [.command, .shift]))
         menu.addItem(.separator())
 
         let sync = item("Sync Now", #selector(syncNowAction))
@@ -2079,8 +2175,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Quit \(appName)", #selector(quit)))
     }
 
-    private func item(_ title: String, _ selector: Selector) -> NSMenuItem {
-        let i = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+    private func item(
+        _ title: String,
+        _ selector: Selector,
+        keyEquivalent: String = "",
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> NSMenuItem {
+        let i = NSMenuItem(
+            title: title, action: selector, keyEquivalent: keyEquivalent)
+        i.keyEquivalentModifierMask = modifiers
         i.target = self
         return i
     }
@@ -2174,6 +2277,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showMainWindowAction() { showMainWindow() }
+
+    @objc private func toggleMainWindowAction() {
+        if webWindow?.window?.isVisible == true {
+            webWindow?.hide()
+        } else {
+            showMainWindow()
+        }
+    }
 
     @objc private func showStatusWindowAction() { showStatusWindow() }
 

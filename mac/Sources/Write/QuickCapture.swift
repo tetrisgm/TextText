@@ -20,16 +20,38 @@ struct QuickCaptureContent: Equatable {
 
 }
 
+enum QuickCaptureTarget: String, Codable, Equatable {
+    case notes
+    case bookmarks
+
+    var kind: String {
+        switch self {
+        case .notes: "note"
+        case .bookmarks: "bookmark"
+        }
+    }
+}
+
 struct QuickCaptureRecord: Codable, Equatable, Identifiable {
     let id: String
     let title: String
     let body: String
     let createdAt: Date
+    let target: QuickCaptureTarget
+    let attempts: Int
+    let lastError: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, body, createdAt, target, attempts, lastError
+    }
 
     init(
         id: String = UUID().uuidString,
         content: QuickCaptureContent,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        target: QuickCaptureTarget = .notes,
+        attempts: Int = 0,
+        lastError: String? = nil
     ) {
         self.id = id
         title = content.title
@@ -37,17 +59,48 @@ struct QuickCaptureRecord: Codable, Equatable, Identifiable {
         self.createdAt = Date(
             timeIntervalSince1970:
                 (createdAt.timeIntervalSince1970 * 1_000).rounded(.down) / 1_000)
+        self.target = target
+        self.attempts = attempts
+        self.lastError = lastError
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        body = try values.decode(String.self, forKey: .body)
+        createdAt = try values.decode(Date.self, forKey: .createdAt)
+        target = try values.decodeIfPresent(QuickCaptureTarget.self, forKey: .target) ?? .notes
+        attempts = try values.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
+        lastError = try values.decodeIfPresent(String.self, forKey: .lastError)
+    }
+
+    func retrying(after message: String) -> QuickCaptureRecord {
+        QuickCaptureRecord(
+            id: id,
+            content: QuickCaptureContent(title: title, body: body),
+            createdAt: createdAt,
+            target: target,
+            attempts: attempts + 1,
+            lastError: message
+        )
     }
 
     var idempotencyKey: String { "quick-capture:\(id)" }
 
     var markdown: String {
-        ExternalNoteImport(
-            title: title,
-            body: body,
-            representation: .textpack,
-            idempotencyKey: idempotencyKey
-        ).markdown
+        let encodedTitle =
+            (try? JSONEncoder().encode(title))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "\"Untitled\""
+        return """
+        ---
+        title: \(encodedTitle)
+        kind: \(target.kind)
+        status: draft
+        ---
+
+        \(body)
+        """
     }
 }
 
@@ -108,15 +161,17 @@ final class QuickCaptureOutbox {
     func enqueue(
         _ content: QuickCaptureContent,
         id: String = UUID().uuidString,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        target: QuickCaptureTarget = .notes
     ) throws -> QuickCaptureRecord {
-        let record = QuickCaptureRecord(id: id, content: content, createdAt: createdAt)
+        let record = QuickCaptureRecord(
+            id: id, content: content, createdAt: createdAt, target: target)
         try queue.sync {
             let destination = pendingURL(for: record)
             do {
                 let data = try encoder.encode(record)
                 try data.write(to: destination, options: .atomic)
-                try fileManager.setAttributes(
+                try? fileManager.setAttributes(
                     [.posixPermissions: 0o600], ofItemAtPath: destination.path)
             } catch {
                 throw QuickCaptureOutboxError.couldNotPersist(
@@ -124,6 +179,18 @@ final class QuickCaptureOutbox {
             }
         }
         return record
+    }
+
+    func recordRetry(_ record: QuickCaptureRecord, message: String) throws -> QuickCaptureRecord {
+        try queue.sync {
+            let updated = record.retrying(after: message)
+            let destination = pendingURL(for: updated)
+            let data = try encoder.encode(updated)
+            try data.write(to: destination, options: .atomic)
+            try? fileManager.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: destination.path)
+            return updated
+        }
     }
 
     func pendingRecords() -> [QuickCaptureRecord] {
@@ -225,12 +292,12 @@ struct QuickCaptureFiler {
         workspace: Workspace,
         client: any SyncClient
     ) -> QuickCaptureFilingResult {
-        guard let notesFolder = workspace.folders.first(where: { $0.mode == "notes" }) else {
-            return .retry("This workspace has no Notes folder")
+        guard let targetFolder = workspace.folders.first(where: { $0.mode == record.target.rawValue }) else {
+            return .retry("This workspace has no \(record.target.rawValue.capitalized) folder")
         }
         switch client.postFile(
             body: record.markdown,
-            folderId: notesFolder.id,
+            folderId: targetFolder.id,
             representation: .textpack,
             idempotencyKey: record.idempotencyKey
         ) {
@@ -260,10 +327,12 @@ struct QuickCaptureDrainSummary {
 struct QuickCaptureOutboxDrainer {
     let outbox: QuickCaptureOutbox
     var filer = QuickCaptureFiler()
+    var maxAttempts = 5
 
     func drain(
         workspace: Workspace,
-        client: any SyncClient
+        client: any SyncClient,
+        deferRejections: Bool = false
     ) -> QuickCaptureDrainSummary {
         var summary = QuickCaptureDrainSummary()
         for record in outbox.pendingRecords() {
@@ -276,8 +345,34 @@ struct QuickCaptureOutboxDrainer {
                     summary.retryMessages.append(error.localizedDescription)
                 }
             case .retry(let message):
-                summary.retryMessages.append(message)
+                do {
+                    let updated = try outbox.recordRetry(record, message: message)
+                    if updated.attempts >= maxAttempts {
+                        try outbox.reject(updated)
+                        summary.rejectedMessages.append(
+                            "\(message) after \(updated.attempts) attempts")
+                    } else {
+                        summary.retryMessages.append(message)
+                    }
+                } catch {
+                    summary.retryMessages.append(error.localizedDescription)
+                }
             case .rejected(let message):
+                if deferRejections {
+                    do {
+                        let updated = try outbox.recordRetry(record, message: message)
+                        if updated.attempts >= maxAttempts {
+                            try outbox.reject(updated)
+                            summary.rejectedMessages.append(
+                                "\(message) after \(updated.attempts) attempts")
+                        } else {
+                            summary.retryMessages.append(message)
+                        }
+                    } catch {
+                        summary.retryMessages.append(error.localizedDescription)
+                    }
+                    continue
+                }
                 do {
                     try outbox.reject(record)
                     summary.rejectedMessages.append(message)

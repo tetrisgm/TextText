@@ -2640,65 +2640,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: var(--ink);
   font: 600 14px/1.2 var(--font-body);
 }
-.post-editor-folder-add {
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-}
-.post-editor-folder-row:hover .post-editor-folder-add {
-  opacity: 1;
-}
-.post-editor-folder-add:hover {
-  background: color-mix(in srgb, var(--ink) 10%, transparent);
-  color: var(--ink);
-}
-.post-editor-folder-add:focus-visible {
-  opacity: 1;
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-.post-editor-folder-share {
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  opacity: 0;
-}
-.post-editor-folder-row:hover .post-editor-folder-share {
-  opacity: 1;
-}
-.post-editor-folder-share:hover {
-  background: color-mix(in srgb, var(--ink) 10%, transparent);
-  color: var(--ink);
-}
-.post-editor-folder-share:focus-visible {
-  opacity: 1;
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-.post-editor-folder-share svg {
-  width: 15px;
-  height: 15px;
-  display: block;
-}
 .post-editor-folder-count {
   flex: 0 0 auto;
   min-width: 20px;
@@ -3107,7 +3048,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   height: 36px;
   white-space: nowrap;
 }
-.workspace-root-action-bar {
+.workspace-root-action-bar.is-inline-search {
   position: fixed;
   top: 8px;
   right: 60px;
@@ -3231,16 +3172,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   line-height: 1;
   letter-spacing: 0;
 }
-.workspace-root-folder-header,
 .workspace-search-page {
   display: grid;
   gap: 10px;
 }
-.workspace-root-folder-header {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-}
-.workspace-root-folder-header select,
 .workspace-recent select {
   min-height: 32px;
   border: 1px solid var(--hairline);
@@ -3257,91 +3192,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-size: 17px;
   font-weight: 600;
   line-height: 1.42;
-}
-.workspace-root-sections {
-  width: 100%;
-  display: grid;
-  gap: 8px;
-  margin-top: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.workspace-root-section {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 58px;
-  padding: 10px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 0.18s var(--ease),
-    border-color 0.18s var(--ease),
-    box-shadow 0.18s var(--ease);
-}
-.workspace-root-section:hover {
-  background: color-mix(in srgb, var(--ink) 5%, var(--bg));
-}
-.workspace-root-section.is-command-selected {
-  border-color: color-mix(
-    in srgb,
-    var(--ac-accent, var(--accent)) 42%,
-    var(--hairline)
-  );
-  background: var(--bg);
-  outline: 2px solid
-    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
-  outline-offset: -2px;
-}
-.workspace-root-section:focus-visible {
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-.workspace-root-section-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--hairline) 80%, transparent);
-  border-radius: 8px;
-  background: var(--bg-soft);
-  color: var(--muted);
-}
-.workspace-root-section-icon svg {
-  width: 18px;
-  height: 18px;
-}
-.workspace-root-section-copy {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-.workspace-root-section-name {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.2;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.workspace-root-section-meta {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-.workspace-search-wrap {
-  position: relative;
-  z-index: 3;
-  width: 100%;
 }
 .workspace-search-field {
   width: 100%;
@@ -3433,11 +3283,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-item-option.is-command-selected,
 .workspace-search-folder-option.is-command-selected {
-  background: transparent;
-  outline: 2px solid
+  outline: 0;
+  background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
     color-mix(in srgb, var(--accent) 60%, var(--ink));
-  outline-offset: -2px;
-  box-shadow: none;
 }
 .workspace-item-option-main {
   padding-right: 82px;
@@ -3629,7 +3478,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-search-results button:focus-visible,
 .workspace-recent-list button:focus-visible,
 .workspace-date-results > header button:focus-visible,
-.workspace-root-folder-header select:focus-visible,
 .workspace-recent select:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
@@ -3807,9 +3655,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     outline-color 0.18s var(--ease);
 }
 .post-folder-card-option.is-command-selected {
-  outline: 2px solid
-    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
-  outline-offset: -2px;
+  outline: 0;
+  background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent) 60%, var(--ink));
 }
 .post-folder-card-option:focus-visible {
   box-shadow: var(--ac-focus);
@@ -3927,10 +3776,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin: -10px 46px 10px 0;
 }
 .post-folder-row-shell.is-command-selected {
-  background: transparent;
-  outline: 2px solid
-    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
-  outline-offset: -2px;
+  outline: 0;
+  background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent) 60%, var(--ink));
 }
 .folder-item-actions {
   position: absolute;
@@ -4194,7 +4043,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   white-space: nowrap;
 }
 .workspace-selection-toolbar > button,
-.workspace-selection-toolbar > select {
+.workspace-selection-toolbar > select,
+.workspace-selection-toolbar > .kbd-tip-wrap > button,
+.workspace-selection-toolbar > .kbd-tip-wrap > select {
   min-height: 32px;
   border: 0;
   border-radius: 7px;
@@ -4205,7 +4056,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   cursor: pointer;
 }
 .workspace-selection-toolbar > button:focus-visible,
-.workspace-selection-toolbar > select:focus-visible {
+.workspace-selection-toolbar > select:focus-visible,
+.workspace-selection-toolbar > .kbd-tip-wrap > button:focus-visible,
+.workspace-selection-toolbar > .kbd-tip-wrap > select:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 60%, var(--ink));
   outline-offset: -2px;
 }
@@ -4214,6 +4067,323 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   z-index: 214;
   border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--ink));
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
+
+/* Superhuman workspace refinement */
+.post-editor-folder-nav {
+  padding-inline: 8px;
+}
+.post-editor-folder-row {
+  position: relative;
+}
+.post-editor-folder-disclosure {
+  width: 10px;
+}
+.post-editor-folder-main {
+  padding-inline: 0;
+}
+.post-editor-home-row,
+.post-editor-special-row {
+  padding-left: 10px;
+}
+.post-editor-sidebar-activity {
+  padding-left: 18px;
+  padding-right: 14px;
+}
+.post-editor-folder-trailing {
+  position: relative;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+}
+.post-editor-folder-trailing > .post-editor-folder-count,
+.post-editor-folder-more {
+  position: absolute;
+  inset: 50% 0 auto auto;
+  width: 30px;
+  min-width: 30px;
+  height: 24px;
+  translate: 0 -50%;
+  transition: opacity 0.18s var(--ease);
+}
+.post-editor-folder-trailing > .post-editor-folder-count {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.post-editor-folder-more {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 0 3px;
+  background: transparent;
+  color: var(--muted);
+  font: 750 14px/1 var(--font-body);
+  cursor: pointer;
+  opacity: 0;
+}
+.post-editor-folder-row:hover
+  .post-editor-folder-trailing
+  > .post-editor-folder-count,
+.post-editor-folder-trailing:focus-within > .post-editor-folder-count {
+  opacity: 0;
+}
+.post-editor-folder-row:hover .post-editor-folder-more,
+.post-editor-folder-trailing:focus-within .post-editor-folder-more,
+.post-editor-folder-more[aria-expanded="true"] {
+  opacity: 1;
+}
+.post-editor-folder-more:hover,
+.post-editor-folder-more:focus-visible {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  color: var(--ink);
+  outline: none;
+}
+.post-editor-folder-more-menu {
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+}
+
+.workspace-view-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 7px;
+  background: var(--ac-fill-3);
+}
+.workspace-view-segmented-button {
+  width: 28px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: var(--ac-label-2);
+  cursor: pointer;
+}
+.workspace-view-segmented-button svg {
+  width: 17px;
+  height: 17px;
+}
+.workspace-view-segmented-button:hover,
+.workspace-view-segmented-button:focus-visible {
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  outline: none;
+}
+.workspace-view-segmented-button[aria-pressed="true"] {
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 0 0 0.5px var(--ac-hairline);
+}
+.folder-action-toolbar {
+  gap: 3px;
+  padding: 2px;
+}
+.folder-action-toolbar .ac-icon-btn,
+.folder-action-toolbar .workspace-view-segmented {
+  flex: 0 0 auto;
+}
+.folder-action-share,
+.folder-action-create,
+.folder-action-more {
+  width: 32px;
+  height: 30px;
+}
+.folder-action-create {
+  border-radius: 6px;
+  background: var(--ac-accent);
+  color: #fff;
+  font: 600 18px/1 var(--ac-font-text);
+}
+.folder-action-create:hover,
+.folder-action-create:focus-visible {
+  background: color-mix(in srgb, var(--ac-accent) 86%, var(--ink));
+  color: #fff;
+  outline: none;
+}
+.post-folder-title-edit {
+  width: 32px;
+  height: 32px;
+  opacity: 0;
+  transition: opacity 0.18s var(--ease);
+}
+.post-folder-title-row:hover .post-folder-title-edit,
+.post-folder-title-row:focus-within .post-folder-title-edit {
+  opacity: 1;
+}
+
+.workspace-root-action-bar.is-inline-search {
+  width: min(
+    520px,
+    max(36px, calc(100vw - var(--workspace-sidebar-width, 280px) - 84px))
+  );
+}
+.post-editor-shell.is-sidebar-collapsed
+  .workspace-root-action-bar.is-inline-search {
+  width: min(520px, max(36px, calc(100vw - 84px)));
+}
+.post-editor-shell.has-assistant-pinned
+  .workspace-root-action-bar.is-inline-search {
+  width: min(
+    520px,
+    max(
+      36px,
+      calc(
+        100vw - var(--workspace-sidebar-width, 280px) -
+          var(--workspace-assistant-width, 360px) - 32px
+      )
+    )
+  );
+}
+.post-editor-shell.is-sidebar-collapsed.has-assistant-pinned
+  .workspace-root-action-bar.is-inline-search {
+  width: min(
+    520px,
+    max(
+      36px,
+      calc(100vw - var(--workspace-assistant-width, 360px) - 84px)
+    )
+  );
+}
+.workspace-root-action-bar.is-inline-search .workspace-root-action-toolbar {
+  width: 100%;
+  padding: 2px;
+  border: 1px solid var(--ac-hairline);
+  background: var(--ac-mat-fallback);
+  -webkit-backdrop-filter: var(--ac-mat-blur);
+  backdrop-filter: var(--ac-mat-blur);
+}
+.workspace-root-action-bar.is-inline-search
+  .workspace-root-action-toolbar.is-compact:not(.is-compact-open) {
+  width: 36px;
+  margin-left: auto;
+  padding: 0;
+}
+.workspace-root-action-bar.is-inline-search
+  .workspace-root-action-toolbar
+  .workspace-search-field {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding-inline: 9px;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-root-action-bar.is-inline-search
+  .workspace-root-action-toolbar
+  .workspace-search-field
+  input {
+  font-size: 14px;
+}
+.workspace-root-inner {
+  gap: 14px;
+}
+.workspace-recent {
+  margin-top: 0;
+}
+.workspace-recent-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workspace-recent-list {
+  border-top: 0;
+  padding-top: 0;
+  padding-left: 34px;
+}
+.workspace-recent.is-view-column .workspace-recent-list {
+  width: min(100%, 720px);
+  gap: 10px;
+  margin-inline: auto;
+}
+.workspace-recent.is-view-grid .workspace-recent-list {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.workspace-recent:is(.is-view-column, .is-view-grid) .workspace-item-option-main {
+  min-height: 74px;
+  border: 1px solid var(--hairline);
+  background: var(--bg-soft);
+}
+.workspace-search-results,
+.post-folder-list,
+.post-folder-card-grid {
+  padding-left: 34px;
+  box-sizing: border-box;
+}
+
+.workspace-item-leading-star {
+  position: absolute;
+  top: 50%;
+  left: -32px;
+  z-index: 14;
+  translate: 0 -50%;
+  opacity: 0.52;
+  background: transparent;
+  box-shadow: none;
+}
+.tvcard-shell > .workspace-item-leading-star,
+.post-folder-card-option > .tvcard-shell .workspace-item-leading-star,
+.bookmark-folder-card > .workspace-item-leading-star {
+  top: 18px;
+  translate: none;
+}
+.workspace-item-leading-star[aria-pressed="true"] {
+  color: color-mix(in srgb, #f5a623 72%, var(--ink));
+  opacity: 1;
+}
+.workspace-item-leading-star:hover,
+.workspace-item-leading-star:focus-visible {
+  opacity: 1;
+}
+
+.post-editor-shell.is-marquee-dragging .post-editor-content,
+.post-editor-shell.is-marquee-dragging .post-editor-content * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.workspace-selection-toolbar > .kbd-tip-wrap {
+  display: inline-flex;
+}
+.workspace-selection-toolbar > .kbd-tip-wrap > button,
+.workspace-selection-toolbar > .kbd-tip-wrap > select {
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+  font: 600 12px/1 var(--ac-font-text);
+  cursor: pointer;
+}
+.workspace-selection-toolbar > .kbd-tip-wrap > .is-danger {
+  color: var(--ac-red, #d70015);
+}
+
+.post-workspace-sidebar-region.is-collapsed.is-peeking {
+  width: var(--workspace-sidebar-width, 280px);
+  pointer-events: auto;
+}
+.post-workspace-sidebar-region.is-collapsed.is-peeking .post-editor-sidebar {
+  transform: translateX(0);
+  pointer-events: auto;
+  box-shadow: 18px 0 44px -34px rgba(0, 0, 0, 0.58);
+}
+.post-editor-shell:has(.post-workspace-sidebar-region.is-peeking)
+  .workspace-sidebar-reveal-chrome {
+  opacity: 0;
   pointer-events: none;
 }
 .tvcard-menu-date {
@@ -4249,22 +4419,23 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin-inline: -10px;
   padding-inline: 10px;
   border-radius: 8px;
-  background: transparent;
-  outline: 2px solid
-    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
-  outline-offset: -2px;
+  outline: 0;
+  background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent) 60%, var(--ink));
 }
 .workspace-trash-row.is-command-selected,
-.workspace-root-section.is-command-selected,
 .workspace-recent-list button.is-command-selected,
-.workspace-search-results button.is-command-selected,
-.post-folder-card-option.is-command-selected,
-.post-folder-row-shell.is-command-selected,
-.post-folder-row.is-command-selected {
+.workspace-search-results button.is-command-selected {
+  outline: 0;
+  background-color: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent) 60%, var(--ink));
+}
+.post-editor-shell.is-active-region-sidebar
+  .post-editor-content
+  .is-command-selected {
   background-color: transparent;
-  outline: 2px solid
-    color-mix(in srgb, var(--ac-accent, var(--accent)) 60%, var(--ink));
-  outline-offset: -2px;
   box-shadow: none;
 }
 .post-folder-row.is-bookmark {
@@ -5989,9 +6160,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
   .workspace-root-inner h1 {
     font-size: 30px;
-  }
-  .workspace-root-sections {
-    grid-template-columns: 1fr;
   }
   .workspace-search-field input {
     font-size: 15px;

@@ -10,7 +10,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   useTransition,
 } from "react";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
@@ -24,11 +23,20 @@ import {
 import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { PostCard } from "@/components/PostCard";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
-import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
+import {
+  WorkspaceItemActions,
+  WorkspaceItemStar,
+} from "@/components/workspace/WorkspaceItemActions";
+import {
+  useWorkspaceViewMode,
+  WorkspaceViewModeControl,
+  type WorkspaceViewMode,
+} from "@/components/workspace/WorkspaceViewModeControl";
 import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
@@ -56,12 +64,11 @@ export type FolderCreateRequest =
 export type FolderCreateItem = (request: FolderCreateRequest) => void;
 export type FolderDeleteItem = (post: Post) => Promise<void> | void;
 export type FolderCaptureResolved = (post: Post) => void;
-export type FolderViewMode = "list" | "column" | "grid";
+export type FolderViewMode = WorkspaceViewMode;
 export type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
 
 const CREATE_FOLDER_ITEM_EVENT = "write:create-folder-item";
 const EDIT_FOLDER_TITLE_EVENT = "write:edit-folder-title";
-const FOLDER_VIEW_EVENT = "write:folder-view-changed";
 
 type FolderUiEventDetail = { folderId: string };
 
@@ -75,44 +82,6 @@ function isFolderUiEvent(event: Event, folderId: string): boolean {
   return (
     (event as CustomEvent<FolderUiEventDetail>).detail?.folderId === folderId
   );
-}
-
-function validFolderViewMode(
-  value: string | null,
-): value is FolderViewMode {
-  return value === "list" || value === "column" || value === "grid";
-}
-
-function useFolderViewMode(
-  folderId: string,
-  defaultMode: FolderViewMode,
-): [FolderViewMode, (mode: FolderViewMode) => void] {
-  const key = `write:folder-view:${folderId}`;
-  const subscribe = useCallback((notify: () => void) => {
-    window.addEventListener("storage", notify);
-    window.addEventListener(FOLDER_VIEW_EVENT, notify);
-    return () => {
-      window.removeEventListener("storage", notify);
-      window.removeEventListener(FOLDER_VIEW_EVENT, notify);
-    };
-  }, []);
-  const getSnapshot = useCallback(() => {
-    const saved = window.localStorage.getItem(key);
-    return validFolderViewMode(saved) ? saved : defaultMode;
-  }, [defaultMode, key]);
-  const viewMode = useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    () => defaultMode,
-  );
-  const changeView = useCallback(
-    (mode: FolderViewMode) => {
-      window.localStorage.setItem(key, mode);
-      window.dispatchEvent(new Event(FOLDER_VIEW_EVENT));
-    },
-    [key],
-  );
-  return [viewMode, changeView];
 }
 
 function itemKey(post: Post): string {
@@ -265,12 +234,6 @@ function FolderEmptyCard({
   );
 }
 
-const FOLDER_VIEW_LABELS: Record<FolderViewMode, string> = {
-  list: "List",
-  column: "One column",
-  grid: "Grid",
-};
-
 function FolderActionBar({
   blog,
   folder,
@@ -280,7 +243,7 @@ function FolderActionBar({
   viewMode,
   onChangeView,
   onCreate,
-  onEdit,
+  onRename,
   onSearch,
   onDeleteFolder,
 }: {
@@ -292,33 +255,28 @@ function FolderActionBar({
   viewMode: FolderViewMode;
   onChangeView: (mode: FolderViewMode) => void;
   onCreate: () => void;
-  onEdit: () => void;
+  onRename: () => void;
   onSearch?: () => void;
   onDeleteFolder?: FolderDeleteFolder;
 }) {
-  const viewRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const [viewOpen, setViewOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const closeView = useCallback(() => setViewOpen(false), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
-  useEscapeLayer(viewOpen, "Folder view", closeView);
   useEscapeLayer(menuOpen, "Folder actions", closeMenu);
 
   useEffect(() => {
-    if (!viewOpen && !menuOpen) return;
+    if (!menuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!(event.target instanceof Node)) return;
-      if (viewOpen && !viewRef.current?.contains(event.target)) closeView();
       if (menuOpen && !menuRef.current?.contains(event.target)) closeMenu();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [closeMenu, closeView, menuOpen, viewOpen]);
+  }, [closeMenu, menuOpen]);
 
   const createLabel =
     folder.mode === "notes"
@@ -347,77 +305,32 @@ function FolderActionBar({
         <div className="folder-action-toolbar ac-chrome">
           {onSearch && <WorkspaceSearchButton onSearch={onSearch} />}
           {canShare && (
-            <button
-              type="button"
-              className="ac-btn ac-btn-gray"
-              onClick={() => setShareOpen(true)}
-            >
-              Share
-            </button>
-          )}
-          <div className="post-action-popover-wrap" ref={viewRef}>
-            <button
-              type="button"
-              className="ac-btn ac-btn-gray"
-              aria-haspopup="menu"
-              aria-expanded={viewOpen}
-              onClick={() => {
-                setMenuOpen(false);
-                setViewOpen((open) => !open);
-              }}
-            >
-              {FOLDER_VIEW_LABELS[viewMode]}
-              <span aria-hidden="true">▾</span>
-            </button>
-            {viewOpen && (
-              <div
-                className="folder-action-menu"
-                role="menu"
-                data-post-edit-menu-open="true"
-                aria-label="Folder view"
-              >
-                {(Object.keys(FOLDER_VIEW_LABELS) as FolderViewMode[]).map(
-                  (mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={`folder-action-menu-item${
-                        viewMode === mode ? " is-active" : ""
-                      }`}
-                      role="menuitemradio"
-                      aria-checked={viewMode === mode}
-                      onClick={() => {
-                        onChangeView(mode);
-                        setViewOpen(false);
-                      }}
-                    >
-                      {FOLDER_VIEW_LABELS[mode]}
-                    </button>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-          {canEdit && (
-            <button type="button" className="ac-btn ac-btn-gray" onClick={onEdit}>
-              <span className="shortcut-label"><span className="shortcut-letter">E</span>dit</span>
-            </button>
-          )}
-          {canEdit && onDeleteFolder && (
-            <div className="post-action-popover-wrap" ref={menuRef}>
+            <ShortcutTooltip label="Share" placement="bottom">
               <button
                 type="button"
-                className="ac-icon-btn folder-action-more"
-                aria-label="Folder options"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => {
-                  setViewOpen(false);
-                  setMenuOpen((open) => !open);
-                }}
+                className="ac-icon-btn folder-action-share"
+                aria-label="Share folder"
+                onClick={() => setShareOpen(true)}
               >
-                ···
+                <span aria-hidden="true">↗</span>
               </button>
+            </ShortcutTooltip>
+          )}
+          <WorkspaceViewModeControl mode={viewMode} onChange={onChangeView} />
+          {canEdit && (
+            <div className="post-action-popover-wrap" ref={menuRef}>
+              <ShortcutTooltip label="Folder options" placement="bottom">
+                <button
+                  type="button"
+                  className="ac-icon-btn folder-action-more"
+                  aria-label="Folder options"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((open) => !open)}
+                >
+                  ···
+                </button>
+              </ShortcutTooltip>
               {menuOpen && (
                 <div
                   className="folder-action-menu is-right"
@@ -427,29 +340,45 @@ function FolderActionBar({
                 >
                   <button
                     type="button"
-                    className="folder-action-menu-item is-danger"
+                    className="folder-action-menu-item"
                     role="menuitem"
                     onClick={() => {
                       setMenuOpen(false);
-                      setDeleteOpen(true);
+                      onRename();
                     }}
                   >
-                    Move folder to Trash
+                    Rename
                   </button>
+                  {onDeleteFolder && (
+                    <button
+                      type="button"
+                      className="folder-action-menu-item is-danger"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setDeleteOpen(true);
+                      }}
+                    >
+                      Move folder to Trash
+                    </button>
+                  )}
                   {error && <span className="post-folder-error">{error}</span>}
                 </div>
               )}
             </div>
           )}
           {canCreate && (
-            <button
-              type="button"
-              className="ac-btn ac-btn-filled folder-action-create"
-              aria-keyshortcuts="C"
-              onClick={onCreate}
-            >
-              <span className="shortcut-label"><span className="shortcut-letter">C</span>{createLabel.slice(1)}</span>
-            </button>
+            <ShortcutTooltip label={createLabel} keys="C" placement="bottom">
+              <button
+                type="button"
+                className="ac-icon-btn folder-action-create"
+                aria-label={createLabel}
+                aria-keyshortcuts="C"
+                onClick={onCreate}
+              >
+                <span aria-hidden="true">＋</span>
+              </button>
+            </ShortcutTooltip>
           )}
         </div>
       </div>
@@ -534,6 +463,18 @@ function FolderTitleEditor({
     return (
       <div className="post-folder-title-row">
         <h1 id="post-folder-page-title">{folder.name}</h1>
+        {canEdit && (
+          <ShortcutTooltip label="Rename" placement="bottom">
+            <button
+              type="button"
+              className="post-folder-title-edit ac-icon-btn"
+              aria-label="Rename folder"
+              onClick={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
+            >
+              <span aria-hidden="true">✎</span>
+            </button>
+          </ShortcutTooltip>
+        )}
       </div>
     );
   }
@@ -707,6 +648,11 @@ function NotesFolderContents({
                     }
                   }}
                 >
+                  <WorkspaceItemStar
+                    handle={handle}
+                    owner={canEditItems}
+                    post={note}
+                  />
                   <Link
                     className="post-folder-row"
                     href={
@@ -1238,7 +1184,10 @@ export function FolderPage({
 }) {
   const defaultViewMode: FolderViewMode =
     folder.mode === "blog" ? "grid" : "list";
-  const [viewMode, changeView] = useFolderViewMode(folder.id, defaultViewMode);
+  const [viewMode, changeView] = useWorkspaceViewMode(
+    `folder:${folder.id}`,
+    defaultViewMode,
+  );
   const [filterQuery, setFilterQuery] = useState("");
   const lastCreateRequestKey = useRef(createBookmarkRequestKey ?? 0);
   const lastEditRequestKey = useRef(editRequestKey);
@@ -1305,7 +1254,7 @@ export function FolderPage({
         viewMode={viewMode}
         onChangeView={changeView}
         onCreate={() => dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)}
-        onEdit={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
+        onRename={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
         onSearch={onSearch}
         onDeleteFolder={onDeleteFolder}
       />

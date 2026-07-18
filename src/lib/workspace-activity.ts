@@ -28,6 +28,24 @@ export function localDateKey(value: string | Date | undefined): string | null {
   return `${year}-${month}-${day}`;
 }
 
+export function calendarDaysForMonth(monthStart: Date): Date[] {
+  const first = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
+  const leadingOffset = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(
+    first.getFullYear(),
+    first.getMonth() + 1,
+    0,
+  ).getDate();
+  const cellCount = Math.ceil((leadingOffset + daysInMonth) / 7) * 7;
+  const start = new Date(first);
+  start.setDate(first.getDate() - leadingOffset);
+  return Array.from({ length: cellCount }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    return day;
+  });
+}
+
 function historyStorageKey(workspaceId: string): string {
   return `${HISTORY_STORAGE_PREFIX}${workspaceId}`;
 }

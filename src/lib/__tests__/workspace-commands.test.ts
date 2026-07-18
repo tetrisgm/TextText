@@ -110,6 +110,38 @@ describe("workspace commands", () => {
     expect(directions).toEqual([-1, 1]);
   });
 
+  it("separates global Cmd-number navigation from plain item numbers", () => {
+    const navigation = WORKSPACE_COMMANDS.find(
+      (command) => command.id === "navigation.target.2",
+    );
+    const item = WORKSPACE_COMMANDS.find(
+      (command) => command.id === "navigation.item.1",
+    );
+    const navigate = vi.fn();
+    const openItem = vi.fn();
+    const ctx = context({
+      viewLevel: "root",
+      getNavigationTargetPaths: () => ["", "blog", "notes"],
+      getVisiblePostIds: () => ["recent-1"],
+      navigateToNavTargetByIndex: navigate,
+      openItemByIndex: openItem,
+    });
+
+    expect(shortcutList(navigation!)).toEqual([
+      {
+        key: "2",
+        meta: true,
+        label: "⌘2",
+        allowTypingTarget: true,
+      },
+    ]);
+    expect(navigation!.when(ctx)).toBe(true);
+    navigation!.run(ctx);
+    item!.run(ctx);
+    expect(navigate).toHaveBeenCalledWith(1);
+    expect(openItem).toHaveBeenCalledWith(0);
+  });
+
   it("uses S to toggle the personal star and delegates a multi-selection", () => {
     const post = {
       id: "post-1",

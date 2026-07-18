@@ -8,7 +8,10 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
+import {
+  WorkspaceItemActions,
+  WorkspaceItemStar,
+} from "@/components/workspace/WorkspaceItemActions";
 import { TagChips } from "@/components/TagChips";
 import type { Post } from "@/lib/content";
 import { isSafeLinkHref, isVideoFile, postBodyPreview } from "@/lib/content";
@@ -290,6 +293,11 @@ export function BookmarkCard({
         }
       }}
     >
+      <WorkspaceItemStar
+        handle={handle ?? ""}
+        owner={owner && Boolean(handle)}
+        post={post}
+      />
       <div className={styles.body}>
         <Link
           className={styles.main}

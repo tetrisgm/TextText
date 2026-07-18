@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspacePoolPost } from "@/lib/pool/types";
 import {
+  calendarDaysForMonth,
   calendarDocumentAction,
   documentsForActivityDate,
   groupDocumentsByActivityDate,
@@ -107,6 +108,12 @@ describe("workspace activity", () => {
       dateKey: "2026-07-12",
       postIds: [],
     });
+  });
+
+  it("renders only calendar weeks that contain a day in the month", () => {
+    expect(calendarDaysForMonth(new Date(2021, 1, 1))).toHaveLength(28);
+    expect(calendarDaysForMonth(new Date(2026, 3, 1))).toHaveLength(35);
+    expect(calendarDaysForMonth(new Date(2026, 7, 1))).toHaveLength(42);
   });
 
   it("splits a date into created and edited sections without duplicates", () => {

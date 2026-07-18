@@ -43,6 +43,7 @@ export type CommandWorkspaceSurface = {
   selectedPostId: string | null;
   selectedPostIds: readonly string[];
   getRootSectionPaths: () => string[];
+  getNavigationTargetPaths: () => string[];
   getVisiblePostIds: () => string[];
   getPost: (postId: string) => WorkspacePoolPost | null;
   selectPost: (postId: string | null) => void;
@@ -53,6 +54,7 @@ export type CommandWorkspaceSurface = {
   selectPrevious: () => void;
   openSelected: () => void;
   openItemByIndex: (index: number) => void;
+  navigateToNavTargetByIndex: (index: number) => void;
   openSectionByIndex: (index: number) => void;
   openPost: (postId: string, mode?: "read" | "edit") => void;
   editCurrent: () => void;

@@ -3,7 +3,10 @@
 import type { CSSProperties, MouseEvent, PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
+import {
+  WorkspaceItemActions,
+  WorkspaceItemStar,
+} from "@/components/workspace/WorkspaceItemActions";
 import { TagChips } from "@/components/TagChips";
 import type { Blog, Post } from "@/lib/content";
 import {
@@ -271,6 +274,7 @@ export function PostCard({
         isMinimal ? " tvcard-shell--minimal" : ""
       }`}
     >
+      <WorkspaceItemStar handle={handle} owner={owner} post={post} />
       <Link
         ref={ref}
         href={href ?? blogPostPath(blog, post)}

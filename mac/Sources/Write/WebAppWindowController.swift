@@ -237,6 +237,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         observeVisibilityForRepaint()
     }
 
+    func hide() {
+        window?.orderOut(nil)
+    }
+
     /// WKWebView stops compositing while its window is occluded (another Space,
     /// the display asleep, the screen locked). On some returns to visibility it
     /// keeps showing the stale, blank surface until something forces a repaint,

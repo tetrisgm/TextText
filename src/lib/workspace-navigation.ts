@@ -14,6 +14,7 @@ export type WorkspaceHierarchyView =
       folderPath: string;
       level: "post" | "edit";
       postId: string;
+      openedFrom?: "folder" | "root" | "search";
       returnToSearch?: WorkspaceSearchLocation;
     };
 
@@ -145,6 +146,7 @@ export function workspaceHierarchyUpTarget(
     if (view.returnToSearch) {
       return { kind: "search", ...view.returnToSearch };
     }
+    if (view.openedFrom === "root") return { kind: "home" };
     return { kind: "folder", folderPath: view.folderPath };
   }
   if (view.level === "section") {
