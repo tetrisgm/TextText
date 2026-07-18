@@ -23,6 +23,23 @@ This version has breaking changes. APIs, conventions, and file structure may all
   the remote source, public artifacts, update feed, and installed app on the
   same source version.
 
+## Release reliability
+
+- Close stdin and impose a process-group wall-clock cap on every long agent,
+  build, test, and publish child. Stash abandoned worker WIP before waiting for
+  a clean tree.
+- Scope process guards to this repository's absolute path or explicit working
+  directory. Never use a bare shared script or program name.
+- Ship only fast deterministic gates. Keep race and heavy suites required out
+  of band; use deterministic assertions plus generous hang guards.
+- In launchd, load `GH_TOKEN` from a mode-600 env file, disable prompts, and
+  pin absolute tool paths. Do not rely on Keychain UI or a login shell.
+- Key retries to the stable source commit. Probe and bump to the next free
+  immutable version; never reuse published identifiers.
+- Keep ship and agent lanes mutually exclusive. The release driver is launchd
+  `KeepAlive` and agent-free, with deterministic continuation rather than a
+  model turn.
+
 # AI approach (binding)
 
 Full architecture: docs/ai-sidebar-architecture.md. The short contract every
