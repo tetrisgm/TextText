@@ -444,6 +444,7 @@ describe("CollabProvider startup and outbox", () => {
   // (or the assertions) inspect it.
   function beaconHarness(postId: string) {
     const beacons: Array<{ url: string }> = [];
+    const keepalives: Array<{ url: string; init: RequestInit }> = [];
     const pageListeners = new Map<string, Set<() => void>>();
     vi.stubGlobal("window", {
       addEventListener: (ev: string, fn: () => void) => {
@@ -466,10 +467,13 @@ describe("CollabProvider startup and outbox", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
-        if (init?.method === "POST") return new Promise<Response>(() => {});
+        if (init?.method === "POST") {
+          if (init.keepalive) keepalives.push({ url, init });
+          return new Promise<Response>(() => {});
+        }
         if (!catchUpDone) {
           catchUpDone = true;
-          return jsonResponse({ updates: [], seq: 0 });
+          return jsonResponse({ updates: [], seq: 0, epoch: 5 });
         }
         return new Promise<Response>(() => {});
       }),
@@ -477,12 +481,12 @@ describe("CollabProvider startup and outbox", () => {
     const firePageHide = () => {
       for (const fn of pageListeners.get("pagehide") ?? []) fn();
     };
-    return { beacons, firePageHide, base: `/api/collab/${postId}` };
+    return { beacons, keepalives, firePageHide, base: `/api/collab/${postId}` };
   }
 
-  it("skips the beacon for an over-limit payload so the normal flush keeps it", async () => {
+  it("uses an epoch-fenced keepalive fetch for a single over-limit update", async () => {
     vi.useFakeTimers();
-    const { beacons, firePageHide, base } = beaconHarness("beacon-big");
+    const { beacons, keepalives, firePageHide, base } = beaconHarness("beacon-big");
     const doc = new Y.Doc();
     const provider = new CollabProvider(doc, {
       postId: "beacon-big",
@@ -495,11 +499,41 @@ describe("CollabProvider startup and outbox", () => {
     doc.getText("big").insert(0, "x".repeat(80_000));
 
     firePageHide();
-    // Over-limit: nothing is beaconed to the push endpoint (the edit stays in
-    // the outbox for the chunked normal flush rather than being silently
-    // dropped by sendBeacon).
+    // The update cannot fit in even an otherwise empty beacon envelope. It
+    // must fall back to unload-safe fetch instead of disappearing with the tab.
     expect(beacons.some((b) => b.url === base)).toBe(false);
+    expect(keepalives).toHaveLength(1);
+    expect(keepalives[0]).toMatchObject({
+      url: base,
+      init: {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+    const payload = JSON.parse(String(keepalives[0].init.body)) as {
+      updates: string[];
+      epoch?: number;
+    };
+    expect(payload.updates).toHaveLength(1);
+    expect(payload.updates[0].length).toBeGreaterThanOrEqual(60_000);
+    expect(payload.epoch).toBe(5);
 
+    provider.destroy();
+  });
+
+  it("keeps the normal small-update pagehide path on sendBeacon", async () => {
+    vi.useFakeTimers();
+    const { beacons, keepalives, firePageHide, base } = beaconHarness("beacon-small");
+    const doc = new Y.Doc();
+    const provider = providerFor(doc, "beacon-small");
+    await provider.start();
+    doc.getMap("body").set("text", "small queued edit");
+
+    firePageHide();
+
+    expect(beacons.filter((b) => b.url === base)).toHaveLength(1);
+    expect(keepalives).toHaveLength(0);
     provider.destroy();
   });
 

@@ -381,10 +381,10 @@ export class CollabProvider {
   }
 
   /** Last-resort delivery of queued edits over sendBeacon (survives page
-   * unload, when a normal fetch would be cancelled). Best-effort: the server
-   * appends what it receives; if the payload exceeds the beacon limit it is
-   * left in the outbox for the next normal flush. Delivered updates are dropped
-   * from the queue so a following normal flush cannot double-send them. */
+   * unload, when a normal fetch would be cancelled). A keepalive fetch carries
+   * any over-limit tail or retries a rejected beacon. Delivered beacon updates
+   * are dropped from the queue so a following normal flush cannot double-send
+   * them. */
   private flushPendingViaBeacon(): void {
     if (
       !this.opts.canPush ||
@@ -413,7 +413,27 @@ export class CollabProvider {
       size = next;
       fit += 1;
     }
-    if (fit === 0) return;
+    const keepalive = (updates: string[]) => {
+      if (updates.length === 0) return;
+      const payload = JSON.stringify({
+        updates,
+        epoch: this.outbox!.epoch,
+      });
+      try {
+        fetch(this.base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // Best-effort only. The page is already leaving.
+      }
+    };
+    if (fit === 0) {
+      keepalive(encoded);
+      return;
+    }
     // Fence the unload append on the same generation as the normal push, or a
     // retired post (epoch >= 1) would reject it (absent epoch is treated as 0).
     const payload = JSON.stringify({
@@ -423,6 +443,9 @@ export class CollabProvider {
     const blob = new Blob([payload], { type: "application/json" });
     if (navigator.sendBeacon(this.base, blob)) {
       this.outbox.pending.splice(0, fit);
+      keepalive(encoded.slice(fit));
+    } else {
+      keepalive(encoded);
     }
   }
 

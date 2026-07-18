@@ -200,6 +200,16 @@ export async function retireStaleCollabEpoch(
 ): Promise<boolean> {
   if (!db) return false;
   if (await hasActiveCoEditors(postId)) return false;
+  // This path has already proved the post idle. Sweep only ghosts well beyond
+  // the live-presence window, retaining the existing 4x safety margin.
+  await db
+    .delete(collabPresence)
+    .where(
+      and(
+        eq(collabPresence.postId, postId),
+        lt(collabPresence.updatedAt, new Date(Date.now() - PRESENCE_STALE_MS * 4)),
+      ),
+    );
   const rows = await db
     .select({
       epoch: collabState.epoch,
@@ -213,17 +223,46 @@ export async function retireStaleCollabEpoch(
     !cur ||
     cur.materializedRevision == null ||
     cur.materializedRevision !== postRevision;
-  if (!stale) return false;
   const readEpoch = cur?.epoch ?? 0;
-  await db.execute(sql`
-    INSERT INTO ${collabState} (post_id, epoch, materialized_revision, updated_at)
-    VALUES (${postId}::uuid, 1, ${postRevision}, now())
-    ON CONFLICT (post_id) DO UPDATE
+  let retired = false;
+  if (stale) {
+    await db.execute(sql`
+      INSERT INTO ${collabState} (post_id, epoch, materialized_revision, updated_at)
+      VALUES (${postId}::uuid, 1, ${postRevision}, now())
+      ON CONFLICT (post_id) DO UPDATE
+        SET epoch = collab_state.epoch + 1,
+            materialized_revision = ${postRevision},
+            updated_at = now()
+        WHERE collab_state.epoch = ${readEpoch}
+    `);
+    retired = true;
+  } else {
+    // A materialized, idle current log is reconstructible from posts.body. Do
+    // not delete it in place: rotate the epoch with the same single-writer CAS
+    // used above, so a lapsed writer is fenced before the old generation is
+    // swept. The live posts.revision comparison closes the read-to-delete race,
+    // and EXISTS avoids pointless epoch churn when there is no log to clean.
+    const result = await db.execute(sql`
+      UPDATE ${collabState}
       SET epoch = collab_state.epoch + 1,
-          materialized_revision = ${postRevision},
           updated_at = now()
-      WHERE collab_state.epoch = ${readEpoch}
-  `);
+      WHERE post_id = ${postId}::uuid
+        AND epoch = ${readEpoch}
+        AND materialized_revision = ${postRevision}
+        AND EXISTS (
+          SELECT 1 FROM ${posts}
+          WHERE id = ${postId}::uuid
+            AND revision = collab_state.materialized_revision
+        )
+        AND EXISTS (
+          SELECT 1 FROM ${collabUpdates}
+          WHERE post_id = ${postId}::uuid
+            AND epoch = ${readEpoch}
+        )
+      RETURNING epoch
+    `);
+    retired = result.rows.length > 0;
+  }
   // Storage sweep: rows from retired epochs are dead forever. The relay only
   // serves the CURRENT epoch and the append fence rejects stale writers, so
   // nothing can ever read or extend an older epoch's rows; deleting them is
@@ -235,7 +274,7 @@ export async function retireStaleCollabEpoch(
       AND epoch < COALESCE(
         (SELECT epoch FROM ${collabState} WHERE post_id = ${postId}::uuid), 0)
   `);
-  return true;
+  return retired;
 }
 
 // Compact the append log once it grows past this many rows. Compaction
