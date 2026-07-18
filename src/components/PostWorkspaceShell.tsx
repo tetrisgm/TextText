@@ -2381,16 +2381,6 @@ function WorkspacePostOption({
       tabIndex={active ? 0 : -1}
       title={showUpdatedAt ? sidebarDocumentTitle(post) : undefined}
       onFocus={() => onSelect(post.id)}
-      onMouseMove={(event) => {
-        if (
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.shiftKey &&
-          workspaceMouseMoved(event.clientX, event.clientY)
-        ) {
-          onSelect(post.id);
-        }
-      }}
     >
       <WorkspaceItemStar
         handle={handle}
@@ -2825,13 +2815,6 @@ function WorkspaceRootLanding({
                       }`}
                       data-workspace-section-path={result.folderPath}
                       onFocus={() => onSelectSection(result.folderPath)}
-                      onMouseMove={(event) => {
-                        if (
-                          workspaceMouseMoved(event.clientX, event.clientY)
-                        ) {
-                          onSelectSection(result.folderPath);
-                        }
-                      }}
                       onClick={() => openResult(result)}
                     >
                       <span>
@@ -3091,11 +3074,6 @@ function TrashPage({
                 data-workspace-post-id={post.id}
                 tabIndex={selected ? 0 : -1}
                 onFocus={() => onSelectPost(post.id)}
-                onMouseMove={(event) => {
-                  if (workspaceMouseMoved(event.clientX, event.clientY)) {
-                    onSelectPost(post.id);
-                  }
-                }}
               >
                 <div>
                   <strong>{post.title.trim() || "Untitled"}</strong>

@@ -41,7 +41,6 @@ import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
-import { workspaceMouseMoved } from "@/lib/workspace-hover";
 
 export type FolderCreateRequest =
   | { type: "article"; folderPath: string }
@@ -636,17 +635,6 @@ function NotesFolderContents({
                   tabIndex={note.id === selectedPostId ? 0 : -1}
                   data-workspace-post-id={note.id}
                   onFocus={() => note.id && onSelectPost?.(note.id)}
-                  onMouseMove={(event) => {
-                    if (
-                      note.id &&
-                      !event.metaKey &&
-                      !event.ctrlKey &&
-                      !event.shiftKey &&
-                      workspaceMouseMoved(event.clientX, event.clientY)
-                    ) {
-                      onSelectPost?.(note.id);
-                    }
-                  }}
                 >
                   <WorkspaceItemStar
                     handle={handle}
@@ -1086,17 +1074,6 @@ function BlogFolderContents({
                   tabIndex={post.id === selectedPostId ? 0 : -1}
                   data-workspace-post-id={post.id}
                   onFocus={() => post.id && onSelectPost?.(post.id)}
-                  onMouseMove={(event) => {
-                    if (
-                      post.id &&
-                      !event.metaKey &&
-                      !event.ctrlKey &&
-                      !event.shiftKey &&
-                      workspaceMouseMoved(event.clientX, event.clientY)
-                    ) {
-                      onSelectPost?.(post.id);
-                    }
-                  }}
                 >
                   <PostCard
                     blog={blog}
