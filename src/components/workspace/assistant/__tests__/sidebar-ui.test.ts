@@ -10,6 +10,7 @@ import {
   AssistantSidebar,
   isAssistantToggleShortcut,
   resolveAssistantSidebarDimensions,
+  shouldRetractAssistantSidebar,
 } from "@/components/workspace/assistant/AssistantSidebar";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
 
@@ -93,6 +94,37 @@ describe("assistant sidebar UI", () => {
         key: "a",
         metaKey: false,
         shiftKey: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("retracts only an idle unpinned assistant", () => {
+    expect(
+      shouldRetractAssistantSidebar({
+        state: "open",
+        pointerWithin: false,
+        focusWithin: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetractAssistantSidebar({
+        state: "open",
+        pointerWithin: true,
+        focusWithin: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRetractAssistantSidebar({
+        state: "open",
+        pointerWithin: false,
+        focusWithin: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRetractAssistantSidebar({
+        state: "pinned",
+        pointerWithin: false,
+        focusWithin: false,
       }),
     ).toBe(false);
   });

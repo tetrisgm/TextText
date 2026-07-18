@@ -325,7 +325,16 @@ export function PostCard({
               </span>
             )}
             <span className="tvcard-body">
-              <span className="tvcard-chip-row">
+              {(categoryLabel || showPinned) && (
+                <span className="tvcard-chip-row">
+                  {categoryLabel && (
+                    <span className="tvcard-category">{categoryLabel}</span>
+                  )}
+                  {showPinned && <span className="tvcard-pinned">Pinned</span>}
+                </span>
+              )}
+              <span className="tvcard-title">{title}</span>
+              <span className="tvcard-detail">
                 {showTypeChip && (
                   <span
                     className="tvcard-chip"
@@ -334,13 +343,8 @@ export function PostCard({
                     {WORKSPACE_ITEM_TYPE_LABELS[post.type]}
                   </span>
                 )}
-                {categoryLabel && (
-                  <span className="tvcard-category">{categoryLabel}</span>
-                )}
-                {showPinned && <span className="tvcard-pinned">Pinned</span>}
+                <span className="tvcard-desc">{desc}</span>
               </span>
-              <span className="tvcard-title">{title}</span>
-              <span className="tvcard-desc">{desc}</span>
             </span>
           </span>
         </span>

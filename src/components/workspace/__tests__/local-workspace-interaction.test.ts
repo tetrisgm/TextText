@@ -3,6 +3,7 @@ import {
   createOptimisticWorkspacePost,
   createWorkspaceItemIdentityRegistry,
   mergeCreatedWorkspacePost,
+  nextWorkspacePostAfterDelete,
   shouldAutofocusWorkspacePostEditor,
   shouldOpenWorkspacePostInEdit,
 } from "@/components/workspace/useLocalWorkspaceInteraction";
@@ -220,5 +221,21 @@ describe("local workspace direct edit routing", () => {
     expect(shouldAutofocusWorkspacePostEditor({ type: "note" })).toBe(false);
     expect(shouldAutofocusWorkspacePostEditor({ type: "article" })).toBe(false);
     expect(shouldAutofocusWorkspacePostEditor({ type: "bookmark" })).toBe(false);
+  });
+});
+
+describe("local workspace optimistic deletion", () => {
+  it("selects the following sibling before removing the current item", () => {
+    const pool = workspacePool();
+    pool.posts = [
+      post({ id: "first", slug: "first", folderId: "blog" }),
+      post({ id: "second", slug: "second", folderId: "blog" }),
+      post({ id: "third", slug: "third", folderId: "blog" }),
+    ];
+
+    expect(nextWorkspacePostAfterDelete(pool, "second", "blog")?.id).toBe(
+      "third",
+    );
+    expect(nextWorkspacePostAfterDelete(pool, "third", "blog")).toBeNull();
   });
 });

@@ -83,6 +83,7 @@ import {
 import {
   createOptimisticWorkspacePost,
   mergeCreatedWorkspacePost,
+  nextWorkspacePostAfterDelete,
   shouldOpenWorkspacePostInEdit,
   useLocalWorkspaceItemIdentity,
   type WorkspaceItemIdentityRegistry,
@@ -2398,8 +2399,8 @@ function WorkspacePostOption({
         <span className="workspace-item-option-copy">
           <strong>{sidebarDocumentTitle(post)}</strong>
           <span className="workspace-item-option-detail">
-            <small>{post.excerpt?.trim() || post.bodyPreview?.trim() || "No preview"}</small>
             <em>{WORKSPACE_ITEM_TYPE_LABELS[post.type]}</em>
+            <small>{post.excerpt?.trim() || post.bodyPreview?.trim() || "No preview"}</small>
           </span>
         </span>
         {showUpdatedAt && (
@@ -5453,65 +5454,110 @@ function LocalWorkspaceShell({
   );
 
   const deleteWorkspaceItem = useCallback<FolderDeleteItem>(
-    async (post) => {
+    (post) => {
       if (!canManageFolders || !post.id) {
         throw new Error("You cannot edit this blog");
       }
+      const postId = post.id;
+      const currentView = viewRef.current;
       const pool = displayPoolRef.current;
-      const poolPost = findPoolPostById(pool, post.id);
+      const poolPost = findPoolPostById(pool, postId);
       if (!poolPost) throw new Error("Post not found");
       const folderPath = folderPathForPoolPost(pool, poolPost);
-      if (isOptimisticPostId(post.id)) {
-        void deletePersistedWorkspaceDraft(pool.blogId, post.id);
-        cancelledOptimisticPostIdsRef.current.add(post.id);
-        localWorkspacePendingSaveIds.delete(post.id);
-        localWorkspaceDraftSessions.delete(post.id);
-        localWorkspaceDraftRevisions.delete(post.id);
-        localWorkspaceServerRevisions.delete(post.id);
-        removePost(post.id);
+      const nextPost =
+        (currentView.level === "post" || currentView.level === "edit") &&
+        currentView.postId === postId
+          ? nextWorkspacePostAfterDelete(pool, postId, folderPath)
+          : null;
+      if (isOptimisticPostId(postId)) {
+        void deletePersistedWorkspaceDraft(pool.blogId, postId);
+        cancelledOptimisticPostIdsRef.current.add(postId);
+        localWorkspacePendingSaveIds.delete(postId);
+        localWorkspaceDraftSessions.delete(postId);
+        localWorkspaceDraftRevisions.delete(postId);
+        localWorkspaceServerRevisions.delete(postId);
+        removePost(postId);
         setSelectedPostIds((current) => {
           const next = new Set(current);
-          next.delete(post.id!);
+          next.delete(postId);
           return next;
         });
-        setSelectedPostId((current) => (current === post.id ? null : current));
-        const currentView = viewRef.current;
+        setSelectedPostId((current) => (current === postId ? null : current));
         if (
           (currentView.level === "post" || currentView.level === "edit") &&
-          currentView.postId === post.id
+          currentView.postId === postId
         ) {
-          navigateSection(folderPath);
+          if (nextPost) {
+            openPoolPost(
+              nextPost,
+              folderPath,
+              currentView.level === "edit" ? "edit" : "read",
+            );
+          } else if (currentView.returnToSearch) {
+            navigateSearch(currentView.returnToSearch);
+          } else {
+            navigateSection(folderPath);
+          }
         }
         return;
       }
-      localWorkspacePendingSaveIds.delete(post.id);
-      localWorkspaceDraftSessions.delete(post.id);
-      localWorkspaceDraftRevisions.delete(post.id);
-      localWorkspaceServerRevisions.delete(post.id);
-      movePostToTrash(post.id);
+      const pendingDraft = localWorkspaceDraftSessions.get(postId);
+      const pendingDraftRevision = localWorkspaceDraftRevisions.get(postId);
+      const pendingServerRevision = localWorkspaceServerRevisions.get(postId);
+      const hadPendingSave = localWorkspacePendingSaveIds.has(postId);
+      localWorkspacePendingSaveIds.delete(postId);
+      localWorkspaceDraftSessions.delete(postId);
+      localWorkspaceDraftRevisions.delete(postId);
+      localWorkspaceServerRevisions.delete(postId);
+      movePostToTrash(postId);
       setSelectedPostIds((current) => {
         const next = new Set(current);
-        next.delete(post.id!);
+        next.delete(postId);
         return next;
       });
-      setSelectedPostId((current) => (current === post.id ? null : current));
-      const currentView = viewRef.current;
+      setSelectedPostId((current) => (current === postId ? null : current));
       if (
         (currentView.level === "post" || currentView.level === "edit") &&
-        currentView.postId === post.id
+        currentView.postId === postId
       ) {
-        navigateSection(folderPath);
+        if (nextPost) {
+          openPoolPost(
+            nextPost,
+            folderPath,
+            currentView.level === "edit" ? "edit" : "read",
+          );
+        } else if (currentView.returnToSearch) {
+          navigateSearch(currentView.returnToSearch);
+        } else {
+          navigateSection(folderPath);
+        }
       }
 
-      try {
-        await deleteEditablePostAction(pool.blog.handle, post.id);
-        void deletePersistedWorkspaceDraft(pool.blogId, post.id);
-      } catch (error) {
-        restorePostFromTrash(poolPost.id);
-        throw error;
-      }
+      void deleteEditablePostAction(pool.blog.handle, postId)
+        .then(() => {
+          void deletePersistedWorkspaceDraft(pool.blogId, postId);
+        })
+        .catch((error) => {
+          if (pendingDraft) {
+            localWorkspaceDraftSessions.set(postId, pendingDraft);
+          }
+          if (pendingDraftRevision !== undefined) {
+            localWorkspaceDraftRevisions.set(postId, pendingDraftRevision);
+          }
+          if (pendingServerRevision !== undefined) {
+            localWorkspaceServerRevisions.set(postId, pendingServerRevision);
+          }
+          if (hadPendingSave) localWorkspacePendingSaveIds.add(postId);
+          restorePostFromTrash(poolPost.id);
+          console.warn("workspace item delete failed", error);
+        });
     },
-    [canManageFolders, navigateSection],
+    [
+      canManageFolders,
+      navigateSearch,
+      navigateSection,
+      openPoolPost,
+    ],
   );
 
   const deleteWorkspaceFolder = useCallback(

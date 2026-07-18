@@ -18,6 +18,7 @@ import {
   type SlashCommandItem,
   type SlashMenuHandle,
 } from "@/components/editor/SlashMenu";
+import { EDITOR_BLOCK_LABELS } from "@/components/editor/block-labels";
 
 type SlashCommandOptions = {
   mediaEnabled: boolean;
@@ -38,7 +39,7 @@ const textCommands: SlashCommandItem[] = [
   {
     id: "slash-command-subtitle",
     action: "subtitle",
-    label: "Subtitle",
+    label: EDITOR_BLOCK_LABELS.subtitle,
     hint: "Description below the title",
     icon: "ST",
     aliases: ["dek", "description", "standfirst"],
@@ -46,26 +47,26 @@ const textCommands: SlashCommandItem[] = [
   {
     id: "slash-command-heading-1",
     action: "heading1",
-    label: "Heading 1",
+    label: EDITOR_BLOCK_LABELS.heading1,
     hint: "Large section title",
     icon: "H1",
-    aliases: ["h1", "title"],
+    aliases: ["h1", "section"],
   },
   {
     id: "slash-command-heading-2",
     action: "heading2",
-    label: "Heading 2",
+    label: EDITOR_BLOCK_LABELS.heading2,
     hint: "Medium section title",
     icon: "H2",
-    aliases: ["h2"],
+    aliases: ["h2", "subheading"],
   },
   {
     id: "slash-command-heading-3",
     action: "heading3",
-    label: "Heading 3",
+    label: EDITOR_BLOCK_LABELS.heading3,
     hint: "Small section title",
     icon: "H3",
-    aliases: ["h3", "subheading"],
+    aliases: ["h3", "sub-subheading"],
   },
 ];
 

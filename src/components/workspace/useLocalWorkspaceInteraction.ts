@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FolderCreateRequest } from "@/components/FolderPage";
 import { isNoCoverValue } from "@/lib/cover";
+import { poolPostsForFolder } from "@/lib/pool/selectors";
 import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
@@ -141,6 +142,16 @@ export function shouldAutofocusWorkspacePostEditor(
 ): boolean {
   void post.type;
   return false;
+}
+
+export function nextWorkspacePostAfterDelete(
+  pool: WorkspacePoolPayload,
+  postId: string,
+  folderPath: string,
+): WorkspacePoolPost | null {
+  const siblings = poolPostsForFolder(pool, folderPath);
+  const deletedIndex = siblings.findIndex((post) => post.id === postId);
+  return deletedIndex >= 0 ? (siblings[deletedIndex + 1] ?? null) : null;
 }
 
 export type WorkspaceItemIdentityRegistry = {

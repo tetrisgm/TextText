@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
+import { EDITOR_BLOCK_LABELS } from "@/components/editor/block-labels";
 
 type BodyEditorBlock =
   | "body"
@@ -18,11 +19,11 @@ const BLOCK_OPTIONS: Array<{
   label: string;
   keys: string;
 }> = [
-  { value: "body", label: "Body", keys: "⌘⌥0" },
-  { value: "subtitle", label: "Subtitle", keys: "⌘⌥4" },
-  { value: "heading1", label: "Heading 1", keys: "⌘⌥1" },
-  { value: "heading2", label: "Heading 2", keys: "⌘⌥2" },
-  { value: "heading3", label: "Heading 3", keys: "⌘⌥3" },
+  { value: "body", label: EDITOR_BLOCK_LABELS.body, keys: "⌘⌥0" },
+  { value: "subtitle", label: EDITOR_BLOCK_LABELS.subtitle, keys: "⌘⌥4" },
+  { value: "heading1", label: EDITOR_BLOCK_LABELS.heading1, keys: "⌘⌥1" },
+  { value: "heading2", label: EDITOR_BLOCK_LABELS.heading2, keys: "⌘⌥2" },
+  { value: "heading3", label: EDITOR_BLOCK_LABELS.heading3, keys: "⌘⌥3" },
 ];
 
 function bodyEditorBlock(editor: Editor): BodyEditorBlock {

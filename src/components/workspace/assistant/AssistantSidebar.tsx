@@ -154,6 +154,18 @@ export function isAssistantToggleShortcut(
   );
 }
 
+export function shouldRetractAssistantSidebar({
+  focusWithin,
+  pointerWithin,
+  state,
+}: {
+  focusWithin: boolean;
+  pointerWithin: boolean;
+  state: AssistantSidebarState;
+}): boolean {
+  return state === "open" && !pointerWithin && !focusWithin;
+}
+
 function formatFileSize(value: number | undefined): string | null {
   if (value === undefined || !Number.isFinite(value) || value < 0) return null;
   if (value < 1024) return `${Math.round(value)} B`;
@@ -223,6 +235,7 @@ export function AssistantSidebar({
     state === "pinned" ? "pinned" : "open",
   );
   const focusOnOpenRef = useRef(true);
+  const pointerWithinRef = useRef(false);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const [resizing, setResizing] = useState(false);
   // Approaching the collapsed right rail reveals an interactive overlay. It
@@ -321,13 +334,27 @@ export function AssistantSidebar({
   }, [disabled, state, visible]);
 
   const handleRootPointerEnter = () => {
+    pointerWithinRef.current = true;
     if (edgePeeking === undefined && state === "hidden") setPeeking(true);
   };
   const handleRootPointerLeave = () => {
-    if (edgePeeking !== undefined) return;
-    if (state !== "hidden") return;
+    pointerWithinRef.current = false;
+    const panelHasFocus = Boolean(
+      panelRef.current?.contains(document.activeElement),
+    );
+    if (
+      shouldRetractAssistantSidebar({
+        state,
+        pointerWithin: false,
+        focusWithin: panelHasFocus,
+      })
+    ) {
+      hideAssistant();
+      return;
+    }
+    if (state !== "hidden" || edgePeeking !== undefined) return;
     // Keep the panel up if the pointer left while focus is inside it (e.g. the
-    // user clicked into the composer): promote to a persistent open instead of
+    // user clicked into the composer): engage the unpinned overlay instead of
     // yanking it away mid-interaction.
     if (panelRef.current?.contains(document.activeElement)) {
       focusOnOpenRef.current = false;
@@ -452,6 +479,15 @@ export function AssistantSidebar({
     const next = event.relatedTarget;
     if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
       setFocusWithin(false);
+      if (
+        shouldRetractAssistantSidebar({
+          state,
+          pointerWithin: pointerWithinRef.current,
+          focusWithin: false,
+        })
+      ) {
+        hideAssistant();
+      }
     }
   };
 
