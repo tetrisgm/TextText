@@ -1323,7 +1323,7 @@ export async function setItemCoverAction(
       coverCaption: caption,
       coverHeight: height,
     },
-    "set_item_cover",
+    "update_item",
     String(sourceInput),
   );
 }

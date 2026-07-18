@@ -324,6 +324,15 @@ describe("native workspace tool adapter", () => {
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: () => current,
+      readItemText: async (id) => {
+        const post = current.posts.find((candidate) => candidate.id === id)!;
+        return {
+          title: post.title,
+          excerpt: post.excerpt ?? "",
+          body: "Body",
+          tags: post.tags ?? [],
+        };
+      },
     });
 
     await expect(
@@ -336,7 +345,7 @@ describe("native workspace tool adapter", () => {
       tools.executor("recapture_bookmark", { id: "bookmark-1" }),
     ).resolves.toMatchObject({ queued: true });
     await expect(
-      tools.executor("list_item_assets", { id: "post-1" }),
+      tools.executor("read_item", { id: "post-1" }),
     ).resolves.toMatchObject({
       assets: [{ url: "https://assets.test/a.jpg" }],
     });
@@ -352,7 +361,7 @@ describe("native workspace tool adapter", () => {
       tools.executor("delete_folder", { folder_id: "notes" }),
     ).resolves.toEqual({ ok: false, cancelled: true });
     await expect(
-      tools.executor("grant_access", {
+      tools.executor("set_access", {
         scope_type: "workspace",
         email: "reader@example.com",
         role: "guest",

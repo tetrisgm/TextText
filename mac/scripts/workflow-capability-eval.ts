@@ -79,21 +79,12 @@ const evaluations = [
         idempotent: true,
         openWorld: false,
       });
-      expectTool("grant_access", {
+      expectTool("set_access", {
         mutability: "write",
         requiredScope: "sync",
         confirmation: "audience",
         readOnly: false,
         destructive: false,
-        idempotent: false,
-        openWorld: false,
-      });
-      expectTool("set_access_role", {
-        mutability: "write",
-        requiredScope: "sync",
-        confirmation: "audience",
-        readOnly: false,
-        destructive: true,
         idempotent: true,
         openWorld: false,
       });
@@ -106,14 +97,14 @@ const evaluations = [
         idempotent: true,
         openWorld: false,
       });
-      parse("grant_access", {
+      parse("set_access", {
         scope_type: "folder",
         scope_id: "folder-1",
         email: "reader@example.com",
         role: "viewer",
       });
       expectThrows(() =>
-        parse("grant_access", {
+        parse("set_access", {
           scope_type: "workspace",
           email: "reader@example.com",
           role: "viewer",
@@ -198,15 +189,6 @@ const evaluations = [
   {
     id: "workflow.cover_assets",
     run() {
-      expectTool("list_item_assets", {
-        mutability: "read",
-        requiredScope: "read",
-        confirmation: "none",
-        readOnly: true,
-        destructive: false,
-        idempotent: true,
-        openWorld: false,
-      });
       expectTool("add_item_asset", {
         mutability: "write",
         requiredScope: "sync",
@@ -225,13 +207,13 @@ const evaluations = [
         idempotent: true,
         openWorld: false,
       });
-      expectTool("set_item_cover", {
+      expectTool("update_item", {
         mutability: "write",
         requiredScope: "sync",
         confirmation: "none",
         readOnly: false,
         destructive: true,
-        idempotent: true,
+        idempotent: false,
         openWorld: false,
       });
       parse("add_item_asset", {
@@ -240,17 +222,15 @@ const evaluations = [
         placement: "cover",
         if_match_hash: "asset-hash",
       });
-      parse("set_item_cover", {
+      parse("update_item", {
         id: "item-1",
-        source: "url",
-        url: "https://assets.example/cover.jpg",
+        cover: "https://assets.example/cover.jpg",
         if_match_hash: "cover-hash",
       });
       expectThrows(() =>
-        parse("set_item_cover", {
+        parse("update_item", {
           id: "item-1",
           source: "auto",
-          url: "https://assets.example/cover.jpg",
         }),
       );
     },

@@ -53,7 +53,7 @@ describe("native workspace tool parity", () => {
     expect(schemas.list_items.properties).not.toHaveProperty("folder");
     expect(schemas.create_item.properties).not.toHaveProperty("folder");
     expect(schemas.append_to_item.properties).not.toHaveProperty("markdown");
-    expect(schemas.set_item_pinned.properties?.pinned).toEqual({
+    expect(schemas.update_item.properties?.pinned).toEqual({
       type: "boolean",
     });
   });

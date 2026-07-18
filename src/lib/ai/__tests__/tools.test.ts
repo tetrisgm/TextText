@@ -10,35 +10,30 @@ import {
 const EXPECTED_NAMES = [
   "get_workspace",
   "list_folders",
+  "list_items",
+  "read_item",
+  "search",
+  "list_trash",
+  "list_comments",
+  "list_access",
+  "create_item",
+  "update_item",
+  "append_to_item",
+  "set_item_status",
+  "move_item",
+  "delete_item",
+  "restore_item",
+  "add_item_asset",
+  "remove_item_asset",
+  "recapture_bookmark",
+  "add_comment",
+  "set_comment_resolved",
   "create_folder",
   "rename_folder",
   "delete_folder",
   "restore_folder",
-  "list_items",
-  "list_trash",
-  "read_item",
-  "search",
-  "create_item",
-  "update_item",
-  "append_to_item",
-  "move_item",
-  "delete_item",
-  "restore_item",
-  "set_item_status",
-  "set_item_metadata",
-  "set_item_pinned",
-  "list_access",
-  "grant_access",
-  "set_access_role",
+  "set_access",
   "revoke_access",
-  "list_comments",
-  "add_comment",
-  "set_comment_resolved",
-  "recapture_bookmark",
-  "list_item_assets",
-  "add_item_asset",
-  "remove_item_asset",
-  "set_item_cover",
 ] as const;
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -48,14 +43,10 @@ const DESTRUCTIVE_TOOLS = new Set([
   "move_item",
   "delete_item",
   "set_item_status",
-  "set_item_metadata",
-  "set_item_pinned",
-  "set_access_role",
   "revoke_access",
   "set_comment_resolved",
   "recapture_bookmark",
   "remove_item_asset",
-  "set_item_cover",
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
@@ -65,13 +56,10 @@ const IDEMPOTENT_WRITES = new Set([
   "delete_item",
   "restore_item",
   "set_item_status",
-  "set_item_metadata",
-  "set_item_pinned",
-  "set_access_role",
+  "set_access",
   "revoke_access",
   "set_comment_resolved",
   "remove_item_asset",
-  "set_item_cover",
 ]);
 
 const CONFIRMED_TOOLS = new Set([
@@ -80,8 +68,7 @@ const CONFIRMED_TOOLS = new Set([
   "delete_item",
   "restore_item",
   "set_item_status",
-  "grant_access",
-  "set_access_role",
+  "set_access",
   "revoke_access",
   "remove_item_asset",
 ]);
@@ -146,8 +133,8 @@ describe("workspace tool contract", () => {
       }),
     ).toThrow();
     expect(() =>
-      parseWorkspaceToolInput("set_item_metadata", { id: "post-1" }),
-    ).toThrow("Pass metadata to update");
+      parseWorkspaceToolInput("update_item", { id: "post-1" }),
+    ).toThrow("Pass content or metadata to update");
     expect(
       parseWorkspaceToolInput("set_item_status", {
         id: "post-1",
@@ -155,7 +142,7 @@ describe("workspace tool contract", () => {
       }),
     ).toEqual({ id: "post-1", status: "published" });
     expect(
-      parseWorkspaceToolInput("set_item_metadata", {
+      parseWorkspaceToolInput("update_item", {
         id: "post-1",
         tags: ["design", "notes"],
       }),
@@ -163,8 +150,8 @@ describe("workspace tool contract", () => {
     expect(
       parseWorkspaceToolInput("update_item", {
         id: "post-1",
-        tags: ["work"],
+        pinned: true,
       }),
-    ).toEqual({ id: "post-1", tags: ["work"] });
+    ).toEqual({ id: "post-1", pinned: true });
   });
 });

@@ -147,8 +147,6 @@ const TOOL_PROGRESS_LABELS: Record<string, string> = {
   delete_item: "Moving an item to Trash",
   restore_item: "Restoring an item",
   set_item_status: "Changing publish status",
-  set_item_metadata: "Updating item details",
-  set_item_pinned: "Changing pin status",
 };
 
 // ---- Per-context transcript store (module scope, sessionStorage mirror) ----
@@ -588,7 +586,7 @@ export function useNativeAssistant({
             : undefined,
         }));
         try {
-          await tools.executor("set_item_metadata", {
+          await tools.executor("update_item", {
             id: proposal.itemId,
             tags: normalizeTags(next),
           });

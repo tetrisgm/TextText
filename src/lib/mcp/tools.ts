@@ -39,7 +39,6 @@ import {
   inviteScopeShare,
   listScopeShares,
   revokeScopeShare,
-  updateScopeShareRole,
 } from "@/lib/shares";
 import type { ScopeShareRole } from "@/lib/shares";
 import {
@@ -69,9 +68,11 @@ import {
 } from "@/lib/store";
 import { workspaceBlog } from "./auth";
 import {
+  type BacklinkRef,
   DEFAULT_TYPE_BY_MODE,
   folderModeForType,
   isAlwaysDraftType,
+  itemBacklinks,
   itemEntry,
   itemKindForPost,
   kindsForFolderMode,
@@ -330,6 +331,22 @@ function requiredSub(extra: ToolContext): string | CallToolResult {
     : errorResult("This connection is not associated with a signed-in user.");
 }
 
+async function mcpItemEntry(
+  extra: ToolContext,
+  blog: Blog,
+  post: Post,
+  options: {
+    hash?: string;
+    backlinks?: BacklinkRef[];
+    visiblePosts?: Post[];
+  } = {},
+) {
+  const visiblePosts =
+    options.visiblePosts ??
+    (await getAccessibleAllPostFiles(blog.handle, accessUser(extra)));
+  return itemEntry(blog, post, { ...options, visiblePosts });
+}
+
 async function accessTarget(
   extra: ToolContext,
   scopeType: CollaboratorScopeType,
@@ -390,7 +407,14 @@ function markdownContentUpdate(
       title: string;
       excerpt: string | undefined;
       body: string;
-      tags?: string[];
+      tags: string[];
+      slug: string;
+      accent: string | undefined;
+      cover: string | undefined;
+      coverCaption: string | undefined;
+      coverHeight: number | undefined;
+      date: string | undefined;
+      pinned: boolean;
     }
   | CallToolResult {
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
@@ -405,16 +429,12 @@ function markdownContentUpdate(
     );
   }
 
+  // update_item owns content plus owner metadata on both structured and full
+  // markdown paths. Keep only publication, kind or folder-implying fields and
+  // unrelated workspace metadata protected here.
   const protectedFields: Array<[keyof typeof parsed.fields, unknown]> = [
     ["type", post.type],
-    ["slug", post.slug],
     ["status", post.status],
-    ["date", post.date],
-    ["accent", post.accent],
-    ["cover", post.cover],
-    ["coverCaption", post.coverCaption],
-    ["coverHeight", post.coverHeight],
-    ["pinned", Boolean(post.pinned)],
     ["starred", Boolean(post.starred)],
     ["gallery", post.gallery],
     ["links", post.links],
@@ -430,7 +450,7 @@ function markdownContentUpdate(
         : parsed.fields[key];
     if (!sameValue(incoming, stored)) {
       return errorResult(
-        `update_item cannot change ${key}. Use its dedicated workspace tool.`,
+        `update_item cannot change ${key}.`,
       );
     }
   }
@@ -439,9 +459,28 @@ function markdownContentUpdate(
     title: parsed.fields.title ?? post.title,
     excerpt: parsed.fields.excerpt ?? post.excerpt,
     body: parsed.body,
-    ...(Object.prototype.hasOwnProperty.call(parsed.fields, "tags")
-      ? { tags: normalizeTags(parsed.fields.tags) }
-      : {}),
+    tags: Object.prototype.hasOwnProperty.call(parsed.fields, "tags")
+      ? normalizeTags(parsed.fields.tags)
+      : normalizeTags(post.tags),
+    slug: parsed.fields.slug ?? post.slug,
+    accent: Object.prototype.hasOwnProperty.call(parsed.fields, "accent")
+      ? parsed.fields.accent
+      : post.accent,
+    cover: Object.prototype.hasOwnProperty.call(parsed.fields, "cover")
+      ? parsed.fields.cover
+      : post.cover,
+    coverCaption: Object.prototype.hasOwnProperty.call(parsed.fields, "coverCaption")
+      ? parsed.fields.coverCaption
+      : post.coverCaption,
+    coverHeight: Object.prototype.hasOwnProperty.call(parsed.fields, "coverHeight")
+      ? parsed.fields.coverHeight
+      : post.coverHeight,
+    date: Object.prototype.hasOwnProperty.call(parsed.fields, "date")
+      ? parsed.fields.date
+      : post.date,
+    pinned: Object.prototype.hasOwnProperty.call(parsed.fields, "pinned")
+      ? Boolean(parsed.fields.pinned)
+      : Boolean(post.pinned),
   };
 }
 
@@ -642,39 +681,48 @@ async function executeMcpTool(
       const path = input.folder_path ?? "blog";
       const folder = await accessibleFolder(blog, extra, path);
       if (isToolResult(folder)) return folder;
-      const posts = await getAccessibleFolderPostFiles(
-        blog.handle,
-        folder.path,
-        accessUser(extra),
-      );
+      const [posts, visiblePosts] = await Promise.all([
+        getAccessibleFolderPostFiles(blog.handle, folder.path, accessUser(extra)),
+        getAccessibleAllPostFiles(blog.handle, accessUser(extra)),
+      ]);
       return jsonResult({
         folder: folderSummary(folder),
-        items: posts
-          .filter((post) => post.id)
-          .slice(0, input.limit ?? 50)
-          .map((post) => itemEntry(blog, post)),
+        items: await Promise.all(
+          posts
+            .filter((post) => post.id)
+            .slice(0, input.limit ?? 50)
+            .map((post) =>
+              mcpItemEntry(extra, blog, post, { visiblePosts }),
+            ),
+        ),
       });
     }
 
     case "list_trash": {
       const resolved = await requireWorkspace(extra, true);
       if (isToolResult(resolved)) return resolved;
-      const [posts, folders] = await Promise.all([
+      const [posts, folders, visiblePosts] = await Promise.all([
         getTrashedPosts(resolved.blog.handle),
         getTrashedFolders(resolved.blog.handle),
+        getAccessibleAllPostFiles(resolved.blog.handle, accessUser(extra)),
       ]);
       const trashedFolderIds = new Set(folders.map((folder) => folder.id));
       const folderUnits = folders.filter(
         (folder) => !folder.parentId || !trashedFolderIds.has(folder.parentId),
       );
+      const items = await Promise.all(
+        posts
+          .filter((post) => !post.folderId || !trashedFolderIds.has(post.folderId))
+          .map(async (post) => {
+            const entry = await mcpItemEntry(extra, resolved.blog, post, {
+              visiblePosts,
+            });
+            return { ...entry, file: undefined, folderId: post.folderId ?? null };
+          }),
+      );
       return jsonResult({
         folders: folderUnits.map((folder) => folderSummary(folder)),
-        items: posts
-          .filter((post) => !post.folderId || !trashedFolderIds.has(post.folderId))
-          .map((post) => {
-          const entry = itemEntry(resolved.blog, post);
-          return { ...entry, file: undefined, folderId: post.folderId ?? null };
-          }),
+        items,
       });
     }
 
@@ -682,7 +730,25 @@ async function executeMcpTool(
       const input = args as WorkspaceToolInput<"read_item">;
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
-      return textResult(renderItemFile(resolved.blog, resolved.post).text);
+      const rendered = renderItemFile(resolved.blog, resolved.post);
+      const livePosts = await getAccessibleAllPostFiles(
+        resolved.blog.handle,
+        accessUser(extra),
+      );
+      const backlinks = await itemBacklinks(
+        resolved.blog,
+        resolved.post,
+        livePosts,
+      );
+      return jsonResult({
+        item: await mcpItemEntry(extra, resolved.blog, resolved.post, {
+          hash: rendered.hash,
+          backlinks,
+          visiblePosts: livePosts,
+        }),
+        markdown: rendered.text,
+        assets: listItemAssetReferences(resolved.post),
+      });
     }
 
     case "search": {
@@ -690,13 +756,15 @@ async function executeMcpTool(
       const blog = await requireBlog(extra);
       if (isToolResult(blog)) return blog;
       const posts = await getAccessibleAllPostFiles(blog.handle, accessUser(extra));
-      const results = posts
-        .filter((post) => post.id && postMatchesQuery(post, input.query))
-        .slice(0, input.limit ?? 25)
-        .map((post) => ({
-          ...itemEntry(blog, post),
-          snippet: searchSnippet(post, input.query),
-        }));
+      const results = await Promise.all(
+        posts
+          .filter((post) => post.id && postMatchesQuery(post, input.query))
+          .slice(0, input.limit ?? 25)
+          .map(async (post) => ({
+            ...(await mcpItemEntry(extra, blog, post, { visiblePosts: posts })),
+            snippet: searchSnippet(post, input.query),
+          })),
+      );
       return jsonResult({ query: input.query, results });
     }
 
@@ -747,7 +815,7 @@ async function executeMcpTool(
       }
       if (parsed.fields.pinned) {
         return errorResult(
-          "New items cannot start pinned. Create it first, then use set_item_pinned.",
+          "New items cannot start pinned. Create it first, then use update_item with pinned.",
         );
       }
       if (parsed.fields.date) {
@@ -778,10 +846,7 @@ async function executeMcpTool(
         });
         await auditMcp(extra, "mcp.create_item", "item", saved.id, saved.title);
         revalidateBlogPaths(blog, [saved.slug]);
-        return jsonResult({
-          folder: folderSummary(folder),
-          item: itemEntry(blog, saved),
-        });
+        return jsonResult({ item: await mcpItemEntry(extra, blog, saved) });
       } catch (error) {
         if (created.id) await deletePost(blog.handle, created.id).catch(() => {});
         return saveErrorResult(error);
@@ -806,13 +871,60 @@ async function executeMcpTool(
             excerpt:
               input.excerpt === null ? undefined : (input.excerpt ?? post.excerpt),
             body: input.body ?? post.body,
-            ...(input.tags !== undefined
-              ? { tags: normalizeTags(input.tags) }
-              : {}),
+            tags:
+              input.tags !== undefined
+                ? normalizeTags(input.tags)
+                : normalizeTags(post.tags),
+            slug: input.slug ?? post.slug,
+            accent:
+              input.accent === null ? undefined : (input.accent ?? post.accent),
+            cover: input.cover === null ? undefined : (input.cover ?? post.cover),
+            coverCaption:
+              input.cover_caption === null
+                ? undefined
+                : (input.cover_caption ?? post.coverCaption),
+            coverHeight:
+              input.cover_height === null
+                ? undefined
+                : (input.cover_height ?? post.coverHeight),
+            date: input.date ?? post.date,
+            pinned: input.pinned ?? Boolean(post.pinned),
           };
       if (isToolResult(content)) return content;
-      if (!access.isOwner && input.excerpt !== undefined) {
-        return errorResult("Only the owner can change an item's excerpt.");
+      if (content.date !== post.date && post.status !== "published") {
+        return errorResult("Publication date can only be set on a published item.");
+      }
+      const ownerMetadataChanged =
+        content.excerpt !== post.excerpt ||
+        content.slug !== post.slug ||
+        content.accent !== post.accent ||
+        content.cover !== post.cover ||
+        content.coverCaption !== post.coverCaption ||
+        content.coverHeight !== post.coverHeight ||
+        content.date !== post.date ||
+        content.pinned !== Boolean(post.pinned);
+      const ownerMetadataRequested = input.markdown
+        ? ownerMetadataChanged
+        : input.excerpt !== undefined ||
+          input.slug !== undefined ||
+          input.accent !== undefined ||
+          input.cover !== undefined ||
+          input.cover_caption !== undefined ||
+          input.cover_height !== undefined ||
+          input.date !== undefined ||
+          input.pinned !== undefined;
+      if (!access.isOwner && ownerMetadataRequested) {
+        return errorResult(
+          "Only the owner can change excerpt, slug, accent, cover, date, or pin metadata.",
+        );
+      }
+      if (
+        content.cover !== post.cover &&
+        content.cover &&
+        content.cover !== NO_COVER_VALUE &&
+        !listItemAssetReferences(post).some((asset) => asset.url === content.cover)
+      ) {
+        return errorResult("Import or attach that asset before using it as the cover.");
       }
       // Only a real body change can clobber a live co-editing session; a
       // title/excerpt-only edit leaves the Yjs document alone.
@@ -820,16 +932,45 @@ async function executeMcpTool(
         return coEditingConflictResult(post);
       }
 
+      const next: Post = {
+        ...post,
+        ...content,
+        status: isAlwaysDraftType(post.type) ? "draft" : post.status,
+        date: post.status === "published" ? content.date : undefined,
+      };
+      const contentFields = [
+        content.title !== post.title ? "title" : null,
+        content.excerpt !== post.excerpt ? "excerpt" : null,
+        content.body !== post.body ? "body" : null,
+        !sameValue(content.tags, normalizeTags(post.tags)) ? "tags" : null,
+      ].filter((field): field is string => field !== null);
+      const metadataFields = [
+        content.slug !== post.slug ? "slug" : null,
+        content.accent !== post.accent ? "accent" : null,
+        content.cover !== post.cover ? "cover" : null,
+        content.coverCaption !== post.coverCaption ? "cover_caption" : null,
+        content.coverHeight !== post.coverHeight ? "cover_height" : null,
+        content.date !== post.date ? "date" : null,
+      ].filter((field): field is string => field !== null);
+      const pinChanged = content.pinned !== Boolean(post.pinned);
+      if (contentFields.length === 0 && metadataFields.length === 0 && !pinChanged) {
+        return jsonResult({ item: await mcpItemEntry(extra, blog, post) });
+      }
+      const summary = [
+        contentFields.length > 0 ? `content (${contentFields.join(", ")})` : null,
+        metadataFields.length > 0
+          ? `metadata (${metadataFields.join(", ")})`
+          : null,
+        pinChanged ? "pin (pinned)" : null,
+      ]
+        .filter((group): group is string => group !== null)
+        .join("; ");
+
       try {
         const saved = access.isOwner
           ? await savePost(
               blog.handle,
-              {
-                ...post,
-                ...content,
-                status: isAlwaysDraftType(post.type) ? "draft" : post.status,
-                date: post.status === "published" ? post.date : undefined,
-              },
+              next,
               { expectedRevision: revision },
             )
           : await savePostContentPatch(
@@ -838,13 +979,22 @@ async function executeMcpTool(
               {
                 title: content.title,
                 body: content.body,
-                ...(content.tags !== undefined ? { tags: content.tags } : {}),
+                tags: content.tags,
               },
               { expectedRevision: revision },
             );
-        await auditMcp(extra, "mcp.update_item", "item", saved.id, saved.title);
+        await auditMcp(extra, "mcp.update_item", "item", saved.id, summary);
+        if (pinChanged) {
+          await auditMcp(
+            extra,
+            content.pinned ? "mcp.pin_item" : "mcp.unpin_item",
+            "item",
+            saved.id,
+            saved.title,
+          );
+        }
         revalidateBlogPaths(blog, [post.slug, saved.slug]);
-        return jsonResult({ item: itemEntry(blog, saved) });
+        return jsonResult({ item: await mcpItemEntry(extra, blog, saved) });
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(post, "the update could be saved");
@@ -891,7 +1041,7 @@ async function executeMcpTool(
             );
         await auditMcp(extra, "mcp.append_to_item", "item", saved.id, saved.title);
         revalidateBlogPaths(blog, [saved.slug]);
-        return jsonResult({ item: itemEntry(blog, saved) });
+        return jsonResult({ item: await mcpItemEntry(extra, blog, saved) });
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(post, "the append could be saved");
@@ -937,9 +1087,7 @@ async function executeMcpTool(
           revalidateBlogPaths(resolved.blog, [moved.post.slug]);
         }
         return jsonResult({
-          changed: moved.changed,
-          folder: folderSummary(folder),
-          item: itemEntry(resolved.blog, moved.post),
+          item: await mcpItemEntry(extra, resolved.blog, moved.post),
         });
       } catch (error) {
         if (error instanceof PostConflictError) {
@@ -969,7 +1117,10 @@ async function executeMcpTool(
         );
         // The mcp.delete_item audit was written atomically inside deletePostAtomic.
         revalidateBlogPaths(resolved.blog, [resolved.post.slug]);
-        return jsonResult({ ok: true, id: input.id, trashed: true });
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, resolved.post),
+          trashed: true,
+        });
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(resolved.post, "it could be moved to Trash");
@@ -1000,7 +1151,10 @@ async function executeMcpTool(
           restored.title,
         );
         revalidateBlogPaths(resolved.blog, [restored.slug]);
-        return jsonResult({ item: itemEntry(resolved.blog, restored) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, restored),
+          restored: true,
+        });
       } catch (error) {
         return errorResult(
           error instanceof Error ? error.message : "The item could not be restored.",
@@ -1023,7 +1177,9 @@ async function executeMcpTool(
       const revision = mutationRevision(resolved.post);
       if (typeof revision !== "number") return revision;
       if (resolved.post.status === input.status) {
-        return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, resolved.post),
+        });
       }
       try {
         const saved = await savePost(
@@ -1046,130 +1202,12 @@ async function executeMcpTool(
           saved.title,
         );
         revalidateBlogPaths(resolved.blog, [resolved.post.slug, saved.slug]);
-        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, saved),
+        });
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(resolved.post, "the status change could be saved");
-        }
-        return saveErrorResult(error);
-      }
-    }
-
-    case "set_item_metadata": {
-      const input = args as WorkspaceToolInput<"set_item_metadata">;
-      const resolved = await requirePost(extra, input.id);
-      if (isToolResult(resolved)) return resolved;
-      if (!resolved.access.isOwner) {
-        return errorResult("Only the owner can change item metadata.");
-      }
-      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
-      if (stale) return stale;
-      const revision = mutationRevision(resolved.post);
-      if (typeof revision !== "number") return revision;
-      if (input.date !== undefined && resolved.post.status !== "published") {
-        return errorResult("Publication date can only be set on a published item.");
-      }
-      const next: Post = {
-        ...resolved.post,
-        ...(input.title !== undefined ? { title: input.title } : {}),
-        ...(input.slug !== undefined ? { slug: input.slug } : {}),
-        ...(input.excerpt !== undefined
-          ? { excerpt: input.excerpt ?? undefined }
-          : {}),
-        ...(input.accent !== undefined
-          ? { accent: input.accent ?? undefined }
-          : {}),
-        ...(input.cover !== undefined ? { cover: input.cover ?? undefined } : {}),
-        ...(input.cover_caption !== undefined
-          ? { coverCaption: input.cover_caption ?? undefined }
-          : {}),
-        ...(input.cover_height !== undefined
-          ? { coverHeight: input.cover_height ?? undefined }
-          : {}),
-        ...(input.tags !== undefined
-          ? { tags: normalizeTags(input.tags) }
-          : {}),
-        ...(input.date !== undefined ? { date: input.date } : {}),
-        status: isAlwaysDraftType(resolved.post.type)
-          ? "draft"
-          : resolved.post.status,
-        pinned: resolved.post.pinned,
-      };
-      const changed =
-        next.title !== resolved.post.title ||
-        next.slug !== resolved.post.slug ||
-        next.excerpt !== resolved.post.excerpt ||
-        next.accent !== resolved.post.accent ||
-        next.cover !== resolved.post.cover ||
-        next.coverCaption !== resolved.post.coverCaption ||
-        next.coverHeight !== resolved.post.coverHeight ||
-        JSON.stringify(normalizeTags(next.tags)) !==
-          JSON.stringify(normalizeTags(resolved.post.tags)) ||
-        next.date !== resolved.post.date;
-      if (!changed) {
-        return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
-      }
-      try {
-        const saved = await savePost(resolved.blog.handle, next, {
-          expectedRevision: revision,
-        });
-        await auditMcp(
-          extra,
-          "mcp.set_item_metadata",
-          "item",
-          saved.id,
-          saved.title,
-        );
-        revalidateBlogPaths(resolved.blog, [resolved.post.slug, saved.slug]);
-        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
-      } catch (error) {
-        if (error instanceof PostConflictError) {
-          return conflictResult(resolved.post, "the metadata change could be saved");
-        }
-        return saveErrorResult(error);
-      }
-    }
-
-    case "set_item_pinned": {
-      const input = args as WorkspaceToolInput<"set_item_pinned">;
-      const resolved = await requirePost(extra, input.id);
-      if (isToolResult(resolved)) return resolved;
-      if (!resolved.access.isOwner) {
-        return errorResult("Only the owner can pin or unpin items.");
-      }
-      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
-      if (stale) return stale;
-      const revision = mutationRevision(resolved.post);
-      if (typeof revision !== "number") return revision;
-      if (Boolean(resolved.post.pinned) === input.pinned) {
-        return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
-      }
-      try {
-        const saved = await savePost(
-          resolved.blog.handle,
-          {
-            ...resolved.post,
-            pinned: input.pinned,
-            status: isAlwaysDraftType(resolved.post.type)
-              ? "draft"
-              : resolved.post.status,
-            date:
-              resolved.post.status === "published" ? resolved.post.date : undefined,
-          },
-          { expectedRevision: revision },
-        );
-        await auditMcp(
-          extra,
-          input.pinned ? "mcp.pin_item" : "mcp.unpin_item",
-          "item",
-          saved.id,
-          saved.title,
-        );
-        revalidateBlogPaths(resolved.blog, [saved.slug]);
-        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
-      } catch (error) {
-        if (error instanceof PostConflictError) {
-          return conflictResult(resolved.post, "the pin change could be saved");
         }
         return saveErrorResult(error);
       }
@@ -1186,8 +1224,8 @@ async function executeMcpTool(
       });
     }
 
-    case "grant_access": {
-      const input = args as WorkspaceToolInput<"grant_access">;
+    case "set_access": {
+      const input = args as WorkspaceToolInput<"set_access">;
       const target = await accessTarget(extra, input.scope_type, input.scope_id);
       if (isToolResult(target)) return target;
       if (!target.access.canManage) return errorResult("You cannot manage this access list.");
@@ -1202,41 +1240,11 @@ async function executeMcpTool(
           invitedBySub: sub,
           actorType: mcpActorType(extra),
           actorUserId: accessUser(extra).userId,
-          auditActionName: "mcp.grant_access",
+          auditActionName: "mcp.set_access",
         });
         return jsonResult({ share });
       } catch (error) {
-        return errorResult(error instanceof Error ? error.message : "Access could not be granted.");
-      }
-    }
-
-    case "set_access_role": {
-      const input = args as WorkspaceToolInput<"set_access_role">;
-      const target = await accessTarget(extra, input.scope_type, input.scope_id);
-      if (isToolResult(target)) return target;
-      if (!target.access.canManage) return errorResult("You cannot manage this access list.");
-      const sub = requiredSub(extra);
-      if (typeof sub !== "string") return sub;
-      const current = await listScopeShares(target.scopeType, target.scopeId);
-      if (!current.some((share) => share.id === input.access_id)) {
-        return errorResult("Access grant not found.");
-      }
-      try {
-        await updateScopeShareRole({
-          scopeType: target.scopeType,
-          scopeId: target.scopeId,
-          shareId: input.access_id,
-          role: input.role as ScopeShareRole,
-          updatedBySub: sub,
-          actorType: mcpActorType(extra),
-          actorUserId: accessUser(extra).userId,
-          auditActionName: "mcp.set_access_role",
-        });
-        return jsonResult({
-          access: await listScopeShares(target.scopeType, target.scopeId),
-        });
-      } catch (error) {
-        return errorResult(error instanceof Error ? error.message : "Access role could not be changed.");
+        return errorResult(error instanceof Error ? error.message : "Access could not be set.");
       }
     }
 
@@ -1382,16 +1390,9 @@ async function executeMcpTool(
         sourceUrl.toString(),
       );
       revalidateBlogPaths(resolved.blog, [resolved.post.slug]);
-      return jsonResult({ queued: true, item: itemEntry(resolved.blog, pending) });
-    }
-
-    case "list_item_assets": {
-      const input = args as WorkspaceToolInput<"list_item_assets">;
-      const resolved = await requirePost(extra, input.id);
-      if (isToolResult(resolved)) return resolved;
       return jsonResult({
-        itemId: input.id,
-        assets: listItemAssetReferences(resolved.post),
+        item: await mcpItemEntry(extra, resolved.blog, pending),
+        queued: true,
       });
     }
 
@@ -1433,7 +1434,9 @@ async function executeMcpTool(
           `${input.placement}: ${asset.filename} (${asset.bytes} bytes)`,
         );
         revalidateBlogPaths(resolved.blog, [saved.slug]);
-        return jsonResult({ asset, item: itemEntry(resolved.blog, saved) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, saved),
+        });
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(resolved.post, "the asset could be attached");
@@ -1455,7 +1458,11 @@ async function executeMcpTool(
         resolved.post,
         input.asset_url,
       );
-      if (!changed) return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });
+      if (!changed) {
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, resolved.post),
+        });
+      }
       try {
         const saved = await savePost(resolved.blog.handle, next, {
           expectedRevision: revision,
@@ -1468,7 +1475,9 @@ async function executeMcpTool(
           input.asset_url,
         );
         revalidateBlogPaths(resolved.blog, [saved.slug]);
-        return jsonResult({ changed: true, item: itemEntry(resolved.blog, saved) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, saved),
+        });
       } catch (error) {
         if (error instanceof PostConflictError) {
           return conflictResult(resolved.post, "the asset could be removed");
@@ -1477,56 +1486,6 @@ async function executeMcpTool(
       }
     }
 
-    case "set_item_cover": {
-      const input = args as WorkspaceToolInput<"set_item_cover">;
-      const resolved = await requirePost(extra, input.id);
-      if (isToolResult(resolved)) return resolved;
-      if (!resolved.access.isOwner) return errorResult("Only the owner can set an item cover.");
-      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
-      if (stale) return stale;
-      const revision = mutationRevision(resolved.post);
-      if (typeof revision !== "number") return revision;
-      if (
-        input.source === "url" &&
-        !listItemAssetReferences(resolved.post).some((asset) => asset.url === input.url)
-      ) {
-        return errorResult("Import or attach that asset before using it as the cover.");
-      }
-      const cover =
-        input.source === "url"
-          ? input.url
-          : input.source === "none"
-            ? NO_COVER_VALUE
-            : undefined;
-      try {
-        const saved = await savePost(
-          resolved.blog.handle,
-          {
-            ...resolved.post,
-            cover,
-            coverCaption:
-              input.caption === null ? undefined : (input.caption ?? resolved.post.coverCaption),
-            coverHeight:
-              input.height === null ? undefined : (input.height ?? resolved.post.coverHeight),
-          },
-          { expectedRevision: revision },
-        );
-        await auditMcp(
-          extra,
-          "mcp.set_item_cover",
-          "item",
-          input.id,
-          input.source,
-        );
-        revalidateBlogPaths(resolved.blog, [saved.slug]);
-        return jsonResult({ item: itemEntry(resolved.blog, saved) });
-      } catch (error) {
-        if (error instanceof PostConflictError) {
-          return conflictResult(resolved.post, "the cover could be changed");
-        }
-        return saveErrorResult(error);
-      }
-    }
   }
 }
 

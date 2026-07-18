@@ -19,13 +19,11 @@ import {
   restoreEditablePostAction,
   revokeScopeShareAction,
   saveEditablePostAction,
-  setItemCoverAction,
   setEditablePostStatusAction,
   shareScopeAction,
   resolveItemCommentAction,
   toggleEditablePostPinnedAction,
   trashFolderAction,
-  updateScopeShareRoleAction,
 } from "@/app/editor/actions";
 import {
   WORKSPACE_FOLDER_MODES,
@@ -43,6 +41,7 @@ import type {
 } from "@/lib/ai/workspace-item-draft";
 import { isPrivatePostType } from "@/lib/content";
 import type { Post, PostType } from "@/lib/content";
+import { NO_COVER_VALUE } from "@/lib/cover";
 import { normalizeTags } from "@/lib/tags";
 import {
   folderModeForPostType,
@@ -416,9 +415,12 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     return saved;
   }
 
-  async function saveMetadata(
+  async function saveItemUpdate(
     poolPost: WorkspacePoolPost,
-    input: WorkspaceToolInput<"set_item_metadata">,
+    input: Omit<
+      WorkspaceToolInput<"update_item">,
+      "id" | "markdown" | "if_match_hash"
+    >,
   ) {
     if (input.date !== undefined && poolPost.status !== "published") {
       throw new Error("Publication date can only be set on a published item");
@@ -428,6 +430,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     draft.title = input.title ?? text.title;
     draft.excerpt =
       input.excerpt === null ? "" : (input.excerpt ?? text.excerpt);
+    draft.body = input.body ?? text.body;
     if (input.slug !== undefined) draft.slug = input.slug;
     if (input.accent !== undefined) draft.accent = input.accent ?? "";
     if (input.cover !== undefined) draft.cover = input.cover ?? "";
@@ -439,10 +442,30 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     }
     if (input.date !== undefined) draft.date = input.date;
     if (input.tags !== undefined) draft.tags = normalizeTags(input.tags);
-    const saved = await saveEditablePostAction(
-      handle,
-      payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
+    if (
+      draft.cover !== poolPost.cover &&
+      draft.cover &&
+      draft.cover !== NO_COVER_VALUE
+    ) {
+      const assets = await listItemAssetsAction(handle, poolPost.id);
+      if (!assets.some((asset) => asset.url === draft.cover)) {
+        throw new Error("Import or attach that asset before using it as the cover");
+      }
+    }
+    const pinChanged =
+      input.pinned !== undefined && input.pinned !== Boolean(poolPost.pinned);
+    const saveRequested = Object.entries(input).some(
+      ([key, value]) => key !== "pinned" && value !== undefined,
     );
+    let saved = saveRequested
+      ? await saveEditablePostAction(
+          handle,
+          payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
+        )
+      : postFromPoolPost(poolPost, text.body);
+    if (pinChanged) {
+      saved = await toggleEditablePostPinnedAction(handle, poolPost.id);
+    }
     syncPost(saved);
     return saved;
   }
@@ -467,18 +490,12 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       );
     }
 
-    if (
-      name === "grant_access" ||
-      name === "set_access_role" ||
-      name === "revoke_access"
-    ) {
+    if (name === "set_access" || name === "revoke_access") {
       const scope = String(input.scope_type ?? "workspace");
       const description =
-        name === "grant_access"
+        name === "set_access"
           ? `Give ${String(input.email ?? "this person")} ${String(input.role ?? "access")} access to this ${scope}?`
-          : name === "set_access_role"
-            ? `Change this ${scope} access grant to ${String(input.role ?? "the new role")}?`
-            : `Revoke this ${scope} access grant?`;
+          : `Revoke this ${scope} access grant?`;
       return await confirmDestructive(description);
     }
 
@@ -681,6 +698,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           date: post.date ?? null,
           updatedAt: post.updatedAt ?? null,
           body: capped(text.body, 12_000),
+          assets: await listItemAssetsAction(handle, input.id),
         };
       }
 
@@ -804,7 +822,10 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       case "update_item": {
         const input = args as WorkspaceToolInput<"update_item">;
         const post = requirePost(input.id);
-        let patch: WorkspaceItemTextPatch;
+        let values: Omit<
+          WorkspaceToolInput<"update_item">,
+          "id" | "markdown" | "if_match_hash"
+        >;
         if (input.markdown) {
           const parsed = parsePostMarkdownFile(input.markdown);
           if (parsed.unknownKeys.length > 0) {
@@ -816,14 +837,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             [keyof typeof parsed.fields, unknown]
           > = [
             ["type", post.type],
-            ["slug", post.slug],
             ["status", post.status],
-            ["date", post.date],
-            ["accent", post.accent],
-            ["cover", post.cover],
-            ["coverCaption", post.coverCaption],
-            ["coverHeight", post.coverHeight],
-            ["pinned", Boolean(post.pinned)],
             ["starred", Boolean(post.starred)],
             ["gallery", post.gallery],
             ["links", post.links],
@@ -841,22 +855,71 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
               throw new Error(`update_item cannot change ${key}`);
             }
           }
-          patch = {
+          values = {
             title: parsed.fields.title ?? post.title,
             excerpt: parsed.fields.excerpt ?? post.excerpt ?? "",
             body: parsed.body,
             ...(Object.prototype.hasOwnProperty.call(parsed.fields, "tags")
               ? { tags: normalizeTags(parsed.fields.tags) }
               : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "slug")
+              ? { slug: parsed.fields.slug }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "accent")
+              ? { accent: parsed.fields.accent }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "cover")
+              ? { cover: parsed.fields.cover }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "coverCaption")
+              ? { cover_caption: parsed.fields.coverCaption }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "coverHeight")
+              ? { cover_height: parsed.fields.coverHeight }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "date")
+              ? { date: parsed.fields.date }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "pinned")
+              ? { pinned: Boolean(parsed.fields.pinned) }
+              : {}),
           };
         } else {
-          patch = {};
-          if (input.title !== undefined) patch.title = input.title;
-          if (input.excerpt !== undefined) patch.excerpt = input.excerpt ?? "";
-          if (input.body !== undefined) patch.body = input.body;
-          if (input.tags !== undefined) patch.tags = normalizeTags(input.tags);
+          values = {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.excerpt !== undefined ? { excerpt: input.excerpt } : {}),
+            ...(input.body !== undefined ? { body: input.body } : {}),
+            ...(input.tags !== undefined ? { tags: input.tags } : {}),
+            ...(input.slug !== undefined ? { slug: input.slug } : {}),
+            ...(input.accent !== undefined ? { accent: input.accent } : {}),
+            ...(input.cover !== undefined ? { cover: input.cover } : {}),
+            ...(input.cover_caption !== undefined
+              ? { cover_caption: input.cover_caption }
+              : {}),
+            ...(input.cover_height !== undefined
+              ? { cover_height: input.cover_height }
+              : {}),
+            ...(input.date !== undefined ? { date: input.date } : {}),
+            ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
+          };
         }
-        const saved = await saveDraftPatch(post, patch);
+        const metadataRequested =
+          values.slug !== undefined ||
+          values.accent !== undefined ||
+          values.cover !== undefined ||
+          values.cover_caption !== undefined ||
+          values.cover_height !== undefined ||
+          values.date !== undefined ||
+          values.pinned !== undefined;
+        const saved = metadataRequested
+          ? await saveItemUpdate(post, values)
+          : await saveDraftPatch(post, {
+              title: values.title,
+              excerpt:
+                values.excerpt === null ? "" : values.excerpt,
+              body: values.body,
+              tags: values.tags,
+            });
         return { ok: true, id: input.id, title: saved.title };
       }
 
@@ -957,28 +1020,6 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         return { ok: true, changed: true, id: input.id, status: input.status };
       }
 
-      case "set_item_metadata": {
-        const input = args as WorkspaceToolInput<"set_item_metadata">;
-        const saved = await saveMetadata(requirePost(input.id), input);
-        return { ok: true, id: input.id, title: saved.title, slug: saved.slug };
-      }
-
-      case "set_item_pinned": {
-        const input = args as WorkspaceToolInput<"set_item_pinned">;
-        const post = requirePost(input.id);
-        if (Boolean(post.pinned) === input.pinned) {
-          return { ok: true, changed: false, id: input.id, pinned: input.pinned };
-        }
-        const saved = await toggleEditablePostPinnedAction(handle, input.id);
-        syncPost(saved);
-        return {
-          ok: true,
-          changed: true,
-          id: input.id,
-          pinned: Boolean(saved.pinned),
-        };
-      }
-
       case "list_access": {
         const input = args as WorkspaceToolInput<"list_access">;
         return {
@@ -991,8 +1032,8 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         };
       }
 
-      case "grant_access": {
-        const input = args as WorkspaceToolInput<"grant_access">;
+      case "set_access": {
+        const input = args as WorkspaceToolInput<"set_access">;
         return {
           ok: true,
           access: await shareScopeAction(
@@ -1000,20 +1041,6 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             input.scope_type,
             input.scope_id,
             input.email,
-            input.role,
-          ),
-        };
-      }
-
-      case "set_access_role": {
-        const input = args as WorkspaceToolInput<"set_access_role">;
-        return {
-          ok: true,
-          access: await updateScopeShareRoleAction(
-            handle,
-            input.scope_type,
-            input.scope_id,
-            input.access_id,
             input.role,
           ),
         };
@@ -1090,15 +1117,6 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         return { ok: true, queued: true, id: input.id };
       }
 
-      case "list_item_assets": {
-        const input = args as WorkspaceToolInput<"list_item_assets">;
-        requirePost(input.id);
-        return {
-          item_id: input.id,
-          assets: await listItemAssetsAction(handle, input.id),
-        };
-      }
-
       case "add_item_asset": {
         const input = args as WorkspaceToolInput<"add_item_asset">;
         requirePost(input.id);
@@ -1122,20 +1140,6 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         return { ok: true, changed: result.changed, id: input.id };
       }
 
-      case "set_item_cover": {
-        const input = args as WorkspaceToolInput<"set_item_cover">;
-        requirePost(input.id);
-        const saved = await setItemCoverAction(
-          handle,
-          input.id,
-          input.source,
-          input.url,
-          input.caption,
-          input.height,
-        );
-        syncPost(saved);
-        return { ok: true, id: input.id, cover: saved.cover ?? null };
-      }
     }
   };
 

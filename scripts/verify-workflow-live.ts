@@ -14,7 +14,7 @@
 // Covers the five required workflow IDs: folder_trash_restore, comments,
 // cover_assets, sharing_access, bookmark_recapture. Plus two coverage add-ons
 // for store paths that have no fast unit test (they need a DB): folder_rename
-// (rename sanitization + CAS) and the access role lifecycle (set_access_role +
+// (rename sanitization + CAS) and the access role lifecycle (set_access +
 // revoke_access).
 
 import { and, eq, gt, inArray } from "drizzle-orm";
@@ -220,7 +220,7 @@ async function main() {
     );
 
     // ---- Workflow: sharing_access ----
-    const grant = await tool("grant_access", {
+    const grant = await tool("set_access", {
       scope_type: "workspace",
       email: `friend-${STAMP}@example.com`,
       role: "member",
@@ -231,13 +231,13 @@ async function main() {
       grant.ok && collabRows.length > 0,
       `collaborators=${collabRows.length}`,
     );
-    check("sharing_access workflow leaves an audit row", (await auditRows("mcp.grant_access")).length > 0);
+    check("sharing_access workflow leaves an audit row", (await auditRows("mcp.set_access")).length > 0);
 
     // ---- Workflow: access role lifecycle (set role + revoke) ----
     const accessId = (collabRows[0] as { id?: string })?.id ?? "";
-    const roleChanged = await tool("set_access_role", {
+    const roleChanged = await tool("set_access", {
       scope_type: "workspace",
-      access_id: accessId,
+      email: `friend-${STAMP}@example.com`,
       role: "guest",
     });
     const [afterRole] = await db
@@ -245,7 +245,7 @@ async function main() {
       .from(collaborators)
       .where(eq(collaborators.id, accessId));
     check(
-      "set_access_role changes the grant's role",
+      "set_access changes the grant's role",
       roleChanged.ok && afterRole?.role === "guest",
       `role=${afterRole?.role ?? roleChanged.error}`,
     );
@@ -264,7 +264,7 @@ async function main() {
     );
     check(
       "access role lifecycle leaves audit rows",
-      (await auditRows("mcp.set_access_role")).length > 0 &&
+      (await auditRows("mcp.set_access")).length > 1 &&
         (await auditRows("mcp.revoke_access")).length > 0,
     );
 

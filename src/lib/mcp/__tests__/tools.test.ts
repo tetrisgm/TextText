@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createSubfolder: vi.fn(),
   deletePostAtomic: vi.fn(),
   getAccessibleFolders: vi.fn(),
+  getAccessibleAllPostFiles: vi.fn(),
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
   getTrashedFolders: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   recordAction: vi.fn(),
   removeItemAssetReferences: vi.fn(),
   resolveItemAccess: vi.fn(),
+  resolvePostSlug: vi.fn(),
   resolveWorkspaceAccess: vi.fn(),
   restoreFolder: vi.fn(),
   revokeScopeShare: vi.fn(),
@@ -60,7 +62,7 @@ vi.mock("@/lib/store", () => ({
   createSubfolder: mocks.createSubfolder,
   deletePost: vi.fn(),
   deletePostAtomic: mocks.deletePostAtomic,
-  getAccessibleAllPostFiles: vi.fn(),
+  getAccessibleAllPostFiles: mocks.getAccessibleAllPostFiles,
   getAccessibleFolderCounts: vi.fn(async () => ({})),
   getAccessibleFolderPostFiles: vi.fn(),
   getAccessibleFolders: mocks.getAccessibleFolders,
@@ -74,6 +76,7 @@ vi.mock("@/lib/store", () => ({
   renameFolder: vi.fn(),
   restoreFolder: mocks.restoreFolder,
   restorePost: vi.fn(),
+  resolvePostSlug: mocks.resolvePostSlug,
   savePost: mocks.savePost,
   savePostContentPatch: vi.fn(),
   setItemCommentResolved: mocks.setItemCommentResolved,
@@ -140,6 +143,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.hasActiveCoEditors.mockReset();
     mocks.hasActiveCoEditors.mockResolvedValue(false);
     mocks.getAccessibleFolders.mockResolvedValue([]);
+    mocks.getAccessibleAllPostFiles.mockResolvedValue([]);
     mocks.getTrashedFolders.mockResolvedValue([]);
     mocks.listItemAssetReferences.mockReturnValue([]);
     mocks.listItemComments.mockResolvedValue([]);
@@ -172,6 +176,7 @@ describe("MCP workspace tool adapter", () => {
       blogId: "blog-1",
       workspaceRole: null,
     });
+    mocks.resolvePostSlug.mockResolvedValue({ kind: "missing" });
   });
 
   it("registers every shared definition with all current MCP annotations", () => {
@@ -351,13 +356,48 @@ describe("MCP workspace tool adapter", () => {
       slug: "tagged",
       title: "Tagged",
       excerpt: "",
-      body: "Body",
+      body: "Body with [[target|Target]], [[secret]], and [[missing]].",
       tags: ["design"],
       status: "draft",
       pinned: false,
       revision: 7,
     } as const;
+    const target = {
+      ...post,
+      id: "14141414-1414-4414-8414-141414141414",
+      slug: "target",
+      title: "Target",
+    };
     mocks.getPostById.mockResolvedValue(post);
+    mocks.getAccessibleAllPostFiles.mockResolvedValue([
+      post,
+      target,
+      {
+        ...post,
+        id: "13131313-1313-4313-8313-131313131313",
+        slug: "source",
+        title: "Source",
+        body: "Links to [[tagged]].",
+      },
+    ]);
+    mocks.resolvePostSlug.mockImplementation(async (_handle, slug) => {
+      if (slug === "target") {
+        return { kind: "exact", post: target };
+      }
+      if (slug === "secret") {
+        return {
+          kind: "exact",
+          post: {
+            ...post,
+            id: "15151515-1515-4515-8515-151515151515",
+            slug: "secret",
+            title: "Private title",
+          },
+        };
+      }
+      if (slug === "tagged") return { kind: "exact", post };
+      return { kind: "missing" };
+    });
     mocks.savePost.mockResolvedValue({
       ...post,
       tags: ["design", "notes"],
@@ -369,7 +409,29 @@ describe("MCP workspace tool adapter", () => {
 
     const read = await readItem.callback({ id }, auth(["read"]));
     expect(read.isError).not.toBe(true);
-    expect(toolText(read)).toContain('tags: ["design"]');
+    expect(JSON.parse(toolText(read))).toMatchObject({
+      item: {
+        tags: ["design"],
+        wikilinks: [
+          {
+            raw: "[[target|Target]]",
+            targetSlug: "target",
+            title: "Target",
+            resolved: true,
+          },
+          { raw: "[[secret]]", targetSlug: "secret", resolved: false },
+          { raw: "[[missing]]", targetSlug: "missing", resolved: false },
+        ],
+        backlinks: [
+          {
+            id: "13131313-1313-4313-8313-131313131313",
+            slug: "source",
+            title: "Source",
+          },
+        ],
+      },
+      assets: [],
+    });
 
     const updated = await updateItem.callback(
       { id, tags: ["Design", "#Notes", "notes"] },
@@ -531,9 +593,8 @@ describe("MCP workspace tool adapter", () => {
     );
     const result = await deleteItem!.callback({ id }, auth(["sync"]));
     expect(result.isError).not.toBe(true);
-    expect(JSON.parse(toolText(result))).toEqual({
-      ok: true,
-      id,
+    expect(JSON.parse(toolText(result))).toMatchObject({
+      item: { id, title: "Old draft" },
       trashed: true,
     });
     // The mcp.delete_item audit is folded into the delete's own transaction
@@ -629,10 +690,7 @@ describe("MCP workspace tool adapter", () => {
 
     const entries = registrations();
     const listAccess = entries.find((entry) => entry.name === "list_access");
-    const grantAccess = entries.find((entry) => entry.name === "grant_access");
-    const setAccessRole = entries.find(
-      (entry) => entry.name === "set_access_role",
-    );
+    const setAccess = entries.find((entry) => entry.name === "set_access");
     const revokeAccess = entries.find(
       (entry) => entry.name === "revoke_access",
     );
@@ -641,19 +699,11 @@ describe("MCP workspace tool adapter", () => {
       { scope_type: "workspace" },
       auth(["sync"]),
     );
-    const granted = await grantAccess!.callback(
+    const changed = await setAccess!.callback(
       {
         scope_type: "workspace",
         email: share.email,
         role: "member",
-      },
-      auth(["sync"]),
-    );
-    const changed = await setAccessRole!.callback(
-      {
-        scope_type: "workspace",
-        access_id: share.id,
-        role: "guest",
       },
       auth(["sync"]),
     );
@@ -663,7 +713,7 @@ describe("MCP workspace tool adapter", () => {
     );
 
     expect(
-      [listed, granted, changed, revoked].every(
+      [listed, changed, revoked].every(
         (result) => result.isError !== true,
       ),
     ).toBe(true);
@@ -677,15 +727,7 @@ describe("MCP workspace tool adapter", () => {
         invitedBySub: "sub-1",
         actorType: "external_agent",
         actorUserId: "user-1",
-        auditActionName: "mcp.grant_access",
-      }),
-    );
-    expect(mocks.updateScopeShareRole).toHaveBeenCalledWith(
-      expect.objectContaining({
-        shareId: share.id,
-        role: "guest",
-        actorType: "external_agent",
-        auditActionName: "mcp.set_access_role",
+        auditActionName: "mcp.set_access",
       }),
     );
     expect(mocks.revokeScopeShare).toHaveBeenCalledWith(
@@ -839,7 +881,7 @@ describe("MCP workspace tool adapter", () => {
     );
   });
 
-  it("lists, adds, removes, and selects item cover assets", async () => {
+  it("reads, adds, removes, and selects item cover assets", async () => {
     const id = "66666666-6666-4666-8666-666666666666";
     const assetUrl = "https://assets.example.com/cover.jpg";
     const sourceUrl = "https://images.example.com/cover.jpg";
@@ -877,16 +919,14 @@ describe("MCP workspace tool adapter", () => {
     }));
 
     const entries = registrations();
-    const listAssets = entries.find(
-      (entry) => entry.name === "list_item_assets",
-    );
+    const readItem = entries.find((entry) => entry.name === "read_item");
     const addAsset = entries.find((entry) => entry.name === "add_item_asset");
     const removeAsset = entries.find(
       (entry) => entry.name === "remove_item_asset",
     );
-    const setCover = entries.find((entry) => entry.name === "set_item_cover");
+    const updateItem = entries.find((entry) => entry.name === "update_item");
 
-    const listed = await listAssets!.callback({ id }, auth(["read"]));
+    const read = await readItem!.callback({ id }, auth(["read"]));
     const added = await addAsset!.callback(
       {
         id,
@@ -900,22 +940,24 @@ describe("MCP workspace tool adapter", () => {
       { id, asset_url: assetUrl },
       auth(["sync"]),
     );
-    const covered = await setCover!.callback(
+    const covered = await updateItem!.callback(
       {
         id,
-        source: "url",
-        url: assetUrl,
-        caption: "Cover caption",
-        height: 420,
+        cover: assetUrl,
+        cover_caption: "Cover caption",
+        cover_height: 420,
       },
       auth(["sync"]),
     );
 
     expect(
-      [listed, added, removed, covered].every(
+      [read, added, removed, covered].every(
         (result) => result.isError !== true,
       ),
     ).toBe(true);
+    expect(JSON.parse(toolText(read))).toMatchObject({
+      assets: [{ url: assetUrl, role: "body" }],
+    });
     expect(mocks.importItemAssetFromUrl).toHaveBeenCalledWith({
       handle: "local",
       itemId: id,
@@ -948,7 +990,7 @@ describe("MCP workspace tool adapter", () => {
       }),
     );
     expect(mocks.recordAction).toHaveBeenCalledWith(
-      expect.objectContaining({ actionName: "mcp.set_item_cover", targetId: id }),
+      expect.objectContaining({ actionName: "mcp.update_item", targetId: id }),
     );
   });
 

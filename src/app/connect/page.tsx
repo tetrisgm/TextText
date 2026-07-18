@@ -25,8 +25,10 @@ export default async function ConnectPage() {
         <main className="connect-main">
           <h1 className="connect-title">Connect</h1>
           <p className="connect-lede">
-            Tokens for agents and sync clients live here. Sign in to create
-            one for your blog.
+            Connect at <code className="connect-inline-code">https://write.ramine.net/api/mcp</code>.{" "}
+            <code className="connect-inline-code">read</code> inspects and{" "}
+            <code className="connect-inline-code">sync</code> writes. Sign in to
+            create a token.
           </p>
           <p>
             <a
@@ -37,8 +39,7 @@ export default async function ConnectPage() {
             </a>
           </p>
           <p className="connect-sub" style={{ marginTop: 16 }}>
-            Curious what this unlocks? Read the{" "}
-            <Link href="/docs/ai">agent setup guide</Link>.
+            <Link href="/docs/ai">Setup for Claude, Cursor, VS Code, and Codex</Link>.
           </p>
         </main>
       </div>
@@ -59,8 +60,10 @@ export default async function ConnectPage() {
       <main className="connect-main">
         <h1 className="connect-title">Connect</h1>
         <p className="connect-lede">
-          Give an agent or sync client access to your blog. Setup walkthrough
-          in the <Link href="/docs/ai">agent guide</Link>.
+          Connect at <code className="connect-inline-code">https://write.ramine.net/api/mcp</code>.{" "}
+          <code className="connect-inline-code">read</code> inspects and{" "}
+          <code className="connect-inline-code">sync</code> writes.{" "}
+          <Link href="/docs/ai">Setup for Claude, Cursor, VS Code, and Codex</Link>.
         </p>
         <ConnectPanel initialTokens={tokens} origin={origin} />
       </main>

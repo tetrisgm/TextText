@@ -350,7 +350,7 @@ describe("assistant local-first item edits", () => {
     });
 
     await expect(
-      tools.executor("set_item_metadata", {
+      tools.executor("update_item", {
         id: "post-1",
         tags: ["#Notes", "Design", "design"],
       }),

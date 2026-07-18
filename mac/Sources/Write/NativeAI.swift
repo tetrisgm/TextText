@@ -594,7 +594,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         [
           {
             "name": "get_workspace",
-            "description": "Return the current workspace identity, public handle, display name, supported folder modes, scope capabilities, and the caller's effective access.",
+            "description": "Return this workspace's handle, name, your effective access, and server capabilities.",
             "inputSchema": {
               "type": "object",
               "properties": {},
@@ -603,7 +603,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "list_folders",
-            "description": "List accessible folders with ids, full paths, modes, parents, and item counts. Notes and bookmarks folders are private and always unlisted.",
+            "description": "List every folder you can see with its id, path, mode, and item count.",
             "inputSchema": {
               "type": "object",
               "properties": {},
@@ -611,96 +611,8 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             }
           },
           {
-            "name": "create_folder",
-            "description": "Create a subfolder under an existing full folder path. It inherits the parent's mode and privacy rules.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "parent_path": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "description": "The existing parent folder path."
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "description": "The new display name."
-                }
-              },
-              "required": [
-                "parent_path",
-                "name"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "rename_folder",
-            "description": "Change a folder's display name. The stable folder id and path do not change.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "folder_id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80
-                }
-              },
-              "required": [
-                "folder_id",
-                "name"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "delete_folder",
-            "description": "Soft-delete one folder subtree and its live items. The folder remains restorable and permanent deletion is not available to agents. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "folder_id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The stable workspace folder id."
-                }
-              },
-              "required": [
-                "folder_id"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "restore_folder",
-            "description": "Restore one folder subtree from Trash. Restored published items can become public again. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "folder_id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The stable workspace folder id."
-                }
-              },
-              "required": [
-                "folder_id"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
             "name": "list_items",
-            "description": "List live items in one folder with ids, titles, kinds, status, metadata, revision, and content hash.",
+            "description": "List the live items in one folder with their ids, titles, tags, status, and content hash.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -721,17 +633,8 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             }
           },
           {
-            "name": "list_trash",
-            "description": "List soft-deleted folder restoration units and individual items. This never exposes permanent-delete operations.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-          },
-          {
             "name": "read_item",
-            "description": "Read one live item's markdown content and metadata. Server clients can use its current hash from list_items or search before a later write.",
+            "description": "Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -750,7 +653,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "search",
-            "description": "Search accessible live item titles, excerpts, and bodies. Drafts and private folders are included only when the caller can view them.",
+            "description": "Search item titles, excerpts, and bodies you can access, and return matches with snippets.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -773,8 +676,71 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             }
           },
           {
+            "name": "list_trash",
+            "description": "List soft-deleted items and folder restore-units. Nothing here is permanently deleted.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_comments",
+            "description": "List comment threads on one item, with anchored quotes and resolution state.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "resolved",
+                    "all"
+                  ]
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_access",
+            "description": "List who can access the workspace, one folder, or one item, and their role.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "scope_type": {
+                  "type": "string",
+                  "enum": [
+                    "workspace",
+                    "folder",
+                    "item"
+                  ]
+                },
+                "scope_id": {
+                  "description": "Required for folder and item scopes. Omit for the current workspace.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": [
+                "scope_type"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
             "name": "create_item",
-            "description": "Create one draft in a target folder from structured fields or a complete Write markdown file. If no folder is supplied, create it in the Blog folder. New items are never published or pinned; use the dedicated confirmed tools afterward.",
+            "description": "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -826,7 +792,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "update_item",
-            "description": "Update title, excerpt, body, and/or tags without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
+            "description": "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, and publication date. Full markdown may update the same fields. Cannot publish, unpublish, or move an item.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -864,199 +830,12 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                     "minLength": 1,
                     "maxLength": 48
                   },
-                  "description": "The complete tag list. Tags are normalized and capped when saved."
-                },
-                "markdown": {
-                  "description": "A complete Write markdown file. Tags may change; other metadata, status, kind, and pin changes are rejected.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1000000
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "append_to_item",
-            "description": "Append markdown to the end of an item's body, separated by a blank line, without changing metadata.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "markdown_fragment": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1000000
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id",
-                "markdown_fragment"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "move_item",
-            "description": "Move an item to another folder of the same mode. Public kinds cannot cross into private folders, and notes or bookmarks cannot cross into public folders.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "folder_path": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "description": "A full folder path from list_folders, such as \"blog/ideas\"."
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id",
-                "folder_path"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "delete_item",
-            "description": "Soft-delete one live item by moving it to Trash. It remains restorable; this tool never permanently deletes content. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "restore_item",
-            "description": "Restore one item from Trash with its previous status. Restoring a previously published item can make it public again. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                }
-              },
-              "required": [
-                "id"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "set_item_status",
-            "description": "Publish or unpublish one public item. Notes and bookmarks reject publication and remain unlisted forever. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "draft",
-                    "published"
-                  ]
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id",
-                "status"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "set_item_metadata",
-            "description": "Update supported item metadata while preserving content, kind, folder, publication status, and pin state.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "title": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 300
+                  "description": "The complete tag list; replaces existing tags."
                 },
                 "slug": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 120
-                },
-                "excerpt": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 2000
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
                 },
                 "accent": {
                   "anyOf": [
@@ -1107,20 +886,19 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                     }
                   ]
                 },
-                "tags": {
-                  "maxItems": 24,
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 48
-                  },
-                  "description": "The complete tag list. Tags are normalized and capped when saved."
-                },
                 "date": {
                   "description": "Publication date for an already-published item, as YYYY-MM-DD.",
                   "type": "string",
                   "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "markdown": {
+                  "description": "A complete Write markdown file. Content and owner metadata may change, but status, kind, and folder cannot.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000
                 },
                 "if_match_hash": {
                   "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
@@ -1136,8 +914,8 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             }
           },
           {
-            "name": "set_item_pinned",
-            "description": "Set whether an item is pinned at the top of its workspace and public listings.",
+            "name": "append_to_item",
+            "description": "Append a markdown block to the end of one item's body without touching its metadata.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1147,8 +925,10 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   "maxLength": 128,
                   "description": "The workspace item id."
                 },
-                "pinned": {
-                  "type": "boolean"
+                "markdown_fragment": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000000
                 },
                 "if_match_hash": {
                   "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
@@ -1159,161 +939,14 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
               },
               "required": [
                 "id",
-                "pinned"
+                "markdown_fragment"
               ],
               "additionalProperties": false
             }
           },
           {
-            "name": "list_access",
-            "description": "List the people and roles with direct access to the current workspace, one folder, or one item.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "scope_type": {
-                  "type": "string",
-                  "enum": [
-                    "workspace",
-                    "folder",
-                    "item"
-                  ]
-                },
-                "scope_id": {
-                  "description": "Required for folder and item scopes. Omit for the current workspace.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              },
-              "required": [
-                "scope_type"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "grant_access",
-            "description": "Invite one email address to the current workspace, one folder, or one item with an explicit role. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "scope_type": {
-                  "type": "string",
-                  "enum": [
-                    "workspace",
-                    "folder",
-                    "item"
-                  ]
-                },
-                "scope_id": {
-                  "description": "Required for folder and item scopes. Omit for the current workspace.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "email": {
-                  "type": "string",
-                  "maxLength": 320,
-                  "format": "email",
-                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-                },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "member",
-                    "guest",
-                    "editor",
-                    "viewer"
-                  ]
-                }
-              },
-              "required": [
-                "scope_type",
-                "email",
-                "role"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "set_access_role",
-            "description": "Change one existing direct access grant on the current workspace, one folder, or one item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "scope_type": {
-                  "type": "string",
-                  "enum": [
-                    "workspace",
-                    "folder",
-                    "item"
-                  ]
-                },
-                "scope_id": {
-                  "description": "Required for folder and item scopes. Omit for the current workspace.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "access_id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "member",
-                    "guest",
-                    "editor",
-                    "viewer"
-                  ]
-                }
-              },
-              "required": [
-                "scope_type",
-                "access_id",
-                "role"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "revoke_access",
-            "description": "Revoke one direct access grant from the current workspace, one folder, or one item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "scope_type": {
-                  "type": "string",
-                  "enum": [
-                    "workspace",
-                    "folder",
-                    "item"
-                  ]
-                },
-                "scope_id": {
-                  "description": "Required for folder and item scopes. Omit for the current workspace.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "access_id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              },
-              "required": [
-                "scope_type",
-                "access_id"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "list_comments",
-            "description": "List collaboration comments and replies on one item, including anchored text context and resolution state.",
+            "name": "set_item_status",
+            "description": "Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1323,13 +956,199 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   "maxLength": 128,
                   "description": "The workspace item id."
                 },
-                "state": {
+                "status": {
                   "type": "string",
                   "enum": [
-                    "open",
-                    "resolved",
-                    "all"
+                    "draft",
+                    "published"
                   ]
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "move_item",
+            "description": "Move one item to another folder of the same mode.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "folder_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "A full folder path from list_folders, such as \"blog/ideas\"."
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "folder_path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "delete_item",
+            "description": "Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "restore_item",
+            "description": "Restore one item from Trash with its previous status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "add_item_asset",
+            "description": "Import one public image or video URL into Write and attach it as cover, body, or gallery.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "source_url": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "format": "uri"
+                },
+                "placement": {
+                  "type": "string",
+                  "enum": [
+                    "cover",
+                    "body_end",
+                    "gallery"
+                  ]
+                },
+                "alt_text": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "caption": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "source_url",
+                "placement"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "remove_item_asset",
+            "description": "Remove references to one asset URL from an item's cover, body, and gallery. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "asset_url": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "format": "uri"
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "id",
+                "asset_url"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "recapture_bookmark",
+            "description": "Re-fetch one bookmark from its saved URL. The current capture stays visible until the new one lands.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The workspace item id."
+                },
+                "if_match_hash": {
+                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
                 }
               },
               "required": [
@@ -1340,7 +1159,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "add_comment",
-            "description": "Add a collaboration comment or reply on one item. Anchors retain the quoted context even if the document later changes.",
+            "description": "Add a comment or reply on one item, optionally anchored to an exact quote.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1393,7 +1212,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "set_comment_resolved",
-            "description": "Set whether one collaboration comment thread is resolved.",
+            "description": "Resolve or reopen one comment thread.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1421,186 +1240,166 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             }
           },
           {
-            "name": "recapture_bookmark",
-            "description": "Queue a fresh full capture of an existing bookmark using its saved original URL. The current completed capture remains visible until the replacement is complete.",
+            "name": "create_folder",
+            "description": "Create a subfolder under an existing folder path; it inherits the parent's mode and privacy.",
             "inputSchema": {
               "type": "object",
               "properties": {
-                "id": {
+                "parent_path": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
+                  "maxLength": 256,
+                  "description": "The existing parent folder path."
                 },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                "name": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 256
+                  "maxLength": 80,
+                  "description": "The new display name."
                 }
               },
               "required": [
-                "id"
+                "parent_path",
+                "name"
               ],
               "additionalProperties": false
             }
           },
           {
-            "name": "list_item_assets",
-            "description": "List cover, body, gallery, video, capture, and screenshot assets referenced by one item.",
+            "name": "rename_folder",
+            "description": "Rename one folder. Its id and path do not change.",
             "inputSchema": {
               "type": "object",
               "properties": {
-                "id": {
+                "folder_id": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
+                  "maxLength": 128
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
                 }
               },
               "required": [
-                "id"
+                "folder_id",
+                "name"
               ],
               "additionalProperties": false
             }
           },
           {
-            "name": "add_item_asset",
-            "description": "Import one public image or video URL into Write storage and attach it as the cover, at the end of the body, or in the gallery.",
+            "name": "delete_folder",
+            "description": "Move one folder subtree to Trash. Restorable; never permanently deleted. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
             "inputSchema": {
               "type": "object",
               "properties": {
-                "id": {
+                "folder_id": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "source_url": {
+                  "description": "The stable workspace folder id."
+                }
+              },
+              "required": [
+                "folder_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "restore_folder",
+            "description": "Restore one folder subtree from Trash. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "folder_id": {
                   "type": "string",
-                  "maxLength": 2048,
-                  "format": "uri"
-                },
-                "placement": {
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The stable workspace folder id."
+                }
+              },
+              "required": [
+                "folder_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "set_access",
+            "description": "Grant or change one person's role on the workspace, a folder, or an item, by email. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "scope_type": {
                   "type": "string",
                   "enum": [
-                    "cover",
-                    "body_end",
-                    "gallery"
+                    "workspace",
+                    "folder",
+                    "item"
                   ]
                 },
-                "alt_text": {
-                  "type": "string",
-                  "maxLength": 500
-                },
-                "caption": {
-                  "type": "string",
-                  "maxLength": 2000
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
+                "scope_id": {
+                  "description": "Required for folder and item scopes. Omit for the current workspace.",
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id",
-                "source_url",
-                "placement"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "remove_item_asset",
-            "description": "Remove references to one asset URL from an item's cover, body, and gallery without physically deleting shared storage. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
+                  "maxLength": 128
                 },
-                "asset_url": {
+                "email": {
                   "type": "string",
-                  "maxLength": 2048,
-                  "format": "uri"
+                  "maxLength": 320,
+                  "format": "email",
+                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                 },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                }
-              },
-              "required": [
-                "id",
-                "asset_url"
-              ],
-              "additionalProperties": false
-            }
-          },
-          {
-            "name": "set_item_cover",
-            "description": "Use a referenced asset URL as the item cover, restore automatic cover selection, or explicitly show no cover.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "description": "The workspace item id."
-                },
-                "source": {
+                "role": {
                   "type": "string",
                   "enum": [
-                    "url",
-                    "auto",
-                    "none"
+                    "member",
+                    "guest",
+                    "editor",
+                    "viewer"
                   ]
-                },
-                "url": {
-                  "type": "string",
-                  "maxLength": 2048,
-                  "format": "uri"
-                },
-                "caption": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 2000
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "height": {
-                  "anyOf": [
-                    {
-                      "type": "integer",
-                      "minimum": 180,
-                      "maximum": 860
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "if_match_hash": {
-                  "description": "The hash returned by list_items, search, or the previous mutation. A stale hash rejects the write.",
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
                 }
               },
               "required": [
-                "id",
-                "source"
+                "scope_type",
+                "email",
+                "role"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "revoke_access",
+            "description": "Revoke one person's access to the workspace, a folder, or an item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "scope_type": {
+                  "type": "string",
+                  "enum": [
+                    "workspace",
+                    "folder",
+                    "item"
+                  ]
+                },
+                "scope_id": {
+                  "description": "Required for folder and item scopes. Omit for the current workspace.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "access_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": [
+                "scope_type",
+                "access_id"
               ],
               "additionalProperties": false
             }

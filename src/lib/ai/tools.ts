@@ -120,7 +120,7 @@ const itemKind = z.enum([
 const tags = z
   .array(z.string().trim().min(1).max(48))
   .max(24)
-  .describe("The complete tag list. Tags are normalized and capped when saved.");
+  .describe("The complete tag list; replaces existing tags.");
 
 const scopeType = z.enum(["workspace", "folder", "item"]);
 const accessRole = z.enum(["member", "guest", "editor", "viewer"]);
@@ -216,13 +216,26 @@ const updateItemInput = z
     excerpt: z.string().max(2_000).nullable().optional(),
     body: z.string().max(1_000_000).optional(),
     tags: tags.optional(),
+    slug: z.string().trim().min(1).max(120).optional(),
+    accent: z
+      .union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.literal(""), z.null()])
+      .optional(),
+    cover: z.string().max(2_048).nullable().optional(),
+    cover_caption: z.string().max(2_000).nullable().optional(),
+    cover_height: z.number().int().min(180).max(860).nullable().optional(),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Publication date for an already-published item, as YYYY-MM-DD."),
+    pinned: z.boolean().optional(),
     markdown: z
       .string()
       .min(1)
       .max(1_000_000)
       .optional()
       .describe(
-        "A complete Write markdown file. Tags may change; other metadata, status, kind, and pin changes are rejected.",
+        "A complete Write markdown file. Content and owner metadata may change, but status, kind, and folder cannot.",
       ),
     if_match_hash: ifMatchHash,
   })
@@ -232,53 +245,22 @@ const updateItemInput = z
       value.title !== undefined ||
       value.excerpt !== undefined ||
       value.body !== undefined ||
-      value.tags !== undefined;
+      value.tags !== undefined ||
+      value.slug !== undefined ||
+      value.accent !== undefined ||
+      value.cover !== undefined ||
+      value.cover_caption !== undefined ||
+      value.cover_height !== undefined ||
+      value.date !== undefined ||
+      value.pinned !== undefined;
     if (!value.markdown && !structured) {
-      context.addIssue({ code: "custom", message: "Pass content to update." });
+      context.addIssue({ code: "custom", message: "Pass content or metadata to update." });
     }
     if (value.markdown && structured) {
       context.addIssue({
         code: "custom",
-        message: "Pass markdown or structured content fields, not both.",
+        message: "Pass markdown or structured item fields, not both.",
       });
-    }
-  });
-
-const setMetadataInput = z
-  .object({
-    id,
-    title: z.string().trim().min(1).max(300).optional(),
-    slug: z.string().trim().min(1).max(120).optional(),
-    excerpt: z.string().max(2_000).nullable().optional(),
-    accent: z
-      .union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.literal(""), z.null()])
-      .optional(),
-    cover: z.string().max(2_048).nullable().optional(),
-    cover_caption: z.string().max(2_000).nullable().optional(),
-    cover_height: z.number().int().min(180).max(860).nullable().optional(),
-    tags: tags.optional(),
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional()
-      .describe("Publication date for an already-published item, as YYYY-MM-DD."),
-    if_match_hash: ifMatchHash,
-  })
-  .strict()
-  .superRefine((value, context) => {
-    const keys = [
-      "title",
-      "slug",
-      "excerpt",
-      "accent",
-      "cover",
-      "cover_caption",
-      "cover_height",
-      "tags",
-      "date",
-    ] as const;
-    if (!keys.some((key) => value[key] !== undefined)) {
-      context.addIssue({ code: "custom", message: "Pass metadata to update." });
     }
   });
 
@@ -286,62 +268,19 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   get_workspace: defineTool("get_workspace", {
     title: "Get workspace",
     description:
-      "Return the current workspace identity, public handle, display name, supported folder modes, scope capabilities, and the caller's effective access.",
+      "Return this workspace's handle, name, your effective access, and server capabilities.",
     inputSchema: emptyInput(),
   }),
   list_folders: defineTool("list_folders", {
     title: "List folders",
     description:
-      "List accessible folders with ids, full paths, modes, parents, and item counts. Notes and bookmarks folders are private and always unlisted.",
+      "List every folder you can see with its id, path, mode, and item count.",
     inputSchema: emptyInput(),
-  }),
-  create_folder: defineTool("create_folder", {
-    title: "Create folder",
-    description:
-      "Create a subfolder under an existing full folder path. It inherits the parent's mode and privacy rules.",
-    inputSchema: z
-      .object({
-        parent_path: folderPath.describe("The existing parent folder path."),
-        name: z.string().trim().min(1).max(80).describe("The new display name."),
-      })
-      .strict(),
-    mutability: "write",
-  }),
-  rename_folder: defineTool("rename_folder", {
-    title: "Rename folder",
-    description:
-      "Change a folder's display name. The stable folder id and path do not change.",
-    inputSchema: z
-      .object({
-        folder_id: z.string().trim().min(1).max(128),
-        name: z.string().trim().min(1).max(80),
-      })
-      .strict(),
-    mutability: "write",
-    destructive: true,
-  }),
-  delete_folder: defineTool("delete_folder", {
-    title: "Move folder to Trash",
-    description:
-      "Soft-delete one folder subtree and its live items. The folder remains restorable and permanent deletion is not available to agents.",
-    inputSchema: z.object({ folder_id: folderId }).strict(),
-    mutability: "write",
-    confirmation: "destructive",
-    idempotent: true,
-  }),
-  restore_folder: defineTool("restore_folder", {
-    title: "Restore folder",
-    description:
-      "Restore one folder subtree from Trash. Restored published items can become public again.",
-    inputSchema: z.object({ folder_id: folderId }).strict(),
-    mutability: "write",
-    confirmation: "audience",
-    idempotent: true,
   }),
   list_items: defineTool("list_items", {
     title: "List items",
     description:
-      "List live items in one folder with ids, titles, kinds, status, metadata, revision, and content hash.",
+      "List the live items in one folder with their ids, titles, tags, status, and content hash.",
     inputSchema: z
       .object({
         folder_path: folderPath.optional().describe('Defaults to "blog".'),
@@ -349,22 +288,16 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       })
       .strict(),
   }),
-  list_trash: defineTool("list_trash", {
-    title: "List Trash",
-    description:
-      "List soft-deleted folder restoration units and individual items. This never exposes permanent-delete operations.",
-    inputSchema: emptyInput(),
-  }),
   read_item: defineTool("read_item", {
     title: "Read item",
     description:
-      "Read one live item's markdown content and metadata. Server clients can use its current hash from list_items or search before a later write.",
+      "Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id.",
     inputSchema: z.object({ id }).strict(),
   }),
   search: defineTool("search", {
     title: "Search items",
     description:
-      "Search accessible live item titles, excerpts, and bodies. Drafts and private folders are included only when the caller can view them.",
+      "Search item titles, excerpts, and bodies you can access, and return matches with snippets.",
     inputSchema: z
       .object({
         query: z.string().trim().min(1).max(500),
@@ -372,17 +305,41 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       })
       .strict(),
   }),
+  list_trash: defineTool("list_trash", {
+    title: "List Trash",
+    description:
+      "List soft-deleted items and folder restore-units. Nothing here is permanently deleted.",
+    inputSchema: emptyInput(),
+  }),
+  list_comments: defineTool("list_comments", {
+    title: "List comments",
+    description:
+      "List comment threads on one item, with anchored quotes and resolution state.",
+    inputSchema: z
+      .object({ id, state: z.enum(["open", "resolved", "all"]).optional() })
+      .strict(),
+  }),
+  list_access: defineTool("list_access", {
+    title: "List access",
+    description:
+      "List who can access the workspace, one folder, or one item, and their role.",
+    inputSchema: z
+      .object(accessTargetInput)
+      .strict()
+      .superRefine(validateAccessTarget),
+    requiredScope: "sync",
+  }),
   create_item: defineTool("create_item", {
     title: "Create item",
     description:
-      "Create one draft in a target folder from structured fields or a complete Write markdown file. If no folder is supplied, create it in the Blog folder. New items are never published or pinned; use the dedicated confirmed tools afterward.",
+      "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned.",
     inputSchema: createItemInput,
     mutability: "write",
   }),
   update_item: defineTool("update_item", {
     title: "Update item",
     description:
-      "Update title, excerpt, body, and/or tags without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
+      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, and publication date. Full markdown may update the same fields. Cannot publish, unpublish, or move an item.",
     inputSchema: updateItemInput,
     mutability: "write",
     destructive: true,
@@ -390,7 +347,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   append_to_item: defineTool("append_to_item", {
     title: "Append to item",
     description:
-      "Append markdown to the end of an item's body, separated by a blank line, without changing metadata.",
+      "Append a markdown block to the end of one item's body without touching its metadata.",
     inputSchema: z
       .object({
         id,
@@ -400,37 +357,10 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       .strict(),
     mutability: "write",
   }),
-  move_item: defineTool("move_item", {
-    title: "Move item",
-    description:
-      "Move an item to another folder of the same mode. Public kinds cannot cross into private folders, and notes or bookmarks cannot cross into public folders.",
-    inputSchema: z.object({ id, folder_path: folderPath, if_match_hash: ifMatchHash }).strict(),
-    mutability: "write",
-    destructive: true,
-    idempotent: true,
-  }),
-  delete_item: defineTool("delete_item", {
-    title: "Move item to Trash",
-    description:
-      "Soft-delete one live item by moving it to Trash. It remains restorable; this tool never permanently deletes content.",
-    inputSchema: z.object({ id, if_match_hash: ifMatchHash }).strict(),
-    mutability: "write",
-    confirmation: "destructive",
-    idempotent: true,
-  }),
-  restore_item: defineTool("restore_item", {
-    title: "Restore item",
-    description:
-      "Restore one item from Trash with its previous status. Restoring a previously published item can make it public again.",
-    inputSchema: z.object({ id }).strict(),
-    mutability: "write",
-    confirmation: "audience",
-    idempotent: true,
-  }),
   set_item_status: defineTool("set_item_status", {
     title: "Set item status",
     description:
-      "Publish or unpublish one public item. Notes and bookmarks reject publication and remain unlisted forever.",
+      "Publish or unpublish one blog item. Notes and bookmarks can never be published.",
     inputSchema: z
       .object({
         id,
@@ -443,96 +373,72 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     destructive: true,
     idempotent: true,
   }),
-  set_item_metadata: defineTool("set_item_metadata", {
-    title: "Set item metadata",
-    description:
-      "Update supported item metadata while preserving content, kind, folder, publication status, and pin state.",
-    inputSchema: setMetadataInput,
+  move_item: defineTool("move_item", {
+    title: "Move item",
+    description: "Move one item to another folder of the same mode.",
+    inputSchema: z.object({ id, folder_path: folderPath, if_match_hash: ifMatchHash }).strict(),
     mutability: "write",
     destructive: true,
     idempotent: true,
   }),
-  set_item_pinned: defineTool("set_item_pinned", {
-    title: "Pin or unpin item",
+  delete_item: defineTool("delete_item", {
+    title: "Move item to Trash",
     description:
-      "Set whether an item is pinned at the top of its workspace and public listings.",
+      "Move one item to Trash. It stays restorable; this never permanently deletes.",
+    inputSchema: z.object({ id, if_match_hash: ifMatchHash }).strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
+  restore_item: defineTool("restore_item", {
+    title: "Restore item",
+    description: "Restore one item from Trash with its previous status.",
+    inputSchema: z.object({ id }).strict(),
+    mutability: "write",
+    confirmation: "audience",
+    idempotent: true,
+  }),
+  add_item_asset: defineTool("add_item_asset", {
+    title: "Add item asset",
+    description:
+      "Import one public image or video URL into Write and attach it as cover, body, or gallery.",
     inputSchema: z
-      .object({ id, pinned: z.boolean(), if_match_hash: ifMatchHash })
+      .object({
+        id,
+        source_url: z.string().url().max(2_048),
+        placement: z.enum(["cover", "body_end", "gallery"]),
+        alt_text: z.string().max(500).optional(),
+        caption: z.string().max(2_000).optional(),
+        if_match_hash: ifMatchHash,
+      })
       .strict(),
     mutability: "write",
-    destructive: true,
-    idempotent: true,
+    openWorld: true,
   }),
-  list_access: defineTool("list_access", {
-    title: "List access",
+  remove_item_asset: defineTool("remove_item_asset", {
+    title: "Remove item asset",
     description:
-      "List the people and roles with direct access to the current workspace, one folder, or one item.",
+      "Remove references to one asset URL from an item's cover, body, and gallery.",
     inputSchema: z
-      .object(accessTargetInput)
-      .strict()
-      .superRefine(validateAccessTarget),
-    requiredScope: "sync",
-  }),
-  grant_access: defineTool("grant_access", {
-    title: "Grant access",
-    description:
-      "Invite one email address to the current workspace, one folder, or one item with an explicit role.",
-    inputSchema: z
-      .object({
-        ...accessTargetInput,
-        email: z.string().trim().email().max(320),
-        role: accessRole,
-      })
-      .strict()
-      .superRefine(validateAccessTarget),
-    mutability: "write",
-    confirmation: "audience",
-  }),
-  set_access_role: defineTool("set_access_role", {
-    title: "Change access role",
-    description:
-      "Change one existing direct access grant on the current workspace, one folder, or one item.",
-    inputSchema: z
-      .object({
-        ...accessTargetInput,
-        access_id: z.string().trim().min(1).max(128),
-        role: accessRole,
-      })
-      .strict()
-      .superRefine(validateAccessTarget),
-    mutability: "write",
-    confirmation: "audience",
-    destructive: true,
-    idempotent: true,
-  }),
-  revoke_access: defineTool("revoke_access", {
-    title: "Revoke access",
-    description:
-      "Revoke one direct access grant from the current workspace, one folder, or one item.",
-    inputSchema: z
-      .object({
-        ...accessTargetInput,
-        access_id: z.string().trim().min(1).max(128),
-      })
-      .strict()
-      .superRefine(validateAccessTarget),
-    mutability: "write",
-    confirmation: "audience",
-    destructive: true,
-    idempotent: true,
-  }),
-  list_comments: defineTool("list_comments", {
-    title: "List comments",
-    description:
-      "List collaboration comments and replies on one item, including anchored text context and resolution state.",
-    inputSchema: z
-      .object({ id, state: z.enum(["open", "resolved", "all"]).optional() })
+      .object({ id, asset_url: z.string().url().max(2_048), if_match_hash: ifMatchHash })
       .strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
+  recapture_bookmark: defineTool("recapture_bookmark", {
+    title: "Recapture bookmark",
+    description:
+      "Re-fetch one bookmark from its saved URL. The current capture stays visible until the new one lands.",
+    inputSchema: z.object({ id, if_match_hash: ifMatchHash }).strict(),
+    mutability: "write",
+    destructive: true,
+    openWorld: true,
   }),
   add_comment: defineTool("add_comment", {
     title: "Add comment",
     description:
-      "Add a collaboration comment or reply on one item. Anchors retain the quoted context even if the document later changes.",
+      "Add a comment or reply on one item, optionally anchored to an exact quote.",
     inputSchema: z
       .object({
         id,
@@ -582,8 +488,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   }),
   set_comment_resolved: defineTool("set_comment_resolved", {
     title: "Resolve or reopen comment",
-    description:
-      "Set whether one collaboration comment thread is resolved.",
+    description: "Resolve or reopen one comment thread.",
     inputSchema: z
       .object({
         id,
@@ -595,76 +500,76 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     destructive: true,
     idempotent: true,
   }),
-  recapture_bookmark: defineTool("recapture_bookmark", {
-    title: "Recapture bookmark",
+  create_folder: defineTool("create_folder", {
+    title: "Create folder",
     description:
-      "Queue a fresh full capture of an existing bookmark using its saved original URL. The current completed capture remains visible until the replacement is complete.",
-    inputSchema: z.object({ id, if_match_hash: ifMatchHash }).strict(),
-    mutability: "write",
-    destructive: true,
-    openWorld: true,
-  }),
-  list_item_assets: defineTool("list_item_assets", {
-    title: "List item assets",
-    description:
-      "List cover, body, gallery, video, capture, and screenshot assets referenced by one item.",
-    inputSchema: z.object({ id }).strict(),
-  }),
-  add_item_asset: defineTool("add_item_asset", {
-    title: "Add item asset",
-    description:
-      "Import one public image or video URL into Write storage and attach it as the cover, at the end of the body, or in the gallery.",
+      "Create a subfolder under an existing folder path; it inherits the parent's mode and privacy.",
     inputSchema: z
       .object({
-        id,
-        source_url: z.string().url().max(2_048),
-        placement: z.enum(["cover", "body_end", "gallery"]),
-        alt_text: z.string().max(500).optional(),
-        caption: z.string().max(2_000).optional(),
-        if_match_hash: ifMatchHash,
+        parent_path: folderPath.describe("The existing parent folder path."),
+        name: z.string().trim().min(1).max(80).describe("The new display name."),
       })
       .strict(),
     mutability: "write",
-    openWorld: true,
   }),
-  remove_item_asset: defineTool("remove_item_asset", {
-    title: "Remove item asset",
-    description:
-      "Remove references to one asset URL from an item's cover, body, and gallery without physically deleting shared storage.",
+  rename_folder: defineTool("rename_folder", {
+    title: "Rename folder",
+    description: "Rename one folder. Its id and path do not change.",
     inputSchema: z
-      .object({ id, asset_url: z.string().url().max(2_048), if_match_hash: ifMatchHash })
+      .object({
+        folder_id: z.string().trim().min(1).max(128),
+        name: z.string().trim().min(1).max(80),
+      })
       .strict(),
+    mutability: "write",
+    destructive: true,
+  }),
+  delete_folder: defineTool("delete_folder", {
+    title: "Move folder to Trash",
+    description:
+      "Move one folder subtree to Trash. Restorable; never permanently deleted.",
+    inputSchema: z.object({ folder_id: folderId }).strict(),
     mutability: "write",
     confirmation: "destructive",
     idempotent: true,
   }),
-  set_item_cover: defineTool("set_item_cover", {
-    title: "Set item cover",
+  restore_folder: defineTool("restore_folder", {
+    title: "Restore folder",
+    description: "Restore one folder subtree from Trash.",
+    inputSchema: z.object({ folder_id: folderId }).strict(),
+    mutability: "write",
+    confirmation: "audience",
+    idempotent: true,
+  }),
+  set_access: defineTool("set_access", {
+    title: "Set access",
     description:
-      "Use a referenced asset URL as the item cover, restore automatic cover selection, or explicitly show no cover.",
+      "Grant or change one person's role on the workspace, a folder, or an item, by email.",
     inputSchema: z
       .object({
-        id,
-        source: z.enum(["url", "auto", "none"]),
-        url: z.string().url().max(2_048).optional(),
-        caption: z.string().max(2_000).nullable().optional(),
-        height: z.number().int().min(180).max(860).nullable().optional(),
-        if_match_hash: ifMatchHash,
+        ...accessTargetInput,
+        email: z.string().trim().email().max(320),
+        role: accessRole,
       })
       .strict()
-      .superRefine((value, context) => {
-        if (value.source === "url" && !value.url) {
-          context.addIssue({ code: "custom", path: ["url"], message: "A URL cover requires url." });
-        }
-        if (value.source !== "url" && value.url) {
-          context.addIssue({
-            code: "custom",
-            path: ["url"],
-            message: "Only a URL cover accepts url.",
-          });
-        }
-      }),
+      .superRefine(validateAccessTarget),
     mutability: "write",
+    confirmation: "audience",
+    idempotent: true,
+  }),
+  revoke_access: defineTool("revoke_access", {
+    title: "Revoke access",
+    description:
+      "Revoke one person's access to the workspace, a folder, or an item.",
+    inputSchema: z
+      .object({
+        ...accessTargetInput,
+        access_id: z.string().trim().min(1).max(128),
+      })
+      .strict()
+      .superRefine(validateAccessTarget),
+    mutability: "write",
+    confirmation: "audience",
     destructive: true,
     idempotent: true,
   }),

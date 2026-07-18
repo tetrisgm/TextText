@@ -18,8 +18,7 @@ describe("cloudAssistantToolNames", () => {
       "delete_item",
       "restore_item",
       "set_item_status",
-      "grant_access",
-      "set_access_role",
+      "set_access",
       "revoke_access",
     ]) {
       expect(names).not.toContain(gated);

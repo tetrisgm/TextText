@@ -12,7 +12,7 @@ import { rootDomainUrl } from "@/lib/site-url";
 export function GET() {
   const origin = rootDomainUrl().origin;
   const readTools = WORKSPACE_TOOL_NAMES.filter(
-    (name) => WORKSPACE_TOOL_DEFINITIONS[name].requiredScope === "read",
+    (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read",
   );
   const mutationTools = WORKSPACE_TOOL_NAMES.filter(
     (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write",
@@ -47,7 +47,7 @@ The endpoint advertises OAuth discovery from its unauthenticated 401 response.
 The click-to-approve flow uses authorization code with PKCE S256. Clients
 should request the least privilege they need:
 
-- read: ${readTools.length} workspace tools that do not manage access
+- read: ${readTools.length} workspace inspection tools
 - sync: all ${WORKSPACE_TOOL_NAMES.length} tools, including access management and mutations
 
 A client requesting both advertised scopes receives effective sync access.
@@ -79,8 +79,6 @@ New items are drafts. Notes and bookmarks cannot publish. Existing-item writes
 should send the latest if_match_hash; stale writes are rejected. Every mutation
 is audited.
 
-Human setup and tool reference: ${origin}/docs/ai
-
 ## Sync API and OpenAPI actions
 
 Sync API: ${origin}/api/sync/v1
@@ -102,6 +100,8 @@ same ${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the sign
 Write's MCP endpoint. The plain web app has no assistant model fallback.
 OpenAI and Anthropic are not implemented as in-app providers; they can connect
 as external MCP clients.
+
+Human setup: ${origin}/docs/ai. Approval flow: ${origin}/api/mcp advertises OAuth from its 401.
 `;
 
   return new Response(text, {

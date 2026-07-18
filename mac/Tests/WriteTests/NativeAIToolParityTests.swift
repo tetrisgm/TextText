@@ -10,35 +10,30 @@ final class NativeAIToolParityTests: XCTestCase {
     private let expectedNames = [
         "get_workspace",
         "list_folders",
+        "list_items",
+        "read_item",
+        "search",
+        "list_trash",
+        "list_comments",
+        "list_access",
+        "create_item",
+        "update_item",
+        "append_to_item",
+        "set_item_status",
+        "move_item",
+        "delete_item",
+        "restore_item",
+        "add_item_asset",
+        "remove_item_asset",
+        "recapture_bookmark",
+        "add_comment",
+        "set_comment_resolved",
         "create_folder",
         "rename_folder",
         "delete_folder",
         "restore_folder",
-        "list_items",
-        "list_trash",
-        "read_item",
-        "search",
-        "create_item",
-        "update_item",
-        "append_to_item",
-        "move_item",
-        "delete_item",
-        "restore_item",
-        "set_item_status",
-        "set_item_metadata",
-        "set_item_pinned",
-        "list_access",
-        "grant_access",
-        "set_access_role",
+        "set_access",
         "revoke_access",
-        "list_comments",
-        "add_comment",
-        "set_comment_resolved",
-        "recapture_bookmark",
-        "list_item_assets",
-        "add_item_asset",
-        "remove_item_asset",
-        "set_item_cover",
     ]
 
     func testNativeAgentExposesOnlyTheSafeWorkspaceToolSurface() {
@@ -94,9 +89,9 @@ final class NativeAIToolParityTests: XCTestCase {
 
         @available(macOS 26.4, *)
         func testGeneratedSchemasPreserveBooleanIntegerEnumAndNullableTypes() throws {
-            let pinned = try generatedJSON(for: "set_item_pinned")
+            let pinned = try generatedJSON(for: "update_item")
             XCTAssertEqual(property("pinned", in: pinned)["type"] as? String, "boolean")
-            XCTAssertEqual(required(in: pinned), ["id", "pinned"])
+            XCTAssertEqual(required(in: pinned), ["id"])
 
             let listItems = try generatedJSON(for: "list_items")
             let limit = property("limit", in: listItems)
@@ -109,7 +104,7 @@ final class NativeAIToolParityTests: XCTestCase {
                 for: "set_item_status"))
             XCTAssertEqual(status["enum"] as? [String], ["draft", "published"])
 
-            let metadata = try generatedJSON(for: "set_item_metadata")
+            let metadata = try generatedJSON(for: "update_item")
             let coverHeight = try resolvedProperty("cover_height", in: metadata)
             let variants = try XCTUnwrap(coverHeight["anyOf"] as? [[String: Any]])
             XCTAssertTrue(variants.contains { $0["type"] as? String == "integer" })

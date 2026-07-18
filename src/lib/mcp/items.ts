@@ -8,12 +8,29 @@ import { blogBaseUrl, oneLine, postUrl } from "@/lib/agent-surface";
 import type { Blog, Folder, FolderMode, ItemKind, Post, PostType } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { itemKindForPostType, renderPostMarkdownFile } from "@/lib/markdown-files";
+import { normalizeTags } from "@/lib/tags";
+import { extractWikiLinks, resolveTarget } from "@/lib/wikilinks";
+import { serializeWikiLink } from "@/lib/wikilink-syntax";
 
 /** What a new item is when the file's frontmatter does not say. */
 export const DEFAULT_TYPE_BY_MODE: Record<FolderMode, PostType> = {
   blog: "article",
   notes: "note",
   bookmarks: "bookmark",
+};
+
+export type WikiLink = {
+  raw: string;
+  targetId?: string;
+  targetSlug?: string;
+  title?: string;
+  resolved: boolean;
+};
+
+export type BacklinkRef = {
+  id: string;
+  slug: string;
+  title: string;
 };
 
 /** Manifest-style entry, the shape every listing and mutation tool returns. */
@@ -32,6 +49,10 @@ export type McpItemEntry = {
   file?: string;
   /** sha256 hex of the rendered markdown file; the if_match_hash currency */
   hash: string;
+  tags: string[];
+  wikilinks: WikiLink[];
+  /** Populated only by read_item because it requires a full workspace scan. */
+  backlinks?: BacklinkRef[];
 };
 
 /** notes and bookmarks are always unlisted: their status never leaves draft. */
@@ -91,8 +112,91 @@ export function renderItemFile(
   return { text, hash: markdownFileHash(text) };
 }
 
-/** One manifest-style entry for a post, as every tool returns it. */
-export function itemEntry(blog: Blog, post: Post): McpItemEntry {
+async function resolvedWikiLinks(
+  blog: Blog,
+  post: Post,
+  visiblePosts: readonly Post[],
+): Promise<WikiLink[]> {
+  const visibleIds = new Set(
+    visiblePosts.flatMap((candidate) => (candidate.id ? [candidate.id] : [])),
+  );
+  const visibleSlugs = new Set(visiblePosts.map((candidate) => candidate.slug));
+  return Promise.all(
+    extractWikiLinks(post.body).map(async (reference) => {
+      const resolution = await resolveTarget(blog.handle, reference.target);
+      if (
+        (resolution.kind === "exact" || resolution.kind === "history") &&
+        (resolution.post.id
+          ? visibleIds.has(resolution.post.id)
+          : visibleSlugs.has(resolution.post.slug))
+      ) {
+        return {
+          raw: serializeWikiLink(reference),
+          ...(resolution.post.id ? { targetId: resolution.post.id } : {}),
+          targetSlug: resolution.post.slug,
+          title: resolution.post.title,
+          resolved: true,
+        };
+      }
+      return {
+        raw: serializeWikiLink(reference),
+        targetSlug: reference.target,
+        resolved: false,
+      };
+    }),
+  );
+}
+
+/**
+ * Find live items whose prose resolves to this item. getAllPosts excludes
+ * trashed rows, and resolveTarget excludes missing, ambiguous, and tombstoned
+ * targets, so deleted content cannot pollute the backlink graph.
+ */
+export async function itemBacklinks(
+  blog: Blog,
+  post: Post,
+  livePosts: Post[],
+): Promise<BacklinkRef[]> {
+  const cache = new Map<string, ReturnType<typeof resolveTarget>>();
+  const backlinks: BacklinkRef[] = [];
+
+  for (const source of livePosts) {
+    if (!source.id || source.id === post.id) continue;
+    let linksHere = false;
+    for (const reference of extractWikiLinks(source.body)) {
+      let pending = cache.get(reference.target);
+      if (!pending) {
+        pending = resolveTarget(blog.handle, reference.target);
+        cache.set(reference.target, pending);
+      }
+      const resolution = await pending;
+      if (
+        (resolution.kind === "exact" || resolution.kind === "history") &&
+        (post.id
+          ? resolution.post.id === post.id
+          : resolution.post.slug === post.slug)
+      ) {
+        linksHere = true;
+        break;
+      }
+    }
+    if (linksHere) {
+      backlinks.push({ id: source.id, slug: source.slug, title: source.title });
+    }
+  }
+  return backlinks;
+}
+
+/** One manifest-style entry for a post, as every item tool returns it. */
+export async function itemEntry(
+  blog: Blog,
+  post: Post,
+  options: {
+    hash?: string;
+    backlinks?: BacklinkRef[];
+    visiblePosts?: readonly Post[];
+  } = {},
+): Promise<McpItemEntry> {
   return {
     ...(post.id ? { id: post.id } : {}),
     slug: post.slug,
@@ -104,7 +208,10 @@ export function itemEntry(blog: Blog, post: Post): McpItemEntry {
     ...(post.updatedAt ? { updatedAt: post.updatedAt } : {}),
     ...(post.revision !== undefined ? { revision: post.revision } : {}),
     ...(post.id ? { file: syncFileUrl(post.id) } : {}),
-    hash: renderItemFile(blog, post).hash,
+    hash: options.hash ?? renderItemFile(blog, post).hash,
+    tags: normalizeTags(post.tags),
+    wikilinks: await resolvedWikiLinks(blog, post, options.visiblePosts ?? []),
+    ...(options.backlinks ? { backlinks: options.backlinks } : {}),
   };
 }
 
