@@ -14,6 +14,7 @@ import {
   type WorkspaceItemTextField,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
+import { normalizeTags } from "@/lib/tags";
 
 export const NATIVE_QUICK_ACTIONS = [
   {
@@ -62,6 +63,15 @@ export type NativeQuickActionResult =
       result: string;
       range: WorkspaceItemTextEdit["range"];
       scope: NativeQuickActionScope;
+      canApply: boolean;
+      note?: string;
+    }
+  | {
+      kind: "tags-proposal";
+      label: string;
+      beforeTags: string[];
+      afterTags: string[];
+      addedTags: string[];
       canApply: boolean;
       note?: string;
     };
@@ -172,10 +182,21 @@ export async function runNativeQuickAction(
 
     case "tags": {
       const result = await nativeTags(source, 5);
-      const tags = result.tags.map((tag) => tag.trim()).filter(Boolean);
+      const beforeTags = normalizeTags(item.tags);
+      const afterTags = normalizeTags([...beforeTags, ...result.tags]);
+      const addedTags = afterTags.filter((tag) => !beforeTags.includes(tag));
       return {
-        kind: "response",
-        text: tags.length > 0 ? tags.join(", ") : "No useful tags found.",
+        kind: "tags-proposal",
+        label: "Suggested tags",
+        beforeTags,
+        afterTags,
+        addedTags,
+        canApply: addedTags.length > 0 && !result.truncated,
+        note: result.truncated
+          ? "The source was too long to suggest tags safely."
+          : addedTags.length === 0
+            ? "No new tags found."
+            : undefined,
       };
     }
 

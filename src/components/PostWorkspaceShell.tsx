@@ -34,6 +34,7 @@ import {
   trashFolderAction,
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
   useEscapeLayer,
@@ -53,6 +54,11 @@ import { PostByline } from "@/components/PostByline";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { TagChips, TagEditor } from "@/components/TagChips";
+import {
+  WikiLinkAnchor,
+  remarkWikiLinks,
+} from "@/components/WikiLinkMarkdown";
 import { EditReaderPreview } from "@/components/editor/EditReaderPreview";
 import {
   EditableCover as WorkspaceEditableCover,
@@ -112,13 +118,17 @@ import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
 import { COVER_PILE } from "@/lib/cover-pile";
 import {
   adjacentPublishedPostsForPool,
+  allTagsInPool,
+  backlinksForPost,
   findPoolPostById,
   findPoolPostBySlug,
   folderPathForPoolPost,
   narrowPostFromPost,
   poolPostsForFolder,
+  poolPostsForTag,
   postFromPoolPost,
   starredPoolPosts,
+  wikiLinkRenderTargetsForPool,
 } from "@/lib/pool/selectors";
 import {
   addPost,
@@ -162,6 +172,7 @@ import {
 import type { DraftState } from "@/lib/post-edit-draft";
 import type { SpatialDirection } from "@/lib/commands/types";
 import type { AdjacentPublishedPosts } from "@/lib/store";
+import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 import {
   isRemoteImageUrl,
   localizeRemoteMarkdownImages,
@@ -372,6 +383,7 @@ function mergeDraftIntoWorkspacePost(
     coverHeight: draft.coverHeight ?? undefined,
     accent: draft.accent || undefined,
     gallery: draft.gallery,
+    tags: draft.tags,
     videoUrl: draft.videoUrl || undefined,
     venue: draft.venue || undefined,
     duration: draft.duration || undefined,
@@ -2130,6 +2142,7 @@ function WorkspacePostOption({
   onDeletePost,
   onItemClick,
   onOpen,
+  onOpenTag,
   onSelect,
   owner,
   post,
@@ -2145,6 +2158,7 @@ function WorkspacePostOption({
     event: ReactMouseEvent<HTMLElement>,
   ) => boolean;
   onOpen: (postId: string) => void;
+  onOpenTag?: (tag: string) => void;
   onSelect: (postId: string) => void;
   owner: boolean;
   post: WorkspacePoolPost;
@@ -2198,6 +2212,12 @@ function WorkspacePostOption({
           </time>
         )}
       </button>
+      <TagChips
+        blog={blog}
+        className="workspace-item-option-tags"
+        onOpenTag={onOpenTag}
+        tags={post.tags}
+      />
       <WorkspaceItemActions
         blog={blog}
         handle={handle}
@@ -2215,6 +2235,7 @@ function WorkspaceRootLanding({
   focusRequestKey,
   onOpenPost,
   onOpenSection,
+  onOpenTag,
   onDeletePost,
   onItemClick,
   onQueryChange,
@@ -2222,6 +2243,7 @@ function WorkspaceRootLanding({
   onSelectSection,
   pool,
   query,
+  source,
   selectedPostId,
   selectedPostIds,
   selectedSectionPath,
@@ -2230,6 +2252,7 @@ function WorkspaceRootLanding({
   focusRequestKey: number;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
+  onOpenTag: (tag: string) => void;
   onDeletePost?: FolderDeleteItem;
   onItemClick: (
     postId: string,
@@ -2240,6 +2263,7 @@ function WorkspaceRootLanding({
   onSelectSection: (folderPath: string) => void;
   pool: WorkspacePoolPayload;
   query: string;
+  source: WorkspaceSearchLocation["source"];
   selectedPostId: string | null;
   selectedPostIds: ReadonlySet<string>;
   selectedSectionPath: string | null;
@@ -2286,7 +2310,11 @@ function WorkspaceRootLanding({
     [bodies, pool.folders, pool.posts, query],
   );
   const dateKey = parseWorkspaceDateQuery(query);
-  const bodyMode = workspaceRootBodyMode(query);
+  const bodyMode = source === "tag" ? "tag" : workspaceRootBodyMode(query);
+  const tagPosts = useMemo(
+    () => (source === "tag" ? poolPostsForTag(pool, query) : []),
+    [pool, query, source],
+  );
   const dateLabel = dateKey
     ? new Intl.DateTimeFormat(undefined, {
         day: "numeric",
@@ -2340,7 +2368,7 @@ function WorkspaceRootLanding({
 
   useEffect(() => {
     const clean = query.trim().toLocaleLowerCase();
-    if (clean.length < 3 || dateKey) return;
+    if (clean.length < 3 || dateKey || source === "tag") return;
     const pending = pool.posts
       .filter((post) => {
         if (requestedBodiesRef.current.has(post.id) || bodies[post.id]) {
@@ -2356,7 +2384,7 @@ function WorkspaceRootLanding({
     void Promise.all(
       pending.map((post) => ensurePostBody(pool.blogId, post.id)),
     ).then(() => setBodyRevision((current) => current + 1));
-  }, [bodies, dateKey, pool.blogId, pool.posts, query]);
+  }, [bodies, dateKey, pool.blogId, pool.posts, query, source]);
 
   const changeQuery = (nextQuery: string) => {
     onQueryChange(nextQuery);
@@ -2393,7 +2421,12 @@ function WorkspaceRootLanding({
   };
   const handSearchInputToBody = (direction: "down" | "up") => {
     const options =
-      bodyMode === "date"
+      bodyMode === "tag"
+        ? tagPosts.map((post) => ({
+            kind: "post" as const,
+            postId: post.id,
+          }))
+        : bodyMode === "date"
         ? [...dateActivity.created, ...dateActivity.edited].map((post) => ({
             kind: "post" as const,
             postId: post.id,
@@ -2450,7 +2483,40 @@ function WorkspaceRootLanding({
           </div>
         </div>
 
-        {bodyMode === "date" && dateKey ? (
+        {bodyMode === "tag" ? (
+          <section className="workspace-search-page workspace-tag-page">
+            <header>
+              <button type="button" onClick={() => changeQuery("")}>Back</button>
+              <h1 id="workspace-root-title">#{query}</h1>
+            </header>
+            <div
+              className="workspace-search-results"
+              role="listbox"
+              aria-activedescendant={activeId}
+            >
+              {tagPosts.length === 0 ? (
+                <p>No items with this tag.</p>
+              ) : (
+                tagPosts.map((post) => (
+                  <WorkspacePostOption
+                    active={selectedPostId === post.id}
+                    key={post.id}
+                    blog={pool.blog}
+                    handle={pool.blog.handle}
+                    post={post}
+                    selected={selectedPostIds.has(post.id)}
+                    onDeletePost={onDeletePost}
+                    onItemClick={onItemClick}
+                    onOpen={onOpenPost}
+                    onOpenTag={onOpenTag}
+                    onSelect={onSelectPost}
+                    owner={canManageItems}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+        ) : bodyMode === "date" && dateKey ? (
           <div className="workspace-date-results">
             <header>
               <button type="button" onClick={() => changeQuery("")}>
@@ -2484,6 +2550,7 @@ function WorkspaceRootLanding({
                           onDeletePost={onDeletePost}
                           onItemClick={onItemClick}
                           onOpen={onOpenPost}
+                          onOpenTag={onOpenTag}
                           onSelect={onSelectPost}
                           owner={canManageItems}
                         />
@@ -2508,6 +2575,7 @@ function WorkspaceRootLanding({
                           onDeletePost={onDeletePost}
                           onItemClick={onItemClick}
                           onOpen={onOpenPost}
+                          onOpenTag={onOpenTag}
                           onSelect={onSelectPost}
                           owner={canManageItems}
                         />
@@ -2546,6 +2614,7 @@ function WorkspaceRootLanding({
                         onDeletePost={onDeletePost}
                         onItemClick={onItemClick}
                         onOpen={onOpenPost}
+                        onOpenTag={onOpenTag}
                         onSelect={onSelectPost}
                         owner={canManageItems}
                       />
@@ -2730,6 +2799,7 @@ function WorkspaceRootLanding({
                       onDeletePost={onDeletePost}
                       onItemClick={onItemClick}
                       onOpen={onOpenPost}
+                      onOpenTag={onOpenTag}
                       onSelect={onSelectPost}
                       owner={canManageItems}
                     />
@@ -3003,6 +3073,7 @@ function StarredPage({
   onDeletePost,
   onItemClick,
   onOpenPost,
+  onOpenTag,
   onSelectPost,
   owner,
   pool,
@@ -3015,6 +3086,7 @@ function StarredPage({
     event: ReactMouseEvent<HTMLElement>,
   ) => boolean;
   onOpenPost: (postId: string) => void;
+  onOpenTag: (tag: string) => void;
   onSelectPost: (postId: string) => void;
   owner: boolean;
   pool: WorkspacePoolPayload;
@@ -3044,6 +3116,7 @@ function StarredPage({
               onDeletePost={onDeletePost}
               onItemClick={onItemClick}
               onOpen={onOpenPost}
+              onOpenTag={onOpenTag}
               onSelect={onSelectPost}
               owner={owner}
             />
@@ -3180,15 +3253,22 @@ function MarkdownBody({
   allowedRemoteImages,
   body,
   hideRemoteImages = false,
+  onWikiLinkNavigate,
+  wikiLinkTargets = {},
 }: {
   allowedRemoteImages?: Set<string>;
   body: string;
   hideRemoteImages?: boolean;
+  onWikiLinkNavigate?: (href: string) => Promise<void> | void;
+  wikiLinkTargets?: WikiLinkRenderTargets;
 }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkWikiLinks(wikiLinkTargets)]}
       components={{
+        a: (props) => (
+          <WikiLinkAnchor {...props} onNavigate={onWikiLinkNavigate} />
+        ),
         h1: "h2",
         img: ({ src, alt }) => {
           const imageSrc = typeof src === "string" ? src : undefined;
@@ -3305,6 +3385,7 @@ function WorkspacePostReader({
   homePath,
   onCaptureResolved,
   onNavigate,
+  onOpenTag,
   onSearch,
   pool,
   poolPost,
@@ -3316,6 +3397,7 @@ function WorkspacePostReader({
   homePath: string;
   onCaptureResolved?: FolderCaptureResolved;
   onNavigate: (path: string) => Promise<void> | void;
+  onOpenTag: (tag: string) => void;
   onSearch: () => void;
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
@@ -3366,13 +3448,19 @@ function WorkspacePostReader({
         allowedRemoteImages={new Set(bodyImageReplacements.values())}
         body={bodyMarkdown}
         hideRemoteImages={false}
+        onWikiLinkNavigate={onNavigate}
+        wikiLinkTargets={wikiLinkRenderTargetsForPool(pool)}
       />
     ) : entry.status === "error" ? (
       <ErrorBody message={entry.error} />
     ) : (
       <LoadingBody />
     );
-  const slots = { body: bodySlot };
+  const slots = {
+    body: bodySlot,
+    tags: <TagChips onOpenTag={onOpenTag} tags={post.tags} />,
+  };
+  const backlinks = backlinksForPost(pool, poolPost);
   const ReaderComponent =
     post.type === "talk"
       ? TalkReader
@@ -3405,6 +3493,11 @@ function WorkspacePostReader({
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
       <ReaderComponent blog={blog} post={post} slots={slots} />
+      <BacklinksPanel
+        blog={blog}
+        posts={backlinks}
+        onNavigate={onNavigate}
+      />
     </>
   );
 }
@@ -3419,6 +3512,7 @@ function LocalWorkspacePostEditor({
   onCaptureResolved,
   onDeleteItem,
   onNavigate,
+  onOpenTag,
   onSearch,
   pool,
   poolPost,
@@ -3433,6 +3527,7 @@ function LocalWorkspacePostEditor({
   onCaptureResolved?: FolderCaptureResolved;
   onDeleteItem?: FolderDeleteItem;
   onNavigate: (path: string) => Promise<void> | void;
+  onOpenTag: (tag: string) => void;
   onSearch: () => void;
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
@@ -3493,6 +3588,34 @@ function LocalWorkspacePostEditor({
         .filter((candidate) => candidate.id !== poolPost.id)
         .map((candidate) => candidate.slug),
     [pool.posts, poolPost.id],
+  );
+  const workspaceTags = useMemo(() => allTagsInPool(pool), [pool]);
+  const wikiLinkPosts = useMemo(
+    () =>
+      pool.posts.map((candidate) => ({
+        slug: candidate.slug,
+        title: candidate.title.trim() || candidate.slug,
+      })),
+    [pool.posts],
+  );
+  const backlinks = useMemo(
+    () => backlinksForPost(pool, poolPost),
+    [pool, poolPost],
+  );
+  const createWikiLinkNote = useCallback(
+    async (title: string) => {
+      const saved = await createFolderItemAction(blog.handle, "notes", {
+        title,
+      });
+      const created = narrowPostFromPost(saved, pool.blogId);
+      if (!created) return null;
+      addPost(created);
+      return {
+        slug: created.slug,
+        title: created.title.trim() || created.slug,
+      };
+    },
+    [blog.handle, pool.blogId],
   );
 
   useEffect(() => {
@@ -3644,6 +3767,7 @@ function LocalWorkspacePostEditor({
         title: draftRef.current.title,
         excerpt: markdownSubtitle(draftRef.current.body),
         body: draftRef.current.body,
+        tags: draftRef.current.tags,
       }),
       apply: (patch) => {
         const body =
@@ -4132,6 +4256,14 @@ function LocalWorkspacePostEditor({
                 }}
               />
             ),
+            tags: (
+              <TagEditor
+                tags={draft.tags}
+                suggestions={workspaceTags}
+                onChange={(tags) => updateDraft({ tags })}
+                onOpenTag={onOpenTag}
+              />
+            ),
             body: (
               <div
                 onKeyUp={captureBodySelection}
@@ -4152,6 +4284,8 @@ function LocalWorkspacePostEditor({
                   }}
                   mediaEnabled
                   uploadEndpoint={mediaUploadEndpointForHandle(blog.handle)}
+                  wikiLinkPosts={wikiLinkPosts}
+                  onCreateWikiLinkNote={createWikiLinkNote}
                 />
               </div>
             ),
@@ -4185,6 +4319,11 @@ function LocalWorkspacePostEditor({
             ),
           }}
         />
+        <BacklinksPanel
+          blog={blog}
+          posts={backlinks}
+          onNavigate={onNavigate}
+        />
       </main>
     </>
   );
@@ -4211,6 +4350,7 @@ function LocalWorkspaceContent({
   onOpenPostId,
   onOpenPost,
   onOpenRoot,
+  onOpenTag,
   onItemClick,
   onQueryChange,
   onSearch,
@@ -4248,6 +4388,7 @@ function LocalWorkspaceContent({
   onOpenPostId: (postId: string) => void;
   onOpenPost: (post: Post) => void;
   onOpenRoot: () => void;
+  onOpenTag: (tag: string) => void;
   onItemClick: (
     postId: string,
     event: ReactMouseEvent<HTMLElement>,
@@ -4278,6 +4419,7 @@ function LocalWorkspaceContent({
       focusRequestKey={searchFocusRequestKey}
       onOpenPost={onOpenPostId}
       onOpenSection={onOpenSection}
+      onOpenTag={onOpenTag}
       onDeletePost={onDeleteItem}
       onItemClick={onItemClick}
       onQueryChange={onQueryChange}
@@ -4285,6 +4427,7 @@ function LocalWorkspaceContent({
       onSelectSection={onSelectSection}
       pool={pool}
       query={searchQuery}
+      source={view.level === "search" ? view.source : "query"}
       selectedPostId={selectedPostId}
       selectedPostIds={selectedPostIds}
       selectedSectionPath={selectedSectionPath}
@@ -4338,6 +4481,7 @@ function LocalWorkspaceContent({
           onDeletePost={onDeleteItem}
           onItemClick={onItemClick}
           onOpenPost={onOpenPostId}
+          onOpenTag={onOpenTag}
           onSelectPost={onSelectPost}
           owner={canManagePost}
         />
@@ -4367,6 +4511,7 @@ function LocalWorkspaceContent({
           onDeleteItem={onDeleteItem}
           onDeleteFolder={onDeleteFolder}
           onOpenPost={onOpenPost}
+          onOpenTag={onOpenTag}
           onItemClick={onItemClick}
           createBookmarkRequestKey={createBookmarkRequestKey}
           editRequestKey={editFolderRequestKey}
@@ -4388,6 +4533,7 @@ function LocalWorkspaceContent({
         homePath={homePath}
         onCaptureResolved={onCaptureResolved}
         onNavigate={onNavigate}
+        onOpenTag={onOpenTag}
         onSearch={onSearch}
         pool={pool}
         poolPost={post}
@@ -4419,6 +4565,7 @@ function LocalWorkspaceContent({
             onCaptureResolved={onCaptureResolved}
             onDeleteItem={onDeleteItem}
             onNavigate={onNavigate}
+            onOpenTag={onOpenTag}
             onSearch={onSearch}
             pool={pool}
             poolPost={activePost}
@@ -4809,6 +4956,13 @@ function LocalWorkspaceShell({
     [navigateSearch],
   );
 
+  const navigateTag = useCallback(
+    (tag: string) => {
+      navigateSearch({ query: tag, source: "tag" });
+    },
+    [navigateSearch],
+  );
+
   const focusSearch = useCallback(() => {
     if (
       viewRef.current.level !== "root" &&
@@ -4829,9 +4983,9 @@ function LocalWorkspaceShell({
       const current = viewRef.current;
       const source =
         current.level === "search" &&
-        current.source === "date" &&
+        (current.source === "date" || current.source === "tag") &&
         current.query === query
-          ? "date"
+          ? current.source
           : "query";
       setSearchQuery(query ? nextQuery : "");
       replaceWithView(
@@ -5419,6 +5573,7 @@ function LocalWorkspaceShell({
         title: poolPost.title,
         excerpt: markdownSubtitle(body) || poolPost.excerpt || "",
         body,
+        tags: poolPost.tags,
       };
     },
     [],
@@ -6410,6 +6565,7 @@ function LocalWorkspaceShell({
       onOpenPostId={openPostId}
       onOpenPost={openPost}
       onOpenRoot={navigateRoot}
+      onOpenTag={navigateTag}
       onItemClick={handleItemClick}
       onQueryChange={changeSearchQuery}
       onSearch={focusSearch}

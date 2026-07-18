@@ -38,12 +38,20 @@ export function usernamePostPath(username: string, slug: string): string {
   return `${usernameHomePath(username)}/${encodeURIComponent(slug)}`;
 }
 
+export function usernameTagPath(username: string, tag: string): string {
+  return `${usernameHomePath(username)}/tags/${encodeURIComponent(tag)}`;
+}
+
 export function tenantHomePath(handle: string): string {
   return `/t/${encodeURIComponent(handle)}`;
 }
 
 export function tenantPostPath(handle: string, slug: string): string {
   return `${tenantHomePath(handle)}/${encodeURIComponent(slug)}`;
+}
+
+export function tenantTagPath(handle: string, tag: string): string {
+  return `${tenantHomePath(handle)}/tags/${encodeURIComponent(tag)}`;
 }
 
 export function blogHomePath(blog: Pick<Blog, "handle" | "username">): string {
@@ -57,6 +65,15 @@ export function blogPostPath(
   return blog.username
     ? usernamePostPath(blog.username, post.slug)
     : tenantPostPath(blog.handle, post.slug);
+}
+
+export function blogTagPath(
+  blog: Pick<Blog, "handle" | "username">,
+  tag: string,
+): string {
+  return blog.username
+    ? usernameTagPath(blog.username, tag)
+    : tenantTagPath(blog.handle, tag);
 }
 
 export function blogPostEditPath(

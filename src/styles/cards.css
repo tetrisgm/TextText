@@ -15,6 +15,26 @@
   display: flex;
 }
 
+.tvcard-tags {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  pointer-events: none;
+  max-height: 48px;
+  overflow: hidden;
+}
+
+.tvcard-shell:has(.tvcard-tags) .tvcard-body {
+  padding-bottom: 66px;
+}
+
+.tvcard-tags a,
+.tvcard-tags button {
+  pointer-events: auto;
+}
+
 .tvcard {
   --rx: 0deg;
   --ry: 0deg;

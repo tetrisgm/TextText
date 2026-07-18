@@ -96,6 +96,7 @@ import {
   type BookmarkCaptureGeneration,
 } from "./bookmark-capture-generation";
 import { randomUUID } from "node:crypto";
+import { normalizeTag, normalizeTags } from "./tags";
 
 type PostRow = typeof posts.$inferSelect;
 type ItemCommentRow = typeof itemComments.$inferSelect;
@@ -114,6 +115,7 @@ type PostListRow = Pick<
   | "cover"
   | "coverCaption"
   | "coverHeight"
+  | "tags"
   | "videoUrl"
   | "venue"
   | "duration"
@@ -269,6 +271,7 @@ function mapPost(row: PostRow): Post {
     coverHeight: row.coverHeight ?? undefined,
     gallery: row.gallery ?? undefined,
     links: row.links ?? undefined,
+    tags: normalizeTags(row.tags),
     videoUrl: row.videoUrl ?? undefined,
     venue: row.venue ?? undefined,
     duration: row.duration ?? undefined,
@@ -318,6 +321,7 @@ function mapPostList(row: PostListRow): Post {
     cover: row.cover ?? undefined,
     coverCaption: row.coverCaption ?? undefined,
     coverHeight: row.coverHeight ?? undefined,
+    tags: normalizeTags(row.tags),
     links: compactLinks(row),
     videoUrl: row.videoUrl ?? undefined,
     venue: row.venue ?? undefined,
@@ -377,6 +381,7 @@ function postListSelection() {
     cover: posts.cover,
     coverCaption: posts.coverCaption,
     coverHeight: posts.coverHeight,
+    tags: posts.tags,
     videoUrl: posts.videoUrl,
     venue: posts.venue,
     duration: posts.duration,
@@ -520,6 +525,59 @@ export async function getPosts(handle: string): Promise<Post[]> {
   return getPostsCached(handle);
 }
 
+async function getPostsForTagUncached(
+  handle: string,
+  tagInput: string,
+  publishedOnly: boolean,
+): Promise<Post[]> {
+  const tag = normalizeTag(tagInput);
+  if (!tag) return [];
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle) return [];
+    const selected = pinnedFirst(
+      DEMO_POSTS.filter(
+        (post) =>
+          normalizeTags(post.tags).includes(tag) &&
+          !isPrivatePostType(post.type) &&
+          (!publishedOnly || post.status === "published"),
+      ),
+    );
+    return selected.map(withoutPersonalWorkspaceMetadata);
+  }
+
+  const rows = await db
+    .select(postListSelection())
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        publicPostTypePredicate(),
+        publishedOnly ? eq(posts.status, "published") : undefined,
+        sql`${posts.tags} @> ARRAY[${tag}]::text[]`,
+      ),
+    )
+    .orderBy(
+      desc(posts.pinned),
+      publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
+      desc(posts.createdAt),
+    );
+  return rows.map(mapPostList).map(withoutPersonalWorkspaceMetadata);
+}
+
+const getPostsForTagCached = cache(getPostsForTagUncached);
+
+/** Public-kind posts carrying one canonical tag. Private item types never pass. */
+export async function getPostsForTag(
+  handle: string,
+  tag: string,
+  options: { publishedOnly?: boolean } = {},
+): Promise<Post[]> {
+  return getPostsForTagCached(handle, tag, options.publishedOnly ?? true);
+}
+
 async function getAllPostsUncached(handle: string): Promise<Post[]> {
   if (!db) {
     return handle === DEMO_BLOG.handle ? pinnedFirst(DEMO_POSTS) : [];
@@ -646,6 +704,45 @@ export async function resolvePostSlug(
     return { kind: resolution.kind, post: mapPost(resolution.row) };
   }
   return { kind: resolution.kind };
+}
+
+/** Current slugs plus only those historical aliases that resolve uniquely. */
+export async function getPostSlugAliases(
+  handle: string,
+): Promise<Record<string, string>> {
+  if (!db) {
+    return handle === DEMO_BLOG.handle
+      ? Object.fromEntries(DEMO_POSTS.map((post) => [post.slug, post.slug]))
+      : {};
+  }
+  const rows = await db
+    .select({ slug: posts.slug, slugHistory: posts.slugHistory })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    );
+  const current = new Set(rows.map((row) => row.slug));
+  const owners = new Map<string, Set<string>>();
+  for (const row of rows) {
+    for (const alias of row.slugHistory) {
+      const aliases = owners.get(alias) ?? new Set<string>();
+      aliases.add(row.slug);
+      owners.set(alias, aliases);
+    }
+  }
+  const aliases: Record<string, string> = Object.fromEntries(
+    rows.map((row) => [row.slug, row.slug]),
+  );
+  for (const [alias, candidates] of owners) {
+    if (current.has(alias) || candidates.size !== 1) continue;
+    aliases[alias] = [...candidates][0]!;
+  }
+  return aliases;
 }
 
 async function blogIdFor(handle: string): Promise<string> {
@@ -3334,7 +3431,10 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
 }
 
 export type PostContentPatch = Partial<
-  Pick<Post, "title" | "body" | "cover" | "coverCaption" | "coverHeight">
+  Pick<
+    Post,
+    "title" | "body" | "cover" | "coverCaption" | "coverHeight" | "tags"
+  >
 >;
 
 function hasOwnContentKey<K extends keyof PostContentPatch>(
@@ -3408,6 +3508,7 @@ export async function savePost(
     coverHeight: post.coverHeight ?? null,
     gallery: post.gallery ?? null,
     links: post.links ?? null,
+    tags: normalizeTags(post.tags),
     videoUrl: post.videoUrl ?? null,
     venue: post.venue ?? null,
     duration: post.duration ?? null,
@@ -3521,6 +3622,9 @@ export async function savePostContentPatch(
   }
   if (hasOwnContentKey(patch, "coverHeight")) {
     next.coverHeight = patch.coverHeight;
+  }
+  if (hasOwnContentKey(patch, "tags")) {
+    next.tags = normalizeTags(patch.tags);
   }
 
   return savePost(handle, next, {

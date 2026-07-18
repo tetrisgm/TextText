@@ -8,6 +8,7 @@ import { blogs, posts, users } from "./schema";
 import { DEMO_BLOG, DEMO_POSTS } from "../demo";
 import { wordCountForMarkdown } from "../content";
 import { ensureWorkspaceFolders, folderPathForPostType } from "../store";
+import { normalizeTags } from "../tags";
 
 async function main() {
   if (!db) throw new Error("db:seed requires DATABASE_URL");
@@ -83,6 +84,7 @@ async function main() {
         coverHeight: p.coverHeight ?? null,
         gallery: p.gallery ?? null,
         links: p.links ?? null,
+        tags: normalizeTags(p.tags),
         videoUrl: p.videoUrl ?? null,
         venue: p.venue ?? null,
         duration: p.duration ?? null,

@@ -18,6 +18,7 @@ import type { AssistantAttachment } from "@/components/workspace/assistant/Assis
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import { isNativeModelAssetError, nativeAgent } from "@/lib/ai/native";
 import { runNativeQuickAction } from "@/lib/ai/quick-actions";
+import { saveEditablePostAction } from "@/app/editor/actions";
 import {
   patchOpenWorkspaceItemDraft,
   readOpenWorkspaceItemDraft,
@@ -200,6 +201,31 @@ describe("native assistant submissions", () => {
     ).resolves.toEqual({ kind: "response", text: "Selection summary" });
   });
 
+  it("proposes canonical tags merged with existing metadata", async () => {
+    const request = vi.fn(async (op: string) => {
+      expect(op).toBe("tags");
+      return { tags: ["#Design", "Writing", "design"], truncated: false };
+    });
+    vi.stubGlobal("window", { writeNativeAI: { request } });
+
+    await expect(
+      runNativeQuickAction("tags", {
+        title: "Draft",
+        excerpt: "A design note",
+        body: "Useful text.",
+        tags: ["notes"],
+      }),
+    ).resolves.toEqual({
+      kind: "tags-proposal",
+      label: "Suggested tags",
+      beforeTags: ["notes"],
+      afterTags: ["notes", "design", "writing"],
+      addedTags: ["design", "writing"],
+      canApply: true,
+      note: undefined,
+    });
+  });
+
   it("creates a precise range proposal when rewriting a selection", async () => {
     const request = vi.fn(async (op: string, payload: unknown) => {
       expect(op).toBe("rewrite");
@@ -302,6 +328,37 @@ describe("assistant local-first item edits", () => {
       excerpt: "Local excerpt",
       body: undefined,
     });
+  });
+
+  it("persists tag metadata through the shared editable save action", async () => {
+    const workspace = pool();
+    workspace.posts[0]!.tags = ["notes"];
+    vi.mocked(saveEditablePostAction).mockResolvedValueOnce({
+      ...workspace.posts[0]!,
+      body: "Local body",
+      tags: ["notes", "design"],
+    });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: () => workspace,
+      readItemText: async () => ({
+        title: "Draft",
+        excerpt: "",
+        body: "Local body",
+        tags: ["notes"],
+      }),
+    });
+
+    await expect(
+      tools.executor("set_item_metadata", {
+        id: "post-1",
+        tags: ["#Notes", "Design", "design"],
+      }),
+    ).resolves.toMatchObject({ ok: true, id: "post-1" });
+    expect(saveEditablePostAction).toHaveBeenCalledWith(
+      "local",
+      expect.objectContaining({ tags: ["notes", "design"] }),
+    );
   });
 });
 

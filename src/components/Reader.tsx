@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PostByline } from "@/components/PostByline";
+import { TagChips } from "@/components/TagChips";
 import type { Blog, Post } from "@/lib/content";
 import {
   formatArticleDate,
@@ -15,6 +16,11 @@ import {
   localizeRemoteMarkdownImages,
 } from "@/lib/markdown-images";
 import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
+import {
+  WikiLinkAnchor,
+  remarkWikiLinks,
+} from "@/components/WikiLinkMarkdown";
+import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 
 // The public reader: top cover hero, centered masthead, byline, and prose.
 // Server component; markdown renders on the server. The post's accent rides in
@@ -26,6 +32,7 @@ type ReaderSlots = {
   title?: ReactNode;
   cover?: ReactNode;
   body?: ReactNode;
+  tags?: ReactNode;
 };
 
 function upgradeHttpImageSrc(src: string | undefined): string {
@@ -55,10 +62,14 @@ export function Reader({
   blog,
   post,
   slots,
+  wikiLinkTargets = {},
+  onWikiLinkNavigate,
 }: {
   blog: Blog;
   post: Post;
   slots?: ReaderSlots;
+  wikiLinkTargets?: WikiLinkRenderTargets;
+  onWikiLinkNavigate?: (href: string) => Promise<void> | void;
 }) {
   const accent = postAccent(blog, post);
   const style = accent
@@ -141,12 +152,18 @@ export function Reader({
             {title}
           </h1>
         )}
+        {slots && Object.prototype.hasOwnProperty.call(slots, "tags")
+          ? slots.tags
+          : <TagChips blog={blog} tags={post.tags} />}
       </header>
       <div className="reader-prose">
         {slots?.body ?? (
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkWikiLinks(wikiLinkTargets)]}
             components={{
+              a: (props) => (
+                <WikiLinkAnchor {...props} onNavigate={onWikiLinkNavigate} />
+              ),
               h1: "h2",
               h6: ({ children }) => (
                 <p className="reader-subtitle">{children}</p>

@@ -191,6 +191,8 @@ export interface Post {
   starred?: boolean;
   gallery?: GalleryItem[];
   links?: LinkRef[];
+  /** normalized workspace tags, independent of folders */
+  tags?: string[];
   videoUrl?: string;
   venue?: string;
   duration?: string;

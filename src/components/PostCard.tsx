@@ -4,6 +4,7 @@ import type { CSSProperties, MouseEvent, PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
+import { TagChips } from "@/components/TagChips";
 import type { Blog, Post } from "@/lib/content";
 import {
   isVideoFile,
@@ -84,6 +85,7 @@ export function PostCard({
   handle,
   href,
   onOpen,
+  onOpenTag,
   onDeletePost,
   post,
   owner,
@@ -94,6 +96,7 @@ export function PostCard({
   handle: string;
   href?: string;
   onOpen?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onOpenTag?: (tag: string) => void;
   onDeletePost?: (post: Post) => Promise<void> | void;
   post: Post;
   owner: boolean;
@@ -338,6 +341,12 @@ export function PostCard({
           </span>
         </span>
       </Link>
+      <TagChips
+        blog={blog}
+        className="tvcard-tags"
+        onOpenTag={onOpenTag}
+        tags={post.tags}
+      />
       <WorkspaceItemActions
         blog={blog}
         className="is-card"

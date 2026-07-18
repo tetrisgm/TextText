@@ -100,6 +100,7 @@ function mergeSavedPostWithLocalDraft(
     ...saved,
     title: localDraft.title,
     excerpt: localDraft.excerpt,
+    tags: localDraft.tags,
     updatedAt: localDraft.updatedAt ?? saved.updatedAt,
   };
 }
@@ -122,6 +123,7 @@ function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null 
     coverHeight: post.coverHeight,
     gallery: post.gallery,
     links: post.links,
+    tags: post.tags,
     videoUrl: post.videoUrl,
     venue: post.venue,
     duration: post.duration,

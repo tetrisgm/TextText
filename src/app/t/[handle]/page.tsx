@@ -30,7 +30,7 @@ import {
 } from "@/lib/feed-links";
 import {
   DEFAULT_ANONYMOUS_BLOG_NAME,
-  getAllPosts,
+  getAllPostFiles,
   getAccessibleFolderCounts,
   getAccessibleFolderPosts,
   getAccessibleFolders,
@@ -41,7 +41,9 @@ import {
   getTrashedFolders,
   getTrashedPosts,
   getPost,
+  getPostSlugAliases,
 } from "@/lib/store";
+import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
 import {
   formatArticleDate,
   isVideoFile,
@@ -74,6 +76,7 @@ type BlogHomeQuery = {
   folder?: string | string[];
   layout?: string | string[];
   q?: string | string[];
+  tag?: string | string[];
   view?: string | string[];
 };
 
@@ -359,6 +362,7 @@ export async function BlogHomeForHandle({
       "folder",
       "layout",
       "q",
+      "tag",
       "view",
     ] as const) {
       const value = queryValue(query[key]);
@@ -370,19 +374,30 @@ export async function BlogHomeForHandle({
     redirect(`${blogHomePath(blog)}${suffix}`);
   }
   const canEdit = access.canEdit;
-  const initialPool =
-    canEdit && access.blogId
-      ? workspacePoolFromParts({
-          blog,
-          blogId: access.blogId,
-          folders: await getFolders(handle),
-          counts: await getFolderCounts(handle),
-          posts: await getAllPosts(handle),
-          trashedFolders: await getTrashedFolders(handle),
-          trashedPosts: await getTrashedPosts(handle),
-          sharedEntries: await getSharedPostsForUser(viewer),
-        })
-      : null;
+  const initialPool = await (async () => {
+    if (!canEdit || !access.blogId) return null;
+    const [folders, counts, posts, slugAliases, trashedFolders, trashedPosts, sharedEntries] =
+      await Promise.all([
+        getFolders(handle),
+        getFolderCounts(handle),
+        getAllPostFiles(handle),
+        getPostSlugAliases(handle),
+        getTrashedFolders(handle),
+        getTrashedPosts(handle),
+        getSharedPostsForUser(viewer),
+      ]);
+    return workspacePoolFromParts({
+      blog,
+      blogId: access.blogId,
+      folders,
+      counts,
+      posts,
+      trashedFolders,
+      trashedPosts,
+      sharedEntries,
+      ...workspaceWikiLinkMetadata(posts, slugAliases),
+    });
+  })();
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
   const hasBlogWorkspaceContent =
     canEdit || Boolean(workspaceAccess?.canEditContent);
@@ -575,8 +590,19 @@ export async function BlogHomeForHandle({
       folders={folders}
       homePath={blogHomePath(blog)}
       initialSidebarCollapsed={initialSidebarCollapsed}
-      initialSearchQuery={queryValue(query.date) ?? queryValue(query.q) ?? ""}
-      initialSearchSource={queryValue(query.date) ? "date" : "query"}
+      initialSearchQuery={
+        queryValue(query.date) ??
+        queryValue(query.tag) ??
+        queryValue(query.q) ??
+        ""
+      }
+      initialSearchSource={
+        queryValue(query.date)
+          ? "date"
+          : queryValue(query.tag)
+            ? "tag"
+            : "query"
+      }
       initialSettingsOpen={queryValue(query.view) === "settings"}
       initialPool={initialPool}
       showGuestSignIn={isGuestWorkspace && isAuthConfigured}

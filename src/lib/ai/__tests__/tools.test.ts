@@ -154,5 +154,17 @@ describe("workspace tool contract", () => {
         status: "published",
       }),
     ).toEqual({ id: "post-1", status: "published" });
+    expect(
+      parseWorkspaceToolInput("set_item_metadata", {
+        id: "post-1",
+        tags: ["design", "notes"],
+      }),
+    ).toEqual({ id: "post-1", tags: ["design", "notes"] });
+    expect(
+      parseWorkspaceToolInput("update_item", {
+        id: "post-1",
+        tags: ["work"],
+      }),
+    ).toEqual({ id: "post-1", tags: ["work"] });
   });
 });

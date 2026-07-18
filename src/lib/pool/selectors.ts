@@ -11,6 +11,12 @@ import type {
 } from "@/lib/pool/types";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import { markdownSubtitle, postSubtitle } from "@/lib/markdown-subtitle";
+import { normalizeTag, normalizeTags } from "@/lib/tags";
+import { blogPostPath } from "@/lib/public-paths";
+import type {
+  WikiLinkRenderTarget,
+  WikiLinkRenderTargets,
+} from "@/lib/wikilinks";
 
 function fallbackFolderPathForType(type: WorkspacePoolPost["type"]): string {
   if (type === "note") return "notes";
@@ -34,13 +40,15 @@ export function narrowPostFromPost(
     title: post.title,
     excerpt: postSubtitle(post) || undefined,
     bodyPreview:
-      post.bodyPreview ?? (post.type === "note" ? post.body : undefined),
+      post.bodyPreview ??
+      (post.type === "note" ? post.body : post.body.slice(0, 2048) || undefined),
     accent: post.accent,
     cover: post.cover,
     coverCaption: post.coverCaption,
     coverHeight: post.coverHeight,
     gallery: post.gallery,
     links: post.links,
+    tags: normalizeTags(post.tags),
     videoUrl: post.videoUrl,
     venue: post.venue,
     duration: post.duration,
@@ -75,6 +83,7 @@ export function postFromPoolPost(
     coverHeight: post.coverHeight,
     gallery: post.gallery,
     links: post.links,
+    tags: normalizeTags(post.tags),
     videoUrl: post.videoUrl,
     venue: post.venue,
     duration: post.duration,
@@ -117,6 +126,8 @@ export function workspacePoolFromParts({
   trashedFolders = [],
   trashedPosts = [],
   sharedEntries = [],
+  outboundLinks = {},
+  slugAliases = {},
 }: {
   blog: Blog;
   blogId: string;
@@ -126,6 +137,8 @@ export function workspacePoolFromParts({
   trashedFolders?: Folder[];
   trashedPosts?: Post[];
   sharedEntries?: WorkspacePoolPayload["sharedEntries"];
+  outboundLinks?: WorkspacePoolPayload["outboundLinks"];
+  slugAliases?: WorkspacePoolPayload["slugAliases"];
 }): WorkspacePoolPayload {
   const initialBodies = posts.flatMap((post) =>
     post.id && post.type === "note"
@@ -147,6 +160,8 @@ export function workspacePoolFromParts({
     trashedFolders,
     sharedEntries,
     initialBodies,
+    outboundLinks,
+    slugAliases,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -181,11 +196,78 @@ export function poolPostsForFolder(
   });
 }
 
+export function poolPostsForTag(
+  pool: Pick<WorkspacePoolPayload, "posts">,
+  tagInput: string,
+): WorkspacePoolPost[] {
+  const tag = normalizeTag(tagInput);
+  if (!tag) return [];
+  return pool.posts.filter((post) => normalizeTags(post.tags).includes(tag));
+}
+
+export function allTagsInPool(
+  pool: Pick<WorkspacePoolPayload, "posts">,
+): string[] {
+  const tags = new Set<string>();
+  for (const post of pool.posts) {
+    for (const tag of normalizeTags(post.tags)) tags.add(tag);
+  }
+  return [...tags].sort((left, right) => left.localeCompare(right));
+}
+
 export function findPoolPostBySlug(
   pool: WorkspacePoolPayload,
   slug: string,
 ): WorkspacePoolPost | null {
   return pool.posts.find((post) => post.slug === slug) ?? null;
+}
+
+export function resolvePoolWikiLinkTarget(
+  pool: Pick<WorkspacePoolPayload, "posts" | "slugAliases">,
+  target: string,
+): WorkspacePoolPost | null {
+  const direct = pool.posts.find((post) => post.slug === target);
+  if (direct) return direct;
+  const currentSlug = pool.slugAliases?.[target];
+  return currentSlug
+    ? (pool.posts.find((post) => post.slug === currentSlug) ?? null)
+    : null;
+}
+
+export function backlinksForPost(
+  pool: Pick<
+    WorkspacePoolPayload,
+    "outboundLinks" | "posts" | "slugAliases"
+  >,
+  post: Pick<WorkspacePoolPost, "id" | "slug">,
+): WorkspacePoolPost[] {
+  const seen = new Set<string>();
+  return pool.posts.filter((source) => {
+    if (source.id === post.id || seen.has(source.id)) return false;
+    const links = pool.outboundLinks?.[source.id] ?? [];
+    const linksHere = links.some(
+      (link) => resolvePoolWikiLinkTarget(pool, link.target)?.id === post.id,
+    );
+    if (linksHere) seen.add(source.id);
+    return linksHere;
+  });
+}
+
+export function wikiLinkRenderTargetsForPool(
+  pool: Pick<WorkspacePoolPayload, "blog" | "posts" | "slugAliases">,
+): WikiLinkRenderTargets {
+  const targets: WikiLinkRenderTargets = {};
+  for (const post of pool.posts) {
+    targets[post.slug] = {
+      slug: post.slug,
+      href: blogPostPath(pool.blog, post),
+    };
+  }
+  for (const [alias, currentSlug] of Object.entries(pool.slugAliases ?? {})) {
+    const target: WikiLinkRenderTarget | undefined = targets[currentSlug];
+    if (target) targets[alias] = target;
+  }
+  return targets;
 }
 
 export function findPoolPostById(

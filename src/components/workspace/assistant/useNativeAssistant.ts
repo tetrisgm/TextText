@@ -65,6 +65,7 @@ import {
 } from "@/lib/ai/skills";
 import { findPoolPostById } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
+import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import {
   assistantAttachmentAccept,
@@ -80,21 +81,34 @@ export type { AssistantViewSnapshot } from "./context";
 
 export type AssistantMessageRole = "user" | "assistant" | "progress" | "error";
 
-export type AssistantProposal = {
+type AssistantProposalBase = {
   itemId: string;
-  field: NativeQuickActionField;
   label: string;
-  before: string;
-  after: string;
-  source?: string;
-  result?: string;
-  range?: WorkspaceItemTextEdit["range"];
-  scope?: NativeQuickActionScope;
   canApply: boolean;
   note?: string;
   status: "pending" | "applying" | "applied" | "undoing" | "undone";
   syncPending?: boolean;
 };
+
+export type AssistantProposal = AssistantProposalBase &
+  (
+    | {
+        kind?: "text";
+        field: NativeQuickActionField;
+        before: string;
+        after: string;
+        source?: string;
+        result?: string;
+        range?: WorkspaceItemTextEdit["range"];
+        scope?: NativeQuickActionScope;
+      }
+    | {
+        kind: "tags";
+        beforeTags: string[];
+        afterTags: string[];
+        addedTags: string[];
+      }
+  );
 
 export type AssistantMessage = {
   id: string;
@@ -222,6 +236,7 @@ function subscribe(listener: () => void): () => void {
 function proposalEdit(
   proposal: AssistantProposal,
 ): WorkspaceItemTextEdit | null {
+  if (proposal.kind === "tags") return null;
   const source = proposal.source ?? proposal.before;
   const range = proposal.range ?? { start: 0, end: source.length };
   const edit = createWorkspaceItemTextEdit({
@@ -487,7 +502,22 @@ export function useNativeAssistant({
           appendToThread(thread, "assistant", result.text || "Done.");
           return;
         }
+        if (result.kind === "tags-proposal") {
+          appendToThread(thread, "assistant", result.label, {
+            kind: "tags",
+            itemId: view.postId,
+            label: result.label,
+            beforeTags: result.beforeTags,
+            afterTags: result.afterTags,
+            addedTags: result.addedTags,
+            canApply: result.canApply,
+            note: result.note,
+            status: "pending",
+          });
+          return;
+        }
         appendToThread(thread, "assistant", result.label, {
+          kind: "text",
           itemId: view.postId,
           field: result.field,
           label: result.label,
@@ -529,6 +559,66 @@ export function useNativeAssistant({
           proposal.status !== "undone") ||
         (direction === "undo" && proposal.status !== "applied")
       ) {
+        return;
+      }
+      if (proposal.kind === "tags") {
+        const current = await readItemTextRef.current(proposal.itemId);
+        const expected =
+          direction === "apply" ? proposal.beforeTags : proposal.afterTags;
+        const next =
+          direction === "apply" ? proposal.afterTags : proposal.beforeTags;
+        if (
+          JSON.stringify(normalizeTags(current.tags)) !==
+          JSON.stringify(normalizeTags(expected))
+        ) {
+          appendToThread(
+            threadKey,
+            "error",
+            "This item changed after the preview. Run the action again.",
+          );
+          return;
+        }
+        updateThreadMessage(threadKey, messageId, (candidate) => ({
+          ...candidate,
+          proposal: candidate.proposal
+            ? {
+                ...candidate.proposal,
+                status: direction === "apply" ? "applying" : "undoing",
+              }
+            : undefined,
+        }));
+        try {
+          await tools.executor("set_item_metadata", {
+            id: proposal.itemId,
+            tags: normalizeTags(next),
+          });
+          updateThreadMessage(threadKey, messageId, (candidate) => ({
+            ...candidate,
+            proposal: candidate.proposal
+              ? {
+                  ...candidate.proposal,
+                  status: direction === "apply" ? "applied" : "undone",
+                }
+              : undefined,
+          }));
+        } catch (error) {
+          updateThreadMessage(threadKey, messageId, (candidate) => ({
+            ...candidate,
+            proposal: candidate.proposal
+              ? {
+                  ...candidate.proposal,
+                  status: direction === "apply" ? "pending" : "applied",
+                }
+              : undefined,
+          }));
+          appendToThread(
+            threadKey,
+            "error",
+            error instanceof Error && error.message
+              ? error.message
+              : "The change could not be applied.",
+          );
+        }
         return;
       }
       const edit = proposalEdit(proposal);
@@ -600,7 +690,7 @@ export function useNativeAssistant({
         );
       }
     },
-    [threadKey],
+    [threadKey, tools],
   );
 
   const applyProposal = useCallback(

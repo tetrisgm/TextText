@@ -19,11 +19,12 @@ export type WorkspaceItemTextSnapshot = {
   title: string;
   excerpt: string;
   body: string;
+  tags?: string[];
   selection?: WorkspaceItemTextSelection | null;
 };
 
 export type WorkspaceItemTextPatch = Partial<
-  Pick<WorkspaceItemTextSnapshot, WorkspaceItemTextField>
+  Pick<WorkspaceItemTextSnapshot, WorkspaceItemTextField | "tags">
 >;
 
 export type WorkspaceItemTextEdit = {

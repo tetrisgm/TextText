@@ -117,6 +117,10 @@ const itemKind = z.enum([
   "note",
   "bookmark",
 ]);
+const tags = z
+  .array(z.string().trim().min(1).max(48))
+  .max(24)
+  .describe("The complete tag list. Tags are normalized and capped when saved.");
 
 const scopeType = z.enum(["workspace", "folder", "item"]);
 const accessRole = z.enum(["member", "guest", "editor", "viewer"]);
@@ -211,20 +215,24 @@ const updateItemInput = z
     title: z.string().trim().min(1).max(300).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
     body: z.string().max(1_000_000).optional(),
+    tags: tags.optional(),
     markdown: z
       .string()
       .min(1)
       .max(1_000_000)
       .optional()
       .describe(
-        "A complete Write markdown file. Metadata, status, kind, and pin changes in it are rejected; use their dedicated tools.",
+        "A complete Write markdown file. Tags may change; other metadata, status, kind, and pin changes are rejected.",
       ),
     if_match_hash: ifMatchHash,
   })
   .strict()
   .superRefine((value, context) => {
     const structured =
-      value.title !== undefined || value.excerpt !== undefined || value.body !== undefined;
+      value.title !== undefined ||
+      value.excerpt !== undefined ||
+      value.body !== undefined ||
+      value.tags !== undefined;
     if (!value.markdown && !structured) {
       context.addIssue({ code: "custom", message: "Pass content to update." });
     }
@@ -248,6 +256,7 @@ const setMetadataInput = z
     cover: z.string().max(2_048).nullable().optional(),
     cover_caption: z.string().max(2_000).nullable().optional(),
     cover_height: z.number().int().min(180).max(860).nullable().optional(),
+    tags: tags.optional(),
     date: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -265,6 +274,7 @@ const setMetadataInput = z
       "cover",
       "cover_caption",
       "cover_height",
+      "tags",
       "date",
     ] as const;
     if (!keys.some((key) => value[key] !== undefined)) {
@@ -372,7 +382,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   update_item: defineTool("update_item", {
     title: "Update item",
     description:
-      "Update title, excerpt, and/or body without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
+      "Update title, excerpt, body, and/or tags without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
     inputSchema: updateItemInput,
     mutability: "write",
     destructive: true,

@@ -457,6 +457,74 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     color-mix(in srgb, var(--post-accent, var(--ink)) 55%, transparent);
   outline-offset: 3px;
 }
+.reader-prose a.wiki-link {
+  border-radius: 3px;
+  color: color-mix(
+    in srgb,
+    var(--post-accent, var(--ink-2)) 40%,
+    var(--ink) 60%
+  );
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    color 0.18s var(--ease),
+    background-color 0.18s var(--ease);
+}
+.reader-prose a.wiki-link:hover,
+.reader-prose a.wiki-link:focus-visible {
+  background: color-mix(
+    in srgb,
+    var(--post-accent, var(--ink)) 10%,
+    transparent
+  );
+}
+.backlinks-panel {
+  width: min(680px, calc(100% - 40px));
+  margin: 12px auto 72px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ac-hairline, var(--hairline));
+  color: var(--ac-label, var(--ink));
+}
+.backlinks-panel h2 {
+  margin: 0 0 8px;
+  color: var(--ac-label-2, var(--muted));
+  font: 700 11px/1.2 var(--ac-font-text, var(--sans));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.backlinks-panel nav {
+  display: grid;
+  gap: 2px;
+}
+.backlinks-panel a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 14px;
+  min-height: 36px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  color: color-mix(
+    in srgb,
+    var(--post-accent, var(--ac-accent, var(--ink))) 40%,
+    var(--ac-label, var(--ink)) 60%
+  );
+  font: 650 13px/1.3 var(--ac-font-text, var(--sans));
+  text-decoration: none;
+  transition: background-color 0.18s var(--ease);
+}
+.backlinks-panel a:hover,
+.backlinks-panel a:focus-visible {
+  outline: none;
+  background: var(--ac-fill-4, var(--bg-soft));
+}
+.backlinks-panel small {
+  overflow: hidden;
+  color: var(--ac-label-2, var(--muted));
+  font: 500 11px/1.3 var(--ac-font-text, var(--sans));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Pull-quotes: the single visual set piece. Accent spine + faint tinted plate. */
 .reader-prose blockquote {
@@ -3374,6 +3442,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-item-option-main {
   padding-right: 82px;
 }
+.workspace-item-option:has(.workspace-item-option-tags) .workspace-item-option-main {
+  min-height: 70px;
+  padding-bottom: 24px;
+}
+.workspace-item-option-tags {
+  position: absolute;
+  z-index: 4;
+  right: 82px;
+  bottom: 7px;
+  left: 64px;
+  max-height: 24px;
+  overflow: hidden;
+}
 .workspace-item-option-copy {
   min-width: 0;
   flex: 1 1 auto;
@@ -3484,6 +3565,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.workspace-tag-page > header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.workspace-tag-page > header button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 60%, var(--ink));
+  font: 650 13px/1 var(--font-body);
+  cursor: pointer;
 }
 .workspace-date-results > header {
   align-items: flex-start;
@@ -3828,6 +3922,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-folder-row-shell .post-folder-row {
   border-bottom: 0;
   padding-right: 46px;
+}
+.post-folder-row-tags {
+  margin: -10px 46px 10px 0;
 }
 .post-folder-row-shell.is-command-selected {
   background: transparent;

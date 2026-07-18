@@ -12,14 +12,17 @@ import {
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
+  createFolderItemAction,
   deleteEditablePostAction,
   movePostToFolderAction,
   saveEditablePostAction,
 } from "@/app/editor/actions";
 import { ProjectGallery } from "@/components/ProjectGallery";
+import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { ProjectReader } from "@/components/ProjectReader";
 import { Reader } from "@/components/Reader";
 import { TalkReader } from "@/components/TalkReader";
+import { TagEditor } from "@/components/TagChips";
 import {
   WorkspaceSidebarChrome,
   finishEditTransition,
@@ -54,6 +57,7 @@ import type {
   BodyEditorHandle,
   BodyEditorCollab,
 } from "@/components/BodyEditor";
+import type { WikiLinkSuggestionPost } from "@/components/editor/WikiLinkCommand";
 import type { PresencePeer } from "@/lib/collab/provider";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { hasOpenEditMenu } from "@/components/PostShortcuts";
@@ -73,6 +77,9 @@ import {
   persistWorkspaceDraft,
   readPersistedWorkspaceDraft,
 } from "@/lib/pool/storage";
+import { workspaceSearchHref } from "@/lib/workspace-navigation";
+import type { WorkspacePoolPost } from "@/lib/pool/types";
+import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 
 type EditSession = {
   draft: DraftState;
@@ -469,6 +476,10 @@ export type PostEditLayerProps = {
   canCommentPost?: boolean;
   canManagePost?: boolean;
   workspaceBlogId?: string;
+  availableTags?: string[];
+  wikiLinkPosts?: WikiLinkSuggestionPost[];
+  wikiLinkTargets?: WikiLinkRenderTargets;
+  backlinks?: WorkspacePoolPost[];
 };
 
 export function PostEditLayer({
@@ -485,6 +496,10 @@ export function PostEditLayer({
   canCommentPost = true,
   canManagePost = true,
   workspaceBlogId,
+  availableTags = [],
+  wikiLinkPosts = [],
+  wikiLinkTargets = {},
+  backlinks = [],
 }: PostEditLayerProps) {
   const router = useRouter();
   const [initialSessionState] = useState(() => {
@@ -542,6 +557,19 @@ export function PostEditLayer({
   const postId = post.id;
   const draftBlogId = workspaceBlogId ?? blog.handle;
   const uploadEndpoint = mediaUploadEndpointForHandle(blog.handle);
+  const createWikiLinkNote = useCallback(
+    async (title: string) => {
+      if (!canManagePost) return null;
+      const created = await createFolderItemAction(blog.handle, "notes", {
+        title,
+      });
+      return {
+        slug: created.slug,
+        title: created.title.trim() || created.slug,
+      };
+    },
+    [blog.handle, canManagePost],
+  );
 
   useEffect(() => {
     if (!postId || initialSessionState.fromMemory) return;
@@ -1280,6 +1308,7 @@ export function PostEditLayer({
       slug: draft.slug || post.slug,
       accent: draft.accent || undefined,
       gallery: draft.gallery,
+      tags: draft.tags,
       videoUrl: draft.videoUrl || undefined,
       venue: draft.venue || undefined,
       duration: draft.duration || undefined,
@@ -1373,6 +1402,18 @@ export function PostEditLayer({
         onKeyDown={onTitleKeyDown}
       />
     ),
+    tags: (
+      <TagEditor
+        tags={draft.tags}
+        suggestions={availableTags}
+        onChange={(tags) => updateDraft({ tags })}
+        onOpenTag={(tag) =>
+          router.push(
+            workspaceSearchHref(homePath, { query: tag, source: "tag" }),
+          )
+        }
+      />
+    ),
     body: (
       <div onKeyDown={onBodyKeyDown}>
         <BodyEditor
@@ -1385,6 +1426,8 @@ export function PostEditLayer({
           uploadEndpoint={uploadEndpoint}
           collab={collab}
           onPresence={updatePresencePeers}
+          wikiLinkPosts={wikiLinkPosts}
+          onCreateWikiLinkNote={canManagePost ? createWikiLinkNote : undefined}
           onCollabRetired={() => {
             // The co-editing generation was retired (a stale between-sessions log
             // reset from posts.body). This client's local doc is stale and its
@@ -1577,7 +1620,12 @@ export function PostEditLayer({
               onNavigate={navigateFromRead}
             />
             <SaveStatusPill saveState={saveState} error={error} />
-            <ReaderComponent blog={blog} post={displayPost} />
+            <ReaderComponent
+              blog={blog}
+              post={displayPost}
+              wikiLinkTargets={wikiLinkTargets}
+            />
+            <BacklinksPanel blog={blog} posts={backlinks} />
           </div>
         )}
         <div ref={editSurfaceRef} hidden={surfaceMode === "read"}>
@@ -1634,6 +1682,7 @@ export function PostEditLayer({
           ) : (
             <EditReaderPreview blog={blog} post={displayPost} slots={slots} />
           )}
+          <BacklinksPanel blog={blog} posts={backlinks} />
         </div>
       </div>
       <ConfirmationDialog

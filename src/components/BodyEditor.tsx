@@ -31,6 +31,12 @@ import {
 } from "@/components/editor/BlockInsertMenu";
 import { SlashCommand } from "@/components/editor/SlashCommand";
 import { Subtitle } from "@/components/editor/Subtitle";
+import { WikiLink } from "@/components/editor/WikiLink";
+import {
+  WikiLinkCommand,
+  type WikiLinkCreatedPost,
+  type WikiLinkSuggestionPost,
+} from "@/components/editor/WikiLinkCommand";
 import { MediaUploadError, uploadMedia } from "@/lib/upload";
 import { CollabProvider } from "@/lib/collab/provider";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -64,6 +70,10 @@ type BodyEditorProps = {
    * the authoritative content. */
   onCollabRetired?: () => void;
   onNavigateField?: (direction: "previous" | "next") => void;
+  wikiLinkPosts?: WikiLinkSuggestionPost[];
+  onCreateWikiLinkNote?: (
+    title: string,
+  ) => Promise<WikiLinkCreatedPost | null>;
 };
 
 // Markdown is the source of truth for post bodies, so the toolbar only offers
@@ -78,6 +88,11 @@ type MarkdownStorage = {
 type SlashCommandConfig = {
   mediaEnabled: boolean;
   onChooseImage: () => void;
+};
+
+type WikiLinkCommandConfig = {
+  posts: WikiLinkSuggestionPost[];
+  onCreateNote?: (title: string) => Promise<WikiLinkCreatedPost | null>;
 };
 
 const MediaImage = Image.extend({
@@ -115,6 +130,7 @@ function getServerMounted() {
 function buildEditorExtensions(
   ydoc: Y.Doc | null,
   slashCommand: SlashCommandConfig,
+  wikiLinkCommand: WikiLinkCommandConfig,
 ): AnyExtension[] {
   const extensions: AnyExtension[] = [
     StarterKit.configure({
@@ -122,6 +138,7 @@ function buildEditorExtensions(
       ...(ydoc ? { history: false } : {}),
     }),
     Subtitle,
+    WikiLink,
     MediaImage,
     Link.configure({
       autolink: true,
@@ -144,6 +161,7 @@ function buildEditorExtensions(
       mediaEnabled: slashCommand.mediaEnabled,
       onChooseImage: slashCommand.onChooseImage,
     }),
+    WikiLinkCommand.configure(wikiLinkCommand),
     Markdown.configure({
       html: false,
       bulletListMarker: "-",
@@ -179,6 +197,8 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
       onPresence,
       onCollabRetired,
       onNavigateField,
+      wikiLinkPosts = [],
+      onCreateWikiLinkNote,
     },
     ref,
   ) {
@@ -227,11 +247,18 @@ export const BodyEditor = forwardRef<BodyEditorHandle, BodyEditorProps>(
     );
     const extensions = useMemo(
       () =>
-        buildEditorExtensions(ydoc, {
-          mediaEnabled,
-          onChooseImage: () => slashChooseImageRef.current(),
-        }),
-      [mediaEnabled, ydoc],
+        buildEditorExtensions(
+          ydoc,
+          {
+            mediaEnabled,
+            onChooseImage: () => slashChooseImageRef.current(),
+          },
+          {
+            posts: wikiLinkPosts,
+            onCreateNote: onCreateWikiLinkNote,
+          },
+        ),
+      [mediaEnabled, onCreateWikiLinkNote, wikiLinkPosts, ydoc],
     );
 
     useEffect(() => {

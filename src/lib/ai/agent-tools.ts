@@ -43,6 +43,7 @@ import type {
 } from "@/lib/ai/workspace-item-draft";
 import { isPrivatePostType } from "@/lib/content";
 import type { Post, PostType } from "@/lib/content";
+import { normalizeTags } from "@/lib/tags";
 import {
   folderModeForPostType,
   itemKindForPostType,
@@ -203,6 +204,7 @@ function poolPostFromPost(post: Post, blogId: string): WorkspacePoolPost | null 
     coverHeight: post.coverHeight,
     gallery: post.gallery,
     links: post.links,
+    tags: normalizeTags(post.tags),
     videoUrl: post.videoUrl,
     venue: post.venue,
     duration: post.duration,
@@ -328,6 +330,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           title: post.title,
           excerpt: post.excerpt ?? "",
           body: await readBody(pool().blogId, post.id),
+          tags: normalizeTags(post.tags),
         };
   }
 
@@ -342,6 +345,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
         ...postFromPoolPost(poolPost, patch.body ?? current.body),
         title: patch.title ?? current.title,
         excerpt: patch.excerpt ?? current.excerpt,
+        tags: normalizeTags(patch.tags ?? poolPost.tags),
       };
     }
 
@@ -350,6 +354,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     if (patch.title !== undefined) draft.title = patch.title;
     if (patch.excerpt !== undefined) draft.excerpt = patch.excerpt;
     if (patch.body !== undefined) draft.body = patch.body;
+    if (patch.tags !== undefined) draft.tags = normalizeTags(patch.tags);
     if (patch.title && isPlaceholderSlug(draft.slug)) {
       const used = pool()
         .posts.filter((candidate) => candidate.id !== poolPost.id)
@@ -379,6 +384,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       videoUrl?: string;
       venue?: string;
       duration?: string;
+      tags?: string[];
     },
   ) {
     const draft = initialDraft(postFromPoolPost(poolPost, input.body));
@@ -394,6 +400,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
     draft.videoUrl = input.videoUrl ?? draft.videoUrl;
     draft.venue = input.venue ?? draft.venue;
     draft.duration = input.duration ?? draft.duration;
+    draft.tags = normalizeTags(input.tags ?? draft.tags);
     draft.status = "draft";
     if (input.title && isPlaceholderSlug(draft.slug)) {
       const used = pool()
@@ -431,6 +438,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
       draft.coverHeight = input.cover_height;
     }
     if (input.date !== undefined) draft.date = input.date;
+    if (input.tags !== undefined) draft.tags = normalizeTags(input.tags);
     const saved = await saveEditablePostAction(
       handle,
       payloadFor(poolPost.id, draft, poolPost.slug, poolPost.updatedAt),
@@ -669,6 +677,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
           cover: post.cover ?? null,
           cover_caption: post.coverCaption ?? null,
           cover_height: post.coverHeight ?? null,
+          tags: normalizeTags(post.tags),
           date: post.date ?? null,
           updatedAt: post.updatedAt ?? null,
           body: capped(text.body, 12_000),
@@ -778,6 +787,7 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             videoUrl: parsed.fields.videoUrl,
             venue: parsed.fields.venue,
             duration: parsed.fields.duration,
+            tags: parsed.fields.tags,
           });
         }
         const created = {
@@ -835,12 +845,16 @@ export function createWorkspaceAgentTools(options: WorkspaceAgentToolsOptions): 
             title: parsed.fields.title ?? post.title,
             excerpt: parsed.fields.excerpt ?? post.excerpt ?? "",
             body: parsed.body,
+            ...(Object.prototype.hasOwnProperty.call(parsed.fields, "tags")
+              ? { tags: normalizeTags(parsed.fields.tags) }
+              : {}),
           };
         } else {
           patch = {};
           if (input.title !== undefined) patch.title = input.title;
           if (input.excerpt !== undefined) patch.excerpt = input.excerpt ?? "";
           if (input.body !== undefined) patch.body = input.body;
+          if (input.tags !== undefined) patch.tags = normalizeTags(input.tags);
         }
         const saved = await saveDraftPatch(post, patch);
         return { ok: true, id: input.id, title: saved.title };

@@ -342,6 +342,47 @@ describe("MCP workspace tool adapter", () => {
     );
   });
 
+  it("reads and updates tags through the shared Markdown contract", async () => {
+    const id = "12121212-1212-4212-8212-121212121212";
+    const post = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "tagged",
+      title: "Tagged",
+      excerpt: "",
+      body: "Body",
+      tags: ["design"],
+      status: "draft",
+      pinned: false,
+      revision: 7,
+    } as const;
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.savePost.mockResolvedValue({
+      ...post,
+      tags: ["design", "notes"],
+      revision: 8,
+    });
+    const entries = registrations();
+    const readItem = entries.find((entry) => entry.name === "read_item")!;
+    const updateItem = entries.find((entry) => entry.name === "update_item")!;
+
+    const read = await readItem.callback({ id }, auth(["read"]));
+    expect(read.isError).not.toBe(true);
+    expect(toolText(read)).toContain('tags: ["design"]');
+
+    const updated = await updateItem.callback(
+      { id, tags: ["Design", "#Notes", "notes"] },
+      auth(["sync"]),
+    );
+    expect(updated.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.objectContaining({ tags: ["design", "notes"] }),
+      { expectedRevision: 7 },
+    );
+  });
+
   it("refuses a body overwrite while the item is being co-edited", async () => {
     const id = "44444444-4444-4444-8444-444444444444";
     mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });

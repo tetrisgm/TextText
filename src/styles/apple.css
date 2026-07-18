@@ -407,6 +407,11 @@
   background: var(--ac-tinted-fill);
   color: var(--ac-editor-accent-text);
 }
+.applecms .wiki-link-decoration {
+  border-radius: 4px;
+  background: var(--ac-tinted-fill);
+  color: var(--ac-editor-accent-text);
+}
 .applecms.slash-command-menu,
 .applecms .slash-command-menu {
   pointer-events: auto;
@@ -497,6 +502,22 @@
 /* ---- Notes body content while editing ---- */
 .applecms .body-editor-content {
   caret-color: var(--ac-accent);
+}
+.applecms .wiki-link-node {
+  display: inline;
+  border-radius: 4px;
+  padding: 1px 3px;
+  background: var(--ac-tinted-fill);
+  color: color-mix(in srgb, var(--ac-accent) 40%, var(--ac-label) 60%);
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+.applecms .wiki-link-node:hover,
+.applecms .wiki-link-node.ProseMirror-selectednode {
+  background: color-mix(in srgb, var(--ac-accent) 18%, var(--ac-fill-3));
 }
 .applecms .reader-prose .body-editor-content h1 {
   max-width: 680px;

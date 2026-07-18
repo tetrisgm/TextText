@@ -163,8 +163,10 @@ export function AssistantConversation({
             proposal.status === "applying" || proposal.status === "undoing";
           const applied =
             proposal.status === "applied" || proposal.status === "undoing";
-          const scopeLabel =
-            proposal.scope === "selection"
+          const tagProposal = proposal.kind === "tags";
+          const scopeLabel = tagProposal
+            ? "Item tags"
+            : proposal.scope === "selection"
               ? `${proposal.field} selection${
                   proposal.range
                     ? `, source offsets ${proposal.range.start} to ${proposal.range.end}`
@@ -175,19 +177,39 @@ export function AssistantConversation({
             <div key={message.id} className={styles.proposal}>
               <p className={styles.proposalLabel}>{proposal.label}</p>
               <p className={styles.proposalScope}>{scopeLabel}</p>
-              <div
-                className={styles.proposalPreview}
-                aria-label={`${proposal.label} preview`}
-              >
-                <div className={styles.proposalValue} data-kind="before">
-                  <span className={styles.proposalValueLabel}>Original</span>
-                  <pre>{proposal.before || "Empty"}</pre>
+              {tagProposal ? (
+                <div
+                  className={styles.proposalTags}
+                  aria-label={`${proposal.label} preview`}
+                >
+                  {proposal.afterTags.length > 0 ? (
+                    proposal.afterTags.map((tag) => (
+                      <span
+                        key={tag}
+                        data-added={proposal.addedTags.includes(tag) || undefined}
+                      >
+                        #{tag}
+                      </span>
+                    ))
+                  ) : (
+                    <span>None</span>
+                  )}
                 </div>
-                <div className={styles.proposalValue} data-kind="after">
-                  <span className={styles.proposalValueLabel}>Replacement</span>
-                  <pre>{proposal.after || "Empty"}</pre>
+              ) : (
+                <div
+                  className={styles.proposalPreview}
+                  aria-label={`${proposal.label} preview`}
+                >
+                  <div className={styles.proposalValue} data-kind="before">
+                    <span className={styles.proposalValueLabel}>Original</span>
+                    <pre>{proposal.before || "Empty"}</pre>
+                  </div>
+                  <div className={styles.proposalValue} data-kind="after">
+                    <span className={styles.proposalValueLabel}>Replacement</span>
+                    <pre>{proposal.after || "Empty"}</pre>
+                  </div>
                 </div>
-              </div>
+              )}
               {proposal.note && (
                 <p className={styles.proposalNote}>{proposal.note}</p>
               )}

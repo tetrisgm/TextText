@@ -100,6 +100,7 @@ import {
   type ItemAssetReference,
 } from "@/lib/item-assets";
 import { sanitizePostSlug } from "@/lib/post-slug";
+import { normalizeTags } from "@/lib/tags";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
 
@@ -384,6 +385,9 @@ function editableInput(input: unknown, existing: Post, fallbackSlug: string) {
     links: hasInputKey(values, "links")
       ? cleanLinks(values.links)
       : (existing.links ?? []),
+    tags: hasInputKey(values, "tags")
+      ? normalizeTags(values.tags)
+      : normalizeTags(existing.tags),
     date: hasInputKey(values, "date")
       ? cleanDate(values.date)
       : existing.date,
@@ -418,6 +422,9 @@ function collaboratorContentPatch(input: unknown, existing: Post): PostContentPa
     coverHeight: hasInputKey(values, "coverHeight")
       ? cleanCoverHeight(values.coverHeight)
       : existing.coverHeight,
+    tags: hasInputKey(values, "tags")
+      ? normalizeTags(values.tags)
+      : normalizeTags(existing.tags),
   };
 }
 

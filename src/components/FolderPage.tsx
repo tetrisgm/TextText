@@ -25,6 +25,7 @@ import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { PostCard } from "@/components/PostCard";
+import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
@@ -592,6 +593,7 @@ function NotesFolderContents({
   onDeleteItem,
   onItemClick,
   onOpenPost,
+  onOpenTag,
   onSelectPost,
   selectedPostId,
   selectedPostIds,
@@ -606,6 +608,7 @@ function NotesFolderContents({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  onOpenTag?: (tag: string) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
@@ -740,6 +743,12 @@ function NotesFolderContents({
                       <span className="post-folder-row-excerpt">{preview}</span>
                     )}
                   </Link>
+                  <TagChips
+                    blog={blog}
+                    className="post-folder-row-tags"
+                    onOpenTag={onOpenTag}
+                    tags={note.tags}
+                  />
                   {canEditItems && (
                     <WorkspaceItemActions
                       blog={blog}
@@ -773,6 +782,7 @@ function BookmarksFolderContents({
   onDeleteItem,
   onItemClick,
   onOpenPost,
+  onOpenTag,
   onSelectPost,
   selectedPostId,
   selectedPostIds,
@@ -789,6 +799,7 @@ function BookmarksFolderContents({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  onOpenTag?: (tag: string) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
@@ -999,6 +1010,7 @@ function BookmarksFolderContents({
                   onCaptureResolved={onCaptureResolved}
                   onDeletePost={onDeleteItem}
                   onOpenPost={onOpenPost}
+                  onOpenTag={onOpenTag}
                   onItemClick={(event) =>
                     bookmark.id
                       ? (onItemClick?.(bookmark.id, event) ?? true)
@@ -1026,6 +1038,7 @@ function BlogFolderContents({
   onDeleteItem,
   onItemClick,
   onOpenPost,
+  onOpenTag,
   onSelectPost,
   selectedPostId,
   selectedPostIds,
@@ -1040,6 +1053,7 @@ function BlogFolderContents({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  onOpenTag?: (tag: string) => void;
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
@@ -1167,6 +1181,7 @@ function BlogFolderContents({
                         : undefined
                     }
                     onDeletePost={onDeleteItem}
+                    onOpenTag={onOpenTag}
                   />
                 </div>
               );
@@ -1190,6 +1205,7 @@ export function FolderPage({
   onDeleteItem,
   onItemClick,
   onOpenPost,
+  onOpenTag,
   createBookmarkRequestKey,
   editRequestKey = 0,
   onSelectPost,
@@ -1210,6 +1226,7 @@ export function FolderPage({
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
+  onOpenTag?: (tag: string) => void;
   createBookmarkRequestKey?: number;
   editRequestKey?: number;
   onSelectPost?: (postId: string) => void;
@@ -1323,6 +1340,7 @@ export function FolderPage({
           onDeleteItem={onDeleteItem}
           onItemClick={onItemClick}
           onOpenPost={onOpenPost}
+          onOpenTag={onOpenTag}
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
           selectedPostIds={selectedPostIds}
@@ -1341,6 +1359,7 @@ export function FolderPage({
           onDeleteItem={onDeleteItem}
           onItemClick={onItemClick}
           onOpenPost={onOpenPost}
+          onOpenTag={onOpenTag}
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
           selectedPostIds={selectedPostIds}
@@ -1357,6 +1376,7 @@ export function FolderPage({
           onDeleteItem={onDeleteItem}
           onItemClick={onItemClick}
           onOpenPost={onOpenPost}
+          onOpenTag={onOpenTag}
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
           selectedPostIds={selectedPostIds}

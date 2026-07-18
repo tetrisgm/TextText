@@ -12,7 +12,7 @@ import {
   getAccessibleAllPosts,
   getAccessibleFolderCounts,
   getAccessibleFolders,
-  getAllPosts,
+  getAllPostFiles,
   getBlog,
   getFolderCounts,
   getFolders,
@@ -20,6 +20,7 @@ import {
   getTrashedPosts,
   getPost,
   getPostById,
+  getPostSlugAliases,
   resolvePostSlug,
 } from "@/lib/store";
 import type { Blog, Post } from "@/lib/content";
@@ -38,12 +39,19 @@ import {
   blogPostEditPath,
   blogPostPath,
 } from "@/lib/public-paths";
-import { workspacePoolFromParts } from "@/lib/pool/selectors";
+import {
+  backlinksForPost,
+  narrowPostFromPost,
+  workspacePoolFromParts,
+} from "@/lib/pool/selectors";
+import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
 import { tenantFromHost } from "@/lib/tenants";
+import { normalizeTags } from "@/lib/tags";
+import { resolveWikiLinkRenderTargets } from "@/lib/wikilinks";
 
 interface Props {
   params: Promise<{ handle: string; slug: string }>;
@@ -216,11 +224,13 @@ export async function PostPageForHandle({
   let allPosts: Post[];
   let folders: Awaited<ReturnType<typeof getFolders>>;
   let counts: Record<string, number>;
+  let slugAliases: Record<string, string> = {};
   if (canEdit) {
-    [allPosts, folders, counts] = await Promise.all([
-      getAllPosts(handle),
+    [allPosts, folders, counts, slugAliases] = await Promise.all([
+      getAllPostFiles(handle),
       getFolders(handle),
       getFolderCounts(handle),
+      getPostSlugAliases(handle),
     ]);
   } else {
     const [accessiblePosts, accessibleFolders] = await Promise.all([
@@ -250,6 +260,7 @@ export async function PostPageForHandle({
           trashedFolders,
           trashedPosts,
           sharedEntries,
+          ...workspaceWikiLinkMetadata(allPosts, slugAliases),
         })
       : null;
   const usedSlugs = editMode
@@ -259,6 +270,21 @@ export async function PostPageForHandle({
         )
         .map((candidate) => candidate.slug)
     : [];
+  const availableTags = Array.from(
+    new Set(allPosts.flatMap((candidate) => normalizeTags(candidate.tags))),
+  ).sort((left, right) => left.localeCompare(right));
+  const wikiLinkTargets = await resolveWikiLinkRenderTargets({
+    blog,
+    handle,
+    includePrivate: canEdit,
+    markdown: post.body,
+  });
+  const initialPoolPost =
+    initialPool && post.id ? narrowPostFromPost(post, initialPool.blogId) : null;
+  const backlinks =
+    initialPool && initialPoolPost
+      ? backlinksForPost(initialPool, initialPoolPost)
+      : [];
 
   const ReaderComponent =
     post.type === "talk"
@@ -290,7 +316,13 @@ export async function PostPageForHandle({
 
   if (editMode) {
     if (initialPool && canEdit) {
-      const reader = <ReaderComponent blog={blog} post={post} />;
+      const reader = (
+        <ReaderComponent
+          blog={blog}
+          post={post}
+          wikiLinkTargets={wikiLinkTargets}
+        />
+      );
       return (
         <PostReadWorkspaceShell
           adjacent={adjacent}
@@ -349,12 +381,25 @@ export async function PostPageForHandle({
           canManagePost={canEdit}
           canCommentPost={canCommentPost}
           workspaceBlogId={access.blogId ?? undefined}
+          availableTags={availableTags}
+          wikiLinkPosts={allPosts.map((candidate) => ({
+            slug: candidate.slug,
+            title: candidate.title.trim() || candidate.slug,
+          }))}
+          wikiLinkTargets={wikiLinkTargets}
+          backlinks={backlinks}
         />
       </>
     );
   }
 
-  const reader = <ReaderComponent blog={blog} post={post} />;
+  const reader = (
+    <ReaderComponent
+      blog={blog}
+      post={post}
+      wikiLinkTargets={wikiLinkTargets}
+    />
+  );
 
   return (
     <>

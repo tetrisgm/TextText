@@ -3,25 +3,36 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PostByline } from "@/components/PostByline";
 import { ProjectGallery } from "@/components/ProjectGallery";
+import { TagChips } from "@/components/TagChips";
 import type { Blog, Post } from "@/lib/content";
 import { postAccent } from "@/lib/content";
 import { postBodyWithSubtitle } from "@/lib/markdown-subtitle";
+import {
+  WikiLinkAnchor,
+  remarkWikiLinks,
+} from "@/components/WikiLinkMarkdown";
+import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 
 type ReaderSlots = {
   toolbar?: ReactNode;
   title?: ReactNode;
   body?: ReactNode;
   gallery?: ReactNode;
+  tags?: ReactNode;
 };
 
 export function ProjectReader({
   blog,
   post,
   slots,
+  wikiLinkTargets = {},
+  onWikiLinkNavigate,
 }: {
   blog: Blog;
   post: Post;
   slots?: ReaderSlots;
+  wikiLinkTargets?: WikiLinkRenderTargets;
+  onWikiLinkNavigate?: (href: string) => Promise<void> | void;
 }) {
   const accent = postAccent(blog, post);
   const style = accent
@@ -52,12 +63,21 @@ export function ProjectReader({
               {title}
             </h1>
           )}
+          {slots && Object.prototype.hasOwnProperty.call(slots, "tags")
+            ? slots.tags
+            : <TagChips blog={blog} tags={post.tags} />}
           {(slots?.body || body) && (
             <div className="reader-prose project-prose">
               {slots?.body ?? (
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={[remarkGfm, remarkWikiLinks(wikiLinkTargets)]}
                   components={{
+                    a: (props) => (
+                      <WikiLinkAnchor
+                        {...props}
+                        onNavigate={onWikiLinkNavigate}
+                      />
+                    ),
                     h1: "h2",
                     h6: ({ children }) => (
                       <p className="reader-subtitle project-subtitle">

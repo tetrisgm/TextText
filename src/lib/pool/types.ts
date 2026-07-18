@@ -9,6 +9,7 @@ import type {
   PostType,
 } from "@/lib/content";
 import type { SharedWithMeEntry } from "@/lib/shares";
+import type { WikiLinkReference } from "@/lib/wikilink-syntax";
 
 export type WorkspacePoolPost = {
   id: string;
@@ -27,6 +28,7 @@ export type WorkspacePoolPost = {
   coverHeight?: number;
   gallery?: GalleryItem[];
   links?: LinkRef[];
+  tags?: string[];
   videoUrl?: string;
   venue?: string;
   duration?: string;
@@ -53,6 +55,10 @@ export type WorkspacePoolPayload = {
   sharedEntries?: SharedWithMeEntry[];
   /** Bodies worth warming with the workspace shell, currently every note. */
   initialBodies?: WorkspaceInitialBody[];
+  /** Full-body extraction keyed by source post id. */
+  outboundLinks?: Record<string, WikiLinkReference[]>;
+  /** Unambiguous historical slug to current slug mappings. */
+  slugAliases?: Record<string, string>;
   fetchedAt: string;
 };
 

@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { WorkspaceItemActions } from "@/components/workspace/WorkspaceItemActions";
+import { TagChips } from "@/components/TagChips";
 import type { Post } from "@/lib/content";
 import { isSafeLinkHref, isVideoFile, postBodyPreview } from "@/lib/content";
 import {
@@ -129,6 +130,7 @@ export function BookmarkCard({
   post,
   editPath,
   onOpenPost,
+  onOpenTag,
   onItemClick,
   onSelect,
   onCaptureResolved,
@@ -142,6 +144,7 @@ export function BookmarkCard({
   post: Post;
   editPath: string;
   onOpenPost?: (post: Post) => void;
+  onOpenTag?: (tag: string) => void;
   onItemClick?: (event: MouseEvent<HTMLElement>) => boolean;
   onSelect?: () => void;
   onCaptureResolved?: (post: Post) => void;
@@ -296,6 +299,7 @@ export function BookmarkCard({
         >
           {mainContent}
         </Link>
+        <TagChips onOpenTag={onOpenTag} tags={post.tags} />
       </div>
       {isFailed && (
         <div

@@ -1,6 +1,10 @@
 "use client";
 
 import { BodyEditor } from "@/components/BodyEditor";
+import type {
+  WikiLinkCreatedPost,
+  WikiLinkSuggestionPost,
+} from "@/components/editor/WikiLinkCommand";
 
 export type LocalWorkspaceBodyEditorProps = {
   value: string;
@@ -8,6 +12,10 @@ export type LocalWorkspaceBodyEditorProps = {
   mediaEnabled?: boolean;
   uploadEndpoint?: string;
   onNavigateField?: (direction: "previous" | "next") => void;
+  wikiLinkPosts?: WikiLinkSuggestionPost[];
+  onCreateWikiLinkNote?: (
+    title: string,
+  ) => Promise<WikiLinkCreatedPost | null>;
 };
 
 export function LocalWorkspaceBodyEditor(props: LocalWorkspaceBodyEditorProps) {

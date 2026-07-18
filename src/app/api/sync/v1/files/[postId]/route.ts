@@ -160,6 +160,7 @@ export async function PUT(request: Request, { params }: Props) {
             cover: parsed.fields.cover ?? post.cover,
             coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
             coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
+            tags: parsed.fields.tags ?? post.tags,
             body: parsed.body,
           },
           { expectedRevision },

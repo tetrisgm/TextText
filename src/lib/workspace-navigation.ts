@@ -2,7 +2,7 @@ import type { Folder, PostType } from "@/lib/content";
 
 export type WorkspaceSearchLocation = {
   query: string;
-  source: "date" | "query";
+  source: "date" | "query" | "tag";
 };
 
 export type WorkspaceHierarchyView =
@@ -32,7 +32,14 @@ export function workspaceSearchHref(
   location: WorkspaceSearchLocation,
 ): string {
   const params = new URLSearchParams();
-  params.set(location.source === "date" ? "date" : "q", location.query);
+  params.set(
+    location.source === "date"
+      ? "date"
+      : location.source === "tag"
+        ? "tag"
+        : "q",
+    location.query,
+  );
   return `${homePath}?${params.toString()}`;
 }
 
@@ -41,6 +48,8 @@ export function workspaceSearchLocationFromUrl(
 ): WorkspaceSearchLocation | null {
   const dateQuery = url.searchParams.get("date")?.trim();
   if (dateQuery) return { query: dateQuery, source: "date" };
+  const tagQuery = url.searchParams.get("tag")?.trim();
+  if (tagQuery) return { query: tagQuery, source: "tag" };
   const textQuery = url.searchParams.get("q")?.trim();
   return textQuery ? { query: textQuery, source: "query" } : null;
 }
@@ -63,10 +72,10 @@ export function workspaceSearchReturnFromUrl(
   if (!query) return undefined;
   return {
     query,
-    source:
-      url.searchParams.get(SEARCH_RETURN_SOURCE_PARAM) === "date"
-        ? "date"
-        : "query",
+    source: (() => {
+      const source = url.searchParams.get(SEARCH_RETURN_SOURCE_PARAM);
+      return source === "date" || source === "tag" ? source : "query";
+    })(),
   };
 }
 

@@ -34,6 +34,7 @@ import {
   resolveWorkspaceAccess,
 } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { normalizeTags } from "@/lib/tags";
 import {
   inviteScopeShare,
   listScopeShares,
@@ -385,7 +386,12 @@ function markdownContentUpdate(
   post: Post,
   markdown: string,
 ):
-  | { title: string; excerpt: string | undefined; body: string }
+  | {
+      title: string;
+      excerpt: string | undefined;
+      body: string;
+      tags?: string[];
+    }
   | CallToolResult {
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
   try {
@@ -433,6 +439,9 @@ function markdownContentUpdate(
     title: parsed.fields.title ?? post.title,
     excerpt: parsed.fields.excerpt ?? post.excerpt,
     body: parsed.body,
+    ...(Object.prototype.hasOwnProperty.call(parsed.fields, "tags")
+      ? { tags: normalizeTags(parsed.fields.tags) }
+      : {}),
   };
 }
 
@@ -797,6 +806,9 @@ async function executeMcpTool(
             excerpt:
               input.excerpt === null ? undefined : (input.excerpt ?? post.excerpt),
             body: input.body ?? post.body,
+            ...(input.tags !== undefined
+              ? { tags: normalizeTags(input.tags) }
+              : {}),
           };
       if (isToolResult(content)) return content;
       if (!access.isOwner && input.excerpt !== undefined) {
@@ -823,7 +835,11 @@ async function executeMcpTool(
           : await savePostContentPatch(
               blog.handle,
               post,
-              { title: content.title, body: content.body },
+              {
+                title: content.title,
+                body: content.body,
+                ...(content.tags !== undefined ? { tags: content.tags } : {}),
+              },
               { expectedRevision: revision },
             );
         await auditMcp(extra, "mcp.update_item", "item", saved.id, saved.title);
@@ -1070,6 +1086,9 @@ async function executeMcpTool(
         ...(input.cover_height !== undefined
           ? { coverHeight: input.cover_height ?? undefined }
           : {}),
+        ...(input.tags !== undefined
+          ? { tags: normalizeTags(input.tags) }
+          : {}),
         ...(input.date !== undefined ? { date: input.date } : {}),
         status: isAlwaysDraftType(resolved.post.type)
           ? "draft"
@@ -1084,6 +1103,8 @@ async function executeMcpTool(
         next.cover !== resolved.post.cover ||
         next.coverCaption !== resolved.post.coverCaption ||
         next.coverHeight !== resolved.post.coverHeight ||
+        JSON.stringify(normalizeTags(next.tags)) !==
+          JSON.stringify(normalizeTags(resolved.post.tags)) ||
         next.date !== resolved.post.date;
       if (!changed) {
         return jsonResult({ changed: false, item: itemEntry(resolved.blog, resolved.post) });

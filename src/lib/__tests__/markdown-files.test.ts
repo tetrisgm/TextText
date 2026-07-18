@@ -12,6 +12,7 @@ import {
   markdownSubtitle,
   postBodyWithSubtitle,
 } from "@/lib/markdown-subtitle";
+import { normalizeTags } from "@/lib/tags";
 
 const blog: Blog = {
   handle: "demo",
@@ -45,6 +46,7 @@ const fullArticle: Post = {
   status: "published",
   pinned: true,
   starred: true,
+  tags: [" Design ", "#Notes", "design"],
   createdAt: "2026-06-30T08:00:00.000Z",
   updatedAt: "2026-07-01T09:30:00.000Z",
 };
@@ -135,6 +137,7 @@ function expectedFields(post: Post): ParsedPostFields {
     }));
   }
   if (post.links && post.links.length > 0) fields.links = post.links;
+  if (post.tags && post.tags.length > 0) fields.tags = normalizeTags(post.tags);
   if (post.videoUrl) fields.videoUrl = post.videoUrl;
   if (post.venue) fields.venue = post.venue;
   if (post.duration) fields.duration = post.duration;
@@ -187,6 +190,7 @@ describe("render -> parse round trip", () => {
       post: fullArticle,
     });
     expect(file).toContain("\npinned: true\n");
+    expect(file).toContain('tags: ["design","notes"]');
     expect(file).not.toContain("\nstarred:");
   });
 
@@ -263,6 +267,21 @@ describe("hand-written human frontmatter", () => {
     const parsed = parsePostMarkdownFile("---\ntitle:\nexcerpt: \n---\nbody");
     expect(parsed.fields).toEqual({});
   });
+
+  it("accepts JSON, comma-separated, and single-token tags", () => {
+    expect(
+      parsePostMarkdownFile(
+        '---\ntags: ["#Design", "Notes", "design"]\n---\nx',
+      ).fields.tags,
+    ).toEqual(["design", "notes"]);
+    expect(
+      parsePostMarkdownFile("---\ntags: Work, Ideas, #work\n---\nx").fields
+        .tags,
+    ).toEqual(["work", "ideas"]);
+    expect(
+      parsePostMarkdownFile("---\ntags: Focus\n---\nx").fields.tags,
+    ).toEqual(["focus"]);
+  });
 });
 
 describe("wrong types throw, naming the key", () => {
@@ -323,6 +342,12 @@ describe("wrong types throw, naming the key", () => {
     );
     expect(() => parsePostMarkdownFile('---\nlinks: "nope"\n---\nx')).toThrow(
       /links/,
+    );
+  });
+
+  it("rejects an unsupported tags value", () => {
+    expect(() => parsePostMarkdownFile("---\ntags: 5\n---\nx")).toThrow(
+      /tags/,
     );
   });
 

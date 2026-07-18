@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PostByline } from "@/components/PostByline";
 import { ProjectGallery } from "@/components/ProjectGallery";
+import { TagChips } from "@/components/TagChips";
 import type { Blog, LinkRef, Post } from "@/lib/content";
 import {
   formatArticleDate,
@@ -30,6 +31,7 @@ type EditReaderSlots = {
   stage?: ReactNode;
   talkMeta?: ReactNode;
   byline?: ReactNode;
+  tags?: ReactNode;
 };
 
 function upgradeHttpImageSrc(src: string | undefined): string {
@@ -205,6 +207,9 @@ export function EditReaderPreview({
             {title}
           </h1>
         )}
+        {slots && Object.prototype.hasOwnProperty.call(slots, "tags")
+          ? slots.tags
+          : <TagChips blog={blog} tags={post.tags} />}
       </header>
       <div className="reader-prose">
         {slots?.body ?? (
@@ -258,6 +263,9 @@ export function EditProjectReaderPreview({
               {title}
             </h1>
           )}
+          {slots && Object.prototype.hasOwnProperty.call(slots, "tags")
+            ? slots.tags
+            : <TagChips blog={blog} tags={post.tags} />}
           {(slots?.body || body) && (
             <div className="reader-prose project-prose">
               {slots?.body ?? <MarkdownBody body={body} />}
@@ -391,6 +399,9 @@ export function EditTalkReaderPreview({
             {title}
           </h1>
         )}
+        {slots && Object.prototype.hasOwnProperty.call(slots, "tags")
+          ? slots.tags
+          : <TagChips blog={blog} tags={post.tags} />}
         {(slots?.body || body) && (
           <div className="talk-detail-desc reader-prose">
             {slots?.body ?? <MarkdownBody body={body} />}

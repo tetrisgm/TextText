@@ -13,6 +13,7 @@ import { isSafeLinkHref } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import { isNoCoverValue } from "@/lib/cover";
 import { sanitizePostSlug } from "@/lib/post-slug";
+import { normalizeTags } from "@/lib/tags";
 import {
   markdownSubtitle,
   postBodyWithSubtitle,
@@ -211,6 +212,7 @@ export function renderPostMarkdownFile({
   addOptionalNumber(frontmatter, "coverHeight", post.coverHeight);
   addGallery(frontmatter, post.gallery);
   addLinks(frontmatter, post.links);
+  addTags(frontmatter, post.tags);
   addOptional(frontmatter, "videoUrl", post.videoUrl);
   addOptional(frontmatter, "venue", post.venue);
   addOptional(frontmatter, "duration", post.duration);
@@ -248,6 +250,7 @@ export type ParsedPostFields = Partial<
     | "starred"
     | "gallery"
     | "links"
+    | "tags"
     | "videoUrl"
     | "venue"
     | "duration"
@@ -357,6 +360,9 @@ export function parsePostMarkdownFile(fileText: string): ParsedPostMarkdownFile 
         break;
       case "links":
         fields.links = fieldLinks(value);
+        break;
+      case "tags":
+        fields.tags = fieldTags(value);
         break;
       default:
         if (!METADATA_KEYS.includes(key)) unknownKeys.push(key);
@@ -500,6 +506,13 @@ function fieldLinks(value: unknown): LinkRef[] {
   return links;
 }
 
+function fieldTags(value: unknown): string[] {
+  if (typeof value !== "string" && !Array.isArray(value)) {
+    throw new Error("tags must be a list or comma-separated text");
+  }
+  return normalizeTags(value);
+}
+
 function fieldOptionalText(value: unknown, key: string): string | undefined {
   if (value == null) return undefined;
   return fieldText(value, key) || undefined;
@@ -561,6 +574,11 @@ function addLinks(target: Record<string, unknown>, links: LinkRef[] | undefined)
     label: link.label,
     href: link.href,
   }));
+}
+
+function addTags(target: Record<string, unknown>, tags: string[] | undefined) {
+  const normalized = normalizeTags(tags);
+  if (normalized.length > 0) target.tags = normalized;
 }
 
 function renderFrontmatter(values: Record<string, unknown>): string {

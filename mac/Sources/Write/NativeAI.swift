@@ -446,6 +446,9 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         let description: String?
         let minLength: Int?
         let maxLength: Int?
+        let minItems: Int?
+        let maxItems: Int?
+        let items: AgentArrayItemSchema?
         let minimum: Int?
         let maximum: Int?
         let pattern: String?
@@ -454,7 +457,8 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         let anyOf: [AgentPropertySchema]?
 
         enum CodingKeys: String, CodingKey {
-            case type, description, minLength, maxLength, minimum, maximum, pattern, anyOf
+            case type, description, minLength, maxLength, minItems, maxItems, items
+            case minimum, maximum, pattern, anyOf
             case choices = "enum"
             case constant = "const"
         }
@@ -536,9 +540,36 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 case "boolean":
                     return DynamicGenerationSchema(type: Bool.self)
 
+                case "array":
+                    guard let items else {
+                        throw AgentToolSchemaError.invalidProperty(name)
+                    }
+                    return DynamicGenerationSchema(
+                        arrayOf: try items.makeDynamicGenerationSchema(
+                            named: "\(name)_item"),
+                        minimumElements: minItems,
+                        maximumElements: maxItems
+                    )
+
                 default:
                     throw AgentToolSchemaError.invalidProperty(name)
                 }
+            }
+        #endif
+    }
+
+    struct AgentArrayItemSchema: Decodable, Sendable {
+        let type: String
+
+        #if canImport(FoundationModels)
+            @available(macOS 26.0, *)
+            func makeDynamicGenerationSchema(named name: String) throws
+                -> DynamicGenerationSchema
+            {
+                guard type == "string" else {
+                    throw AgentToolSchemaError.invalidProperty(name)
+                }
+                return DynamicGenerationSchema(type: String.self)
             }
         #endif
     }
@@ -795,7 +826,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "update_item",
-            "description": "Update title, excerpt, and/or body without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
+            "description": "Update title, excerpt, body, and/or tags without changing folder, kind, publication status, pin, or other metadata. A supplied hash prevents stale overwrites.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -825,8 +856,18 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   "type": "string",
                   "maxLength": 1000000
                 },
+                "tags": {
+                  "maxItems": 24,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48
+                  },
+                  "description": "The complete tag list. Tags are normalized and capped when saved."
+                },
                 "markdown": {
-                  "description": "A complete Write markdown file. Metadata, status, kind, and pin changes in it are rejected; use their dedicated tools.",
+                  "description": "A complete Write markdown file. Tags may change; other metadata, status, kind, and pin changes are rejected.",
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 1000000
@@ -1065,6 +1106,16 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                       "type": "null"
                     }
                   ]
+                },
+                "tags": {
+                  "maxItems": 24,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48
+                  },
+                  "description": "The complete tag list. Tags are normalized and capped when saved."
                 },
                 "date": {
                   "description": "Publication date for an already-published item, as YYYY-MM-DD.",

@@ -114,6 +114,21 @@ describe("workspace hierarchy navigation", () => {
     ).toEqual({ kind: "none" });
   });
 
+  it("serializes tag views as virtual workspace search levels", () => {
+    const tag = { query: "deep work", source: "tag" as const };
+    const href = workspaceSearchHref("/@writer", tag);
+    expect(href).toBe("/@writer?tag=deep+work");
+    expect(
+      workspaceSearchLocationFromUrl(new URL(href, "https://write.local")),
+    ).toEqual(tag);
+    const returned = workspaceHrefWithSearchReturn("/@writer/post", tag);
+    expect(
+      workspaceSearchReturnFromUrl(
+        new URL(returned, "https://write.local"),
+      ),
+    ).toEqual(tag);
+  });
+
   it("remembers the last root folder and rejects a stale remembered path", () => {
     expect(rootFolderPathForSelection(folders, "blog/ideas")).toBe("blog");
     expect(rememberedRootFolderPath(folders, "blog")).toBe("blog");

@@ -1,4 +1,5 @@
 import type { GalleryItem, Post } from "@/lib/content";
+import { normalizeTags } from "@/lib/tags";
 import {
   ensureMarkdownSubtitle,
   markdownSubtitle,
@@ -16,6 +17,7 @@ export type DraftState = {
   slug: string;
   accent: string;
   gallery: GalleryItem[];
+  tags: string[];
   videoUrl: string;
   venue: string;
   duration: string;
@@ -50,6 +52,7 @@ export function initialDraft(post: Post): DraftState {
     slug: post.slug,
     accent: post.accent ?? "",
     gallery: post.gallery ?? [],
+    tags: normalizeTags(post.tags),
     videoUrl: post.videoUrl ?? "",
     venue: post.venue ?? "",
     duration: post.duration ?? "",
@@ -117,6 +120,7 @@ export function payloadFor(
     slug: slugify(draft.slug, fallbackSlug),
     accent: draft.accent || null,
     gallery: draft.gallery,
+    tags: normalizeTags(draft.tags),
     videoUrl: draft.videoUrl || null,
     venue: draft.venue || null,
     duration: draft.duration || null,

@@ -337,6 +337,10 @@ export const posts = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY[]::text[]`),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     title: text("title").notNull(),
     /** short dek/standfirst */
     excerpt: text("excerpt"),
@@ -394,6 +398,7 @@ export const posts = pgTable(
       .on(t.folderId)
       .where(sql`${t.deletedAt} is null`),
     index("posts_slug_history_gin_full_idx").using("gin", t.slugHistory),
+    index("posts_tags_gin_full_idx").using("gin", t.tags),
     index("posts_blog_public_order_idx")
       .on(t.blogId, t.status, t.pinned.desc(), t.publishedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),

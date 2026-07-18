@@ -48,6 +48,7 @@ function draft(title: string): DraftState {
     slug: "draft",
     accent: "",
     gallery: [],
+    tags: [],
     videoUrl: "",
     venue: "",
     duration: "",

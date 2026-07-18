@@ -36,6 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusWindow: StatusWindowController?
     private var webWindow: WebAppWindowController?
     private var sharingServicePicker: NSSharingServicePicker?
+    private var quickCaptureController: QuickCaptureController?
+    private var quickCaptureHotKey: GlobalHotKey?
+    private var quickCaptureOutbox: QuickCaptureOutbox?
+    private var quickCaptureRetry: DispatchWorkItem?
+    private let quickCaptureQueue = DispatchQueue(
+        label: "net.writeapp.write.quick-capture", qos: .userInitiated)
     private let openFileQueue = DispatchQueue(
         label: "com.example.write.mac.open-files", qos: .userInitiated)
     private var pendingExternalImports: [ExternalNoteImport] = []
@@ -124,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Shared items filed while signed out could not reach the server;
             // drain them now that credentials exist.
             self.retryShareInboxDrain()
+            self.retryQuickCaptureDrain()
             self.refreshUI()
             // Linking configures folder sync; bring the workspace forward.
             NSApp.activate(ignoringOtherApps: true)
@@ -131,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setupStatusItem()
+        configureQuickCapture()
         // Warm account.json for a returning user so the File Provider domain can
         // register on launch. Best effort and file-free.
         seedCachedWorkspaceIfNeeded()
@@ -386,6 +394,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         changeListener?.stop()
         materializationRetry?.cancel()
         fileProviderRetry?.cancel()
+        quickCaptureRetry?.cancel()
+        quickCaptureHotKey?.unregister()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -488,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         changeListener?.nudge()
         signalFileProviderChange(serverReachable: true)
         captureAgent?.poke()
+        retryQuickCaptureDrain()
         fileProviderStatusMonitor.refresh()
     }
 
@@ -498,6 +509,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ) -> Bool {
         guard let lastRunUptime else { return true }
         return nowUptime - lastRunUptime >= coalescingWindow
+    }
+
+    // MARK: Quick capture
+
+    private func configureQuickCapture() {
+        do {
+            quickCaptureOutbox = try QuickCaptureOutbox(baseDirectory: store.baseDir)
+        } catch {
+            appendActivity(error.localizedDescription)
+        }
+
+        do {
+            quickCaptureHotKey = try GlobalHotKey { [weak self] in
+                DispatchQueue.main.async { self?.presentQuickCapture() }
+            }
+        } catch {
+            appendActivity(error.localizedDescription)
+        }
+
+        // A prior offline session may have left durable records. A returning
+        // signed-in app should file them without requiring another capture.
+        retryQuickCaptureDrain()
+    }
+
+    @objc private func quickCaptureAction() {
+        presentQuickCapture()
+    }
+
+    private func presentQuickCapture() {
+        if quickCaptureController == nil {
+            quickCaptureController = QuickCaptureController { [weak self] content in
+                guard let self, let outbox = self.quickCaptureOutbox else {
+                    throw QuickCaptureOutboxError.couldNotPersist(
+                        "The capture outbox is unavailable")
+                }
+                try outbox.enqueue(content)
+                self.retryQuickCaptureDrain()
+            }
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        quickCaptureController?.present()
+    }
+
+    private func retryQuickCaptureDrain(delay: TimeInterval = 0) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.retryQuickCaptureDrain(delay: delay)
+            }
+            return
+        }
+        guard quickCaptureOutbox != nil else { return }
+        quickCaptureRetry?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.quickCaptureQueue.async { [weak self] in
+                self?.drainQuickCaptureOutbox()
+            }
+        }
+        quickCaptureRetry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Runs away from the main thread because ServerClient is synchronous. The
+    /// outbox record remains untouched on every transient failure and is retried
+    /// with the same key, including after a later device link.
+    private func drainQuickCaptureOutbox() {
+        guard let outbox = quickCaptureOutbox,
+              !outbox.pendingRecords().isEmpty else { return }
+        guard let credentials = store.loadCredentials() else { return }
+
+        let client = ServerClient(
+            origin: resolveServerOrigin(credentials: credentials),
+            token: credentials.token)
+        let workspace: Workspace
+        if let cached = store.cachedWorkspace() {
+            workspace = cached
+        } else {
+            switch client.workspace() {
+            case .success(let (fetched, data)):
+                workspace = fetched
+                store.cacheWorkspace(data)
+            case .failure(let error):
+                appendActivity("Could not file capture: \(error.description)")
+                retryQuickCaptureDrain(delay: 15)
+                return
+            }
+        }
+
+        let summary = QuickCaptureOutboxDrainer(outbox: outbox).drain(
+            workspace: workspace,
+            client: client
+        )
+        if !summary.savedItems.isEmpty {
+            appendActivity(
+                "Filed \(summary.savedItems.count) capture\(summary.savedItems.count == 1 ? "" : "s")")
+            DispatchQueue.main.async { [weak self] in
+                self?.signalFileProviderChange(serverReachable: true)
+            }
+        }
+        for message in summary.rejectedMessages {
+            appendActivity("Capture rejected: \(message); kept in Capture Rejected")
+        }
+        if summary.shouldRetry {
+            if let message = summary.retryMessages.first {
+                appendActivity("Could not file capture: \(message); will retry")
+            }
+            retryQuickCaptureDrain(delay: 15)
+        }
     }
 
     // MARK: Share inbox
@@ -1936,6 +2054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The primary action: the full workspace in a native window.
         let openWrite = item("Open Write", #selector(showMainWindowAction))
         menu.addItem(openWrite)
+        menu.addItem(item("New note", #selector(quickCaptureAction)))
         menu.addItem(.separator())
 
         let sync = item("Sync Now", #selector(syncNowAction))
@@ -2004,6 +2123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         seedCachedWorkspaceIfNeeded()
         changeListener?.nudge()
         signalFileProviderChange(serverReachable: true)
+        retryQuickCaptureDrain()
     }
 
     @objc private func newNoteAction() {
@@ -2120,6 +2240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureAgent.poke()
         // Drain anything shared before this Mac was linked.
         retryShareInboxDrain()
+        retryQuickCaptureDrain()
         let pending = pendingExternalImports
         pendingExternalImports.removeAll()
         for item in pending { importExternalNote(item) }
