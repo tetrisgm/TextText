@@ -19,6 +19,14 @@ BASE="${2:-main}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BRIEF="$REPO/codex/tasks/$TASK.md"
 [ -f "$BRIEF" ] || { echo "no brief at codex/tasks/$TASK.md" >&2; exit 64; }
+STACK_RELEASE_LIB="${STACK_RELEASE_LIB:-$HOME/dev/stack/lib/release-reliability.sh}"
+RUN_CAPPED="${RELEASE_RUN_CAPPED:-$HOME/dev/stack/bin/run-capped}"
+CODEX_BIN="${WRITE_CODEX_BIN:-$HOME/.local/bin/codex}"
+[ -r "$STACK_RELEASE_LIB" ] || { echo "missing $STACK_RELEASE_LIB" >&2; exit 66; }
+# shellcheck disable=SC1090
+. "$STACK_RELEASE_LIB"
+rr_require_absolute_executable RELEASE_RUN_CAPPED "$RUN_CAPPED"
+rr_require_absolute_executable WRITE_CODEX_BIN "$CODEX_BIN"
 
 WT_ROOT="$(dirname "$REPO")/write-codex"
 WT="$WT_ROOT/$TASK"
@@ -33,8 +41,10 @@ if [ ! -d "$WT" ]; then
 fi
 
 echo ">> codex on $TASK (worktree $WT)"
-codex exec -C "$WT" -s workspace-write -c 'mcp_servers={}' \
-  -o "$WT_ROOT/$TASK.last.txt" \
-  < "$BRIEF" > "$WT_ROOT/$TASK.log" 2>&1 || \
+"$RUN_CAPPED" --seconds "${WRITE_CODEX_MAX_SECS:-5400}" --grace 15 \
+  --label "Write Codex task $TASK" -- \
+  "$CODEX_BIN" exec -C "$WT" -s workspace-write -c 'mcp_servers={}' \
+    -o "$WT_ROOT/$TASK.last.txt" "$(cat "$BRIEF")" \
+  > "$WT_ROOT/$TASK.log" 2>&1 || \
   echo ">> codex exited nonzero for $TASK (often fine; judge the diff)"
 echo ">> done: diff with  git -C $WT diff $BASE --stat"
