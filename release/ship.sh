@@ -200,7 +200,11 @@ echo ">> release Mac app"
 
 if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
   echo ">> deploy public web app"
-  npx vercel --prod --yes
+  # A linked Vercel project can turn `vercel --prod` into a Git deployment,
+  # which clones HEAD and silently omits the release marker generated above.
+  # Build locally after that marker exists, then deploy those exact outputs.
+  npx vercel build --prod --yes
+  npx vercel deploy --prebuilt --prod --yes
 fi
 
 ORIGIN="${WRITE_PRODUCT_ORIGIN:-}"
