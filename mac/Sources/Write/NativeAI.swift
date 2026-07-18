@@ -5,6 +5,29 @@ import WebKit
 
 #if canImport(FoundationModels)
     import FoundationModels
+
+    @available(macOS 26.0, *)
+    private final class NativeModelWarmup: @unchecked Sendable {
+        static let shared = NativeModelWarmup()
+
+        private let lock = NSLock()
+        private var session: LanguageModelSession?
+
+        func startIfNeeded() {
+            lock.lock()
+            guard session == nil else {
+                lock.unlock()
+                return
+            }
+            let warmSession = LanguageModelSession(
+                instructions:
+                    "You are the private on-device writing assistant inside Write."
+            )
+            session = warmSession
+            lock.unlock()
+            warmSession.prewarm()
+        }
+    }
 #endif
 
 /// On-device AI for the web app: Apple's foundation model (macOS 26+) plus
@@ -154,6 +177,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             #if canImport(FoundationModels)
                 switch SystemLanguageModel.default.availability {
                 case .available:
+                    NativeModelWarmup.shared.startIfNeeded()
                     result["available"] = true
                     result["textOps"] = [
                         "generate", "title", "tags", "excerpt", "summarize",
@@ -201,7 +225,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 case .appleIntelligenceNotEnabled:
                     return "The on-device model is unavailable because Apple Intelligence is turned off. Enable it in System Settings, then try again, or add a cloud AI key in Workspace Settings."
                 case .modelNotReady:
-                    return "The on-device model is unavailable because it is still downloading. Try again after the download finishes, or add a cloud AI key in Workspace Settings."
+                    return "The on-device model is still downloading. Write will retry automatically, or you can add a cloud AI key in Workspace Settings."
                 @unknown default:
                     return "The on-device model is unavailable right now. Try again later, or add a cloud AI key in Workspace Settings."
                 }
@@ -231,7 +255,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 if message.localizedCaseInsensitiveContains("Local Model Asset")
                     || message.localizedCaseInsensitiveContains("assets unavailable")
                 {
-                    return "The Assistant could not access a required local resource while running this request. Try again."
+                    return "The on-device model is still preparing or downloading (assets unavailable). Write will retry automatically."
                 }
                 return message
             }
@@ -240,7 +264,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             case .exceededContextWindowSize:
                 return "This request is too large for the on-device Assistant. Shorten it or split it into smaller requests."
             case .assetsUnavailable:
-                return "The Assistant could not access a required local resource while running this request. Try again."
+                return "The on-device model is still preparing or downloading (assets unavailable). Write will retry automatically."
             case .guardrailViolation:
                 return "The on-device Assistant could not complete this request because of its safety checks."
             case .unsupportedGuide:
@@ -278,9 +302,17 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         private func respond(instructions: String, prompt: String) async throws
             -> String
         {
+            NativeModelWarmup.shared.startIfNeeded()
             let session = LanguageModelSession(instructions: instructions)
-            let response = try await session.respond(to: prompt)
-            return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            do {
+                let response = try await session.respond(to: prompt)
+                return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            } catch {
+                throw BridgeError(
+                    message: Self.agentSessionErrorMessage(
+                        error,
+                        modelAvailability: SystemLanguageModel.default.availability))
+            }
         }
 
         @available(macOS 26.0, *)
@@ -1577,6 +1609,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             {
                 throw BridgeError(message: unavailable)
             }
+            NativeModelWarmup.shared.startIfNeeded()
             let (prompt, truncated) = try trimmedText(payload, key: "prompt")
             let eventTag = payload["eventTag"] as? String ?? UUID().uuidString
             let enabled = payload["tools"] as? [String]

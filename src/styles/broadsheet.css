@@ -335,6 +335,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   line-height: 1.35;
   letter-spacing: 0;
 }
+.reader-bookmark-source {
+  max-width: 760px;
+  margin: -8px auto 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.reader-bookmark-source a {
+  color: inherit;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
 .bookmark-reader-view {
   width: min(1180px, calc(100vw - 48px));
   margin: 0 auto 56px;
@@ -2119,60 +2132,39 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   gap: 5px;
   min-width: 0;
 }
+.post-bookmark-view-label {
+  padding-inline-start: 7px;
+  color: var(--ac-secondary-label);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.post-bookmark-view-segmented {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--ac-fill-3);
+}
 .post-bookmark-view-button {
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 0;
+  min-height: 28px;
+  height: 28px;
+  padding-inline: 10px;
+  border-radius: 5px;
   white-space: nowrap;
 }
 .post-bookmark-view-button.is-active {
   background: var(--ac-label);
   color: var(--ac-bg);
 }
-.post-bookmark-original-button {
-  max-width: min(36vw, 420px);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.post-bookmark-original-url {
-  min-width: 0;
-  overflow: hidden;
-  color: color-mix(in srgb, currentColor 68%, transparent);
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.post-comments-button,
 .post-bookmark-recapture {
   position: relative;
   flex: 0 0 auto;
   white-space: nowrap;
-}
-.post-comments-count {
-  min-width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  border-radius: 8px;
-  padding: 0 4px;
-  background: var(--ac-accent);
-  color: var(--ac-on-accent);
-  font-size: 10px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 16px;
-}
-@media (max-width: 1200px) {
-  .post-bookmark-original-url {
-    display: none;
-  }
-  .post-bookmark-original-button {
-    max-width: none;
-  }
 }
 .post-action-popover-wrap {
   position: relative;
@@ -2194,7 +2186,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-owner-edit,
 .post-action-share,
-.post-comments-button,
 .post-bookmark-recapture,
 .post-bookmark-view-button,
 .post-edit-menu-button,
@@ -3072,6 +3063,37 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-search-action svg {
   width: 18px;
   height: 18px;
+}
+.workspace-action-search {
+  width: min(300px, 30vw);
+  min-width: 180px;
+  flex: 1 1 240px;
+}
+.workspace-action-search.is-compact {
+  width: 36px;
+  min-width: 36px;
+  flex: 0 0 36px;
+}
+.workspace-action-search .workspace-search-field {
+  min-height: 30px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  padding-inline: 9px;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-action-search .workspace-search-field input {
+  font-size: 14px;
+}
+.workspace-root-action-toolbar .workspace-action-search {
+  width: 100%;
+  min-width: 0;
+}
+.workspace-root-action-toolbar .workspace-action-search.is-compact {
+  width: 36px;
+  min-width: 36px;
+  margin-left: auto;
 }
 .post-editor-shell.has-sidebar .post-top-action-bar {
   right: 60px;
@@ -4264,28 +4286,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   -webkit-backdrop-filter: var(--ac-mat-blur);
   backdrop-filter: var(--ac-mat-blur);
 }
-.workspace-root-action-bar.is-inline-search
-  .workspace-root-action-toolbar.is-compact:not(.is-compact-open) {
-  width: 36px;
-  margin-left: auto;
-  padding: 0;
-}
-.workspace-root-action-bar.is-inline-search
-  .workspace-root-action-toolbar
-  .workspace-search-field {
-  min-height: 30px;
-  border: 0;
-  border-radius: 6px;
-  padding-inline: 9px;
-  background: transparent;
-  box-shadow: none;
-}
-.workspace-root-action-bar.is-inline-search
-  .workspace-root-action-toolbar
-  .workspace-search-field
-  input {
-  font-size: 14px;
-}
 .workspace-root-inner {
   gap: 14px;
 }
@@ -4348,8 +4348,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   opacity: 1;
 }
 
-.post-editor-shell.is-marquee-dragging .post-editor-content,
-.post-editor-shell.is-marquee-dragging .post-editor-content * {
+.post-editor-shell.is-marquee-dragging [data-workspace-post-id],
+.post-editor-shell.is-marquee-dragging [data-workspace-post-id] * {
   -webkit-user-select: none;
   user-select: none;
 }
@@ -6217,7 +6217,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
   .post-owner-edit,
   .post-action-share,
-  .post-comments-button,
   .post-bookmark-recapture,
   .post-bookmark-view-button {
     min-height: 36px;
@@ -6230,26 +6229,23 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
   .post-top-action-bar.is-read .post-owner-edit,
   .post-action-share,
-  .post-comments-button,
-  .post-bookmark-recapture,
-  .post-bookmark-view-button {
+  .post-bookmark-recapture {
     width: 36px;
     min-width: 36px;
     gap: 0;
     padding-inline: 0;
   }
+  .post-bookmark-view-label {
+    display: none;
+  }
+  .post-bookmark-view-button {
+    width: auto;
+    min-width: 52px;
+    padding-inline: 8px;
+  }
   .post-responsive-action-label,
   .post-top-action-bar.is-read .post-owner-edit .shortcut-label {
     display: none;
-  }
-  .post-comments-count {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    min-width: 14px;
-    height: 14px;
-    padding-inline: 3px;
-    line-height: 14px;
   }
   .post-edit-menu-button,
   .post-detail-nav,
@@ -6310,9 +6306,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     gap: 2px;
   }
   .post-top-action-bar.is-read .post-owner-edit,
-  .post-comments-button,
-  .post-bookmark-recapture,
-  .post-bookmark-view-button {
+  .post-bookmark-recapture {
     width: 36px;
     min-width: 36px;
   }

@@ -2,7 +2,7 @@
 
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 
-function SearchIcon() {
+export function SearchIcon() {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <circle cx="8" cy="8" r="4.75" stroke="currentColor" strokeWidth="1.55" />

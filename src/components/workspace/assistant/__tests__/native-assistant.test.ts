@@ -99,6 +99,10 @@ describe("native assistant submissions", () => {
       ),
     );
 
+    const retryNative = vi.fn(async () => {
+      throw new Error("Resource (Local Model Asset) unavailable error.");
+    });
+    const onPreparing = vi.fn();
     const result = await fallbackForNativeAssetError({
       error: new Error("Resource (Local Model Asset) unavailable error."),
       prompt: "Summarize this",
@@ -108,13 +112,93 @@ describe("native assistant submissions", () => {
         ocr: false,
         imageUnderstanding: false,
       }),
+      retryNative,
+      retryDelaysMs: [0, 0],
+      onPreparing,
     });
 
-    expect(result?.message).toEqual({
+    expect(result).toMatchObject({
+      kind: "fallback",
+      message: {
+        role: "assistant",
+        text: "The on-device model is still downloading. Try again in a few minutes.",
+      },
+    });
+    expect(retryNative).toHaveBeenCalledTimes(2);
+    expect(onPreparing).toHaveBeenNthCalledWith(1, "downloading", 1, 2);
+    expect(onPreparing).toHaveBeenNthCalledWith(2, "downloading", 2, 2);
+    expect(result?.kind === "fallback" && result.message).toEqual({
       role: "assistant",
       text: "The on-device model is still downloading. Try again in a few minutes.",
     });
-    expect(result?.message.role).not.toBe("error");
+  });
+
+  it("retries a preparing native model and returns the local result", async () => {
+    const retryNative = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Resource (Local Model Asset) unavailable error."),
+      )
+      .mockResolvedValueOnce({ text: "Local answer", truncated: false });
+    const onPreparing = vi.fn();
+
+    await expect(
+      fallbackForNativeAssetError({
+        error: new Error("assets unavailable"),
+        prompt: "Answer locally",
+        reprobe: async () => ({
+          available: true,
+          ocr: true,
+          imageUnderstanding: false,
+        }),
+        retryNative,
+        retryDelaysMs: [0, 0, 0],
+        onPreparing,
+      }),
+    ).resolves.toEqual({
+      kind: "recovered",
+      capabilities: {
+        available: true,
+        ocr: true,
+        imageUnderstanding: false,
+      },
+      value: { text: "Local answer", truncated: false },
+    });
+    expect(retryNative).toHaveBeenCalledTimes(2);
+    expect(onPreparing).toHaveBeenNthCalledWith(1, "preparing", 1, 3);
+  });
+
+  it("does not retry a genuinely ineligible Mac", async () => {
+    vi.stubGlobal("window", { writeNativeAI: { request: vi.fn() } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ enabled: false, provider: null })),
+      ),
+    );
+    const retryNative = vi.fn();
+
+    const result = await fallbackForNativeAssetError({
+      error: new Error("Local Model Asset unavailable"),
+      prompt: "Answer locally",
+      reprobe: async () => ({
+        available: false,
+        reason: "appleIntelligenceNotEnabled",
+        ocr: true,
+        imageUnderstanding: false,
+      }),
+      retryNative,
+      retryDelaysMs: [0, 0, 0],
+    });
+
+    expect(retryNative).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      kind: "fallback",
+      message: {
+        role: "assistant",
+        text: "Apple Intelligence is turned off. Enable it in System Settings, then try again.",
+      },
+    });
   });
 
   it("marks a cloud fallback answer with its off-device provider", async () => {

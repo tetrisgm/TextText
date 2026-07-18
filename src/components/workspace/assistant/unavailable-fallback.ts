@@ -16,6 +16,36 @@ export type GracefulFallbackMessage = {
   provider?: CloudAssistantProviderLabel;
 };
 
+export type NativeAssetPreparationState = "preparing" | "downloading";
+
+export type NativeAssetRetryOutcome<T> =
+  | {
+      kind: "recovered";
+      capabilities: NativeAICapabilities;
+      value: T;
+    }
+  | {
+      kind: "fallback";
+      capabilities: NativeAICapabilities;
+      message: GracefulFallbackMessage;
+    };
+
+const DEFAULT_ASSET_RETRY_DELAYS_MS = [600, 1_200, 2_400] as const;
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function isGenuineNativeUnavailability(
+  capabilities: NativeAICapabilities,
+): boolean {
+  return (
+    !capabilities.available &&
+    capabilities.reason !== "modelNotReady" &&
+    capabilities.reason !== "unavailable"
+  );
+}
+
 export function unavailableExplanation(
   capabilities: NativeAICapabilities | null,
 ): string {
@@ -76,29 +106,62 @@ export async function runUnavailableAssistantFallback({
   }
 }
 
-export async function fallbackForNativeAssetError({
+export async function fallbackForNativeAssetError<T>({
   context,
   error,
   onCloudStart,
+  onPreparing,
   prompt,
   reprobe,
+  retryNative,
+  retryDelaysMs = DEFAULT_ASSET_RETRY_DELAYS_MS,
 }: {
   context?: CloudAssistantContext;
   error: unknown;
   onCloudStart?: (provider: CloudAssistantProviderLabel) => void;
+  onPreparing?: (
+    state: NativeAssetPreparationState,
+    attempt: number,
+    maximumAttempts: number,
+  ) => void;
   prompt: string;
   reprobe: () => Promise<NativeAICapabilities>;
-}): Promise<
-  | { capabilities: NativeAICapabilities; message: GracefulFallbackMessage }
-  | null
-> {
+  retryNative: () => Promise<T>;
+  retryDelaysMs?: readonly number[];
+}): Promise<NativeAssetRetryOutcome<T> | null> {
   if (!isNativeModelAssetError(error)) return null;
-  const capabilities = await reprobe();
+  let capabilities = await reprobe();
+
+  if (!isGenuineNativeUnavailability(capabilities)) {
+    for (const [index, delayMs] of retryDelaysMs.entries()) {
+      const attempt = index + 1;
+      const state =
+        capabilities.reason === "modelNotReady" ? "downloading" : "preparing";
+      onPreparing?.(state, attempt, retryDelaysMs.length);
+      await wait(delayMs);
+      capabilities = await reprobe();
+      if (isGenuineNativeUnavailability(capabilities)) break;
+      try {
+        const value = await retryNative();
+        return { kind: "recovered", capabilities, value };
+      } catch (retryError) {
+        if (!isNativeModelAssetError(retryError)) throw retryError;
+      }
+    }
+  }
+
+  const fallbackCapabilities = capabilities.available
+    ? { ...capabilities, available: false, reason: "modelNotReady" as const }
+    : capabilities;
   const message = await runUnavailableAssistantFallback({
-    capabilities,
+    capabilities: fallbackCapabilities,
     context,
     onCloudStart,
     prompt,
   });
-  return { capabilities, message };
+  return {
+    kind: "fallback",
+    capabilities: fallbackCapabilities,
+    message,
+  };
 }

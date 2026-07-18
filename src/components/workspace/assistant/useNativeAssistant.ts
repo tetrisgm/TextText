@@ -270,6 +270,50 @@ function proposalEdit(
   return edit;
 }
 
+type NativeQuickActionResult = Awaited<
+  ReturnType<typeof runNativeQuickAction>
+>;
+
+function appendQuickActionResult(
+  thread: string,
+  postId: string,
+  result: NativeQuickActionResult,
+) {
+  if (result.kind === "response") {
+    appendToThread(thread, "assistant", result.text || "Done.");
+    return;
+  }
+  if (result.kind === "tags-proposal") {
+    appendToThread(thread, "assistant", result.label, {
+      kind: "tags",
+      itemId: postId,
+      label: result.label,
+      beforeTags: result.beforeTags,
+      afterTags: result.afterTags,
+      addedTags: result.addedTags,
+      canApply: result.canApply,
+      note: result.note,
+      status: "pending",
+    });
+    return;
+  }
+  appendToThread(thread, "assistant", result.label, {
+    kind: "text",
+    itemId: postId,
+    field: result.field,
+    label: result.label,
+    before: result.before,
+    after: result.after,
+    source: result.source,
+    result: result.result,
+    range: result.range,
+    scope: result.scope,
+    canApply: result.canApply,
+    note: result.note,
+    status: "pending",
+  });
+}
+
 export function useNativeAssistant({
   handle,
   contextKey,
@@ -380,19 +424,17 @@ export function useNativeAssistant({
   const runGracefulFallback = useCallback(
     async ({
       capabilities: current,
-      error,
       jobId,
       prompt,
       thread,
       view,
     }: {
       capabilities?: NativeAICapabilities;
-      error?: unknown;
       jobId?: string;
       prompt: string;
       thread: string;
       view: AssistantViewSnapshot;
-    }): Promise<boolean> => {
+    }): Promise<void> => {
       const context = {
         level: view.level,
         folderPath: view.folderPath,
@@ -407,34 +449,87 @@ export function useNativeAssistant({
           });
         }
       };
-      const result =
-        error === undefined
-          ? {
-              capabilities: current ?? null,
-              message: await runUnavailableAssistantFallback({
-                capabilities: current ?? null,
-                context,
-                onCloudStart,
-                prompt,
-              }),
-            }
-          : await fallbackForNativeAssetError({
-              context,
-              error,
-              onCloudStart,
-              prompt,
-              reprobe: nativeAICapabilities,
-            });
-      if (!result) return false;
-      if (result.capabilities) setCapabilities(result.capabilities);
+      const message = await runUnavailableAssistantFallback({
+        capabilities: current ?? null,
+        context,
+        onCloudStart,
+        prompt,
+      });
       appendToThread(
         thread,
-        result.message.role,
-        result.message.text,
+        message.role,
+        message.text,
         undefined,
-        result.message.provider,
+        message.provider,
       );
-      return true;
+    },
+    [],
+  );
+
+  const recoverNativeAssetFailure = useCallback(
+    async <T,>({
+      error,
+      jobId,
+      prompt,
+      retryNative,
+      thread,
+      view,
+    }: {
+      error: unknown;
+      jobId?: string;
+      prompt: string;
+      retryNative: () => Promise<T>;
+      thread: string;
+      view: AssistantViewSnapshot;
+    }) => {
+      let preparationAnnounced = false;
+      const result = await fallbackForNativeAssetError({
+        context: {
+          level: view.level,
+          folderPath: view.folderPath,
+          postId: view.postId,
+        },
+        error,
+        onCloudStart: (provider) => {
+          setCloudProvider(provider);
+          setThreadCloudProvider(thread, provider);
+          if (jobId) {
+            updateAssistantJob(jobId, {
+              activity: `Thinking with ${provider}`,
+            });
+          }
+        },
+        onPreparing: (state, attempt, maximumAttempts) => {
+          const activity =
+            state === "downloading"
+              ? "Downloading the on-device model"
+              : "Preparing the on-device model";
+          if (!preparationAnnounced) {
+            preparationAnnounced = true;
+            appendToThread(thread, "progress", activity);
+          }
+          if (jobId) {
+            updateAssistantJob(jobId, {
+              activity: `${activity} (${attempt} of ${maximumAttempts})`,
+            });
+          }
+        },
+        prompt,
+        reprobe: nativeAICapabilities,
+        retryNative,
+      });
+      if (!result) return null;
+      setCapabilities(result.capabilities);
+      if (result.kind === "fallback") {
+        appendToThread(
+          thread,
+          result.message.role,
+          result.message.text,
+          undefined,
+          result.message.provider,
+        );
+      }
+      return result;
     },
     [],
   );
@@ -458,6 +553,9 @@ export function useNativeAssistant({
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
       const submittedView = getViewRef.current();
       let fallbackPrompt = prompt;
+      let retryNativeAgent:
+        | (() => ReturnType<typeof nativeAgent>)
+        | null = null;
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
       const jobId = startAssistantJob({
@@ -495,30 +593,42 @@ export function useNativeAssistant({
           prepared.prompt,
           context,
         );
-        const reply = await nativeAgent(prepared.prompt, {
-          context,
-          instructions,
-          tools: tools.toolNames,
-          onEvent: (event) => {
-            if (event.type === "tool") {
-              const activity =
-                TOOL_PROGRESS_LABELS[event.name] ?? `Running ${event.name}`;
-              appendToThread(thread, "progress", activity);
-              updateAssistantJob(jobId, { activity });
-            }
-          },
-        });
+        retryNativeAgent = () =>
+          nativeAgent(prepared.prompt, {
+            context,
+            instructions,
+            tools: tools.toolNames,
+            onEvent: (event) => {
+              if (event.type === "tool") {
+                const activity =
+                  TOOL_PROGRESS_LABELS[event.name] ?? `Running ${event.name}`;
+                appendToThread(thread, "progress", activity);
+                updateAssistantJob(jobId, { activity });
+              }
+            },
+          });
+        const reply = await retryNativeAgent();
         appendToThread(thread, "assistant", reply.text || "Done.");
         updateAssistantJob(jobId, { status: "done" });
       } catch (error) {
-        const handled = await runGracefulFallback({
-          error,
-          jobId,
-          prompt: fallbackPrompt,
-          thread,
-          view: submittedView,
-        });
-        if (handled) {
+        const recovery = retryNativeAgent
+          ? await recoverNativeAssetFailure({
+              error,
+              jobId,
+              prompt: fallbackPrompt,
+              retryNative: retryNativeAgent,
+              thread,
+              view: submittedView,
+            })
+          : null;
+        if (recovery) {
+          if (recovery.kind === "recovered") {
+            appendToThread(
+              thread,
+              "assistant",
+              recovery.value.text || "Done.",
+            );
+          }
           updateAssistantJob(jobId, { status: "done" });
           return;
         }
@@ -535,7 +645,15 @@ export function useNativeAssistant({
         setThreadBusy(thread, false);
       }
     },
-    [contextKey, contextLabel, handle, runGracefulFallback, threadKey, tools],
+    [
+      contextKey,
+      contextLabel,
+      handle,
+      recoverNativeAssetFailure,
+      runGracefulFallback,
+      threadKey,
+      tools,
+    ],
   );
 
   const runQuickAction = useCallback(
@@ -549,6 +667,9 @@ export function useNativeAssistant({
           ?.label ?? action;
       setThreadBusy(thread, true);
       let fallbackPrompt = `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
+      let retryNativeAction:
+        | (() => ReturnType<typeof runNativeQuickAction>)
+        | null = null;
       try {
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
@@ -582,48 +703,25 @@ export function useNativeAssistant({
           );
           return;
         }
-        const result = await runNativeQuickAction(action, item);
-        if (result.kind === "response") {
-          appendToThread(thread, "assistant", result.text || "Done.");
-          return;
-        }
-        if (result.kind === "tags-proposal") {
-          appendToThread(thread, "assistant", result.label, {
-            kind: "tags",
-            itemId: view.postId,
-            label: result.label,
-            beforeTags: result.beforeTags,
-            afterTags: result.afterTags,
-            addedTags: result.addedTags,
-            canApply: result.canApply,
-            note: result.note,
-            status: "pending",
-          });
-          return;
-        }
-        appendToThread(thread, "assistant", result.label, {
-          kind: "text",
-          itemId: view.postId,
-          field: result.field,
-          label: result.label,
-          before: result.before,
-          after: result.after,
-          source: result.source,
-          result: result.result,
-          range: result.range,
-          scope: result.scope,
-          canApply: result.canApply,
-          note: result.note,
-          status: "pending",
-        });
+        retryNativeAction = () => runNativeQuickAction(action, item);
+        const result = await retryNativeAction();
+        appendQuickActionResult(thread, view.postId, result);
       } catch (error) {
-        const handled = await runGracefulFallback({
-          error,
-          prompt: fallbackPrompt,
-          thread,
-          view,
-        });
-        if (handled) return;
+        const recovery = retryNativeAction
+          ? await recoverNativeAssetFailure({
+              error,
+              prompt: fallbackPrompt,
+              retryNative: retryNativeAction,
+              thread,
+              view,
+            })
+          : null;
+        if (recovery) {
+          if (recovery.kind === "recovered") {
+            appendQuickActionResult(thread, view.postId, recovery.value);
+          }
+          return;
+        }
         appendToThread(
           thread,
           "error",
@@ -636,7 +734,7 @@ export function useNativeAssistant({
         setThreadBusy(thread, false);
       }
     },
-    [runGracefulFallback, threadKey],
+    [recoverNativeAssetFailure, runGracefulFallback, threadKey],
   );
 
   const applyProposalValue = useCallback(

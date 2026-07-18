@@ -1,4 +1,20 @@
-# Write: Codex continuation (2026-07-18, batch 4 + release watch)
+# Write: Codex continuation (2026-07-18, batch 4 completed)
+
+## Current status
+
+Batch 4 is implemented and verified. Items A through H below are retained as the
+historical acceptance criteria, not as pending work.
+
+- Native Foundation Models sessions prewarm and retry bounded asset preparation.
+- Reader text selection no longer starts the workspace marquee.
+- Selected reader text can create anchored comments, and threads render inline.
+- Bookmark recapture, source captions, and Reader or Full controls use the agreed chrome.
+- Root, folder, and item views share one responsive search control, including item highlights.
+- Web verification passed: TypeScript, 565 tests, and the production Next build.
+- Mac verification passed: Swift build and 366 tests.
+
+The next durable release is `0.99`. The prior local `0.98` install was ahead of the
+public `0.97` feed, so `0.98` must not be reused as an immutable release identifier.
 
 You (Codex, gpt-5.6-sol, high + priority) are continuing an autonomous build effort on
 Write. Read AGENTS.md, CLAUDE.md, DESIGN.md, and docs/codex/HANDOFF.md first. Work on
@@ -9,17 +25,12 @@ writer on the main tree at a time; if a ship is grinding, work in a git worktree
 do not add load to the machine during its test phase (concurrent load causes test flakes).
 
 ## Release state (as of handoff)
-- Last CLEAN public release: 0.97 (write.ramine.net serves 0.97/103).
-- 0.98 is shipping. The pipeline was hardened this session and both prior drift causes are
-  fixed in committed code: (1) the release health gate now blocks only on a hard FAIL and
-  tolerates a transient `finder.provider` warning (ship.sh uses `health:review
-  --fail-on-failure`; commit 2051ffb); (2) Mac tests are load-tolerant with retry (2b75a80,
-  2051ffb). Let the daemon land 0.98. If a ship FAILS AGAIN with the hardening in place,
-  that is a NEW cause: read release/.autobuild.log, find the exact failing test or gate,
-  and fix THAT (do not just retry). The build number is monotonic: max(source, installed)+1
-  in mac/scripts/release.sh (do not regress it). Do NOT babysit a healthy ship.
+- Last clean public release before this batch: 0.97 (write.ramine.net serves 0.97/103).
+- The installed 0.98 build was produced by an interrupted earlier ship and is not public.
+- Ship this completed batch as 0.99. The build number remains monotonic through
+  `max(source, installed) + 1` in `mac/scripts/release.sh`.
 
-## The work to do: BATCH 4 (all anchors are current-tree file:line; re-grep the symbol if drifted)
+## Completed acceptance criteria: batch 4
 
 ### A. On-device model actually usable (the top user complaint)
 The Assistant errors "could not access a required local resource" because FoundationModels

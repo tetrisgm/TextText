@@ -27,7 +27,7 @@ import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { PostCard } from "@/components/PostCard";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
-import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
+import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import {
   WorkspaceItemActions,
   WorkspaceItemStar,
@@ -243,7 +243,9 @@ function FolderActionBar({
   onChangeView,
   onCreate,
   onRename,
-  onSearch,
+  searchFocusRequestKey,
+  searchValue,
+  onSearchValueChange,
   onDeleteFolder,
 }: {
   blog: Blog;
@@ -255,7 +257,9 @@ function FolderActionBar({
   onChangeView: (mode: FolderViewMode) => void;
   onCreate: () => void;
   onRename: () => void;
-  onSearch?: () => void;
+  searchFocusRequestKey?: number;
+  searchValue: string;
+  onSearchValueChange: (value: string) => void;
   onDeleteFolder?: FolderDeleteFolder;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -302,7 +306,20 @@ function FolderActionBar({
     <>
       <div className="folder-top-action-bar applecms" aria-label="Folder actions">
         <div className="folder-action-toolbar ac-chrome">
-          {onSearch && <WorkspaceSearchButton onSearch={onSearch} />}
+          <WorkspaceActionSearch
+            ariaLabel={`Search ${folder.name}`}
+            focusRequestKey={searchFocusRequestKey}
+            placeholder={`Search ${folder.name}`}
+            value={searchValue}
+            onChange={onSearchValueChange}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              event.stopPropagation();
+              if (searchValue) onSearchValueChange("");
+              else event.currentTarget.blur();
+            }}
+          />
           {canShare && (
             <ShortcutTooltip label="Share" placement="bottom">
               <button
@@ -1131,8 +1148,8 @@ export function FolderPage({
   onOpenTag,
   createBookmarkRequestKey,
   editRequestKey = 0,
+  searchFocusRequestKey = 0,
   onSelectPost,
-  onSearch,
   selectedPostId,
   selectedPostIds,
   onDeleteFolder,
@@ -1152,8 +1169,8 @@ export function FolderPage({
   onOpenTag?: (tag: string) => void;
   createBookmarkRequestKey?: number;
   editRequestKey?: number;
+  searchFocusRequestKey?: number;
   onSelectPost?: (postId: string) => void;
-  onSearch?: () => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
   onDeleteFolder?: FolderDeleteFolder;
@@ -1232,7 +1249,9 @@ export function FolderPage({
         onChangeView={changeView}
         onCreate={() => dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)}
         onRename={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
-        onSearch={onSearch}
+        searchFocusRequestKey={searchFocusRequestKey}
+        searchValue={filterQuery}
+        onSearchValueChange={setFilterQuery}
         onDeleteFolder={onDeleteFolder}
       />
       <header className="post-folder-page-header">

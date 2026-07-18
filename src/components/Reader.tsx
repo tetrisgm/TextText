@@ -40,6 +40,17 @@ function upgradeHttpImageSrc(src: string | undefined): string {
   return value.startsWith("http://") ? `https://${value.slice(7)}` : value;
 }
 
+function safeBookmarkOriginalUrl(post: Post): string {
+  const raw = post.capture?.url?.trim() || post.links?.[0]?.href?.trim() || "";
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
 function BookmarkMeta({ post }: { post: Post }) {
   const items = [
     post.body ? `${readingTimeMin(post.body)} min read` : "",
@@ -76,6 +87,8 @@ export function Reader({
     ? ({ "--post-accent": accent } as CSSProperties)
     : undefined;
   const title = post.title.trim() || "Untitled";
+  const bookmarkOriginalUrl =
+    post.type === "bookmark" ? safeBookmarkOriginalUrl(post) : "";
   const titleId = "reader-title";
   const coverSource = resolveCoverSource(post);
   const resolvedCover = coverSource.src;
@@ -151,6 +164,14 @@ export function Reader({
           <h1 className="reader-title" id={titleId}>
             {title}
           </h1>
+        )}
+        {bookmarkOriginalUrl && (
+          <p className="reader-bookmark-source">
+            originally captured from:{" "}
+            <a href={bookmarkOriginalUrl} rel="noreferrer" target="_blank">
+              {bookmarkOriginalUrl}
+            </a>
+          </p>
         )}
         {slots && Object.prototype.hasOwnProperty.call(slots, "tags")
           ? slots.tags

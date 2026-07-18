@@ -16,7 +16,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   createFolderItemAction,
@@ -67,6 +67,9 @@ import {
 } from "@/components/editor/EditableCover";
 import { LocalWorkspaceBodyEditor } from "@/components/LocalWorkspaceBodyEditor";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
+import { ReaderComments } from "@/components/workspace/ReaderComments";
+import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
+import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import { WorkspaceSettings } from "@/components/workspace/WorkspaceSettings";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
@@ -868,20 +871,6 @@ function SidebarCollapseIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="4.75" stroke="currentColor" strokeWidth="1.55" />
-      <path
-        d="m11.6 11.6 3.1 3.1"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.55"
       />
     </svg>
   );
@@ -2287,57 +2276,15 @@ function WorkspaceSearchActionBar({ onSearch }: { onSearch: () => void }) {
 
 function WorkspaceRootSearchActionBar({
   children,
-  focusRequestKey,
-  searchRef,
 }: {
   children: ReactNode;
-  focusRequestKey: number;
-  searchRef: RefObject<HTMLInputElement | null>;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [compact, setCompact] = useState(false);
-  const [compactOpen, setCompactOpen] = useState(false);
-
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!container || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      const nextCompact = (entry?.contentRect.width ?? 0) < 360;
-      setCompact(nextCompact);
-      if (!nextCompact) setCompactOpen(false);
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (focusRequestKey <= 0) return;
-    if (compact) setCompactOpen(true);
-    window.requestAnimationFrame(() => searchRef.current?.focus());
-  }, [compact, focusRequestKey, searchRef]);
-
-  const openCompactSearch = () => {
-    setCompactOpen(true);
-    window.requestAnimationFrame(() => searchRef.current?.focus());
-  };
-
   return (
     <div
-      ref={containerRef}
       className="workspace-root-action-bar is-inline-search applecms"
       aria-label="Workspace actions"
     >
-      <div
-        className={`workspace-root-action-toolbar ac-chrome${
-          compact ? " is-compact" : ""
-        }${compactOpen ? " is-compact-open" : ""}`}
-      >
-        {!compact || compactOpen ? (
-          children
-        ) : (
-          <WorkspaceSearchButton onSearch={openCompactSearch} />
-        )}
-      </div>
+      <div className="workspace-root-action-toolbar ac-chrome">{children}</div>
     </div>
   );
 }
@@ -2629,40 +2576,32 @@ function WorkspaceRootLanding({
       className="workspace-root-page"
       aria-labelledby="workspace-root-title"
     >
-      <WorkspaceRootSearchActionBar
-        focusRequestKey={focusRequestKey}
-        searchRef={searchRef}
-      >
-        <div className="workspace-search-field">
-          <SearchIcon />
-          <input
-            ref={searchRef}
-            type="search"
-            value={query}
-            aria-label="Search workspace"
-            aria-keyshortcuts="/"
-            placeholder="Search workspace"
-            onChange={(event) => changeQuery(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                handSearchInputToBody("down");
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                handSearchInputToBody("up");
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                openResult(selectedSearchResult);
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                if (query) changeQuery("");
-                else searchRef.current?.blur();
-              }
-            }}
-          />
-          <kbd>/</kbd>
-        </div>
+      <WorkspaceRootSearchActionBar>
+        <WorkspaceActionSearch
+          ariaLabel="Search workspace"
+          focusRequestKey={focusRequestKey}
+          inputRef={searchRef}
+          placeholder="Search workspace"
+          value={query}
+          onChange={changeQuery}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              handSearchInputToBody("down");
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              handSearchInputToBody("up");
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              openResult(selectedSearchResult);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              if (query) changeQuery("");
+              else searchRef.current?.blur();
+            }
+          }}
+        />
       </WorkspaceRootSearchActionBar>
       <div className="workspace-root-inner">
         {bodyMode === "tag" ? (
@@ -3427,10 +3366,8 @@ function safeBookmarkViewUrl(value: string | undefined): string {
 }
 
 function BookmarkViewBody({
-  mode,
   post,
 }: {
-  mode: Exclude<BookmarkContentMode, "readable">;
   post: Post;
 }) {
   const title = post.title.trim() || post.capture?.title?.trim() || "Bookmark";
@@ -3439,11 +3376,7 @@ function BookmarkViewBody({
     .map((tile) => ({ ...tile, url: safeBookmarkViewUrl(tile.url) }))
     .filter((tile) => tile.url)
     .sort((a, b) => a.index - b.index);
-  const originalUrl =
-    safeBookmarkViewUrl(post.capture?.url) ||
-    safeBookmarkViewUrl(post.links?.[0]?.href);
-
-  if (mode === "capture" && (screenshotTiles.length > 0 || screenshotUrl)) {
+  if (screenshotTiles.length > 0 || screenshotUrl) {
     return (
       <section className="bookmark-reader-view is-capture">
         {(screenshotTiles.length > 0
@@ -3463,23 +3396,7 @@ function BookmarkViewBody({
     );
   }
 
-  const url = originalUrl;
-  if (!url) {
-    return <ErrorBody message="This bookmark view is not available yet." />;
-  }
-
-  return (
-    <section className={`bookmark-reader-view is-${mode}`}>
-      <iframe
-        className="bookmark-reader-frame"
-        src={url}
-        title={title}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
-      />
-    </section>
-  );
+  return <ErrorBody message="This bookmark capture is not available yet." />;
 }
 
 function WorkspacePostReader({
@@ -3491,6 +3408,7 @@ function WorkspacePostReader({
   onNavigate,
   onOpenTag,
   onSearch,
+  searchFocusRequestKey,
   pool,
   poolPost,
   returnToSearch,
@@ -3503,6 +3421,7 @@ function WorkspacePostReader({
   onNavigate: (path: string) => Promise<void> | void;
   onOpenTag: (tag: string) => void;
   onSearch: () => void;
+  searchFocusRequestKey: number;
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
@@ -3528,6 +3447,15 @@ function WorkspacePostReader({
     },
     [poolPost.id],
   );
+  const [findState, setFindState] = useState({
+    postId: poolPost.id,
+    query: "",
+  });
+  const findQuery = findState.postId === poolPost.id ? findState.query : "";
+  const setFindQuery = useCallback(
+    (query: string) => setFindState({ postId: poolPost.id, query }),
+    [poolPost.id],
+  );
 
   useEffect(() => {
     if (entry.status === "idle" || stale) load(stale);
@@ -3545,8 +3473,8 @@ function WorkspacePostReader({
       ? localizeRemoteMarkdownImages(body, bodyImageReplacements)
       : body;
   const bodySlot =
-    post.type === "bookmark" && bookmarkContentMode !== "readable" ? (
-      <BookmarkViewBody mode={bookmarkContentMode} post={post} />
+    post.type === "bookmark" && bookmarkContentMode === "capture" ? (
+      <BookmarkViewBody post={post} />
     ) : entry.status === "ready" ? (
       <MarkdownBody
         allowedRemoteImages={new Set(bodyImageReplacements.values())}
@@ -3594,9 +3522,22 @@ function WorkspacePostReader({
           await onNavigate(path);
         }}
         onSearch={onSearch}
+        searchFocusRequestKey={searchFocusRequestKey}
+        searchValue={findQuery}
+        onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
       <ReaderComponent blog={blog} post={post} slots={slots} />
+      <ReaderFindHighlights query={findQuery} />
+      {canCommentPost && post.id && entry.status === "ready" && (
+        <ReaderComments
+          key={post.id}
+          canResolve={canManagePost}
+          handle={blog.handle}
+          postId={post.id}
+          sourceBody={body}
+        />
+      )}
       <BacklinksPanel
         blog={blog}
         posts={backlinks}
@@ -3618,6 +3559,7 @@ function LocalWorkspacePostEditor({
   onNavigate,
   onOpenTag,
   onSearch,
+  searchFocusRequestKey,
   pool,
   poolPost,
   returnToSearch,
@@ -3633,6 +3575,7 @@ function LocalWorkspacePostEditor({
   onNavigate: (path: string) => Promise<void> | void;
   onOpenTag: (tag: string) => void;
   onSearch: () => void;
+  searchFocusRequestKey: number;
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
@@ -3686,6 +3629,7 @@ function LocalWorkspacePostEditor({
   const [deleting, setDeleting] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
+  const [findQuery, setFindQuery] = useState("");
   const usedSlugs = useMemo(
     () =>
       pool.posts
@@ -4286,6 +4230,9 @@ function LocalWorkspacePostEditor({
           await onNavigate(path);
         }}
         onSearch={onSearch}
+        searchFocusRequestKey={searchFocusRequestKey}
+        searchValue={findQuery}
+        onSearchValueChange={setFindQuery}
         onSlugBlur={() => {
           updateDraft({ slug: slugify(draft.slug, post.slug) });
         }}
@@ -4423,6 +4370,7 @@ function LocalWorkspacePostEditor({
             ),
           }}
         />
+        <ReaderFindHighlights query={findQuery} />
         <BacklinksPanel
           blog={blog}
           posts={backlinks}
@@ -4619,7 +4567,7 @@ function LocalWorkspaceContent({
           onItemClick={onItemClick}
           createBookmarkRequestKey={createBookmarkRequestKey}
           editRequestKey={editFolderRequestKey}
-          onSearch={onSearch}
+          searchFocusRequestKey={searchFocusRequestKey}
           onSelectPost={onSelectPost}
           selectedPostId={selectedPostId}
           selectedPostIds={selectedPostIds}
@@ -4639,6 +4587,7 @@ function LocalWorkspaceContent({
         onNavigate={onNavigate}
         onOpenTag={onOpenTag}
         onSearch={onSearch}
+        searchFocusRequestKey={searchFocusRequestKey}
         pool={pool}
         poolPost={post}
         returnToSearch={view.returnToSearch}
@@ -4671,6 +4620,7 @@ function LocalWorkspaceContent({
             onNavigate={onNavigate}
             onOpenTag={onOpenTag}
             onSearch={onSearch}
+            searchFocusRequestKey={searchFocusRequestKey}
             pool={pool}
             poolPost={activePost}
             returnToSearch={
@@ -5131,18 +5081,8 @@ function LocalWorkspaceShell({
   );
 
   const focusSearch = useCallback(() => {
-    if (
-      viewRef.current.level !== "root" &&
-      viewRef.current.level !== "search"
-    ) {
-      setSearchQuery("");
-      navigateToView({ level: "root" }, workspaceRootHref(homePath), {
-        selectedPostId: null,
-        selectedSectionPath: null,
-      });
-    }
     setSearchFocusRequestKey((current) => current + 1);
-  }, [homePath, navigateToView]);
+  }, []);
 
   const changeSearchQuery = useCallback(
     (nextQuery: string) => {
@@ -6774,7 +6714,7 @@ function LocalWorkspaceShell({
         target instanceof Element &&
         Boolean(
           target.closest(
-            '[role="option"], a, button, input, select, textarea, [contenteditable="true"], [role="menu"], [role="dialog"]',
+            '.reader, .reader-prose, [data-static-prose], [role="option"], a, button, input, select, textarea, [contenteditable="true"], [role="menu"], [role="dialog"]',
           ),
         );
       if (

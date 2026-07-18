@@ -21,8 +21,8 @@ import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { shortcutLabelForCommand } from "@/lib/commands/workspace";
 import { preloadPostEditLayer } from "@/components/preloadPostEditLayer";
-import { CommentsDialog } from "@/components/workspace/CommentsDialog";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
+import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
@@ -50,6 +50,9 @@ type CommonProps = {
   onBookmarkCaptureChange?: (post: Post) => void;
   onNavigate?: (path: string) => Promise<void> | void;
   onSearch?: () => void;
+  searchFocusRequestKey?: number;
+  searchValue?: string;
+  onSearchValueChange?: (value: string) => void;
   presencePeers?: PresencePeer[];
 };
 
@@ -77,7 +80,7 @@ type EditProps = CommonProps & {
 };
 
 type Props = ReadProps | EditProps;
-export type BookmarkContentMode = "readable" | "capture" | "original";
+export type BookmarkContentMode = "readable" | "capture";
 type ReadState = {
   sourceVersion: string;
   dirty: boolean;
@@ -140,18 +143,6 @@ function safePostUrl(value: string | undefined): string {
     return "";
   }
   return "";
-}
-
-function displayUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    const path = `${url.pathname}${url.search}`.replace(/\/$/, "");
-    const text = `${url.hostname.replace(/^www\./, "")}${path}`;
-    if (text.length <= 46) return text;
-    return `${text.slice(0, 43)}...`;
-  } catch {
-    return value.length <= 46 ? value : `${value.slice(0, 43)}...`;
-  }
 }
 
 function initials(name: string): string {
@@ -282,19 +273,6 @@ function ShareIcon() {
   );
 }
 
-function CommentIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M3.1 3.1h9.8v7.1H7.3L4.2 13v-2.8H3.1V3.1Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.35"
-      />
-    </svg>
-  );
-}
-
 function RecaptureIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -304,43 +282,6 @@ function RecaptureIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.45"
-      />
-    </svg>
-  );
-}
-
-function CaptureIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect
-        x="2.5"
-        y="3"
-        width="11"
-        height="9.5"
-        rx="1.2"
-        stroke="currentColor"
-        strokeWidth="1.3"
-      />
-      <path
-        d="m4.2 10 2.2-2.2 1.7 1.7 1.4-1.4 2.3 2.3"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.2"
-      />
-    </svg>
-  );
-}
-
-function OriginalIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M6.3 3H3.7A1.7 1.7 0 0 0 2 4.7v7.6A1.7 1.7 0 0 0 3.7 14h7.6a1.7 1.7 0 0 0 1.7-1.7V9.7M9 2h5v5M13.5 2.5 7.2 8.8"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
       />
     </svg>
   );
@@ -383,10 +324,12 @@ function bookmarkWithCaptureSnapshot(
 
 function BookmarkRecaptureControl({
   handle,
+  menuItem = false,
   post,
   onCaptureChange,
 }: {
   handle: string;
+  menuItem?: boolean;
   post: Post;
   onCaptureChange?: (post: Post) => void;
 }) {
@@ -454,7 +397,12 @@ function BookmarkRecaptureControl({
     <>
       <button
         type="button"
-        className="post-bookmark-recapture ac-btn ac-btn-gray"
+        className={
+          menuItem
+            ? "post-edit-menu-item post-bookmark-recapture-menu-item"
+            : "post-bookmark-recapture ac-btn ac-btn-gray"
+        }
+        role={menuItem ? "menuitem" : undefined}
         disabled={pending || starting}
         aria-label={
           pending ? "Bookmark capture in progress" : "Recapture bookmark"
@@ -462,10 +410,12 @@ function BookmarkRecaptureControl({
         title={error || (pending ? "Bookmark capture in progress" : "Recapture")}
         onClick={() => void recapture()}
       >
-        <span className="post-action-button-icon">
-          <RecaptureIcon />
-        </span>
-        <span className="post-responsive-action-label">
+        {!menuItem && (
+          <span className="post-action-button-icon">
+            <RecaptureIcon />
+          </span>
+        )}
+        <span className={menuItem ? undefined : "post-responsive-action-label"}>
           {pending ? (requested ? "Recapturing" : "Capturing") : "Recapture"}
         </span>
       </button>
@@ -565,8 +515,6 @@ export function PostActionBar(props: Props) {
   const readBaseUpdatedAtRef = useRef(props.post.updatedAt);
   const [shareOpen, setShareOpen] = useState(false);
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [openCommentCount, setOpenCommentCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const origin = useSyncExternalStore(
@@ -585,7 +533,6 @@ export function PostActionBar(props: Props) {
   }));
   const canEditPost = props.canEditPost ?? props.owner;
   const canManagePost = props.canManagePost ?? props.owner;
-  const canCommentPost = props.canCommentPost ?? canEditPost;
 
   const closeShare = useCallback(() => setShareOpen(false), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -636,7 +583,6 @@ export function PostActionBar(props: Props) {
   useEffect(() => {
     const closePopovers = () => {
       setShareOpen(false);
-      setCommentsOpen(false);
       setTypeOpen(false);
       setSettingsOpen(false);
     };
@@ -809,21 +755,18 @@ export function PostActionBar(props: Props) {
   }, [publicUrl]);
 
   const openShare = useCallback(() => {
-    setCommentsOpen(false);
     setTypeOpen(false);
     setSettingsOpen(false);
     setShareOpen((open) => !open);
   }, []);
 
   const openSettings = useCallback(() => {
-    setCommentsOpen(false);
     setShareOpen(false);
     setTypeOpen(false);
     setSettingsOpen((open) => !open);
   }, []);
 
   const openType = useCallback(() => {
-    setCommentsOpen(false);
     setShareOpen(false);
     setSettingsOpen(false);
     setTypeOpen((open) => !open);
@@ -924,11 +867,6 @@ export function PostActionBar(props: Props) {
   const showPostNav = props.mode === "read" && Boolean(previousPath || nextPath);
   const bookmarkMode =
     props.mode === "read" ? (props.bookmarkContentMode ?? "readable") : "readable";
-  const bookmarkOriginalUrl =
-    props.mode === "read" && props.post.type === "bookmark"
-      ? safePostUrl(props.post.capture?.url) ||
-        safePostUrl(props.post.links?.[0]?.href)
-      : "";
   const bookmarkCaptureUrl =
     props.mode === "read" && props.post.type === "bookmark"
       ? safePostUrl(props.post.capture?.screenshotTiles?.[0]?.url) ||
@@ -938,100 +876,42 @@ export function PostActionBar(props: Props) {
     props.mode === "read" &&
     props.post.type === "bookmark" &&
     props.onBookmarkContentModeChange &&
-    (bookmarkCaptureUrl || bookmarkOriginalUrl) ? (
-      <div className="post-bookmark-action-group" aria-label="Bookmark views">
-        {bookmarkCaptureUrl && (
+    bookmarkCaptureUrl ? (
+      <div
+        className="post-bookmark-action-group"
+        role="group"
+        aria-label="Bookmark view"
+      >
+        <span className="post-bookmark-view-label">View as:</span>
+        <div className="post-bookmark-view-segmented">
+          <button
+            type="button"
+            className={`post-bookmark-view-button ac-btn ac-btn-gray${
+              bookmarkMode === "readable" ? " is-active" : ""
+            }`}
+            aria-pressed={bookmarkMode === "readable"}
+            onClick={() => props.onBookmarkContentModeChange?.("readable")}
+          >
+            Reader
+          </button>
           <button
             type="button"
             className={`post-bookmark-view-button ac-btn ac-btn-gray${
               bookmarkMode === "capture" ? " is-active" : ""
             }`}
             aria-pressed={bookmarkMode === "capture"}
-            aria-label="Show full bookmark capture"
-            title="Show full capture"
-            onClick={() =>
-              props.onBookmarkContentModeChange?.(
-                bookmarkMode === "capture" ? "readable" : "capture",
-              )
-            }
+            onClick={() => props.onBookmarkContentModeChange?.("capture")}
           >
-            <span className="post-action-button-icon">
-              <CaptureIcon />
-            </span>
-            <span className="post-responsive-action-label">Show full capture</span>
+            Full
           </button>
-        )}
-        {bookmarkOriginalUrl && (
-          <button
-            type="button"
-            className={`post-bookmark-view-button post-bookmark-original-button ac-btn ac-btn-gray${
-              bookmarkMode === "original" ? " is-active" : ""
-            }`}
-            aria-pressed={bookmarkMode === "original"}
-            aria-label="Show original bookmark page"
-            title={bookmarkOriginalUrl}
-            onClick={() =>
-              props.onBookmarkContentModeChange?.(
-                bookmarkMode === "original" ? "readable" : "original",
-              )
-            }
-          >
-            <span className="post-action-button-icon">
-              <OriginalIcon />
-            </span>
-            <span className="post-responsive-action-label">Original</span>
-            <span className="post-bookmark-original-url">
-              {displayUrl(bookmarkOriginalUrl)}
-            </span>
-          </button>
-        )}
+        </div>
       </div>
     ) : null;
-  const commentsControl = canCommentPost && props.post.id ? (
-    <button
-      type="button"
-      className="post-comments-button ac-btn ac-btn-gray"
-      aria-haspopup="dialog"
-      aria-expanded={commentsOpen}
-      aria-label={
-        openCommentCount > 0
-          ? `Comments, ${openCommentCount} open`
-          : "Comments"
-      }
-      title="Comments"
-      onClick={() => {
-        setShareOpen(false);
-        setTypeOpen(false);
-        setSettingsOpen(false);
-        setCommentsOpen(true);
-      }}
-    >
-      <span className="post-action-button-icon">
-        <CommentIcon />
-      </span>
-      <span className="post-responsive-action-label">Comments</span>
-      {openCommentCount > 0 && (
-        <span className="post-comments-count" aria-hidden="true">
-          {openCommentCount > 99 ? "99+" : openCommentCount}
-        </span>
-      )}
-    </button>
-  ) : null;
-  const recaptureControl =
-    canManagePost && props.post.id && props.post.type === "bookmark" ? (
-      <BookmarkRecaptureControl
-        handle={props.blog.handle}
-        post={props.post}
-        onCaptureChange={props.onBookmarkCaptureChange}
-      />
-    ) : null;
   const showTopActionBar =
-    Boolean(props.onSearch) ||
+    Boolean(props.onSearch || props.onSearchValueChange) ||
     canEditPost ||
-    canCommentPost ||
     showPostNav ||
-    Boolean(bookmarkControls) ||
-    Boolean(recaptureControl);
+    Boolean(bookmarkControls);
   const showAddHeaderItem =
     props.mode === "edit" &&
     activeDraft.type === "article" &&
@@ -1171,18 +1051,28 @@ export function PostActionBar(props: Props) {
           aria-label="Post controls"
         >
           <div className="post-action-toolbar ac-chrome">
-            {props.onSearch && (
+            {props.onSearchValueChange ? (
+              <WorkspaceActionSearch
+                ariaLabel={`Find in ${postTitle(activeDraft.title)}`}
+                focusRequestKey={props.searchFocusRequestKey}
+                placeholder="Find in page"
+                value={props.searchValue ?? ""}
+                onChange={props.onSearchValueChange}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (props.searchValue) props.onSearchValueChange?.("");
+                  else event.currentTarget.blur();
+                }}
+              />
+            ) : props.onSearch ? (
               <WorkspaceSearchButton onSearch={props.onSearch} />
-            )}
-            {(canEditPost ||
-              canCommentPost ||
-              bookmarkControls ||
-              recaptureControl) && (
+            ) : null}
+            {(canEditPost || bookmarkControls) && (
               <div className="post-action-owner-group">
                 {bookmarkControls}
                 {canManagePost && shareControl}
-                {commentsControl}
-                {recaptureControl}
                 {canEditPost && presenceControl}
                 {canManagePost &&
                   props.mode === "edit" &&
@@ -1266,6 +1156,14 @@ export function PostActionBar(props: Props) {
                             Add header image
                           </button>
                         )}
+                        {activeDraft.type === "bookmark" && props.post.id && (
+                          <BookmarkRecaptureControl
+                            handle={props.blog.handle}
+                            menuItem
+                            post={props.post}
+                            onCaptureChange={props.onBookmarkCaptureChange}
+                          />
+                        )}
                         <button
                           className="post-edit-delete"
                           type="button"
@@ -1328,18 +1226,6 @@ export function PostActionBar(props: Props) {
             )}
           </div>
         </div>
-      )}
-      {canCommentPost && props.post.id && (
-        <CommentsDialog
-          key={props.post.id}
-          canResolve={canEditPost}
-          handle={props.blog.handle}
-          postId={props.post.id}
-          postTitle={postTitle(activeDraft.title)}
-          open={commentsOpen}
-          onClose={() => setCommentsOpen(false)}
-          onOpenCountChange={setOpenCommentCount}
-        />
       )}
     </>
   );
