@@ -47,8 +47,23 @@ require_release_env WRITE_APP_GROUP
 ORIGIN="${WRITE_PRODUCT_ORIGIN%/}"
 
 # 1. Bump. CFBundleVersion is Sparkle's monotonic comparison key; it is
-# auto-incremented here so no human ever hand-edits it.
-BUILD="$(( $("$PB" -c 'Print :CFBundleVersion' "$MAC/Info.plist") + 1 ))"
+# auto-incremented here so no human ever hand-edits it. Advance past BOTH the
+# source build AND any already-installed build: a ship that installed build N
+# and then failed before the release commit landed restores the source to N-1,
+# so a naive +1 would recompute the SAME N on retry and trip the "not newer than
+# installed" guard below forever. Taking the max makes every retry move forward.
+SOURCE_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$MAC/Info.plist")"
+INSTALLED_BUILD_FOR_BUMP=0
+BUMP_INSTALLED_APP="${WRITE_INSTALLED_APP_PATH:-}"
+if [ -z "$BUMP_INSTALLED_APP" ]; then
+  for candidate in /Applications/Write.app "$HOME/Applications/Write.app"; do
+    if [ -d "$candidate" ]; then BUMP_INSTALLED_APP="$candidate"; break; fi
+  done
+fi
+if [ -n "$BUMP_INSTALLED_APP" ] && [ -f "$BUMP_INSTALLED_APP/Contents/Info.plist" ]; then
+  INSTALLED_BUILD_FOR_BUMP="$("$PB" -c 'Print :CFBundleVersion' "$BUMP_INSTALLED_APP/Contents/Info.plist" 2>/dev/null || echo 0)"
+fi
+BUILD=$(( ( SOURCE_BUILD > INSTALLED_BUILD_FOR_BUMP ? SOURCE_BUILD : INSTALLED_BUILD_FOR_BUMP ) + 1 ))
 "$PB" -c "Set :CFBundleShortVersionString $VERSION" "$MAC/Info.plist"
 "$PB" -c "Set :CFBundleVersion $BUILD" "$MAC/Info.plist"
 echo ">> version v$VERSION (build $BUILD)"
