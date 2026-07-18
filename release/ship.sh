@@ -121,6 +121,9 @@ if [ "$SKIP_TESTS" != "1" ]; then
     sleep $((15 * attempt))
   done
   [ "$mac_ok" = 1 ] || { echo "Mac tests failed after 3 attempts" >&2; exit 1; }
+  echo ">> verify live on-device assistant"
+  WRITE_LIVE_AI_PROBE=1 swift test --package-path "$ROOT/mac" \
+    --filter NativeAIIntegrationProbeTests/testLiveAgentToolSession
   echo ">> verify Next build"
   npm run build
   echo ">> evaluate Apple platform contract"
@@ -282,78 +285,170 @@ INSTALL_PATH="${WRITE_INSTALLED_APP_PATH:-/Applications/Write.app}"
 INSTALL_PARENT="$(dirname "$INSTALL_PATH")"
 INSTALL_NEW="$INSTALL_PARENT/.Write.app.new.$$"
 INSTALL_OLD="$INSTALL_PARENT/.Write.app.previous.$$"
+INSTALL_EXECUTABLE="$INSTALL_PATH/Contents/MacOS/Write"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+installed_write_pids() {
+  ps ax -o pid=,command= | awk -v executable="$INSTALL_EXECUTABLE" '$2 == executable { print $1 }'
+}
+
+installed_write_is_running() {
+  [ -n "$(installed_write_pids)" ]
+}
+
+stop_installed_write() {
+  local pids
+  local attempt
+
+  installed_write_is_running || return 0
+  osascript -e 'tell application id "net.writeapp.write.mac" to quit' </dev/null >/dev/null 2>&1 || true
+  for attempt in {1..10}; do
+    installed_write_is_running || return 0
+    sleep 0.5
+  done
+
+  pids="$(installed_write_pids)"
+  [ -z "$pids" ] || kill -TERM $pids 2>/dev/null || true
+  for attempt in {1..10}; do
+    installed_write_is_running || return 0
+    sleep 0.5
+  done
+
+  pids="$(installed_write_pids)"
+  [ -z "$pids" ] || kill -KILL $pids 2>/dev/null || true
+  for attempt in {1..10}; do
+    installed_write_is_running || return 0
+    sleep 0.2
+  done
+  return 1
+}
+
+launch_installed_write() {
+  local attempt
+  local settle
+  local stable
+
+  "$LSREGISTER" -f "$INSTALL_PATH" </dev/null >/dev/null 2>&1 || true
+  for attempt in {1..5}; do
+    if open -g "$INSTALL_PATH" </dev/null >/dev/null 2>&1; then
+      for settle in {1..20}; do
+        if installed_write_is_running; then
+          for stable in {1..8}; do
+            sleep 0.25
+            installed_write_is_running || break
+          done
+          installed_write_is_running && return 0
+        fi
+        sleep 0.25
+      done
+    fi
+    sleep "$attempt"
+  done
+  return 1
+}
+
+rollback_installed_write() {
+  local failed_install="$INSTALL_PARENT/.Write.app.failed.$$"
+
+  stop_installed_write || true
+  rm -rf "$failed_install"
+  [ ! -e "$INSTALL_PATH" ] || mv "$INSTALL_PATH" "$failed_install"
+  if [ -e "$INSTALL_OLD" ]; then
+    mv "$INSTALL_OLD" "$INSTALL_PATH"
+    "$LSREGISTER" -f "$INSTALL_PATH" </dev/null >/dev/null 2>&1 || true
+    if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
+      launch_installed_write || true
+    fi
+  fi
+  rm -rf "$failed_install" "$INSTALL_NEW"
+}
+
+fail_installed_write() {
+  echo "$1" >&2
+  rollback_installed_write
+  exit 1
+}
+
 rm -rf "$INSTALL_NEW" "$INSTALL_OLD"
 ditto "$ROOT/mac/build/Write.app" "$INSTALL_NEW"
-osascript -e 'tell application id "net.writeapp.write.mac" to quit' >/dev/null 2>&1 || true
-for _ in 1 2 3 4 5; do
-  pgrep -x Write >/dev/null 2>&1 || break
-  sleep 0.4
-done
+INSTALL_WAS_RUNNING=0
+installed_write_is_running && INSTALL_WAS_RUNNING=1
+if ! stop_installed_write; then
+  rm -rf "$INSTALL_NEW"
+  echo "The running Write app did not quit before installation." >&2
+  exit 1
+fi
 if [ -e "$INSTALL_PATH" ]; then mv "$INSTALL_PATH" "$INSTALL_OLD"; fi
 mv "$INSTALL_NEW" "$INSTALL_PATH"
-rm -rf "$INSTALL_OLD"
 defaults write net.writeapp.write.mac SUEnableAutomaticChecks -bool true
 defaults write net.writeapp.write.mac SUAutomaticallyUpdate -bool true
-open -a "$INSTALL_PATH"
-sleep 1
 INSTALLED_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$INSTALL_PATH/Contents/Info.plist")"
 INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALL_PATH/Contents/Info.plist")"
-[ "$INSTALLED_VERSION" = "$VERSION" ] || { echo "Installed app version is $INSTALLED_VERSION, expected $VERSION." >&2; exit 1; }
-[ "$INSTALLED_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app build is $INSTALLED_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
-codesign --verify --strict --verbose=2 "$INSTALL_PATH"
-"$ROOT/mac/scripts/verify-apple-silicon-app.sh" \
-  "$INSTALL_PATH" --require-extensions
-pgrep -x Write >/dev/null || { echo "Installed Write app did not launch." >&2; exit 1; }
+[ "$INSTALLED_VERSION" = "$VERSION" ] || fail_installed_write "Installed app version is $INSTALLED_VERSION, expected $VERSION."
+[ "$INSTALLED_BUILD" = "$EXPECTED_BUILD" ] || fail_installed_write "Installed app build is $INSTALLED_BUILD, expected $EXPECTED_BUILD."
+codesign --verify --strict --verbose=2 "$INSTALL_PATH" || fail_installed_write "Installed Write app failed code-signature verification."
+if ! "$ROOT/mac/scripts/verify-apple-silicon-app.sh" \
+  "$INSTALL_PATH" --require-extensions; then
+  fail_installed_write "Installed Write app failed Apple silicon verification."
+fi
+if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
+  launch_installed_write || fail_installed_write "Installed Write app did not launch after bounded retries."
+fi
+rm -rf "$INSTALL_OLD"
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 
-echo ">> verify installed app health"
-LOCAL_HEALTH="$HOME/Library/Application Support/Write/health/latest.json"
-LOCAL_HEALTH_VERSION=""
-LOCAL_HEALTH_BUILD=""
-LOCAL_HEALTH_STATUS=""
-# Wait for the installed app to write a health report for THIS version/build, and
-# prefer a clean "pass" once it does. Some runtime checks (notably finder.provider,
-# the File Provider mount) legitimately report "warning" for the first seconds
-# after a fresh install while the domain registers, then settle. Give them time.
-for attempt in {1..90}; do
-  if [ -f "$LOCAL_HEALTH" ]; then
-    LOCAL_HEALTH_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("appVersion", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-    LOCAL_HEALTH_BUILD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("buildNumber", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-    LOCAL_HEALTH_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-  fi
-  if [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] && [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] && [ "$LOCAL_HEALTH_STATUS" = "pass" ]; then
-    break
-  fi
-  [ "$attempt" -eq 90 ] || sleep 1
-done
-[ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] || { echo "Installed app did not write a $VERSION health report." >&2; exit 1; }
-[ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app health build is $LOCAL_HEALTH_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
-# A "fail" is a hard block. A residual "warning" (never "fail") is non-blocking:
-# it is a soft, usually transient signal (e.g. the File Provider mount still warming
-# up moments after install) and must not wedge the autobuild ship loop. The uploaded
-# health gate below (health:review --fail-on-failure) already blocks only on failure.
-case "$LOCAL_HEALTH_STATUS" in
-  pass)
-    echo "   local health: pass"
-    ;;
-  warning)
-    LOCAL_HEALTH_WARN_CHECKS="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id","?") for c in d.get("checks", d.get("suites", [])) if c.get("status")=="warning"))' "$LOCAL_HEALTH" 2>/dev/null || true)"
-    echo "   local health: warning (non-blocking) [${LOCAL_HEALTH_WARN_CHECKS}]" >&2
-    ;;
-  *)
-    echo "Installed app health is '${LOCAL_HEALTH_STATUS:-missing}', expected pass or warning." >&2
-    exit 1
-    ;;
-esac
+if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
+  echo ">> verify installed app health"
+  LOCAL_HEALTH="$HOME/Library/Application Support/Write/health/latest.json"
+  LOCAL_HEALTH_VERSION=""
+  LOCAL_HEALTH_BUILD=""
+  LOCAL_HEALTH_STATUS=""
+  # Wait for the installed app to write a health report for THIS version/build, and
+  # prefer a clean "pass" once it does. Some runtime checks (notably finder.provider,
+  # the File Provider mount) legitimately report "warning" for the first seconds
+  # after a fresh install while the domain registers, then settle. Give them time.
+  for attempt in {1..90}; do
+    if [ -f "$LOCAL_HEALTH" ]; then
+      LOCAL_HEALTH_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("appVersion", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+      LOCAL_HEALTH_BUILD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("buildNumber", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+      LOCAL_HEALTH_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", ""))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+    fi
+    if [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] && [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] && [ "$LOCAL_HEALTH_STATUS" = "pass" ]; then
+      break
+    fi
+    [ "$attempt" -eq 90 ] || sleep 1
+  done
+  [ "$LOCAL_HEALTH_VERSION" = "$VERSION" ] || { echo "Installed app did not write a $VERSION health report." >&2; exit 1; }
+  [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app health build is $LOCAL_HEALTH_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
+  # A "fail" is a hard block. A residual "warning" (never "fail") is non-blocking:
+  # it is a soft, usually transient signal (e.g. the File Provider mount still warming
+  # up moments after install) and must not wedge the autobuild ship loop. The uploaded
+  # health gate below (health:review --fail-on-failure) already blocks only on failure.
+  case "$LOCAL_HEALTH_STATUS" in
+    pass)
+      echo "   local health: pass"
+      ;;
+    warning)
+      LOCAL_HEALTH_WARN_CHECKS="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print(", ".join(c.get("id","?") for c in d.get("checks", d.get("suites", [])) if c.get("status")=="warning"))' "$LOCAL_HEALTH" 2>/dev/null || true)"
+      echo "   local health: warning (non-blocking) [${LOCAL_HEALTH_WARN_CHECKS}]" >&2
+      ;;
+    *)
+      echo "Installed app health is '${LOCAL_HEALTH_STATUS:-missing}', expected pass or warning." >&2
+      exit 1
+      ;;
+  esac
 
-echo ">> verify uploaded app health"
-npm run health:review -- \
-  --app-identifier "$WRITE_BUNDLE_ID" \
-  --version "$VERSION" \
-  --build "$EXPECTED_BUILD" \
-  --wait-seconds 30 \
-  --require-reports \
-  --fail-on-failure
+  echo ">> verify uploaded app health"
+  npm run health:review -- \
+    --app-identifier "$WRITE_BUNDLE_ID" \
+    --version "$VERSION" \
+    --build "$EXPECTED_BUILD" \
+    --wait-seconds 30 \
+    --require-reports \
+    --fail-on-failure
+else
+  echo "   Write was not running before installation; leaving it closed and deferring runtime health until next launch."
+fi
 
 echo
 echo "Shipped Write $VERSION"

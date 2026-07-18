@@ -88,6 +88,16 @@ final class NativeAIToolParityTests: XCTestCase {
         }
 
         @available(macOS 26.4, *)
+        func testNativeToolSchemasLeaveRegexValidationToTheCommandLayer() throws {
+            let update = try generatedJSON(for: "update_item")
+            XCTAssertNil(try resolvedProperty("accent", in: update)["pattern"])
+            XCTAssertNil(try resolvedProperty("date", in: update)["pattern"])
+
+            let access = try generatedJSON(for: "set_access")
+            XCTAssertNil(try resolvedProperty("email", in: access)["pattern"])
+        }
+
+        @available(macOS 26.4, *)
         func testGeneratedSchemasPreserveBooleanIntegerEnumAndNullableTypes() throws {
             let pinned = try generatedJSON(for: "update_item")
             XCTAssertEqual(property("pinned", in: pinned)["type"] as? String, "boolean")

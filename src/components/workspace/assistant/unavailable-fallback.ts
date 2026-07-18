@@ -62,6 +62,9 @@ export function unavailableExplanation(
     case "osTooOld":
       return "On-device AI needs macOS 26 or later.";
     default:
+      if (capabilities?.available) {
+        return "The on-device Assistant could not complete this request. Try again.";
+      }
       return "On-device AI is unavailable right now.";
   }
 }
@@ -150,18 +153,15 @@ export async function fallbackForNativeAssetError<T>({
     }
   }
 
-  const fallbackCapabilities = capabilities.available
-    ? { ...capabilities, available: false, reason: "modelNotReady" as const }
-    : capabilities;
   const message = await runUnavailableAssistantFallback({
-    capabilities: fallbackCapabilities,
+    capabilities,
     context,
     onCloudStart,
     prompt,
   });
   return {
     kind: "fallback",
-    capabilities: fallbackCapabilities,
+    capabilities,
     message,
   };
 }

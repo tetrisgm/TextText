@@ -168,6 +168,40 @@ describe("native assistant submissions", () => {
     expect(onPreparing).toHaveBeenNthCalledWith(1, "preparing", 1, 3);
   });
 
+  it("does not turn an agent failure into a model download state", async () => {
+    vi.stubGlobal("window", { writeNativeAI: { request: vi.fn() } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ enabled: false, provider: null })),
+      ),
+    );
+    const capabilities = {
+      available: true,
+      ocr: true,
+      imageUnderstanding: false,
+    };
+
+    await expect(
+      fallbackForNativeAssetError({
+        error: new Error("Resource (Local Model Asset) unavailable error."),
+        prompt: "Rename this",
+        reprobe: async () => capabilities,
+        retryNative: async () => {
+          throw new Error("Resource (Local Model Asset) unavailable error.");
+        },
+        retryDelaysMs: [0],
+      }),
+    ).resolves.toEqual({
+      kind: "fallback",
+      capabilities,
+      message: {
+        role: "assistant",
+        text: "The on-device Assistant could not complete this request. Try again.",
+      },
+    });
+  });
+
   it("does not retry a genuinely ineligible Mac", async () => {
     vi.stubGlobal("window", { writeNativeAI: { request: vi.fn() } });
     vi.stubGlobal(

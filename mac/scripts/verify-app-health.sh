@@ -41,6 +41,7 @@ required = {
     "selftest.filename_codec",
     "selftest.document_assets",
     "selftest.public_link",
+    "selftest.native_agent_contract",
     "workflow.folder_trash_restore",
     "workflow.sharing_access",
     "workflow.comments",

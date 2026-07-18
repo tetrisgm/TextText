@@ -252,10 +252,16 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 error as? LanguageModelSession.GenerationError
             else {
                 let message = error.localizedDescription
+                let diagnostic = String(reflecting: error)
+                if diagnostic.localizedCaseInsensitiveContains(
+                    "unsupported pattern")
+                {
+                    return "The on-device Assistant received an unsupported workspace tool format."
+                }
                 if message.localizedCaseInsensitiveContains("Local Model Asset")
                     || message.localizedCaseInsensitiveContains("assets unavailable")
                 {
-                    return "The on-device model is still preparing or downloading (assets unavailable). Write will retry automatically."
+                    return "The on-device Assistant could not start this request (assets unavailable). Write will retry automatically."
                 }
                 return message
             }
@@ -264,7 +270,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             case .exceededContextWindowSize:
                 return "This request is too large for the on-device Assistant. Shorten it or split it into smaller requests."
             case .assetsUnavailable:
-                return "The on-device model is still preparing or downloading (assets unavailable). Write will retry automatically."
+                return "The on-device Assistant could not start this request (assets unavailable). Write will retry automatically."
             case .guardrailViolation:
                 return "The on-device Assistant could not complete this request because of its safety checks."
             case .unsupportedGuide:
@@ -549,10 +555,13 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                     if let constant {
                         return DynamicGenerationSchema(name: name, anyOf: [constant])
                     }
-                    if let pattern {
-                        return DynamicGenerationSchema(
-                            type: String.self, guides: [.pattern(try Regex(pattern))])
-                    }
+                    // Foundation Models rejects some valid JSON Schema regexes
+                    // as unsupported generation guides and reports the failure
+                    // misleadingly as a missing local model asset. The page
+                    // command parser remains the authority for pattern
+                    // validation, so native tool schemas use an unconstrained
+                    // string here.
+                    _ = pattern
                     return DynamicGenerationSchema(type: String.self)
 
                 case "integer":
@@ -1447,6 +1456,33 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             preconditionFailure("Invalid native agent tool contract: \(error)")
         }
     }()
+
+    #if canImport(FoundationModels)
+        @available(macOS 26.0, *)
+        static func agentToolSchemasAreRuntimeCompatible() -> Bool {
+            do {
+                for spec in agentToolSpecs {
+                    let encoded = try JSONEncoder().encode(spec.makeGenerationSchema())
+                    let object = try JSONSerialization.jsonObject(with: encoded)
+                    if generationSchemaContainsPattern(object) { return false }
+                }
+                return true
+            } catch {
+                return false
+            }
+        }
+
+        private static func generationSchemaContainsPattern(_ value: Any) -> Bool {
+            if let object = value as? [String: Any] {
+                if object["pattern"] != nil { return true }
+                return object.values.contains(where: generationSchemaContainsPattern)
+            }
+            if let array = value as? [Any] {
+                return array.contains(where: generationSchemaContainsPattern)
+            }
+            return false
+        }
+    #endif
 
     private let toolCallLock = NSLock()
     private var pendingToolCalls: [String: CheckedContinuation<String, Error>] = [:]

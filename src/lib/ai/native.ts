@@ -52,7 +52,12 @@ export async function nativeAICapabilities(): Promise<NativeAICapabilities> {
   try {
     return await request<NativeAICapabilities>("capabilities");
   } catch {
-    return { available: false, ocr: false, imageUnderstanding: false };
+    return {
+      available: false,
+      reason: "unavailable",
+      ocr: false,
+      imageUnderstanding: false,
+    };
   }
 }
 

@@ -369,6 +369,9 @@ final class AppHealthReporter {
             timedCheck(id: "selftest.filename_codec", operation: checkFilenameCodec),
             timedCheck(id: "selftest.document_assets", operation: checkDocumentAssets),
             timedCheck(id: "selftest.public_link", operation: checkPublicLinkMapping),
+            timedCheck(
+                id: "selftest.native_agent_contract",
+                operation: checkNativeAgentContract),
             timedCheck(id: WriteWorkflowHealth.folderTrashRestore) {
                 checkAttestedWorkflow(id: WriteWorkflowHealth.folderTrashRestore)
             },
@@ -605,6 +608,24 @@ final class AppHealthReporter {
         return (valid ? .pass : .fail, [
             "public_url": usesPublicURL ? 1 : 0,
             "private_url_hidden": hidesPrivateURL ? 1 : 0,
+        ])
+    }
+
+    private func checkNativeAgentContract() -> (WriteHealthStatus, [String: Double]) {
+        #if canImport(FoundationModels)
+            if #available(macOS 26.0, *) {
+                let compatible = NativeAIBridge.agentToolSchemasAreRuntimeCompatible()
+                return (compatible ? .pass : .fail, [
+                    "applicable": 1,
+                    "schema_compatible": compatible ? 1 : 0,
+                    "tool_count": Double(NativeAIBridge.agentToolSpecs.count),
+                ])
+            }
+        #endif
+        return (.pass, [
+            "applicable": 0,
+            "schema_compatible": 1,
+            "tool_count": 0,
         ])
     }
 
