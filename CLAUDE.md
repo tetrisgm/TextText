@@ -7,6 +7,14 @@ small commercial product; there is no moat in publishing tools and that is
 decided, so the bet is taste. Sibling repo: ~/dev/ramine.net (the personal
 portfolio this was extracted from; it stays its own thing).
 
+## Continuation
+
+When taking over existing work, read `docs/codex/HANDOFF.md` after this file,
+`AGENTS.md`, and `DESIGN.md`. It is the only current handoff. Files named
+`mcp-brief.md` and `ui-batch-brief.md` under `docs/codex/` are historical design
+references unless the handoff or the user's latest request explicitly activates
+them.
+
 ## Hard rules
 
 - NO em dashes anywhere in copy, prose, or docs.
