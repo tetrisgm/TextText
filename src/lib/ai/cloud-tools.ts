@@ -20,7 +20,11 @@ import {
 } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 
-export type CloudAssistantActor = { sub: string; userId: string | null };
+export type CloudAssistantActor = {
+  sub: string;
+  userId: string | null;
+  handle: string;
+};
 
 export function cloudAssistantToolNames(): WorkspaceToolName[] {
   return WORKSPACE_TOOL_NAMES.filter((name) => {

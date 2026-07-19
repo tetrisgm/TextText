@@ -12,13 +12,11 @@ import {
   WorkspaceItemActions,
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
+import type { WorkspaceViewMode } from "@/components/workspace/WorkspaceViewModeControl";
 import { TagChips } from "@/components/TagChips";
 import type { Post } from "@/lib/content";
 import { isSafeLinkHref, isVideoFile, postBodyPreview } from "@/lib/content";
-import {
-  bookmarkFaviconUrl,
-  resolveCoverSource,
-} from "@/lib/cover";
+import { bookmarkFaviconUrl, resolveCoverSource } from "@/lib/cover";
 import { useCaptureStatus } from "./useCaptureStatus";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import { postSubtitle } from "@/lib/markdown-subtitle";
@@ -83,18 +81,27 @@ function previewLine(value: string | undefined): string {
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
 
+function expandedPreview(value: string | undefined): string {
+  const text = (value ?? "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/^[\s#*>`-]+/gm, "")
+    .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= 900) return text;
+  const sliced = text.slice(0, 897).trimEnd();
+  const wordBreak = sliced.lastIndexOf(" ");
+  return `${wordBreak > 600 ? sliced.slice(0, wordBreak) : sliced}...`;
+}
+
 function thumbnailInitial(host: string, title: string): string {
   const match = `${host} ${title}`.match(/[a-z0-9]/i);
   return match ? match[0].toUpperCase() : "W";
 }
 
-function ThumbnailFallback({
-  host,
-  title,
-}: {
-  host: string;
-  title: string;
-}) {
+function ThumbnailFallback({ host, title }: { host: string; title: string }) {
   const label = host || title;
   return (
     <span className={styles.thumbnailFallback} aria-hidden="true">
@@ -143,6 +150,7 @@ export function BookmarkCard({
   owner = false,
   selected = false,
   handle,
+  viewMode = "list",
 }: {
   post: Post;
   editPath: string;
@@ -157,6 +165,7 @@ export function BookmarkCard({
   owner?: boolean;
   selected?: boolean;
   handle?: string;
+  viewMode?: WorkspaceViewMode;
 }) {
   const router = useRouter();
   const captureStatus = useCaptureStatus(post.id, post.captureStatus, {
@@ -177,9 +186,13 @@ export function BookmarkCard({
   const host = bookmarkHost(post);
   const faviconSrc = bookmarkFaviconUrl(post);
   const description =
-    previewLine(postSubtitle(post)) ||
-    previewLine(post.capture?.description) ||
-    previewLine(postBodyPreview(post));
+    viewMode === "column"
+      ? expandedPreview(postBodyPreview(post)) ||
+        expandedPreview(postSubtitle(post)) ||
+        expandedPreview(post.capture?.description)
+      : previewLine(postSubtitle(post)) ||
+        previewLine(post.capture?.description) ||
+        previewLine(postBodyPreview(post));
   const isFailed = captureStatus === "failed";
   const thumbnailSource = resolveCoverSource(post);
   const thumbnailUrl = thumbnailSource.src;
@@ -234,34 +247,32 @@ export function BookmarkCard({
   );
   const mainContent = (
     <span className={styles.content}>
-        <span className={styles.titleRow}>
-          <span className={styles.title}>{title}</span>
-          <StatusChip status={captureStatus} />
-        </span>
-        {host && (
-          <span className={styles.metaRow}>
-            <span className={styles.favicon} aria-hidden="true">
-              {faviconSrc && (
-                // Bookmark favicons can come from any source host, so they
-                // intentionally bypass Next's configured image allowlist.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className={styles.faviconImage}
-                  src={faviconSrc}
-                  alt=""
-                  onError={(event) => {
-                    event.currentTarget.hidden = true;
-                  }}
-                />
-              )}
-            </span>
-            <span className={styles.host}>{host}</span>
-          </span>
-        )}
-        {description && (
-          <span className={styles.description}>{description}</span>
-        )}
+      <span className={styles.titleRow}>
+        <span className={styles.title}>{title}</span>
+        <StatusChip status={captureStatus} />
       </span>
+      {host && (
+        <span className={styles.metaRow}>
+          <span className={styles.favicon} aria-hidden="true">
+            {faviconSrc && (
+              // Bookmark favicons can come from any source host, so they
+              // intentionally bypass Next's configured image allowlist.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className={styles.faviconImage}
+                src={faviconSrc}
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.hidden = true;
+                }}
+              />
+            )}
+          </span>
+          <span className={styles.host}>{host}</span>
+        </span>
+      )}
+      {description && <span className={styles.description}>{description}</span>}
+    </span>
   );
   const openItem = (event: MouseEvent<HTMLAnchorElement>) => {
     if (onItemClick && !onItemClick(event)) {
@@ -276,7 +287,12 @@ export function BookmarkCard({
   return (
     <article
       id={optionId}
-      className={classNames("bookmark-folder-card", styles.card, selected && styles.selected)}
+      className={classNames(
+        "bookmark-folder-card",
+        styles.card,
+        viewMode === "grid" && !thumbnailUrl && styles.noThumbnail,
+        selected && styles.selected,
+      )}
       role={optionId ? "option" : undefined}
       aria-selected={optionId ? selected : undefined}
       tabIndex={optionTabIndex}
@@ -311,7 +327,10 @@ export function BookmarkCard({
       </div>
       {isFailed && (
         <div
-          className={classNames(styles.thumbnailLink, styles.failedThumbnailTile)}
+          className={classNames(
+            styles.thumbnailLink,
+            styles.failedThumbnailTile,
+          )}
           aria-hidden="true"
         >
           {thumbnailFallback}
@@ -339,7 +358,7 @@ export function BookmarkCard({
           {thumbnailMedia}
         </Link>
       )}
-      {!isFailed && !thumbnailUrl && (
+      {!isFailed && !thumbnailUrl && viewMode !== "grid" && (
         <Link
           className={thumbnailLinkClass}
           href={editPath}

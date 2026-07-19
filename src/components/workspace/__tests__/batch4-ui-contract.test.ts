@@ -17,6 +17,10 @@ const shellSource = readFileSync(
   new URL("../../PostWorkspaceShell.tsx", import.meta.url),
   "utf8",
 );
+const viewModeSource = readFileSync(
+  new URL("../WorkspaceViewModeControl.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("batch 4 workspace UI contract", () => {
   it("keeps reader prose selectable instead of starting marquee selection", () => {
@@ -48,5 +52,13 @@ describe("batch 4 workspace UI contract", () => {
     expect(folderSource).toContain("<WorkspaceActionSearch");
     expect(actionBarSource).toContain("<WorkspaceActionSearch");
     expect(shellSource).toContain("<ReaderFindHighlights query={findQuery}");
+  });
+
+  it("names the image-led grid Cards and reuses PostCard for expanded notes", () => {
+    expect(viewModeSource).toContain('grid: "Cards"');
+    expect(folderSource).toContain(
+      'variant={viewMode === "column" ? "expanded" : "card"}',
+    );
+    expect(folderSource).toContain('viewMode !== "list"');
   });
 });

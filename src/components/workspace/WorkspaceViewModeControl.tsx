@@ -10,7 +10,7 @@ const VIEW_MODE_EVENT = "write:workspace-view-mode-changed";
 export const WORKSPACE_VIEW_MODE_LABELS: Record<WorkspaceViewMode, string> = {
   list: "List",
   column: "One column",
-  grid: "Grid",
+  grid: "Cards",
 };
 
 function validWorkspaceViewMode(
@@ -57,24 +57,74 @@ function ViewModeIcon({ mode }: { mode: WorkspaceViewMode }) {
   if (mode === "list") {
     return (
       <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-        <path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+        <path
+          d="M3 5h12M3 9h12M3 13h12"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="1.5"
+        />
       </svg>
     );
   }
   if (mode === "column") {
     return (
       <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-        <rect x="4" y="3" width="10" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M6.5 6h5M6.5 9h5M6.5 12h3.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.2" />
+        <rect
+          x="4"
+          y="3"
+          width="10"
+          height="12"
+          rx="1.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M6.5 6h5M6.5 9h5M6.5 12h3.5"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="1.2"
+        />
       </svg>
     );
   }
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="3" y="3" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="10" y="3" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="3" y="10" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="10" y="10" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+      <rect
+        x="3"
+        y="3"
+        width="5"
+        height="5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <rect
+        x="10"
+        y="3"
+        width="5"
+        height="5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <rect
+        x="3"
+        y="10"
+        width="5"
+        height="5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <rect
+        x="10"
+        y="10"
+        width="5"
+        height="5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
     </svg>
   );
 }
@@ -87,7 +137,11 @@ export function WorkspaceViewModeControl({
   onChange: (mode: WorkspaceViewMode) => void;
 }) {
   return (
-    <div className="workspace-view-segmented" role="group" aria-label="View mode">
+    <div
+      className="workspace-view-segmented"
+      role="group"
+      aria-label="View mode"
+    >
       {(Object.keys(WORKSPACE_VIEW_MODE_LABELS) as WorkspaceViewMode[]).map(
         (candidate) => (
           <ShortcutTooltip

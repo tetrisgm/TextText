@@ -109,6 +109,7 @@ import {
   resolveWorkspaceAssistantContext,
 } from "@/components/workspace/assistant/context";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
+import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
   createWorkspaceItemTextSelection,
   locateWorkspaceItemTextSelection,
@@ -312,6 +313,7 @@ const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = "write:workspace-sidebar-width";
 const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 280;
 const WORKSPACE_SIDEBAR_MIN_WIDTH = 220;
 const WORKSPACE_SIDEBAR_MAX_WIDTH = 420;
+const WORKSPACE_COMPACT_MEDIA_QUERY = "(max-width: 1024px)";
 const localWorkspaceDraftSessions = new Map<string, DraftState>();
 const localWorkspacePendingSaveIds = new Set<string>();
 const localWorkspaceDraftRevisions = new Map<string, number>();
@@ -1921,14 +1923,14 @@ export function WorkspaceSidebarChrome({
     setMobileOpen(false);
   }, []);
   const openSidebar = useCallback(() => {
-    if (window.matchMedia("(max-width: 680px)").matches) {
+    if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) {
       setMobileOpen(true);
       return;
     }
     if (collapsed) onToggleCollapsed();
   }, [collapsed, onToggleCollapsed]);
   const toggleSidebar = useCallback(() => {
-    if (window.matchMedia("(max-width: 680px)").matches) {
+    if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) {
       setMobileOpen(false);
       return;
     }
@@ -1947,7 +1949,7 @@ export function WorkspaceSidebarChrome({
         return;
       }
       event.preventDefault();
-      if (window.matchMedia("(max-width: 680px)").matches) {
+      if (window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches) {
         if (mobileOpen) toggleSidebar();
         else openSidebar();
       } else if (collapsed) openSidebar();
@@ -2654,11 +2656,9 @@ function WorkspaceRootLanding({
                 role="listbox"
                 aria-activedescendant={activeId}
               >
-                <section>
-                  <h2>Created on {dateLabel}</h2>
-                  {dateActivity.created.length === 0 ? (
-                    <p>No items created.</p>
-                  ) : (
+                {dateActivity.created.length > 0 ? (
+                  <section>
+                    <h2>Created on {dateLabel}</h2>
                     <div className="workspace-recent-list">
                       {dateActivity.created.map((post) => (
                         <WorkspacePostOption
@@ -2677,13 +2677,11 @@ function WorkspaceRootLanding({
                         />
                       ))}
                     </div>
-                  )}
-                </section>
-                <section>
-                  <h2>Edited on {dateLabel}</h2>
-                  {dateActivity.edited.length === 0 ? (
-                    <p>No items edited.</p>
-                  ) : (
+                  </section>
+                ) : null}
+                {dateActivity.edited.length > 0 ? (
+                  <section>
+                    <h2>Edited on {dateLabel}</h2>
                     <div className="workspace-recent-list">
                       {dateActivity.edited.map((post) => (
                         <WorkspacePostOption
@@ -2702,8 +2700,8 @@ function WorkspaceRootLanding({
                         />
                       ))}
                     </div>
-                  )}
-                </section>
+                  </section>
+                ) : null}
               </div>
             )}
           </div>
@@ -4766,7 +4764,7 @@ function LocalWorkspaceShell({
     const trackEdges = (event: PointerEvent) => {
       const selection = window.getSelection();
       if (
-        window.innerWidth <= 680 ||
+        window.matchMedia(WORKSPACE_COMPACT_MEDIA_QUERY).matches ||
         event.buttons !== 0 ||
         marqueeRectangle ||
         Boolean(selection && !selection.isCollapsed)
@@ -5828,28 +5826,43 @@ function LocalWorkspaceShell({
       );
 
       try {
-        const saved = await saveEditablePostAction(
+        const result = await executeWorkspaceToolRequest(
           currentPool.blog.handle,
-          payloadFor(postId, nextDraft, poolPost.slug, baseUpdatedAt),
+          "update_item",
+          {
+            id: postId,
+            title: nextDraft.title,
+            excerpt: nextDraft.excerpt || null,
+            body: nextDraft.body,
+            tags: nextDraft.tags,
+          },
         );
-        if (saved.updatedAt) {
-          localWorkspaceServerRevisions.set(postId, saved.updatedAt);
-        }
+        const savedItem = result.item as
+          | { updatedAt?: unknown }
+          | undefined;
+        const savedAt =
+          typeof savedItem?.updatedAt === "string"
+            ? savedItem.updatedAt
+            : new Date().toISOString();
+        localWorkspaceServerRevisions.set(postId, savedAt);
         if (localDraftRevision(postId) === requestedRevision) {
           localWorkspacePendingSaveIds.delete(postId);
           localWorkspaceDraftSessions.delete(postId);
           acknowledgePost(postId);
-          applySavedWorkspacePost(saved, currentPool.blogId);
           acknowledgePostBody(
             currentPool.blogId,
             postId,
-            saved.body,
-            saved.updatedAt,
+            nextDraft.body,
+            savedAt,
           );
           void deletePersistedWorkspaceDraft(
             currentPool.blogId,
             postId,
             requestedKey,
+          );
+          void refreshWorkspacePool(
+            currentPool.blog.handle,
+            currentPool.blogId,
           );
         }
         return { synced: true, queued: false };

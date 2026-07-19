@@ -13,9 +13,43 @@
 #   release/ship.sh 0.13 --skip-tests
 #   release/ship.sh 0.13 --skip-web-deploy
 set -euo pipefail
+exec </dev/null
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 PB=/usr/libexec/PlistBuddy
+
+mkdir -p "$ROOT/.write"
+SHIP_LOCK="$ROOT/.write/delivery.lock"
+acquire_ship_lock() {
+  local owner_pid=""
+  if mkdir "$SHIP_LOCK" 2>/dev/null; then
+    printf '%s\n' "$$" > "$SHIP_LOCK/pid"
+    printf '%s\n' "ship" > "$SHIP_LOCK/lane"
+    printf '%s\n' "$ROOT" > "$SHIP_LOCK/repository"
+    return 0
+  fi
+  if [ "$(cat "$SHIP_LOCK/lane" 2>/dev/null || true)" = "work" ]; then
+    echo "An active Write work unit owns the delivery lane." >&2
+    exit 75
+  fi
+  owner_pid="$(cat "$SHIP_LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$owner_pid" ] && kill -0 "$owner_pid" 2>/dev/null; then
+    echo "Another Write ship owns the release lock (pid $owner_pid)." >&2
+    exit 75
+  fi
+  rm -rf "$SHIP_LOCK"
+  mkdir "$SHIP_LOCK" || exit 75
+  printf '%s\n' "$$" > "$SHIP_LOCK/pid"
+  printf '%s\n' "ship" > "$SHIP_LOCK/lane"
+  printf '%s\n' "$ROOT" > "$SHIP_LOCK/repository"
+}
+release_ship_lock() {
+  if [ "$(cat "$SHIP_LOCK/pid" 2>/dev/null || true)" = "$$" ]; then
+    rm -rf "$SHIP_LOCK"
+  fi
+}
+acquire_ship_lock
+trap release_ship_lock EXIT INT TERM
 
 # Write's public release identity is product configuration, not secret input.
 # Keep it here so the owner-facing command is genuinely one command.
@@ -58,29 +92,6 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-next_version() {
-  local current
-  current="$("$PB" -c 'Print :CFBundleShortVersionString' "$ROOT/mac/Info.plist")"
-  python3 - "$current" <<'PY'
-import sys
-parts = sys.argv[1].split(".")
-if len(parts) < 2 or not all(part.isdigit() for part in parts):
-    raise SystemExit(f"Cannot bump version: {sys.argv[1]}")
-parts[-1] = str(int(parts[-1]) + 1)
-print(".".join(parts))
-PY
-}
-
-if [ -z "$VERSION" ]; then
-  VERSION="$(next_version)"
-fi
-
-if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
-  echo "Version must be dotted numeric, got: $VERSION" >&2
-  usage
-  exit 1
-fi
-
 if [ "$ALLOW_DIRTY" != "1" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   dirty="$(git status --porcelain --untracked-files=no)"
   if [ -n "$dirty" ]; then
@@ -90,49 +101,31 @@ if [ "$ALLOW_DIRTY" != "1" ] && git rev-parse --is-inside-work-tree >/dev/null 2
   fi
 fi
 
+if [ -z "$VERSION" ]; then
+  VERSION="$(node "$ROOT/scripts/release-version.mjs" next)"
+fi
+
+if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+  echo "Version must be dotted numeric, got: $VERSION" >&2
+  usage
+  exit 1
+fi
+
+if [ "$NO_PUBLISH" != "1" ]; then
+  node "$ROOT/scripts/release-version.mjs" assert-free "$VERSION"
+fi
+
 echo ">> ship Write $VERSION"
 
 if [ "$SKIP_TESTS" != "1" ]; then
-  echo ">> verify TypeScript"
-  npx tsc --noEmit
-  # Load-tolerant web test gate. Under heavy concurrent machine load (a parallel
-  # Codex build on another project) the parallel suite thrashes the CPU and
-  # false-fails on import/hook timeouts. Run test files serially (smaller CPU
-  # footprint, so each test finishes) and retry up to 3x so a transient load
-  # flake can never fail a ship. A real failure still fails all 3 attempts.
-  echo ">> test web (load-tolerant: serial files, up to 3 attempts)"
-  web_ok=0
-  for attempt in 1 2 3; do
-    if npx vitest run --no-file-parallelism; then web_ok=1; break; fi
-    echo ">> web tests attempt $attempt failed (likely machine load); cooling down" >&2
-    sleep $((20 * attempt))
-  done
-  [ "$web_ok" = 1 ] || { echo "web tests failed after 3 attempts" >&2; exit 1; }
-  echo ">> clean Mac package"
-  swift package --package-path "$ROOT/mac" clean
-  echo ">> test Mac package"
-  # Retry once: several Mac tests are timing-sensitive async waits (sync backoff,
-  # File Provider status) that can slip under the ship's concurrent CPU load. A
-  # real failure still fails twice; a load flake clears on the settle + retry.
-  mac_ok=0
-  for attempt in 1 2 3; do
-    if swift test --package-path "$ROOT/mac"; then mac_ok=1; break; fi
-    echo ">> Mac tests attempt $attempt failed; settling then retrying" >&2
-    sleep $((15 * attempt))
-  done
-  [ "$mac_ok" = 1 ] || { echo "Mac tests failed after 3 attempts" >&2; exit 1; }
-  echo ">> verify live on-device assistant"
-  WRITE_LIVE_AI_PROBE=1 swift test --package-path "$ROOT/mac" \
-    --filter NativeAIIntegrationProbeTests/testLiveAgentToolSession
-  echo ">> verify Next build"
-  npm run build
-  echo ">> evaluate Apple platform contract"
-  "$ROOT/mac/scripts/apple-plan-eval.sh" --skip-tests
-  export WRITE_RELEASE_GATES_VERIFIED=1
-elif [ "${WRITE_RELEASE_GATES_VERIFIED:-0}" != "1" ]; then
-  echo "Refusing --skip-tests without WRITE_RELEASE_GATES_VERIFIED=1." >&2
-  exit 1
+  echo ">> verify exact release source"
+  npx tsx "$ROOT/scripts/verify-release.ts"
+else
+  echo ">> reuse exact release receipt"
+  npx tsx "$ROOT/scripts/verify-release.ts" --check
 fi
+RELEASE_GATE_RECEIPT="$ROOT/.write/release-gate-receipt.json"
+export WRITE_RELEASE_GATE_RECEIPT="$RELEASE_GATE_RECEIPT"
 
 echo ">> evaluate workflow capability contracts"
 WORKFLOW_CAPABILITY_RECEIPT="$ROOT/mac/build/workflow-capability-receipt.json"
@@ -141,6 +134,9 @@ WORKFLOW_CAPABILITY_RECEIPT="$ROOT/mac/build/workflow-capability-receipt.json"
 export WRITE_WORKFLOW_CAPABILITY_RECEIPT="$WORKFLOW_CAPABILITY_RECEIPT"
 
 if [ "$NO_PUBLISH" = "1" ]; then
+  echo ">> verify one dry-run web build"
+  npx tsx "$ROOT/scripts/work-unit.ts" run \
+    --name web.dry_build --timeout 1800 -- npm run build
   echo ">> dry-run Mac app build"
   DRY_BUILD="$(( $("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist") + 1 ))"
   DRY_ATTESTATION="$ROOT/mac/build/app-health-attestation.json"
@@ -158,33 +154,15 @@ if [ "$NO_PUBLISH" = "1" ]; then
     "$ROOT/mac/build/Write.app" "$VERSION" "$DRY_BUILD"
   echo
   echo "Verified Write $VERSION (not published)"
-  echo "  web build: .next"
+  echo "  web build: .next (one production build)"
   echo "  app build: mac/build/Write.app ($VERSION build $DRY_BUILD)"
   exit 0
 fi
 
-echo ">> migrate database: file representation"
-node "$ROOT/scripts/migrate-add-file-representation.mjs"
-echo ">> migrate database: slug history"
-node "$ROOT/scripts/migrate-add-slug-history.mjs"
-echo ">> migrate database: tags"
-node "$ROOT/scripts/migrate-add-tags.mjs"
-echo ">> migrate database: workspace AI config"
-node "$ROOT/scripts/migrate-add-workspace-ai-config.mjs"
-echo ">> migrate database: app health reports"
-node "$ROOT/scripts/migrate-add-app-health.mjs"
-echo ">> migrate database: OAuth token lifecycle"
-node "$ROOT/scripts/migrate-add-oauth-token-lifecycle.mjs"
-echo ">> migrate database: item comments"
-node "$ROOT/scripts/migrate-add-item-comments.mjs"
-echo ">> migrate database: collab epoch (hole 2)"
-node "$ROOT/scripts/migrate-add-collab-epoch.mjs"
-echo ">> migrate database: flip post representation to flat markdown"
-node "$ROOT/scripts/migrate-flip-representation-to-markdown.mjs"
-echo ">> migrate database: flip post representation to textpack"
-node "$ROOT/scripts/migrate-flip-representation-to-textpack.mjs"
-echo ">> migrate database: drop the retired rename-revert guard"
-node "$ROOT/scripts/migrate-drop-rename-revert-guard.mjs"
+echo ">> migrate database"
+npx tsx "$ROOT/scripts/work-unit.ts" run \
+  --name database.migrations --timeout 900 --no-reuse -- \
+  "$ROOT/scripts/run-release-migrations.sh"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'
@@ -196,19 +174,30 @@ NODE
 fi
 
 echo ">> release Mac app"
-"$ROOT/mac/scripts/release.sh" "$VERSION"
+npx tsx "$ROOT/scripts/work-unit.ts" run \
+  --name mac.release --timeout 7200 --no-reuse -- \
+  "$ROOT/mac/scripts/release.sh" "$VERSION"
+EXPECTED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist")"
+# This identity lets Next detect an app window that survived a web deployment.
+# The assistant itself uses stable JSON commands, while remaining Server Action
+# calls recover with a hard navigation instead of submitting stale action ids.
+export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-write-${VERSION}-${EXPECTED_BUILD}}"
+echo "   web deployment identity: $NEXT_DEPLOYMENT_ID"
 
 if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
   echo ">> deploy public web app"
   # A linked Vercel project can turn `vercel --prod` into a Git deployment,
   # which clones HEAD and silently omits the release marker generated above.
   # Build locally after that marker exists, then deploy those exact outputs.
-  npx vercel build --prod --yes
-  npx vercel deploy --prebuilt --prod --yes
+  npx tsx "$ROOT/scripts/work-unit.ts" run \
+    --name web.production_build --timeout 2400 -- \
+    npx vercel build --prod --yes
+  npx tsx "$ROOT/scripts/work-unit.ts" run \
+    --name web.production_deploy --timeout 1800 --no-reuse -- \
+    npx vercel deploy --prebuilt --prod --yes
 fi
 
 ORIGIN="${WRITE_PRODUCT_ORIGIN:-}"
-EXPECTED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist")"
 if [ -n "$ORIGIN" ]; then
   ORIGIN="${ORIGIN%/}"
   echo ">> verify public release"

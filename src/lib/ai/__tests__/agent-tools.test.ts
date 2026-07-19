@@ -1,35 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const actions = vi.hoisted(() => ({
-  addItemAssetAction: vi.fn(),
-  addItemCommentAction: vi.fn(),
-  createSubfolderAction: vi.fn(),
-  createWorkspacePostAction: vi.fn(),
-  deleteEditablePostAction: vi.fn(),
-  listItemAssetsAction: vi.fn(),
-  listItemCommentsAction: vi.fn(),
-  listScopeSharesAction: vi.fn(),
-  movePostToFolderAction: vi.fn(),
-  recaptureBookmarkAction: vi.fn(),
-  renameFolderAction: vi.fn(),
-  removeItemAssetAction: vi.fn(),
-  replyItemCommentAction: vi.fn(),
-  reopenItemCommentAction: vi.fn(),
-  restoreEditablePostAction: vi.fn(),
-  restoreFolderAction: vi.fn(),
-  revokeScopeShareAction: vi.fn(),
-  saveEditablePostAction: vi.fn(),
-  setItemCoverAction: vi.fn(),
-  shareScopeAction: vi.fn(),
-  resolveItemCommentAction: vi.fn(),
-  setEditablePostStatusAction: vi.fn(),
-  trashFolderAction: vi.fn(),
-  toggleEditablePostPinnedAction: vi.fn(),
-  updateScopeShareRoleAction: vi.fn(),
-}));
-
-vi.mock("@/app/editor/actions", () => actions);
-
 import {
   WORKSPACE_AGENT_TOOL_DEFINITIONS,
   createWorkspaceAgentTools,
@@ -134,7 +104,10 @@ describe("native workspace tool adapter", () => {
       workspace: { handle: "local", name: "Local Workspace" },
       capabilities: {
         folderModes: ["blog", "notes", "bookmarks"],
-        scopes: { fullAccess: "sync", readOnly: expect.arrayContaining(["read"]) },
+        scopes: {
+          fullAccess: "sync",
+          readOnly: expect.arrayContaining(["read"]),
+        },
         permanentDeletion: false,
         memberManagement: true,
         accessManagement: true,
@@ -160,47 +133,27 @@ describe("native workspace tool adapter", () => {
   });
 
   it("defaults root requests to Blog and creates every requested post", async () => {
-    actions.createWorkspacePostAction
+    const executeTool = vi
+      .fn()
       .mockResolvedValueOnce({
-        id: "new-1",
-        blogId: "blog-1",
-        folderId: "blog",
-        type: "article",
-        slug: "untitled",
-        title: "Untitled",
-        status: "draft",
+        item: {
+          id: "new-1",
+          title: "The top 10 NES games",
+          status: "draft",
+        },
       })
       .mockResolvedValueOnce({
-        id: "new-2",
-        blogId: "blog-1",
-        folderId: "blog",
-        type: "article",
-        slug: "untitled-2",
-        title: "Untitled",
-        status: "draft",
-      });
-    actions.saveEditablePostAction
-      .mockResolvedValueOnce({
-        id: "new-1",
-        blogId: "blog-1",
-        folderId: "blog",
-        type: "article",
-        slug: "top-nes-games",
-        title: "The top 10 NES games",
-        status: "draft",
-      })
-      .mockResolvedValueOnce({
-        id: "new-2",
-        blogId: "blog-1",
-        folderId: "blog",
-        type: "article",
-        slug: "chipzel-chiptunes",
-        title: "Chipzel and modern chiptunes",
-        status: "draft",
+        item: {
+          id: "new-2",
+          title: "Chipzel and modern chiptunes",
+          status: "draft",
+        },
       });
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,
+      executeTool,
+      refreshPool: async () => {},
     });
 
     await expect(
@@ -234,41 +187,45 @@ describe("native workspace tool adapter", () => {
       status: "draft",
     });
 
-    expect(actions.createWorkspacePostAction).toHaveBeenNthCalledWith(
-      1,
-      "local",
-      "article",
-      "blog",
-    );
-    expect(actions.createWorkspacePostAction).toHaveBeenNthCalledWith(
-      2,
-      "local",
-      "article",
-      "blog",
-    );
+    expect(executeTool).toHaveBeenNthCalledWith(1, "create_item", {
+      folder_path: "blog",
+      kind: "article",
+      title: "The top 10 NES games",
+      body: "Complete NES article",
+    });
+    expect(executeTool).toHaveBeenNthCalledWith(2, "create_item", {
+      folder_path: "blog",
+      kind: "article",
+      title: "Chipzel and modern chiptunes",
+      body: "Complete chiptunes article",
+    });
     expect(tools.describeContext({ level: "root" })).toContain(
       'Blog folder at path "blog"',
     );
   });
 
   it("fails closed for an audience-changing restore without confirmation", async () => {
+    const executeTool = vi.fn();
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,
+      executeTool,
     });
 
     await expect(
       tools.executor("restore_item", { id: "trash-1" }),
     ).resolves.toEqual({ ok: false, cancelled: true });
-    expect(actions.restoreEditablePostAction).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it("keeps notes private even after confirmed publication input", async () => {
     const confirmDestructive = vi.fn(async () => true);
+    const executeTool = vi.fn();
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,
       confirmDestructive,
+      executeTool,
     });
 
     await expect(
@@ -278,25 +235,27 @@ describe("native workspace tool adapter", () => {
       }),
     ).rejects.toThrow("Notes and bookmarks are always unlisted");
     expect(confirmDestructive).not.toHaveBeenCalled();
-    expect(actions.setEditablePostStatusAction).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid published private item before restoring it", async () => {
     const confirmDestructive = vi.fn(async () => true);
+    const executeTool = vi.fn();
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,
       confirmDestructive,
+      executeTool,
     });
 
     await expect(
       tools.executor("restore_item", { id: "trash-note-1" }),
     ).rejects.toThrow("must be unlisted before restoration");
     expect(confirmDestructive).not.toHaveBeenCalled();
-    expect(actions.restoreEditablePostAction).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
-  it("routes access, comments, recapture, and assets through app actions", async () => {
+  it("routes access, comments, recapture, and assets through stable commands", async () => {
     const current = workspacePool();
     current.posts.push({
       id: "bookmark-1",
@@ -307,23 +266,24 @@ describe("native workspace tool adapter", () => {
       title: "Source",
       status: "draft",
     });
-    actions.listScopeSharesAction.mockResolvedValue([{ id: "share-1" }]);
-    actions.listItemCommentsAction.mockResolvedValue([
-      { id: "comment-1", resolvedAt: null },
-      { id: "comment-2", resolvedAt: "2026-07-15T13:00:00.000Z" },
-    ]);
-    actions.recaptureBookmarkAction.mockResolvedValue({
-      id: "bookmark-1",
-      type: "bookmark",
-      slug: "source",
-      title: "Source",
-      status: "draft",
-      captureStatus: "pending",
+    const executeTool = vi.fn(async (name: string) => {
+      if (name === "list_access") return { access: [{ id: "share-1" }] };
+      if (name === "list_comments") {
+        return { comments: [{ id: "comment-1", resolvedAt: null }] };
+      }
+      if (name === "recapture_bookmark") {
+        return { ok: true, queued: true, id: "bookmark-1" };
+      }
+      if (name === "read_item") {
+        return { assets: [{ url: "https://assets.test/a.jpg" }] };
+      }
+      return {};
     });
-    actions.listItemAssetsAction.mockResolvedValue([{ url: "https://assets.test/a.jpg" }]);
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: () => current,
+      executeTool,
+      refreshPool: async () => {},
       readItemText: async (id) => {
         const post = current.posts.find((candidate) => candidate.id === id)!;
         return {
@@ -352,9 +312,11 @@ describe("native workspace tool adapter", () => {
   });
 
   it("requires confirmation before folder Trash and access mutations", async () => {
+    const executeTool = vi.fn();
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: workspacePool,
+      executeTool,
     });
 
     await expect(
@@ -367,7 +329,6 @@ describe("native workspace tool adapter", () => {
         role: "guest",
       }),
     ).resolves.toEqual({ ok: false, cancelled: true });
-    expect(actions.trashFolderAction).not.toHaveBeenCalled();
-    expect(actions.shareScopeAction).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
   });
 });

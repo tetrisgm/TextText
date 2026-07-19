@@ -5,8 +5,13 @@ type Cleanup = void | (() => void);
 function jsonResponse(value: unknown): Response {
   return {
     ok: true,
+    status: 200,
     json: async () => value,
   } as Response;
+}
+
+function errorResponse(status: number): Response {
+  return { ok: false, status } as Response;
 }
 
 async function loadLiveSync(refreshWorkspacePool: ReturnType<typeof vi.fn>) {
@@ -36,6 +41,22 @@ afterEach(() => {
 });
 
 describe("workspace live sync", () => {
+  it("stops polling when the workspace has no owner change feed", async () => {
+    const refreshWorkspacePool = vi.fn();
+    const fetch = vi.fn().mockResolvedValue(errorResponse(404));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("document", { hidden: false });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("guest", "guest-blog");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(refreshWorkspacePool).not.toHaveBeenCalled();
+    liveSync.cleanup();
+  });
+
   it("does not reload or speculatively refresh when visibility returns", async () => {
     const reload = vi.fn();
     const addEventListener = vi.fn();

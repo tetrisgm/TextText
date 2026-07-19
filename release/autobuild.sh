@@ -1,150 +1,142 @@
 #!/bin/bash
-# Autobuild daemon for Write. Whenever main holds committed work newer than the
-# last release, auto-bump and run the full ship. No prompts, ever. Runs via
-# launchd (release/install-autobuild.sh).
-#
-# Design: "needs ship" is derived from GIT STATE, not an in-memory marker, so a
-# failed ship, a daemon restart, or a machine reboot can never strand unshipped
-# work: if HEAD's subject is not a "Release Write" commit, there is unshipped
-# work and the daemon keeps trying (with backoff) until a ship succeeds.
-#   - Debounce: HEAD must be stable for DEBOUNCE seconds (a burst = one build).
-#   - Clean-tree only: never ship a mid-edit or uncommitted state.
-#   - Supersession: abandon an active ship when HEAD advances, then build only
-#     the latest commit.
-#   - Failure recovery: restore the aborted version bump so the tree is clean.
-#     Back off only while the broken commit remains at HEAD.
-set -uo pipefail
+# Ship one clean, verified main commit once. launchd owns liveness; this loop
+# only detects a ready source and hands it to the deterministic ship command.
+set -euo pipefail
+exec </dev/null
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$HOME/.npm-global/bin"
-REPO="$HOME/dev/write"
-POLL=20
-DEBOUNCE=45
-FAIL_BACKOFF=600
-LOG="$REPO/release/.autobuild.log"
+readonly REPO="$HOME/dev/write"
+readonly GIT="/usr/bin/git"
+readonly NPX="/opt/homebrew/bin/npx"
+readonly POLL_SECONDS=30
+readonly DEBOUNCE_SECONDS=45
+readonly LOG="$REPO/release/.autobuild.log"
+readonly STATE="$REPO/.write/autobuild"
+readonly FAILED_SOURCE="$STATE/failed-source"
+readonly RELEASE_ENV="$HOME/.config/write/release.env"
 
 cd "$REPO" || exit 1
-log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
+mkdir -p "$STATE"
+touch "$LOG"
 
-clean() {
-  git diff --quiet && git diff --cached --quiet \
-    && [ -z "$(git ls-files --others --exclude-standard)" ]
+log() {
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"
 }
 
-# Unshipped work exists whenever HEAD is not itself a release commit.
+notify() {
+  /usr/bin/osascript -e "display notification \"$1\" with title \"Write delivery\"" \
+    >/dev/null 2>&1 || true
+}
+
+if [ -f "$RELEASE_ENV" ]; then
+  permissions="$(/usr/bin/stat -f '%Lp' "$RELEASE_ENV")"
+  if [ "$permissions" != "600" ]; then
+    log "refusing release env with mode $permissions; expected 600"
+    exit 78
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$RELEASE_ENV"
+  set +a
+fi
+
+clean_tree() {
+  "$GIT" diff --quiet && "$GIT" diff --cached --quiet \
+    && [ -z "$("$GIT" ls-files --others --exclude-standard)" ]
+}
+
 needs_ship() {
-  case "$(git log -1 --format=%s)" in
+  case "$("$GIT" log -1 --format=%s)" in
     "Release Write"*) return 1 ;;
     *) return 0 ;;
   esac
 }
 
-next_version() {
-  local v
-  v=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' mac/Info.plist)
-  echo "${v%.*}.$(( ${v##*.} + 1 ))"
+receipt_matches_source() {
+  "$NPX" tsx scripts/verify-release.ts --check >/dev/null 2>&1
 }
 
-restore_bump() {
-  git checkout -- mac/Info.plist src/generated/app-release.ts 2>/dev/null || true
+push_release_commit() {
+  if ! clean_tree; then return 0; fi
+  case "$("$GIT" log -1 --format=%s)" in
+    "Release Write"*) ;;
+    *) return 0 ;;
+  esac
+  if [ "$("$GIT" rev-list --count origin/main..HEAD)" -eq 0 ]; then return 0; fi
+  log "retrying push for release commit $("$GIT" rev-parse HEAD)"
+  if "$NPX" tsx scripts/work-unit.ts run \
+    --name autobuild.git_push --timeout 300 --no-reuse -- \
+    "$GIT" push origin main >> "$LOG" 2>&1; then
+    log "release commit pushed"
+  else
+    log "release commit push failed; launchd will retry without rebuilding"
+  fi
 }
 
-# ship.sh starts several layers of child processes. Stop descendants before
-# their parent so an abandoned build cannot leave work running in the
-# background. Limit every signal to the known ship process tree.
-kill_process_tree() {
-  local pid="$1"
-  local child
-  for child in $(pgrep -P "$pid" 2>/dev/null); do
-    kill_process_tree "$child"
-  done
-  kill -TERM "$pid" 2>/dev/null || true
-}
-
-log "autobuild started (git-derived); HEAD $(git rev-parse --short HEAD)"
-
-# A commit that fails to ship MAX_FAILS times in a row is HELD: stop re-shipping
-# it (each retry is a full paid build + notarize + deploy) until a NEW commit
-# lands. This prevents an unbounded paid-retry loop drifting public state for
-# hours on a deterministic failure. A held commit is released the moment HEAD
-# advances (a fix or any new commit).
-MAX_FAILS=3
-last_failed_head=""
-fail_count=0
-held_head=""
+log "autobuild started; HEAD $("$GIT" rev-parse --short HEAD)"
 
 while true; do
-  sleep "$POLL"
+  sleep "$POLL_SECONDS"
+  push_release_commit
   needs_ship || continue
-  if [ -n "$held_head" ] && [ "$(git rev-parse HEAD)" = "$held_head" ]; then
-    continue # this commit failed repeatedly; wait for a new commit
-  fi
-  if ! clean; then
-    continue # work in progress; wait for the commit
-  fi
+  clean_tree || continue
+  receipt_matches_source || continue
 
-  # Debounce: let a burst of commits settle into ONE build.
-  stable=$(git rev-parse HEAD)
-  while true; do
-    sleep "$DEBOUNCE"
-    now=$(git rev-parse HEAD)
-    [ "$now" = "$stable" ] && break
-    stable="$now"
-  done
-  clean || continue
-  needs_ship || continue
-  [ "$(git rev-parse HEAD)" = "$stable" ] || continue
-
-  ver=$(next_version)
-  log "shipping $ver (HEAD $stable)"
-  ./release/ship.sh "$ver" >> "$LOG" 2>&1 &
-  ship_pid=$!
-  superseded=0
-
-  while kill -0 "$ship_pid" 2>/dev/null; do
-    sleep "$POLL"
-    now=$(git rev-parse HEAD)
-    if [ "$now" != "$stable" ]; then
-      log "ship $ver superseded by HEAD $now; cancelling process tree $ship_pid"
-      kill_process_tree "$ship_pid"
-      wait "$ship_pid" 2>/dev/null || true
-      restore_bump
-      log "ship $ver abandoned; bump restored, rebuilding latest HEAD"
-      superseded=1
-      break
-    fi
-  done
-
-  [ "$superseded" -eq 0 ] || continue
-
-  ship_rc=0
-  wait "$ship_pid" || ship_rc=$?
-  now=$(git rev-parse HEAD)
-  if [ "$now" != "$stable" ]; then
-    restore_bump
-    log "ship $ver finished after HEAD advanced to $now; bump restored, rebuilding latest HEAD"
+  source_commit="$("$GIT" rev-parse HEAD)"
+  if [ -f "$FAILED_SOURCE" ] \
+    && [ "$(cat "$FAILED_SOURCE")" = "$source_commit" ]; then
     continue
   fi
 
-  if [ "$ship_rc" -eq 0 ]; then
-    git add mac/Info.plist src/generated/app-release.ts 2>/dev/null
-    git commit -q -m "Release Write $ver" 2>>"$LOG"
-    git push origin main >> "$LOG" 2>&1
-    log "shipped $ver and pushed"
+  sleep "$DEBOUNCE_SECONDS"
+  [ "$("$GIT" rev-parse HEAD)" = "$source_commit" ] || continue
+  clean_tree || continue
+  receipt_matches_source || continue
+
+  version="$($NPX tsx scripts/release-version.mjs next)"
+  log "shipping $version from $source_commit"
+  set +e
+  "$NPX" tsx scripts/work-unit.ts run \
+    --name "autobuild.ship.$source_commit" --timeout 10800 --no-reuse -- \
+    "$REPO/release/ship.sh" "$version" --skip-tests >> "$LOG" 2>&1
+  ship_status=$?
+  set -e
+
+  if [ "$ship_status" -eq 75 ]; then
+    log "delivery lane busy; deferring $source_commit"
+    continue
+  fi
+  if [ "$ship_status" -ne 0 ]; then
+    printf '%s\n' "$source_commit" > "$FAILED_SOURCE"
+    log "ship failed once with exit $ship_status; holding $source_commit"
+    notify "Ship $version failed once and is held until the source changes."
+    continue
+  fi
+
+  if [ "$("$GIT" rev-parse HEAD)" != "$source_commit" ]; then
+    printf '%s\n' "$source_commit" > "$FAILED_SOURCE"
+    log "source changed during ship; preserving the result for review"
+    notify "Source changed during ship. Review the release before continuing."
+    continue
+  fi
+
+  unexpected="$($GIT status --porcelain --untracked-files=no \
+    | /usr/bin/grep -Ev '^( M|M |MM) (mac/Info.plist|src/generated/app-release.ts)$' || true)"
+  if [ -n "$unexpected" ]; then
+    printf '%s\n' "$source_commit" > "$FAILED_SOURCE"
+    log "ship left unexpected tracked changes; preserving them for review"
+    notify "Ship $version left unexpected source changes and was not committed."
+    continue
+  fi
+
+  "$GIT" add mac/Info.plist src/generated/app-release.ts
+  "$GIT" commit -q -m "Release Write $version"
+  rm -f "$FAILED_SOURCE"
+  if "$NPX" tsx scripts/work-unit.ts run \
+    --name autobuild.git_push --timeout 300 --no-reuse -- \
+    "$GIT" push origin main >> "$LOG" 2>&1; then
+    log "shipped $version and pushed"
   else
-    restore_bump
-    if [ "$stable" = "$last_failed_head" ]; then
-      fail_count=$((fail_count + 1))
-    else
-      last_failed_head="$stable"
-      fail_count=1
-    fi
-    if [ "$fail_count" -ge "$MAX_FAILS" ]; then
-      held_head="$stable"
-      log "ship $ver FAILED (exit $ship_rc) ${fail_count}x on HEAD $stable; HOLDING this commit, not retrying until a new commit lands (each retry is a paid build). Owner action needed."
-      osascript -e "display notification \"Ship of $ver failed ${fail_count}x; holding $stable. Fix the cause and commit.\" with title \"Write autobuild\"" >/dev/null 2>&1 || true
-    else
-      log "ship $ver FAILED (exit $ship_rc) ${fail_count}/${MAX_FAILS} on HEAD $stable; bump restored, retrying in ${FAIL_BACKOFF}s"
-      sleep "$FAIL_BACKOFF"
-    fi
+    log "shipped $version; push deferred without rebuilding"
+    notify "Write $version shipped, but its source push will retry."
   fi
 done

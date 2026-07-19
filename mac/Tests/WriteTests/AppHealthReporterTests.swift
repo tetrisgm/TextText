@@ -251,16 +251,19 @@ final class AppHealthReporterTests: XCTestCase {
         let data = try PropertyListSerialization.data(
             fromPropertyList: info, format: .xml, options: 0)
         try data.write(to: contents.appendingPathComponent("Info.plist"))
-        let suites = [
-            ["id": "web.unit", "status": "pass"],
-            ["id": "native.unit", "status": "pass"],
-        ] + workflowSuites.map { ["id": $0, "status": "pass"] }
+        let suites: [[String: Any]] = [
+            ["id": "web.unit", "status": "pass", "durationMilliseconds": 100],
+            ["id": "native.unit", "status": "pass", "durationMilliseconds": 200],
+        ] + workflowSuites.map {
+            ["id": $0, "status": "pass", "durationMilliseconds": 0]
+        }
         let attestation: [String: Any] = [
             "schemaVersion": 1,
             "appVersion": "9.8",
             "buildNumber": "76",
             "sourceCommit": "health-test-revision",
             "workflowContractHash": String(repeating: "a", count: 64),
+            "releaseGateDurationMilliseconds": 300,
             "generatedAt": "2026-07-14T00:00:00Z",
             "suites": suites,
         ]

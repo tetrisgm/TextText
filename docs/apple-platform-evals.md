@@ -22,16 +22,18 @@ outer `release/ship.sh` already ran Swift tests, so it uses:
 mac/scripts/apple-plan-eval.sh --skip-tests
 ```
 
-`--skip-tests` means the same ship process already completed the suite. The
-owner-facing ship command refuses an independent `--skip-tests` release unless
-`WRITE_RELEASE_GATES_VERIFIED=1` is explicitly supplied by a trusted outer
-workflow.
+`--skip-tests` means the exact source fingerprint already completed the suite.
+The owner-facing ship command refuses an independent `--skip-tests` release
+unless `.write/release-gate-receipt.json` matches the current commit, source
+state, required commands, and passing statuses.
 
-After TypeScript, web unit, Swift unit, Next build, and Apple acceptance gates
-pass, `mac/scripts/verify-workflow-capabilities.sh` evaluates the five web-owned
+After TypeScript, web unit, Swift unit, live on-device assistant, and Apple
+acceptance gates pass, `mac/scripts/verify-workflow-capabilities.sh` evaluates the five web-owned
 workflow command classes without executing a production mutation. Then
 `mac/scripts/write-build-attestation.sh` records their stable receipt IDs with
-the source suites, source commit, app version, and build number. `build-app.sh`
+the source suites, durations, source commit, app version, and build number. The
+real Vercel production build runs once later, after the immutable Mac artifact
+has established the release marker. `build-app.sh`
 embeds the receipt as
 `Contents/Resources/AppHealthBuildAttestation.json` before signing.
 

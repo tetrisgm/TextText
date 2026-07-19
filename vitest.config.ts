@@ -10,12 +10,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
-    // The suite runs 70+ files and a few tests spawn Node subprocesses (e.g.
-    // the native-tool-contract parity check) or do heavy setup. Under heavy
-    // concurrent machine load (a parallel Codex build on another project, a
-    // ship in flight) imports and hooks can run 10x+ slower, so even 30s
-    // produced false timeout failures in the autobuild ship gate. Give very
-    // generous headroom; the ship gate also serialises files and retries.
+    // A few tests spawn subprocesses or do heavy setup. The outer work-unit
+    // runner owns the process-group wall-clock cap, while these limits identify
+    // a stuck individual test without retrying the full paid release pipeline.
     testTimeout: 120000,
     hookTimeout: 120000,
   },

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   deletePostAtomic: vi.fn(),
   getAccessibleFolders: vi.fn(),
   getAccessibleAllPostFiles: vi.fn(),
+  getBlog: vi.fn(),
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
   getTrashedFolders: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock("@/lib/store", () => ({
   getAccessibleFolderCounts: vi.fn(async () => ({})),
   getAccessibleFolderPostFiles: vi.fn(),
   getAccessibleFolders: mocks.getAccessibleFolders,
+  getBlog: mocks.getBlog,
   getOwnedBlog: mocks.getOwnedBlog,
   getPostById: mocks.getPostById,
   getTrashedFolders: mocks.getTrashedFolders,
@@ -150,6 +152,13 @@ describe("MCP workspace tool adapter", () => {
     mocks.listScopeShares.mockResolvedValue([]);
     mocks.recordAction.mockResolvedValue(undefined);
     mocks.getOwnedBlog.mockResolvedValue({
+      handle: "local",
+      name: "Local Workspace",
+      author: "Writer",
+      cardStyle: "cover",
+      homeLayout: "grid",
+    });
+    mocks.getBlog.mockResolvedValue({
       handle: "local",
       name: "Local Workspace",
       author: "Writer",
@@ -244,7 +253,7 @@ describe("MCP workspace tool adapter", () => {
     const result = await runWorkspaceToolForSession(
       "get_workspace",
       {},
-      { sub: "owner-sub", userId: "owner-uuid" },
+      { sub: "owner-sub", userId: "owner-uuid", handle: "local" },
     );
     expect(result.isError).not.toBe(true);
     expect(JSON.parse(toolText(result))).toMatchObject({
@@ -274,7 +283,7 @@ describe("MCP workspace tool adapter", () => {
     const result = await runWorkspaceToolForSession(
       "update_item",
       { id, body: "After" },
-      { sub: "owner-sub", userId: "owner-uuid" },
+      { sub: "owner-sub", userId: "owner-uuid", handle: "local" },
     );
     expect(result.isError).not.toBe(true);
     expect(mocks.recordAction).toHaveBeenCalledWith(

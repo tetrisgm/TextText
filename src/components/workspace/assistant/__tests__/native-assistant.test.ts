@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/app/editor/actions", () => ({
-  createWorkspacePostAction: vi.fn(),
-  deleteEditablePostAction: vi.fn(),
-  movePostToFolderAction: vi.fn(),
-  saveEditablePostAction: vi.fn(),
-  setEditablePostStatusAction: vi.fn(),
+vi.mock("@/lib/ai/workspace-tool-client", () => ({
+  executeWorkspaceToolRequest: vi.fn(),
 }));
 
 import {
@@ -22,7 +18,7 @@ import {
   fallbackForNativeAssetError,
   runUnavailableAssistantFallback,
 } from "@/components/workspace/assistant/unavailable-fallback";
-import { saveEditablePostAction } from "@/app/editor/actions";
+import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
   patchOpenWorkspaceItemDraft,
   readOpenWorkspaceItemDraft,
@@ -513,14 +509,17 @@ describe("assistant local-first item edits", () => {
     });
   });
 
-  it("persists tag metadata through the shared editable save action", async () => {
+  it("persists tag metadata through the stable workspace command", async () => {
     const workspace = pool();
     workspace.posts[0]!.tags = ["notes"];
-    vi.mocked(saveEditablePostAction).mockResolvedValueOnce({
-      ...workspace.posts[0]!,
-      body: "Local body",
-      tags: ["notes", "design"],
+    vi.mocked(executeWorkspaceToolRequest).mockResolvedValueOnce({
+      item: {
+        id: "post-1",
+        title: "Draft",
+        tags: ["notes", "design"],
+      },
     });
+    const refreshPool = vi.fn(async () => undefined);
     const tools = createWorkspaceAgentTools({
       handle: "local",
       getPool: () => workspace,
@@ -530,6 +529,7 @@ describe("assistant local-first item edits", () => {
         body: "Local body",
         tags: ["notes"],
       }),
+      refreshPool,
     });
 
     await expect(
@@ -538,10 +538,12 @@ describe("assistant local-first item edits", () => {
         tags: ["#Notes", "Design", "design"],
       }),
     ).resolves.toMatchObject({ ok: true, id: "post-1" });
-    expect(saveEditablePostAction).toHaveBeenCalledWith(
+    expect(executeWorkspaceToolRequest).toHaveBeenCalledWith(
       "local",
-      expect.objectContaining({ tags: ["notes", "design"] }),
+      "update_item",
+      { id: "post-1", tags: ["notes", "design"] },
     );
+    expect(refreshPool).toHaveBeenCalledOnce();
   });
 });
 

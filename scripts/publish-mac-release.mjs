@@ -34,12 +34,12 @@ if (!/^vercel_blob_rw_[A-Za-z0-9]+_/.test(token ?? "")) {
 const storeId = token.match(/^vercel_blob_rw_([A-Za-z0-9]+)_/)?.[1]?.toLowerCase();
 const blobBase = `https://${storeId}.public.blob.vercel-storage.com`;
 
-async function upload(pathname, body, contentType) {
+async function upload(pathname, body, contentType, allowOverwrite) {
   const res = await put(pathname, body, {
     access: "public",
     addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 0,
+    allowOverwrite,
+    cacheControlMaxAge: allowOverwrite ? 60 : 31_536_000,
     contentType,
     token,
   });
@@ -76,17 +76,24 @@ const appcastUrl = `${blobBase}/downloads/appcast-${version}.xml`;
 // Immutable per-version zip first; the immutable appcast references it. The
 // stable aliases are maintained as best-effort human conveniences, but the app
 // and website never depend on overwriting them.
-await upload(`downloads/Write-${version}.zip`, zip, "application/zip");
-await upload(`downloads/appcast-${version}.xml`, appcast, "application/xml; charset=utf-8");
+await upload(`downloads/Write-${version}.zip`, zip, "application/zip", false);
+await upload(
+  `downloads/appcast-${version}.xml`,
+  appcast,
+  "application/xml; charset=utf-8",
+  false,
+);
 await upload(
   "downloads/Write.zip",
   zip,
   "application/zip",
+  true,
 );
 await upload(
   "downloads/appcast.xml",
   appcast,
   "application/xml; charset=utf-8",
+  true,
 );
 
 await mkdir("src/generated", { recursive: true });

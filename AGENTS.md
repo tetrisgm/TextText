@@ -23,6 +23,22 @@ This version has breaking changes. APIs, conventions, and file structure may all
   the remote source, public artifacts, update feed, and installed app on the
   same source version.
 
+## Work-unit instrumentation (binding)
+
+- Start each coherent body of work with `npm run work:start -- "short label"`.
+  Run verification through `scripts/work-unit.ts run` or the package recipes so
+  commands have closed stdin, a process-group timeout, an exact source
+  fingerprint, and a durable timing receipt under `.write/`.
+- Use `npm run work:summary` while working and `npm run work:finish` after the
+  final verification to persist elapsed time, failures, cache sizes, the
+  slowest gates, and receipt reuse. Use `npm run work:doctor` when local work feels slow; the
+  dev command prunes only an oversized Next development cache and never removes
+  the Swift incremental cache.
+- A passing command may be reused only when its command and exact source state
+  match. `npm run verify:release` is the sole full release gate. Shipping must
+  consume that exact receipt instead of repeating tests or trusting an
+  environment flag.
+
 ## Release reliability
 
 - Close stdin and impose a process-group wall-clock cap on every long agent,

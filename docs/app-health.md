@@ -6,11 +6,13 @@ integrations, and reports can be reviewed without collecting document content.
 
 ## Lifecycle
 
-1. `release/ship.sh` runs TypeScript, web unit tests, Swift unit tests, the Next
-   production build, the Apple acceptance matrix, and the deterministic
-   workflow capability evaluator.
-2. The ship process writes a build attestation containing stable suite IDs,
-   workflow receipts, source commit, version, and build.
+1. `npm run verify:release` runs TypeScript, web unit tests, Swift unit tests,
+   the live on-device assistant probe, and the Apple acceptance matrix once for
+   an exact source fingerprint. Each bounded command writes a duration receipt.
+2. `release/ship.sh` consumes that exact receipt, runs the deterministic
+   workflow capability evaluator, and performs the real Vercel production build
+   once. The ship process writes a build attestation containing stable suite
+   IDs, durations, workflow receipts, source commit, version, and build.
 3. The receipt is copied into the app before code signing.
 4. The staged app runs `releaseVerification`. Any non-passing check blocks
    publishing.
@@ -26,6 +28,16 @@ integrations, and reports can be reviewed without collecting document content.
 8. The ship command installs the release, waits for that exact version and
    build to write and upload a report, then runs the fail-closed release review
    before declaring the release complete.
+
+## Developer work units
+
+Local product work uses the same bounded command runner as release verification.
+Start a unit with `npm run work:start -- "label"`, inspect cache growth with
+`npm run work:doctor`, and review command cost with `npm run work:summary`.
+Receipts are keyed to the full repository state, including uncommitted and
+untracked source, so a stale pass cannot authorize different code. Local
+receipts contain commands, stable source hashes, status, and durations only.
+They do not contain document content, credentials, or model output.
 
 Finder reliability has two complementary gates. The Swift suite runs a
 deterministic 20-cycle lifecycle through the real File Provider extension core:

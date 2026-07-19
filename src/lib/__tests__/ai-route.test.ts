@@ -105,6 +105,7 @@ describe("/api/ai cloud assistant route", () => {
     expect(mocks.cloudAssistantTools).toHaveBeenCalledWith({
       sub: "editor-sub",
       userId: "user-uuid",
+      handle: "demo-blog",
     });
     // Tools + a step bound are passed to the model call.
     const call = mocks.generateText.mock.calls[0][0];

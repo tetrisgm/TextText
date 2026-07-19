@@ -278,7 +278,8 @@ function FolderActionBar({
       if (menuOpen && !menuRef.current?.contains(event.target)) closeMenu();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
   }, [closeMenu, menuOpen]);
 
   const createLabel =
@@ -295,7 +296,9 @@ function FolderActionBar({
     void Promise.resolve(onDeleteFolder(folder))
       .then(() => setDeleteOpen(false))
       .catch((deleteError) => {
-        setError(actionErrorMessage(deleteError, "Could not move folder to Trash"));
+        setError(
+          actionErrorMessage(deleteError, "Could not move folder to Trash"),
+        );
         setDeleteOpen(false);
         setMenuOpen(true);
       })
@@ -304,7 +307,10 @@ function FolderActionBar({
 
   return (
     <>
-      <div className="folder-top-action-bar applecms" aria-label="Folder actions">
+      <div
+        className="folder-top-action-bar applecms"
+        aria-label="Folder actions"
+      >
         <div className="folder-action-toolbar ac-chrome">
           <WorkspaceActionSearch
             ariaLabel={`Search ${folder.name}`}
@@ -485,7 +491,9 @@ function FolderTitleEditor({
               type="button"
               className="post-folder-title-edit ac-icon-btn"
               aria-label="Rename folder"
-              onClick={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
+              onClick={() =>
+                dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)
+              }
             >
               <span aria-hidden="true">✎</span>
             </button>
@@ -554,6 +562,7 @@ function NotesFolderContents({
   onSelectPost,
   selectedPostId,
   selectedPostIds,
+  viewMode,
 }: {
   blog: Blog;
   handle: string;
@@ -569,6 +578,7 @@ function NotesFolderContents({
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
+  viewMode: FolderViewMode;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -591,17 +601,16 @@ function NotesFolderContents({
         })
         .catch((createError) => {
           setCreating(false);
-          setError(actionErrorMessage(createError, "Could not create the note"));
+          setError(
+            actionErrorMessage(createError, "Could not create the note"),
+          );
         });
     });
   }, [blog, creating, folderPath, handle, onCreateItem, router]);
 
   const notes = useMemo(
     () =>
-      sortedByTimestampDesc(
-        items,
-        (post) => post.updatedAt ?? post.date ?? "",
-      ),
+      sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? ""),
     [items],
   );
 
@@ -628,6 +637,68 @@ function NotesFolderContents({
           >
             Write your first private note.
           </FolderEmptyCard>
+        ) : viewMode !== "list" ? (
+          <div
+            className="tv-grid post-folder-card-grid"
+            role="listbox"
+            aria-label="Notes"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
+            {notes.map((note) => {
+              const selected = Boolean(
+                note.id &&
+                (selectedPostIds?.has(note.id) ?? note.id === selectedPostId),
+              );
+              return (
+                <div
+                  key={itemKey(note)}
+                  id={postOptionId(note.id)}
+                  className={`post-folder-card-option${
+                    selected ? " is-command-selected" : ""
+                  }`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={note.id === selectedPostId ? 0 : -1}
+                  data-workspace-post-id={note.id}
+                  onFocus={() => note.id && onSelectPost?.(note.id)}
+                >
+                  <PostCard
+                    blog={blog}
+                    handle={handle}
+                    post={note}
+                    owner={canEditItems}
+                    variant={viewMode === "column" ? "expanded" : "card"}
+                    href={
+                      onOpenPost
+                        ? blogPostPath(blog, note)
+                        : canEditItems
+                          ? blogPostEditPath(blog, note)
+                          : blogPostPath(blog, note)
+                    }
+                    onOpen={
+                      onOpenPost
+                        ? (event) => {
+                            if (
+                              note.id &&
+                              onItemClick &&
+                              !onItemClick(note.id, event)
+                            ) {
+                              event.preventDefault();
+                              return;
+                            }
+                            if (!shouldOpenLocally(event)) return;
+                            event.preventDefault();
+                            onOpenPost(note);
+                          }
+                        : undefined
+                    }
+                    onDeletePost={onDeleteItem}
+                    onOpenTag={onOpenTag}
+                  />
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div
             className="post-folder-list"
@@ -638,7 +709,8 @@ function NotesFolderContents({
             {notes.map((note) => {
               const preview = previewLine(postBodyPreview(note));
               const selected = Boolean(
-                note.id && (selectedPostIds?.has(note.id) ?? note.id === selectedPostId),
+                note.id &&
+                (selectedPostIds?.has(note.id) ?? note.id === selectedPostId),
               );
               return (
                 <div
@@ -737,6 +809,7 @@ function BookmarksFolderContents({
   onSelectPost,
   selectedPostId,
   selectedPostIds,
+  viewMode,
 }: {
   blog: Blog;
   handle: string;
@@ -754,6 +827,7 @@ function BookmarksFolderContents({
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
+  viewMode: FolderViewMode;
 }) {
   const router = useRouter();
   const urlRef = useRef<HTMLInputElement>(null);
@@ -851,21 +925,18 @@ function BookmarksFolderContents({
     [folderPath, handle, onCreateItem, router, saving],
   );
 
-  const bookmarks = useMemo(
-    () => {
-      const persistedIds = new Set(
-        items.flatMap((post) => (post.id ? [post.id] : [])),
-      );
-      const pending = localBookmarks.filter(
-        (post) => !post.id || !persistedIds.has(post.id),
-      );
-      return sortedByTimestampDesc(
-        [...pending, ...items],
-        (post) => post.createdAt ?? post.date ?? "",
-      );
-    },
-    [items, localBookmarks],
-  );
+  const bookmarks = useMemo(() => {
+    const persistedIds = new Set(
+      items.flatMap((post) => (post.id ? [post.id] : [])),
+    );
+    const pending = localBookmarks.filter(
+      (post) => !post.id || !persistedIds.has(post.id),
+    );
+    return sortedByTimestampDesc(
+      [...pending, ...items],
+      (post) => post.createdAt ?? post.date ?? "",
+    );
+  }, [items, localBookmarks]);
 
   return (
     <>
@@ -877,48 +948,48 @@ function BookmarksFolderContents({
       {canCreateItems && formOpen && (
         <div className="post-folder-inline-create">
           <form className="post-folder-new-form" onSubmit={addBookmark}>
-              <input
-                ref={urlRef}
-                className="post-folder-field is-url"
-                name="url"
-                type="text"
-                inputMode="url"
-                placeholder="https://example.com"
-                aria-label="Bookmark link"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                required
-              />
-              <input
-                className="post-folder-field is-title"
-                name="title"
-                type="text"
-                placeholder="Title (optional)"
-                aria-label="Bookmark title"
-              />
-              <input
-                className="post-folder-field is-description"
-                name="description"
-                type="text"
-                placeholder="Description (optional)"
-                aria-label="Bookmark description"
-              />
-              <button
-                type="submit"
-                className="ac-btn ac-btn-filled"
-                disabled={saving}
-              >
-                {saving ? "Adding" : "Add"}
-              </button>
-              <button
-                type="button"
-                className="ac-btn ac-btn-gray"
-                disabled={saving}
-                onClick={closeForm}
-              >
-                Cancel
-              </button>
+            <input
+              ref={urlRef}
+              className="post-folder-field is-url"
+              name="url"
+              type="text"
+              inputMode="url"
+              placeholder="https://example.com"
+              aria-label="Bookmark link"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+            />
+            <input
+              className="post-folder-field is-title"
+              name="title"
+              type="text"
+              placeholder="Title (optional)"
+              aria-label="Bookmark title"
+            />
+            <input
+              className="post-folder-field is-description"
+              name="description"
+              type="text"
+              placeholder="Description (optional)"
+              aria-label="Bookmark description"
+            />
+            <button
+              type="submit"
+              className="ac-btn ac-btn-filled"
+              disabled={saving}
+            >
+              {saving ? "Adding" : "Add"}
+            </button>
+            <button
+              type="button"
+              className="ac-btn ac-btn-gray"
+              disabled={saving}
+              onClick={closeForm}
+            >
+              Cancel
+            </button>
           </form>
         </div>
       )}
@@ -939,8 +1010,8 @@ function BookmarksFolderContents({
             {bookmarks.map((bookmark) => {
               const selected = Boolean(
                 bookmark.id &&
-                  (selectedPostIds?.has(bookmark.id) ??
-                    bookmark.id === selectedPostId),
+                (selectedPostIds?.has(bookmark.id) ??
+                  bookmark.id === selectedPostId),
               );
               return (
                 <BookmarkCard
@@ -968,6 +1039,7 @@ function BookmarksFolderContents({
                       : true
                   }
                   onSelect={() => bookmark.id && onSelectPost?.(bookmark.id)}
+                  viewMode={viewMode}
                 />
               );
             })}
@@ -993,6 +1065,7 @@ function BlogFolderContents({
   onSelectPost,
   selectedPostId,
   selectedPostIds,
+  viewMode,
 }: {
   blog: Blog;
   handle: string;
@@ -1008,6 +1081,7 @@ function BlogFolderContents({
   onSelectPost?: (postId: string) => void;
   selectedPostId?: string | null;
   selectedPostIds?: ReadonlySet<string>;
+  viewMode: FolderViewMode;
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -1015,10 +1089,7 @@ function BlogFolderContents({
   const [, startTransition] = useTransition();
   const sorted = useMemo(
     () =>
-      sortedByTimestampDesc(
-        items,
-        (post) => post.updatedAt ?? post.date ?? "",
-      ),
+      sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? ""),
     [items],
   );
 
@@ -1077,7 +1148,8 @@ function BlogFolderContents({
           >
             {sorted.map((post) => {
               const selected = Boolean(
-                post.id && (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
+                post.id &&
+                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
               );
               return (
                 <div
@@ -1122,6 +1194,7 @@ function BlogFolderContents({
                     }
                     onDeletePost={onDeleteItem}
                     onOpenTag={onOpenTag}
+                    variant={viewMode === "column" ? "expanded" : "card"}
                   />
                 </div>
               );
@@ -1189,7 +1262,8 @@ export function FolderPage({
   useEffect(() => {
     const applyFilter = (event: Event) => {
       const detail = (event as CustomEvent<{ query?: unknown }>).detail;
-      const query = typeof detail?.query === "string" ? detail.query.trim() : "";
+      const query =
+        typeof detail?.query === "string" ? detail.query.trim() : "";
       setFilterQuery(query);
       if (!query || !onSelectPost) return;
       const normalized = query.toLocaleLowerCase();
@@ -1201,7 +1275,8 @@ export function FolderPage({
       if (firstMatch?.id) onSelectPost(firstMatch.id);
     };
     window.addEventListener("write:filter-current-folder", applyFilter);
-    return () => window.removeEventListener("write:filter-current-folder", applyFilter);
+    return () =>
+      window.removeEventListener("write:filter-current-folder", applyFilter);
   }, [items, onSelectPost]);
 
   useEffect(() => {
@@ -1247,8 +1322,12 @@ export function FolderPage({
         canShare={canShareFolders}
         viewMode={viewMode}
         onChangeView={changeView}
-        onCreate={() => dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)}
-        onRename={() => dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)}
+        onCreate={() =>
+          dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)
+        }
+        onRename={() =>
+          dispatchFolderUiEvent(EDIT_FOLDER_TITLE_EVENT, folder.id)
+        }
         searchFocusRequestKey={searchFocusRequestKey}
         searchValue={filterQuery}
         onSearchValueChange={setFilterQuery}
@@ -1289,6 +1368,7 @@ export function FolderPage({
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
           selectedPostIds={selectedPostIds}
+          viewMode={viewMode}
         />
       ) : folder.mode === "bookmarks" ? (
         <BookmarksFolderContents
@@ -1308,6 +1388,7 @@ export function FolderPage({
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
           selectedPostIds={selectedPostIds}
+          viewMode={viewMode}
         />
       ) : (
         <NotesFolderContents
@@ -1325,6 +1406,7 @@ export function FolderPage({
           onSelectPost={onSelectPost}
           selectedPostId={visibleSelectedPostId}
           selectedPostIds={selectedPostIds}
+          viewMode={viewMode}
         />
       )}
     </main>

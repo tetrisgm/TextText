@@ -47,6 +47,7 @@ private struct WriteBuildAttestation: Decodable {
     struct Suite: Decodable {
         let id: String
         let status: String
+        let durationMilliseconds: Int?
     }
 
     let schemaVersion: Int
@@ -54,6 +55,7 @@ private struct WriteBuildAttestation: Decodable {
     let buildNumber: String
     let sourceCommit: String
     let workflowContractHash: String
+    let releaseGateDurationMilliseconds: Int?
     let suites: [Suite]
 }
 
@@ -468,11 +470,18 @@ final class AppHealthReporter {
         let passed = attestation.suites.filter { $0.status == "pass" }.count
         let suiteIDs = attestation.suites.map(\.id)
         let uniqueSuiteIDs = Set(suiteIDs).count == suiteIDs.count
+        let durationReceiptsValid = attestation.suites.allSatisfy {
+            ($0.durationMilliseconds ?? -1) >= 0
+        }
+        let releaseDurationValid =
+            (attestation.releaseGateDurationMilliseconds ?? -1) >= 0
         let requiredSuitesPresent = Set(WriteWorkflowHealth.requiredCheckIDs)
             .isSubset(of: Set(suiteIDs))
         let suitesValid = !attestation.suites.isEmpty
             && passed == attestation.suites.count
             && uniqueSuiteIDs
+            && durationReceiptsValid
+            && releaseDurationValid
             && requiredSuitesPresent
             && attestation.suites.allSatisfy {
                 Self.validIdentifier($0.id) && $0.status == "pass"
@@ -492,6 +501,9 @@ final class AppHealthReporter {
             "workflow_contract_valid": workflowContractValid ? 1 : 0,
             "suite_ids_unique": uniqueSuiteIDs ? 1 : 0,
             "required_suites_present": requiredSuitesPresent ? 1 : 0,
+            "duration_receipts_valid": durationReceiptsValid ? 1 : 0,
+            "release_gate_duration_ms": Double(
+                attestation.releaseGateDurationMilliseconds ?? 0),
         ])
     }
 

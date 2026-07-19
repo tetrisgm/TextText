@@ -103,6 +103,31 @@ describe("workspace local authority", () => {
     );
   });
 
+  it("keeps a locally trashed item out of active lists until the server confirms it", async () => {
+    const store = await import("@/lib/pool/store");
+    const original = post();
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [original]));
+
+    expect(store.movePostToTrash(original.id)?.id).toBe(original.id);
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:01:00.000Z", [
+        { ...original, updatedAt: "2026-07-10T10:01:00.000Z" },
+      ]),
+    );
+
+    expect(store.getWorkspacePost(original.id)).toBeNull();
+  });
+
+  it("restores a locally trashed item when the server mutation fails", async () => {
+    const store = await import("@/lib/pool/store");
+    const original = post();
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [original]));
+    store.movePostToTrash(original.id);
+
+    expect(store.restorePostFromTrash(original.id)?.id).toBe(original.id);
+    expect(store.getWorkspacePost(original.id)?.title).toBe(original.title);
+  });
+
   it("keeps an optimistic patch until the server acknowledges its values", async () => {
     const store = await import("@/lib/pool/store");
     store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [post()]));

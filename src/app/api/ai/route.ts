@@ -162,7 +162,11 @@ export async function POST(request: Request) {
   }
 
   const userId = user.userId ?? (await getUserIdBySub(user.sub));
-  const actor = { sub: user.sub, userId: userId ?? null };
+  const actor = {
+    sub: user.sub,
+    userId: userId ?? null,
+    handle: workspace.handle,
+  };
   const provider = config ? cloudProviderLabel(config.provider) : "Anthropic";
   const model = config
     ? config.provider === "anthropic"

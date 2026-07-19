@@ -36,6 +36,7 @@ const bodyFetches = new Set<string>();
 const bodyMutationGenerations = new Map<string, number>();
 const locallyDirtyBodies = new Set<string>();
 const locallyDirtyPosts = new Set<string>();
+const locallyTrashedPosts = new Set<string>();
 const optimisticPostPatches = new Map<string, Partial<WorkspacePoolPost>>();
 let poolMutationGeneration = 0;
 
@@ -47,6 +48,10 @@ let state: WorkspacePoolState = {
 };
 
 function bodyKey(blogId: string, postId: string): string {
+  return `${blogId}:${postId}`;
+}
+
+function postKey(blogId: string, postId: string): string {
   return `${blogId}:${postId}`;
 }
 
@@ -148,10 +153,25 @@ function patchMatchesPost(
 
 function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
   const current = state.pool;
-  if (!current || current.blogId !== pool.blogId) return pool;
+  const confirmedTrashedIds = new Set(
+    (pool.trashedPosts ?? []).map((post) => post.id),
+  );
+  for (const postId of confirmedTrashedIds) {
+    locallyTrashedPosts.delete(postKey(pool.blogId, postId));
+  }
+  const incomingPosts = pool.posts.filter(
+    (post) =>
+      !confirmedTrashedIds.has(post.id) &&
+      !locallyTrashedPosts.has(postKey(pool.blogId, post.id)),
+  );
+  if (!current || current.blogId !== pool.blogId) {
+    return incomingPosts.length === pool.posts.length
+      ? pool
+      : { ...pool, posts: incomingPosts };
+  }
 
   const currentById = new Map(current.posts.map((post) => [post.id, post]));
-  const reconciledPosts = pool.posts.map((post) => {
+  const reconciledPosts = incomingPosts.map((post) => {
     const local = currentById.get(post.id);
     const patch = optimisticPostPatches.get(post.id);
     if (patch && patchMatchesPost(post, patch)) {
@@ -169,8 +189,14 @@ function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
       (isOptimisticPost(post) || locallyDirtyPosts.has(post.id)) &&
       !incomingIds.has(post.id),
   );
+  const pendingTrashedPosts = (current.trashedPosts ?? []).filter(
+    (post) =>
+      locallyTrashedPosts.has(postKey(pool.blogId, post.id)) &&
+      !confirmedTrashedIds.has(post.id),
+  );
   if (
     pendingPosts.length === 0 &&
+    pendingTrashedPosts.length === 0 &&
     reconciledPosts.every((post, index) => post === pool.posts[index])
   ) {
     return pool;
@@ -179,6 +205,12 @@ function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
   return {
     ...pool,
     posts: [...pendingPosts, ...reconciledPosts],
+    trashedPosts: [
+      ...pendingTrashedPosts,
+      ...(pool.trashedPosts ?? []).filter(
+        (post) => !pendingTrashedPosts.some((pending) => pending.id === post.id),
+      ),
+    ],
   };
 }
 
@@ -566,6 +598,7 @@ export function movePostToTrash(postId: string): WorkspacePoolPost | null {
   const post = state.pool.posts.find((entry) => entry.id === postId) ?? null;
   if (!post) return null;
   markPoolMutation();
+  locallyTrashedPosts.add(postKey(state.pool.blogId, postId));
   locallyDirtyPosts.delete(postId);
   optimisticPostPatches.delete(postId);
   locallyDirtyBodies.delete(bodyKey(state.pool.blogId, postId));
@@ -593,6 +626,7 @@ export function restorePostFromTrash(postId: string): WorkspacePoolPost | null {
     null;
   if (!post) return null;
   markPoolMutation();
+  locallyTrashedPosts.delete(postKey(state.pool.blogId, postId));
   setState({
     pool: {
       ...state.pool,

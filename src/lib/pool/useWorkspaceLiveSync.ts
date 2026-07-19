@@ -23,9 +23,10 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-    async function poll(
-      wait: number,
-    ): Promise<{ cursor?: string; changed?: boolean; build?: string } | null> {
+    type PollResult =
+      { cursor?: string; changed?: boolean; build?: string } | null | false;
+
+    async function poll(wait: number): Promise<PollResult> {
       controller = new AbortController();
       const params = new URLSearchParams({ handle });
       if (cursor) params.set("cursor", cursor);
@@ -39,6 +40,15 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
             signal: controller.signal,
           },
         );
+        // Guest and shared read-only shells have no owner change feed. A 404 is
+        // permanent for this mounted workspace, so do not keep waking the app.
+        if (
+          response.status === 401 ||
+          response.status === 403 ||
+          response.status === 404
+        ) {
+          return false;
+        }
         if (!response.ok) return null;
         return (await response.json()) as {
           cursor?: string;
@@ -53,6 +63,7 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
     async function run() {
       const initial = await poll(0);
       if (cancelled) return;
+      if (initial === false) return;
       if (initial?.cursor) cursor = initial.cursor;
 
       while (!cancelled) {
@@ -62,6 +73,7 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
         }
         const result = await poll(20);
         if (cancelled) return;
+        if (result === false) return;
         if (!result) {
           await sleep(3000); // error backoff
           continue;

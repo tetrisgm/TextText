@@ -357,6 +357,87 @@
   pointer-events: none;
 }
 
+:global(.post-folder-page.is-view-grid) .card,
+:global(.post-folder-page.is-view-column) .card {
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+:global(.post-folder-page.is-view-grid) .card {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-height: 100%;
+}
+
+:global(.post-folder-page.is-view-column) .card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:global(.post-folder-page.is-view-grid) .selected,
+:global(.post-folder-page.is-view-column) .selected {
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+:global(.post-folder-page.is-view-grid) .body,
+:global(.post-folder-page.is-view-column) .body {
+  grid-column: 1;
+  grid-row: 2;
+  padding: 18px 20px 20px;
+}
+
+:global(.post-folder-page.is-view-grid) .thumbnailLink,
+:global(.post-folder-page.is-view-column) .thumbnailLink {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  height: auto;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 8px 8px 0 0;
+  aspect-ratio: 4 / 3;
+}
+
+:global(.post-folder-page.is-view-column) .thumbnailLink {
+  max-height: 240px;
+  aspect-ratio: 16 / 6;
+}
+
+:global(.post-folder-page.is-view-grid) .noThumbnail .body {
+  grid-row: 1;
+  min-height: 230px;
+  padding-top: 54px;
+}
+
+:global(.post-folder-page.is-view-grid) .main,
+:global(.post-folder-page.is-view-column) .main {
+  padding-right: 34px;
+}
+
+:global(.post-folder-page.is-view-grid) .menuWrap,
+:global(.post-folder-page.is-view-column) .menuWrap {
+  top: 12px;
+  right: 12px;
+}
+
+:global(.post-folder-page.is-view-grid) .title,
+:global(.post-folder-page.is-view-column) .title {
+  white-space: normal;
+}
+
+:global(.post-folder-page.is-view-grid) .description {
+  -webkit-line-clamp: 4;
+}
+
+:global(.post-folder-page.is-view-column) .description {
+  -webkit-line-clamp: 10;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .spinner {
     animation: bookmarkCaptureSpin 1.2s linear infinite;

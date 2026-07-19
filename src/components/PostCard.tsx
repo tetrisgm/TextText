@@ -10,6 +10,7 @@ import {
 import { TagChips } from "@/components/TagChips";
 import type { Blog, Post } from "@/lib/content";
 import {
+  formatArticleDate,
   isVideoFile,
   postBodyPreview,
   postAccent,
@@ -61,13 +62,18 @@ function truncate(value: string, maxLength: number): string {
   return `${base}...`;
 }
 
-function plainTextExcerpt(markdown: string | undefined): string {
+function plainTextExcerpt(
+  markdown: string | undefined,
+  maxLength = 140,
+): string {
   if (!markdown) return "";
-  return truncate(oneLine(stripMarkdown(markdown)), 140);
+  return truncate(oneLine(stripMarkdown(markdown)), maxLength);
 }
 
-function postDesc(post: Post): string {
-  return postSubtitle(post) || plainTextExcerpt(postBodyPreview(post));
+function postDesc(post: Post, expanded: boolean): string {
+  const body = plainTextExcerpt(postBodyPreview(post), expanded ? 900 : 140);
+  if (expanded && body) return body;
+  return postSubtitle(post) || body;
 }
 
 function videoMimeType(src: string): string {
@@ -94,6 +100,7 @@ export function PostCard({
   owner,
   categoryLabel,
   showTypeChip = false,
+  variant = "card",
 }: {
   blog: Blog;
   handle: string;
@@ -106,13 +113,15 @@ export function PostCard({
   /** name of the subfolder this post lives in, shown as a quiet chip */
   categoryLabel?: string | null;
   showTypeChip?: boolean;
+  variant?: "card" | "expanded";
 }) {
   const ref = useRef<HTMLAnchorElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [hovered, setHovered] = useState(false);
 
   const title = postTitle(post);
-  const desc = postDesc(post);
+  const expanded = variant === "expanded";
+  const desc = postDesc(post, expanded);
   const coverSource = resolveCoverSource(post);
   const cover = coverSource.src;
   const isMinimal = blog.cardStyle === "minimal";
@@ -205,7 +214,8 @@ export function PostCard({
   const baseRectOf = (el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
-    const translate = (cs as CSSStyleDeclaration & { translate?: string }).translate;
+    const translate = (cs as CSSStyleDeclaration & { translate?: string })
+      .translate;
     let tx = 0;
     let ty = 0;
     if (translate && translate !== "none") {
@@ -262,6 +272,7 @@ export function PostCard({
     "tvcard",
     `tvcard--${post.type}`,
     `tvcard--style-${blog.cardStyle}`,
+    expanded ? "tvcard--expanded" : "",
     cover ? "" : "tvcard--no-cover",
     hovered ? "is-hover" : "",
   ]
@@ -272,7 +283,7 @@ export function PostCard({
     <div
       className={`tvcard-shell${
         isMinimal ? " tvcard-shell--minimal" : ""
-      }`}
+      }${expanded ? " tvcard-shell--expanded" : ""}`}
     >
       <WorkspaceItemStar handle={handle} owner={owner} post={post} />
       <Link
@@ -345,6 +356,16 @@ export function PostCard({
                 )}
                 <span className="tvcard-desc">{desc}</span>
               </span>
+              {expanded && (
+                <time
+                  className="tvcard-date"
+                  dateTime={post.updatedAt ?? post.date}
+                >
+                  {formatArticleDate(post.updatedAt ?? post.date, {
+                    style: "short",
+                  })}
+                </time>
+              )}
             </span>
           </span>
         </span>

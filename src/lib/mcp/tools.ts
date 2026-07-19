@@ -47,6 +47,7 @@ import {
   createSubfolder,
   deletePost,
   deletePostAtomic,
+  getBlog,
   getAccessibleAllPostFiles,
   getAccessibleFolderCounts,
   getAccessibleFolderPostFiles,
@@ -230,11 +231,24 @@ function isToolResult<T extends object>(
 }
 
 async function requireBlog(extra: ToolContext): Promise<Blog | CallToolResult> {
-  const blog = await workspaceBlog(extra.authInfo);
+  const requestedHandle = extra.authInfo?.extra?.workspaceHandle;
+  const blog =
+    typeof requestedHandle === "string" && requestedHandle
+      ? await getBlog(requestedHandle)
+      : await workspaceBlog(extra.authInfo);
   if (!blog) {
     return errorResult(
       "No workspace exists for this token's user. Open the editor once to create one.",
     );
+  }
+  if (typeof requestedHandle === "string" && requestedHandle) {
+    const access = await resolveWorkspaceAccess({
+      handle: blog.handle,
+      user: accessUser(extra),
+    });
+    if (!access.canView) {
+      return errorResult("You cannot access this workspace.");
+    }
   }
   return blog;
 }
@@ -1520,14 +1534,19 @@ export function registerWriteTools(server: McpServer): void {
 export async function runWorkspaceToolForSession(
   name: WorkspaceToolName,
   args: Record<string, unknown>,
-  actor: { sub: string; userId: string | null },
+  actor: { sub: string; userId: string | null; handle: string },
 ): Promise<CallToolResult> {
   const extra: ToolContext = {
     authInfo: {
       token: "session",
       clientId: "in-app-assistant",
       scopes: [WORKSPACE_SCOPE_CAPABILITIES.fullAccess],
-      extra: { sub: actor.sub, userId: actor.userId, actorType: "ai" },
+      extra: {
+        sub: actor.sub,
+        userId: actor.userId,
+        actorType: "ai",
+        workspaceHandle: actor.handle,
+      },
     },
   };
   return executeMcpTool(name, args, extra);

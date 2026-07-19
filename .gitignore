@@ -44,3 +44,6 @@ mac/profiles/
 
 # autobuild daemon logs (local)
 release/.autobuild*.log
+
+# per-work-unit timings, receipts, and local cache history
+/.write/

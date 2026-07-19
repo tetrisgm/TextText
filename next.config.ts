@@ -5,6 +5,14 @@ import type { NextConfig } from "next";
 const devOrigin = process.env.WRITE_DEV_ORIGIN;
 
 const nextConfig: NextConfig = {
+  // Server Actions are deployment-specific. Give every build a stable identity
+  // so Next can reject version-skewed requests with a hard navigation instead
+  // of submitting an action id to the wrong deployment. The in-app assistant
+  // uses stable JSON routes, but editor actions still benefit from this guard.
+  deploymentId:
+    process.env.NEXT_DEPLOYMENT_ID ??
+    process.env.VERCEL_GIT_COMMIT_SHA ??
+    process.env.VERCEL_DEPLOYMENT_ID,
   allowedDevOrigins: devOrigin ? [devOrigin, `*.${devOrigin}`] : [],
   devIndicators: false,
   async headers() {

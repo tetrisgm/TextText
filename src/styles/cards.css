@@ -272,6 +272,72 @@ video.tvcard-cover[data-ready="true"] {
   border-radius: 18px;
 }
 
+.tvcard-shell.tvcard-shell--expanded .tvcard {
+  padding: 0;
+  perspective: none;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-inner,
+.tvcard-shell.tvcard-shell--expanded .tvcard-inner::after {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-inner {
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  transform: none !important;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-media {
+  max-height: 240px;
+  border-radius: 8px 8px 0 0;
+  aspect-ratio: 16 / 6;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-body {
+  min-height: 180px;
+  padding: 22px 24px;
+  border-radius: 0 0 8px 8px;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard--no-cover .tvcard-body {
+  min-height: 230px;
+  border-radius: 8px;
+  padding-top: 54px;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-title {
+  min-height: 0;
+  font-size: 24px;
+  -webkit-line-clamp: 3;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-desc {
+  min-height: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-line-clamp: 10;
+}
+
+.tvcard-shell.tvcard-shell--expanded .tvcard-date {
+  margin-top: auto;
+}
+
+@media (hover: hover) {
+  .tvcard-shell.tvcard-shell--expanded .tvcard:is(:hover, .is-hover) {
+    z-index: auto;
+    scale: 1;
+    translate: 0;
+  }
+
+  .tvcard-shell.tvcard-shell--expanded
+    .tvcard:is(:hover, .is-hover)
+    .tvcard-inner::after {
+    opacity: 0;
+  }
+}
+
 .tvcard--style-minimal .tvcard-inner {
   background: color-mix(in srgb, var(--bg) 94%, var(--bg-soft));
   border: 1px solid var(--hairline-2);
