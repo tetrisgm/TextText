@@ -178,10 +178,11 @@ npx tsx "$ROOT/scripts/work-unit.ts" run \
   --name mac.release --timeout 7200 --no-reuse -- \
   "$ROOT/mac/scripts/release.sh" "$VERSION"
 EXPECTED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist")"
+DEPLOYMENT_VERSION="${VERSION//./_}"
 # This identity lets Next detect an app window that survived a web deployment.
 # The assistant itself uses stable JSON commands, while remaining Server Action
 # calls recover with a hard navigation instead of submitting stale action ids.
-export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-write-${VERSION}-${EXPECTED_BUILD}}"
+export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-write-${DEPLOYMENT_VERSION}-${EXPECTED_BUILD}}"
 echo "   web deployment identity: $NEXT_DEPLOYMENT_ID"
 
 if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
