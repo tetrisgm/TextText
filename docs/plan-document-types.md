@@ -126,6 +126,43 @@ deserializers) produced RCE or XSS. The blueprint is Microsoft Adaptive Cards:
 a versioned JSON tree of allowlisted primitives where the host owns styling and
 content is bound by reference.
 
+### The mental model: a game engine
+
+The clearest frame for this is a game engine. The **engine** is a library of
+render primitives (cover, masthead, byline, gallery, prose, card, and whatever
+gets added), implemented by us in HTML, CSS, and JavaScript, versioned, and
+shipped with the app. A **document type is a game**: it does not carry its own
+rendering pipeline, it *refers to* engine primitives and composes them. Primitives
+evolve, and every type that uses them inherits the improvement, which is what
+makes global restyle work (patch the engine, every document re-renders). This is
+the same closed-vocabulary-of-primitives idea as Adaptive Cards and server-driven
+UI, in the language the product actually thinks in.
+
+Two rules make the engine model hold, and both come straight from the analogy:
+
+- **HTML and CSS live INSIDE the primitives, not in the per-document layer.** The
+  primitives are hand-written by us, trusted, theme-correct. A type author (human
+  or AI) composes them; the library emits the HTML. So "the renderer is HTML and
+  CSS" is true at the engine level and "a type is data" is true at the authoring
+  level, both at once. HTML is not given up, it is relocated into the trusted
+  engine.
+- **Compose-only, never run-alongside.** A library you *can* use is not a library
+  you can *only* use. A game engine gives primitives but does NOT sandbox the
+  game: a Unity build is still arbitrary code you would never run from a stranger.
+  So a type must be a **composition that can only reference library primitives**
+  (config and data), not free HTML/CSS/JS that merely imports the library. The
+  instant a type could run code alongside the engine, a shared or gallery-imported
+  type is arbitrary code in another user's browser. This single choice is what
+  buys taste, consistency, fields, global restyle, safety-when-shared,
+  portability, and AI reliability all at once.
+
+Content stays data, not baked HTML: the engine feeds on the document's content
+(text, images, typed fields) and compiles it to HTML for three outputs (in-app,
+the public URL, and a downloadable self-contained export). HTML is a build
+product, never the source, so a global restyle can always reach every document
+(a baked-HTML document is frozen and unreachable). See section 4 for where that
+content physically lives.
+
 ### The three closed vocabularies
 
 - **Item layout primitives:** `Stack` (direction, gap, align), `Group`,
@@ -181,6 +218,24 @@ and nesting, and re-validate on import (never trust a publisher's validation).
 ---
 
 ## 4. Storage, sync, and how a type travels
+
+### The content-format decision
+
+The container stays `.textpack` (a zipped textbundle: `text.md` + `assets/` +
+`info.json`), unchanged. Markdown stays as the **body** format: in the engine
+model the file must hold content as data the engine feeds on, and for prose,
+portable Markdown is the right tool (it round-trips, opens in Bear/Ulysses, and
+is what the prose primitive renders). What changes is that a document is no
+longer *only* Markdown: it gains **typed fields** (carried as frontmatter, keyed
+by stable field id, emitted in a declared order) and a lightweight **`type:`
+reference**. Content stays data (text, images, typed fields); it never becomes
+baked HTML, because the engine compiles content to HTML as output, and a baked
+document would be unreachable by a global restyle. The type definition and its
+render composition do NOT live in the file (see below); the file references the
+type by slug, and an export writes a resolved snapshot sidecar so the artifact
+is self-describing.
+
+### The closed lists a custom field dies at today
 
 Anchored in the format map. A document is always one Markdown file: `---`
 frontmatter (each line one JSON scalar or array) plus body.
