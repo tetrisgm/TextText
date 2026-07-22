@@ -32,6 +32,9 @@ export const maxDuration = 60;
 
 const MAX_WAIT_SECONDS = 25;
 const POLL_INTERVAL_MS = 700;
+// Ceiling for the backoff during a long-poll wait, so an idle open editor keeps
+// far fewer DB round-trips than a flat 700ms poll would.
+const POLL_MAX_INTERVAL_MS = 4000;
 const MAX_UPDATES_PER_POST = 64;
 // A single Yjs update is a small binary diff; 512 KB base64 is already far
 // larger than any real edit, so anything bigger is rejected rather than
@@ -142,10 +145,15 @@ export async function GET(
   let updates = await collabUpdatesSince(postId, since, epoch);
   if (updates.length === 0 && wait > 0) {
     const deadline = Date.now() + wait * 1000;
+    // Back off the inner DB poll during the wait: snappy for the first checks
+    // (a real co-edit still lands in well under a second) then slower while idle,
+    // so a long-lived open editor is not a steady stream of Neon queries.
+    let interval = POLL_INTERVAL_MS;
     while (updates.length === 0 && Date.now() < deadline) {
       if (request.signal?.aborted) break;
-      await sleep(Math.min(POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
+      await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
       updates = await collabUpdatesSince(postId, since, epoch);
+      interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     }
   }
   const seq = updates.length > 0 ? updates[updates.length - 1].seq : since;

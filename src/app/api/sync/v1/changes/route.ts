@@ -19,6 +19,10 @@ export const maxDuration = 60;
 
 const MAX_WAIT_SECONDS = 25;
 const POLL_INTERVAL_MS = 750;
+// Ceiling for the backoff during a long-poll wait. A few seconds of change-
+// detection latency is fine for file sync, and it keeps an always-connected
+// File Provider from being a steady stream of Neon queries.
+const POLL_MAX_INTERVAL_MS = 5000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -40,11 +44,13 @@ export async function GET(request: Request) {
   }
 
   const deadline = Date.now() + wait * 1000;
+  let interval = POLL_INTERVAL_MS;
   while (cursor === since && Date.now() < deadline) {
     // Stop burning cycles for a client that already went away.
     if (request.signal?.aborted) break;
-    await sleep(Math.min(POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
+    await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
     cursor = await workspaceChangeCursor(blog.handle);
+    interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
   }
   return Response.json({ cursor, changed: cursor !== since });
 }
