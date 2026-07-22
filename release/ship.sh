@@ -159,8 +159,21 @@ if [ "$NO_PUBLISH" = "1" ]; then
   exit 0
 fi
 
-echo ">> migrate database"
-npx tsx "$ROOT/scripts/work-unit.ts" run \
+echo ">> migrate database (production only)"
+# The dev DB (.env.local) is a LOCAL Postgres, so migrations must load the
+# production Neon creds from the release-only file. Guard hard: never migrate
+# anything that is not the prod Neon endpoint, so a misconfigured machine can
+# never point a release at a local or throwaway database.
+if [ ! -f "$ROOT/.env.release.local" ]; then
+  echo "Missing .env.release.local (production DB creds required to migrate)." >&2
+  exit 1
+fi
+set -a; . "$ROOT/.env.release.local"; set +a
+case "${DATABASE_URL:-}" in
+  *neon.tech*) ;;
+  *) echo "Refusing: migration DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
+esac
+DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
   --name database.migrations --timeout 900 --no-reuse -- \
   "$ROOT/scripts/run-release-migrations.sh"
 
