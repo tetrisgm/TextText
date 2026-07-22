@@ -28,11 +28,20 @@ below:
 5. **Import something and make it editable**: bring an external thing in and turn
    it into a first-class document you can reshape, improve, and save.
 
-The spine is 1 to 5. **Collaboration (multiplayer, live cursors) is a
-nice-to-have that already exists** (the relay + presence + revision CAS) and is
-explicitly NOT on the critical path. Peer-to-peer sockets do not remove the
-server (signaling, TURN relay, persistence, permission enforcement, offline
-peers all remain server jobs), so they add complexity, not less; park them.
+The spine is 1 to 5, and **collaboration is part of the spine, not a side
+feature**: adding people to a document or page and editing together to improve it
+is core, and it is in goal 5 verbatim ("edit and collaborate and improve"). What
+the owner set aside is the peer-to-peer *transport mechanism*, NOT collaboration
+itself. The server-mediated relay is the right mechanism and already partly
+exists (the Yjs relay + presence + revision CAS); peer-to-peer sockets do not
+remove the server (signaling, TURN relay, persistence, permission enforcement,
+offline peers all stay server jobs), so P2P adds complexity, not less, which is
+the only thing to avoid. Collaboration is crucial and still has real work to be
+solid: make the owner a first-class co-editor, an invite / accept binding step,
+live cursors, and close the known between-sessions durability holes (tracked in
+the collaboration review and its follow-ups). It is a core parallel track to the
+document-types work, and the permission model in section 5 (public link, team,
+named writers) is its access half.
 Point 5 falls straight out of the content model: because a document is
 structured content-data (fields + body + assets), **import is just a capability
 that normalizes an external thing (a page, a file, a captured site, a template)
