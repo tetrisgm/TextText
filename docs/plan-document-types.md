@@ -30,18 +30,32 @@ below:
 
 The spine is 1 to 5, and **collaboration is part of the spine, not a side
 feature**: adding people to a document or page and editing together to improve it
-is core, and it is in goal 5 verbatim ("edit and collaborate and improve"). What
-the owner set aside is the peer-to-peer *transport mechanism*, NOT collaboration
-itself. The server-mediated relay is the right mechanism and already partly
-exists (the Yjs relay + presence + revision CAS); peer-to-peer sockets do not
-remove the server (signaling, TURN relay, persistence, permission enforcement,
-offline peers all stay server jobs), so P2P adds complexity, not less, which is
-the only thing to avoid. Collaboration is crucial and still has real work to be
-solid: make the owner a first-class co-editor, an invite / accept binding step,
-live cursors, and close the known between-sessions durability holes (tracked in
-the collaboration review and its follow-ups). It is a core parallel track to the
-document-types work, and the permission model in section 5 (public link, team,
-named writers) is its access half.
+is core, and it is in goal 5 verbatim ("edit and collaborate and improve").
+
+The collaboration architecture, organized by one principle: **a CRDT (Yjs)
+decouples merge from transport**, so updates merge correctly however they arrive,
+which makes the P2P-versus-server choice a late, reversible layer rather than a
+foundational one. What the product requires regardless of transport is a durable,
+authoritative, permission-enforcing home that exists when nobody is online
+(publish-by-link, gating, multi-device, offline edits), which is the server. So
+the layers are: CRDT data model (transport-agnostic keystone); server as the
+authoritative persistence + permission + publish home; a server-mediated sync
+baseline covering solo/offline/async/live with one path (already partly built:
+the Yjs relay + presence + revision CAS); a lightweight live channel for
+presence/cursors. **P2P is not rejected, it is deferred**: because the CRDT makes
+transport swappable, a WebRTC data-channel fast-path for active co-editing
+sessions can be added later without changing the data model, if a real latency
+need appears (even local-first/P2P designs land on local replicas plus a sync
+server, so this layered shape is the principled form of P2P). The only thing to
+avoid is P2P as the FOUNDATION, since a persistent publishable document still
+needs a durable authoritative copy the server provides.
+
+Collaboration is crucial and still has real work to be solid: make the owner a
+first-class co-editor, an invite / accept binding step, live cursors, and close
+the known between-sessions durability holes (tracked in the collaboration review
+and its follow-ups). It is a core parallel track to the document-types work, and
+the permission model in section 5 (public link, team, named writers) is its
+access half.
 Point 5 falls straight out of the content model: because a document is
 structured content-data (fields + body + assets), **import is just a capability
 that normalizes an external thing (a page, a file, a captured site, a template)
