@@ -515,7 +515,7 @@ final class CaptureAgent {
     private func truncateReadable(_ readable: String) -> String {
         guard Data(readable.utf8).count > maxReadableBytes else { return readable }
 
-        let note = "\n\n[Captured text truncated by Write because it exceeded the 1.75 MB upload limit.]\n"
+        let note = "\n\n[Captured text truncated by Texttext because it exceeded the 1.75 MB upload limit.]\n"
         let noteBytes = Data(note.utf8).count
         let limit = max(0, maxReadableBytes - noteBytes)
         var used = 0

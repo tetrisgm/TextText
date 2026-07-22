@@ -42,7 +42,7 @@ fi
 
 echo ">> codex on $TASK (worktree $WT)"
 "$RUN_CAPPED" --seconds "${WRITE_CODEX_MAX_SECS:-5400}" --grace 15 \
-  --label "Write Codex task $TASK" -- \
+  --label "Texttext Codex task $TASK" -- \
   "$CODEX_BIN" exec -C "$WT" -s workspace-write -c 'mcp_servers={}' \
     -o "$WT_ROOT/$TASK.last.txt" "$(cat "$BRIEF")" \
   > "$WT_ROOT/$TASK.log" 2>&1 || \

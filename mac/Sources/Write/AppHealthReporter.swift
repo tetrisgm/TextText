@@ -605,8 +605,8 @@ final class AppHealthReporter {
     }
 
     private func checkPublicLinkMapping() -> (WriteHealthStatus, [String: Double]) {
-        let privateURL = "https://write.ramine.net/api/sync/v1/files/health-item"
-        let publicURL = "https://write.ramine.net/t/demo/health-item"
+        let privateURL = "https://texttext.app/api/sync/v1/files/health-item"
+        let publicURL = "https://texttext.app/t/demo/health-item"
         let entry = WriteManifestItem(
             file: "health-item.md", kind: "article", slug: "health-item",
             title: "Health item", status: "published", hash: "health-hash",

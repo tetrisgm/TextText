@@ -281,7 +281,7 @@ final class WriteWorkspaceCoreTests: XCTestCase {
 
     func testFallbackRootAvoidsTCCGatedDocumentsFolder() throws {
         let fallback = WorkspaceRootResolver.documentsFallbackWriteRoot()
-        XCTAssertEqual(fallback, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write Local", isDirectory: true))
+        XCTAssertEqual(fallback, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Texttext Local", isDirectory: true))
     }
 
     private func fixtureWorkspace() -> WorkspaceDescriptor {

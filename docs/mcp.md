@@ -1,7 +1,7 @@
-# Write MCP workspace command reference
+# Texttext MCP workspace command reference
 
-Write exposes one file-backed workspace command surface to three consumers:
-the product UI, the on-device assistant in Write for Mac, and external agents
+Texttext exposes one file-backed workspace command surface to three consumers:
+the product UI, the on-device assistant in Texttext for Mac, and external agents
 over MCP. The application calls the commands directly. It does not call its
 own MCP endpoint.
 
@@ -23,11 +23,11 @@ registers those definitions in `src/lib/mcp/tools.ts`.
 The normal connection flow is OAuth authorization code with PKCE S256:
 
 1. The client follows the protected-resource and authorization-server
-   metadata advertised by Write.
+   metadata advertised by Texttext.
 2. Public clients can register at `/oauth/register` and request the least
    privilege they need: `read` or `sync`. A client that requests both
    advertised scopes receives effective `sync` access.
-3. Write shows the signed-in owner a consent page naming the client and
+3. Texttext shows the signed-in owner a consent page naming the client and
    requested access. The owner must click Approve.
 4. The authorization code exchange returns a `wsk_` bearer access token and a
    `wrt_` refresh token. Access tokens expire after 3,600 seconds.
@@ -113,7 +113,7 @@ or workspace selector that could cross that boundary.
 | `set_comment_resolved` | `sync` | `id`, `comment_id`, `resolved` | Resolve or reopen a comment thread. |
 | `recapture_bookmark` | `sync` | `id`, `if_match_hash?` | Queue a fresh full bookmark capture without hiding the completed capture. |
 | `list_item_assets` | `read` or `sync` | `id` | List referenced cover, body, gallery, video, capture, and screenshot assets. |
-| `add_item_asset` | `sync` | `id`, `source_url`, `placement`, `if_match_hash?` | Import a public image or video into Write storage and attach it. |
+| `add_item_asset` | `sync` | `id`, `source_url`, `placement`, `if_match_hash?` | Import a public image or video into Texttext storage and attach it. |
 | `remove_item_asset` | `sync` | `id`, `asset_url`, `if_match_hash?` | Remove item references to an asset without deleting shared storage. |
 | `set_item_cover` | `sync` | `id`, `source`, cover fields, `if_match_hash?` | Set a URL cover, automatic cover selection, or no cover. |
 
@@ -137,14 +137,14 @@ confirmation callback.
 
 ## In-app assistant status
 
-Write for Mac currently runs the assistant through Apple's on-device
+Texttext for Mac currently runs the assistant through Apple's on-device
 Foundation Models bridge. The model receives the same 31 tool definitions,
 but calls execute in the signed-in page through the normal workspace actions.
 The assistant is unavailable in the plain web app and does not silently send
 workspace content to a cloud provider.
 
 OpenAI and Anthropic are not implemented as in-app assistant providers.
-ChatGPT, Claude, Cursor, and other hosts can use Write as external MCP clients
+ChatGPT, Claude, Cursor, and other hosts can use Texttext as external MCP clients
 through the endpoint documented here.
 
 ## Sibling surface: sync API

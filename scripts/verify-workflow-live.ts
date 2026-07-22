@@ -33,7 +33,7 @@ import {
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 
-const ORIGIN = process.env.WRITE_ORIGIN ?? "https://write.ramine.net";
+const ORIGIN = process.env.WRITE_ORIGIN ?? "https://texttext.app";
 const STAMP = Date.now().toString(36);
 const SUB = `scratch-workflow-verify-${STAMP}`;
 const HANDLE = `scratch-workflow-verify-${STAMP}`;

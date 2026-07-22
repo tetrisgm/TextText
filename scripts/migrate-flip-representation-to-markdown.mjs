@@ -3,8 +3,8 @@
 // File Provider rename revert-loop: a package's directory name and its inner
 // text.md reconcile on separate schedules, so a server rename could leave
 // {content: new, dirname: old} and the client would push the stale name back,
-// reverting the rename in a loop. A flat .md is a single inode — name and content
-// are one node and move together — so that split state (and the phantom) cannot
+// reverting the rename in a loop. A flat .md is a single inode - name and content
+// are one node and move together - so that split state (and the phantom) cannot
 // exist. See DEFAULT_FILE_REPRESENTATION in src/lib/content.ts.
 //
 //   node scripts/migrate-flip-representation-to-markdown.mjs

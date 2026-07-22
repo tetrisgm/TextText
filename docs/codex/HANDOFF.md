@@ -1,4 +1,4 @@
-# Write: Claude handoff
+# Texttext: Claude handoff
 
 Updated 2026-07-19. This is the only current continuation document.
 
@@ -21,7 +21,7 @@ Read these files before changing product code:
 - Repository: `/Users/shokunin/dev/write`
 - Durable branch: `main` only
 - Remote: `origin/main`
-- Feature and release source commit: `aea7650` records Write `0.103`
+- Feature and release source commit: `aea7650` records Texttext `0.103`
 - The later commits on `main` only refresh continuation documentation.
 - No temporary worktrees, unmerged branches, or uncommitted product changes
   existed when this handoff was prepared.
@@ -31,14 +31,14 @@ Always confirm the live state with `git status`, `git worktree list`, and
 
 ## Shipped product state
 
-Write `0.103`, build `109`, is the coherent shipped release for this body of
+Texttext `0.103`, build `109`, is the coherent shipped release for this body of
 work. At handoff time all of the following matched:
 
 - Source metadata: `src/generated/app-release.ts`
 - Mac source version: `mac/Info.plist`
 - Installed app: `/Applications/Write.app`
-- Public marker: `https://write.ramine.net/api/app/version`
-- Sparkle feed: `https://write.ramine.net/appcast.xml`
+- Public marker: `https://texttext.app/api/app/version`
+- Sparkle feed: `https://texttext.app/appcast.xml`
 - Immutable archive and signed enclosure named by the generated release metadata
 
 The installed app was running from `/Applications/Write.app`. Release metadata
@@ -75,7 +75,7 @@ The only recent idea discussed but not implemented is macOS-aware reading size.
 The user asked whether macOS defines a correct font size for text apps. This was
 an information question, not an implementation request. There is no universal
 desktop Dynamic Type setting that automatically sizes web or AppKit document
-content, so a future implementation should be a Write reading-size preference
+content, so a future implementation should be a Texttext reading-size preference
 that respects system accessibility choices where available. Do not build it
 unless the user's next request asks for it.
 
@@ -129,7 +129,7 @@ Use a bounded dev-server process and stop it after the gate. The OAuth loop is a
 release blocker for that surface.
 
 Meaningful user-facing work also gets a newest-first entry in the in-product
-`Write Changelog` note as described in `AGENTS.md`.
+`Texttext Changelog` note as described in `AGENTS.md`.
 
 ## Handoff maintenance
 
@@ -143,10 +143,10 @@ the architecture documents, and the in-product changelog.
 ```text
 cd /Users/shokunin/dev/write
 
-Continue the Write project from clean main. Read AGENTS.md, CLAUDE.md, DESIGN.md,
+Continue the Texttext project from clean main. Read AGENTS.md, CLAUDE.md, DESIGN.md,
 docs/codex/HANDOFF.md, and docs/ai-sidebar-architecture.md before changing code.
 The handoff is authoritative: the previous feature batch is complete and shipped
-as Write 0.103 build 109, and the old MCP and UI briefs are historical references,
+as Texttext 0.103 build 109, and the old MCP and UI briefs are historical references,
 not active task lists. Do not redo completed work.
 
 First fetch and fast-forward main, then verify branch hygiene and the current
@@ -157,7 +157,7 @@ report that there is no active implementation rather than inventing a backlog.
 For actual product work, start a work unit with npm run work:start, work directly
 on main, preserve unrelated changes, verify once through the receipt-based work
 commands, commit and push one coherent unit, ship it with release/ship.sh, update
-the installed app and in-product Write Changelog, and verify source, public
+the installed app and in-product Texttext Changelog, and verify source, public
 artifacts, feed, website, installed version, and running behavior all agree.
 Do not create a feature branch or leave work for me to integrate. Do not ship
 documentation-only changes. Use no em dashes.

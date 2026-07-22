@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: Write sync API
+  title: Texttext sync API
   version: 1.0.0
-  summary: File-level markdown sync for a Write workspace.
+  summary: File-level markdown sync for a Texttext workspace.
   description: |
-    The Write sync API exposes one authenticated workspace as folders of
+    The Texttext sync API exposes one authenticated workspace as folders of
     markdown files. It is intended for sync clients and third-party agents,
     including ChatGPT Actions, that need to create, read, update, and delete
     markdown files without MCP.
@@ -19,8 +19,8 @@ servers:
   - url: https://{host}/api/sync/v1
     variables:
       host:
-        default: example.com
-        description: The Write host for the workspace owner.
+        default: texttext.app
+        description: The Texttext host for the workspace owner.
 security:
   - bearerAuth: []
 tags:
@@ -341,7 +341,7 @@ paths:
       operationId: listFileArtifacts
       summary: List inline document assets
       description: |
-        Returns the Write-hosted image URLs referenced by this item's Markdown,
+        Returns the Texttext-hosted image URLs referenced by this item's Markdown,
         plus saved inline bookmark capture assets. The manifest is available for
         every item kind. Screenshot and screenshot-tile capture artifacts are
         excluded. fileHash is the hash of the unchanged canonical Markdown file.

@@ -168,7 +168,7 @@ export function beginWorkUnit(label: string, root = repositoryRoot) {
   const workUnit: WorkUnit = {
     schemaVersion: 1,
     id: `${compactTime}-${sourceCommit.slice(0, 8)}`,
-    label: label.trim() || "Write work unit",
+    label: label.trim() || "Texttext work unit",
     baseCommit: sourceCommit,
     startedAt,
   };
@@ -610,7 +610,7 @@ function parseRunArguments(args: string[]) {
 async function main() {
   const [subcommand = "summary", ...args] = process.argv.slice(2);
   if (subcommand === "begin") {
-    beginWorkUnit(args.join(" ") || "Write work unit");
+    beginWorkUnit(args.join(" ") || "Texttext work unit");
     return;
   }
   if (subcommand === "run") {

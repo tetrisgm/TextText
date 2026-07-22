@@ -1,6 +1,6 @@
 # App-owned reliability
 
-Write carries its reliability system inside the shipped product. Each release
+Texttext carries its reliability system inside the shipped product. Each release
 proves its source gates, each installed version checks its production
 integrations, and reports can be reviewed without collecting document content.
 
@@ -75,13 +75,13 @@ workflows run end-to-end and are audited, which the content-blind receipts
 cannot; the two together cover contract-shape and real execution.
 
 The release also has one architecture identity from build through update. The
-Write executable and its three extensions must be arm64-only, while Sparkle is
+Texttext executable and its three extensions must be arm64-only, while Sparkle is
 left universal. The staged and public appcasts must advertise
 `sparkle:hardwareRequirements` as `arm64`; a missing marker blocks publishing
 or completion of the owner ship command.
 
 This follows the useful PartyParty pattern of a bounded local history, lifecycle
-probes, best-effort upload, and centralized review. Write uses a structured,
+probes, best-effort upload, and centralized review. Texttext uses a structured,
 content-blind report instead of an unstructured session log because document
 privacy is a product invariant.
 

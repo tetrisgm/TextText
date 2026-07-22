@@ -4,7 +4,7 @@ import Foundation
 @available(macOS 13.0, *)
 public struct CreateDocumentIntent: AppIntent {
     public static var title: LocalizedStringResource = "Create document"
-    public static var description = IntentDescription("Create a local markdown document in the Write workspace.")
+    public static var description = IntentDescription("Create a local markdown document in the Texttext workspace.")
 
     @Parameter(title: "Title")
     public var titleText: String
@@ -80,7 +80,7 @@ public struct SearchDocumentsIntent: AppIntent {
 @available(macOS 13.0, *)
 public struct CreateFolderIntent: AppIntent {
     public static var title: LocalizedStringResource = "Create folder"
-    public static var description = IntentDescription("Create a local folder in the Write workspace.")
+    public static var description = IntentDescription("Create a local folder in the Texttext workspace.")
 
     @Parameter(title: "Name")
     public var name: String

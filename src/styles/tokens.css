@@ -1,4 +1,4 @@
-/* ============================ Write: base tokens ============================
+/* ========================== Texttext: base tokens ===========================
    The neutral palette every surface reads from. Apple-calibrated grays
    (#1d1d1f ink, #f5f5f7 soft) with dark mode via [data-theme="dark"] plus a
    prefers-color-scheme fallback when no explicit theme is set. */

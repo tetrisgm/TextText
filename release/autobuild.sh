@@ -23,7 +23,7 @@ log() {
 }
 
 notify() {
-  /usr/bin/osascript -e "display notification \"$1\" with title \"Write delivery\"" \
+  /usr/bin/osascript -e "display notification \"$1\" with title \"Texttext delivery\"" \
     >/dev/null 2>&1 || true
 }
 
@@ -46,7 +46,7 @@ clean_tree() {
 
 needs_ship() {
   case "$("$GIT" log -1 --format=%s)" in
-    "Release Write"*) return 1 ;;
+    "Release Texttext"*|"Release Write"*) return 1 ;;
     *) return 0 ;;
   esac
 }
@@ -58,7 +58,7 @@ receipt_matches_source() {
 push_release_commit() {
   if ! clean_tree; then return 0; fi
   case "$("$GIT" log -1 --format=%s)" in
-    "Release Write"*) ;;
+    "Release Texttext"*|"Release Write"*) ;;
     *) return 0 ;;
   esac
   if [ "$("$GIT" rev-list --count origin/main..HEAD)" -eq 0 ]; then return 0; fi
@@ -129,7 +129,7 @@ while true; do
   fi
 
   "$GIT" add mac/Info.plist src/generated/app-release.ts
-  "$GIT" commit -q -m "Release Write $version"
+  "$GIT" commit -q -m "Release Texttext $version"
   rm -f "$FAILED_SOURCE"
   if "$NPX" tsx scripts/work-unit.ts run \
     --name autobuild.git_push --timeout 300 --no-reuse -- \
@@ -137,6 +137,6 @@ while true; do
     log "shipped $version and pushed"
   else
     log "shipped $version; push deferred without rebuilding"
-    notify "Write $version shipped, but its source push will retry."
+    notify "Texttext $version shipped, but its source push will retry."
   fi
 done

@@ -792,7 +792,7 @@ const STARTER_NOTE = {
 
 const STARTER_BOOKMARK = {
   slug: "write-ai-setup-guide",
-  title: "Write AI setup guide",
+  title: "Texttext AI setup guide",
 };
 
 const WORKSPACE_STARTER_POST_SLUGS = [

@@ -7,7 +7,7 @@ public struct FileProviderWorkspace: Codable, Equatable, Sendable {
     public var name: String
     /// The workspace handle; folder/file identifiers are scoped by it.
     public var handle: String
-    /// Product origin, e.g. https://write.ramine.net (LiveWriteSyncAPI trims any
+    /// Product origin, e.g. https://texttext.app (LiveWriteSyncAPI trims any
     /// trailing slash).
     public var origin: String
     /// The workspace-scoped `wsk_` bearer token.
@@ -23,7 +23,7 @@ public struct FileProviderWorkspace: Codable, Equatable, Sendable {
 
 /// The credential handoff the container app writes and the File Provider
 /// extension reads, defined once so both sides agree on the shape. It carries a
-/// LIST of workspaces (one "Write" domain now spans every workspace the user has
+/// LIST of workspaces (one "Texttext" domain now spans every workspace the user has
 /// joined); today the app holds one credential, so the list has one element, but
 /// the extension already fans out per handle. Stored in a shared keychain access
 /// group (see FileProviderHandoffStore).

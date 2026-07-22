@@ -33,7 +33,7 @@ export function LandingFooter() {
       <div className="write-landing-footer-inner">
         <div className="write-landing-footer-brand">
           <Link className="write-landing-footer-mark" href="/">
-            Write
+            Texttext
           </Link>
           <p>Folders, Markdown, and publishing in one quiet workspace.</p>
         </div>

@@ -5,7 +5,7 @@ import { LandingHeader } from "@/components/LandingHeader";
 export const metadata: Metadata = {
   title: "Security",
   description:
-    "How Write protects portable Markdown files, unlisted notes, tokens, and sync.",
+    "How Texttext protects portable Markdown files, unlisted notes, tokens, and sync.",
 };
 
 const securityFacts = [
@@ -24,7 +24,7 @@ export default function SecurityPage() {
         <p className="write-landing-kicker">Security</p>
         <h1>Your writing stays portable first</h1>
         <p className="write-legal-lede">
-          Write starts with a simple security claim: every post is a portable
+          Texttext starts with a simple security claim: every post is a portable
           Markdown file you can export. The product is built so you can leave
           with your work instead of trusting a closed database forever.
         </p>
@@ -67,8 +67,8 @@ export default function SecurityPage() {
         <section>
           <h2>Infrastructure basics</h2>
           <p>
-            Write uses TLS in transit. Production secrets are environment-only
-            values, not committed files. The Mac app signs in through Write
+            Texttext uses TLS in transit. Production secrets are environment-only
+            values, not committed files. The Mac app signs in through Texttext
             instead of asking you to paste account passwords into the app.
           </p>
         </section>
@@ -76,7 +76,7 @@ export default function SecurityPage() {
         <section>
           <h2>Compliance</h2>
           <p>
-            Write is in beta and does not claim SOC 2, ISO 27001, HIPAA, or
+            Texttext is in beta and does not claim SOC 2, ISO 27001, HIPAA, or
             similar certifications.
           </p>
         </section>
@@ -85,7 +85,7 @@ export default function SecurityPage() {
           <h2>Report a security issue</h2>
           <p>
             Send security reports to{" "}
-            <a href="mailto:security@write.ramine.net">security@write.ramine.net</a>.
+            <a href="mailto:security@texttext.app">security@texttext.app</a>.
             Include the affected URL, steps to reproduce, and whether any data
             may have been exposed.
           </p>

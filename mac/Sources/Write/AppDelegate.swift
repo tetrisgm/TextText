@@ -260,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 guard let target else {
                     self.appendActivity(
-                        "Could not match \(url.lastPathComponent) to a Write item")
+                        "Could not match \(url.lastPathComponent) to a Texttext item")
                     self.showMainWindow()
                     return
                 }
@@ -1197,11 +1197,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard url.host == "item",
               url.pathComponents.count == 2,
               let id = url.pathComponents.last else {
-            appendActivity("Ignored malformed Write link \(url.absoluteString)")
+            appendActivity("Ignored malformed Texttext link \(url.absoluteString)")
             return
         }
         guard isValidWriteItemId(id) else {
-            appendActivity("Ignored Write link with an invalid item id")
+            appendActivity("Ignored Texttext link with an invalid item id")
             return
         }
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -1209,7 +1209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let action {
             guard let rawTarget = query.first(where: { $0.name == "url" })?.value,
                   let target = validatedWriteWebURL(rawTarget) else {
-                appendActivity("Ignored Write action with an invalid target")
+                appendActivity("Ignored Texttext action with an invalid target")
                 return
             }
             switch action {
@@ -1218,7 +1218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case "manage-access":
                 presentAccessManagement(for: target)
             default:
-                appendActivity("Ignored unknown Write action \(action)")
+                appendActivity("Ignored unknown Texttext action \(action)")
             }
             return
         }
@@ -1245,7 +1245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            appendActivity("Copied the Write link")
+            appendActivity("Copied the Texttext link")
         }
     }
 
@@ -1268,13 +1268,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// so a nil URL nudges the enumerator and retries briefly before giving up.
     private func openWriteItem(id: String) {
         guard isValidWriteItemId(id) else {
-            appendActivity("Ignored Write link with an invalid item id")
+            appendActivity("Ignored Texttext link with an invalid item id")
             return
         }
         guard let handle = store.cachedWorkspace()?.blog.handle, !handle.isEmpty,
               let domain = registeredFileProviderDomain,
               let manager = NSFileProviderManager(for: domain) else {
-            appendActivity("No item found for Write link")
+            appendActivity("No item found for Texttext link")
             return
         }
         let identifier = NSFileProviderItemIdentifier(
@@ -1282,7 +1282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         resolveWriteFileProviderURL(identifier, manager: manager) { [weak self] url in
             guard let self else { return }
             guard let url else {
-                self.appendActivity("No item found for Write link")
+                self.appendActivity("No item found for Texttext link")
                 return
             }
             self.resolveAndOpenManagedFile(url, fileProviderIdentifier: identifier.rawValue)
@@ -1383,11 +1383,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// One stable "Write" File Provider domain now spans every workspace: the
+    /// One stable "Texttext" File Provider domain now spans every workspace: the
     /// root lists a folder per workspace, so the Finder Locations entry is a
-    /// single "Write" and the workspace name lives on the folder inside it.
+    /// single "Texttext" and the workspace name lives on the folder inside it.
     private static let fileProviderDomainId = "write"
-    private static let fileProviderDomainName = "Write"
+    private static let fileProviderDomainName = "Texttext"
 
     /// Warm account.json so the File Provider domain can register: syncFileProvider-
     /// Domain() needs a cached workspace handle, which a fresh sign-in does not yet
@@ -1424,7 +1424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                           self.store.cachedWorkspace() == nil else { return }
                     guard attempt < 5 else {
                         self.appendActivity(
-                            "Could not reach Write to set up sync (\(error.description)); "
+                            "Could not reach Texttext to set up sync (\(error.description)); "
                             + "use Sync Now to retry")
                         return
                     }
@@ -1437,7 +1437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Reconcile the single "Write" File Provider domain with sign-in + cached
+    /// Reconcile the single "Texttext" File Provider domain with sign-in + cached
     /// workspace state, and (re)publish the credential handoff for the extension.
     /// The app holds one workspace token today, so the handoff carries a
     /// one-element workspace list; the extension already fans out per handle, so
@@ -1694,7 +1694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 UserDefaults.standard.set(
                     Self.fileProviderSchemaVersion,
                     forKey: Self.fileProviderSchemaVersionKey)
-                self.appendActivity("Upgraded Finder's local Write cache")
+                self.appendActivity("Upgraded Finder's local Texttext cache")
                 self.addFileProviderDomain(
                     identifier: domain.identifier, handoff: handoff,
                     epoch: epoch, identity: identity)
@@ -1793,7 +1793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let error else {
                 if let preservedLocation {
                     self?.appendActivity(
-                        "Preserved local Write files at \(preservedLocation.path)")
+                        "Preserved local Texttext files at \(preservedLocation.path)")
                 }
                 return
             }
@@ -2068,7 +2068,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defaults.set(true, forKey: Self.loginItemAppliedKey) // only after SUCCESS,
             // so a transient failure retries next launch instead of losing the default
         } catch {
-            NSLog("Write: login-item default enroll failed (will retry next launch): \(error)")
+            NSLog("Texttext: login-item default enroll failed (will retry next launch): \(error)")
         }
     }
 
@@ -2096,7 +2096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 image.isTemplate = true
                 button.image = image
             } else {
-                button.title = "W"
+                button.title = "T"
             }
             button.toolTip = appName
         }
@@ -2138,7 +2138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The primary action: the full workspace in a native window.
         let windowVisible = webWindow?.window?.isVisible == true
         menu.addItem(item(
-            windowVisible ? "Hide Write" : "Open Write",
+            windowVisible ? "Hide Texttext" : "Open Texttext",
             #selector(toggleMainWindowAction),
             keyEquivalent: "w",
             modifiers: [.command, .shift]))
@@ -2248,8 +2248,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let domain = registeredFileProviderDomain,
               let manager = NSFileProviderManager(for: domain) else {
             appendActivity(store.loadCredentials() == nil
-                ? "Sign in to open your Write folder"
-                : "Write folder is still setting up; try again in a moment")
+                ? "Sign in to open your Texttext folder"
+                : "Texttext folder is still setting up; try again in a moment")
             materializeWorkspace()
             return
         }
@@ -2261,7 +2261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     NSWorkspace.shared.open(url)
                 } else {
                     self.appendActivity(
-                        "Write folder is still setting up; try again in a moment")
+                        "Texttext folder is still setting up; try again in a moment")
                     self.materializeWorkspace()
                 }
             }
@@ -2342,7 +2342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.saveCredentials(Credentials(
             token: token,
             serverOrigin: origin.absoluteString,
-            tokenName: "Write.app on \(device)",
+            tokenName: "Texttext on \(device)",
             linkedAt: Date()))
         appendActivity("Linked this Mac")
         // Fetch+cache the workspace, then register the File Provider domain
@@ -2435,7 +2435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             linking: linkController.isLinking,
             linkFailed: linkFailed,
             waitingApproval: waitingApproval,
-            folderPath: fileProviderUserVisibleURL?.path ?? "Write in Finder",
+            folderPath: fileProviderUserVisibleURL?.path ?? "Texttext in Finder",
             folderStatus: "All Markdown files are kept on this Mac.",
             lastSyncLine: lastSyncLine(),
             finderStatus: fileProviderStatusMonitor.snapshot,
@@ -2452,9 +2452,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         MarkdownDefaultHandler.makeDefault { [weak self] error in
             DispatchQueue.main.async {
                 if let error {
-                    self?.appendActivity("Could not set Write as the .md default: \(error.localizedDescription)")
+                    self?.appendActivity("Could not set Texttext as the .md default: \(error.localizedDescription)")
                 } else {
-                    self?.appendActivity("Write is now the default app for .md files")
+                    self?.appendActivity("Texttext is now the default app for .md files")
                 }
                 self?.refreshUI()
             }

@@ -126,8 +126,8 @@ public final class WriteFileProviderItem: NSObject, NSFileProviderItem {
     /// legacy name+parent identity for non-represented items), deliberately NOT
     /// the content hash:
     /// coupling them made an ordinary body edit (hash changes, name does not)
-    /// look like a metadata change too, and — because the Finder filename derives
-    /// from the post title — a rename's frontmatter re-render then churned the
+    /// look like a metadata change too, and - because the Finder filename derives
+    /// from the post title - a rename's frontmatter re-render then churned the
     /// metadata channel in a reconciliation loop. Keeping the two versions
     /// independent lets a rename settle the name once and a content change settle
     /// the body once, instead of each re-triggering the other.

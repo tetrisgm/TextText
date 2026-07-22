@@ -105,7 +105,7 @@ public enum ShareExtensionError: LocalizedError, Equatable {
         case .missingURL:
             return "A bookmark requires a URL"
         case .missingAppendTarget:
-            return "Append requires a target Write document id"
+            return "Append requires a target Texttext document id"
         case .missingPayload:
             return "Save file requires file data"
         }

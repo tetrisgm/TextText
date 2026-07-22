@@ -75,7 +75,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main className="connect-main signin-main">
         <div className="signin-topline">
           <a className="signin-wordmark" href="/">
-            Write
+            Texttext
           </a>
           <a className="signin-back" href="/">
             Back
@@ -226,7 +226,7 @@ export default async function SignInPage({ searchParams }: Props) {
       )}
 
       <p className="signin-terms">
-        By continuing, you agree to Write's terms and privacy policy.
+        By continuing, you agree to Texttext's terms and privacy policy.
       </p>
     </Shell>
   );

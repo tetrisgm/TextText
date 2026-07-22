@@ -47,11 +47,11 @@ so nothing is deleted and no push is ever orphaned.
 
 ### State (schema)
 
-- `posts.collab_epoch` INT NOT NULL DEFAULT 0 — the current log generation.
-- `posts.collab_body_epoch` INT NULL DEFAULT NULL — the epoch whose
+- `posts.collab_epoch` INT NOT NULL DEFAULT 0 - the current log generation.
+- `posts.collab_body_epoch` INT NULL DEFAULT NULL - the epoch whose
   materialization produced the current `posts.body`; NULL when the body was last
   written by a non-collab (external) path.
-- `collab_updates.epoch` INT NOT NULL DEFAULT 0 — the generation each row belongs
+- `collab_updates.epoch` INT NOT NULL DEFAULT 0 - the generation each row belongs
   to.
 
 Migration backfills all existing rows to epoch 0 and sets `collab_body_epoch`
@@ -59,7 +59,7 @@ NULL (any existing log is treated as "unknown provenance", so the first reopen
 reseeds once, which is safe). Re-run note goes in the migrate script, same
 pattern as `scripts/migrate-add-revision.mjs`.
 
-### Write paths set provenance
+### Texttext paths set provenance
 
 - **Collab materialization** (the Yjs-shell autosave via `savePostContentPatch`,
   AND `POST /api/collab/{id}/materialize`): set `collab_body_epoch = collab_epoch`

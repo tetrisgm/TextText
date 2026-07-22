@@ -54,7 +54,7 @@ function NativeModelReadiness({
       </div>
       <p className={styles.modelStatusBody}>
         Apple Intelligence runs locally. macOS installs and manages its model
-        separately from Write, so first use can require a system download.
+        separately from Texttext, so first use can require a system download.
       </p>
       <progress
         className={styles.modelStatusProgress}

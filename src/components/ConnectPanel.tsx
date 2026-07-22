@@ -221,7 +221,7 @@ export function ConnectPanel({
           Use with Claude, ChatGPT, Cursor, or any MCP client
         </h2>
         <p className="connect-sub">
-          Write speaks MCP over streamable HTTP. Add this to your client's
+          Texttext speaks MCP over streamable HTTP. Add this to your client's
           MCP configuration and replace the placeholder with a token from
           above.
         </p>

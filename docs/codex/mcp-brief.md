@@ -1,10 +1,10 @@
-# Write MCP, Paper-grade: implementation and documentation brief
+# Texttext MCP, Paper-grade: implementation and documentation brief
 
 ## Task
 
-Revise Write's MCP integration to the level of craft in `paper.design/docs/mcp`, in both the running implementation and the documentation. Consolidate the tool surface (31 tools becomes 26: 8 read, 18 write), normalize result envelopes, surface the just-landed `tags` and `[[wikilinks]]`, and rewrite the connect docs into Paper's six-part shape. Do this as one coherent change across the shared command surface, the MCP layer, the Swift native contract, the docs, and the OAuth release gate.
+Revise Texttext's MCP integration to the level of craft in `paper.design/docs/mcp`, in both the running implementation and the documentation. Consolidate the tool surface (31 tools becomes 26: 8 read, 18 write), normalize result envelopes, surface the just-landed `tags` and `[[wikilinks]]`, and rewrite the connect docs into Paper's six-part shape. Do this as one coherent change across the shared command surface, the MCP layer, the Swift native contract, the docs, and the OAuth release gate.
 
-Repo: `~/dev/write`, branch `main` (work in place, uncommitted). Stack: Next.js App Router (this is NOT stock Next.js; APIs differ from training data, consult `node_modules/next/dist/docs/` before writing framework code). Web app plus its own docs pages. Public MCP endpoint: `https://write.ramine.net/api/mcp`.
+Repo: `~/dev/write`, branch `main` (work in place, uncommitted). Stack: Next.js App Router (this is NOT stock Next.js; APIs differ from training data, consult `node_modules/next/dist/docs/` before writing framework code). Web app plus its own docs pages. Public MCP endpoint: `https://texttext.app/api/mcp`.
 
 Standard to match: `paper.design/docs/mcp` for simplicity, thoroughness, and craft. Copy voice everywhere: verb-first, sentence case headings, second person, present tense, example prompts written as quoted user requests, no marketing. NO em dashes anywhere in code, copy, or docs.
 
@@ -31,7 +31,7 @@ Standard to match: `paper.design/docs/mcp` for simplicity, thoroughness, and cra
 
 ---
 
-## PART 1 — Implementation
+## PART 1 - Implementation
 
 ### 1a. Result-shape normalization (do this first; it touches many tools)
 
@@ -54,7 +54,7 @@ backlinks: BacklinkRef[]       // items whose body links to this one (read_item 
 - `read_item`: `{ item: McpItemEntry, markdown: string, assets: AssetRef[] }` (JSON now, not raw text). **`markdown` and `item.hash` MUST come from ONE render.** Use `renderItemFile(blog, post)` once; it returns `{text, hash}` together. Feed `text` into `markdown` and `hash` into `item.hash` so they never diverge and the `if_match_hash` CAS stays valid. `assets` is `listItemAssetReferences(post)`. This absorbs `list_item_assets`. `tags`/`wikilinks`/`backlinks` live only in the JSON envelope, never in `markdown`.
 - Every mutation returns `{ item: McpItemEntry }`. Keep booleans only where they carry real meaning: deletes return `{ item, trashed: true }`, restores `{ item, restored: true }`, `recapture_bookmark` returns `{ item, queued: true }`. Remove the no-op `{changed:false,item}` early returns; returning the unchanged item is enough.
 
-### 1b. READ tools — keep 8, tighten descriptions
+### 1b. READ tools - keep 8, tighten descriptions
 
 | Tool | Change | Verb-first one-line description |
 |---|---|---|
@@ -69,7 +69,7 @@ backlinks: BacklinkRef[]       // items whose body links to this one (read_item 
 
 `read_item` is the one behavioral change (text becomes the JSON envelope with `tags`/`wikilinks`/`backlinks`/`assets`). An agent that reads an item now sees its tags and link graph without a second call.
 
-### 1c. WRITE tools — 18, after 5 removals
+### 1c. WRITE tools - 18, after 5 removals
 
 **Remove these five names entirely** (folded into a survivor). All five are on the shared surface, so removal cascades across consumers (see 1e):
 
@@ -79,7 +79,7 @@ backlinks: BacklinkRef[]       // items whose body links to this one (read_item 
 - `list_item_assets` → folded into the `read_item` result (`assets[]`).
 - `grant_access` AND `set_access_role` → BOTH replaced by a single `set_access` upsert. (The design's checklist omitted `grant_access`; it must be removed too, or the count is wrong.)
 
-**`update_item` — the one item-patch tool** (merges the three `set_item_*` mutators). Schema:
+**`update_item` - the one item-patch tool** (merges the three `set_item_*` mutators). Schema:
 
 ```
 update_item({
@@ -110,7 +110,7 @@ update_item({
 | `move_item` | "Move one item to another folder of the same mode." | unchanged; keeps the cross-mode block. |
 | `delete_item` | "Move one item to Trash. It stays restorable; this never permanently deletes." | returns `{item, trashed:true}`. |
 | `restore_item` | "Restore one item from Trash with its previous status." | returns `{item, restored:true}`. |
-| `add_item_asset` | "Import one public image or video URL into Write and attach it as cover, body, or gallery." | openWorld; unchanged. |
+| `add_item_asset` | "Import one public image or video URL into Texttext and attach it as cover, body, or gallery." | openWorld; unchanged. |
 | `remove_item_asset` | "Remove references to one asset URL from an item's cover, body, and gallery." | unchanged. |
 | `recapture_bookmark` | "Re-fetch one bookmark from its saved URL. The current capture stays visible until the new one lands." | openWorld; returns `{item, queued:true}`. |
 | `add_comment` | "Add a comment or reply on one item, optionally anchored to an exact quote." | unchanged. |
@@ -121,7 +121,7 @@ update_item({
 | `restore_folder` | "Restore one folder subtree from Trash." | unchanged. |
 | `revoke_access` | "Revoke one person's access to the workspace, a folder, or an item." | unchanged. |
 
-**`set_access` — new (merges `grant_access` + `set_access_role`), upsert by email:**
+**`set_access` - new (merges `grant_access` + `set_access_role`), upsert by email:**
 
 ```
 set_access({ scope_type, scope_id?, email, role })
@@ -132,7 +132,7 @@ set_access({ scope_type, scope_id?, email, role })
 
 **Final write set (18):** `create_item`, `update_item`, `append_to_item`, `set_item_status`, `move_item`, `delete_item`, `restore_item`, `add_item_asset`, `remove_item_asset`, `recapture_bookmark`, `add_comment`, `set_comment_resolved`, `create_folder`, `rename_folder`, `delete_folder`, `restore_folder`, `set_access`, `revoke_access`.
 
-**No new tools beyond `set_access`.** Write has no canvas-selection lifecycle, so no `finish_working_on_nodes` analogue; the hash/revision CAS already fills that role.
+**No new tools beyond `set_access`.** Texttext has no canvas-selection lifecycle, so no `finish_working_on_nodes` analogue; the hash/revision CAS already fills that role.
 
 **Alias / deprecation decision (state it explicitly in the output).** The parity test comment notes a legacy-alias mechanism already exists. Recommended: hard-remove the five names (pre-1.0 is defensible) and do NOT keep aliases, so the surface stays clean. If you instead keep short-lived aliases for already-connected external agents, they must be kept out of the native surface exactly as the existing aliases are. Whichever you choose, call the decision out in the final report rather than leaving it implicit.
 
@@ -142,14 +142,14 @@ set_access({ scope_type, scope_id?, email, role })
 - Every mutation still writes `action_audit`; `store.ts` remains the only content path; `move_item` keeps the cross-mode block.
 - `/api/sync/v1` and the OpenAPI action surface are untouched. `McpItemEntry.file` still points at `/api/sync/v1/files/{id}` so the HTTP twin stays valid.
 
-### 1e. Shared-surface cascade (the removals/renames touch these consumers — all must be updated in lockstep)
+### 1e. Shared-surface cascade (the removals/renames touch these consumers - all must be updated in lockstep)
 
-- `mac/Sources/Write/NativeAI.swift` — holds `agentToolContractJSON`, a hand-maintained copy of the tool contract. Regenerate it to match the new 26-tool surface. `src/lib/ai/__tests__/native-tool-parity.test.ts:41` asserts `nativeToolContract()` deep-equals `WORKSPACE_TOOL_NAMES`, and `:56` asserts `schemas.set_item_pinned.properties.pinned`. Update that assertion to the folded `update_item.properties.pinned`. Removing a tool from the surface without updating the Swift contract fails the parity test and the build.
-- `src/app/editor/actions.ts:1326` references `"set_item_cover"` — route it to `update_item`.
-- `src/components/workspace/assistant/useNativeAssistant.ts:150-151,591` — the label map and `executor("set_item_metadata", ...)` call. Update to `update_item` (and fold cover/pin labels).
-- `src/lib/ai/agent-tools.ts:471-479` — the access-tool confirmation special-casing on `grant_access` / `set_access_role`. Fold both branches into a single `set_access` branch. Keep `confirmDestructive` behavior for the audience-changing and destructive tools.
-- `src/lib/ai/__tests__/tools.test.ts` — the name list plus `parseWorkspaceToolInput("set_item_metadata", ...)`; update to the new names.
-- `src/components/workspace/assistant/__tests__/native-assistant.test.ts:353` — update the referenced tool name.
+- `mac/Sources/Write/NativeAI.swift` - holds `agentToolContractJSON`, a hand-maintained copy of the tool contract. Regenerate it to match the new 26-tool surface. `src/lib/ai/__tests__/native-tool-parity.test.ts:41` asserts `nativeToolContract()` deep-equals `WORKSPACE_TOOL_NAMES`, and `:56` asserts `schemas.set_item_pinned.properties.pinned`. Update that assertion to the folded `update_item.properties.pinned`. Removing a tool from the surface without updating the Swift contract fails the parity test and the build.
+- `src/app/editor/actions.ts:1326` references `"set_item_cover"` - route it to `update_item`.
+- `src/components/workspace/assistant/useNativeAssistant.ts:150-151,591` - the label map and `executor("set_item_metadata", ...)` call. Update to `update_item` (and fold cover/pin labels).
+- `src/lib/ai/agent-tools.ts:471-479` - the access-tool confirmation special-casing on `grant_access` / `set_access_role`. Fold both branches into a single `set_access` branch. Keep `confirmDestructive` behavior for the audience-changing and destructive tools.
+- `src/lib/ai/__tests__/tools.test.ts` - the name list plus `parseWorkspaceToolInput("set_item_metadata", ...)`; update to the new names.
+- `src/components/workspace/assistant/__tests__/native-assistant.test.ts:353` - update the referenced tool name.
 
 ### 1f. Auth / well-known (verify; fix only if a check fails)
 
@@ -160,7 +160,7 @@ set_access({ scope_type, scope_id?, email, role })
 
 ### 1g. Files to touch (implementer checklist)
 
-- `src/lib/ai/tools.ts`: remove `set_item_metadata`, `set_item_pinned`, `set_item_cover`, `list_item_assets`, `grant_access`, `set_access_role`; expand `update_item` schema (`slug`, `accent`, `cover`, `cover_caption`, `cover_height`, `date`, `pinned`); add `set_access`; rewrite all descriptions per 1b/1c. The final object-literal insertion order determines `tools/list` order and the OAuth-loop assertion order — order deliberately: 8 read tools first (as in 1b), then the 18 write tools (as listed in 1c).
+- `src/lib/ai/tools.ts`: remove `set_item_metadata`, `set_item_pinned`, `set_item_cover`, `list_item_assets`, `grant_access`, `set_access_role`; expand `update_item` schema (`slug`, `accent`, `cover`, `cover_caption`, `cover_height`, `date`, `pinned`); add `set_access`; rewrite all descriptions per 1b/1c. The final object-literal insertion order determines `tools/list` order and the OAuth-loop assertion order - order deliberately: 8 read tools first (as in 1b), then the 18 write tools (as listed in 1c).
 - `src/lib/mcp/items.ts`: add `tags` / `wikilinks` / `backlinks` to `McpItemEntry` and `itemEntry`, built on `src/lib/wikilinks.ts` `extractWikiLinks` plus the existing resolver. Exclude trashed/tombstoned targets from backlinks.
 - `src/lib/mcp/tools.ts`: fold the three metadata mutators into the `update_item` case (keep every owner-only, audience, co-editor, and `isAlwaysDraftType` guard; emit `mcp.pin_item`/`mcp.unpin_item` on pin flip; fold `mcp.set_item_metadata`/`mcp.set_item_cover` audit into `mcp.update_item`); relax `markdownContentUpdate` (385-446) per 1c while keeping `status`/`type`/folder-keys rejected; make `read_item` return `{item, markdown, assets}` from one `renderItemFile` call; fix the `create_item` error string at line 750; merge `grant_access`+`set_access_role` into a `set_access` upsert; normalize every mutation to the `{item}` envelope.
 - `mac/Sources/Write/NativeAI.swift`: regenerate `agentToolContractJSON` to the new surface.
@@ -170,42 +170,42 @@ set_access({ scope_type, scope_id?, email, role })
 
 ---
 
-## PART 2 — Documentation
+## PART 2 - Documentation
 
 Rewrite `src/app/docs/ai/page.tsx` into Paper's six-part shape. Remove the hardcoded "17" at line 97; derive every count from `WORKSPACE_TOOL_NAMES`. Voice contract: verb-first, sentence case headings, quoted user requests as example prompts, no em dashes, no marketing, second person, present tense.
 
 ### Section headings, in order
 
-**1. `# Connect your AI to Write`** (page title)
+**1. `# Connect your AI to Texttext`** (page title)
 
 **2. `## Overview`**
-- What an MCP server is: "An MCP server is an authenticated API that an AI assistant can call on your behalf. Connect one once, and your assistant can read and write your Write workspace from wherever it runs."
-- What Write's server does: reads and writes the folders and markdown items in your one workspace; respects your sharing; keeps notes and bookmarks unlisted; logs every change.
-- The URL, stated once, in a code block: `https://write.ramine.net/api/mcp`.
+- What an MCP server is: "An MCP server is an authenticated API that an AI assistant can call on your behalf. Connect one once, and your assistant can read and write your Texttext workspace from wherever it runs."
+- What Texttext's server does: reads and writes the folders and markdown items in your one workspace; respects your sharing; keeps notes and bookmarks unlisted; logs every change.
+- The URL, stated once, in a code block: `https://texttext.app/api/mcp`.
 - One line on scopes: `read` inspects, `sync` also writes; the approval page shows which one a client asked for.
 
-**3. `## Getting started`** — one copy-paste block per client, each three lines max (command, then "then approve in your browser," nothing else), in this order:
-- **Claude Code (CLI):** `claude mcp add --transport http write https://write.ramine.net/api/mcp` then run `/mcp` and approve in the browser.
+**3. `## Getting started`** - one copy-paste block per client, each three lines max (command, then "then approve in your browser," nothing else), in this order:
+- **Claude Code (CLI):** `claude mcp add --transport http write https://texttext.app/api/mcp` then run `/mcp` and approve in the browser.
 - **Claude Desktop / claude.ai:** Settings → Connectors → Add custom connector → paste the URL → Add → Approve.
-- **Cursor:** the "Add to Cursor" deeplink button (already generated in the doc) or `.cursor/mcp.json`: `{ "mcpServers": { "write": { "url": "https://write.ramine.net/api/mcp" } } }`
-- **VS Code / Copilot:** `.vscode/mcp.json` (key is `servers`, needs `type`): `{ "servers": { "write": { "type": "http", "url": "https://write.ramine.net/api/mcp" } } }`
-- **Codex CLI:** `~/.codex/config.toml`: `[mcp_servers.write]` / `url = "https://write.ramine.net/api/mcp"` (streamable HTTP; Codex runs the OAuth flow).
-- **Any other client:** mcp-remote fallback `{ "mcpServers": { "write": { "command": "npx", "args": ["-y", "mcp-remote", "https://write.ramine.net/api/mcp"] } } }`, plus the manual-token option: mint a `sync` token at `/connect` and pass `Authorization: Bearer wsk_...` in the client's `headers`.
+- **Cursor:** the "Add to Cursor" deeplink button (already generated in the doc) or `.cursor/mcp.json`: `{ "mcpServers": { "write": { "url": "https://texttext.app/api/mcp" } } }`
+- **VS Code / Copilot:** `.vscode/mcp.json` (key is `servers`, needs `type`): `{ "servers": { "write": { "type": "http", "url": "https://texttext.app/api/mcp" } } }`
+- **Codex CLI:** `~/.codex/config.toml`: `[mcp_servers.write]` / `url = "https://texttext.app/api/mcp"` (streamable HTTP; Codex runs the OAuth flow).
+- **Any other client:** mcp-remote fallback `{ "mcpServers": { "write": { "command": "npx", "args": ["-y", "mcp-remote", "https://texttext.app/api/mcp"] } } }`, plus the manual-token option: mint a `sync` token at `/connect` and pass `Authorization: Bearer wsk_...` in the client's `headers`.
 
-**4. `## Verifying the connection`** — one prompt: "Ask your assistant: *'What folders are in my Write workspace?'* It calls `list_folders`, asks to connect if it has not, and lists Blog, Notes, and Bookmarks." (Read-only, zero side effects, works on `read` scope.)
+**4. `## Verifying the connection`** - one prompt: "Ask your assistant: *'What folders are in my Texttext workspace?'* It calls `list_folders`, asks to connect if it has not, and lists Blog, Notes, and Bookmarks." (Read-only, zero side effects, works on `read` scope.)
 
-**5. `## Troubleshooting`** — front-load the number-one cause first, Paper-style:
+**5. `## Troubleshooting`** - front-load the number-one cause first, Paper-style:
 - **"Reconnect a stale session."** "The most common problem is a long-running assistant session that connected before you approved access. Restart the session (or run `/mcp` in Claude Code) and try again."
-- "The client shows no Write tools" → restart the MCP host after editing config.
+- "The client shows no Texttext tools" → restart the MCP host after editing config.
 - "Approval page will not open" → the client lacks OAuth; mint a token at `/connect` and use the bearer-header config.
 - "A write was rejected as a conflict" → the item changed since you read it; read it again and retry (this is the hash guard working).
 - "Read-only connection" → you approved `read`; reconnect and approve `sync` to write.
 
-**6. `## Guides`** — the three narrative workflows from Part 4.
+**6. `## Guides`** - the three narrative workflows from Part 4.
 
-**7. `## Reference`** — two tables (read then write), one line each, generated from `WORKSPACE_TOOL_DEFINITIONS` so counts and descriptions never drift:
+**7. `## Reference`** - two tables (read then write), one line each, generated from `WORKSPACE_TOOL_DEFINITIONS` so counts and descriptions never drift:
 - **Read tools** (8): name + description. One sentence above: "Any connected assistant can call these."
-- **Write tools** (18): name + description. One sentence above: "These require the `sync` scope. Write marks publishing, moving to Trash, restoring, and sharing as destructive or audience-changing; clients that support confirmations will ask you first." (Do not claim all clients confirm; confirmation is a client-honored annotation for arbitrary MCP clients, only enforced for the in-app assistant via `agent-tools.ts confirmDestructive`.)
+- **Texttext tools** (18): name + description. One sentence above: "These require the `sync` scope. Texttext marks publishing, moving to Trash, restoring, and sharing as destructive or audience-changing; clients that support confirmations will ask you first." (Do not claim all clients confirm; confirmation is a client-honored annotation for arbitrary MCP clients, only enforced for the in-app assistant via `agent-tools.ts confirmDestructive`.)
 - Below the tables, keep at most five total bullets: how approval works, audit log, soft-delete only, revoke anytime, prompt-injection caution.
 
 ### `llms.txt` (`src/app/llms.txt/route.ts`)
@@ -218,31 +218,31 @@ Tighten the lede: replace "Give an agent or sync client access to your blog" wit
 
 ---
 
-## PART 4 — Example prompts and the three guides
+## PART 4 - Example prompts and the three guides
 
-**Verify prompt (read):** "What folders are in my Write workspace?" → `list_folders`.
-**Verify prompt (write):** "Create a draft note in Write titled 'MCP test'." → `create_item(folder_path:"notes", kind:"note", title:"MCP test")`; returns the draft, nothing goes public.
+**Verify prompt (read):** "What folders are in my Texttext workspace?" → `list_folders`.
+**Verify prompt (write):** "Create a draft note in Texttext titled 'MCP test'." → `create_item(folder_path:"notes", kind:"note", title:"MCP test")`; returns the draft, nothing goes public.
 
-### Guide 1 — `### Capture research into Notes`
-**Prompt:** "Research the current EU AI Act enforcement timeline and save what you find as a note in my Write workspace."
+### Guide 1 - `### Capture research into Notes`
+**Prompt:** "Research the current EU AI Act enforcement timeline and save what you find as a note in my Texttext workspace."
 **Expected agent behavior:** `get_workspace` → `list_folders` (finds the `notes` folder) → `create_item(folder_path:"notes", kind:"note", title:"EU AI Act enforcement timeline", body: first findings)` → `append_to_item(id, markdown_fragment:...)` as it gathers more, so it never rewrites the whole body. The note is created as a draft and stays unlisted forever; the agent never calls `set_item_status`. Closes by reading it back with `read_item` to confirm. Note in the guide that `append_to_item`'s `markdown_fragment` is an MCP-only affordance (the native on-device assistant omits it), so this exact fragment step applies to external MCP clients.
 
-### Guide 2 — `### Publish a drafted article`
-**Prompt:** "Polish my 'Ship logs' draft in Write and publish it."
+### Guide 2 - `### Publish a drafted article`
+**Prompt:** "Polish my 'Ship logs' draft in Texttext and publish it."
 **Expected agent behavior:** `search("Ship logs")` → `read_item(id)` (gets markdown, tags, current hash) → `update_item(id, body:..., tags:[...], if_match_hash: <hash>)`. Then, because publishing is audience-changing, the agent asks for confirmation and only then calls `set_item_status(id, status:"published")`. If the item changed under it, `update_item` returns a conflict and the agent re-reads and retries. Demonstrates the read → edit → confirm → publish gate.
 
-### Guide 3 — `### Sync tags across a workspace`
-**Prompt:** "Find every Write post tagged 'draft-idea' and add the tag 'q3' to each."
+### Guide 3 - `### Sync tags across a workspace`
+**Prompt:** "Find every Texttext post tagged 'draft-idea' and add the tag 'q3' to each."
 **Expected agent behavior:** `search("draft-idea")` or `list_items` per folder → for each hit, `read_item(id)` to get `tags[]` and the current `hash` → `update_item(id, tags:[...existing, "q3"], if_match_hash:<hash>)`. Because `tags` is a full-list replace and `read_item` now returns `tags[]` directly, the agent round-trips tags without parsing frontmatter. One guarded write per item.
 
 ---
 
 ## VERIFY (all must be green; run before finishing)
 
-- `npx tsc --noEmit` — green (types across web + shared surface).
-- `npm test` — green, including `src/lib/ai/__tests__/native-tool-parity.test.ts` (the Swift contract must match the new surface), the MCP tools tests, and the assistant tests. Add/adjust: read-scope `update_item` returns 403 `insufficient_scope`; `read_item` tags round-trip; audit row name change from `mcp.set_item_cover` to `mcp.update_item`.
-- `npm run build` — green (full check; this app is small and building is cheap).
-- `python3 scripts/test-oauth-mcp-loop.py` — green, with `EXPECTED_TOOLS` rewritten to the exact ordered 26 names in final definition order.
+- `npx tsc --noEmit` - green (types across web + shared surface).
+- `npm test` - green, including `src/lib/ai/__tests__/native-tool-parity.test.ts` (the Swift contract must match the new surface), the MCP tools tests, and the assistant tests. Add/adjust: read-scope `update_item` returns 403 `insufficient_scope`; `read_item` tags round-trip; audit row name change from `mcp.set_item_cover` to `mcp.update_item`.
+- `npm run build` - green (full check; this app is small and building is cheap).
+- `python3 scripts/test-oauth-mcp-loop.py` - green, with `EXPECTED_TOOLS` rewritten to the exact ordered 26 names in final definition order.
 - Do NOT run a dev server; the app is plain DOM and these checks are sufficient here.
 - The sandbox mounts `.git` read-only. Leave everything uncommitted. Do NOT commit, push, release, or bump any version; the maintainer commits.
 

@@ -11,9 +11,9 @@ export async function GET(request: Request) {
   const origin = getPublicOrigin(request);
   return Response.json(
     {
-      name: "Write",
+      name: "Texttext",
       description:
-        "Read and write the folders and markdown items in your Write workspace.",
+        "Read and write the folders and markdown items in your Texttext workspace.",
       icon: `${origin}/apple-icon`,
       endpoint: `${origin}/api/mcp`,
     },

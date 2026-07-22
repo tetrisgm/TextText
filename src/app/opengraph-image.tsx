@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
-export const alt = "Write, folders of Markdown for publishing";
+export const alt = "Texttext, folders of Markdown for publishing";
 
 export const size = {
   width: 1200,
@@ -69,7 +69,7 @@ export default async function Image() {
                 marginBottom: 28,
               }}
             >
-              Write
+              Texttext
             </div>
             <div
               style={{

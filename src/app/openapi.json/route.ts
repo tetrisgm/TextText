@@ -24,13 +24,13 @@ function openApiDocument(origin: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Write AI connector API",
+      title: "Texttext AI connector API",
       version: "1.0.0",
-      summary: "OAuth setup and markdown content actions for Write.",
+      summary: "OAuth setup and markdown content actions for Texttext.",
       description:
         "Import this document into ChatGPT Actions or another AI connector. " +
         "These actions use the sync HTTP API and require the sync scope. " +
-        `Write also offers a read-only OAuth scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
+        `Texttext also offers a read-only OAuth scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
         "but this document is a smaller action surface, not the complete " +
         `${WORKSPACE_TOOL_COUNT}-tool MCP contract. OAuth uses authorization code with PKCE S256, ` +
         "one-hour access tokens, and rotating refresh tokens.",

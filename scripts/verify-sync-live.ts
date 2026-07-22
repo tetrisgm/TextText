@@ -26,7 +26,7 @@ import {
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 
-const ORIGIN = "https://write.ramine.net";
+const ORIGIN = "https://texttext.app";
 const STAMP = Date.now().toString(36);
 const SUB = `scratch-sync-verify-${STAMP}`;
 const HANDLE = `scratch-sync-verify-${STAMP}`;

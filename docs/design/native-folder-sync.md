@@ -4,7 +4,7 @@ Status: shipped architecture, July 2026.
 
 ## Purpose
 
-Write is file-based without making people manage a sync engine. Finder exposes
+Texttext is file-based without making people manage a sync engine. Finder exposes
 ordinary document items, the Mac app stays responsive from local state, and the
 server supplies cross-device sync and web access.
 
@@ -20,7 +20,7 @@ against newer local revisions instead of replacing them.
 ## Finder tree
 
 ```text
-Write/
+Texttext/
   Data/
     Attachments/
       Workspace/
@@ -40,7 +40,7 @@ The domain root spans every linked workspace. Identifiers include the workspace
 handle and stable server ID, so workspaces and same-named documents cannot
 collide.
 
-TextBundle is the default native representation for content created by Write.
+TextBundle is the default native representation for content created by Texttext.
 It keeps Markdown and immutable captured images in one package. Plain Markdown
 and text stay supported. Assets managed for imported plain files live in the
 central `Data/Attachments` tree.
@@ -74,7 +74,7 @@ Folder move and delete are excluded from Finder capabilities. The app performs
 those higher-level operations with explicit workspace semantics and Trash
 recovery.
 
-Write sanitizes only the Finder filename. The document title remains unchanged,
+Texttext sanitizes only the Finder filename. The document title remains unchanged,
 including punctuation that a filesystem cannot represent directly. Reimport
 matches stable identity before display names and requires an unambiguous match.
 
@@ -111,7 +111,7 @@ eventually inconsistent cloud badge.
 Manifest entries carry a private transport URL and a separate canonical public
 URL. Finder actions resolve fresh metadata for the selected stable item, then:
 
-- Copy Write Link writes the canonical page URL to the pasteboard.
+- Copy Texttext Link writes the canonical page URL to the pasteboard.
 - Share opens the app's native sharing picker with that URL.
 - Manage Access opens the canonical page in the app with access controls.
 

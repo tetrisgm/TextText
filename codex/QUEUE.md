@@ -1,7 +1,7 @@
 # The Codex loop
 
 Codex (the local `codex` CLI, headless) does the bounded build tracks;
-Claude (or Ramine) holds schema, security, contracts, merges, review, and
+Claude (or the owner) holds schema, security, contracts, merges, review, and
 deploys. This file is the queue's state.
 
 Current project status is NOT tracked here. See `docs/app-health.md`,

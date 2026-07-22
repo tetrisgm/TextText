@@ -1,6 +1,6 @@
-# Write: the design contract
+# Texttext: the design contract
 
-Two design systems, one product. Both were built and shipped on ramine.net
+Two design systems, one product. Both were built and shipped on an earlier site
 first; this file is the portable contract so they survive the move.
 
 ## 1. The Broadsheet (the published blog)

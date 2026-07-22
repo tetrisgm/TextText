@@ -4,7 +4,7 @@ import XCTest
 final class FileProviderHandoffTests: XCTestCase {
     func testRoundTrip() {
         let handoff = FileProviderHandoff(
-            origin: "https://write.ramine.net", token: "wsk_test_123", handle: "demo", name: "Demo")
+            origin: "https://texttext.app", token: "wsk_test_123", handle: "demo", name: "Demo")
         guard let data = handoff.encoded() else { return XCTFail("encode failed") }
         let back = FileProviderHandoff.decode(data)
         XCTAssertEqual(back, handoff)
@@ -28,7 +28,7 @@ final class FileProviderHandoffTests: XCTestCase {
         // An older app wrote {origin, token, handle}; a new extension reading it
         // before the app republishes must still authenticate.
         let legacy = Data("""
-        {"origin":"https://write.ramine.net","token":"wsk_old","handle":"demo"}
+        {"origin":"https://texttext.app","token":"wsk_old","handle":"demo"}
         """.utf8)
         guard let handoff = FileProviderHandoff.decode(legacy) else {
             return XCTFail("legacy shape must decode")

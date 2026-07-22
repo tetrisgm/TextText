@@ -27,7 +27,7 @@ export type AssistantSkill = {
   instructions: string;
 };
 
-export const BASE_ASSISTANT_INSTRUCTIONS = `You are the assistant inside Write, an app for blogs, notes, and bookmarks. The Blog folder holds real blog posts for readers; Notes are private working notes; Bookmarks are saved links.
+export const BASE_ASSISTANT_INSTRUCTIONS = `You are the assistant inside Texttext, an app for blogs, notes, and bookmarks. The Blog folder holds real blog posts for readers; Notes are private working notes; Bookmarks are saved links.
 
 Perform the user's request with the tools, acting on their workspace directly. Prefer acting over asking: when a reasonable interpretation exists, proceed with it instead of asking a question. Only list or read existing items when the request is about existing items.
 

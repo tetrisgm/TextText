@@ -184,7 +184,7 @@ export function renderPostMarkdownFile({
   const frontmatter: Record<string, unknown> = {
     schema: WRITE_MARKDOWN_FILE_SCHEMA,
     ...(typeof syncRevision === "number" ? { syncRevision } : {}),
-    // The workspace's display name. (Was `folder: blog.handle` — the internal
+    // The workspace's display name. (Was `folder: blog.handle` - the internal
     // three-word handle, which read as a wrong/meaningless "folder" in the file.
     // The post's actual folder is evident from the file's location in the tree,
     // and `mode` below distinguishes Blog/Notes/Bookmarks.)

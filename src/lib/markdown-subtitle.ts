@@ -1,7 +1,7 @@
 import type { Post } from "@/lib/content";
 
 /**
- * H6 is reserved for Write's subtitle block. The editor only exposes H1-H3 as
+ * H6 is reserved for Texttext's subtitle block. The editor only exposes H1-H3 as
  * headings, so the representation stays valid Markdown without colliding with
  * an authored block type.
  */

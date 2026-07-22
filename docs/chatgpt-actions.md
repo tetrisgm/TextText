@@ -1,11 +1,11 @@
-# ChatGPT Actions setup for the Write sync API
+# ChatGPT Actions setup for the Texttext sync API
 
-This guide connects a custom GPT to the Write sync API so it can work with
+This guide connects a custom GPT to the Texttext sync API so it can work with
 markdown files without MCP.
 
 ## What the action can do
 
-The sync API treats a Write blog as one workspace of folders and markdown files.
+The sync API treats a Texttext blog as one workspace of folders and markdown files.
 With a `wsk_` token from `/connect`, a ChatGPT Action can:
 
 - List the workspace folders.
@@ -37,7 +37,7 @@ https://{host}/openapi/sync-v1.yaml
 
 ## Create a token
 
-1. Sign in to Write.
+1. Sign in to Texttext.
 2. Open `https://{host}/connect`.
 3. Create a token for ChatGPT.
 4. Copy the token immediately. It is shown once and starts with `wsk_`.
@@ -52,7 +52,7 @@ Authorization: Bearer wsk_...
 ## Add the Action to a custom GPT
 
 1. Open the GPT editor in ChatGPT.
-2. Create or edit the GPT that should manage Write markdown files.
+2. Create or edit the GPT that should manage Texttext markdown files.
 3. Open the Actions section.
 4. Import the schema from `https://{host}/api/sync/v1/openapi.json`.
 5. Set authentication to API key authentication.
@@ -76,7 +76,7 @@ References:
 Paste instructions like these into the custom GPT:
 
 ```text
-You can edit the owner's Write workspace through the Write sync API.
+You can edit the owner's Texttext workspace through the Texttext sync API.
 
 Rules:
 - Treat the workspace as folders of markdown files.
@@ -108,7 +108,7 @@ title: Draft from ChatGPT
 status: draft
 ---
 
-Write the body here.
+Texttext the body here.
 ```
 
 Public blog items can use `kind: article`, `kind: media_post`, or

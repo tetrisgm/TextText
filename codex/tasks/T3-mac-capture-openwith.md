@@ -1,6 +1,6 @@
-# T3: Mac capture agent + open markdown files with Write.app
+# T3: Mac capture agent + open markdown files with Texttext
 
-Two Swift features in Write.app (SwiftPM, `mac/`). Both have WIRED SKELETON
+Two Swift features in Texttext (SwiftPM, `mac/`). Both have WIRED SKELETON
 files in this branch; you fill the implementations. AppDelegate already
 calls you; do not touch it.
 
@@ -56,7 +56,7 @@ Implementation requirements:
   `onActivity?("capture failed <host>: <reason>")`.
 - Popups/JS dialogs: deny (implement the WKUIDelegate bits as no-ops).
 
-## Feature 2: open .md files with Write.app (OpenFileHandler.swift)
+## Feature 2: open .md files with Texttext (OpenFileHandler.swift)
 
 Info.plist already declares markdown document types; AppDelegate already
 forwards `application(_:open:)` to `OpenFileHandler.open(urls:store:syncRoot:)`.
@@ -91,4 +91,4 @@ first). No em dashes anywhere including comments. Guard-let early returns.
 - `swift build --package-path mac` clean; that is your gate (no network,
   no GUI in the sandbox). In your summary, walk through the capture of one
   URL end to end and the open-with flow for a file at
-  ~/Write/blog/ideas/hello.md.
+  ~/Texttext/blog/ideas/hello.md.

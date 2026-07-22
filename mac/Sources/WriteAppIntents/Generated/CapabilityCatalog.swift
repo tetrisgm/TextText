@@ -29,11 +29,11 @@ public struct CapabilityIntentDescriptor: Equatable, Sendable {
 
 public enum CapabilityCatalog {
     public static let entities: [CapabilityEntityDescriptor] = [
-        CapabilityEntityDescriptor(id: "Document", displayName: "Document", doc: "Local markdown document in the Write workspace."),
-        CapabilityEntityDescriptor(id: "Folder", displayName: "Folder", doc: "Local folder in the Write workspace."),
-        CapabilityEntityDescriptor(id: "Blog", displayName: "Blog", doc: "Local blog folder in the Write workspace."),
+        CapabilityEntityDescriptor(id: "Document", displayName: "Document", doc: "Local markdown document in the Texttext workspace."),
+        CapabilityEntityDescriptor(id: "Folder", displayName: "Folder", doc: "Local folder in the Texttext workspace."),
+        CapabilityEntityDescriptor(id: "Blog", displayName: "Blog", doc: "Local blog folder in the Texttext workspace."),
         CapabilityEntityDescriptor(id: "Publication", displayName: "Publication", doc: "Published state for a local markdown document."),
-        CapabilityEntityDescriptor(id: "Bookmark", displayName: "Bookmark", doc: "Local markdown bookmark in the Write workspace."),
+        CapabilityEntityDescriptor(id: "Bookmark", displayName: "Bookmark", doc: "Local markdown bookmark in the Texttext workspace."),
     ]
 
     public static let intents: [CapabilityIntentDescriptor] = [

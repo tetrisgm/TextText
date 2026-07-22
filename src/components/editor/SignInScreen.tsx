@@ -14,7 +14,7 @@ export function SignInScreen() {
       <div className="ac-toolbar ac-chrome">
         <Link href="/" className="ac-btn ac-btn-plain ac-back">
           <span aria-hidden="true">&#8249;</span>
-          Write
+          Texttext
         </Link>
         <div className="ac-toolbar-title ac-toolbar-title-grow">Editor</div>
       </div>

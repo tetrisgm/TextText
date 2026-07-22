@@ -1,6 +1,6 @@
 # File Provider authentication and Finder actions
 
-Write appears as a normal Finder Location through a replicated File Provider
+Texttext appears as a normal Finder Location through a replicated File Provider
 extension. The main app owns sign-in and passes the minimum credential needed
 by the extension through the shared keychain access group. The app group is
 used for File Provider coordination and the signed extension relationship.
@@ -35,9 +35,9 @@ attributes, public URLs, or health reports.
 The sync manifest carries two deliberately separate URLs:
 
 - `url` is the authenticated content transport endpoint used by File Provider.
-- `canonicalUrl` is the human-facing Write page used by Finder actions.
+- `canonicalUrl` is the human-facing Texttext page used by Finder actions.
 
-Copy Write Link, Share, and Manage Access use only `canonicalUrl`. The mapper
+Copy Texttext Link, Share, and Manage Access use only `canonicalUrl`. The mapper
 accepts an older public `url` for compatibility, but rejects any legacy value
 whose path starts with `/api/sync/`. This prevents Finder from exposing a URL
 that returns `A valid API token is required` in a browser.
@@ -46,7 +46,7 @@ Regression coverage:
 
 - `WriteItemMapperTests` proves the canonical URL wins and a private transport
   URL is never published as item metadata.
-- `FileProviderExtensionTests` proves Copy Write Link copies only the public
+- `FileProviderExtensionTests` proves Copy Texttext Link copies only the public
   page URL.
 - `sync-http.test.ts` proves the server manifest emits both roles correctly.
 
@@ -54,5 +54,5 @@ Regression coverage:
 
 The installed app reports `finder.provider` as part of its content-blind app
 health suite. Finder also presents native progress and error decorations from
-File Provider. Write keeps every document downloaded and does not offer
+File Provider. Texttext keeps every document downloaded and does not offer
 online-only files or selective sync.

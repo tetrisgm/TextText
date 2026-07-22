@@ -84,7 +84,7 @@ public enum WorkspaceIntentError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .notSignedIn:
-            return "Sign in to Write to use this shortcut"
+            return "Sign in to Texttext to use this shortcut"
         case .emptyTitle:
             return "A title is required"
         case .emptyText:

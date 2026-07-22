@@ -9,7 +9,8 @@
 # Identity/origin injection happens HERE, on the STAGED plist only; the
 # committed mac/Info.plist keeps its neutral placeholders:
 #   WRITE_BUNDLE_ID          -> CFBundleIdentifier
-#   WRITE_PRODUCT_ORIGIN     -> SUFeedURL = <origin>/appcast.xml (the app also
+#   WRITE_PRODUCT_ORIGIN=https://texttext.app
+#                            -> SUFeedURL = <origin>/appcast.xml (the app also
 #                               derives its default server origin from SUFeedURL)
 #   WRITE_SPARKLE_PUBLIC_KEY -> SUPublicEDKey
 set -euo pipefail

@@ -30,7 +30,7 @@
 
    Failure scenario: a rename PATCH resolves post body `A`; the web editor saves body `B`; PATCH then calls `savePost({ ...post, slug })`. The stale body `A` is written back along with the slug, silently deleting `B`.
 
-   For move+rename, `setPostFolder` commits first. If the subsequent slug save fails—for example, because the slug is occupied—the route returns 400 but the move remains committed. No `sync.patch_file` audit is written.
+   For move+rename, `setPostFolder` commits first. If the subsequent slug save fails - for example, because the slug is occupied - the route returns 400 but the move remains committed. No `sync.patch_file` audit is written.
 
    Why it is real: PATCH requires no `If-Match`; rename calls the whole-row `savePost` at line 217. Move and rename are separate database statements at lines 207–218. File Provider’s base version is not passed to PATCH.
 
@@ -83,7 +83,7 @@
    `mac/Sources/Write/SyncEngine.swift:655`  
    `mac/Sources/Write/SyncEngine.swift:659`
 
-   Failure scenario: an iCloud mirror with nine posts materializes its hidden sync marker before its content, with no `.icloud` placeholders yet. All nine paths return ENOENT, but `missingCount >= 10` is false. SyncEngine propagates nine server deletes—100% of the workspace.
+   Failure scenario: an iCloud mirror with nine posts materializes its hidden sync marker before its content, with no `.icloud` placeholders yet. All nine paths return ENOENT, but `missingCount >= 10` is false. SyncEngine propagates nine server deletes - 100% of the workspace.
 
    Why it is real: the breaker requires both at least ten missing files and at least half the index. The breadcrumb only detects a different mirror; it cannot distinguish a valid but partially materialized mirror.
 
@@ -215,7 +215,7 @@
 
 ## Overall assessment
 
-Write’s sync is not bulletproof: its hashes and three-way native merge design are good foundations, but the server lacks an atomic versioned mutation primitive, so simultaneous writers can both “win” and silently overwrite each other. The top three fixes are: implement store-level CAS for PUT/PATCH/DELETE and remove `savePost`’s update-to-insert fallthrough; make native creates and moves folder-aware to close the Notes publication leak; and replace File Provider’s relist-as-updates behavior with real versioned deltas, deletion reporting, and atomic compound modifications.
+Texttext’s sync is not bulletproof: its hashes and three-way native merge design are good foundations, but the server lacks an atomic versioned mutation primitive, so simultaneous writers can both “win” and silently overwrite each other. The top three fixes are: implement store-level CAS for PUT/PATCH/DELETE and remove `savePost`’s update-to-insert fallthrough; make native creates and moves folder-aware to close the Notes publication leak; and replace File Provider’s relist-as-updates behavior with real versioned deltas, deletion reporting, and atomic compound modifications.
 
 ## Fixes applied (2026-07-12)
 
@@ -234,48 +234,48 @@ globally unique and strictly increasing, so no mutation path can forget to bump
 one and no two changes ever share a value. DDL in `scripts/migrate-add-revision.mjs`.
 This single primitive resolves #1, #2, #3, #9, and #11:
 
-- **#1 lost-update CAS** — `savePost` takes `expectedRevision`; the id-present
+- **#1 lost-update CAS** - `savePost` takes `expectedRevision`; the id-present
   UPDATE is guarded by `revision = <base>` and a zero-row guarded update throws
   `PostConflictError` (never the insert fallthrough that resurrected deleted
   posts). Because every write draws a fresh revision, two writes in the same
   millisecond get different revisions and the second conflicts. Wired through the
   sync PUT, the MCP `update_item`, and the editor save (owner + collaborator), so
   all three consumers are guarded, not just sync.
-- **#2 move/rename** — `movePostFile` updates only `folder_id` + `slug` (never the
+- **#2 move/rename** - `movePostFile` updates only `folder_id` + `slug` (never the
   body) and is `expectedRevision`-guarded, so a racing body PUT is neither
   clobbered nor lost to a stale metadata write. A no-op PATCH returns the row
   untouched instead of bumping the cursor.
-- **#3 stale delete** — `deletePostAtomic` deletes in one `revision`-guarded
+- **#3 stale delete** - `deletePostAtomic` deletes in one `revision`-guarded
   statement, so an edit landing between resolve and delete conflicts (412) rather
   than being silently discarded. The route also rejects a mismatched `If-Match`.
-- **#11 cursor** — `workspaceChangeCursor` is `max(revision)` across posts and
+- **#11 cursor** - `workspaceChangeCursor` is `max(revision)` across posts and
   folders. It advances on every mutation (the trigger guarantees it), never
   reuses a value, and same-millisecond changes are distinct. Hard-deleting
   trashed rows can only trigger a harmless extra resync, never a missed change.
 
 ### Other fixes
 
-- **#4 native create privacy** — `postFile(body:folderId:)` sends `?folder=<id>`,
+- **#4 native create privacy** - `postFile(body:folderId:)` sends `?folder=<id>`,
   so the server’s folder mode is authoritative and a note filed under Notes stays
   a draft note. (Native MOVE-as-PATCH is handled in the Mac client track.)
-- **#5 mass-delete breaker** — small-workspace protection (Mac client track).
-- **#6 conflict-copy** — `preserveAsConflictedCopy` returns a 3-way
+- **#5 mass-delete breaker** - small-workspace protection (Mac client track).
+- **#6 conflict-copy** - `preserveAsConflictedCopy` returns a 3-way
   `ConflictPreservation`; all six overwrite/move sites refuse to replace the
   canonical file when preservation `.failed`, keeping the old index hash to retry.
-- **#7 valid tree** — workspace route emits `parentId`; `getFolderPostFiles` gains
+- **#7 valid tree** - workspace route emits `parentId`; `getFolderPostFiles` gains
   an `exact` mode and the manifest route uses it, so the blog root lists only its
   direct children (each post in exactly one manifest). Public blog view unchanged.
-- **#8 FP deletions** — `enumerateChanges` expires the anchor to force a full
+- **#8 FP deletions** - `enumerateChanges` expires the anchor to force a full
   reconcile that drops web-deleted ghosts (Mac client track refines it to only
   expire when the anchor differs from the current cursor).
-- **#10 create idempotency** — POST `/files` and `/folders` honor an
+- **#10 create idempotency** - POST `/files` and `/folders` honor an
   `Idempotency-Key` header via an `idempotency_keys` table with a claim-first
   protocol (`claimIdempotencyKey` / `resolveIdempotencyKey` /
   `releaseIdempotencyKey`), so a retried ambiguous create returns the original
   item instead of duplicating it. Clients send the key (Mac client track).
-- **#12 FP version** — `fetchContents` returns the item carrying the fetched
+- **#12 FP version** - `fetchContents` returns the item carrying the fetched
   `content.hash` (new `WriteItem.withContentHash`).
-- **#13 audit** — `recordAction` now retries once and logs loudly on failure
+- **#13 audit** - `recordAction` now retries once and logs loudly on failure
   rather than silently swallowing. Truly atomic mutation+audit is limited by the
   no-transaction driver (it would need a data-modifying CTE folded into each
   mutation or a durable outbox); tracked as a follow-up.
@@ -286,47 +286,47 @@ churn, #9 PATCH guarded by the PUT-returned hash, #10 client Idempotency-Key.
 
 ### Round-3 refinements (after a second Codex pass)
 
-- **Durable cursor** — the cursor was `max(revision)`, which can FALL when a
+- **Durable cursor** - the cursor was `max(revision)`, which can FALL when a
   trashed row is hard-deleted (emptying Trash), erasing a soft-delete the client
   had not yet polled and leaving a permanent ghost. Replaced with a durable
   per-workspace high-water-mark `blogs.change_seq`, bumped by an AFTER trigger on
   every post/folder insert or update. It only ever increases, so a hard delete
   can never lower it.
-- **PATCH validates If-Match** — the move/rename route now rejects a client that
+- **PATCH validates If-Match** - the move/rename route now rejects a client that
   was already stale before the request (412), matching PUT and DELETE, in
   addition to the revision guard that covers the post-resolution race.
-- **Same-folder PATCH no-op** — `movePostFile` only sets `folder_id` when the
+- **Same-folder PATCH no-op** - `movePostFile` only sets `folder_id` when the
   target folder actually differs, so a same-folder PATCH no longer bumps the
   cursor.
-- **Idempotency: spent key** — a create whose original item was since deleted now
+- **Idempotency: spent key** - a create whose original item was since deleted now
   returns 409 instead of recreating (which two concurrent retries would each do).
-- **Safe-by-default writers** — the legacy `savePostAction`, publish/unpublish,
+- **Safe-by-default writers** - the legacy `savePostAction`, publish/unpublish,
   and MCP `append_to_item` now also pass `expectedRevision`, so every
   full-snapshot writer is guarded, not just the sync/modern-editor/MCP-update
   paths.
 
 ### Accepted tradeoffs (documented, not defects)
 
-- **`revision` as JS number** — bigint mapped to a JS number is exact below
+- **`revision` as JS number** - bigint mapped to a JS number is exact below
   2^53. At this app's write rate that ceiling is ~10^13 mutations away
   (hundreds of millennia), so it is not a practical precision risk; the cursor is
   already carried as a string.
-- **Sequential-manifest omission** — the File Provider fetches folder manifests
+- **Sequential-manifest omission** - the File Provider fetches folder manifests
   one at a time, so a post moved between two folders mid-enumeration can be
   omitted from that single pass. It self-heals: any move advances the cursor, the
   next `enumerateChanges` expires the anchor, and the full re-enumeration picks it
   up. A single cross-cursor snapshot would remove even the transient.
-- **Idempotency stale-reclaim** — create and key-resolution are two statements on
+- **Idempotency stale-reclaim** - create and key-resolution are two statements on
   a no-transaction driver, so a process death in the ~1ms gap plus a retry after
   the 30s stale window can duplicate. Truly exactly-once create needs the create
   and the claim in one statement.
-- **#13 audit atomicity** — best-effort with retry and loud logging. A hard
+- **#13 audit atomicity** - best-effort with retry and loud logging. A hard
   "every mutation writes action_audit" guarantee would need a DB trigger writing
   a coarser guaranteed row (no rich actor/action context on this stateless
   driver) or a data-modifying CTE folded into every mutation. Left as an owner
   decision: telemetry-grade audit today, upgradeable to a trigger-backed
   invariant if required.
-- **If-Match on PATCH/DELETE is validated, not required** — PUT requires it (428),
+- **If-Match on PATCH/DELETE is validated, not required** - PUT requires it (428),
   but PATCH and DELETE only validate it when supplied. Hard-requiring it would
   428 a legitimate File Provider operation whose base version has an empty content
   hash. The bundled clients send it (native the indexed hash, the File Provider
@@ -336,21 +336,21 @@ churn, #9 PATCH guarded by the PUT-returned hash, #10 client Idempotency-Key.
 
 ### Round-4 refinements
 
-- **Monotonic migration** — the `blogs.change_seq` backfill now runs AFTER the
+- **Monotonic migration** - the `blogs.change_seq` backfill now runs AFTER the
   triggers are installed and uses `GREATEST(change_seq, ...)`, so a rerun (or a
   mutation during install) can never lower the cursor and recreate a ghost.
 
 ### Round-5 refinements
 
-- **Atomic trigger install** — all four triggers are installed with
+- **Atomic trigger install** - all four triggers are installed with
   `CREATE OR REPLACE TRIGGER` (Postgres 14+) instead of DROP + CREATE, so a
   migration rerun never opens a window where a trigger is missing and a
   concurrent update could slip through without a fresh revision.
-- **No duplicate on a moved file** — `pushPass`'s new-file detection extracts the
+- **No duplicate on a moved file** - `pushPass`'s new-file detection extracts the
   injected item id from each candidate and skips any file whose id is already in
   the index (leaving it for move reconciliation), so a file carrying a known id is
   never POSTed as a new post. This closes the failed-move-then-pull-restore path
   and any same-id copy.
-- **No redundant PUT after a failed move convergence** — when the post-move
+- **No redundant PUT after a failed move convergence** - when the post-move
   canonical GET fails, the index records the local file's actual hash rather than
   the server render, so the next push sees no phantom diff.

@@ -80,7 +80,7 @@ person's documents.
 
 ## Apple silicon release gate
 
-`build-app.sh` builds Write explicitly for arm64. The reusable staged-bundle
+`build-app.sh` builds Texttext explicitly for arm64. The reusable staged-bundle
 check verifies the main executable and the Share, Quick Look, and File Provider
 extensions contain only the arm64 slice. Sparkle remains universal because its
 framework and update helpers do not need to be thinned.

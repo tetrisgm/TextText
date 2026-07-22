@@ -176,7 +176,7 @@ public enum WriteItemMapper {
     /// renaming: renaming this folder in Finder renames the workspace (its
     /// display name), and, just as important, without `.renaming` the framework
     /// materializes the folder as immutable (the `uchg` flag, which Finder draws
-    /// as a lock badge) — an odd, broken-looking wart on the one folder the user
+    /// as a lock badge) - an odd, broken-looking wart on the one folder the user
     /// most expects to own. Deleting a workspace is not a Finder gesture, so
     /// `.deleting` stays off.
     public static func workspaceItem(handle: String, name: String, readOnly: Bool) -> WriteItem {

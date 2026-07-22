@@ -57,7 +57,7 @@ public enum WorkspaceIntentServerError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .notFound(let id): return "No Write document found for \(id)"
+        case .notFound(let id): return "No Texttext document found for \(id)"
         case .conflict: return "The document changed on the server; try again"
         case .rejected(let message): return message
         case .transport(let message): return message

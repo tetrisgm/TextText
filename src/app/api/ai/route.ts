@@ -56,7 +56,7 @@ function rateLimited(sub: string): boolean {
 }
 
 const SYSTEM =
-  "You are the assistant inside Write, an app for blogs, notes, and bookmarks. " +
+  "You are the assistant inside Texttext, an app for blogs, notes, and bookmarks. " +
   "The Blog folder holds public blog posts; Notes are private working notes; " +
   "Bookmarks are saved links. Notes and bookmarks are always unlisted. Use the " +
   "workspace tools to read and edit the user's items, and refer to items by their " +

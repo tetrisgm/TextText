@@ -23,7 +23,7 @@ export function protectedResourceMetadataResponse(request: Request): Response {
     authServerUrls: [origin],
     resourceUrl: `${origin}/api/mcp`,
     additionalMetadata: {
-      resource_name: "Write",
+      resource_name: "Texttext",
       resource_documentation: `${origin}/docs/ai`,
       scopes_supported: [...OAUTH_SCOPES],
       bearer_methods_supported: ["header"],

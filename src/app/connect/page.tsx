@@ -25,7 +25,7 @@ export default async function ConnectPage() {
         <main className="connect-main">
           <h1 className="connect-title">Connect</h1>
           <p className="connect-lede">
-            Connect at <code className="connect-inline-code">https://write.ramine.net/api/mcp</code>.{" "}
+            Connect at <code className="connect-inline-code">https://texttext.app/api/mcp</code>.{" "}
             <code className="connect-inline-code">read</code> inspects and{" "}
             <code className="connect-inline-code">sync</code> writes. Sign in to
             create a token.
@@ -60,7 +60,7 @@ export default async function ConnectPage() {
       <main className="connect-main">
         <h1 className="connect-title">Connect</h1>
         <p className="connect-lede">
-          Connect at <code className="connect-inline-code">https://write.ramine.net/api/mcp</code>.{" "}
+          Connect at <code className="connect-inline-code">https://texttext.app/api/mcp</code>.{" "}
           <code className="connect-inline-code">read</code> inspects and{" "}
           <code className="connect-inline-code">sync</code> writes.{" "}
           <Link href="/docs/ai">Setup for Claude, Cursor, VS Code, and Codex</Link>.

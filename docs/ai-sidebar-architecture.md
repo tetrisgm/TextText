@@ -1,7 +1,7 @@
 # Assistant and workspace command architecture
 
 This document describes the implemented AI architecture as of 2026-07-15.
-Write has one shared workspace tool contract, a native on-device assistant in
+Texttext has one shared workspace tool contract, a native on-device assistant in
 the Mac app, and a hosted MCP adapter for external agents. The web product does
 not call its own MCP server.
 
@@ -111,12 +111,12 @@ the page through a request-correlated callback, run in the registered page
 executor, and return to the model. The native model therefore cannot perform
 an operation that the current signed-in page cannot perform.
 
-Write does not send an in-app assistant request through `/api/mcp`. MCP is an
+Texttext does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
 
 ## Assistant status
 
-The assistant is implemented and available inside Write for Mac when Apple's
+The assistant is implemented and available inside Texttext for Mac when Apple's
 Foundation Models runtime reports available. Text generation and agent tool
 calling require macOS 26 or later, eligible hardware, Apple Intelligence
 enabled, and a ready on-device model. Vision OCR is used for image text on
@@ -149,7 +149,7 @@ The intended order remains local first, optional cloud second, and external
 agents third. Only the following states are implemented today:
 
 1. **Apple on-device: shipped.** This is the in-app assistant provider in
-   Write for Mac. Utility operations and agent commands run locally through
+   Texttext for Mac. Utility operations and agent commands run locally through
    `mac/Sources/Write/NativeAI.swift` and the `nativeAI` bridge.
 2. **Bring-your-own cloud: shipped.** A workspace owner can add an Anthropic or
    OpenAI key in Settings. The encrypted key stays server-side and is never

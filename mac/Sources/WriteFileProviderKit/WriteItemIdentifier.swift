@@ -7,7 +7,7 @@ import Foundation
 /// extension bridges them for free.
 ///
 /// Folder and file identifiers are scoped by the workspace HANDLE they belong
-/// to, because a single "Write" domain now spans every workspace the user has
+/// to, because a single "Texttext" domain now spans every workspace the user has
 /// joined: the extension reads the handle straight out of the identifier to pick
 /// that workspace's `wsk_` token. The three reserved containers stay global (not
 /// handle-scoped) so the framework bridge stays a free round-trip and the root

@@ -125,7 +125,7 @@ final class SyncEngine {
     /// non-empty index is the vanished-mirror signal (see performPass).
     private let breadcrumbRelativePath = "\(WorkspaceLayout.localMetadataDirectoryName)/state/sync-marker.txt"
     private let breadcrumbBody =
-        "Write keeps this folder in sync. This marker tells the app the folder is the same mirror it indexed; if the folder is deleted or replaced, Write re-mirrors from the server instead of propagating the loss as deletions.\n"
+        "Texttext keeps this folder in sync. This marker tells the app the folder is the same mirror it indexed; if the folder is deleted or replaced, Texttext re-mirrors from the server instead of propagating the loss as deletions.\n"
 
     /// The mirror id inside the marker file, or nil when the marker is
     /// missing or predates mirror ids. The index only trusts a marker whose
@@ -197,19 +197,19 @@ final class SyncEngine {
     /// nil when not linked; rebuilt each pass so sign in/out needs no plumbing.
     var makeClient: () -> SyncClient? = { nil }
     var syncRootProvider: () -> URL = {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Write", isDirectory: true)
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Texttext", isDirectory: true)
     }
     var workspaceLocationProvider: () -> WorkspaceLocation? = { nil }
 
     /// Test seam for the synchronous safety gate around the legacy mirror. In
     /// production this resolves the owning File Provider domain and rejects the
-    /// current and legacy Write domains before the engine watches or mutates it.
+    /// current and legacy Texttext domains before the engine watches or mutates it.
     var isInsideWriteFileProviderMount: (URL) -> Bool = {
         SyncEngine.defaultIsInsideWriteFileProviderMount($0)
     }
 
     /// When this returns true the engine stands every pass down to an idle
-    /// no-op before it touches the legacy mirror: no `~/Write` directory is
+    /// no-op before it touches the legacy mirror: no `~/Texttext` directory is
     /// created, no client call is made, and status settles to `.idle`. The app
     /// sets this once a File Provider domain is the sole writer. It defaults to
     /// false so the Headless CLI and the no-File-Provider fallback keep
@@ -438,7 +438,8 @@ final class SyncEngine {
         let relative = String(resolved.path.dropFirst(cloudPath.count + 1))
         let mountName = relative.split(separator: "/", omittingEmptySubsequences: true)
             .first.map(String.init) ?? ""
-        let nameFallback = mountName == "Write" || mountName.hasPrefix("Write-")
+        let nameFallback = mountName == "Texttext" || mountName.hasPrefix("Texttext-")
+            || mountName == "Write" || mountName.hasPrefix("Write-")
 
         var probeURL = resolved
         while !FileManager.default.fileExists(atPath: probeURL.path),
@@ -688,7 +689,7 @@ final class SyncEngine {
         let isFileProviderMount = isInsideWriteFileProviderMount(context.root)
         guard isCurrent(context) else { return summary }
         guard !isFileProviderMount else {
-            activity("Sync paused: the legacy sync folder cannot be inside the Write File Provider location")
+            activity("Sync paused: the legacy sync folder cannot be inside the Texttext File Provider location")
             summary.errors += 1
             return summary
         }
@@ -719,7 +720,7 @@ final class SyncEngine {
                 location: workspaceLocation
             )
         } catch {
-            activity("Could not prepare Write workspace: \(error.localizedDescription)")
+            activity("Could not prepare Texttext workspace: \(error.localizedDescription)")
             summary.errors += 1
             return summary
         }
@@ -844,7 +845,7 @@ final class SyncEngine {
                         activity("Server deleted \(entry.relativePath); kept a copy in \(kept.deletingLastPathComponent().lastPathComponent)/")
                     } else {
                         summary.errors += 1
-                        activity("Server deleted \(entry.relativePath), but Write could not move the local copy to trash")
+                        activity("Server deleted \(entry.relativePath), but Texttext could not move the local copy to trash")
                         continue
                     }
                 } else {

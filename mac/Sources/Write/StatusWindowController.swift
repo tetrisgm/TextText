@@ -49,8 +49,8 @@ final class StatusWindowController: NSWindowController {
     private let finderStatusDetailLabel = NSTextField(labelWithString: "")
     private let syncLabel = NSTextField(labelWithString: "")
     private let syncButton = NSButton(title: "Sync Now", target: nil, action: nil)
-    private let markdownLabel = NSTextField(labelWithString: "Open .md files with Write")
-    private let markdownButton = NSButton(title: "Use Write", target: nil, action: nil)
+    private let markdownLabel = NSTextField(labelWithString: "Open .md files with Texttext")
+    private let markdownButton = NSButton(title: "Use Texttext", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
     private let activityView = NSTextView()
 
@@ -255,12 +255,12 @@ final class StatusWindowController: NSWindowController {
         if model.busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
 
         if model.isDefaultForMarkdown {
-            markdownLabel.stringValue = "Write opens .md files"
+            markdownLabel.stringValue = "Texttext opens .md files"
             markdownButton.title = "Default"
             markdownButton.isEnabled = false
         } else {
-            markdownLabel.stringValue = "Open .md files with Write"
-            markdownButton.title = "Use Write"
+            markdownLabel.stringValue = "Open .md files with Texttext"
+            markdownButton.title = "Use Texttext"
             markdownButton.isEnabled = true
         }
 

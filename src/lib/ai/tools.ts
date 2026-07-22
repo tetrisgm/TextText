@@ -185,7 +185,7 @@ const createItemInput = z
       .max(1_000_000)
       .optional()
       .describe(
-        "A complete Write markdown file. Use this instead of title, body, excerpt, and kind.",
+        "A complete Texttext markdown file. Use this instead of title, body, excerpt, and kind.",
       ),
   })
   .strict()
@@ -235,7 +235,7 @@ const updateItemInput = z
       .max(1_000_000)
       .optional()
       .describe(
-        "A complete Write markdown file. Content and owner metadata may change, but status, kind, and folder cannot.",
+        "A complete Texttext markdown file. Content and owner metadata may change, but status, kind, and folder cannot.",
       ),
     if_match_hash: ifMatchHash,
   })
@@ -401,7 +401,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   add_item_asset: defineTool("add_item_asset", {
     title: "Add item asset",
     description:
-      "Import one public image or video URL into Write and attach it as cover, body, or gallery.",
+      "Import one public image or video URL into Texttext and attach it as cover, body, or gallery.",
     inputSchema: z
       .object({
         id,

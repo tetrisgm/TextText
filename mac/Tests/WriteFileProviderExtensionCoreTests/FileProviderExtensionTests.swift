@@ -30,7 +30,7 @@ final class FileProviderExtensionTests: XCTestCase {
     ) -> FileProviderExtension {
         let domain = NSFileProviderDomain(
             identifier: NSFileProviderDomainIdentifier(rawValue: "write"),
-            displayName: "Write")
+            displayName: "Texttext")
         // Every handle resolves to the same injected API in these tests.
         let workspaces = descriptors ?? [FileProviderWorkspace(
             name: "Demo", handle: "demo", origin: "https://example.test", token: "token")]
@@ -267,7 +267,7 @@ final class FileProviderExtensionTests: XCTestCase {
             XCTAssertFalse(predicate.evaluate(
                 with: ["fileproviderItems": [linked, noLink]]))
             XCTAssertFalse(predicate.evaluate(with: ["fileproviderItems": [noLink]]),
-                           "\(identifier) requires an authoritative Write URL")
+                           "\(identifier) requires an authoritative Texttext URL")
         }
     }
 

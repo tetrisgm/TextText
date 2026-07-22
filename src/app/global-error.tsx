@@ -164,7 +164,7 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body>
-        <title>Write error</title>
+        <title>Texttext error</title>
         <style>{globalStyles}</style>
         <main className="not-found-page">
           <div aria-hidden="true" className="error-mark">

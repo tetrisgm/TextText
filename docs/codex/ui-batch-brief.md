@@ -1,4 +1,4 @@
-# Write: Superhuman UI refinement batch (workspace nav, focus, sidebar, home, action bar, Mac menu bar)
+# Texttext: Superhuman UI refinement batch (workspace nav, focus, sidebar, home, action bar, Mac menu bar)
 
 Work in `~/dev/write`, branch `main`. Web = Next.js App Router (`src/`). Native mac app = `mac/` (SwiftPM). This is a design-refinement batch on the SIGNED-IN OWNER WORKSPACE (the blog view at `/u/[username]` and `/t/[handle]`: home/root landing + folder pages + editor), plus a few Mac menu-bar actions. Do NOT touch the public reader craft, collab, MCP, or the sync API.
 
@@ -158,7 +158,7 @@ ACCEPTANCE: the status menu shows "New note" and "New bookmark" with visible sho
 
 ### 6B. Global shortcut to toggle the app window in/out of view
 OWNER: "or bring up the app, like quickly toggle it in view or not. I need a shortcut."
-FIX: add `toggleMainWindowAction` beside `showMainWindowAction` (~:2176) that checks `webWindow?.window?.isVisible` and branches: visible -> `orderOut(nil)` (add a `hide()`/`orderOut` method to `WebAppWindowController`), hidden/nil -> `present()`. Register a SECOND global hotkey via the existing `GlobalHotKey` infra (suggest ⌘⇧W or ⌘⇧Return; pick one that does not collide with quick capture ⌘⇧Space) bound to `toggleMainWindowAction`. Add a status-menu item near "Open Write" (~:2055) reflecting the toggle, with its keyEquivalent shown. Retain/unregister the ref in the same places as the capture hotkey.
+FIX: add `toggleMainWindowAction` beside `showMainWindowAction` (~:2176) that checks `webWindow?.window?.isVisible` and branches: visible -> `orderOut(nil)` (add a `hide()`/`orderOut` method to `WebAppWindowController`), hidden/nil -> `present()`. Register a SECOND global hotkey via the existing `GlobalHotKey` infra (suggest ⌘⇧W or ⌘⇧Return; pick one that does not collide with quick capture ⌘⇧Space) bound to `toggleMainWindowAction`. Add a status-menu item near "Open Texttext" (~:2055) reflecting the toggle, with its keyEquivalent shown. Retain/unregister the ref in the same places as the capture hotkey.
 ACCEPTANCE: the shortcut shows the app window if hidden and hides it if visible; the menu item shows the shortcut.
 
 ### 6D. Harden the quick-capture outbox (3 LOW findings from an adversarial review of the just-landed feature)

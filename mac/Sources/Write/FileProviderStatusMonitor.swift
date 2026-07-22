@@ -17,7 +17,7 @@ struct FileProviderStatusSnapshot: Equatable {
     static let unavailable = FileProviderStatusSnapshot(
         symbolName: "icloud.slash",
         title: "Finder sync is not connected",
-        detail: "Link this Mac to add Write to Finder.",
+        detail: "Link this Mac to add Texttext to Finder.",
         severity: .neutral)
 
     static let checking = FileProviderStatusSnapshot(
@@ -221,7 +221,7 @@ final class FileProviderStatusMonitor {
                 domain: NSFileProviderErrorDomain,
                 code: NSFileProviderError.providerNotFound.rawValue,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Finder's Write provider is not available."])))
+                    "Finder's Texttext provider is not available."])))
             return
         }
         publish(.checking)

@@ -1,11 +1,11 @@
-# Write.app for Mac
+# Texttext for Mac
 
-A native markdown sync client for the Write platform. Pure AppKit, SwiftPM
+A native markdown sync client for the Texttext platform. Pure AppKit, SwiftPM
 only (no .xcodeproj), one dependency (Sparkle), and supported on Apple silicon
 with macOS 14 or later. It mirrors your workspace's folders to a local
 directory:
 
-    ~/Write/
+    ~/Texttext/
       blog/my-first-post.md
       notes/an-idea.md
       bookmarks/a-good-read.md
@@ -58,7 +58,7 @@ Mint the token by approving a device link (or via the link flow itself:
   refuse stale writes (412 becomes the same conflicted-copy dance). `PUT` and
   `DELETE` use `If-Match`; hosted metadata `PATCH` uses
   `X-Write-If-Match` because Vercel otherwise consumes the standard header
-  before Write's route runs. New `.md` files are created on the server; files
+  before Texttext's route runs. New `.md` files are created on the server; files
   deleted locally are deleted there. Files the server deletes move to the
   state dir's `trash/`, never `rm`.
 - The server's slug is authoritative: renames on the server rename local
@@ -66,7 +66,7 @@ Mint the token by approving a device link (or via the link flow itself:
   so on per folder.
 - Full pass every 60s, on wake, and on demand; file changes trigger a
   debounced push pass (FSEvents, 2s).
-- The default sync root is `~/Write`. Desktop, Documents, and Downloads are
+- The default sync root is `~/Texttext`. Desktop, Documents, and Downloads are
   deliberately avoided as defaults (macOS privacy prompts); any folder the
   user picks via the Change button works.
 
@@ -80,7 +80,7 @@ inside-out with the auto-detected Developer ID identity, notarizes + staples
 and prints/executes the upload steps in the only safe order: versioned zip,
 appcast, stable alias, advertised-version pointer last.
 
-Write and its three app extensions are built and verified as arm64-only.
+Texttext and its three app extensions are built and verified as arm64-only.
 Sparkle remains universal. The generated, uploaded, and publicly deployed
 appcast must carry an arm64 hardware requirement before the ship command can
 complete. The exact element is
@@ -92,10 +92,10 @@ Trash/restore, sharing/access, comments, bookmark recapture, and cover/assets.
 command calls it only after the source gates pass and the workflow capability
 receipt exists; invoking it without those release-gate inputs fails closed.
 
-Committed placeholders stay neutral: bundle id `com.example.write.mac`,
-domain `write.example.com`, key `REPLACE_WITH_SPARKLE_PUBLIC_KEY`. Real
-values are injected per release via the env vars above; they are applied to
-the staged plist inside the .app, never to the committed `mac/Info.plist`.
+Committed defaults use bundle id `com.example.write.mac`, domain
+`texttext.app`, and key `REPLACE_WITH_SPARKLE_PUBLIC_KEY`. Release values are
+injected via the env vars above; they are applied to the staged plist inside
+the .app, never to the committed `mac/Info.plist`.
 
 ## One-time owner setup
 
@@ -122,7 +122,7 @@ the staged plist inside the .app, never to the committed `mac/Info.plist`.
 ## Verify on a real Mac (headless cannot)
 
 - Fresh-Mac first run: download, open, zero permission prompts.
-- `~/Write` creation triggers no dialog; a picked folder works too.
+- `~/Texttext` creation triggers no dialog; a picked folder works too.
 - Link round trip: code in app matches browser, token mints, workspace 200s.
 - Sparkle N to N+1 in place, passwordless, in `~/Applications`.
 - Login item enrolled exactly once; System Settings toggle works.

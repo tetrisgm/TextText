@@ -9,7 +9,7 @@ const EMAIL = process.env.BENCH_EMAIL || "bench@example.com";
 const SAMPLES = Number(process.env.BENCH_SAMPLES || 6);
 const LABEL = process.env.BENCH_LABEL || "baseline";
 const H = "/@bench";
-const BOOKMARK = "Write AI setup guide"; // seed bookmark title, unique to Bookmarks folder
+const BOOKMARK = "Texttext AI setup guide"; // seed bookmark title, unique to Bookmarks folder
 
 function stats(xs) {
   const s = [...xs].sort((a, b) => a - b);

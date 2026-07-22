@@ -241,7 +241,7 @@ final class AppHealthReporterTests: XCTestCase {
         }
         let info: [String: Any] = [
             "CFBundleIdentifier": "net.writeapp.write.test",
-            "CFBundleName": "Write",
+            "CFBundleName": "Texttext",
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": "9.8",
             "CFBundleVersion": "76",

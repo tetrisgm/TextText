@@ -62,12 +62,12 @@ private final class FileProviderRequestState: @unchecked Sendable {
     }
 }
 
-/// Write's replicated File Provider. A single "Write" domain spans every
+/// Texttext's replicated File Provider. A single "Texttext" domain spans every
 /// workspace the user has joined: the root lists one folder per workspace, and
 /// inside each are that workspace's system folders and posts. Every folder/file
 /// identifier is scoped by the workspace HANDLE, so the extension reads the
 /// handle out of the identifier and resolves that workspace's token from the
-/// handoff. The server (write.ramine.net) stays the source of truth.
+/// handoff. The server (texttext.app) stays the source of truth.
 ///
 /// The API client is resolved per request from the shared keychain handoff (so a
 /// sign-in after launch is picked up without relaunch) via `apiFactory`, which
@@ -492,12 +492,12 @@ public final class FileProviderExtension: NSObject,
                 }
                 guard !Task.isCancelled else { return }
                 guard let link = resolvedManifestLink(for: item, handle: handle) else {
-                    finish(Self.actionError("This item does not have a valid Write link."))
+                    finish(Self.actionError("This item does not have a valid Texttext link."))
                     return
                 }
                 let copied = await MainActor.run { copyLinkHandler(link) }
                 guard !Task.isCancelled else { return }
-                finish(copied ? nil : Self.actionError("The Write link could not be copied."))
+                finish(copied ? nil : Self.actionError("The Texttext link could not be copied."))
             }
             requestState.install(task)
             return requestState.progress
@@ -530,12 +530,12 @@ public final class FileProviderExtension: NSObject,
             guard !Task.isCancelled else { return }
             guard let link = resolvedManifestLink(for: item, handle: handle),
                   let url = Self.appActionURL(action: action, postId: postId, link: link) else {
-                finish(Self.actionError("This item does not have a valid Write link."))
+                finish(Self.actionError("This item does not have a valid Texttext link."))
                 return
             }
             let opened = await MainActor.run { openURLHandler(url) }
             guard !Task.isCancelled else { return }
-            finish(opened ? nil : Self.actionError("The Write action could not be opened."))
+            finish(opened ? nil : Self.actionError("The Texttext action could not be opened."))
         }
         requestState.install(task)
         return requestState.progress

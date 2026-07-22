@@ -14,7 +14,7 @@ enum InboxFilerError: LocalizedError, Equatable {
         case .invalidURL(let value):
             return "The shared URL is invalid: \(value)"
         case .missingAppendTarget:
-            return "Append requires a target Write document id"
+            return "Append requires a target Texttext document id"
         }
     }
 }

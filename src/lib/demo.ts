@@ -58,7 +58,7 @@ That rhythm matters for design writing because the subject is usually mixed. A s
 
 **Good publishing tools anticipate revision.** The same layout has to hold a short update, a long essay, a launch note, and a portfolio case study. It has to survive light and dark themes, a sparse cover, a strong accent, a clipped excerpt, and a paragraph that gets better after the author returns to it.
 
-The broadsheet still works because it is not nostalgic. It is a compact system for making text feel considered. For a product called Write, that is the right starting point.`,
+The broadsheet still works because it is not nostalgic. It is a compact system for making text feel considered. For a product called Texttext, that is the right starting point.`,
   },
   {
     type: "project",
@@ -176,7 +176,7 @@ The question is simple: does this choice help a thoughtful person move forward, 
 
 **The lesson travels well.** Modern software often hides complexity until the moment a user needs to make a precise choice. That can feel simple at first and brittle later. Good tools keep the system understandable even when the work has many states.
 
-For Write, that means drafts, covers, galleries, video, status, feeds, and editing controls need to feel like one coherent place. The interface can be quiet, but it should never be evasive.`,
+For Texttext, that means drafts, covers, galleries, video, status, feeds, and editing controls need to feel like one coherent place. The interface can be quiet, but it should never be evasive.`,
   },
   {
     type: "article",

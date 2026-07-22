@@ -94,7 +94,7 @@ public final class EditorWindowController: NSWindowController, NSTextViewDelegat
         if editorDocument.isDirty {
             if let recoveryURL = editorDocument.saveOrRecover() {
                 NSLog(
-                    "Write editor: save at close failed; buffer preserved at %@",
+                    "Texttext editor: save at close failed; buffer preserved at %@",
                     recoveryURL.path
                 )
             }

@@ -69,7 +69,7 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
               let host = url.host?.lowercased(),
               host.hasSuffix(".blob.vercel-storage.com"),
               Self.isAllowedArtifactPath(url.path) else {
-            return .failure(.rejected("Artifact URL is not Write-hosted"))
+            return .failure(.rejected("Artifact URL is not Texttext-hosted"))
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"

@@ -18,7 +18,7 @@ public struct WorkspaceEnumerator: Sendable {
 
     public init(
         api: WriteSyncAPI, handle: String, workspaceName: String,
-        readOnly: Bool = true, domainName: String = "Write"
+        readOnly: Bool = true, domainName: String = "Texttext"
     ) {
         self.api = api
         self.handle = handle

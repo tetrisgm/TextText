@@ -1,6 +1,6 @@
 "use client";
 
-// Runs inside the Write desktop app's web view after sign-in. It mints a sync
+// Runs inside the Texttext desktop app's web view after sign-in. It mints a sync
 // token for the signed-in account and hands it to the native app over the
 // WKScriptMessageHandler bridge (window.webkit.messageHandlers.writeApp), then
 // the app takes over: it stores the token, starts folder sync, and loads the
@@ -53,17 +53,17 @@ export function AppLinkBridge() {
       <main className="connect-main" style={{ textAlign: "center" }}>
         {state === "browser" ? (
           <>
-            <h1 className="connect-title">Open the Write app</h1>
+            <h1 className="connect-title">Open the Texttext app</h1>
             <p className="connect-lede">
-              This page connects the Write desktop app to your account. Open
-              Write on your Mac and sign in there.
+              This page connects the Texttext desktop app to your account. Open
+              Texttext on your Mac and sign in there.
             </p>
           </>
         ) : state === "error" ? (
           <>
             <h1 className="connect-title">Could not connect</h1>
             <p className="connect-lede">
-              Something went wrong linking this Mac. Try opening Write again.
+              Something went wrong linking this Mac. Try opening Texttext again.
             </p>
           </>
         ) : (

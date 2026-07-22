@@ -1,4 +1,4 @@
-// /docs/ai: the canonical hosted OAuth setup and tool reference for Write MCP.
+// /docs/ai: the canonical hosted OAuth setup and tool reference for Texttext MCP.
 
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -8,7 +8,7 @@ import {
 } from "@/lib/ai/tools";
 import "@/styles/connect.css";
 
-const MCP_URL = "https://write.ramine.net/api/mcp";
+const MCP_URL = "https://texttext.app/api/mcp";
 const READ_TOOLS = WORKSPACE_TOOL_NAMES.filter(
   (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read",
 );
@@ -17,8 +17,8 @@ const WRITE_TOOLS = WORKSPACE_TOOL_NAMES.filter(
 );
 
 export const metadata: Metadata = {
-  title: "Connect your AI to Write",
-  description: `Connect an AI assistant to Write's ${WORKSPACE_TOOL_NAMES.length} workspace tools.`,
+  title: "Connect your AI to Texttext",
+  description: `Connect an AI assistant to Texttext's ${WORKSPACE_TOOL_NAMES.length} workspace tools.`,
 };
 
 function base64(value: string): string {
@@ -67,17 +67,17 @@ export default function AiDocsPage() {
   return (
     <div className="applecms connect-shell">
       <main className="connect-main connect-doc">
-        <h1 className="connect-title">Connect your AI to Write</h1>
+        <h1 className="connect-title">Connect your AI to Texttext</h1>
 
         <section className="connect-section">
           <h2 className="connect-section-title">Overview</h2>
           <p className="connect-body">
             An MCP server is an authenticated API that an AI assistant can call
             on your behalf. Connect one once, and your assistant can read and
-            write your Write workspace from wherever it runs.
+            write your Texttext workspace from wherever it runs.
           </p>
           <p className="connect-body">
-            Write&apos;s server reads and writes the folders and markdown items in
+            Texttext&apos;s server reads and writes the folders and markdown items in
             your one workspace. It respects your sharing, keeps notes and
             bookmarks unlisted, and logs every change.
           </p>
@@ -146,12 +146,12 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Verifying the connection</h2>
           <p className="connect-body">
-            Ask your assistant: <em>&quot;What folders are in my Write workspace?&quot;</em>{" "}
+            Ask your assistant: <em>&quot;What folders are in my Texttext workspace?&quot;</em>{" "}
             It calls <code className="connect-inline-code">list_folders</code>,
             asks to connect if it has not, and lists Blog, Notes, and Bookmarks.
           </p>
           <p className="connect-body">
-            To verify writes, ask: <em>&quot;Create a draft note in Write titled
+            To verify writes, ask: <em>&quot;Create a draft note in Texttext titled
             &apos;MCP test&apos;.&quot;</em> It creates a draft in Notes and nothing goes
             public.
           </p>
@@ -166,7 +166,7 @@ export default function AiDocsPage() {
             <code className="connect-inline-code">/mcp</code> in Claude Code,
             and try again.
           </p>
-          <h3>The client shows no Write tools</h3>
+          <h3>The client shows no Texttext tools</h3>
           <p className="connect-body">
             Restart the MCP host after editing its configuration.
           </p>
@@ -195,7 +195,7 @@ export default function AiDocsPage() {
           <h3>Capture research into Notes</h3>
           <p className="connect-body">
             <strong>Prompt:</strong> &quot;Research the current EU AI Act enforcement
-            timeline and save what you find as a note in my Write workspace.&quot;
+            timeline and save what you find as a note in my Texttext workspace.&quot;
           </p>
           <p className="connect-body">
             The assistant calls <code className="connect-inline-code">get_workspace</code>,{" "}
@@ -212,7 +212,7 @@ export default function AiDocsPage() {
 
           <h3>Publish a drafted article</h3>
           <p className="connect-body">
-            <strong>Prompt:</strong> &quot;Polish my &apos;Ship logs&apos; draft in Write and
+            <strong>Prompt:</strong> &quot;Polish my &apos;Ship logs&apos; draft in Texttext and
             publish it.&quot;
           </p>
           <p className="connect-body">
@@ -226,7 +226,7 @@ export default function AiDocsPage() {
 
           <h3>Sync tags across a workspace</h3>
           <p className="connect-body">
-            <strong>Prompt:</strong> &quot;Find every Write post tagged &apos;draft-idea&apos;
+            <strong>Prompt:</strong> &quot;Find every Texttext post tagged &apos;draft-idea&apos;
             and add the tag &apos;q3&apos; to each.&quot;
           </p>
           <p className="connect-body">
@@ -244,10 +244,10 @@ export default function AiDocsPage() {
           <p className="connect-body">Any connected assistant can call these.</p>
           <ToolTable names={READ_TOOLS} />
 
-          <h3>Write tools ({WRITE_TOOLS.length})</h3>
+          <h3>Texttext tools ({WRITE_TOOLS.length})</h3>
           <p className="connect-body">
             These require the <code className="connect-inline-code">sync</code>{" "}
-            scope. Write marks publishing, moving to Trash, restoring, and
+            scope. Texttext marks publishing, moving to Trash, restoring, and
             sharing as destructive or audience-changing. Clients that support
             confirmations will ask you first.
           </p>

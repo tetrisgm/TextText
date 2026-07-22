@@ -10,7 +10,7 @@ struct WriteAppShortcutsProvider: AppShortcutsProvider {
             intent: CreateDocumentIntent(),
             phrases: [
                 "Create a note in \(.applicationName)",
-                "Make a Write document in \(.applicationName)",
+                "Make a Texttext document in \(.applicationName)",
             ],
             shortTitle: "New Document",
             systemImageName: "square.and.pencil"
@@ -19,7 +19,7 @@ struct WriteAppShortcutsProvider: AppShortcutsProvider {
             intent: SearchDocumentsIntent(),
             phrases: [
                 "Search \(.applicationName)",
-                "Find a Write document in \(.applicationName)",
+                "Find a Texttext document in \(.applicationName)",
             ],
             shortTitle: "Search",
             systemImageName: "magnifyingglass"
@@ -36,7 +36,7 @@ struct WriteAppShortcutsProvider: AppShortcutsProvider {
         AppShortcut(
             intent: GetRecentDocumentsIntent(),
             phrases: [
-                "Show recent Write documents in \(.applicationName)",
+                "Show recent Texttext documents in \(.applicationName)",
                 "Get recent documents in \(.applicationName)",
             ],
             shortTitle: "Recent",

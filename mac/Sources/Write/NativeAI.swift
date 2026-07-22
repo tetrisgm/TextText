@@ -21,7 +21,7 @@ import WebKit
             }
             let warmSession = LanguageModelSession(
                 instructions:
-                    "You are the private on-device writing assistant inside Write."
+                    "You are the private on-device writing assistant inside Texttext."
             )
             session = warmSession
             lock.unlock()
@@ -225,7 +225,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 case .appleIntelligenceNotEnabled:
                     return "The on-device model is unavailable because Apple Intelligence is turned off. Enable it in System Settings, then try again, or add a cloud AI key in Workspace Settings."
                 case .modelNotReady:
-                    return "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Write will keep checking until it is ready."
+                    return "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Texttext will keep checking until it is ready."
                 @unknown default:
                     return "The on-device model is unavailable right now. Try again later, or add a cloud AI key in Workspace Settings."
                 }
@@ -261,7 +261,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 if message.localizedCaseInsensitiveContains("Local Model Asset")
                     || message.localizedCaseInsensitiveContains("assets unavailable")
                 {
-                    return "The on-device Assistant could not start this request (assets unavailable). Write will retry automatically."
+                    return "The on-device Assistant could not start this request (assets unavailable). Texttext will retry automatically."
                 }
                 return message
             }
@@ -270,7 +270,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             case .exceededContextWindowSize:
                 return "This request is too large for the on-device Assistant. Shorten it or split it into smaller requests."
             case .assetsUnavailable:
-                return "The on-device Assistant could not start this request (assets unavailable). Write will retry automatically."
+                return "The on-device Assistant could not start this request (assets unavailable). Texttext will retry automatically."
             case .guardrailViolation:
                 return "The on-device Assistant could not complete this request because of its safety checks."
             case .unsupportedGuide:
@@ -822,7 +822,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   ]
                 },
                 "markdown": {
-                  "description": "A complete Write markdown file. Use this instead of title, body, excerpt, and kind.",
+                  "description": "A complete Texttext markdown file. Use this instead of title, body, excerpt, and kind.",
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 1000000
@@ -936,7 +936,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   "type": "boolean"
                 },
                 "markdown": {
-                  "description": "A complete Write markdown file. Content and owner metadata may change, but status, kind, and folder cannot.",
+                  "description": "A complete Texttext markdown file. Content and owner metadata may change, but status, kind, and folder cannot.",
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 1000000
@@ -1096,7 +1096,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "add_item_asset",
-            "description": "Import one public image or video URL into Write and attach it as cover, body, or gallery.",
+            "description": "Import one public image or video URL into Texttext and attach it as cover, body, or gallery.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1659,7 +1659,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
             var instructions =
                 payload["instructions"] as? String
                 ?? """
-                You are the assistant inside Write, a notes and blogging app. \
+                You are the assistant inside Texttext, a notes and blogging app. \
                 Perform the user's request on their workspace with the tools.
 
                 First, silently count how many distinct items the request names. \

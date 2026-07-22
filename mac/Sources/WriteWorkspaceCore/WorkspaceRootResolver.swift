@@ -38,7 +38,7 @@ public struct WorkspaceRootResolver {
     public func resolve() -> WorkspaceLocation {
         // WRITE_SYNC_ROOT isolates the workspace for headless smokes and tests,
         // exactly as WRITE_STATE_DIR isolates state. Without it the app always
-        // resolves the real iCloud Drive/Write folder, so a smoke that omits it
+        // resolves the real iCloud Drive/Texttext folder, so a smoke that omits it
         // is NOT isolated (it reads and can write the real workspace).
         let root = overrideRoot ?? Self.environmentOverrideRoot()
         if let root {
@@ -46,7 +46,7 @@ public struct WorkspaceRootResolver {
                 url: root,
                 kind: .injected,
                 iCloudAvailable: isICloudDriveAvailable(),
-                statusMessage: "Using injected Write workspace"
+                statusMessage: "Using injected Texttext workspace"
             )
         }
 
@@ -56,7 +56,7 @@ public struct WorkspaceRootResolver {
                 url: cloudRoot,
                 kind: .iCloudDrive,
                 iCloudAvailable: true,
-                statusMessage: "Using iCloud Drive Write workspace"
+                statusMessage: "Using iCloud Drive Texttext workspace"
             )
         }
 
@@ -64,17 +64,17 @@ public struct WorkspaceRootResolver {
             url: Self.documentsFallbackWriteRoot(fileManager: fileManager),
             kind: .documentsFallback,
             iCloudAvailable: false,
-            statusMessage: "iCloud Drive is unavailable; using ~/Write Local on this Mac"
+            statusMessage: "iCloud Drive is unavailable; using ~/Texttext Local on this Mac"
         )
     }
 
     public static func iCloudDriveWriteRoot(fileManager: FileManager = .default) -> URL {
         fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Write", isDirectory: true)
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Texttext", isDirectory: true)
     }
 
     public static func documentsFallbackWriteRoot(fileManager: FileManager = .default) -> URL {
-        fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Write Local", isDirectory: true)
+        fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Texttext Local", isDirectory: true)
     }
 
     private func isICloudDriveAvailable() -> Bool {

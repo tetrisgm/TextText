@@ -50,13 +50,13 @@ export function unavailableExplanation(
   capabilities: NativeAICapabilities | null,
 ): string {
   if (!hasNativeAI()) {
-    return "The on-device assistant is available inside Write for Mac.";
+    return "The on-device assistant is available inside Texttext for Mac.";
   }
   switch (capabilities?.reason) {
     case "appleIntelligenceNotEnabled":
       return "Apple Intelligence is turned off. Enable it in System Settings, then try again.";
     case "modelNotReady":
-      return "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Write will use it as soon as it is ready.";
+      return "The Apple Intelligence model runs on this Mac. macOS is preparing it automatically, and Texttext will use it as soon as it is ready.";
     case "deviceNotEligible":
       return "This Mac does not support Apple Intelligence.";
     case "osTooOld":

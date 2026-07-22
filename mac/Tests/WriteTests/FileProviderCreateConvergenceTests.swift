@@ -118,7 +118,7 @@ final class FileProviderCreateConvergenceTests: XCTestCase {
             created: created, children: [existing, created])
         let domain = NSFileProviderDomain(
             identifier: NSFileProviderDomainIdentifier(rawValue: "write-tests"),
-            displayName: "Write")
+            displayName: "Texttext")
         let provider = FileProviderExtension(
             domain: domain,
             apiFactory: { _ in api },

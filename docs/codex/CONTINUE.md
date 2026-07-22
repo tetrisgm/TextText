@@ -1,4 +1,4 @@
-# Write: continuation pointer
+# Texttext: continuation pointer
 
 The canonical continuation state is `docs/codex/HANDOFF.md`.
 

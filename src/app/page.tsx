@@ -60,7 +60,7 @@ function DemoAction() {
 
 function ProductPreview() {
   return (
-    <div className="write-landing-product" aria-label="Write product preview">
+    <div className="write-landing-product" aria-label="Texttext product preview">
       <div className="write-landing-sidebar" aria-hidden="true">
         <div className="write-landing-sidebar-dot" />
         {starterFolders.map((folder) => (
@@ -158,10 +158,10 @@ function FolderCards() {
 
 function LandingDownload() {
   return (
-    <section className="write-landing-download" aria-label="Download Write">
+    <section className="write-landing-download" aria-label="Download Texttext">
       <div className="write-landing-download-copy">
         <p className="write-landing-kicker">The desktop app</p>
-        <h2>Write on your Mac</h2>
+        <h2>Texttext on your Mac</h2>
         <p>
           The same workspace as the web, in a native window you open from the
           Dock or the menu bar, with a folder of Markdown files that sync both
@@ -206,7 +206,7 @@ function LandingSections() {
           </div>
           <div className="write-landing-band-copy">
             <p>
-              Write treats the Markdown file as the durable shape of your
+              Texttext treats the Markdown file as the durable shape of your
               work. Sync, exports, public blog pages, and agent access all
               speak the same vocabulary.
             </p>
@@ -256,7 +256,7 @@ export default async function Home() {
           <p className="write-landing-kicker">Folders. Markdown. Publishing.</p>
           <h1>Publish from a folder, not a maze.</h1>
           <p>
-            Write gives you Blog, Notes, and Bookmarks as portable Markdown
+            Texttext gives you Blog, Notes, and Bookmarks as portable Markdown
             files. Start on the web, keep the same workspace on your Mac, and
             publish the clean parts when they are ready.
           </p>

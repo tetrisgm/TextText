@@ -7,7 +7,7 @@
 # Usage:
 #   WRITE_NOTARY_PROFILE=write-notary \
 #   WRITE_BUNDLE_ID=<real bundle id> \
-#   WRITE_PRODUCT_ORIGIN=https://<product-domain> \
+#   WRITE_PRODUCT_ORIGIN=https://texttext.app \
 #   WRITE_SPARKLE_PUBLIC_KEY=<EdDSA public key> \
 #   mac/scripts/release.sh <version X.Y>
 #

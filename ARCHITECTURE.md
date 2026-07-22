@@ -1,4 +1,4 @@
-# Write: architecture
+# Texttext: architecture
 
 A multi-tenant blogging platform. Next.js App Router on Vercel.
 
@@ -42,7 +42,7 @@ A multi-tenant blogging platform. Next.js App Router on Vercel.
 ## Roadmap (in order)
 
 1. Editor v1: field editing + markdown body + live Broadsheet preview
-   (the ramine.net CMS proved the postMessage draft-streaming pattern).
+   (the earlier CMS proved the postMessage draft-streaming pattern).
 2. Auth: Sign in with Apple; blogs owned by users; drafts.
 3. Postgres wiring behind `store.ts`; Vercel Blob for covers and figures.
 4. Feeds (RSS/Atom/JSON) per blog; sitemaps; OG images.

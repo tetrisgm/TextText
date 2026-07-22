@@ -1,25 +1,25 @@
 import Foundation
 
-/// The app's display name, read from the bundle. Falls back to "Write" for
+/// The app's display name, read from the bundle. Falls back to "Texttext" for
 /// `swift run` dev builds with no bundle.
 let appName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
     ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
-    ?? "Write"
+    ?? "Texttext"
 
 let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "dev"
 
-/// Committed neutral placeholder. The real product origin is injected at
+/// Committed product fallback. The product origin is injected at
 /// release time (WRITE_PRODUCT_ORIGIN rewrites SUFeedURL on the staged plist;
 /// the app derives its server origin from SUFeedURL) and in dev via the
 /// WRITE_SERVER env var. Never commit a real domain here.
-let placeholderProductOrigin = "https://write.example.com"
+let placeholderProductOrigin = "https://texttext.app"
 
 /// Server origin resolution, most specific first:
 ///   1. WRITE_SERVER env (dev: http://localhost:3000)
 ///   2. the linked credential's serverOrigin (the token belongs to it)
 ///   3. the origin of SUFeedURL in the running bundle (release builds carry
 ///      the real product origin there via the build script's plist override)
-///   4. the committed neutral placeholder
+///   4. the committed product fallback
 func resolveServerOrigin(credentials: Credentials?) -> URL {
     if let raw = ProcessInfo.processInfo.environment["WRITE_SERVER"],
        let url = URL(string: raw), url.host != nil {

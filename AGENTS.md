@@ -89,8 +89,8 @@ agent working here follows:
 
 # Changelog (binding)
 
-Ramine reads a running changelog INSIDE Write. It is NOT a repo file: the
-changelog is the "Write Changelog" note in his workspace (Shoku's Space / My
+The owner reads a running changelog INSIDE Texttext. It is NOT a repo file: the
+changelog is the "Texttext Changelog" note in their workspace (Shoku's Space / My
 Notes), and that note IS the single source of truth. It is content, so it lives
 in the product, in the product's own format (a `.textpack`, whose inner
 `text.md` is markdown). Do not add a parallel `.md` copy in the repo; that
@@ -106,7 +106,7 @@ Only a process on the owner's Mac can write the File Provider mount, so the
 owner or the integrator updates the note (Codex in a sandbox cannot reach it and
 should instead put its user-facing entry in its final report for the integrator
 to prepend). To edit by hand: unzip
-`~/Library/CloudStorage/Write-Write/Shoku's Space/My Notes/Write Changelog.textpack`,
+`~/Library/CloudStorage/Texttext-Texttext/Shoku's Space/My Notes/Texttext Changelog.textpack`,
 edit the inner `text.md` body (preserve the frontmatter block byte-for-byte),
 rezip preserving the `.textbundle` structure, and copy it back over the same
 filename (a content edit, not a rename, so it syncs cleanly).

@@ -1,4 +1,4 @@
-// Platform-level llms.txt: what Write is and where its machine surfaces
+// Platform-level llms.txt: what Texttext is and where its machine surfaces
 // live, for agents landing on the root domain. Per-blog llms.txt (under
 // /@{username}/llms.txt) indexes one blog's posts; this file describes the
 // platform. Terse and factual on purpose.
@@ -18,9 +18,9 @@ export function GET() {
     (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write",
   );
 
-  const text = `# Write
+  const text = `# Texttext
 
-Write is a publishing platform. Each blog is a workspace of folders, and every
+Texttext is a publishing platform. Each blog is a workspace of folders, and every
 item in a folder is a Markdown file with metadata frontmatter and a body.
 Folder modes:
 
@@ -95,9 +95,9 @@ ${WORKSPACE_TOOL_NAMES.length}-tool MCP contract.
 
 ## In-app assistant
 
-Write for Mac uses Apple's on-device Foundation Models runtime and calls the
+Texttext for Mac uses Apple's on-device Foundation Models runtime and calls the
 same ${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the signed-in page. It does not use
-Write's MCP endpoint. The plain web app has no assistant model fallback.
+Texttext's MCP endpoint. The plain web app has no assistant model fallback.
 OpenAI and Anthropic are not implemented as in-app providers; they can connect
 as external MCP clients.
 

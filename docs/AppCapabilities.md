@@ -9,11 +9,11 @@ Manifest version: 1
 
 | Entity | Display name | Documentation |
 | --- | --- | --- |
-| Document | Document | Local markdown document in the Write workspace. |
-| Folder | Folder | Local folder in the Write workspace. |
-| Blog | Blog | Local blog folder in the Write workspace. |
+| Document | Document | Local markdown document in the Texttext workspace. |
+| Folder | Folder | Local folder in the Texttext workspace. |
+| Blog | Blog | Local blog folder in the Texttext workspace. |
 | Publication | Publication | Published state for a local markdown document. |
-| Bookmark | Bookmark | Local markdown bookmark in the Write workspace. |
+| Bookmark | Bookmark | Local markdown bookmark in the Texttext workspace. |
 
 ## Intents
 

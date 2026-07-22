@@ -1,8 +1,8 @@
 // Idempotent migration for a post's immutable local file representation.
-// Existing Write content defaults to textbundle. Posts known to have been
+// Existing Texttext content defaults to textbundle. Posts known to have been
 // explicitly imported from external files through the pre-header sync API are
 // backfilled to markdown once via their resolved idempotency key. Other
-// idempotent creates (for example new-note:*) are Write-created content and must
+// idempotent creates (for example new-note:*) are Texttext-created content and must
 // remain TextBundles.
 //
 //   node scripts/migrate-add-file-representation.mjs

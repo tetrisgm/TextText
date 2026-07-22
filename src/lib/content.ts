@@ -102,7 +102,7 @@ export type ItemKind =
 /**
  * Everything a completed bookmark capture produced. Binary artifacts live in
  * Blob storage (URLs here); the readable extraction lives in the post body
- * itself so the Markdown file round-trips it. Native Write documents package
+ * itself so the Markdown file round-trips it. Native Texttext documents package
  * these artifacts inside their TextBundle; imported plain files address them
  * through the single root Data/Attachments tree.
  */
@@ -134,7 +134,7 @@ export type BookmarkCaptureScreenshotTile = {
 export type BookmarkCaptureAsset = {
   /** original remote image URL seen in the captured page */
   originalUrl: string;
-  /** Blob URL served by Write */
+  /** Blob URL served by Texttext */
   url: string;
   contentType?: string;
   filename?: string;

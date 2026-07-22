@@ -5,9 +5,9 @@ import { LandingHeader } from "@/components/LandingHeader";
 import { LandingFooter } from "@/components/LandingFooter";
 
 export const metadata: Metadata = {
-  title: "Download Write",
+  title: "Download Texttext",
   description:
-    "Get the Write desktop app for Apple silicon Macs. Windows and Linux are on the way.",
+    "Get the Texttext desktop app for Apple silicon Macs. Windows and Linux are on the way.",
 };
 
 export const dynamic = "force-dynamic";
@@ -44,9 +44,9 @@ export default async function DownloadPage() {
 
       <section className="write-download-hero">
         <p className="write-landing-kicker">The desktop app</p>
-        <h1>Download Write</h1>
+        <h1>Download Texttext</h1>
         <p>
-          Download the Mac app for Apple silicon, open Write, and sign in when
+          Download the Mac app for Apple silicon, open Texttext, and sign in when
           it launches. You get the same editor and folders as the web, backed
           by Markdown files that sync both ways.
         </p>
@@ -59,7 +59,7 @@ export default async function DownloadPage() {
 
       <section
         className="write-download-steps"
-        aria-label="Download, open Write, sign in"
+        aria-label="Download, open Texttext, sign in"
       >
         <ol>
           <li>
@@ -68,7 +68,7 @@ export default async function DownloadPage() {
           </li>
           <li>
             <span>2</span>
-            <strong>Open Write</strong>
+            <strong>Open Texttext</strong>
           </li>
           <li>
             <span>3</span>
@@ -121,9 +121,9 @@ export default async function DownloadPage() {
 
       <section className="write-download-note-block">
         <p>
-          Open the zip, launch Write, and keep it in Applications if you want
+          Open the zip, launch Texttext, and keep it in Applications if you want
           it there. The app auto-updates itself once installed; your Markdown
-          files land in a Write folder in your home directory.
+          files land in a Texttext folder in your home directory.
         </p>
       </section>
       <LandingFooter />

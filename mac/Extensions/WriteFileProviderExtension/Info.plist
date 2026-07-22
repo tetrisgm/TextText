@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Write</string>
+	<string>Texttext</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -36,7 +36,7 @@
 				<key>NSExtensionFileProviderActionIdentifier</key>
 				<string>net.writeapp.write.fileprovider.copy-write-link</string>
 				<key>NSExtensionFileProviderActionName</key>
-				<string>Copy Write Link</string>
+				<string>Copy Texttext Link</string>
 				<key>NSExtensionFileProviderActionActivationRule</key>
 				<string>fileproviderItems.@count == 1 AND ANY fileproviderItems.userInfo.writeLinkAvailable == YES</string>
 			</dict>

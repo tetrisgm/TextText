@@ -1,4 +1,4 @@
-// The Write desktop app's link landing. The app's web view loads this after
+// The Texttext desktop app's link landing. The app's web view loads this after
 // sign-in; it mints the app's sync token and hands it back over the native
 // bridge (see AppLinkBridge). Signed out, it bounces to /signin and returns
 // here, so the app only ever shows sign-in first, never the public landing.
@@ -10,7 +10,7 @@ import { AppLinkBridge } from "@/components/AppLinkBridge";
 import "@/styles/connect.css";
 
 export const metadata: Metadata = {
-  title: "Connect Write",
+  title: "Connect Texttext",
   robots: { index: false, follow: false },
 };
 

@@ -166,7 +166,7 @@ final class SyncEngineEpochTests: XCTestCase {
         XCTAssertEqual(client.workspaceCallCount(), 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
         XCTAssertTrue(client.activitiesSnapshot().contains {
-            $0.contains("cannot be inside the Write File Provider location")
+            $0.contains("cannot be inside the Texttext File Provider location")
         })
     }
 

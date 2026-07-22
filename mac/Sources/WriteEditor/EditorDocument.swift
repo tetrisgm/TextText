@@ -8,7 +8,7 @@ public enum EditorDocumentError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notInWorkspace(let url):
-            return "\(url.lastPathComponent) is not inside the Write workspace"
+            return "\(url.lastPathComponent) is not inside the Texttext workspace"
         case .unsupportedEncoding(let url):
             return "\(url.lastPathComponent) is not UTF-8 text"
         }

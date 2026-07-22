@@ -139,7 +139,7 @@ final class SyncEngineRegressionTests: XCTestCase {
         let state = try temporaryDirectory()
         // Point the engine at a child path that does NOT exist yet, so we can
         // prove the pass never creates it.
-        let mirror = root.appendingPathComponent("Write", isDirectory: true)
+        let mirror = root.appendingPathComponent("Texttext", isDirectory: true)
         let fake = FakeSyncClient()
         fake.workspaceValue = fixtureWorkspace()
         fake.manifestReplies["notes"] = .manifest([

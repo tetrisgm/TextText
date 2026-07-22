@@ -1,11 +1,11 @@
 @AGENTS.md
 
-# Write: working notes
+# Texttext: working notes
 
 Apple-grade multi-tenant blogging platform (Next.js App Router). A craft-first
 small commercial product; there is no moat in publishing tools and that is
-decided, so the bet is taste. Sibling repo: ~/dev/ramine.net (the personal
-portfolio this was extracted from; it stays its own thing).
+decided, so the bet is taste. The personal portfolio this was extracted from
+stays its own separate project.
 
 ## Continuation
 
@@ -30,8 +30,8 @@ them.
 
 ## Verify
 
-- `npx tsc --noEmit` for types, `npm run build` for the full check (this app
-  is small; building is cheap, unlike ramine.net).
+- `npx tsc --noEmit` for types, `npm run build` for the full check. This app
+  is small, so building is cheap.
 - The app is plain DOM: browser preview works and screenshots are meaningful.
 - Demo content needs zero setup: `npm run dev`, then the demo lives at
   `/@demo` (`/t/demo` and `demo.localhost:3000` redirect there). If the demo
@@ -65,7 +65,7 @@ them.
 ## Deploy
 
 Vercel (Neon Postgres + Blob wired via env). Work directly on `main`; do not
-leave product work on feature branches. Ramine decides when a version is ready
+leave product work on feature branches. The owner decides when a version is ready
 to release. At that point, ship the exact clean and verified `main` commit with
 the owner-facing command, update production and the installed Mac app, and
 verify that source, public artifacts, website, appcast, and installed build all

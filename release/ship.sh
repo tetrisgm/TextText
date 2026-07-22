@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command Write ship entry point. This is the owner-facing command:
+# One-command Texttext ship entry point. This is the owner-facing command:
 # verify the web app, cut the Mac app release, then deploy the public download
 # and appcast routes as the final version marker. The lower-level release
 # script builds and uploads immutable artifacts before the web deploy flips.
@@ -29,12 +29,12 @@ acquire_ship_lock() {
     return 0
   fi
   if [ "$(cat "$SHIP_LOCK/lane" 2>/dev/null || true)" = "work" ]; then
-    echo "An active Write work unit owns the delivery lane." >&2
+    echo "An active Texttext work unit owns the delivery lane." >&2
     exit 75
   fi
   owner_pid="$(cat "$SHIP_LOCK/pid" 2>/dev/null || true)"
   if [ -n "$owner_pid" ] && kill -0 "$owner_pid" 2>/dev/null; then
-    echo "Another Write ship owns the release lock (pid $owner_pid)." >&2
+    echo "Another Texttext ship owns the release lock (pid $owner_pid)." >&2
     exit 75
   fi
   rm -rf "$SHIP_LOCK"
@@ -51,12 +51,12 @@ release_ship_lock() {
 acquire_ship_lock
 trap release_ship_lock EXIT INT TERM
 
-# Write's public release identity is product configuration, not secret input.
+# Texttext's public release identity is product configuration, not secret input.
 # Keep it here so the owner-facing command is genuinely one command.
 export WRITE_NOTARY_PROFILE="${WRITE_NOTARY_PROFILE:-write-notary}"
 export WRITE_BUNDLE_ID="${WRITE_BUNDLE_ID:-net.writeapp.write.mac}"
 export WRITE_APP_GROUP="${WRITE_APP_GROUP:-group.net.writeapp.write}"
-export WRITE_PRODUCT_ORIGIN="${WRITE_PRODUCT_ORIGIN:-https://write.ramine.net}"
+export WRITE_PRODUCT_ORIGIN="${WRITE_PRODUCT_ORIGIN:-https://texttext.app}"
 export WRITE_SPARKLE_PUBLIC_KEY="${WRITE_SPARKLE_PUBLIC_KEY:-qFmaq5ijn3m2sbiadmkBVvGIjz8v9+piqE/T+YZ1/u0=}"
 
 VERSION=""
@@ -115,7 +115,7 @@ if [ "$NO_PUBLISH" != "1" ]; then
   node "$ROOT/scripts/release-version.mjs" assert-free "$VERSION"
 fi
 
-echo ">> ship Write $VERSION"
+echo ">> ship Texttext $VERSION"
 
 if [ "$SKIP_TESTS" != "1" ]; then
   echo ">> verify exact release source"
@@ -153,7 +153,7 @@ if [ "$NO_PUBLISH" = "1" ]; then
   "$ROOT/mac/scripts/verify-app-health.sh" \
     "$ROOT/mac/build/Write.app" "$VERSION" "$DRY_BUILD"
   echo
-  echo "Verified Write $VERSION (not published)"
+  echo "Verified Texttext $VERSION (not published)"
   echo "  web build: .next (one production build)"
   echo "  app build: mac/build/Write.app ($VERSION build $DRY_BUILD)"
   exit 0
@@ -369,7 +369,7 @@ INSTALL_WAS_RUNNING=0
 installed_write_is_running && INSTALL_WAS_RUNNING=1
 if ! stop_installed_write; then
   rm -rf "$INSTALL_NEW"
-  echo "The running Write app did not quit before installation." >&2
+  echo "The running Texttext app did not quit before installation." >&2
   exit 1
 fi
 if [ -e "$INSTALL_PATH" ]; then mv "$INSTALL_PATH" "$INSTALL_OLD"; fi
@@ -380,13 +380,13 @@ INSTALLED_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$INSTALL_PATH
 INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALL_PATH/Contents/Info.plist")"
 [ "$INSTALLED_VERSION" = "$VERSION" ] || fail_installed_write "Installed app version is $INSTALLED_VERSION, expected $VERSION."
 [ "$INSTALLED_BUILD" = "$EXPECTED_BUILD" ] || fail_installed_write "Installed app build is $INSTALLED_BUILD, expected $EXPECTED_BUILD."
-codesign --verify --strict --verbose=2 "$INSTALL_PATH" || fail_installed_write "Installed Write app failed code-signature verification."
+codesign --verify --strict --verbose=2 "$INSTALL_PATH" || fail_installed_write "Installed Texttext app failed code-signature verification."
 if ! "$ROOT/mac/scripts/verify-apple-silicon-app.sh" \
   "$INSTALL_PATH" --require-extensions; then
-  fail_installed_write "Installed Write app failed Apple silicon verification."
+  fail_installed_write "Installed Texttext app failed Apple silicon verification."
 fi
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
-  launch_installed_write || fail_installed_write "Installed Write app did not launch after bounded retries."
+  launch_installed_write || fail_installed_write "Installed Texttext app did not launch after bounded retries."
 fi
 rm -rf "$INSTALL_OLD"
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
@@ -441,11 +441,11 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
     --require-reports \
     --fail-on-failure
 else
-  echo "   Write was not running before installation; leaving it closed and deferring runtime health until next launch."
+  echo "   Texttext was not running before installation; leaving it closed and deferring runtime health until next launch."
 fi
 
 echo
-echo "Shipped Write $VERSION"
+echo "Shipped Texttext $VERSION"
 if [ -n "$ORIGIN" ]; then
   echo "  download: $ORIGIN/download"
   echo "  appcast:  $ORIGIN/appcast.xml"

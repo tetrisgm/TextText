@@ -192,13 +192,13 @@ final class WorkspaceEnumeratorTests: XCTestCase {
     func testItemForRootReturnsDomainRoot() async {
         let api = Fixtures.standardWorkspace()
         let e = WorkspaceEnumerator(
-            api: api, handle: "demo", workspaceName: "Demo", readOnly: true, domainName: "Write")
+            api: api, handle: "demo", workspaceName: "Demo", readOnly: true, domainName: "Texttext")
         guard case .success(let item) = await e.item(for: .rootContainer) else {
             return XCTFail()
         }
         XCTAssertEqual(item.identifier, .rootContainer)
         XCTAssertEqual(item.parentIdentifier, .rootContainer)
-        XCTAssertEqual(item.filename, "Write")
+        XCTAssertEqual(item.filename, "Texttext")
     }
 
     func testVirtualContainersAreNotReturnedAsRootItems() async {

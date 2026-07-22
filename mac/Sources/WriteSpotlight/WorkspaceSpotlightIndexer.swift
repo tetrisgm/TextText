@@ -104,7 +104,7 @@ public final class WorkspaceSpotlightIndexer {
         attributes.metadataModificationDate = modifiedDate
         attributes.contentModificationDate = modifiedDate
         attributes.kind = kind
-        attributes.creator = "Write"
+        attributes.creator = "Texttext"
         attributes.containerIdentifier = folderPath
         attributes.containerTitle = folderPath
         attributes.url = URL(string: "write-app://item/\(document.writeId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? document.writeId)")

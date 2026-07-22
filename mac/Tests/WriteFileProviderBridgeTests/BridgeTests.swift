@@ -276,11 +276,11 @@ final class BridgeTests: XCTestCase {
     }
 
     func testRootItemBridges() {
-        let e = WorkspaceEnumerator(api: StubAPI(), handle: "demo", workspaceName: "Demo", domainName: "Write")
+        let e = WorkspaceEnumerator(api: StubAPI(), handle: "demo", workspaceName: "Demo", domainName: "Texttext")
         let root = WriteFileProviderItem(e.rootItem())
         XCTAssertEqual(root.itemIdentifier, .rootContainer)
         XCTAssertEqual(root.parentItemIdentifier, .rootContainer)
-        XCTAssertEqual(root.filename, "Write")
+        XCTAssertEqual(root.filename, "Texttext")
         XCTAssertEqual(root.contentType, .folder)
     }
 }

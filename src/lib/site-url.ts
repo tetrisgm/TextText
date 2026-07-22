@@ -2,7 +2,7 @@
 // agent surface. One place decides the scheme (http for local hosts, https
 // everywhere else) and the fallback, so every absolute URL agrees.
 
-const FALLBACK_ROOT_DOMAIN = "localhost:3000";
+const FALLBACK_ROOT_DOMAIN = "texttext.app";
 
 /** The platform root as a URL, derived from env with a local fallback. */
 export function rootDomainUrl(): URL {
@@ -20,7 +20,7 @@ export function rootDomainUrl(): URL {
   try {
     return new URL(candidate);
   } catch {
-    return new URL(`http://${FALLBACK_ROOT_DOMAIN}`);
+    return new URL(`https://${FALLBACK_ROOT_DOMAIN}`);
   }
 }
 

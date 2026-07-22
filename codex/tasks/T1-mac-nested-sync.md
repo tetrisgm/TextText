@@ -1,6 +1,6 @@
 # T1: nested folder sync in the Mac app
 
-You are extending Write.app's sync engine (Swift, SwiftPM, in `mac/`) to
+You are extending Texttext's sync engine (Swift, SwiftPM, in `mac/`) to
 support NESTED folders. The server already ships them: folders now carry a
 FULL slash path (`blog`, `blog/ideas`, `notes/work/clients`), and
 `GET /api/sync/v1/workspace` returns every folder (subfolders included) as
@@ -62,7 +62,7 @@ deeper path. Mode is inherited server-side; you never compute it.
 - `swift build --package-path mac` clean.
 - Reason through and state (in your final summary) the exact pass behavior
   for: (a) server has blog/ideas with 2 files, fresh local root; (b) user
-  mkdirs ~/Write/blog/research and drops a .md inside; (c) user creates
-  ~/Write/blog/too/deep/nested/beyond/cap.
+  mkdirs ~/Texttext/blog/research and drops a .md inside; (c) user creates
+  ~/Texttext/blog/too/deep/nested/beyond/cap.
 - `WRITE_HEADLESS=1` mode must still compile and run (do not test against
   a live server; no network in your sandbox).

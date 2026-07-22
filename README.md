@@ -1,11 +1,11 @@
-# Write
+# Texttext
 
 A blog that reads like a broadsheet. An Apple-grade writing and publishing
 platform: one display serif for the headlines, one quiet accent per post, and
 a reading column that puts the words first.
 
-Born from building [ramine.net](https://ramine.net): the Broadsheet reader
-design and the Apple Notes-style editor were shipped there first, then
+Born from an earlier personal site: the Broadsheet reader design and the
+Apple Notes-style editor were shipped there first, then
 extracted here as the seed of a small commercial product.
 
 ## Run it

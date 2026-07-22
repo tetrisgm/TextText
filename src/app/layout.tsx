@@ -26,7 +26,7 @@ const fraunces = localFont({
   display: "swap",
 });
 
-const title = "Write";
+const title = "Texttext";
 const description =
   "Folders of Markdown for publishing, notes, and agent workflows.";
 
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
   applicationName: title,
   title: {
     default: title,
-    template: "%s · Write",
+    template: "%s · Texttext",
   },
   description,
   manifest: "/manifest.webmanifest",

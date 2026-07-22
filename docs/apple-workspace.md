@@ -1,21 +1,21 @@
 # Apple Workspace Boundary
 
-Write for macOS uses a normal folder as the local source of truth for user
+Texttext for macOS uses a normal folder as the local source of truth for user
 content. The preferred location is:
 
 ```text
-~/Library/Mobile Documents/com~apple~CloudDocs/Write
+~/Library/Mobile Documents/com~apple~CloudDocs/Texttext
 ```
 
-Finder shows this as `iCloud Drive/Write`. When iCloud Drive is unavailable,
-Write falls back to:
+Finder shows this as `iCloud Drive/Texttext`. When iCloud Drive is unavailable,
+Texttext falls back to:
 
 ```text
-~/Write Local
+~/Texttext Local
 ```
 
 The status window and activity log surface the fallback state. The fallback is
-not `~/Write`, because that path is the legacy mirror migration source.
+not `~/Texttext`, because that path is the legacy mirror migration source.
 
 ## Folder Sync
 
@@ -23,11 +23,11 @@ iCloud Drive is responsible for moving files between Macs, materializing files
 that are not downloaded yet, conflict files created by the system, storage
 optimization, and Finder visibility.
 
-Write does not use CloudKit, File Provider, or an iCloud container entitlement
+Texttext does not use CloudKit, File Provider, or an iCloud container entitlement
 for this workspace. The app is a non-sandboxed Developer ID app and accesses
 the visible iCloud Drive path through `FileManager`.
 
-Write coordinates reads and writes with `NSFileCoordinator` and registers an
+Texttext coordinates reads and writes with `NSFileCoordinator` and registers an
 `NSFilePresenter` for the workspace root. It also watches the folder with
 FSEvents and observes ubiquitous item changes with `NSMetadataQuery`.
 
@@ -36,7 +36,7 @@ FSEvents and observes ubiquitous item changes with `NSMetadataQuery`.
 The local workspace is ordinary files and folders:
 
 ```text
-Write/
+Texttext/
   Blogs/
     <handle>/
       blog.yaml
@@ -59,7 +59,7 @@ Write/
       sync-marker.txt
 ```
 
-Markdown files carry normal Write front matter plus local identity keys:
+Markdown files carry normal Texttext front matter plus local identity keys:
 
 ```yaml
 writeId: "server-post-id"
@@ -68,7 +68,7 @@ writeKind: "note"
 ```
 
 Those keys are local identity metadata. Before comparing content hashes or
-sending file bodies to the backend, Write strips them so server hashes still
+sending file bodies to the backend, Texttext strips them so server hashes still
 match the server-rendered markdown vocabulary.
 
 Phase 1 mirrors markdown content. Media directories are visible scaffolding, but
@@ -104,14 +104,14 @@ sync API.
 Files created, edited, renamed, moved, or deleted in Finder are detected by the
 folder watcher and by index reconciliation during sync passes.
 
-When a file with a known `writeId` moves or is renamed, Write updates the local
+When a file with a known `writeId` moves or is renamed, Texttext updates the local
 index instead of treating the old path as a delete and the new path as a new
 post. A rename also updates the markdown `slug` front matter so the existing
 sync API can carry the change onward.
 
 Deletes remain intentional only when the per-device workspace marker under
 `.write-local.nosync/state` is present. If the whole workspace appears newly
-created or lost, Write drops the index and mirrors from the backend instead of
+created or lost, Texttext drops the index and mirrors from the backend instead of
 propagating mass deletion.
 
 A server delete requires the full ladder to pass: the marker exists and its

@@ -7,10 +7,10 @@ export function LandingHeader({
   signedIn: boolean;
 }) {
   return (
-    <nav className="write-landing-nav" aria-label="Write">
+    <nav className="write-landing-nav" aria-label="Texttext">
       <div className="write-landing-nav-left">
         <Link className="write-landing-mark" href="/">
-          Write
+          Texttext
         </Link>
         <Link className="write-landing-nav-item" href="/download">
           Download
@@ -23,7 +23,7 @@ export function LandingHeader({
         {signedIn ? (
           <>
             <Link className="write-landing-button" href="/start?to=home">
-              Open Write
+              Open Texttext
             </Link>
             <SignOutButton className="write-landing-link" redirectTo="/" />
           </>

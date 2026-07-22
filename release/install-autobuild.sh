@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install the Write autobuild daemon as a per-user launchd agent so it runs at
+# Install the Texttext autobuild daemon as a per-user launchd agent so it runs at
 # login and keeps itself alive. Idempotent: safe to re-run (reloads).
 set -euo pipefail
 

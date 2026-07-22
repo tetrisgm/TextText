@@ -1,6 +1,6 @@
 # T2: bookmarks and notes web UI
 
-You are building the web UI for Write's bookmark capture pipeline and
+You are building the web UI for Texttext's bookmark capture pipeline and
 polishing the notes list. The backend is DONE and in this branch; you build
 presentation only.
 

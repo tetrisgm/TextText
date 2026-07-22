@@ -135,7 +135,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             contentRect: webView.frame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
-        window.title = "Write"
+        window.title = "Texttext"
         window.minSize = NSSize(width: 720, height: 480)
         window.contentView = webView
         window.setFrameAutosaveName("WriteMainWindow")
@@ -328,7 +328,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        window?.title = webView.title?.isEmpty == false ? webView.title! : "Write"
+        window?.title = webView.title?.isEmpty == false ? webView.title! : "Texttext"
     }
 
     // MARK: WKUIDelegate

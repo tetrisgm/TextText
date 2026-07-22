@@ -44,7 +44,7 @@ final class LinkController {
         let gen = bumpGeneration()
         setState(.starting)
 
-        let deviceName = "Write.app on \(Host.current().localizedName ?? "this Mac")"
+        let deviceName = "Texttext on \(Host.current().localizedName ?? "this Mac")"
         queue.async { [weak self] in
             guard let self else { return }
             let client = ServerClient(origin: serverOrigin, token: nil)
@@ -118,7 +118,7 @@ final class LinkController {
                     let credentials = Credentials(
                         token: token,
                         serverOrigin: serverOrigin.absoluteString,
-                        tokenName: reply.tokenName ?? "Write.app",
+                        tokenName: reply.tokenName ?? "Texttext",
                         linkedAt: Date()
                     )
                     store.saveCredentials(credentials)

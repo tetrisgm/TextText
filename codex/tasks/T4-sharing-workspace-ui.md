@@ -1,6 +1,6 @@
 # T4: sharing dialog + workspace menu + folder tree + shared-with-me
 
-Four self-contained React components for Write's workspace. The backend is
+Four self-contained React components for Texttext's workspace. The backend is
 DONE in this branch; you build UI components ONLY, as new files. They will
 be mounted by the maintainer afterwards, so each must be a clean island
 with typed props and no assumptions about where it renders.
