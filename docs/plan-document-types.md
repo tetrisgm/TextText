@@ -104,6 +104,11 @@ extend, not replace.
 
 The built-in kinds (article, project, talk, note, bookmark) get recast as
 `DocumentType` rows so there is one code path, not a ternary plus a registry.
+The three sections above are the render half. A type also declares a fourth
+part, its **capabilities** (which app-executed verbs it uses, e.g. the bookmark
+type declares capture; any type can opt into collaboration), covered in section
+3. Capabilities are declared by reference and run by the app, never shipped as
+code in the document.
 
 ### Field types (the closed level-a vocabulary)
 
@@ -162,6 +167,41 @@ the public URL, and a downloadable self-contained export). HTML is a build
 product, never the source, so a global restyle can always reach every document
 (a baked-HTML document is frozen and unreachable). See section 4 for where that
 content physically lives.
+
+### Two kinds of primitive: render vs capability
+
+The engine provides two categories of thing, and conflating them is a mistake.
+A real game engine is not only a renderer; it also ships systems (physics,
+netcode, audio, asset loading). A game references those systems and triggers
+them; it does not implement them or embed a server in a level file. Same here:
+
+- **Render primitives** are pure and declarative (content + composition -> HTML,
+  no I/O, no state, no network). These are what a type composes, and they can
+  safely be data in the document.
+- **Capabilities (verbs / systems)** are things the app EXECUTES: bookmark
+  capture (screenshot, parse, extract, convert to item format), sync (manifest,
+  change cursor, conflict resolution), collaboration (the Yjs relay, presence,
+  revision CAS), AI ops, publish-to-feed, search. These live in the app and
+  server, never in the document. A type DECLARES which capabilities it uses (the
+  bookmark type declares "on create, capture"); it never ships their code.
+
+So a `DocumentType` is really four parts: fields, item render, container render,
+and a **capability declaration**. The declaration follows the same compose-only
+rule as rendering: name the capability, the app runs it, the document carries no
+executable code.
+
+This is also the precise answer to "can collaboration just be JavaScript loaded
+in the item?" No. The CRDT *merge algorithm* (Yjs) is portable JS, but
+*multiplayer* is getting an edit to another person and back, live, with presence,
+durable state, and permission checks, which is irreducibly a shared
+server-mediated channel both peers connect to. A file cannot be its own relay,
+cannot host presence, cannot be the authoritative store, cannot enforce access.
+Even the "just import a library" stacks (y-webrtc, y-websocket, Liveblocks,
+PartyKit) are always a client library PLUS a server behind it. Collaboration is
+an engine capability the app provides (already built: the collab relay + append
+log + presence), invoked when a document is co-edited, not loaded from the file.
+The compose-only safety rule seals it from the other side: a document running
+loaded JS is the arbitrary-code-in-a-reader's-browser case we ruled out.
 
 ### The three closed vocabularies
 
