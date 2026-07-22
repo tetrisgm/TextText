@@ -7,7 +7,36 @@ import { tenantFromHost } from "@/lib/tenants";
 // Host-based multi-tenancy: {handle}.{ROOT_DOMAIN} rewrites to /t/{handle}/...
 // so the app router stays plain. The platform site (root domain) passes
 // through untouched.
+// The legacy product host. write.ramine.net is retired: humans are forwarded to
+// the canonical domain (texttext.app), but the operational paths an already
+// installed Mac app still hits on the old host stay alive so it is never
+// stranded before it auto-updates to the texttext.app build (which then uses
+// texttext.app for everything). Remove this block once no client hits the old
+// host, then drop the write.ramine.net alias.
+const LEGACY_HOSTS = new Set(["write.ramine.net", "www.write.ramine.net"]);
+
+function legacyHostRedirect(request: NextRequest): NextResponse | null {
+  const host = (request.headers.get("host") ?? "").toLowerCase();
+  if (!LEGACY_HOSTS.has(host)) return null;
+  const path = request.nextUrl.pathname;
+  const keepOnLegacyHost =
+    path.startsWith("/api/") ||
+    path.startsWith("/.well-known/") ||
+    path === "/appcast.xml" ||
+    path.startsWith("/download");
+  if (keepOnLegacyHost) return null;
+  const target = request.nextUrl.clone();
+  target.protocol = "https:";
+  target.host = "texttext.app";
+  target.port = "";
+  // 308 preserves method + body so a redirected non-GET never silently drops.
+  return NextResponse.redirect(target, 308);
+}
+
 export function proxy(request: NextRequest) {
+  const legacyRedirect = legacyHostRedirect(request);
+  if (legacyRedirect) return legacyRedirect;
+
   const usernamePath = usernameFromAtPath(request.nextUrl.pathname);
   if (usernamePath) {
     const url = request.nextUrl.clone();
