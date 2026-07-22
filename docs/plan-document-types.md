@@ -15,6 +15,32 @@ look, and its collection view" is **Anytype**. The best AI-authoring pattern is
 distribution loop is **Coda "Copy doc" / Notion "Duplicate"** (a shared type is
 just a copyable unit with an owner-controlled copy flag).
 
+## 0. The north star (what this is actually for)
+
+The owner stated the goal plainly, and it sets the priorities for everything
+below:
+
+1. **Write documents really fast.**
+2. **Give them any shape** you want, by talking with AI or picking a template.
+3. **Publish to the internet** when you want, because the document has a link.
+4. **Or keep it gated**: reachable by link, or restricted to specific accounts /
+   a team.
+5. **Import something and make it editable**: bring an external thing in and turn
+   it into a first-class document you can reshape, improve, and save.
+
+The spine is 1 to 5. **Collaboration (multiplayer, live cursors) is a
+nice-to-have that already exists** (the relay + presence + revision CAS) and is
+explicitly NOT on the critical path. Peer-to-peer sockets do not remove the
+server (signaling, TURN relay, persistence, permission enforcement, offline
+peers all remain server jobs), so they add complexity, not less; park them.
+Point 5 falls straight out of the content model: because a document is
+structured content-data (fields + body + assets), **import is just a capability
+that normalizes an external thing (a page, a file, a captured site, a template)
+into that model**, after which edit / reshape / publish / gate all work
+uniformly. It is bookmark capture generalized. The honest boundary is the render
+fork: import brings the CONTENT in cleanly (then shape the look with AI or a
+type); it does not clone the source's arbitrary CSS pixel-for-pixel.
+
 ---
 
 ## 1. The vision, restated in this codebase's terms
@@ -178,12 +204,14 @@ them; it does not implement them or embed a server in a level file. Same here:
 - **Render primitives** are pure and declarative (content + composition -> HTML,
   no I/O, no state, no network). These are what a type composes, and they can
   safely be data in the document.
-- **Capabilities (verbs / systems)** are things the app EXECUTES: bookmark
-  capture (screenshot, parse, extract, convert to item format), sync (manifest,
-  change cursor, conflict resolution), collaboration (the Yjs relay, presence,
-  revision CAS), AI ops, publish-to-feed, search. These live in the app and
-  server, never in the document. A type DECLARES which capabilities it uses (the
-  bookmark type declares "on create, capture"); it never ships their code.
+- **Capabilities (verbs / systems)** are things the app EXECUTES: import-to-
+  editable (normalize an external page / file / captured site / template into the
+  content model, of which bookmark capture is the first instance: screenshot,
+  parse, extract, convert to item format), sync (manifest, change cursor,
+  conflict resolution), collaboration (the Yjs relay, presence, revision CAS),
+  AI ops, publish-to-feed, search. These live in the app and server, never in
+  the document. A type DECLARES which capabilities it uses (the bookmark type
+  declares "on create, capture"); it never ships their code.
 
 So a `DocumentType` is really four parts: fields, item render, container render,
 and a **capability declaration**. The declaration follows the same compose-only
