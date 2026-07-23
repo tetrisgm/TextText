@@ -1,5 +1,11 @@
 # Apple Workspace Boundary
 
+> Historical note: the iCloud Drive workspace described in the first part of
+> this file is retired. The shipped Finder surface is the Texttext File Provider
+> documented in [file-provider-plan.md](file-provider-plan.md) and
+> [design/native-folder-sync.md](design/native-folder-sync.md). Do not provision
+> the current app from the legacy iCloud instructions below.
+
 Texttext for macOS uses a normal folder as the local source of truth for user
 content. The preferred location is:
 
@@ -205,14 +211,11 @@ a no-op unless the two profiles are present in `mac/profiles/` and a real
 Developer ID identity is in use, so profile-less and ad-hoc builds still
 succeed.
 
-The main app is non-sandboxed and carries no app-group entitlement. It finds
-the container by scanning `~/Library/Group Containers` for the team-prefixed
-directory (`52WM463HR2.group.net.writeapp.write`) the sandboxed extension
-creates; `containerURL(forSecurityApplicationGroupIdentifier:)` is useless
-here because on a non-entitled process it returns a naive bare-id path that
-never matches the real container. When no container exists yet, the app
-watches the Group Containers root so the first shared item is filed without a
-restart.
+The main app remains non-sandboxed but carries the
+`com.apple.security.application-groups` entitlement for
+`group.net.writeapp.write`. The File Provider, Share, and Quick Look extensions
+carry the same group. That signed entitlement is the supported handoff boundary
+for workspace connection data and extension inboxes.
 
 Regenerating the profiles (they last until 2044) or changing the group id
 means re-running the Developer portal steps below and dropping fresh
@@ -222,7 +225,8 @@ Owner steps to embed the extensions:
 
 1. In the Apple Developer portal, register an App Group (for example
    `group.net.writeapp.write`) and add it to the App IDs for the main app
-   (`net.writeapp.write.mac`), the share extension
+   (`net.writeapp.write.mac`), the File Provider extension
+   (`net.writeapp.write.mac.fileprovider`), the share extension
    (`net.writeapp.write.mac.share`), and the Quick Look extension
    (`net.writeapp.write.mac.quicklook`). Create and download Developer ID
    provisioning profiles that include the group for each.

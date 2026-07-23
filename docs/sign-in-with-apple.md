@@ -31,6 +31,22 @@ domain.
 All portal work is at https://developer.apple.com/account/resources (you need
 the Account Holder or Admin role).
 
+## Current Texttext registration
+
+The production registration is:
+
+- Team ID: `52WM463HR2`
+- Primary Sign in with Apple App ID: `52WM463HR2.net.writeapp.write`
+- macOS App ID: `net.writeapp.write.mac`
+- Services ID: `net.writeapp.write.web`
+- Domain: `texttext.app`
+- Return URL: `https://texttext.app/api/auth/callback/apple`
+- Sign in key ID: `J6958HV8HB`
+
+Keep the existing primary App ID association. The production key is associated
+with that identifier even though the signed macOS bundle uses
+`net.writeapp.write.mac`.
+
 ## 1. Primary App ID
 
 Identifiers -> (+) -> **App IDs** -> App -> Continue.
@@ -77,11 +93,11 @@ Keys -> (+).
 
 Account -> **Membership details** -> the 10-character Team ID.
 
-## 5. Generate `AUTH_APPLE_SECRET`
+## 5. Optional static `AUTH_APPLE_SECRET`
 
-You now have four inputs: Team ID, Key ID, the Services ID, and the `.p8` path.
-Mint the JWT with the committed script (zero dependencies, emits the correct
-ES256 / raw-R||S signature Apple requires):
+Production should store the `.p8` content and let the server mint a fresh client
+secret at startup. A manually generated `AUTH_APPLE_SECRET` is supported only as
+a fallback. To create one, run:
 
 ```sh
 node scripts/apple-client-secret.mjs \
@@ -91,14 +107,16 @@ node scripts/apple-client-secret.mjs \
   --p8 ~/Downloads/AuthKey_KEY1234567.p8
 ```
 
-It prints the JWT to stdout. (Auth.js's `npx auth add apple` does the same thing
-interactively and writes the env for you; either works.)
+It prints the JWT to stdout. Do not set both approaches unless intentionally
+testing the static-secret fallback because `AUTH_APPLE_SECRET` takes precedence.
 
 ## 6. Set env and deploy
 
 Set on the Vercel project (Production), never committed:
 - `AUTH_APPLE_ID` = the Services ID.
-- `AUTH_APPLE_SECRET` = the JWT from step 5.
+- `AUTH_APPLE_TEAM_ID` = the Team ID.
+- `AUTH_APPLE_KEY_ID` = the Sign in with Apple key ID.
+- `AUTH_APPLE_PRIVATE_KEY` = the complete `.p8` contents.
 - `AUTH_SECRET` = any random string (`openssl rand -base64 32`).
 
 Do NOT set `AUTH_DEV_LOGIN` in production (it is also force-disabled whenever
@@ -107,9 +125,11 @@ button, and the same per-user blog provisioning runs on the Apple `sub`.
 
 ## Rotation and notes
 
-- **The secret expires (<= 6 months).** When Apple sign-in suddenly fails with
-  `invalid_client` in production, first suspect an expired `AUTH_APPLE_SECRET`;
-  regenerate with step 5 and redeploy. Consider a cron reminder.
+- The stored `.p8` key does not expire. The server mints a fresh client-secret
+  JWT on every cold start. Rotate the key only if it is revoked or exposed.
+- If the optional static `AUTH_APPLE_SECRET` is set, it expires within six
+  months and overrides automatic minting. Remove it or regenerate it when Apple
+  returns `invalid_client`.
 - Apple returns the user's **name and email only on the first consent**. The app
   already persists them on first sign in and preserves them afterward
   (`ensureOwnerBlog`), so this is handled. To re-test the first-consent path,
