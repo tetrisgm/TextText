@@ -370,6 +370,7 @@ function exactRequiredChecks(receipt: ReleaseGateReceipt) {
 
 export const requiredReleaseChecks = new Set([
   "web.types",
+  "workflow.document_engine",
   "web.unit",
   "native.unit",
   "native.live_ai",
@@ -392,10 +393,7 @@ export function validateReleaseReceipt(
     throw new Error("Release receipt contains duplicate checks.");
   }
   const actual = exactRequiredChecks(receipt);
-  if (
-    actual.size !== requiredReleaseChecks.size ||
-    [...requiredReleaseChecks].some((id) => !actual.has(id))
-  ) {
+  if ([...requiredReleaseChecks].some((id) => !actual.has(id))) {
     throw new Error("Release receipt is missing required checks.");
   }
   if (

@@ -19,6 +19,7 @@ function validReceipt(): ReleaseGateReceipt {
     totalDurationMilliseconds: 1_500,
     checks: [
       "web.types",
+      "workflow.document_engine",
       "web.unit",
       "native.unit",
       "native.live_ai",
@@ -48,6 +49,16 @@ describe("work-unit receipts", () => {
     expect(() => validateReleaseReceipt(incomplete, identity)).toThrow(
       "missing required checks",
     );
+
+    const additive = validReceipt();
+    additive.checks.push({
+      id: "future.health_check",
+      status: "pass",
+      durationMilliseconds: 1,
+      reused: false,
+      commandFingerprint: "d".repeat(64),
+    });
+    expect(validateReleaseReceipt(additive, identity)).toBeTruthy();
   });
 
   it("formats concise command names and timings", () => {
