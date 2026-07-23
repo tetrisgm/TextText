@@ -25,7 +25,7 @@
 // tests), not something to fold in casually.
 
 import { sql, type SQL } from "drizzle-orm";
-import { db } from "./db/client";
+import { db, type Database } from "./db/client";
 import { actionAudit } from "./db/schema";
 
 export type AuditActorType = "human" | "ai" | "external_agent";
@@ -104,9 +104,12 @@ export function auditCteFrom(
  * (revision-CAS) mutation: the insert would still run when the guard matched
  * zero rows, recording a phantom action; use auditCteFrom for guarded writes.
  */
-export function auditInsertQuery(entry: AuditEntry) {
-  if (!db) throw new Error("auditInsertQuery needs a database");
-  return db.insert(actionAudit).values(auditValues(entry));
+export function auditInsertQuery(
+  entry: AuditEntry,
+  database: Database | null = db,
+) {
+  if (!database) throw new Error("auditInsertQuery needs a database");
+  return database.insert(actionAudit).values(auditValues(entry));
 }
 
 export async function recordAction(entry: AuditEntry): Promise<void> {

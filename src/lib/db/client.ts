@@ -15,12 +15,17 @@ import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
-type Db = NeonHttpDatabase<typeof schema>;
+export type Database = NeonHttpDatabase<typeof schema>;
+
+type AwaitableQuery = PromiseLike<unknown>;
+type BatchResults<T extends readonly AwaitableQuery[]> = {
+  [K in keyof T]: Awaited<T[K]>;
+};
 
 const url = process.env.DATABASE_URL;
 let localPool: Pool | null = null;
 
-function makeDb(): Db | null {
+function makeDb(): Database | null {
   if (!url) return null;
   if (/neon\.tech/i.test(url)) {
     return drizzleNeon(neon(url), { schema });
@@ -30,10 +35,46 @@ function makeDb(): Db | null {
   localPool = new Pool({ connectionString: url });
   return drizzlePg(localPool, {
     schema,
-  }) as unknown as Db;
+  }) as unknown as Database;
 }
 
 export const db = makeDb();
+
+/**
+ * Execute related Drizzle queries atomically on either supported driver.
+ *
+ * Neon HTTP exposes atomic batches while node-postgres exposes interactive
+ * transactions. The callback must build every query from the supplied
+ * executor so local queries are bound to the active transaction.
+ */
+export async function executeAtomicBatch<
+  const T extends readonly AwaitableQuery[],
+>(
+  build: (executor: Database) => T,
+): Promise<BatchResults<T>> {
+  if (!db) throw new Error("Atomic database work needs DATABASE_URL");
+
+  if (!localPool) {
+    const neonDb = db as Database & {
+      batch(queries: T): Promise<BatchResults<T>>;
+    };
+    return neonDb.batch(build(db));
+  }
+
+  const localDb = db as Database & {
+    transaction<R>(
+      callback: (transaction: Database) => Promise<R>,
+    ): Promise<R>;
+  };
+  return localDb.transaction(async (transaction) => {
+    const results: unknown[] = [];
+    const executor = transaction as unknown as Database;
+    for (const query of build(executor)) {
+      results.push(await query);
+    }
+    return results as BatchResults<T>;
+  });
+}
 
 export async function closeDatabaseConnections(): Promise<void> {
   await localPool?.end();

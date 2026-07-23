@@ -9,7 +9,7 @@ import {
   recordAction,
   type AuditActorType,
 } from "@/lib/audit";
-import { db } from "@/lib/db/client";
+import { db, executeAtomicBatch } from "@/lib/db/client";
 import { blogs, collaborators, folders, posts, users } from "@/lib/db/schema";
 import {
   type AccessUser,
@@ -137,8 +137,8 @@ export async function inviteScopeShare(opts: {
   if (existing[0]) {
     // Atomic: the role change and its audit row commit together (batch), so a
     // permission change is never left without provenance.
-    const [updated] = await db.batch([
-      db
+    const [updated] = await executeAtomicBatch((database) => [
+      database
         .update(collaborators)
         .set({ role })
         .where(eq(collaborators.id, existing[0].id))
@@ -150,8 +150,8 @@ export async function inviteScopeShare(opts: {
         targetType: auditTargetType(opts.scopeType),
         targetId: opts.scopeId,
         inputSummary: `${email} as ${role}`,
-      }),
-    ]);
+      }, database),
+    ] as const);
     const row = updated[0];
     return {
       id: row.id,
@@ -163,8 +163,8 @@ export async function inviteScopeShare(opts: {
   }
 
   const userId = await emailSubUserId(email);
-  const [inserted] = await db.batch([
-    db
+  const [inserted] = await executeAtomicBatch((database) => [
+    database
       .insert(collaborators)
       .values({
         scopeType: opts.scopeType,
@@ -182,8 +182,8 @@ export async function inviteScopeShare(opts: {
       targetType: auditTargetType(opts.scopeType),
       targetId: opts.scopeId,
       inputSummary: `${email} as ${role}`,
-    }),
-  ]);
+    }, database),
+  ] as const);
   const row = inserted[0];
   return {
     id: row.id,
@@ -207,8 +207,8 @@ export async function updateScopeShareRole(opts: {
     opts.actorUserId === undefined
       ? await getUserIdBySub(opts.updatedBySub)
       : opts.actorUserId;
-  await db.batch([
-    db
+  await executeAtomicBatch((database) => [
+    database
       .update(collaborators)
       .set({ role })
       .where(
@@ -226,8 +226,8 @@ export async function updateScopeShareRole(opts: {
       targetType: auditTargetType(opts.scopeType),
       targetId: opts.scopeId,
       inputSummary: role,
-    }),
-  ]);
+    }, database),
+  ] as const);
 }
 
 export async function revokeScopeShare(
@@ -242,8 +242,8 @@ export async function revokeScopeShare(
     audit.actorUserId === undefined
       ? await getUserIdBySub(revokedBySub)
       : audit.actorUserId;
-  await db.batch([
-    db
+  await executeAtomicBatch((database) => [
+    database
       .update(collaborators)
       .set({ revokedAt: new Date() })
       .where(
@@ -260,8 +260,8 @@ export async function revokeScopeShare(
       actionName: audit.auditActionName ?? "share.revoke",
       targetType: auditTargetType(scopeType),
       targetId: scopeId,
-    }),
-  ]);
+    }, database),
+  ] as const);
 }
 
 export async function listPostShares(postId: string): Promise<PostShare[]> {

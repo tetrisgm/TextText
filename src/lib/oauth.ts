@@ -11,7 +11,7 @@ import {
   hashApiToken,
   revokeApiToken,
 } from "@/lib/api-tokens";
-import { db } from "@/lib/db/client";
+import { db, executeAtomicBatch } from "@/lib/db/client";
 import {
   oauthAccessTokens,
   oauthAuthorizationCodes,
@@ -249,8 +249,8 @@ export const databaseOAuthTokenStore: OAuthTokenStore = {
     );
 
     try {
-      await db.batch([
-        db.insert(oauthRefreshTokenFamilies).values({
+      await executeAtomicBatch((database) => [
+        database.insert(oauthRefreshTokenFamilies).values({
           id: input.familyId,
           userId: input.userId,
           clientId: input.clientId,
@@ -260,12 +260,12 @@ export const databaseOAuthTokenStore: OAuthTokenStore = {
           absoluteExpiresAt: input.absoluteExpiresAt,
           inactivityExpiresAt: input.inactivityExpiresAt,
         }),
-        db.insert(oauthAccessTokens).values({
+        database.insert(oauthAccessTokens).values({
           apiTokenId: access.record.id,
           refreshTokenFamilyId: input.familyId,
           createdAt: input.now,
         }),
-        db.insert(oauthRefreshTokens).values({
+        database.insert(oauthRefreshTokens).values({
           id: input.refreshTokenId,
           refreshTokenFamilyId: input.familyId,
           tokenHash: input.refreshTokenHash,

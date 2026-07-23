@@ -1,16 +1,17 @@
-// Live end-to-end proof of the bulletproof sync layer against PRODUCTION.
+// Live end-to-end proof of the sync layer against a running Texttext server.
 //
 // Stands up a fully isolated scratch workspace (a throwaway user + blog + token
-// + post), exercises the real /api/sync/v1 HTTP endpoints on prod to demonstrate
+// + post), exercises the real /api/sync/v1 HTTP endpoints to demonstrate
 // revision compare-and-swap, metadata compare-and-swap, portable titles,
 // historical-slug redirects, stale-delete rejection, and the durable change
 // cursor, then tears EVERYTHING down in a finally. Never
 // touches any real workspace.
 //
-//   DATABASE_URL=... npx tsx scripts/verify-sync-live.ts
+//   npm run eval:sync:live
 //
-// (The scratch data lives in the same prod DB but is clearly namespaced and
-// deleted at the end; this is the established create-and-clean-up test pattern.)
+// The default is a local development server. Production verification must opt
+// in explicitly with WRITE_ORIGIN=https://texttext.app and production database
+// credentials.
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
@@ -26,7 +27,7 @@ import {
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 
-const ORIGIN = "https://texttext.app";
+const ORIGIN = process.env.WRITE_ORIGIN ?? "http://127.0.0.1:3000";
 const STAMP = Date.now().toString(36);
 const SUB = `scratch-sync-verify-${STAMP}`;
 const HANDLE = `scratch-sync-verify-${STAMP}`;
@@ -36,6 +37,17 @@ const fail: string[] = [];
 function check(name: string, ok: boolean, detail = "") {
   (ok ? pass : fail).push(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  (" + detail + ")" : ""}`);
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  (" + detail + ")" : ""}`);
+}
+
+async function responseJson(response: Response, label: string): Promise<unknown> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `${label} returned ${response.status} ${response.headers.get("content-type") ?? "without content type"}: ${text.slice(0, 500)}`,
+    );
+  }
 }
 
 async function main() {
@@ -74,17 +86,24 @@ async function main() {
       headers: { "Content-Type": "text/markdown", "Idempotency-Key": key },
       body: body1,
     });
-    const j1 = await c1.json();
+    const j1 = await responseJson(c1, "first idempotent create") as {
+      item?: { hash?: string; id?: string };
+    };
     const c2 = await api("/api/sync/v1/files", {
       method: "POST",
       headers: { "Content-Type": "text/markdown", "Idempotency-Key": key },
       body: body1,
     });
-    const j2 = await c2.json();
+    const j2 = await responseJson(c2, "idempotent create retry") as {
+      item?: { id?: string };
+    };
     const idemId = j1?.item?.id;
     check(
       "idempotent create returns the SAME item on retry (no duplicate)",
-      c1.status === 201 && c2.status === 201 && idemId && j2?.item?.id === idemId,
+      c1.status === 201 &&
+        c2.status === 201 &&
+        Boolean(idemId) &&
+        j2?.item?.id === idemId,
       `ids ${idemId} == ${j2?.item?.id}`,
     );
 
@@ -261,6 +280,17 @@ async function main() {
       body: "---\ntype: article\nslug: question\ntitle: Question??\nstatus: published\n---\n\nportable title",
     });
     check("publishing through audited sync PUT succeeds", publish.status === 200, `status ${publish.status}`);
+    const [renamedRow] = await db
+      .select({ slug: posts.slug, slugHistory: posts.slugHistory })
+      .from(posts)
+      .where(eq(posts.id, metadataId))
+      .limit(1);
+    check(
+      "renamed item retains its previous public slug",
+      renamedRow?.slug === "question"
+        && renamedRow.slugHistory.includes("first-slug"),
+      `${renamedRow?.slug ?? "missing"} / ${renamedRow?.slugHistory.join(",") ?? "missing"}`,
+    );
     const historical = await fetch(`${ORIGIN}/t/${HANDLE}/first-slug`, {
       redirect: "manual",
     });

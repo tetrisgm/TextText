@@ -4,6 +4,8 @@
     "web.types",
     "workflow.document_engine",
     "workflow.collaboration",
+    "workflow.client_reliability",
+    "workflow.live_clients",
     "web.unit",
     "native.unit",
     "native.live_ai",

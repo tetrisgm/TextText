@@ -1,0 +1,215 @@
+import { spawn, type ChildProcess } from "node:child_process";
+
+const port = Number.parseInt(process.env.WRITE_EVAL_PORT ?? "3107", 10);
+if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+  throw new Error("WRITE_EVAL_PORT must be an unprivileged TCP port.");
+}
+
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is required.");
+const databaseHost = new URL(databaseUrl).hostname;
+if (!["localhost", "127.0.0.1", "::1"].includes(databaseHost)) {
+  throw new Error("The local client evaluator refuses a non-local database.");
+}
+
+// Next normalizes its local request URL to localhost. Drive the evaluator
+// through that same public origin so OAuth's same-origin approval check tests
+// the real browser contract instead of an equivalent 127.0.0.1 alias.
+const origin = `http://localhost:${port}`;
+const commandTimeoutMilliseconds = 300_000;
+const suiteNames = new Set([
+  "workflow",
+  "sync",
+  "collaboration",
+  "oauth",
+]);
+const requestedSuites = new Set(
+  (process.env.WRITE_EVAL_ONLY ?? "")
+    .split(",")
+    .map((suite) => suite.trim())
+    .filter(Boolean),
+);
+for (const suite of requestedSuites) {
+  if (!suiteNames.has(suite)) {
+    throw new Error(
+      `WRITE_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, or oauth.`,
+    );
+  }
+}
+const shouldRun = (suite: string) =>
+  requestedSuites.size === 0 || requestedSuites.has(suite);
+let server: ChildProcess | null = null;
+let serverOutput = "";
+
+function appendServerOutput(chunk: Buffer) {
+  serverOutput = `${serverOutput}${chunk.toString("utf8")}`.slice(-16_000);
+}
+
+function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals) {
+  if (!child.pid || child.exitCode !== null) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // The process may have exited between the state check and the signal.
+  }
+}
+
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
+  killProcessGroup(server, "SIGTERM");
+  await Promise.race([
+    new Promise<void>((resolve) => server?.once("exit", () => resolve())),
+    new Promise<void>((resolve) => setTimeout(resolve, 3_000)),
+  ]);
+  if (server.exitCode === null) {
+    killProcessGroup(server, "SIGKILL");
+  }
+}
+
+async function waitForServer() {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    if (server?.exitCode !== null) {
+      throw new Error(
+        `Local Texttext server exited before readiness.\n${serverOutput}`,
+      );
+    }
+    try {
+      const response = await fetch(`${origin}/signin`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (response.status >= 200 && response.status < 500) return;
+    } catch {
+      // Startup connection failures are expected until Next is listening.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Local Texttext server did not become ready.\n${serverOutput}`);
+}
+
+async function runBounded(
+  label: string,
+  executable: string,
+  args: string[],
+) {
+  const startedAt = performance.now();
+  console.log(`\n>> ${label}`);
+  const child = spawn(executable, args, {
+    cwd: process.cwd(),
+    detached: true,
+    env: {
+      ...process.env,
+      AUTH_DEV_LOGIN: "1",
+      NEXT_TELEMETRY_DISABLED: "1",
+      WRITE_ORIGIN: origin,
+    },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      killProcessGroup(child, "SIGTERM");
+      setTimeout(() => killProcessGroup(child, "SIGKILL"), 3_000).unref();
+      reject(new Error(`${label} exceeded its five-minute limit.`));
+    }, commandTimeoutMilliseconds);
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      resolve(code ?? 1);
+    });
+  });
+  if (exitCode !== 0) {
+    throw new Error(
+      `${label} exited with status ${exitCode}.\nLocal server output:\n${serverOutput}`,
+    );
+  }
+  return Math.round(performance.now() - startedAt);
+}
+
+async function main() {
+  const startedAt = performance.now();
+  const durations: Record<string, number> = {};
+  server = spawn(
+    process.execPath,
+    [
+      "node_modules/next/dist/bin/next",
+      "dev",
+      "--hostname",
+      "127.0.0.1",
+      "--port",
+      String(port),
+    ],
+    {
+      cwd: process.cwd(),
+      detached: true,
+      env: {
+        ...process.env,
+        AUTH_DEV_LOGIN: "1",
+        NEXT_TELEMETRY_DISABLED: "1",
+        WRITE_ORIGIN: origin,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  server.stdout?.on("data", appendServerOutput);
+  server.stderr?.on("data", appendServerOutput);
+
+  try {
+    await waitForServer();
+    if (shouldRun("workflow")) {
+      durations.workflowMilliseconds = await runBounded(
+        "sharing and access workflows",
+        process.execPath,
+        ["--import", "tsx", "scripts/verify-workflow-live.ts"],
+      );
+    }
+    if (shouldRun("sync")) {
+      durations.syncMilliseconds = await runBounded(
+        "sync and page creation",
+        process.execPath,
+        ["--import", "tsx", "scripts/verify-sync-live.ts"],
+      );
+    }
+    if (shouldRun("collaboration")) {
+      durations.collaborationMilliseconds = await runBounded(
+        "four-client collaboration",
+        process.execPath,
+        ["--import", "tsx", "scripts/verify-collaboration-live.ts"],
+      );
+    }
+    if (shouldRun("oauth")) {
+      durations.oauthMcpMilliseconds = await runBounded(
+        "OAuth and MCP connection",
+        "python3",
+        ["scripts/test-oauth-mcp-loop.py", origin],
+      );
+    }
+  } finally {
+    await stopServer();
+  }
+
+  console.log(
+    JSON.stringify({
+      status: "pass",
+      origin,
+      databaseHost,
+      totalMilliseconds: Math.round(performance.now() - startedAt),
+      ...durations,
+    }),
+  );
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void stopServer().finally(() => process.exit(128));
+  });
+}
+
+main().catch(async (error: unknown) => {
+  await stopServer();
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

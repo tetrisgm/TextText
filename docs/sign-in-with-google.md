@@ -19,6 +19,8 @@ The production registration is:
 - Authorized JavaScript origin: `https://texttext.app`
 - Authorized redirect URI:
   `https://texttext.app/api/auth/callback/google`
+- Local development redirect URI:
+  `http://localhost:3000/api/auth/callback/google`
 - Audience: External
 - Publishing status: In production
 - Authorized domain: `texttext.app`
@@ -26,9 +28,8 @@ The production registration is:
 - Privacy policy: `https://texttext.app/privacy`
 - Terms of service: `https://texttext.app/terms`
 
-The client also retains the legacy `write.ramine.net` callback and the localhost
-development callback. Do not remove those until the legacy host and local Google
-sign-in are intentionally retired.
+No other production host is authorized. Localhost remains registered solely for
+local development.
 
 ## Console setup
 

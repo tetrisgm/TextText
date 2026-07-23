@@ -20,7 +20,7 @@ echo ">> create database $DB (if missing)"
 echo ">> push the current schema (all tables) to local"
 DATABASE_URL="$URL" npx drizzle-kit push --force
 
-echo ">> install sync revision and workspace cursor triggers"
+echo ">> install sync revision, slug history, and workspace cursor triggers"
 "$PGBIN/psql" -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
 CREATE OR REPLACE FUNCTION bump_revision() RETURNS trigger AS $$
 BEGIN
@@ -34,6 +34,33 @@ CREATE OR REPLACE TRIGGER posts_bump_revision BEFORE UPDATE ON posts
 
 CREATE OR REPLACE TRIGGER folders_bump_revision BEFORE UPDATE ON folders
   FOR EACH ROW EXECUTE FUNCTION bump_revision();
+
+CREATE OR REPLACE FUNCTION track_post_slug_history() RETURNS trigger AS $$
+DECLARE
+  candidate text;
+  history text[] := ARRAY[]::text[];
+BEGIN
+  IF NEW.slug IS DISTINCT FROM OLD.slug THEN
+    FOREACH candidate IN ARRAY
+      array_prepend(OLD.slug, COALESCE(OLD.slug_history, ARRAY[]::text[]))
+    LOOP
+      IF candidate IS NOT NULL
+         AND candidate <> ''
+         AND candidate <> NEW.slug
+         AND NOT (candidate = ANY(history)) THEN
+        history := array_append(history, candidate);
+        EXIT WHEN cardinality(history) >= 20;
+      END IF;
+    END LOOP;
+    NEW.slug_history := history;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER posts_track_slug_history
+  BEFORE UPDATE OF slug ON posts
+  FOR EACH ROW EXECUTE FUNCTION track_post_slug_history();
 
 CREATE OR REPLACE FUNCTION bump_blog_change_seq() RETURNS trigger AS $$
 BEGIN

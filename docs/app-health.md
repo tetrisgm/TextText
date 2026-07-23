@@ -7,9 +7,10 @@ integrations, and reports can be reviewed without collecting document content.
 ## Lifecycle
 
 1. `npm run verify:release` runs TypeScript, deterministic document-engine and
-   four-client collaboration checks, web unit tests, Swift unit tests, the live
-   on-device assistant probe, and the Apple acceptance matrix once for an exact
-   source fingerprint. Each bounded command writes a duration receipt.
+   four-client collaboration checks, same-tick client creation and
+   reconciliation checks, web unit tests, Swift unit tests, the live on-device
+   assistant probe, and the Apple acceptance matrix once for an exact source
+   fingerprint. Each bounded command writes a duration receipt.
 2. `release/ship.sh` consumes that exact receipt, runs the deterministic
    workflow capability evaluator, and performs the real Vercel production build
    once. The ship process writes a build attestation containing stable suite
@@ -82,6 +83,12 @@ after out-of-order relay rounds. The check includes presence and independent
 presentation-token edits. It is deterministic, content-blind, and embedded in
 the build attestation.
 
+`workflow.client_reliability` creates 120 article, note, and bookmark drafts in
+the same event-loop turn. It rejects duplicate client IDs, verifies that a
+server placeholder cannot replace newer local text, keeps each editor identity
+stable when its durable server ID arrives, and repeats four-client content and
+presence convergence for 20 cycles. It is a required release check.
+
 `npm run eval:collaboration:live` is the out-of-band local database evaluator.
 It creates an isolated scratch workspace, sends the same four-client update
 pattern through the real relay, persists the materialized document through
@@ -90,6 +97,22 @@ then deletes all scratch state in a `finally` block. It reports only numeric
 timings and counts. This evaluator is required when relay, materialization,
 presence, revision, or collaboration persistence code changes, but it is not a
 network-variable ship gate.
+
+`npm run verify:workflows` and `npm run eval:sync:live` are local-first,
+destructive evaluators for isolated scratch workspaces. Run a local Texttext
+server with `AUTH_DEV_LOGIN=1` before invoking them. They use `.env.local` and
+default to `http://localhost:3000`; production requires an explicit
+`WRITE_ORIGIN=https://texttext.app`. Both always remove their scratch data in a
+`finally` block.
+
+`npm run eval:clients:live` owns that local server lifecycle. It refuses a
+non-local database, starts a bounded server on port 3107, runs the workflow and
+sync evaluators, drives OAuth discovery through authenticated MCP tool listing,
+runs the real four-client relay and materialization evaluator, records numeric
+durations, and terminates the server process group even after a failure. The
+release gate requires this evaluator so every shipped source revision proves
+page creation, sharing, access, sync, collaboration, and connector behavior
+against the real local application and database.
 
 The release also has one architecture identity from build through update. The
 Texttext executable and its three extensions must be arm64-only, while Sparkle is

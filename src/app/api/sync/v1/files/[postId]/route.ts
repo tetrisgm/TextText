@@ -1,4 +1,4 @@
-import type { Blog, Post } from "@/lib/content";
+import { isPrivatePostType, type Blog, type Post } from "@/lib/content";
 import {
   documentFromLegacyPost,
   legacyProjectionFromDocument,
@@ -168,6 +168,12 @@ export async function PUT(request: Request, { params }: Props) {
   if (folderPathForPostType(nextType) !== folderPathForPostType(post.type)) {
     return syncError(400, "This item cannot change type");
   }
+  const nextStatus = parsed.fields.status ?? post.status;
+  const nextVisibility = isPrivatePostType(nextType)
+    ? "private"
+    : nextStatus === "published"
+      ? "public"
+      : "private";
 
   try {
     // Fields absent from the file keep their stored values; the body is
@@ -191,6 +197,7 @@ export async function PUT(request: Request, { params }: Props) {
             duration: projection.duration ?? undefined,
             date: parsed.fields.date,
             slug: parsed.fields.slug ?? post.slug,
+            visibility: nextVisibility,
             document,
           },
           { expectedRevision },

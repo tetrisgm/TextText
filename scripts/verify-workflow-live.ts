@@ -1,4 +1,5 @@
-// Live end-to-end proof of the shared workspace WORKFLOWS against PRODUCTION,
+// Live end-to-end proof of the shared workspace workflows against a running
+// Texttext server,
 // driven through the real command surface (/api/mcp) the app, the native
 // assistant, and external agents all share.
 //
@@ -6,10 +7,10 @@
 // are content-blind: they attest the workflow contracts exist, but never mutate
 // a real workspace. This supplements them with a REAL run: it stands up a fully
 // isolated scratch workspace (throwaway user + blog + token), executes each
-// required workflow over MCP, and asserts BOTH the durable mutation and its
+// required workflow over MCP, and asserts both the durable mutation and its
 // action_audit row, then tears everything down in a finally.
 //
-//   DATABASE_URL=... npx tsx scripts/verify-workflow-live.ts
+//   npm run verify:workflows
 //
 // Covers the five required workflow IDs: folder_trash_restore, comments,
 // cover_assets, sharing_access, bookmark_recapture. Plus two coverage add-ons
@@ -17,7 +18,7 @@
 // (rename sanitization + CAS) and the access role lifecycle (set_access +
 // revoke_access).
 
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   actionAudit,
@@ -33,7 +34,9 @@ import {
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 
-const ORIGIN = process.env.WRITE_ORIGIN ?? "https://texttext.app";
+const ORIGIN = process.env.WRITE_ORIGIN ?? "http://127.0.0.1:3000";
+const ASSET_FIXTURE_URL =
+  process.env.WRITE_ASSET_FIXTURE_URL ?? "https://texttext.app/opengraph-image";
 const STAMP = Date.now().toString(36);
 const SUB = `scratch-workflow-verify-${STAMP}`;
 const HANDLE = `scratch-workflow-verify-${STAMP}`;
@@ -97,8 +100,6 @@ async function main() {
 
   let userId = "";
   let blogId = "";
-  const auditSince = new Date();
-
   const auditRows = (actionName: string, targetId?: string) =>
     db!
       .select({ id: actionAudit.id })
@@ -107,7 +108,6 @@ async function main() {
         and(
           eq(actionAudit.actorUserId, userId),
           eq(actionAudit.actionName, actionName),
-          gt(actionAudit.createdAt, auditSince),
           ...(targetId ? [eq(actionAudit.targetId, targetId)] : []),
         ),
       );
@@ -200,11 +200,11 @@ async function main() {
     );
 
     // ---- Workflow: cover_assets ----
-    // Attach a same-origin image as an asset AND use it as the cover in one
-    // step (placement: "cover"), then confirm the cover landed on the row.
+    // Attach a public Texttext image as an asset and use it as the cover in one
+    // step. The asset importer correctly rejects localhost and private hosts.
     const cover = await tool("add_item_asset", {
       id: articleId,
-      source_url: `${ORIGIN}/opengraph-image`,
+      source_url: ASSET_FIXTURE_URL,
       placement: "cover",
       alt_text: "Cover art",
     });
@@ -235,6 +235,9 @@ async function main() {
 
     // ---- Workflow: access role lifecycle (set role + revoke) ----
     const accessId = (collabRows[0] as { id?: string })?.id ?? "";
+    if (!accessId) {
+      throw new Error("set_access did not return a durable collaborator.");
+    }
     const roleChanged = await tool("set_access", {
       scope_type: "workspace",
       email: `friend-${STAMP}@example.com`,
