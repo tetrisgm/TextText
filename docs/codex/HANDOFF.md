@@ -1,20 +1,27 @@
 # Texttext: Claude handoff
 
-Updated 2026-07-19. This is the only current continuation document.
+Updated 2026-07-22. This is the only current continuation document.
 
 ## Start here
 
-There is no unfinished implementation or queued feature batch. Pull the latest
-`main` and continue from the user's newest request. Do not resurrect work from
-older prompts, screenshots, or the historical briefs under `docs/codex/` unless
-the user reports a regression or explicitly asks for that work.
+The queued body of work is **AI-driven document types**: an engine of render
+primitives plus app-executed capabilities, over which a document type is
+validated data (fields, item render, container-as-page render, capability
+declaration), authored by AI or picked from a fork-to-own gallery, compiled to
+HTML, on the existing `.textpack` content model. It is DESIGN, not started, and
+is being built collaboratively with Codex, so treat the plan as a proposal to
+iterate and verify, not a spec to execute blindly. Otherwise continue from the
+user's newest request, and do not resurrect work from older prompts, screenshots,
+or the historical briefs under `docs/codex/` unless the user asks.
 
 Read these files before changing product code:
 
 1. `AGENTS.md`
 2. `CLAUDE.md`
 3. `DESIGN.md`
-4. `docs/ai-sidebar-architecture.md` for AI, assistant, or MCP work
+4. `docs/plan-document-types.md` (the plan) and `docs/review-2026-07-22.md` (the
+   review that scoped it) for the document-types work
+5. `docs/ai-sidebar-architecture.md` for AI, assistant, or MCP work
 
 ## Repository state at handoff
 
@@ -69,17 +76,36 @@ Do not redo these features based on an old acceptance-criteria document. A newly
 observed regression is a new task and should be reproduced against the installed
 current release first.
 
-## Open product direction
+## Current body of work: AI-driven document types
 
-The only recent idea discussed but not implemented is macOS-aware reading size.
-The user asked whether macOS defines a correct font size for text apps. This was
-an information question, not an implementation request. There is no universal
-desktop Dynamic Type setting that automatically sizes web or AppKit document
-content, so a future implementation should be a Texttext reading-size preference
-that respects system accessibility choices where available. Do not build it
-unless the user's next request asks for it.
+See `docs/plan-document-types.md` for the full plan and `docs/review-2026-07-22.md`
+for the review that scoped it. The load-bearing decisions:
 
-No other product work is preassigned.
+- One engine (a game-engine model): render primitives are pure and declarative
+  and a type composes them; capabilities (import, sync, collaboration, AI,
+  publish, search) are app-executed and a type only declares them. Compose-only:
+  a type is validated data, never code that runs alongside the engine.
+- Content stays portable data in the `.textpack` (Markdown body + typed fields +
+  assets). HTML is compiled output, never the stored source.
+- The hard prerequisite is the **fail-closed privacy rework**: today privacy is a
+  denylist, so a novel type would publish by default across four-plus sites. Flip
+  it to an allow-list before any type becomes user-definable. A closed
+  `validateRenderSpec` must gate any rendered spec.
+- The plan lists ordering constraints, not fixed phases; the public gallery is
+  last because import is the only untrusted-input surface.
+
+Intersecting pending work to coordinate with, not duplicate:
+
+- **Collaboration durability** (core, not a side feature): make the owner a
+  first-class Yjs co-editor, an invite/accept binding step, live cursors, and
+  close the known between-sessions holes. Its access half is the sharing and
+  permission model (public link, team, named writers). CRDT/sync only touch
+  document content; the render and the engine are separate layers.
+- **BYO cloud AI**: a "use my cloud key" override so the AI authoring loop can
+  reach Claude or GPT, not only the on-device model.
+
+A separately discussed idea, not assigned: a macOS-aware reading-size preference
+that respects system accessibility choices. Do not build it unless asked.
 
 ## Architecture and safety contracts
 
@@ -99,6 +125,25 @@ No other product work is preassigned.
 The detailed implemented AI state lives in
 `docs/ai-sidebar-architecture.md`. The files `docs/codex/mcp-brief.md` and
 `docs/codex/ui-batch-brief.md` are historical inputs, not pending queues.
+
+## Local development environment (read before running anything)
+
+The database is split local vs prod as of 2026-07-22, because dev, CI, and gate
+traffic against the prod Neon database burned its free-tier transfer cap. Do not
+undo this:
+
+- `.env.local` `DATABASE_URL` points at a LOCAL Postgres
+  (`postgres://<you>@localhost:5432/texttext_dev`, Homebrew `postgresql@17`). All
+  routine work (dev, tests, `npm run build`, `verify:release`) runs local and
+  never touches Neon. Set it up once with `bash scripts/setup-local-db.sh` (it
+  creates the `write_change_seq` sequence, pushes the schema, and seeds the demo).
+- `src/lib/db/client.ts` is dual-driver by URL: a `neon.tech` URL uses the Neon
+  HTTP driver (production), any other URL uses `node-postgres` (local).
+- Prod Neon is only ever touched by the deployed app and by release migrations,
+  which load prod creds from `.env.release.local` (gitignored, mode 600) and
+  refuse to migrate anything that is not the `neon.tech` endpoint.
+- Do NOT point `.env.local` at prod Neon, and do NOT run migrations or tests
+  against it. Schema changes for local work run against `texttext_dev`.
 
 ## Work and verification workflow
 
