@@ -392,7 +392,8 @@ public enum WriteTextBundlePackage {
             return value
         }
         let encoded = try JSONSerialization.data(
-            withJSONObject: replace(root), options: [.prettyPrinted, .sortedKeys])
+            withJSONObject: replace(root),
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         guard let result = String(data: encoded, encoding: .utf8) else {
             throw WriteTextBundleError.invalidPackage("document.json is not UTF-8")
         }

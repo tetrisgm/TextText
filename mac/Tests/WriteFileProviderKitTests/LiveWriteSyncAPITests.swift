@@ -2,6 +2,26 @@ import Foundation
 import XCTest
 @testable import WriteFileProviderKit
 
+private func requestBodyData(_ request: URLRequest) throws -> Data {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else {
+        throw URLError(.cannotDecodeContentData)
+    }
+    stream.open()
+    defer { stream.close() }
+    var body = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while true {
+        let count = buffer.withUnsafeMutableBufferPointer { pointer in
+            stream.read(pointer.baseAddress!, maxLength: pointer.count)
+        }
+        if count == 0 { break }
+        if count < 0 { throw stream.streamError ?? URLError(.cannotDecodeContentData) }
+        body.append(contentsOf: buffer.prefix(count))
+    }
+    return body
+}
+
 private final class WriteSyncURLProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
@@ -118,8 +138,10 @@ final class LiveWriteSyncAPITests: XCTestCase {
 
     func testTextPackCreateSendsStructuredDocumentEnvelope() async throws {
         var capturedRequest: URLRequest?
+        var capturedBody: Data?
         WriteSyncURLProtocol.handler = { request in
             capturedRequest = request
+            capturedBody = try requestBodyData(request)
             let response = try XCTUnwrap(HTTPURLResponse(
                 url: try XCTUnwrap(request.url), statusCode: 201,
                 httpVersion: nil, headerFields: nil))
@@ -138,7 +160,7 @@ final class LiveWriteSyncAPITests: XCTestCase {
             request.value(forHTTPHeaderField: "Content-Type"),
             "application/vnd.texttext.document+json")
         let object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody))
+            JSONSerialization.jsonObject(with: try XCTUnwrap(capturedBody))
                 as? [String: Any])
         XCTAssertEqual(object["schema"] as? String, "texttext.sync-document.v1")
         XCTAssertEqual(object["markdown"] as? String, "# Item")
