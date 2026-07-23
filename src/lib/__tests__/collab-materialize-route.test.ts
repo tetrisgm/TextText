@@ -34,8 +34,18 @@ vi.mock("@/lib/revalidate-blog", () => ({
 }));
 
 import { POST } from "@/app/api/collab/[postId]/materialize/route";
+import { emptyDocumentSnapshot } from "@/lib/documents/model";
 
 const POST_ID = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
+const emptyDocument = emptyDocumentSnapshot();
+const BASE_DOCUMENT = {
+  ...emptyDocument,
+  content: {
+    ...emptyDocument.content,
+    title: "Draft",
+    body: "Old body",
+  },
+};
 
 function req(bodyObj: unknown) {
   return new Request(`http://x/api/collab/${POST_ID}/materialize`, {
@@ -59,6 +69,7 @@ describe("POST /api/collab/[postId]/materialize", () => {
       title: "Draft",
       body: "Old body",
       revision: 12,
+      document: BASE_DOCUMENT,
     });
     mocks.savePost.mockImplementation(async (_handle, post) => ({
       ...post,
@@ -120,10 +131,9 @@ describe("POST /api/collab/[postId]/materialize", () => {
         assets: [],
       },
       presentation: {
-        template: { id: "builtin.article", version: 1 },
+        template: { id: "texttext.article", version: 1 },
         theme: {},
       },
-      visibility: "private",
     };
     mocks.materializeCollabDocument.mockResolvedValue(document);
     const res = await POST(req({ handle: "demo-blog", state: "encoded" }), ctx);
