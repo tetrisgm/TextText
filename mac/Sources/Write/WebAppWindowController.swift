@@ -33,18 +33,18 @@ struct WebAppStartupNavigation {
     }
 }
 
-/// The main window: the full Write web experience in a native window. The app
-/// is account-gated, so it opens on the sign-in flow (never the public landing)
-/// until the account signs in. That one sign-in both authenticates the web view
-/// and, on an unlinked Mac, mints a sync token: an injected script POSTs
-/// /api/app/token from the first signed-in page and hands the token back over
-/// the `writeApp` bridge, so linking is invisible (no code, no approval page).
+/// The main window: the full Texttext web experience in a native window. A
+/// linked Mac exchanges its app token for a web session before opening the
+/// workspace. An unlinked Mac sends account authentication and device approval
+/// to the system browser, then returns to the workspace with both credentials.
 final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     WKUIDelegate, WKScriptMessageHandler {
     private let origin: URL
     private var webView: WKWebView!
     /// Called with (token, origin) when the web view links this Mac.
     private let onLinked: (String, URL) -> Void
+    /// Starts the system-browser account and device approval flow.
+    private let onSystemSignInRequested: () -> Void
     private var startupNavigation: WebAppStartupNavigation
     /// On-device AI over the `nativeAI` bridge; owned here, weak-proxied into
     /// the user content controller like the `writeApp` handler.
@@ -57,24 +57,18 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         "appleid.apple.com",
     ]
 
-    // A normal macOS Safari user agent so identity providers run their OAuth
-    // flow inside the app instead of refusing an embedded web view.
-    private static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-
-    /// - needsToken: true on an unlinked Mac. The web view then mints a sync
-    ///   token in the background as soon as it lands on a signed-in page and
-    ///   hands it back over `writeApp` (see the mint script below); a linked
-    ///   Mac skips minting entirely and just opens the workspace.
+    /// `appToken` is exchanged for an Auth.js session without exposing the token
+    /// in a URL or page script. It is nil before this Mac has been linked.
     init(
         origin: URL,
         startPath: String,
-        needsToken: Bool,
+        appToken: String?,
+        onSystemSignInRequested: @escaping () -> Void,
         onLinked: @escaping (String, URL) -> Void
     ) {
         self.origin = origin
         self.onLinked = onLinked
+        self.onSystemSignInRequested = onSystemSignInRequested
         self.startupNavigation = WebAppStartupNavigation(path: startPath)
 
         Self.configureURLCacheForStartup()
@@ -87,14 +81,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let escapedDevice = device.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         // The server reads none of this; it is the client contract with the web
-        // app (AppLinkBridge / mint script). __WRITE_NEEDS_TOKEN__ gates minting
-        // so a linked Mac never spends a token on every launch.
+        // app. __WRITE_NEEDS_TOKEN__ keeps the legacy in-web linking fallback
+        // inert after this Mac has credentials.
         //
-        // Guarded to the app's own origin: forMainFrameOnly still injects this on
-        // EVERY navigation, including the Google/Apple OAuth pages this window
-        // visits mid-sign-in. Without the host check the device NAME would be
-        // written into those third-party page contexts (and the mint script,
-        // which keys off __WRITE_APP__, would fire there too).
+        // Guarded to the app's own origin so the device name and native bridge
+        // never appear in an external page context.
         ucc.addUserScript(WKUserScript(
             source: """
             (function () {
@@ -102,7 +93,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
               if (base && h !== base && !h.endsWith("." + base)) return;
               window.__WRITE_APP__ = true;
               window.__WRITE_DEVICE__ = "\(escapedDevice)";
-              window.__WRITE_NEEDS_TOKEN__ = \(needsToken ? "true" : "false");
+              window.__WRITE_NEEDS_TOKEN__ = \(appToken == nil ? "true" : "false");
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -127,7 +118,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
         let webView = WKWebView(
             frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
-        webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         self.webView = webView
 
@@ -157,7 +147,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             [weak self] in
             guard let self else { return }
             let path = self.startupNavigation.begin()
-            self.webView.load(self.request(for: path))
+            if let appToken {
+                self.webView.load(Self.sessionRequest(
+                    origin: self.origin, token: appToken, nextPath: path))
+            } else {
+                self.webView.load(self.request(for: path))
+            }
         }
     }
 
@@ -230,6 +225,26 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         return request
     }
 
+    static func sessionRequest(
+        origin: URL, token: String, nextPath: String
+    ) -> URLRequest {
+        var components = URLComponents(
+            url: origin.appendingPathComponent("api/app/session"),
+            resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "next", value: nextPath)]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("1", forHTTPHeaderField: "x-write-app")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        return request
+    }
+
+    func establishSession(token: String, nextPath: String = "/start?to=home") {
+        webView.load(Self.sessionRequest(
+            origin: origin, token: token, nextPath: nextPath))
+    }
+
     func present() {
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
@@ -285,8 +300,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     private func isInApp(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
-        if host == origin.host?.lowercased() { return true }
+        return host == origin.host?.lowercased()
+    }
+
+    private func isAuthenticationHost(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
         return Self.authHosts.contains(host)
+    }
+
+    private func isSessionExchange(_ url: URL) -> Bool {
+        isInApp(url) && url.path == "/api/app/session"
     }
 
     private func openExternally(_ url: URL) {
@@ -318,6 +341,15 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         if let url = navigationAction.request.url,
+           navigationAction.targetFrame?.isMainFrame != false,
+           isAuthenticationHost(url) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in
+                self?.onSystemSignInRequested()
+            }
+            return
+        }
+        if let url = navigationAction.request.url,
            navigationAction.navigationType == .linkActivated,
            !isInApp(url) {
             openExternally(url)
@@ -325,6 +357,31 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
         decisionHandler(.allow)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        guard let response = navigationResponse.response as? HTTPURLResponse,
+              let url = response.url,
+              isSessionExchange(url),
+              response.statusCode >= 400
+        else {
+            decisionHandler(.allow)
+            return
+        }
+
+        decisionHandler(.cancel)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if response.statusCode == 401 || response.statusCode == 403 {
+                self.onSystemSignInRequested()
+            } else {
+                self.webView.load(self.request(for: "/signin?error=Configuration"))
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -339,7 +396,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        if let url = navigationAction.request.url { openExternally(url) }
+        if let url = navigationAction.request.url {
+            if isAuthenticationHost(url) {
+                onSystemSignInRequested()
+            } else {
+                openExternally(url)
+            }
+        }
         return nil
     }
 }

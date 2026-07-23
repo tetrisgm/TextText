@@ -24,6 +24,11 @@ if ProcessInfo.processInfo.environment["WRITE_HEADLESS"] == "1" {
 
 // AppKit entry point (no @main so lifecycle control stays explicit).
 let app = NSApplication.shared
+// SwiftPM executables do not get the application activation policy that an
+// Xcode app target normally establishes for us. Without this, AppKit creates
+// the window but orders it beneath the active app, which looks like a launch
+// with no window.
+_ = app.setActivationPolicy(.regular)
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()

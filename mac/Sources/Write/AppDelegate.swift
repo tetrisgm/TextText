@@ -124,8 +124,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         linkController.onChange = { [weak self] in self?.refreshUI() }
         linkController.onActivity = { [weak self] message in self?.appendActivity(message) }
-        linkController.onLinked = { [weak self] _ in
+        linkController.onLinked = { [weak self] credentials in
             guard let self else { return }
+            self.webWindow?.establishSession(token: credentials.token)
             // Fetch+cache the workspace, then register the File Provider domain
             // (never a mirror pass). seedCachedWorkspaceIfNeeded calls
             // syncFileProviderDomain() once account.json is cached.
@@ -140,6 +141,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             self.showMainWindow()
         }
+
+        // Present the workspace before starting sync, indexing, capture, and
+        // health services. Those systems are intentionally independent of the
+        // visible launch path and continue initializing below.
+        showMainWindow()
 
         setupStatusItem()
         configureQuickCapture()
@@ -204,8 +210,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workspaceCenter.addObserver(
             self, selector: #selector(systemDidResume(_:)),
             name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
-
-        showMainWindow() // open the workspace window on launch
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -2310,12 +2314,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Main window (the web app)
 
-    /// The full Write web experience in a native window. The app is
+    /// The full Texttext web experience in a native window. The app is
     /// account-gated: it always opens on the workspace home (`/start?to=home`),
-    /// which bounces through sign-in when needed and then lands on the blog with
-    /// the sidebar open. The public landing is never the first thing shown, and
-    /// an unlinked Mac mints its sync token silently in the web view (no visible
-    /// link step) via the `needsToken` path.
+    /// which exchanges stored app credentials for a web session. An unlinked or
+    /// expired installation completes account sign-in and approval in the
+    /// system browser before returning here.
     private func showMainWindow(path: String? = nil) {
         if webWindow == nil {
             let credentials = store.loadCredentials()
@@ -2323,7 +2326,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             webWindow = WebAppWindowController(
                 origin: origin,
                 startPath: path ?? "/start?to=home",
-                needsToken: credentials == nil,
+                appToken: credentials?.token,
+                onSystemSignInRequested: { [weak self] in
+                    self?.signIn()
+                },
                 onLinked: { [weak self] token, linkedOrigin in
                     self?.handleAppLinked(token: token, origin: linkedOrigin)
                 })
