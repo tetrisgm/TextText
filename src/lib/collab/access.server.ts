@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import {
   collabAccess,
   colorForSub,
@@ -20,11 +19,17 @@ export type CollabRequestAccess = {
 };
 
 export async function getCollabRequestAccess(
+  request: Request,
   postId: string,
 ): Promise<CollabRequestAccess> {
   const user = await getCurrentUser();
-  const cookieStore = await cookies();
-  const token = cookieStore.get(documentCapabilityCookieName(postId))?.value;
+  const cookieName = documentCapabilityCookieName(postId);
+  const token = request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${cookieName}=`))
+    ?.slice(cookieName.length + 1);
   const resolved = token ? await resolveDocumentCapability(token) : null;
   const capability = resolved?.itemId === postId ? resolved : null;
   const role = await collabAccess(user, postId, capability?.role ?? null);

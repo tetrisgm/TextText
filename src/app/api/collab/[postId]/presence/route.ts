@@ -21,7 +21,7 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const access = await getCollabRequestAccess(postId);
+  const access = await getCollabRequestAccess(request, postId);
   const role = access.role;
   if (!role) {
     return Response.json({ error: "No access to this post" }, { status: 403 });

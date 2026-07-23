@@ -7,12 +7,14 @@ import { getPostsForTag } from "@/lib/store";
 const snapshots = DEMO_POSTS.map((post) => ({
   post,
   status: post.status,
+  visibility: post.visibility,
   tags: post.tags,
 }));
 
 afterEach(() => {
   for (const snapshot of snapshots) {
     snapshot.post.status = snapshot.status;
+    snapshot.post.visibility = snapshot.visibility;
     snapshot.post.tags = snapshot.tags;
   }
 });
@@ -29,6 +31,7 @@ describe("getPostsForTag", () => {
     publicPost.tags = [tag];
     draftPost.tags = [tag];
     draftPost.status = "draft";
+    draftPost.visibility = "private";
     note.tags = [tag];
     bookmark.tags = [tag];
 

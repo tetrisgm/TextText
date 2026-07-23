@@ -61,7 +61,12 @@ describe("native workspace tool parity", () => {
   it("is reproducible from the canonical TypeScript contract", () => {
     const result = spawnSync(
       process.execPath,
-      [resolve(process.cwd(), "scripts/sync-native-tool-contract.mjs"), "--check"],
+      [
+        "--import",
+        "tsx",
+        resolve(process.cwd(), "scripts/sync-native-tool-contract.mjs"),
+        "--check",
+      ],
       { encoding: "utf8" },
     );
 

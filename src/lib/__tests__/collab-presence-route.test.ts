@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   activePresence: vi.fn(),
   collabAccess: vi.fn(),
+  colorForSub: vi.fn(() => "#112233"),
   getCurrentUser: vi.fn(),
   removePresence: vi.fn(),
   upsertPresence: vi.fn(),
@@ -12,6 +13,7 @@ vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/collab", () => ({
   activePresence: mocks.activePresence,
   collabAccess: mocks.collabAccess,
+  colorForSub: mocks.colorForSub,
   removePresence: mocks.removePresence,
   upsertPresence: mocks.upsertPresence,
 }));
@@ -31,7 +33,7 @@ function request(body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getCurrentUser.mockResolvedValue({ sub: "user-1" });
+  mocks.getCurrentUser.mockResolvedValue({ sub: "user-1", name: "Ada" });
   mocks.collabAccess.mockResolvedValue("editor");
   mocks.removePresence.mockResolvedValue(undefined);
   mocks.activePresence.mockResolvedValue([
@@ -64,7 +66,7 @@ describe("collaboration presence route", () => {
 
   it("continues to upsert ordinary heartbeats", async () => {
     await POST(
-      request({ clientId: "active", userName: " Ada ", color: "#112233" }),
+      request({ clientId: "active", userName: "Untrusted", color: "#ffffff" }),
       context,
     );
 
@@ -73,6 +75,7 @@ describe("collaboration presence route", () => {
       clientId: "active",
       userName: "Ada",
       color: "#112233",
+      awareness: null,
     });
   });
 });

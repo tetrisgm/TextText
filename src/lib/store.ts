@@ -22,6 +22,7 @@ import { cache } from "react";
 import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
+  isPrivatePostType,
   readingTimeMinForWordCount,
   wordCountForMarkdown,
 } from "./content";
@@ -296,8 +297,8 @@ function readingTimeForWordCount(wordCount: number | null): number | undefined {
   return wordCount == null ? undefined : readingTimeMinForWordCount(wordCount);
 }
 
-function isPublicDocument(post: Pick<Post, "visibility">): boolean {
-  return post.visibility === "public";
+function isPublicDocument(post: Pick<Post, "visibility" | "type">): boolean {
+  return post.visibility === "public" && !isPrivatePostType(post.type);
 }
 
 function mapPost(row: PostRow): Post {
@@ -535,6 +536,8 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
         ? and(
             eq(blogs.handle, handle),
             eq(posts.visibility, "public"),
+            ne(posts.type, "note"),
+            ne(posts.type, "bookmark"),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -598,6 +601,7 @@ async function getPostsForTagUncached(
     const selected = pinnedFirst(
       DEMO_POSTS.filter(
         (post) =>
+          !isPrivatePostType(post.type) &&
           normalizeTags(post.tags).includes(tag) &&
           (!publishedOnly || isPublicDocument(post)),
       ),
@@ -614,6 +618,8 @@ async function getPostsForTagUncached(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
+        ne(posts.type, "note"),
+        ne(posts.type, "bookmark"),
         publishedOnly ? eq(posts.visibility, "public") : undefined,
         sql`${posts.tags} @> ARRAY[${tag}]::text[]`,
       ),
@@ -2158,6 +2164,8 @@ async function getFolderPostsUncached(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
+        publishedOnly ? ne(posts.type, "note") : undefined,
+        publishedOnly ? ne(posts.type, "bookmark") : undefined,
         publishedOnly ? eq(posts.visibility, "public") : undefined,
         inFolder,
       ),
@@ -2196,6 +2204,8 @@ async function selectFullPosts(
         ? and(
             eq(blogs.handle, handle),
             eq(posts.visibility, "public"),
+            ne(posts.type, "note"),
+            ne(posts.type, "bookmark"),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -2294,6 +2304,8 @@ async function getFolderPostFilesUncached(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
+        publishedOnly ? ne(posts.type, "note") : undefined,
+        publishedOnly ? ne(posts.type, "bookmark") : undefined,
         publishedOnly ? eq(posts.visibility, "public") : undefined,
         inFolder,
       ),

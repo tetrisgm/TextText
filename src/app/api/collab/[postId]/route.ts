@@ -61,7 +61,7 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const { role } = await getCollabRequestAccess(postId);
+  const { role } = await getCollabRequestAccess(request, postId);
   if (role !== "editor") {
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
@@ -114,7 +114,7 @@ export async function GET(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const { role } = await getCollabRequestAccess(postId);
+  const { role } = await getCollabRequestAccess(request, postId);
   if (!role) {
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }

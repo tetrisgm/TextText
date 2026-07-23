@@ -42,7 +42,7 @@ if (updated === source) {
 
 if (checkOnly) {
   console.error(
-    `Native AI tool contract is stale. Run node scripts/sync-native-tool-contract.mjs.`,
+    `Native AI tool contract is stale. Run node --import tsx scripts/sync-native-tool-contract.mjs.`,
   );
   process.exit(1);
 }

@@ -20,7 +20,10 @@ vi.mock("@/app/api/sync/v1/auth", () => ({
 
 import { GET } from "@/app/api/sync/v1/files/[postId]/artifacts/route";
 import { POST } from "@/app/api/sync/v1/files/[postId]/assets/route";
-import { renderSyncFile } from "@/app/api/sync/v1/sync";
+import {
+  renderSyncDocumentFile,
+  renderSyncFile,
+} from "@/app/api/sync/v1/sync";
 import type { Blog, Post } from "@/lib/content";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
@@ -156,6 +159,7 @@ describe("sync file artifact GET", () => {
       postId,
       slug: post.slug,
       fileHash: renderSyncFile(blog, post).hash,
+      documentHash: renderSyncDocumentFile(blog, post).hash,
       artifacts: [
         {
           filename: "photo.png",
