@@ -1,5 +1,5 @@
 import type { Blog, Post } from "@/lib/content";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { requireDocumentSnapshot } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 
@@ -24,7 +24,10 @@ export function UnifiedDocumentReader({
   post: Post;
   template: TemplateDefinition;
 }) {
-  const document = post.document ?? documentFromLegacyPost(post);
+  const document = requireDocumentSnapshot(
+    post.document,
+    `Item ${post.id ?? post.slug}`,
+  );
   return (
     <DocumentRenderer
       document={document}

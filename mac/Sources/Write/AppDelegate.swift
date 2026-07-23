@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // rebuild waits for zero pending local edits, so no in-flight edit is stranded.
     // 11 -> 12: refill leaf .textpack files that materialized as 0 bytes (a leaf
     // must advertise documentSize; see WriteItem).
-    static let fileProviderSchemaVersion = 12
+    static let fileProviderSchemaVersion = 13
     private static let fileProviderSchemaVersionKey = "WriteFileProviderSchemaVersion"
 
     private let store = StateStore()

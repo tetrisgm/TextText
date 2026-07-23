@@ -17,8 +17,17 @@ URL="postgres://$(whoami)@localhost:5432/$DB"
 echo ">> create database $DB (if missing)"
 "$PGBIN/createdb" "$DB" 2>/dev/null || echo "   (already exists)"
 
+echo ">> convert existing documents before applying stricter schema constraints"
+DATABASE_URL="$URL" node scripts/migrate-unified-documents.mjs
+DATABASE_URL="$URL" node scripts/migrate-enforce-canonical-documents.mjs
+
 echo ">> push the current schema (all tables) to local"
 DATABASE_URL="$URL" npx drizzle-kit push --force
+
+echo ">> enforce and audit canonical documents after schema creation"
+DATABASE_URL="$URL" node scripts/migrate-unified-documents.mjs
+DATABASE_URL="$URL" node scripts/migrate-enforce-canonical-documents.mjs
+DATABASE_URL="$URL" npx tsx scripts/audit-canonical-documents.ts
 
 echo ">> install sync revision, slug history, and workspace cursor triggers"
 "$PGBIN/psql" -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'

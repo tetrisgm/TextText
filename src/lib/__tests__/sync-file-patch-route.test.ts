@@ -9,6 +9,7 @@ import {
   SYNC_DOCUMENT_CONTENT_TYPE,
   SYNC_DOCUMENT_SCHEMA,
 } from "@/lib/documents/sync";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { sanitizePostSlug } from "@/lib/post-slug";
 
 const mocks = vi.hoisted(() => ({
@@ -71,7 +72,7 @@ const blog: Blog = {
   cardStyle: "cover",
   homeLayout: "grid",
 };
-const post: Post = {
+const legacyPost: Post = {
   id: postId,
   type: "article",
   slug: "stable-url",
@@ -79,6 +80,10 @@ const post: Post = {
   body: "Body",
   status: "draft",
   revision: 42,
+};
+const post: Post = {
+  ...legacyPost,
+  document: documentFromLegacyPost(legacyPost),
 };
 
 function patchRequest(

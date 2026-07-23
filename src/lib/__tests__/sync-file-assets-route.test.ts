@@ -25,6 +25,7 @@ import {
   renderSyncFile,
 } from "@/app/api/sync/v1/sync";
 import type { Blog, Post } from "@/lib/content";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
 const blobHost = "store.public.blob.vercel-storage.com";
@@ -35,7 +36,7 @@ const blog: Blog = {
   cardStyle: "cover",
   homeLayout: "timeline",
 };
-const basePost: Post = {
+const legacyBasePost: Post = {
   id: postId,
   type: "article",
   slug: "generic-assets",
@@ -45,6 +46,10 @@ const basePost: Post = {
   revision: 17,
   createdAt: "2026-07-13T10:00:00.000Z",
   updatedAt: "2026-07-14T10:00:00.000Z",
+};
+const basePost: Post = {
+  ...legacyBasePost,
+  document: documentFromLegacyPost(legacyBasePost),
 };
 
 const savedBlobToken = process.env.BLOB_READ_WRITE_TOKEN;

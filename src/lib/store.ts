@@ -102,6 +102,7 @@ import {
 } from "./documents/legacy";
 import {
   emptyDocumentSnapshot,
+  requireDocumentSnapshot,
   validateDocumentSnapshot,
   type DocumentSnapshot,
   type DocumentVisibility,
@@ -338,9 +339,10 @@ function mapPost(row: PostRow): Post {
     updatedAt: row.updatedAt.toISOString(),
     revision: row.revision ?? undefined,
   };
-  const document = row.document
-    ? validateDocumentSnapshot(row.document)
-    : documentFromLegacyPost(legacyPost);
+  const document = requireDocumentSnapshot(
+    row.document,
+    `Persisted item ${row.id}`,
+  );
   return {
     ...legacyPost,
     document,
@@ -1692,9 +1694,10 @@ export async function movePostFile(
   // move. The slug/URL is deliberately left alone (rename != reslug).
   if (changes.title !== undefined && changes.title !== row.title) {
     set.title = changes.title;
-    const document = row.document
-      ? validateDocumentSnapshot(row.document)
-      : documentFromLegacyPost(mapPost(row));
+    const document = requireDocumentSnapshot(
+      row.document,
+      `Persisted item ${row.id}`,
+    );
     set.document = validateDocumentSnapshot({
       ...document,
       content: { ...document.content, title: changes.title },
@@ -4177,9 +4180,10 @@ export async function savePostContentPatch(
   };
 
   if (patch.document) {
-    const currentDocument = existing.document
-      ? validateDocumentSnapshot(existing.document)
-      : documentFromLegacyPost(existing);
+    const currentDocument = requireDocumentSnapshot(
+      existing.document,
+      `Persisted item ${existing.id ?? existing.slug}`,
+    );
     const suppliedDocument = validateDocumentSnapshot(patch.document);
     next.document = validateDocumentSnapshot({
       ...currentDocument,

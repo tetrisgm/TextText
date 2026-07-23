@@ -374,7 +374,7 @@ export const posts = pgTable(
      * maintained as search, listing, and old-client projections while clients
      * migrate to this snapshot.
      */
-    document: jsonb("document").$type<DocumentSnapshot>(),
+    document: jsonb("document").$type<DocumentSnapshot>().notNull(),
     /** Explicit, fail-closed reader visibility. */
     visibility: text("visibility")
       .$type<DocumentVisibility>()
@@ -463,6 +463,30 @@ export const posts = pgTable(
     check(
       "posts_visibility_valid",
       sql`${t.visibility} in ('private', 'link', 'public')`,
+    ),
+    check(
+      "posts_document_schema_v1_valid",
+      sql`coalesce((
+        jsonb_typeof(${t.document}) = 'object'
+        and ${t.document} ->> 'schemaVersion' = '1'
+        and jsonb_typeof(${t.document} -> 'content') = 'object'
+        and jsonb_typeof(${t.document} -> 'content' -> 'title') = 'string'
+        and jsonb_typeof(${t.document} -> 'content' -> 'body') = 'string'
+        and jsonb_typeof(${t.document} -> 'content' -> 'fields') = 'object'
+        and jsonb_typeof(${t.document} -> 'content' -> 'tags') = 'array'
+        and jsonb_typeof(${t.document} -> 'content' -> 'assets') = 'array'
+        and jsonb_typeof(${t.document} -> 'presentation') = 'object'
+        and jsonb_typeof(${t.document} -> 'presentation' -> 'template') = 'object'
+        and jsonb_typeof(${t.document} -> 'presentation' -> 'theme') = 'object'
+        and ${t.document} -> 'presentation' -> 'template' ->> 'id' = ${t.templateId}
+        and case
+          when ${t.document} -> 'presentation' -> 'template' ->> 'version'
+            ~ '^[1-9][0-9]*$'
+          then (${t.document} -> 'presentation' -> 'template' ->> 'version')::integer
+            = ${t.templateVersion}
+          else false
+        end
+      ), false)`,
     ),
   ],
 );

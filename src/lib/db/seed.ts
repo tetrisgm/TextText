@@ -72,6 +72,10 @@ async function main() {
       .values({
         blogId: blog.id,
         folderId,
+        document: p.document!,
+        visibility: p.visibility ?? "private",
+        templateId: p.document!.presentation.template.id,
+        templateVersion: p.document!.presentation.template.version,
         type: p.type,
         slug: p.slug,
         title: p.title,

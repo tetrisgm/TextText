@@ -53,6 +53,10 @@ editor preview route were removed. Do not reintroduce them.
 - Template identity and capability declarations never grant access.
 - Documents and templates are data only. No user HTML, CSS, JavaScript, React,
   remote code, or arbitrary component names enter the engine.
+- Every persisted live or trashed item has a validated schema-v1
+  `DocumentSnapshot`. Persisted reads never reconstruct one from legacy columns.
+- Raw Markdown and text are explicit import/export compatibility formats.
+  Legacy columns are search and old-client projections, not a second document.
 - Every render spec passes `validateTemplateDefinition` before rendering.
 - A document pins an exact immutable template version.
 - File Provider is a durable projection, not the local edit hot path.
@@ -82,6 +86,8 @@ editor preview route were removed. Do not reintroduce them.
 - Store boundary: `src/lib/store.ts`
 - Native package projection: `mac/Sources/WriteFileProviderKit/TextBundlePackage.swift`
 - Migration: `scripts/migrate-unified-documents.mjs`
+- Canonical enforcement: `scripts/migrate-enforce-canonical-documents.mjs`
+- Canonical audit: `scripts/audit-canonical-documents.ts`
 - Release evaluation: `scripts/verify-document-engine.ts`
 
 ## Local database safety

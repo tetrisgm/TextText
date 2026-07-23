@@ -1,8 +1,8 @@
 import { isPrivatePostType, type Blog, type Post } from "@/lib/content";
 import {
-  documentFromLegacyPost,
   legacyProjectionFromDocument,
 } from "@/lib/documents/legacy";
+import { requireDocumentSnapshot } from "@/lib/documents/model";
 import {
   mergeMarkdownIntoDocument,
   parseSyncDocumentEnvelope,
@@ -143,7 +143,10 @@ export async function PUT(request: Request, { params }: Props) {
   const expectedRevision = post.revision;
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
-  let suppliedDocument = post.document ?? documentFromLegacyPost(post);
+  let suppliedDocument = requireDocumentSnapshot(
+    post.document,
+    `Persisted item ${post.id ?? post.slug}`,
+  );
   try {
     const raw = await request.text();
     if (structured) {

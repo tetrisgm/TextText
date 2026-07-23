@@ -25,6 +25,16 @@ async function query(text) {
 
 async function main() {
   await client.connect();
+  const table = await query(
+    "SELECT to_regclass('public.posts') AS posts_table",
+  );
+  if (!table.rows[0]?.posts_table) {
+    console.log(
+      "Posts table does not exist yet; canonical document backfill will run after schema creation.",
+    );
+    await client.end();
+    return;
+  }
   await query("BEGIN");
   try {
     await query(`

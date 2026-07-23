@@ -26,8 +26,10 @@ import {
   documentText,
   hasDocumentSnapshot,
 } from "@/lib/collab/document";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
-import type { DocumentSnapshot } from "@/lib/documents/model";
+import {
+  requireDocumentSnapshot,
+  type DocumentSnapshot,
+} from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { TemplateGallery } from "./TemplateGallery";
@@ -322,7 +324,11 @@ export function UnifiedDocumentEditor({
   leadingControls,
 }: UnifiedDocumentEditorProps) {
   const initialDocument = useMemo(
-    () => post.document ?? documentFromLegacyPost(post),
+    () =>
+      requireDocumentSnapshot(
+        post.document,
+        `Item ${post.id ?? post.slug}`,
+      ),
     [post],
   );
   const initialDocumentRef = useRef(initialDocument);

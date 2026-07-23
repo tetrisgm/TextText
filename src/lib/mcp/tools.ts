@@ -14,7 +14,7 @@ import {
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { NO_COVER_VALUE } from "@/lib/cover";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { requireDocumentSnapshot } from "@/lib/documents/model";
 import {
   attachItemAsset,
   importItemAssetFromUrl,
@@ -637,8 +637,10 @@ async function executeMcpTool(
       };
       const template = await getDocumentTemplate(resolved.access.blogId, reference);
       if (!template) return errorResult("Template not found.");
-      const current =
-        resolved.post.document ?? documentFromLegacyPost(resolved.post);
+      const current = requireDocumentSnapshot(
+        resolved.post.document,
+        `Persisted item ${resolved.post.id ?? resolved.post.slug}`,
+      );
       if (
         current.presentation.template.id === reference.id &&
         current.presentation.template.version === reference.version

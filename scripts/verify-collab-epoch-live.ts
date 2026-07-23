@@ -17,6 +17,7 @@ import {
   markCollabMaterialized,
   prepareCollabBaseline,
 } from "@/lib/collab";
+import { emptyDocumentSnapshot } from "@/lib/documents/model";
 
 const STAMP = Date.now().toString(36);
 const HANDLE = `scratch-epoch-${STAMP}`;
@@ -43,9 +44,25 @@ async function main() {
       .values({ handle: HANDLE, name: "Epoch Verify", ownerId: userId })
       .returning({ id: blogs.id });
     await ensureWorkspaceFolders(b.id);
+    const initialDocument = {
+      ...emptyDocumentSnapshot(),
+      content: {
+        ...emptyDocumentSnapshot().content,
+        title: "T",
+        body: "B",
+      },
+    };
     const [p] = await db
       .insert(posts)
-      .values({ blogId: b.id, type: "article", title: "T", slug: `t-${STAMP}`, body: "B", status: "draft" })
+      .values({
+        blogId: b.id,
+        document: initialDocument,
+        type: "article",
+        title: "T",
+        slug: `t-${STAMP}`,
+        body: "B",
+        status: "draft",
+      })
       .returning({ id: posts.id });
     postId = p.id;
     console.log(`scratch post ${postId} ready\n`);
@@ -79,6 +96,14 @@ async function main() {
     await db.update(posts).set({
       title: "Externally changed",
       body: "Canonical revision one",
+      document: {
+        ...initialDocument,
+        content: {
+          ...initialDocument.content,
+          title: "Externally changed",
+          body: "Canonical revision one",
+        },
+      },
       revision: 1,
       updatedAt: new Date(),
     }).where(eq(posts.id, postId));

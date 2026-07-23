@@ -31,7 +31,7 @@ import {
   PostConflictError,
   savePost,
 } from "@/lib/store";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { requireDocumentSnapshot } from "@/lib/documents/model";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { getBlog } from "@/lib/store";
 
@@ -67,7 +67,10 @@ export async function POST(
   if (!post) {
     return Response.json({ error: "Post not found" }, { status: 404 });
   }
-  const currentDocument = post.document ?? documentFromLegacyPost(post);
+  const currentDocument = requireDocumentSnapshot(
+    post.document,
+    `Persisted item ${post.id ?? post.slug}`,
+  );
   const collabDocument = state
     ? await materializeCollabDocument(postId, state)
     : null;

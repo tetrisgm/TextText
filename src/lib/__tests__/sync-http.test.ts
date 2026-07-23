@@ -20,6 +20,7 @@ import {
 } from "@/app/api/sync/v1/sync";
 import type { Blog, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import {
   parsePostMarkdownFile,
   renderFolderManifest,
@@ -35,7 +36,7 @@ const blog: Blog = {
   homeLayout: "timeline",
 };
 
-const post: Post = {
+const legacyPost: Post = {
   id: "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60",
   representation: "textbundle",
   type: "article",
@@ -49,6 +50,10 @@ const post: Post = {
   updatedAt: "2026-07-01T09:30:00.000Z",
   folderId: "31b53543-f5de-4a46-937f-c645bfcaa9c3",
   revision: 42,
+};
+const post: Post = {
+  ...legacyPost,
+  document: documentFromLegacyPost(legacyPost),
 };
 
 afterEach(() => {
@@ -254,6 +259,12 @@ describe("renderSyncDocumentFile", () => {
         },
       }),
     );
+  });
+
+  it("rejects a persisted item without its canonical document", () => {
+    expect(() =>
+      renderSyncDocumentFile(blog, { ...post, document: undefined }),
+    ).toThrow("missing its canonical document");
   });
 });
 

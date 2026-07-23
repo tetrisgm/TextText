@@ -13,6 +13,7 @@ migrations=(
   scripts/migrate-add-item-comments.mjs
   scripts/migrate-add-collab-epoch.mjs
   scripts/migrate-unified-documents.mjs
+  scripts/migrate-enforce-canonical-documents.mjs
   scripts/migrate-flip-representation-to-markdown.mjs
   scripts/migrate-flip-representation-to-textpack.mjs
   scripts/migrate-drop-rename-revert-guard.mjs
@@ -22,3 +23,6 @@ for migration in "${migrations[@]}"; do
   echo ">> migrate database: $(basename "$migration" .mjs)"
   node "$migration"
 done
+
+echo ">> audit database: canonical documents"
+npx tsx scripts/audit-canonical-documents.ts

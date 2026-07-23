@@ -80,6 +80,16 @@ export function validateDocumentSnapshot(value: unknown): DocumentSnapshot {
   return documentSnapshotSchema.parse(value);
 }
 
+export function requireDocumentSnapshot(
+  value: unknown,
+  context = "Persisted item",
+): DocumentSnapshot {
+  if (value == null) {
+    throw new Error(`${context} is missing its canonical document`);
+  }
+  return validateDocumentSnapshot(value);
+}
+
 export function emptyDocumentSnapshot(
   template: TemplateReference = { id: "texttext.article", version: 1 },
 ): DocumentSnapshot {

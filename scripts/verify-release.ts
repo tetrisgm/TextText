@@ -40,6 +40,11 @@ async function verifyRelease() {
       command: ["npx", "tsx", "scripts/verify-document-engine.ts"],
     },
     {
+      id: "workflow.canonical_documents",
+      timeoutSeconds: 300,
+      command: ["npx", "tsx", "scripts/audit-canonical-documents.ts"],
+    },
+    {
       id: "workflow.collaboration",
       timeoutSeconds: 120,
       command: ["npx", "tsx", "scripts/verify-collaboration.ts"],

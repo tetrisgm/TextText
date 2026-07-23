@@ -3,6 +3,7 @@
 // The demo lives at /@demo, matching claimed user pages.
 
 import type { Blog, Post } from "./content";
+import { documentFromLegacyPost } from "./documents/legacy";
 
 export const DEMO_BLOG: Blog = {
   handle: "demo",
@@ -17,7 +18,7 @@ export const DEMO_BLOG: Blog = {
   homeLayout: "grid",
 };
 
-export const DEMO_POSTS: Post[] = [
+const DEMO_LEGACY_POSTS: Post[] = [
   {
     type: "article",
     slug: "why-a-broadsheet",
@@ -280,3 +281,8 @@ That small promise is the craft of an empty state: begin here, leave when ready,
     body: "Butterick's checklist earns a place next to every reader stylesheet decision.",
   },
 ];
+
+export const DEMO_POSTS: Post[] = DEMO_LEGACY_POSTS.map((post) => ({
+  ...post,
+  document: documentFromLegacyPost(post),
+}));

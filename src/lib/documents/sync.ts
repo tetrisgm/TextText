@@ -1,9 +1,8 @@
 import type { GalleryItem, LinkRef } from "@/lib/content";
-import {
-  documentFromLegacyPost,
-} from "@/lib/documents/legacy";
+import type { Post } from "@/lib/content";
 import {
   documentSnapshotSchema,
+  requireDocumentSnapshot,
   type DocumentAsset,
   type DocumentFieldValue,
   type DocumentSnapshot,
@@ -66,14 +65,15 @@ export function renderSyncDocumentEnvelope({
   post,
 }: {
   markdown: string;
-  post: Parameters<typeof documentFromLegacyPost>[0];
+  post: Post;
 }): SyncDocumentEnvelope {
   return {
     schema: SYNC_DOCUMENT_SCHEMA,
     markdown,
-    document: post.document
-      ? validateDocumentSnapshot(post.document)
-      : documentFromLegacyPost(post),
+    document: requireDocumentSnapshot(
+      post.document,
+      `Persisted item ${post.id ?? post.slug}`,
+    ),
   };
 }
 

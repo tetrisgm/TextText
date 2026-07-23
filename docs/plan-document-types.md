@@ -326,13 +326,21 @@ awareness/baseline columns. Existing rows are backfilled into schema version 1.
 Existing published articles, projects, and talks remain public; notes and
 bookmarks remain private.
 
-During the compatibility window:
+`scripts/migrate-enforce-canonical-documents.mjs` then makes the canonical
+snapshot mandatory for every live and trashed row. The database rejects a
+missing or structurally invalid snapshot, and the release audit validates the
+full schema plus all search projections. Persisted reads fail loudly instead of
+synthesizing a document from compatibility columns.
+
+During the client compatibility window:
 
 - Structured clients use the versioned document envelope and document hash.
 - Old clients use raw Markdown and Markdown hash.
 - Writes update both canonical document and legacy projection atomically through
   `store.ts`.
-- The migration verifies that no row is left without a document snapshot.
+- Raw Markdown and text imports are converted explicitly at the write boundary.
+- Compatibility columns are indexes and old-client projections, not a second
+  stored document.
 
 Legacy bespoke readers and editor layers were removed after all routes moved to
 the unified renderer and editor. They must not be reintroduced.

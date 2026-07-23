@@ -22,8 +22,10 @@ import {
   documentSnapshotFromYDoc,
   encodeDocumentBaseline,
 } from "@/lib/collab/document";
-import { documentFromLegacyPost } from "@/lib/documents/legacy";
-import type { DocumentSnapshot } from "@/lib/documents/model";
+import {
+  requireDocumentSnapshot,
+  type DocumentSnapshot,
+} from "@/lib/documents/model";
 import { resolveItemAccess, type AccessUser } from "@/lib/permissions";
 import { getPostStoreContext } from "@/lib/store";
 
@@ -128,8 +130,10 @@ export async function prepareCollabBaseline(
   const context = await getPostStoreContext(postId);
   if (!context) return null;
   const revision = context.post.revision ?? 0;
-  const snapshot =
-    context.post.document ?? documentFromLegacyPost(context.post);
+  const snapshot = requireDocumentSnapshot(
+    context.post.document,
+    `Persisted item ${context.post.id ?? context.post.slug}`,
+  );
   const encoded = Buffer.from(
     encodeDocumentBaseline(snapshot, `${postId}:${revision}`),
   ).toString("base64");
