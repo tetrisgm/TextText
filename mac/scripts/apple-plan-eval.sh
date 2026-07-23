@@ -141,7 +141,7 @@ check "fp.writes" "File Provider Phase 3: write path maps Finder edits to the sy
 check "fp.unlisted" "Invariant: folder-scoped create keeps the folder's kind (notes/bookmarks stay unlisted)" \
   "grep -q 'defaultPostTypeForFolderMode' '$ROOT/src/lib/store.ts'"
 check "health.runtime" "Reliability: installed app runs content-blind production self-tests" \
-  "grep -q 'selftest.filename_codec' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_assets' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'workflow.folder_trash_restore' '$MAC/Sources/Write/AppHealthReporter.swift'"
+  "grep -q 'selftest.filename_codec' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_assets' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'selftest.document_projection' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'workflow.document_engine' '$MAC/Sources/Write/AppHealthReporter.swift' && grep -q 'workflow.folder_trash_restore' '$MAC/Sources/Write/AppHealthReporter.swift'"
 check "health.finder-readiness" "Reliability: Finder health waits for transient startup work to settle" \
   "grep -q 'FileProviderReadinessProbe' '$MAC/Sources/Write/FileProviderStatusMonitor.swift' && grep -q 'working_exhausted' '$MAC/Sources/Write/AppHealthReporter.swift'"
 check "health.attestation" "Reliability: release bundle carries a verified build attestation" \

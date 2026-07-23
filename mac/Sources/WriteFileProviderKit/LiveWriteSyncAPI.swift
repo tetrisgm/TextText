@@ -5,6 +5,8 @@ import Foundation
 /// Provider extension constructs one of these once it has the token from the
 /// shared app group container.
 public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
+    private static let syncDocumentContentType =
+        "application/vnd.texttext.document+json"
     private let origin: URL
     private let token: String
     private let session: URLSession
@@ -51,6 +53,33 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
                 return .failure(.decode("file body is not UTF-8"))
             }
             return .success(WriteFileContent(text: text, hash: reply.bareETag))
+        }
+    }
+
+    public func fileContent(
+        postId: String, representation: WriteFileRepresentation
+    ) async -> Result<WriteFileContent, WriteSyncError> {
+        guard representation.isTextBundleFamily else {
+            return await fileText(postId: postId)
+        }
+        let path = "/api/sync/v1/files/\(escape(postId))"
+        switch await send(
+            "GET", path,
+            headers: ["Accept": Self.syncDocumentContentType]
+        ) {
+        case .failure(let error): return .failure(error)
+        case .success(let reply):
+            if reply.status == 404 { return .failure(.notFound) }
+            guard reply.status == 200 else { return .failure(reply.httpError) }
+            do {
+                let decoded = try Self.decodeSyncDocument(reply.data)
+                return .success(WriteFileContent(
+                    text: decoded.markdown,
+                    documentJSON: decoded.documentJSON,
+                    hash: reply.bareETag))
+            } catch {
+                return .failure(.decode(error.localizedDescription))
+            }
         }
     }
 
@@ -146,14 +175,37 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
         body: String, folderId: String?, representation: WriteFileRepresentation,
         idempotencyKey: String?
     ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await createFile(
+            body: body, documentJSON: nil, folderId: folderId,
+            representation: representation, idempotencyKey: idempotencyKey)
+    }
+
+    public func createFile(
+        body: String, documentJSON: String?, folderId: String?,
+        representation: WriteFileRepresentation, idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
         var path = "/api/sync/v1/files"
         if let folderId, !folderId.isEmpty { path += "?folder=\(escape(folderId))" }
+        let encodedBody: Data
+        let contentType: String
+        if representation.isTextBundleFamily, let documentJSON {
+            do {
+                encodedBody = try Self.encodeSyncDocument(
+                    markdown: body, documentJSON: documentJSON)
+                contentType = Self.syncDocumentContentType
+            } catch {
+                return .failure(.decode(error.localizedDescription))
+            }
+        } else {
+            encodedBody = Data(body.utf8)
+            contentType = "text/markdown; charset=utf-8"
+        }
         var headers = [
-            "Content-Type": "text/markdown; charset=utf-8",
+            "Content-Type": contentType,
             "Write-File-Representation": representation.rawValue,
         ]
         if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
-        switch await send("POST", path, headers: headers, body: Data(body.utf8)) {
+        switch await send("POST", path, headers: headers, body: encodedBody) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
             if reply.status == 400 { return .failure(.rejected(reply.errorMessage)) }
@@ -194,13 +246,34 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
     public func putFile(
         postId: String, body: String, ifMatch hash: String
     ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await putFile(
+            postId: postId, body: body, documentJSON: nil, ifMatch: hash)
+    }
+
+    public func putFile(
+        postId: String, body: String, documentJSON: String?, ifMatch hash: String
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        let encodedBody: Data
+        let contentType: String
+        if let documentJSON {
+            do {
+                encodedBody = try Self.encodeSyncDocument(
+                    markdown: body, documentJSON: documentJSON)
+                contentType = Self.syncDocumentContentType
+            } catch {
+                return .failure(.decode(error.localizedDescription))
+            }
+        } else {
+            encodedBody = Data(body.utf8)
+            contentType = "text/markdown; charset=utf-8"
+        }
         let headers = [
             "If-Match": "\"\(hash)\"",
-            "Content-Type": "text/markdown; charset=utf-8",
+            "Content-Type": contentType,
         ]
         switch await send(
             "PUT", "/api/sync/v1/files/\(escape(postId))",
-            headers: headers, body: Data(body.utf8)
+            headers: headers, body: encodedBody
         ) {
         case .failure(let e): return .failure(e)
         case .success(let reply):
@@ -210,6 +283,46 @@ public final class LiveWriteSyncAPI: WriteSyncAPI, @unchecked Sendable {
             guard reply.status == 200 else { return .failure(reply.httpError) }
             return decode(ItemEnvelope.self, reply.data).map { $0.item }
         }
+    }
+
+    private static func decodeSyncDocument(
+        _ data: Data
+    ) throws -> (markdown: String, documentJSON: String) {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              root["schema"] as? String == "texttext.sync-document.v1",
+              let markdown = root["markdown"] as? String,
+              let document = root["document"] as? [String: Any] else {
+            throw NSError(
+                domain: "WriteSync", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "invalid structured document"])
+        }
+        let documentData = try JSONSerialization.data(
+            withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+        guard let documentJSON = String(data: documentData, encoding: .utf8) else {
+            throw NSError(
+                domain: "WriteSync", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "document is not UTF-8"])
+        }
+        return (markdown, documentJSON + "\n")
+    }
+
+    private static func encodeSyncDocument(
+        markdown: String, documentJSON: String
+    ) throws -> Data {
+        let data = Data(documentJSON.utf8)
+        guard let document = try JSONSerialization.jsonObject(with: data)
+                as? [String: Any] else {
+            throw NSError(
+                domain: "WriteSync", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "document.json must contain an object"])
+        }
+        return try JSONSerialization.data(
+            withJSONObject: [
+                "schema": "texttext.sync-document.v1",
+                "markdown": markdown,
+                "document": document,
+            ],
+            options: [.prettyPrinted, .sortedKeys])
     }
 
     public func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, WriteSyncError> {

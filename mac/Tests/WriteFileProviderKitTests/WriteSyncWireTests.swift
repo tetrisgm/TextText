@@ -29,4 +29,27 @@ final class WriteSyncWireTests: XCTestCase {
             XCTAssertEqual(object["representation"] as? String, representation.rawValue)
         }
     }
+
+    func testPackageRepresentationUsesDocumentValidatorAndSize() {
+        let item = WriteManifestItem(
+            file: "posts/item.textpack", representation: .textpack,
+            kind: "note", slug: "item", title: "Item", status: "draft",
+            hash: "markdown", documentHash: "document", id: "p1",
+            date: nil, createdAt: nil, updatedAt: nil, url: nil,
+            size: 10, documentSize: 42)
+
+        XCTAssertEqual(item.contentHash(), "document")
+        XCTAssertEqual(item.contentSize(), 42)
+        XCTAssertEqual(item.contentHash(for: .markdown), "markdown")
+        XCTAssertEqual(item.contentSize(for: .markdown), 10)
+    }
+
+    func testOldManifestWithoutDocumentValidatorFallsBackToMarkdownValidator() throws {
+        let data = Data(#"{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"legacy","size":12}"#.utf8)
+
+        let item = try JSONDecoder().decode(WriteManifestItem.self, from: data)
+
+        XCTAssertEqual(item.contentHash(), "legacy")
+        XCTAssertEqual(item.contentSize(), 12)
+    }
 }

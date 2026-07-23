@@ -12,6 +12,7 @@ migrations=(
   scripts/migrate-add-oauth-token-lifecycle.mjs
   scripts/migrate-add-item-comments.mjs
   scripts/migrate-add-collab-epoch.mjs
+  scripts/migrate-unified-documents.mjs
   scripts/migrate-flip-representation-to-markdown.mjs
   scripts/migrate-flip-representation-to-textpack.mjs
   scripts/migrate-drop-rename-revert-guard.mjs

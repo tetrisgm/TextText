@@ -72,6 +72,7 @@ public struct WriteTextBundleAsset: Equatable, Sendable {
 
 public struct WriteTextBundleContents: Equatable, Sendable {
     public let markdown: String
+    public let documentJSON: String?
     public let assets: [WriteTextBundleAsset]
     public let logicalSize: Int
 }
@@ -108,6 +109,7 @@ public enum WriteTextBundlePackage {
 
     public static func materialize(
         canonicalMarkdown: String,
+        documentJSON: String? = nil,
         assets: [MaterializedAsset],
         sourceURL: String?,
         in temporaryDirectory: URL
@@ -121,6 +123,7 @@ public enum WriteTextBundlePackage {
             at: assetsURL, withIntermediateDirectories: true)
 
         var localMarkdown = canonicalMarkdown
+        var localDocumentJSON = documentJSON
         var mappings: [String: WriteTextBundleRemoteAsset] = [:]
         var logicalSize = 0
         for asset in assets.sorted(by: { $0.filename < $1.filename }) {
@@ -130,6 +133,11 @@ public enum WriteTextBundlePackage {
             let localReference = "assets/\(asset.filename)"
             localMarkdown = localMarkdown.replacingOccurrences(
                 of: asset.remoteURL, with: localReference)
+            if let current = localDocumentJSON {
+                localDocumentJSON = try replacingStrings(
+                    inJSON: current,
+                    replacements: [asset.remoteURL: localReference])
+            }
             mappings[asset.filename] = WriteTextBundleRemoteAsset(
                 url: asset.remoteURL, contentType: asset.contentType,
                 sha256: WriteStableDigest.sha256Hex(asset.data))
@@ -142,6 +150,13 @@ public enum WriteTextBundlePackage {
         try markdownData.write(
             to: packageURL.appendingPathComponent("text.md"), options: .atomic)
         logicalSize += markdownData.count
+
+        if let localDocumentJSON {
+            let documentData = Data(localDocumentJSON.utf8)
+            try documentData.write(
+                to: packageURL.appendingPathComponent("document.json"), options: .atomic)
+            logicalSize += documentData.count
+        }
 
         let info = WriteTextBundleInfo(sourceURL: sourceURL, writeAssets: mappings)
         let encoder = JSONEncoder()
@@ -207,6 +222,17 @@ public enum WriteTextBundlePackage {
             throw WriteTextBundleError.invalidPackage("text.md is not UTF-8")
         }
         var logicalSize = markdownData.count + (try Data(contentsOf: infoURL)).count
+        let documentURL = packageRoot.appendingPathComponent("document.json")
+        var documentJSON: String?
+        if FileManager.default.fileExists(atPath: documentURL.path) {
+            let documentData = try Data(contentsOf: documentURL)
+            guard let decoded = String(data: documentData, encoding: .utf8) else {
+                throw WriteTextBundleError.invalidPackage("document.json is not UTF-8")
+            }
+            _ = try decodedJSONObject(decoded)
+            documentJSON = decoded
+            logicalSize += documentData.count
+        }
         var assets: [WriteTextBundleAsset] = []
         var remoteURLsByFilename: [String: String] = [:]
         let assetsURL = packageRoot.appendingPathComponent("assets", isDirectory: true)
@@ -235,10 +261,30 @@ public enum WriteTextBundlePackage {
                 contentType: mapping?.contentType,
                 remoteURL: matchesRemote ? mapping?.url : nil))
         }
+        let canonicalMarkdown = WriteDocumentAssets.canonicalMarkdown(
+            local: markdown, remoteURLsByFilename: remoteURLsByFilename)
+        documentJSON = try canonicalDocumentJSON(
+            local: documentJSON,
+            remoteURLsByFilename: remoteURLsByFilename)
         return WriteTextBundleContents(
-            markdown: WriteDocumentAssets.canonicalMarkdown(
-                local: markdown, remoteURLsByFilename: remoteURLsByFilename),
+            markdown: canonicalMarkdown,
+            documentJSON: documentJSON,
             assets: assets, logicalSize: logicalSize)
+    }
+
+    /// Replaces package-local asset references inside a validated document JSON
+    /// object with their immutable server URLs. The same mapping is applied to
+    /// Markdown separately so both projections remain portable and consistent.
+    public static func canonicalDocumentJSON(
+        local: String?, remoteURLsByFilename: [String: String]
+    ) throws -> String? {
+        guard let local else { return nil }
+        return try replacingStrings(
+            inJSON: local,
+            replacements: Dictionary(
+                uniqueKeysWithValues: remoteURLsByFilename.map {
+                    ("assets/\($0.key)", $0.value)
+                }))
     }
 
     public static func isSafeAssetFilename(_ filename: String) -> Bool {
@@ -312,5 +358,44 @@ public enum WriteTextBundlePackage {
             throw WriteTextBundleError.invalidPackage("Missing TextBundle text.md")
         }
         return candidate
+    }
+
+    private static func decodedJSONObject(_ json: String) throws -> Any {
+        let data = Data(json.utf8)
+        let value: Any
+        do {
+            value = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw WriteTextBundleError.invalidPackage("document.json is not valid JSON")
+        }
+        guard value is [String: Any] else {
+            throw WriteTextBundleError.invalidPackage("document.json must contain an object")
+        }
+        return value
+    }
+
+    private static func replacingStrings(
+        inJSON json: String, replacements: [String: String]
+    ) throws -> String {
+        let root = try decodedJSONObject(json)
+        func replace(_ value: Any) -> Any {
+            if let string = value as? String {
+                return replacements.reduce(string) { result, replacement in
+                    result.replacingOccurrences(
+                        of: replacement.key, with: replacement.value)
+                }
+            }
+            if let array = value as? [Any] { return array.map(replace) }
+            if let object = value as? [String: Any] {
+                return object.mapValues(replace)
+            }
+            return value
+        }
+        let encoded = try JSONSerialization.data(
+            withJSONObject: replace(root), options: [.prettyPrinted, .sortedKeys])
+        guard let result = String(data: encoded, encoding: .utf8) else {
+            throw WriteTextBundleError.invalidPackage("document.json is not UTF-8")
+        }
+        return result + "\n"
     }
 }

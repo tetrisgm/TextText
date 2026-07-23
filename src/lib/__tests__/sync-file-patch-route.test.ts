@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Blog, Post } from "@/lib/content";
-import { renderSyncFile } from "@/app/api/sync/v1/sync";
+import {
+  renderSyncDocumentFile,
+  renderSyncFile,
+} from "@/app/api/sync/v1/sync";
+import {
+  serializeSyncDocumentEnvelope,
+  SYNC_DOCUMENT_CONTENT_TYPE,
+  SYNC_DOCUMENT_SCHEMA,
+} from "@/lib/documents/sync";
 import { sanitizePostSlug } from "@/lib/post-slug";
 
 const mocks = vi.hoisted(() => ({
@@ -53,7 +61,7 @@ vi.mock("@/lib/revalidate-blog", () => ({
   revalidateBlogPaths: mocks.revalidateBlogPaths,
 }));
 
-import { DELETE, PATCH, PUT } from "@/app/api/sync/v1/files/[postId]/route";
+import { DELETE, GET, PATCH, PUT } from "@/app/api/sync/v1/files/[postId]/route";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
 const blog: Blog = {
@@ -98,6 +106,38 @@ function mutationRequest(
     method,
     headers,
     body: method === "PUT" ? "---\ntype: article\n---\n\nBody" : undefined,
+  });
+}
+
+function structuredMutationRequest(
+  method: "PUT",
+  currentPost: Post,
+): Request {
+  const document = {
+    schemaVersion: 1 as const,
+    content: {
+      title: "Structured title",
+      body: "Structured body",
+      fields: { custom: "preserved" },
+      tags: [],
+      assets: [],
+    },
+    presentation: {
+      template: { id: "texttext.gallery", version: 2 },
+      theme: { accent: "#0066cc" as const },
+    },
+  };
+  return new Request(`https://write.example/api/sync/v1/files/${postId}`, {
+    method,
+    headers: {
+      "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
+      "If-Match": `"${renderSyncDocumentFile(blog, currentPost).hash}"`,
+    },
+    body: serializeSyncDocumentEnvelope({
+      schema: SYNC_DOCUMENT_SCHEMA,
+      markdown: "---\ntitle: Markdown title\n---\n\nMarkdown body\n",
+      document,
+    }),
   });
 }
 
@@ -383,5 +423,61 @@ describe("sync file PUT during a live co-editing session", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves the complete canonical document to textpack clients", async () => {
+    const request = new Request(
+      `https://write.example/api/sync/v1/files/${postId}`,
+      { headers: { Accept: SYNC_DOCUMENT_CONTENT_TYPE } },
+    );
+
+    const response = await GET(request, {
+      params: Promise.resolve({ postId }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      SYNC_DOCUMENT_CONTENT_TYPE,
+    );
+    const envelope = await response.json();
+    expect(envelope.schema).toBe(SYNC_DOCUMENT_SCHEMA);
+    expect(envelope.document.content.title).toBe(post.title);
+  });
+
+  it("preserves structured presentation through a collaborator content save", async () => {
+    mocks.resolveItemAccess.mockResolvedValue({
+      canView: true,
+      canEditContent: true,
+      isOwner: false,
+    });
+    mocks.savePostContentPatch.mockImplementation(
+      (_handle: string, current: Post, patch: { document: Post["document"] }) =>
+        Promise.resolve({ ...current, document: patch.document, revision: 43 }),
+    );
+
+    const response = await PUT(structuredMutationRequest("PUT", post), {
+      params: Promise.resolve({ postId }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(mocks.savePostContentPatch).toHaveBeenCalledWith(
+      blog.handle,
+      post,
+      {
+        document: expect.objectContaining({
+          content: expect.objectContaining({
+            title: "Markdown title",
+            body: "Markdown body\n",
+            fields: { custom: "preserved" },
+          }),
+          presentation: {
+            template: { id: "texttext.gallery", version: 2 },
+            theme: { accent: "#0066cc" },
+          },
+        }),
+      },
+      { expectedRevision: post.revision },
+    );
   });
 });

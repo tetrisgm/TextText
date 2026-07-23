@@ -95,9 +95,9 @@ public struct WriteWorkspace: Codable, Equatable, Sendable {
 }
 
 /// One manifest entry (GET /api/sync/v1/folders/{id}/manifest), also the body
-/// returned by PUT/POST /files. `file` follows `representation`; `hash` is the
-/// content hash used for If-Match. `id` is the server post id (the stable
-/// identity the File Provider hangs an item off).
+/// returned by PUT/POST /files. `hash` remains the legacy Markdown validator;
+/// package-aware clients use `documentHash` so presentation-only edits advance
+/// the projected file. `id` is the stable server identity.
 public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let file: String
     public let representation: WriteFileRepresentation
@@ -106,6 +106,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     public let title: String
     public let status: String
     public let hash: String
+    public let documentHash: String?
     public let id: String?
     public let date: String?
     public let createdAt: String?
@@ -120,13 +121,14 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
     /// set the File Provider item's documentSize at enumeration; optional so an
     /// older server (no `size`) still decodes.
     public let size: Int?
+    public let documentSize: Int?
 
     public init(
         file: String, representation: WriteFileRepresentation = .markdown,
         kind: String, slug: String, title: String, status: String,
-        hash: String, id: String?, date: String?, createdAt: String?,
+        hash: String, documentHash: String? = nil, id: String?, date: String?, createdAt: String?,
         updatedAt: String?, url: String?, canonicalUrl: String? = nil,
-        size: Int? = nil
+        size: Int? = nil, documentSize: Int? = nil
     ) {
         self.file = file
         self.representation = representation
@@ -135,6 +137,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         self.title = title
         self.status = status
         self.hash = hash
+        self.documentHash = documentHash
         self.id = id
         self.date = date
         self.createdAt = createdAt
@@ -142,6 +145,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         self.url = url
         self.canonicalUrl = canonicalUrl
         self.size = size
+        self.documentSize = documentSize
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -152,6 +156,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         case title
         case status
         case hash
+        case documentHash
         case id
         case date
         case createdAt
@@ -159,6 +164,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         case url
         case canonicalUrl
         case size
+        case documentSize
     }
 
     public init(from decoder: Decoder) throws {
@@ -174,6 +180,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
             title: try values.decode(String.self, forKey: .title),
             status: try values.decode(String.self, forKey: .status),
             hash: try values.decode(String.self, forKey: .hash),
+            documentHash: try values.decodeIfPresent(String.self, forKey: .documentHash),
             id: try values.decodeIfPresent(String.self, forKey: .id),
             date: try values.decodeIfPresent(String.self, forKey: .date),
             createdAt: try values.decodeIfPresent(String.self, forKey: .createdAt),
@@ -181,7 +188,8 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
             url: try values.decodeIfPresent(String.self, forKey: .url),
             canonicalUrl: try values.decodeIfPresent(
                 String.self, forKey: .canonicalUrl),
-            size: try values.decodeIfPresent(Int.self, forKey: .size))
+            size: try values.decodeIfPresent(Int.self, forKey: .size),
+            documentSize: try values.decodeIfPresent(Int.self, forKey: .documentSize))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -193,6 +201,7 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         try values.encode(title, forKey: .title)
         try values.encode(status, forKey: .status)
         try values.encode(hash, forKey: .hash)
+        try values.encodeIfPresent(documentHash, forKey: .documentHash)
         try values.encodeIfPresent(id, forKey: .id)
         try values.encodeIfPresent(date, forKey: .date)
         try values.encodeIfPresent(createdAt, forKey: .createdAt)
@@ -200,6 +209,17 @@ public struct WriteManifestItem: Codable, Equatable, Sendable {
         try values.encodeIfPresent(url, forKey: .url)
         try values.encodeIfPresent(canonicalUrl, forKey: .canonicalUrl)
         try values.encodeIfPresent(size, forKey: .size)
+        try values.encodeIfPresent(documentSize, forKey: .documentSize)
+    }
+
+    public func contentHash(for representation: WriteFileRepresentation? = nil) -> String {
+        let form = representation ?? self.representation
+        return form.isTextBundleFamily ? documentHash ?? hash : hash
+    }
+
+    public func contentSize(for representation: WriteFileRepresentation? = nil) -> Int? {
+        let form = representation ?? self.representation
+        return form.isTextBundleFamily ? documentSize ?? size : size
     }
 }
 
@@ -231,16 +251,22 @@ public struct WriteArtifactManifest: Codable, Equatable, Sendable {
     public let postId: String
     public let slug: String
     public let fileHash: String
+    public let documentHash: String?
     public let artifacts: [WriteArtifact]
 
     public init(
-        postId: String, slug: String, fileHash: String,
+        postId: String, slug: String, fileHash: String, documentHash: String? = nil,
         artifacts: [WriteArtifact]
     ) {
         self.postId = postId
         self.slug = slug
         self.fileHash = fileHash
+        self.documentHash = documentHash
         self.artifacts = artifacts
+    }
+
+    public func contentHash(for representation: WriteFileRepresentation) -> String {
+        representation.isTextBundleFamily ? documentHash ?? fileHash : fileHash
     }
 }
 

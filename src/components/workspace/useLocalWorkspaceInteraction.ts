@@ -8,6 +8,8 @@ import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
+import { emptyDocumentSnapshot } from "@/lib/documents/model";
+import { legacyTemplateId } from "@/lib/documents/legacy";
 
 let optimisticItemSequence = 0;
 
@@ -59,6 +61,12 @@ export function createOptimisticWorkspacePost(
   const token = nextOptimisticItemToken(now);
   const folder = folderForCreateRequest(pool, request);
   const slug = `untitled-${token}`;
+  const template =
+    folder?.defaultTemplate ?? {
+      id: legacyTemplateId(request.type),
+      version: 1,
+    };
+  const document = emptyDocumentSnapshot(template);
 
   if (request.type === "bookmark" && !request.blank) {
     const { href, host } = bookmarkUrlParts(request.url);
@@ -68,6 +76,20 @@ export function createOptimisticWorkspacePost(
       id: `optimistic-bookmark-${token}`,
       blogId: pool.blogId,
       folderId: folder?.id,
+      document: {
+        ...document,
+        content: {
+          ...document.content,
+          title,
+          subtitle: description || href,
+          fields: {
+            sourceUrl: href,
+            sourceLabel: host || title,
+          },
+        },
+      },
+      visibility: "private",
+      template,
       type: "bookmark",
       captureStatus: "pending",
       capture: { url: href },
@@ -88,6 +110,18 @@ export function createOptimisticWorkspacePost(
     id: `optimistic-${request.type}-${token}`,
     blogId: pool.blogId,
     folderId: folder?.id,
+    document: {
+      ...document,
+      content: {
+        ...document.content,
+        title:
+          request.type === "note" || request.type === "bookmark"
+            ? (request.title?.trim() ?? "")
+            : "",
+      },
+    },
+    visibility: "private",
+    template,
     type: request.type,
     slug,
     title:
@@ -111,6 +145,9 @@ export function mergeCreatedWorkspacePost(
   if (!optimistic) return saved;
   return {
     ...saved,
+    document: optimistic.document ?? saved.document,
+    visibility: optimistic.visibility ?? saved.visibility,
+    template: optimistic.template ?? saved.template,
     title: optimistic.title,
     excerpt: optimistic.excerpt,
     updatedAt: optimistic.updatedAt ?? saved.updatedAt,

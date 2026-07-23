@@ -30,6 +30,7 @@ function workspacePool(): WorkspacePoolPayload {
       },
     ],
     counts: { blog: 1, notes: 1 },
+    templates: [],
     posts: [
       {
         id: "post-1",

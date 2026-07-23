@@ -7,11 +7,9 @@ import {
   BlogHomeShell,
 } from "@/components/BlogHomeEditorControls";
 import { BlogHomeWorkspaceShell } from "@/components/PostWorkspaceShell";
+import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { FolderPage } from "@/components/FolderPage";
 import { PostCard } from "@/components/PostCard";
-import { ProjectReader } from "@/components/ProjectReader";
-import { Reader } from "@/components/Reader";
-import { TalkReader } from "@/components/TalkReader";
 import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
@@ -38,10 +36,12 @@ import {
   getFolderCounts,
   getFolderPosts,
   getFolders,
+  getDocumentTemplate,
   getTrashedFolders,
   getTrashedPosts,
   getPost,
   getPostSlugAliases,
+  listDocumentTemplates,
 } from "@/lib/store";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
 import {
@@ -54,6 +54,9 @@ import {
   youtubeThumb,
 } from "@/lib/content";
 import type { Blog, BlogCardStyle, BlogHomeLayout, Post } from "@/lib/content";
+import { legacyTemplateId } from "@/lib/documents/legacy";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { resolveCover } from "@/lib/cover";
 import { blogHomePath, blogPostPath } from "@/lib/public-paths";
 import {
@@ -272,17 +275,18 @@ function BlogIndex({
   );
 }
 
-function BlogSingleHome({ blog, post }: { blog: Blog; post: Post }) {
-  const ReaderComponent =
-    post.type === "talk"
-      ? TalkReader
-      : post.type === "project"
-        ? ProjectReader
-        : Reader;
-
+function BlogSingleHome({
+  blog,
+  post,
+  template,
+}: {
+  blog: Blog;
+  post: Post;
+  template: TemplateDefinition;
+}) {
   return (
     <div className="blog-single-home">
-      <ReaderComponent blog={blog} post={post} />
+      <UnifiedDocumentReader blog={blog} post={post} template={template} />
     </div>
   );
 }
@@ -376,7 +380,16 @@ export async function BlogHomeForHandle({
   const canEdit = access.canEdit;
   const initialPool = await (async () => {
     if (!canEdit || !access.blogId) return null;
-    const [folders, counts, posts, slugAliases, trashedFolders, trashedPosts, sharedEntries] =
+    const [
+      folders,
+      counts,
+      posts,
+      slugAliases,
+      trashedFolders,
+      trashedPosts,
+      sharedEntries,
+      templates,
+    ] =
       await Promise.all([
         getFolders(handle),
         getFolderCounts(handle),
@@ -385,6 +398,7 @@ export async function BlogHomeForHandle({
         getTrashedFolders(handle),
         getTrashedPosts(handle),
         getSharedPostsForUser(viewer),
+        listDocumentTemplates(access.blogId),
       ]);
     return workspacePoolFromParts({
       blog,
@@ -395,6 +409,7 @@ export async function BlogHomeForHandle({
       trashedFolders,
       trashedPosts,
       sharedEntries,
+      templates,
       ...workspaceWikiLinkMetadata(posts, slugAliases),
     });
   })();
@@ -496,6 +511,18 @@ export async function BlogHomeForHandle({
     singleReaderPostRaw && !canEdit
       ? { ...singleReaderPostRaw, starred: undefined }
       : singleReaderPostRaw;
+  const singleReaderTemplate = singleReaderPost
+    ? (access.blogId
+        ? await getDocumentTemplate(
+            access.blogId,
+            singleReaderPost.template ??
+              singleReaderPost.document?.presentation.template ?? {
+                id: legacyTemplateId(singleReaderPost.type),
+                version: 1,
+              },
+          )
+        : null) ?? requireBuiltinTemplate(legacyTemplateId(singleReaderPost.type))
+    : null;
   const feedHref = blogFeedHref(blog);
   const isUnnamedBlog = isDefaultBlogName(blog.name);
   const editableBlogName = isUnnamedBlog ? "" : blog.name;
@@ -527,8 +554,12 @@ export async function BlogHomeForHandle({
         <BlogEmptyState layout={displayBlog.homeLayout} />
       )}
 
-      {singleReaderPost && displayBlog.homeLayout === "single" && (
-        <BlogSingleHome blog={displayBlog} post={singleReaderPost} />
+      {singleReaderPost && singleReaderTemplate && displayBlog.homeLayout === "single" && (
+        <BlogSingleHome
+          blog={displayBlog}
+          post={singleReaderPost}
+          template={singleReaderTemplate}
+        />
       )}
 
       {posts.length > 0 && displayBlog.homeLayout === "timeline" && (

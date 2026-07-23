@@ -1,7 +1,11 @@
-# Texttext: continuation pointer
+# Texttext continuation pointer
 
 The canonical continuation state is `docs/codex/HANDOFF.md`.
 
-There is no unfinished feature batch as of 2026-07-19. Start from clean `main`
-and the user's latest request. Do not treat the historical MCP or UI briefs as
-active task lists unless a newer handoff explicitly says to do so.
+The unified document engine rebuild is the current product architecture. Do not
+restore the deleted bespoke Reader, ProjectReader, TalkReader, body editor, or
+editor preview implementations. Read `docs/plan-document-types.md` for the
+implemented contract and `docs/review-2026-07-22.md` for its release audit.
+
+Always inspect live `main`, worktrees, and release metadata before acting. The
+newest user request supersedes historical task briefs.

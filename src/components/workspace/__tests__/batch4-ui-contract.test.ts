@@ -9,8 +9,12 @@ const folderSource = readFileSync(
   new URL("../../FolderPage.tsx", import.meta.url),
   "utf8",
 );
-const readerSource = readFileSync(
-  new URL("../../Reader.tsx", import.meta.url),
+const templateSource = readFileSync(
+  new URL("../../../lib/presentation/templates.ts", import.meta.url),
+  "utf8",
+);
+const rendererSource = readFileSync(
+  new URL("../../document/DocumentRenderer.tsx", import.meta.url),
   "utf8",
 );
 const shellSource = readFileSync(
@@ -43,8 +47,8 @@ describe("batch 4 workspace UI contract", () => {
     expect(actionBarSource).toMatch(/>\s*Full\s*</);
     expect(actionBarSource).not.toContain("Show full capture");
     expect(actionBarSource).not.toContain("post-bookmark-original-button");
-    expect(readerSource).toContain("reader-bookmark-source");
-    expect(readerSource).toContain("originally captured from:");
+    expect(templateSource).toContain('href: "content.fields.sourceUrl"');
+    expect(rendererSource).toContain("href && isSafeLinkHref(href)");
   });
 
   it("uses the shared action-bar search for roots, folders, and items", () => {

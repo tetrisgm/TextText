@@ -22,9 +22,6 @@ import { cache } from "react";
 import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
-  PRIVATE_POST_TYPES,
-  isBlogBucketPath,
-  isPrivatePostType,
   readingTimeMinForWordCount,
   wordCountForMarkdown,
 } from "./content";
@@ -55,15 +52,15 @@ import {
   collabPresence,
   collabState,
   collabUpdates,
+  documentCapabilityLinks,
+  documentTemplates,
   folders,
   idempotencyKeys,
   itemComments,
   posts,
   users,
 } from "./db/schema";
-import { folderModeForPostType } from "./markdown-files";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
-import { markdownSubtitle } from "./markdown-subtitle";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import { rootDomainUrl } from "./site-url";
 import {
@@ -95,8 +92,29 @@ import {
   startCaptureGeneration,
   type BookmarkCaptureGeneration,
 } from "./bookmark-capture-generation";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalizeTag, normalizeTags } from "./tags";
+import {
+  documentFromLegacyPost,
+  legacyProjectionFromDocument,
+  legacyTemplateId,
+} from "./documents/legacy";
+import {
+  emptyDocumentSnapshot,
+  validateDocumentSnapshot,
+  type DocumentSnapshot,
+  type DocumentVisibility,
+  type TemplateReference,
+} from "./documents/model";
+import { resolveDocumentVisibility } from "./documents/visibility";
+import {
+  getBuiltinTemplate,
+  BUILTIN_TEMPLATES,
+} from "./presentation/templates";
+import {
+  validateTemplateDefinition,
+  type TemplateDefinition,
+} from "./presentation/schema";
 
 type PostRow = typeof posts.$inferSelect;
 type ItemCommentRow = typeof itemComments.$inferSelect;
@@ -107,6 +125,9 @@ type PostListRow = Pick<
   | "blogId"
   | "folderId"
   | "representation"
+  | "visibility"
+  | "templateId"
+  | "templateVersion"
   | "type"
   | "slug"
   | "title"
@@ -186,6 +207,9 @@ export type ItemCommentAnchor = {
   exactQuote: string;
   start?: number;
   end?: number;
+  /** Base64-encoded Y.RelativePosition values. Offsets remain quote fallbacks. */
+  startRelative?: string;
+  endRelative?: string;
 };
 export type ItemCommentActor = {
   actorUserId: string | null;
@@ -240,6 +264,24 @@ export type SetItemCommentResolvedRequest = SetItemCommentResolvedInput & {
   actor: ItemCommentActorContext;
 };
 
+export type DocumentCapabilityRole = "viewer" | "commenter" | "editor";
+export type DocumentCapability = {
+  id: string;
+  itemId: string;
+  role: DocumentCapabilityRole;
+  label: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+};
+export type ResolvedDocumentCapability = DocumentCapability & {
+  handle: string;
+};
+export type CreatedDocumentCapability = DocumentCapability & {
+  token: string;
+};
+
 export const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
 const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
 const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "grid";
@@ -254,11 +296,17 @@ function readingTimeForWordCount(wordCount: number | null): number | undefined {
   return wordCount == null ? undefined : readingTimeMinForWordCount(wordCount);
 }
 
+function isPublicDocument(post: Pick<Post, "visibility">): boolean {
+  return post.visibility === "public";
+}
+
 function mapPost(row: PostRow): Post {
   const wordCount = row.wordCount ?? wordCountForMarkdown(row.body);
-  return {
+  const legacyPost: Post = {
     id: row.id,
     representation: row.representation,
+    visibility: row.visibility,
+    template: { id: row.templateId, version: row.templateVersion },
     type: row.type,
     slug: row.slug,
     title: row.title,
@@ -289,6 +337,15 @@ function mapPost(row: PostRow): Post {
     updatedAt: row.updatedAt.toISOString(),
     revision: row.revision ?? undefined,
   };
+  const document = row.document
+    ? validateDocumentSnapshot(row.document)
+    : documentFromLegacyPost(legacyPost);
+  return {
+    ...legacyPost,
+    document,
+    visibility: row.visibility,
+    template: document.presentation.template,
+  };
 }
 
 function compactCapture(row: PostListRow): BookmarkCapture | undefined {
@@ -313,6 +370,8 @@ function mapPostList(row: PostListRow): Post {
   return {
     id: row.id,
     representation: row.representation,
+    visibility: row.visibility,
+    template: { id: row.templateId, version: row.templateVersion },
     type: row.type,
     slug: row.slug,
     title: row.title,
@@ -373,6 +432,9 @@ function postListSelection() {
     blogId: posts.blogId,
     folderId: posts.folderId,
     representation: posts.representation,
+    visibility: posts.visibility,
+    templateId: posts.templateId,
+    templateVersion: posts.templateVersion,
     type: posts.type,
     slug: posts.slug,
     title: posts.title,
@@ -472,8 +534,7 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
       publishedOnly
         ? and(
             eq(blogs.handle, handle),
-            eq(posts.status, "published"),
-            publicPostTypePredicate(),
+            eq(posts.visibility, "public"),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -511,7 +572,7 @@ async function getPostsUncached(handle: string): Promise<Post[]> {
     if (handle !== DEMO_BLOG.handle) return [];
     const selected = pinnedFirst(
       DEMO_POSTS.filter(
-        (p) => p.status === "published" && !isPrivatePostType(p.type),
+        (post) => isPublicDocument(post),
       ),
     );
     return selected.map(withoutPersonalWorkspaceMetadata);
@@ -538,8 +599,7 @@ async function getPostsForTagUncached(
       DEMO_POSTS.filter(
         (post) =>
           normalizeTags(post.tags).includes(tag) &&
-          !isPrivatePostType(post.type) &&
-          (!publishedOnly || post.status === "published"),
+          (!publishedOnly || isPublicDocument(post)),
       ),
     );
     return selected.map(withoutPersonalWorkspaceMetadata);
@@ -554,8 +614,7 @@ async function getPostsForTagUncached(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
-        publicPostTypePredicate(),
-        publishedOnly ? eq(posts.status, "published") : undefined,
+        publishedOnly ? eq(posts.visibility, "public") : undefined,
         sql`${posts.tags} @> ARRAY[${tag}]::text[]`,
       ),
     )
@@ -754,9 +813,27 @@ async function blogIdFor(handle: string): Promise<string> {
 // Every workspace has these three system folders. Provisioning creates them,
 // and the migration backfills older workspaces so reads never write.
 const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
-  { name: "Blog", path: "blog", mode: "blog", position: 0 },
-  { name: "Notes", path: "notes", mode: "notes", position: 1 },
-  { name: "Bookmarks", path: "bookmarks", mode: "bookmarks", position: 2 },
+  {
+    name: "Blog",
+    path: "blog",
+    mode: "blog",
+    defaultTemplate: { id: "texttext.article", version: 1 },
+    position: 0,
+  },
+  {
+    name: "Notes",
+    path: "notes",
+    mode: "notes",
+    defaultTemplate: { id: "texttext.note", version: 1 },
+    position: 1,
+  },
+  {
+    name: "Bookmarks",
+    path: "bookmarks",
+    mode: "bookmarks",
+    defaultTemplate: { id: "texttext.bookmark", version: 1 },
+    position: 2,
+  },
 ];
 
 const DEFAULT_FOLDER_PATH = BLOG_FOLDER_PATH;
@@ -824,26 +901,17 @@ export function folderPathForPostType(type: PostType): string {
   return DEFAULT_FOLDER_PATH;
 }
 
-function publicPostTypePredicate(): SQL {
-  return and(...PRIVATE_POST_TYPES.map((type) => ne(posts.type, type)))!;
-}
-
-function blogBucketTypePredicate(folderPath: string): SQL | undefined {
-  return isBlogBucketPath(folderPath) ? publicPostTypePredicate() : undefined;
-}
-
-function excludePrivateTypesFromBlogBucket<T extends { type: PostType }>(
-  folderPath: string,
-  items: T[],
-): T[] {
-  if (!isBlogBucketPath(folderPath)) return items;
-  return items.filter((item) => !isPrivatePostType(item.type));
-}
-
 function mapFolder(
   row: Pick<
     typeof folders.$inferSelect,
-    "id" | "name" | "path" | "mode" | "position" | "parentId"
+    | "id"
+    | "name"
+    | "path"
+    | "mode"
+    | "position"
+    | "parentId"
+    | "defaultTemplateId"
+    | "defaultTemplateVersion"
   >,
 ): Folder {
   return {
@@ -851,6 +919,10 @@ function mapFolder(
     name: row.name,
     path: row.path,
     mode: cleanFolderMode(row.mode),
+    defaultTemplate: {
+      id: row.defaultTemplateId,
+      version: row.defaultTemplateVersion,
+    },
     position: row.position,
     parentId: row.parentId ?? null,
   };
@@ -872,9 +944,8 @@ function folderPathSegment(name: string): string {
 
 /**
  * Create a subfolder under an existing folder (system root or another
- * subfolder). Mode is inherited from the parent, so everything under Notes
- * stays notes-mode (and its items stay unlisted) no matter how deep. The
- * full path carries the ancestry; collisions get a numeric suffix.
+ * subfolder). The default presentation is inherited from the parent. Folder
+ * mode remains a compatibility projection for older clients.
  */
 export async function createSubfolder(
   handle: string,
@@ -916,6 +987,8 @@ export async function createSubfolder(
         mode: parent.mode,
         parentId: parent.id,
         position: parent.position,
+        defaultTemplateId: parent.defaultTemplateId,
+        defaultTemplateVersion: parent.defaultTemplateVersion,
       })
       .onConflictDoNothing()
       .returning();
@@ -1483,10 +1556,8 @@ export async function markCapturePending(
 }
 
 /**
- * Move a post into a folder by path. The target folder's mode must match the
- * post's kind family (a blog post cannot move into a notes folder and vice
- * versa), so an article can be filed under any blog subfolder but never
- * becomes an unlisted note. Returns the updated post.
+ * Move a document into a folder by path. Presentation and visibility belong to
+ * the document, so moving never changes either one.
  */
 export async function setPostFolder(
   handle: string,
@@ -1517,18 +1588,21 @@ export async function setPostFolder(
     .limit(1);
   const row = existing[0];
   if (!row) throw new Error("Post not found");
-  const postMode = folderModeForPostType(row.type);
-  if (cleanFolderMode(folder.mode) !== postMode) {
-    throw new Error(
-      `A ${row.type} cannot move into the ${folder.mode} folder.`,
-    );
-  }
   const updated = await db
     .update(posts)
     .set({ folderId: folder.id, updatedAt: new Date() })
     .where(eq(posts.id, row.id))
     .returning();
-  return updated[0] ? mapPost(updated[0]) : null;
+  if (!updated[0]) return null;
+  await recordAction({
+    actorType: "human",
+    actionName: "move_document",
+    targetType: "item",
+    targetId: row.id,
+    inputSummary: row.folderId ?? "root",
+    outputSummary: folder.id,
+  });
+  return mapPost(updated[0]);
 }
 
 /**
@@ -1538,8 +1612,7 @@ export async function setPostFolder(
  * means a content PUT that lands concurrently can never be clobbered by a stale
  * full-row save (which re-sending the whole `post` would do). Returns the post,
  * whether a write occurred, and the prior slug; null means the post no longer
- * exists. Throws on an unknown or mode-mismatched target folder, a stale base,
- * or a slug collision.
+ * exists. Throws on an unknown target folder, a stale base, or a slug collision.
  */
 export async function movePostFile(
   handle: string,
@@ -1578,6 +1651,7 @@ export async function movePostFile(
     folderId?: string;
     slug?: string;
     title?: string;
+    document?: DocumentSnapshot;
   } = {
     updatedAt: new Date(),
   };
@@ -1596,11 +1670,6 @@ export async function movePostFile(
       .limit(1);
     const folder = target[0];
     if (!folder) throw new Error(`unknown folder "${changes.folderId}"`);
-    // The mode-match invariant keeps notes/bookmarks unlisted: a note can never
-    // move into a blog folder, no matter which writer requests it.
-    if (cleanFolderMode(folder.mode) !== folderModeForPostType(row.type)) {
-      throw new Error(`A ${row.type} cannot move into the ${folder.mode} folder.`);
-    }
     // Only a real move counts: setting folder_id to the folder it is already in
     // would still run the update and bump the revision, making a same-folder
     // PATCH look like a change to every client.
@@ -1617,6 +1686,13 @@ export async function movePostFile(
   // move. The slug/URL is deliberately left alone (rename != reslug).
   if (changes.title !== undefined && changes.title !== row.title) {
     set.title = changes.title;
+    const document = row.document
+      ? validateDocumentSnapshot(row.document)
+      : documentFromLegacyPost(mapPost(row));
+    set.document = validateDocumentSnapshot({
+      ...document,
+      content: { ...document.content, title: changes.title },
+    });
   }
 
   // Nothing actually changes (same folder, same slug, same title): return the
@@ -1749,13 +1825,15 @@ export function defaultPostTypeForFolderMode(mode: FolderMode): PostType {
 
 type CreateDraftOptions = {
   representation?: FileRepresentation;
+  template?: { id: string; version: number };
+  audit?: AuditEntry;
 };
 
 /**
  * Create an empty draft directly inside a specific folder (a File Provider
- * create knows the target folder, unlike the type-derived createDraft). The
- * new post's kind follows the folder's mode, keeping the notes/bookmarks
- * unlisted invariant intact.
+ * create knows the target folder, unlike the compatibility createDraft). New
+ * documents inherit the folder's template and are private until explicitly
+ * shared or published.
  */
 export async function createDraftInFolder(
   handle: string,
@@ -1765,6 +1843,13 @@ export async function createDraftInFolder(
   if (!db) throw new Error("createDraftInFolder requires DATABASE_URL");
   const folder = await getFolderById(handle, folderId);
   if (!folder) throw new Error("Folder not found");
+  const template =
+    options.template ??
+    folder.defaultTemplate ?? {
+      id: legacyTemplateId(defaultPostTypeForFolderMode(folder.mode)),
+      version: 1,
+    };
+  const document = emptyDocumentSnapshot(template);
   const type = defaultPostTypeForFolderMode(folder.mode);
   const blogId = await blogIdFor(handle);
   const slug = `untitled-${Date.now().toString(36)}`;
@@ -1775,6 +1860,10 @@ export async function createDraftInFolder(
       folderId: folder.id,
       representation:
         options.representation ?? DEFAULT_FILE_REPRESENTATION,
+      document,
+      visibility: "private",
+      templateId: template.id,
+      templateVersion: template.version,
       type,
       slug,
       title: "",
@@ -1784,7 +1873,17 @@ export async function createDraftInFolder(
       status: "draft",
     })
     .returning();
-  return mapPost(inserted[0]);
+  const created = mapPost(inserted[0]);
+  await recordAction(
+    options.audit ?? {
+      actorType: "human",
+      actionName: "create_document",
+      targetType: "item",
+      targetId: created.id,
+      outputSummary: `${template.id}@${template.version}`,
+    },
+  );
+  return created;
 }
 
 function cleanFolderMode(value: string | null): FolderMode {
@@ -1818,7 +1917,19 @@ export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> 
   if (!db) return DEMO_FOLDERS;
   await db
     .insert(folders)
-    .values(WORKSPACE_FOLDERS.map((folder) => ({ blogId, ...folder })))
+    .values(
+      WORKSPACE_FOLDERS.map((folder) => ({
+        blogId,
+        name: folder.name,
+        path: folder.path,
+        mode: folder.mode,
+        position: folder.position,
+        parentId: folder.parentId,
+        defaultTemplateId:
+          folder.defaultTemplate?.id ?? "texttext.article",
+        defaultTemplateVersion: folder.defaultTemplate?.version ?? 1,
+      })),
+    )
     .onConflictDoNothing();
   const rows = await workspaceFoldersByBlogId(blogId);
   if (rows.length < WORKSPACE_FOLDERS.length) {
@@ -1840,6 +1951,33 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   }
   const bookmarkUrl = starterBookmarkUrl();
   const bookmarkLabel = starterBookmarkLabel(bookmarkUrl);
+  const articleDocument = validateDocumentSnapshot({
+    ...emptyDocumentSnapshot({ id: "texttext.article", version: 1 }),
+    content: {
+      ...emptyDocumentSnapshot({ id: "texttext.article", version: 1 }).content,
+      title: STARTER_BLOG_POST.title,
+      body: STARTER_BLOG_POST.body,
+    },
+  });
+  const noteDocument = validateDocumentSnapshot({
+    ...emptyDocumentSnapshot({ id: "texttext.note", version: 1 }),
+    content: {
+      ...emptyDocumentSnapshot({ id: "texttext.note", version: 1 }).content,
+      title: STARTER_NOTE.title,
+      body: STARTER_NOTE.body,
+    },
+  });
+  const bookmarkDocument = validateDocumentSnapshot({
+    ...emptyDocumentSnapshot({ id: "texttext.bookmark", version: 1 }),
+    content: {
+      ...emptyDocumentSnapshot({ id: "texttext.bookmark", version: 1 }).content,
+      title: STARTER_BOOKMARK.title,
+      fields: {
+        sourceUrl: bookmarkUrl,
+        sourceLabel: bookmarkLabel,
+      },
+    },
+  });
 
   await db!
     .insert(posts)
@@ -1848,6 +1986,10 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         blogId,
         folderId: blogFolderId,
         representation: DEFAULT_FILE_REPRESENTATION,
+        document: articleDocument,
+        visibility: "private",
+        templateId: "texttext.article",
+        templateVersion: 1,
         type: "article",
         slug: STARTER_BLOG_POST.slug,
         title: STARTER_BLOG_POST.title,
@@ -1859,6 +2001,10 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         blogId,
         folderId: notesFolderId,
         representation: DEFAULT_FILE_REPRESENTATION,
+        document: noteDocument,
+        visibility: "private",
+        templateId: "texttext.note",
+        templateVersion: 1,
         type: "note",
         slug: STARTER_NOTE.slug,
         title: STARTER_NOTE.title,
@@ -1870,6 +2016,10 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         blogId,
         folderId: bookmarksFolderId,
         representation: DEFAULT_FILE_REPRESENTATION,
+        document: bookmarkDocument,
+        visibility: "private",
+        templateId: "texttext.bookmark",
+        templateVersion: 1,
         type: "bookmark",
         slug: STARTER_BOOKMARK.slug,
         title: STARTER_BOOKMARK.title,
@@ -1936,6 +2086,8 @@ async function getFoldersUncached(handle: string): Promise<Folder[]> {
       path: folders.path,
       parentId: folders.parentId,
       mode: folders.mode,
+      defaultTemplateId: folders.defaultTemplateId,
+      defaultTemplateVersion: folders.defaultTemplateVersion,
       position: folders.position,
       createdAt: folders.createdAt,
       updatedAt: folders.updatedAt,
@@ -1973,11 +2125,9 @@ async function getFolderPostsUncached(
     const folderPosts = DEMO_POSTS.filter(
       (post) =>
         folderPathForPostType(post.type) === folderPath &&
-        (!publishedOnly || post.status === "published"),
+        (!publishedOnly || isPublicDocument(post)),
     );
-    const selected = pinnedFirst(
-      excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
-    );
+    const selected = pinnedFirst(folderPosts);
     return publishedOnly
       ? selected.map(withoutPersonalWorkspaceMetadata)
       : selected;
@@ -2008,8 +2158,7 @@ async function getFolderPostsUncached(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
-        publishedOnly ? eq(posts.status, "published") : undefined,
-        blogBucketTypePredicate(folderPath),
+        publishedOnly ? eq(posts.visibility, "public") : undefined,
         inFolder,
       ),
     )
@@ -2018,10 +2167,7 @@ async function getFolderPostsUncached(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  const selected = excludePrivateTypesFromBlogBucket(
-    folderPath,
-    rows.map(mapPostList),
-  );
+  const selected = rows.map(mapPostList);
   return publishedOnly
     ? selected.map(withoutPersonalWorkspaceMetadata)
     : selected;
@@ -2049,8 +2195,7 @@ async function selectFullPosts(
       publishedOnly
         ? and(
             eq(blogs.handle, handle),
-            eq(posts.status, "published"),
-            publicPostTypePredicate(),
+            eq(posts.visibility, "public"),
             isNull(blogs.deletedAt),
             isNull(posts.deletedAt),
           )
@@ -2076,7 +2221,7 @@ async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
     if (handle !== DEMO_BLOG.handle) return [];
     const selected = pinnedFirst(
       DEMO_POSTS.filter(
-        (p) => p.status === "published" && !isPrivatePostType(p.type),
+        (post) => isPublicDocument(post),
       ),
     );
     return selected.map(withoutPersonalWorkspaceMetadata);
@@ -2114,11 +2259,9 @@ async function getFolderPostFilesUncached(
     const folderPosts = DEMO_POSTS.filter(
       (post) =>
         folderPathForPostType(post.type) === folderPath &&
-        (!publishedOnly || post.status === "published"),
+        (!publishedOnly || isPublicDocument(post)),
     );
-    const selected = pinnedFirst(
-      excludePrivateTypesFromBlogBucket(folderPath, folderPosts),
-    );
+    const selected = pinnedFirst(folderPosts);
     return publishedOnly
       ? selected.map(withoutPersonalWorkspaceMetadata)
       : selected;
@@ -2151,8 +2294,7 @@ async function getFolderPostFilesUncached(
         eq(blogs.handle, handle),
         isNull(blogs.deletedAt),
         isNull(posts.deletedAt),
-        publishedOnly ? eq(posts.status, "published") : undefined,
-        blogBucketTypePredicate(folderPath),
+        publishedOnly ? eq(posts.visibility, "public") : undefined,
         inFolder,
       ),
     )
@@ -2161,10 +2303,7 @@ async function getFolderPostFilesUncached(
       publishedOnly ? desc(posts.publishedAt) : desc(posts.updatedAt),
       desc(posts.createdAt),
     );
-  const selected = excludePrivateTypesFromBlogBucket(
-    folderPath,
-    rows.map((r) => mapPost(r.posts)),
-  );
+  const selected = rows.map((r) => mapPost(r.posts));
   return publishedOnly
     ? selected.map(withoutPersonalWorkspaceMetadata)
     : selected;
@@ -2266,10 +2405,7 @@ export async function getAccessibleFolderPosts(
   opts: { publishedOnly?: boolean } = {},
 ): Promise<Post[]> {
   if (!db || !user) return [];
-  const folderPosts = excludePrivateTypesFromBlogBucket(
-    folderPath,
-    await getFolderPosts(handle, folderPath, opts),
-  );
+  const folderPosts = await getFolderPosts(handle, folderPath, opts);
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return folderPosts;
   return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
@@ -2282,10 +2418,7 @@ export async function getAccessibleFolderPostFiles(
   opts: { publishedOnly?: boolean; exact?: boolean } = {},
 ): Promise<Post[]> {
   if (!db || !user) return [];
-  const folderPosts = excludePrivateTypesFromBlogBucket(
-    folderPath,
-    await getFolderPostFiles(handle, folderPath, opts),
-  );
+  const folderPosts = await getFolderPostFiles(handle, folderPath, opts);
   const ids = await accessiblePostIdsForUser(handle, user);
   if (ids === "all") return folderPosts;
   return folderPosts.filter((post) => Boolean(post.id && ids.has(post.id)));
@@ -2465,6 +2598,209 @@ export async function getPostStoreContext(
     : null;
 }
 
+function cleanCapabilityRole(value: string): DocumentCapabilityRole {
+  if (value === "editor" || value === "commenter") return value;
+  return "viewer";
+}
+
+function mapDocumentCapability(
+  row: typeof documentCapabilityLinks.$inferSelect,
+): DocumentCapability {
+  return {
+    id: row.id,
+    itemId: row.postId,
+    role: cleanCapabilityRole(row.role),
+    label: row.label,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+  };
+}
+
+function capabilityTokenHash(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export async function getDocumentTemplate(
+  blogId: string,
+  reference: TemplateReference,
+): Promise<TemplateDefinition | null> {
+  const builtin = getBuiltinTemplate(reference.id, reference.version);
+  if (builtin) return builtin;
+  if (!db) return null;
+  const rows = await db
+    .select({ definition: documentTemplates.definition })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, blogId),
+        eq(documentTemplates.templateId, reference.id),
+        eq(documentTemplates.version, reference.version),
+      ),
+    )
+    .limit(1);
+  return rows[0] ? validateTemplateDefinition(rows[0].definition) : null;
+}
+
+export async function listDocumentTemplates(
+  blogId: string,
+): Promise<TemplateDefinition[]> {
+  if (!db) return [...BUILTIN_TEMPLATES];
+  const rows = await db
+    .select({ definition: documentTemplates.definition })
+    .from(documentTemplates)
+    .where(eq(documentTemplates.blogId, blogId))
+    .orderBy(asc(documentTemplates.templateId), desc(documentTemplates.version));
+  return [
+    ...BUILTIN_TEMPLATES,
+    ...rows.map((row) => validateTemplateDefinition(row.definition)),
+  ];
+}
+
+export async function createDocumentTemplateVersion(input: {
+  blogId: string;
+  definition: TemplateDefinition;
+  actor: AuditEntry;
+  createdById?: string | null;
+}): Promise<TemplateDefinition> {
+  if (!db) throw new Error("createDocumentTemplateVersion requires DATABASE_URL");
+  const candidate = validateTemplateDefinition(input.definition);
+  if (candidate.id.startsWith("texttext.")) {
+    throw new Error("Built-in template identifiers cannot be replaced");
+  }
+  const latest = await db
+    .select({ version: documentTemplates.version })
+    .from(documentTemplates)
+    .where(
+      and(
+        eq(documentTemplates.blogId, input.blogId),
+        eq(documentTemplates.templateId, candidate.id),
+      ),
+    )
+    .orderBy(desc(documentTemplates.version))
+    .limit(1);
+  const definition = validateTemplateDefinition({
+    ...candidate,
+    version: (latest[0]?.version ?? 0) + 1,
+  });
+  await db.insert(documentTemplates).values({
+    blogId: input.blogId,
+    templateId: definition.id,
+    version: definition.version,
+    name: definition.name,
+    definition,
+    createdById: input.createdById ?? null,
+  });
+  await recordAction({
+    ...input.actor,
+    actionName: "create_document_template_version",
+    targetType: "mode",
+    targetId: `${definition.id}@${definition.version}`,
+    outputSummary: definition.name,
+  });
+  return definition;
+}
+
+export async function listDocumentCapabilities(
+  itemId: string,
+): Promise<DocumentCapability[]> {
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(documentCapabilityLinks)
+    .where(eq(documentCapabilityLinks.postId, itemId))
+    .orderBy(desc(documentCapabilityLinks.createdAt));
+  return rows.map(mapDocumentCapability);
+}
+
+export async function createDocumentCapability(input: {
+  itemId: string;
+  role: DocumentCapabilityRole;
+  label?: string | null;
+  expiresAt?: Date | null;
+  createdById?: string | null;
+  actor: AuditEntry;
+}): Promise<CreatedDocumentCapability> {
+  if (!db) throw new Error("createDocumentCapability requires DATABASE_URL");
+  const token = randomBytes(32).toString("base64url");
+  const rows = await db
+    .insert(documentCapabilityLinks)
+    .values({
+      postId: input.itemId,
+      tokenHash: capabilityTokenHash(token),
+      role: input.role,
+      label: input.label?.trim() || null,
+      expiresAt: input.expiresAt ?? null,
+      createdById: input.createdById ?? null,
+    })
+    .returning();
+  const capability = mapDocumentCapability(rows[0]);
+  await recordAction({
+    ...input.actor,
+    actionName: "create_document_capability",
+    targetType: "item",
+    targetId: input.itemId,
+    outputSummary: `${input.role}:${capability.id}`,
+  });
+  return { ...capability, token };
+}
+
+export async function revokeDocumentCapability(input: {
+  itemId: string;
+  capabilityId: string;
+  actor: AuditEntry;
+}): Promise<boolean> {
+  if (!db) throw new Error("revokeDocumentCapability requires DATABASE_URL");
+  const rows = await db
+    .update(documentCapabilityLinks)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(documentCapabilityLinks.id, input.capabilityId),
+        eq(documentCapabilityLinks.postId, input.itemId),
+        isNull(documentCapabilityLinks.revokedAt),
+      ),
+    )
+    .returning({ id: documentCapabilityLinks.id });
+  if (!rows[0]) return false;
+  await recordAction({
+    ...input.actor,
+    actionName: "revoke_document_capability",
+    targetType: "item",
+    targetId: input.itemId,
+    inputSummary: input.capabilityId,
+  });
+  return true;
+}
+
+export async function resolveDocumentCapability(
+  token: string,
+): Promise<ResolvedDocumentCapability | null> {
+  if (!db || token.length < 32 || token.length > 256) return null;
+  const rows = await db
+    .select({ capability: documentCapabilityLinks, handle: blogs.handle })
+    .from(documentCapabilityLinks)
+    .innerJoin(posts, eq(documentCapabilityLinks.postId, posts.id))
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        eq(documentCapabilityLinks.tokenHash, capabilityTokenHash(token)),
+        isNull(documentCapabilityLinks.revokedAt),
+        or(
+          isNull(documentCapabilityLinks.expiresAt),
+          sql`${documentCapabilityLinks.expiresAt} > now()`,
+        ),
+        isNull(posts.deletedAt),
+        isNull(blogs.deletedAt),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return { ...mapDocumentCapability(row.capability), handle: row.handle };
+}
+
 function cleanItemCommentActorType(value: string): AuditActorType {
   if (value === "human" || value === "ai" || value === "external_agent") {
     return value;
@@ -2513,6 +2849,8 @@ function cleanItemCommentAnchor(
         exact?: string;
         start?: number;
         end?: number;
+        startRelative?: string;
+        endRelative?: string;
       }
     | null
     | undefined,
@@ -2521,6 +2859,8 @@ function cleanItemCommentAnchor(
   anchorQuote: string | null;
   anchorStart: number | null;
   anchorEnd: number | null;
+  anchorStartRelative: string | null;
+  anchorEndRelative: string | null;
 } {
   if (!anchor) {
     return {
@@ -2528,6 +2868,8 @@ function cleanItemCommentAnchor(
       anchorQuote: null,
       anchorStart: null,
       anchorEnd: null,
+      anchorStartRelative: null,
+      anchorEndRelative: null,
     };
   }
   if (
@@ -2561,11 +2903,24 @@ function cleanItemCommentAnchor(
   ) {
     throw new Error("Comment anchor end cannot be before its start");
   }
+  const cleanRelative = (value: string | undefined, name: string) => {
+    if (value === undefined) return null;
+    if (
+      value.length < 4 ||
+      value.length > 2048 ||
+      !/^[A-Za-z0-9+/_=-]+$/.test(value)
+    ) {
+      throw new Error(`Comment anchor ${name} is not valid encoded data`);
+    }
+    return value;
+  };
   return {
     anchorField: anchor.field,
     anchorQuote: exactQuote,
     anchorStart: anchor.start ?? null,
     anchorEnd: anchor.end ?? null,
+    anchorStartRelative: cleanRelative(anchor.startRelative, "start position"),
+    anchorEndRelative: cleanRelative(anchor.endRelative, "end position"),
   };
 }
 
@@ -2579,6 +2934,12 @@ function mapItemComment(row: ItemCommentRow): ItemComment {
           exactQuote: row.anchorQuote,
           ...(row.anchorStart === null ? {} : { start: row.anchorStart }),
           ...(row.anchorEnd === null ? {} : { end: row.anchorEnd }),
+          ...(row.anchorStartRelative === null
+            ? {}
+            : { startRelative: row.anchorStartRelative }),
+          ...(row.anchorEndRelative === null
+            ? {}
+            : { endRelative: row.anchorEndRelative }),
         }
       : null;
   return {
@@ -2722,6 +3083,14 @@ export async function createItemComment(
     })
     .returning();
   if (!inserted[0]) throw new Error("Failed to create comment");
+  await recordAction({
+    actorUserId: actor.actorUserId,
+    actorType: actor.actorType,
+    actionName: "create_item_comment",
+    targetType: "item",
+    targetId: itemId,
+    outputSummary: inserted[0].id,
+  });
   return mapItemComment(inserted[0]);
 }
 
@@ -2745,6 +3114,8 @@ export async function updateItemComment(
     anchorQuote?: string | null;
     anchorStart?: number | null;
     anchorEnd?: number | null;
+    anchorStartRelative?: string | null;
+    anchorEndRelative?: string | null;
   } = {};
   if (hasOwnItemCommentKey(patch, "body")) {
     changes.body = cleanItemCommentBody(patch.body as string);
@@ -2769,6 +3140,14 @@ export async function updateItemComment(
     )
     .returning();
   if (!updated[0]) throw new Error("Comment not found");
+  await recordAction({
+    actorUserId: actor.actorUserId,
+    actorType: actor.actorType,
+    actionName: "update_item_comment",
+    targetType: "item",
+    targetId: itemId,
+    inputSummary: commentId,
+  });
   return mapItemComment(updated[0]);
 }
 
@@ -2845,6 +3224,14 @@ export async function setItemCommentResolved(
     )
     .returning();
   if (!updated[0]) throw new Error("Comment not found");
+  await recordAction({
+    actorUserId: actor.actorUserId,
+    actorType: actor.actorType,
+    actionName: resolved ? "resolve_item_comment" : "reopen_item_comment",
+    targetType: "item",
+    targetId: itemId,
+    inputSummary: commentId,
+  });
   return mapItemComment(updated[0]);
 }
 
@@ -2871,7 +3258,7 @@ export async function deleteItemComment(
   actorContext: ItemCommentActorContext,
 ): Promise<ItemComment> {
   if (!db) throw new Error("deleteItemComment requires DATABASE_URL");
-  cleanItemCommentActor(actorContext);
+  const actor = cleanItemCommentActor(actorContext);
   const deleted = await db
     .delete(itemComments)
     .where(
@@ -2879,6 +3266,14 @@ export async function deleteItemComment(
     )
     .returning();
   if (!deleted[0]) throw new Error("Comment not found");
+  await recordAction({
+    actorUserId: actor.actorUserId,
+    actorType: actor.actorType,
+    actionName: "delete_item_comment",
+    targetType: "item",
+    targetId: itemId,
+    inputSummary: commentId,
+  });
   return mapItemComment(deleted[0]);
 }
 
@@ -3435,7 +3830,13 @@ export type PostContentPatch = Partial<
     Post,
     "title" | "body" | "cover" | "coverCaption" | "coverHeight" | "tags"
   >
->;
+> & {
+  /**
+   * Collaborators may replace structured content, never presentation. The
+   * helper below enforces that boundary even when a package carries both.
+   */
+  document?: DocumentSnapshot;
+};
 
 function hasOwnContentKey<K extends keyof PostContentPatch>(
   patch: PostContentPatch,
@@ -3477,7 +3878,136 @@ type SavePostOptions = {
    * stale save can likewise never resurrect a deleted post.
    */
   expectedRevision?: number;
+  audit?: AuditEntry;
 };
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function canonicalDocumentForSave(
+  post: Post,
+  existingRow?: PostRow,
+): DocumentSnapshot {
+  const current = existingRow ? mapPost(existingRow) : null;
+  const suppliedDocument = post.document
+    ? validateDocumentSnapshot(post.document)
+    : null;
+  const base =
+    suppliedDocument ??
+    current?.document ??
+    documentFromLegacyPost(post);
+  const fields = { ...base.content.fields };
+
+  const legacyChanged = <K extends keyof Post>(key: K): boolean => {
+    if (!current) return !suppliedDocument;
+    return !valuesEqual(post[key], current[key]);
+  };
+  const setField = (key: string, value: unknown): void => {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null ||
+      (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+    ) {
+      fields[key] = value;
+    } else {
+      delete fields[key];
+    }
+  };
+
+  if (legacyChanged("cover")) setField("cover", post.cover);
+  if (legacyChanged("coverCaption")) {
+    setField("coverCaption", post.coverCaption);
+  }
+  if (legacyChanged("coverHeight")) {
+    setField("coverHeight", post.coverHeight);
+  }
+  if (legacyChanged("videoUrl")) setField("videoUrl", post.videoUrl);
+  if (legacyChanged("venue")) setField("venue", post.venue);
+  if (legacyChanged("duration")) setField("duration", post.duration);
+  if (legacyChanged("links")) {
+    setField("sourceUrl", post.links?.[0]?.href);
+    setField("sourceLabel", post.links?.[0]?.label);
+  }
+
+  let template = base.presentation.template;
+  if (
+    post.template &&
+    (!current || !valuesEqual(post.template, current.template))
+  ) {
+    template = post.template;
+  }
+
+  const theme = { ...base.presentation.theme };
+  if (legacyChanged("accent")) {
+    if (post.accent && /^#[0-9a-fA-F]{6}$/.test(post.accent)) {
+      theme.accent = post.accent;
+    } else {
+      delete theme.accent;
+    }
+  }
+
+  return validateDocumentSnapshot({
+    ...base,
+    content: {
+      ...base.content,
+      title: legacyChanged("title") ? post.title : base.content.title,
+      subtitle: legacyChanged("excerpt")
+        ? post.excerpt || undefined
+        : base.content.subtitle,
+      body: legacyChanged("body") ? post.body : base.content.body,
+      fields,
+      tags: legacyChanged("tags")
+        ? normalizeTags(post.tags)
+        : base.content.tags,
+      assets: legacyChanged("gallery")
+        ? (post.gallery ?? []).map((asset, index) => ({
+            id: `gallery-${index + 1}`,
+            kind: /\.(?:mp4|webm|mov|m4v|ogv|ogg)(?:[?#].*)?$/i.test(
+              asset.src,
+            )
+              ? ("video" as const)
+              : ("image" as const),
+            src: asset.src,
+            caption: asset.caption,
+          }))
+        : base.content.assets,
+    },
+    presentation: {
+      ...base.presentation,
+      template,
+      theme,
+    },
+  });
+}
+
+function visibilityForSave(post: Post, existingRow?: PostRow): DocumentVisibility {
+  return resolveDocumentVisibility({
+    requested: post.visibility,
+    existing: existingRow?.visibility,
+    compatibilityType: existingRow?.type ?? post.type,
+  });
+}
+
+async function recordPostSave(
+  saved: Post,
+  audit: AuditEntry | undefined,
+): Promise<Post> {
+  if (!saved.id) return saved;
+  await recordAction(
+    audit ?? {
+      actorType: "human",
+      actionName: "save_document",
+      targetType: "item",
+      targetId: saved.id,
+      inputSummary: saved.slug,
+    },
+  );
+  return saved;
+}
 
 export async function savePost(
   handle: string,
@@ -3490,29 +4020,53 @@ export async function savePost(
   }
   const blogId = await blogIdFor(handle);
   const slug = sanitizePostSlug(post.slug, "post");
-  // Never taken from the client Post: an update keeps the stored folder and
-  // an insert lands in the folder matching the post's type (moves are a
-  // store-level concern).
-  const insertFolder = await folderForPostType(blogId, post.type);
-  // Notes and bookmarks are always unlisted: no save path may publish them.
-  const status =
-    post.type === "note" || post.type === "bookmark" ? "draft" : post.status;
-  const wordCount = wordCountForMarkdown(post.body);
+  const existingRow = post.id
+    ? (
+        await db
+          .select()
+          .from(posts)
+          .where(
+            and(
+              eq(posts.id, post.id),
+              eq(posts.blogId, blogId),
+              isNull(posts.deletedAt),
+            ),
+          )
+          .limit(1)
+      )[0]
+    : undefined;
+  const document = canonicalDocumentForSave(post, existingRow);
+  const projection = legacyProjectionFromDocument(document);
+  const visibility = visibilityForSave(post, existingRow);
+  const compatibilityType = existingRow?.type ?? post.type;
+  const status: Post["status"] =
+    visibility === "public" ? "published" : "draft";
+  const wordCount = wordCountForMarkdown(document.content.body);
+  // Existing rows keep their folder. New documents use the folder selected by
+  // the caller when available, then the template's legacy compatibility root.
+  const insertFolder = post.folderId
+    ? await getFolderById(handle, post.folderId)
+    : await folderForPostType(blogId, compatibilityType);
+  if (!insertFolder) throw new Error("Folder not found");
   const base = {
-    type: post.type,
-    title: post.title,
-    excerpt: markdownSubtitle(post.body) || post.excerpt || null,
-    accent: post.accent ?? null,
-    cover: post.cover ?? null,
-    coverCaption: post.coverCaption ?? null,
-    coverHeight: post.coverHeight ?? null,
-    gallery: post.gallery ?? null,
-    links: post.links ?? null,
-    tags: normalizeTags(post.tags),
-    videoUrl: post.videoUrl ?? null,
-    venue: post.venue ?? null,
-    duration: post.duration ?? null,
-    body: post.body,
+    document,
+    visibility,
+    templateId: document.presentation.template.id,
+    templateVersion: document.presentation.template.version,
+    type: compatibilityType,
+    title: projection.title,
+    excerpt: projection.excerpt || null,
+    accent: projection.accent,
+    cover: projection.cover,
+    coverCaption: projection.coverCaption,
+    coverHeight: projection.coverHeight,
+    gallery: projection.gallery,
+    links: projection.links,
+    tags: projection.tags,
+    videoUrl: projection.videoUrl,
+    venue: projection.venue,
+    duration: projection.duration,
+    body: projection.body,
     wordCount,
     status,
     pinned: post.pinned ?? false,
@@ -3552,7 +4106,9 @@ export async function savePost(
           ),
         )
         .returning();
-      if (updated[0]) return mapPost(updated[0]);
+      if (updated[0]) {
+        return recordPostSave(mapPost(updated[0]), options.audit);
+      }
       // A guarded save that matched nothing is a conflict, never an insert:
       // the base moved (someone else wrote) or the row is gone (deleted). Both
       // must surface as 412, not silently resurrect the post or upsert onto
@@ -3584,7 +4140,7 @@ export async function savePost(
         set,
       })
       .returning();
-    return mapPost(inserted[0]);
+    return recordPostSave(mapPost(inserted[0]), options.audit);
   } catch (error) {
     if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
@@ -3607,6 +4163,18 @@ export async function savePostContentPatch(
     folderId: existing.folderId,
     date: existing.date,
   };
+
+  if (patch.document) {
+    const currentDocument = existing.document
+      ? validateDocumentSnapshot(existing.document)
+      : documentFromLegacyPost(existing);
+    const suppliedDocument = validateDocumentSnapshot(patch.document);
+    next.document = validateDocumentSnapshot({
+      ...currentDocument,
+      content: suppliedDocument.content,
+    });
+    Object.assign(next, legacyProjectionFromDocument(next.document));
+  }
 
   if (hasOwnContentKey(patch, "title") && patch.title !== undefined) {
     next.title = patch.title;
@@ -3644,6 +4212,10 @@ export async function createDraft(
   if (!db) throw new Error("createDraft requires DATABASE_URL");
   const blogId = await blogIdFor(handle);
   const folder = await folderForPostType(blogId, type);
+  const template =
+    options.template ??
+    folder.defaultTemplate ?? { id: legacyTemplateId(type), version: 1 };
+  const document = emptyDocumentSnapshot(template);
   const slug = `untitled-${Date.now().toString(36)}`;
   const inserted = await db
     .insert(posts)
@@ -3652,6 +4224,10 @@ export async function createDraft(
       folderId: folder.id,
       representation:
         options.representation ?? DEFAULT_FILE_REPRESENTATION,
+      document,
+      visibility: "private",
+      templateId: template.id,
+      templateVersion: template.version,
       type,
       slug,
       title: "",
@@ -3661,7 +4237,17 @@ export async function createDraft(
       status: "draft",
     })
     .returning();
-  return mapPost(inserted[0]);
+  const created = mapPost(inserted[0]);
+  await recordAction(
+    options.audit ?? {
+      actorType: "human",
+      actionName: "create_document",
+      targetType: "item",
+      targetId: created.id,
+      outputSummary: `${template.id}@${template.version}`,
+    },
+  );
+  return created;
 }
 
 function slugifyHandle(value: string, maxLength = 24, fallback = "blog"): string {

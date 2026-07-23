@@ -36,6 +36,8 @@ import {
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
+import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
+import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
   useEscapeLayer,
@@ -52,20 +54,15 @@ import {
   type BookmarkContentMode,
 } from "@/components/PostActionBar";
 import { PostByline } from "@/components/PostByline";
-import { ProjectReader } from "@/components/ProjectReader";
-import { Reader } from "@/components/Reader";
-import { TalkReader } from "@/components/TalkReader";
 import { TagChips, TagEditor } from "@/components/TagChips";
 import {
   WikiLinkAnchor,
   remarkWikiLinks,
 } from "@/components/WikiLinkMarkdown";
-import { EditReaderPreview } from "@/components/editor/EditReaderPreview";
 import {
   EditableCover as WorkspaceEditableCover,
   randomCover,
 } from "@/components/editor/EditableCover";
-import { LocalWorkspaceBodyEditor } from "@/components/LocalWorkspaceBodyEditor";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
@@ -127,6 +124,8 @@ import {
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
 import type { AssistantSkill } from "@/lib/ai/skills";
 import { isVideoFile } from "@/lib/content";
+import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
+import type { DocumentSnapshot } from "@/lib/documents/model";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
 import { COVER_PILE } from "@/lib/cover-pile";
 import {
@@ -141,6 +140,7 @@ import {
   poolPostsForTag,
   postFromPoolPost,
   starredPoolPosts,
+  templateForPoolPost,
   wikiLinkRenderTargetsForPool,
 } from "@/lib/pool/selectors";
 import {
@@ -3456,10 +3456,13 @@ function WorkspacePostReader({
   );
 
   useEffect(() => {
+    if (poolPost.document) return;
     if (entry.status === "idle" || stale) load(stale);
-  }, [entry.status, load, stale]);
+  }, [entry.status, load, poolPost.document, stale]);
 
-  const body = entry.status === "ready" ? entry.body.body : "";
+  const body =
+    poolPost.document?.content.body ??
+    (entry.status === "ready" ? entry.body.body : "");
   const post = postFromPoolPost(poolPost, body);
   const bodyImageReplacements = new Map(
     (post.capture?.assets ?? [])
@@ -3470,33 +3473,21 @@ function WorkspacePostReader({
     post.type === "bookmark"
       ? localizeRemoteMarkdownImages(body, bodyImageReplacements)
       : body;
-  const bodySlot =
-    post.type === "bookmark" && bookmarkContentMode === "capture" ? (
-      <BookmarkViewBody post={post} />
-    ) : entry.status === "ready" ? (
-      <MarkdownBody
-        allowedRemoteImages={new Set(bodyImageReplacements.values())}
-        body={bodyMarkdown}
-        hideRemoteImages={false}
-        onWikiLinkNavigate={onNavigate}
-        wikiLinkTargets={wikiLinkRenderTargetsForPool(pool)}
-      />
-    ) : entry.status === "error" ? (
-      <ErrorBody message={entry.error} />
-    ) : (
-      <LoadingBody />
-    );
-  const slots = {
-    body: bodySlot,
-    tags: <TagChips onOpenTag={onOpenTag} tags={post.tags} />,
-  };
+  const readablePost = useMemo(
+    () => ({
+      ...post,
+      body: bodyMarkdown,
+      document: post.document
+        ? {
+            ...post.document,
+            content: { ...post.document.content, body: bodyMarkdown },
+          }
+        : undefined,
+    }),
+    [bodyMarkdown, post],
+  );
   const backlinks = backlinksForPost(pool, poolPost);
-  const ReaderComponent =
-    post.type === "talk"
-      ? TalkReader
-      : post.type === "project"
-        ? ProjectReader
-        : Reader;
+  const template = templateForPoolPost(pool, poolPost);
   const sectionPath = returnToSearch
     ? workspaceSearchHref(homePath, returnToSearch)
     : folderWorkspaceHref(homePath, folderPathForPoolPost(pool, poolPost));
@@ -3525,7 +3516,19 @@ function WorkspacePostReader({
         onSearchValueChange={setFindQuery}
         onBookmarkContentModeChange={setBookmarkContentMode}
       />
-      <ReaderComponent blog={blog} post={post} slots={slots} />
+      {post.type === "bookmark" && bookmarkContentMode === "capture" ? (
+        <BookmarkViewBody post={post} />
+      ) : poolPost.document || entry.status === "ready" ? (
+        <UnifiedDocumentReader
+          blog={blog}
+          post={readablePost}
+          template={template}
+        />
+      ) : entry.status === "error" ? (
+        <ErrorBody message={entry.error} />
+      ) : (
+        <LoadingBody />
+      )}
       <ReaderFindHighlights query={findQuery} />
       {canCommentPost && post.id && entry.status === "ready" && (
         <ReaderComments
@@ -3545,837 +3548,112 @@ function WorkspacePostReader({
   );
 }
 
-function LocalWorkspacePostEditor({
+function collaboratorColor(identity: string): string {
+  const palette = ["#0071e3", "#34c759", "#ff9f0a", "#af52de", "#ff375f"];
+  let hash = 0;
+  for (const character of identity) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  return palette[hash % palette.length];
+}
+
+function LocalUnifiedWorkspacePostEditor({
   active,
   blog,
-  canCommentPost,
-  canManagePost,
   editorIdentity,
   homePath,
-  onCaptureResolved,
   onDeleteItem,
   onNavigate,
-  onOpenTag,
-  onSearch,
-  searchFocusRequestKey,
   pool,
   poolPost,
   returnToSearch,
 }: {
   active: boolean;
   blog: Blog;
-  canCommentPost: boolean;
-  canManagePost: boolean;
   editorIdentity: string;
   homePath: string;
-  onCaptureResolved?: FolderCaptureResolved;
   onDeleteItem?: FolderDeleteItem;
   onNavigate: (path: string) => Promise<void> | void;
-  onOpenTag: (tag: string) => void;
-  onSearch: () => void;
-  searchFocusRequestKey: number;
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
 }) {
-  const initialBody =
-    pool.initialBodies?.find((body) => body.postId === poolPost.id) ?? null;
-  const { entry, load, stale } = useWorkspacePostBody(
-    pool.blogId,
-    poolPost.id,
-    initialBody,
+  const template = templateForPoolPost(pool, poolPost);
+  const post = postFromPoolPost(
+    poolPost,
+    poolPost.document?.content.body ??
+      getCachedWorkspacePostBody(pool.blogId, poolPost.id)?.body ??
+      "",
   );
-  useEffect(() => {
-    if (isOptimisticPostId(poolPost.id)) return;
-    if (entry.status === "idle" || stale) load(stale);
-  }, [entry.status, load, poolPost.id, stale]);
-
-  const cachedBody = entry.status === "ready" ? entry.body.body : "";
-  const post = useMemo(
-    () => postFromPoolPost(poolPost, cachedBody),
-    [cachedBody, poolPost],
-  );
-  const [draft, setDraft] = useState<DraftState>(() => {
-    return localWorkspaceDraftSessions.get(poolPost.id) ?? initialDraft(post);
-  });
-  const draftRef = useRef(draft);
-  const [draftHydrated, setDraftHydrated] = useState(() =>
-    isOptimisticPostId(poolPost.id),
-  );
-  const baseUpdatedAtRef = useRef(
-    localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt,
-  );
-  const titleRef = useRef<HTMLTextAreaElement>(null);
-  const dateRef = useRef<HTMLInputElement>(null);
-  const editSurfaceRef = useRef<HTMLElement>(null);
-  const bodyLoadedPostIdRef = useRef<string | null>(
-    entry.status === "ready" && !stale ? poolPost.id : null,
-  );
-  const saveTimerRef = useRef<number | null>(null);
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const editorMountedRef = useRef(true);
-  const coverRevisionRef = useRef(0);
-  const initialPayloadKey = payloadKey(
-    payloadFor(poolPost.id, initialDraft(post), post.slug, poolPost.updatedAt),
-  );
-  const lastSavedKeyRef = useRef(
-    localWorkspacePendingSaveIds.has(poolPost.id)
-      ? `pending:${poolPost.id}`
-      : initialPayloadKey,
-  );
-  const latestKeyRef = useRef(initialPayloadKey);
-  const [deleting, setDeleting] = useState(false);
-  const [coverUploading, setCoverUploading] = useState(false);
-  const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
-  const [findQuery, setFindQuery] = useState("");
-  const usedSlugs = useMemo(
-    () =>
-      pool.posts
-        .filter((candidate) => candidate.id !== poolPost.id)
-        .map((candidate) => candidate.slug),
-    [pool.posts, poolPost.id],
-  );
-  const workspaceTags = useMemo(() => allTagsInPool(pool), [pool]);
-  const wikiLinkPosts = useMemo(
-    () =>
-      pool.posts.map((candidate) => ({
-        slug: candidate.slug,
-        title: candidate.title.trim() || candidate.slug,
-      })),
-    [pool.posts],
-  );
-  const backlinks = useMemo(
-    () => backlinksForPost(pool, poolPost),
-    [pool, poolPost],
-  );
-  const createWikiLinkNote = useCallback(
-    async (title: string) => {
-      const saved = await createFolderItemAction(blog.handle, "notes", {
-        title,
-      });
-      const created = narrowPostFromPost(saved, pool.blogId);
-      if (!created) return null;
-      addPost(created);
-      return {
-        slug: created.slug,
-        title: created.title.trim() || created.slug,
-      };
-    },
-    [blog.handle, pool.blogId],
-  );
-
-  useEffect(() => {
-    if (isOptimisticPostId(poolPost.id)) return;
-    let cancelled = false;
-    const requestedRevision = localDraftRevision(poolPost.id);
-    void readPersistedWorkspaceDraft(pool.blogId, poolPost.id).then(
-      (persisted) => {
-        if (cancelled) return;
-        const hasNewerSession =
-          localDraftRevision(poolPost.id) !== requestedRevision ||
-          localWorkspaceDraftSessions.has(poolPost.id);
-        const currentPoolPost = getWorkspacePost(poolPost.id);
-        if (persisted && !hasNewerSession && currentPoolPost) {
-          baseUpdatedAtRef.current =
-            persisted.baseUpdatedAt ?? baseUpdatedAtRef.current;
-          draftRef.current = persisted.draft;
-          latestKeyRef.current = persisted.key;
-          localWorkspaceDraftSessions.set(poolPost.id, persisted.draft);
-          markPostDirty(poolPost.id);
-          bumpLocalDraftRevision(poolPost.id);
-          updatePost(poolPost.id, {
-            ...mergeDraftIntoWorkspacePost(currentPoolPost, persisted.draft),
-            updatedAt: persisted.persistedAt,
-          });
-          updatePostBody(pool.blogId, poolPost.id, persisted.draft.body);
-          setDraft(persisted.draft);
-        }
-        setDraftHydrated(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [pool.blogId, poolPost.id]);
-
-  useEffect(() => {
-    if (!draftHydrated) return;
-    if (entry.status !== "ready") return;
-    if (bodyLoadedPostIdRef.current === poolPost.id) return;
-    bodyLoadedPostIdRef.current = poolPost.id;
-    if (localWorkspaceDraftSessions.has(poolPost.id)) return;
-    const current = draftRef.current;
-    const next = { ...current, body: entry.body.body };
-    draftRef.current = next;
-    baseUpdatedAtRef.current =
-      localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt;
-    const key = payloadKey(
-      payloadFor(poolPost.id, next, post.slug, baseUpdatedAtRef.current),
-    );
-    latestKeyRef.current = key;
-    if (!localWorkspacePendingSaveIds.has(poolPost.id)) {
-      lastSavedKeyRef.current = key;
-    }
-    setDraft(next);
-  }, [draftHydrated, entry, poolPost.id, poolPost.updatedAt, post.slug]);
-
-  useEffect(() => {
-    if (!draftHydrated) return;
-    if (
-      localWorkspaceDraftSessions.has(poolPost.id) ||
-      localWorkspacePendingSaveIds.has(poolPost.id)
-    ) {
-      return;
-    }
-    const next = initialDraft(post);
-    if (entry.status !== "ready" || stale) {
-      next.body = draftRef.current.body;
-    } else {
-      baseUpdatedAtRef.current =
-        localWorkspaceServerRevisions.get(poolPost.id) ?? poolPost.updatedAt;
-    }
-    const nextKey = payloadKey(
-      payloadFor(poolPost.id, next, post.slug, baseUpdatedAtRef.current),
-    );
-    const currentKey = payloadKey(
-      payloadFor(
-        poolPost.id,
-        draftRef.current,
-        post.slug,
-        baseUpdatedAtRef.current,
-      ),
-    );
-    if (nextKey === currentKey) return;
-    draftRef.current = next;
-    latestKeyRef.current = nextKey;
-    lastSavedKeyRef.current = nextKey;
-    setDraft(next);
-  }, [
-    draftHydrated,
-    entry.status,
-    poolPost.id,
-    poolPost.updatedAt,
-    post,
-    stale,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!active) return;
-    // Opening an item preserves neutral focus. Editing starts only after the
-    // user clicks or taps a field.
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-    finishEditTransition(editorIdentity);
-  }, [active, editorIdentity]);
-
-  useEffect(() => {
-    autoGrowTextarea(titleRef.current);
-  }, [draft.title]);
-
-  useEffect(() => {
-    editorMountedRef.current = true;
-    return () => {
-      editorMountedRef.current = false;
-      coverRevisionRef.current += 1;
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, []);
-
-  const updateDraft = useCallback(
-    (patch: Partial<DraftState>) => {
-      const next = { ...draftRef.current, ...patch };
-      draftRef.current = next;
-      latestKeyRef.current = payloadKey(
-        payloadFor(poolPost.id, next, post.slug, baseUpdatedAtRef.current),
-      );
-      localWorkspaceDraftSessions.set(poolPost.id, next);
-      markPostDirty(poolPost.id);
-      bumpLocalDraftRevision(poolPost.id);
-      persistLocalWorkspaceDraft(
-        pool.blogId,
-        poolPost.id,
-        next,
-        latestKeyRef.current,
-        baseUpdatedAtRef.current,
-      );
-      setDraft(next);
-    },
-    [pool.blogId, poolPost.id, post.slug],
-  );
-
-  useEffect(() => {
-    if (!active) return;
-    return registerOpenWorkspaceItemDraft(poolPost.id, {
-      read: () => ({
-        title: draftRef.current.title,
-        excerpt: markdownSubtitle(draftRef.current.body),
-        body: draftRef.current.body,
-        tags: draftRef.current.tags,
-      }),
-      apply: (patch) => {
-        const body =
-          patch.excerpt === undefined
-            ? (patch.body ?? draftRef.current.body)
-            : replaceMarkdownSubtitle(
-                patch.body ?? draftRef.current.body,
-                patch.excerpt,
-              );
-        updateDraft({
-          ...patch,
-          body,
-          excerpt: markdownSubtitle(body),
-        });
-      },
-    });
-  }, [active, poolPost.id, updateDraft]);
-
-  const captureTextControlSelection = useCallback(
-    (
-      field: Exclude<WorkspaceItemTextField, "body">,
-      control: HTMLTextAreaElement,
-    ) => {
-      const source = draftRef.current[field];
-      setOpenWorkspaceItemSelection(
-        poolPost.id,
-        createWorkspaceItemTextSelection(
-          field,
-          source,
-          control.selectionStart,
-          control.selectionEnd,
-        ),
-      );
-    },
-    [poolPost.id],
-  );
-
-  const captureBodySelection = useCallback(() => {
-    const root = editSurfaceRef.current?.querySelector<HTMLElement>(
-      ".body-editor-content[contenteditable='true']",
-    );
-    const selection = window.getSelection();
-    if (!root || !selection || selection.rangeCount === 0) return;
-    if (
-      !selection.anchorNode ||
-      !selection.focusNode ||
-      !root.contains(selection.anchorNode) ||
-      !root.contains(selection.focusNode)
-    ) {
-      return;
-    }
-    if (selection.isCollapsed) {
-      setOpenWorkspaceItemSelection(poolPost.id, null);
-      return;
-    }
-
-    try {
-      const range = selection.getRangeAt(0);
-      const beforeRange = document.createRange();
-      beforeRange.selectNodeContents(root);
-      beforeRange.setEnd(range.startContainer, range.startOffset);
-      const afterRange = document.createRange();
-      afterRange.selectNodeContents(root);
-      afterRange.setStart(range.endContainer, range.endOffset);
-      setOpenWorkspaceItemSelection(
-        poolPost.id,
-        locateWorkspaceItemTextSelection(
-          "body",
-          draftRef.current.body,
-          selection.toString(),
-          {
-            beforeText: beforeRange.toString(),
-            afterText: afterRange.toString(),
-          },
-        ),
-      );
-    } catch {
-      setOpenWorkspaceItemSelection(poolPost.id, null);
-    }
-  }, [poolPost.id]);
-
-  useEffect(() => {
-    if (!active) return;
-    const captureActiveSelection = () => {
-      const activeElement = document.activeElement;
-      if (activeElement === titleRef.current && titleRef.current) {
-        captureTextControlSelection("title", titleRef.current);
-        return;
-      }
-      captureBodySelection();
-    };
-    document.addEventListener("selectionchange", captureActiveSelection);
-    return () => {
-      document.removeEventListener("selectionchange", captureActiveSelection);
-    };
-  }, [active, captureBodySelection, captureTextControlSelection]);
-
-  const enqueueSave = useCallback(
-    (
-      nextDraft: DraftState,
-      options: { onlyIfCurrent?: boolean; revalidate?: boolean } = {},
-    ) => {
-      const requestedKey = payloadKey(
-        payloadFor(poolPost.id, nextDraft, post.slug),
-      );
-      const requestedRevision = localDraftRevision(poolPost.id);
-      const queued = saveQueueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          if (
-            options.onlyIfCurrent &&
-            (latestKeyRef.current !== requestedKey ||
-              localDraftRevision(poolPost.id) !== requestedRevision)
-          ) {
-            return null;
-          }
-          if (lastSavedKeyRef.current === requestedKey) return null;
-
-          const payload = payloadFor(
-            poolPost.id,
-            nextDraft,
-            post.slug,
-            localWorkspaceServerRevisions.get(poolPost.id) ??
-              baseUpdatedAtRef.current,
-          );
-          const saved = await saveEditablePostAction(blog.handle, payload, {
-            revalidate: options.revalidate,
-          });
-          // A superseded response must advance the revision used by the queued
-          // draft, but it must never replace that newer local draft.
-          baseUpdatedAtRef.current = saved.updatedAt;
-          if (saved.updatedAt) {
-            localWorkspaceServerRevisions.set(poolPost.id, saved.updatedAt);
-          }
-          return { requestedKey, requestedRevision, saved };
-        });
-      saveQueueRef.current = queued.then(
-        () => undefined,
-        () => undefined,
-      );
-      return queued;
-    },
-    [blog.handle, poolPost.id, post.slug],
-  );
-
-  const deriveSlugFromTitle = useCallback(
-    (titleValue: string) => {
-      const title = titleValue.trim();
-      if (!title || !isPlaceholderSlug(draft.slug)) return;
-      updateDraft({
-        slug: uniqueSlug(slugify(title, "post"), usedSlugs),
-      });
-    },
-    [draft.slug, updateDraft, usedSlugs],
-  );
-
-  const saveDraftNow = useCallback(
-    async (patch: Partial<DraftState> = {}) => {
-      const nextDraft = { ...draftRef.current, ...patch };
-      draftRef.current = nextDraft;
-      setDraft(nextDraft);
-      const requestedKey = payloadKey(
-        payloadFor(poolPost.id, nextDraft, post.slug),
-      );
-      latestKeyRef.current = requestedKey;
-      const hasLocalChanges = requestedKey !== lastSavedKeyRef.current;
-
-      if (hasLocalChanges) {
-        localWorkspaceDraftSessions.set(poolPost.id, nextDraft);
-        markPostDirty(poolPost.id);
-        bumpLocalDraftRevision(poolPost.id);
-        updatePost(poolPost.id, {
-          ...mergeDraftIntoWorkspacePost(poolPost, nextDraft),
-          updatedAt: new Date().toISOString(),
-        });
-        updatePostBody(pool.blogId, poolPost.id, nextDraft.body);
-        persistLocalWorkspaceDraft(
-          pool.blogId,
-          poolPost.id,
-          nextDraft,
-          requestedKey,
-          baseUpdatedAtRef.current,
-        );
-      }
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-
-      if (!isOptimisticPostId(poolPost.id)) {
-        let targetDraft = nextDraft;
-        while (true) {
-          const targetKey = payloadKey(
-            payloadFor(poolPost.id, targetDraft, post.slug),
-          );
-          const targetRevision = localDraftRevision(poolPost.id);
-          latestKeyRef.current = targetKey;
-          const result = await enqueueSave(targetDraft, { revalidate: true });
-          if (
-            localDraftRevision(poolPost.id) !== targetRevision ||
-            latestKeyRef.current !== targetKey
-          ) {
-            targetDraft = draftRef.current;
-            continue;
-          }
-
-          localWorkspacePendingSaveIds.delete(poolPost.id);
-          localWorkspaceDraftSessions.delete(poolPost.id);
-          acknowledgePost(poolPost.id);
-          if (result) {
-            lastSavedKeyRef.current = result.requestedKey;
-            applySavedWorkspacePost(result.saved, pool.blogId);
-            acknowledgePostBody(
-              pool.blogId,
-              poolPost.id,
-              result.saved.body,
-              result.saved.updatedAt,
-            );
-          } else if (lastSavedKeyRef.current === targetKey) {
-            acknowledgePostBody(
-              pool.blogId,
-              poolPost.id,
-              targetDraft.body,
-              baseUpdatedAtRef.current,
-            );
-          }
-          void deletePersistedWorkspaceDraft(
-            pool.blogId,
-            poolPost.id,
-            targetKey,
-          );
-          break;
-        }
-      }
-    },
-    [enqueueSave, pool.blogId, poolPost, post.slug],
-  );
-
-  useEffect(() => {
-    if (!draftHydrated) return;
-    if (isOptimisticPostId(poolPost.id)) return;
-
-    const requestedKey = payloadKey(payloadFor(poolPost.id, draft, post.slug));
-    latestKeyRef.current = requestedKey;
-    if (requestedKey === lastSavedKeyRef.current) return;
-
-    if (saveTimerRef.current !== null) {
-      window.clearTimeout(saveTimerRef.current);
-    }
-
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void enqueueSave(draft, {
-        onlyIfCurrent: true,
-        revalidate: false,
-      })
-        .then((result) => {
-          if (
-            !result ||
-            latestKeyRef.current !== result.requestedKey ||
-            localDraftRevision(poolPost.id) !== result.requestedRevision
-          ) {
-            return;
-          }
-          lastSavedKeyRef.current = result.requestedKey;
-          localWorkspacePendingSaveIds.delete(poolPost.id);
-          localWorkspaceDraftSessions.delete(poolPost.id);
-          applySavedWorkspacePost(result.saved, pool.blogId);
-          acknowledgePost(poolPost.id);
-          acknowledgePostBody(
-            pool.blogId,
-            poolPost.id,
-            result.saved.body,
-            result.saved.updatedAt,
-          );
-          void deletePersistedWorkspaceDraft(
-            pool.blogId,
-            poolPost.id,
-            result.requestedKey,
-          );
-        })
-        .catch(() => {
-          // Keep the local draft in place. A later edit will retry the save.
-        });
-    }, 800);
-
-    return () => {
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, [draft, draftHydrated, enqueueSave, pool.blogId, poolPost.id, post.slug]);
-
-  useEffect(() => {
-    if (!active) return;
-    const stop = () => {
-      void saveDraftNow();
-    };
-    window.addEventListener(STOP_LOCAL_EDITING_EVENT, stop);
-    return () => window.removeEventListener(STOP_LOCAL_EDITING_EVENT, stop);
-  }, [active, saveDraftNow]);
-
-  const displayPost = useMemo(
-    () =>
-      postFromPoolPost(
-        mergeDraftIntoWorkspacePost(poolPost, draft),
-        draft.body,
-      ),
-    [draft, poolPost],
-  );
-  const resolvedHeaderCover = resolveCover(displayPost);
-  const hasArticleHeaderImage =
-    displayPost.type === "article" &&
-    !isNoCoverValue(draft.cover) &&
-    Boolean(resolvedHeaderCover);
-  const selectCover = useCallback(
-    (cover: string) => {
-      coverRevisionRef.current += 1;
-      setCoverUploadError(null);
-      updateDraft({ cover, coverCaption: "" });
-    },
-    [updateDraft],
-  );
-  const shuffleCover = useCallback(() => {
-    const cover = randomCover(
-      COVER_PILE,
-      isNoCoverValue(draftRef.current.cover) ? "" : draftRef.current.cover,
-    );
-    if (cover) selectCover(cover);
-  }, [selectCover]);
-  const uploadCover = useCallback(
-    async (file: File) => {
-      const uploadRevision = coverRevisionRef.current + 1;
-      coverRevisionRef.current = uploadRevision;
-      setCoverUploading(true);
-      setCoverUploadError(null);
-      try {
-        const cover = await uploadMedia(file, {
-          endpoint: mediaUploadEndpointForHandle(blog.handle),
-        });
-        if (
-          editorMountedRef.current &&
-          coverRevisionRef.current === uploadRevision
-        ) {
-          selectCover(cover);
-        }
-      } catch (error) {
-        setCoverUploadError(
-          error instanceof MediaUploadError
-            ? error.message
-            : "Header image could not be uploaded.",
-        );
-      } finally {
-        if (editorMountedRef.current) setCoverUploading(false);
-      }
-    },
-    [blog.handle, selectCover],
-  );
-  const removeCover = useCallback(() => {
-    coverRevisionRef.current += 1;
-    setCoverUploadError(null);
-    updateDraft({ cover: NO_COVER_VALUE, coverCaption: "" });
-  }, [updateDraft]);
-
   const containingFolderPath = folderPathForPoolPost(pool, poolPost);
   const containingFolderHref = returnToSearch
     ? workspaceSearchHref(homePath, returnToSearch)
     : folderWorkspaceHref(homePath, containingFolderPath);
-  const renderedPostPath = blogPostPath(blog, {
-    slug: slugify(draft.slug, post.slug),
-  });
-  const focusBody = useCallback(() => {
-    document
-      .querySelector<HTMLElement>(".local-workspace-edit .body-editor-content")
-      ?.focus({ preventScroll: true });
-  }, []);
-  const deletePost = useCallback(() => {
-    if (!onDeleteItem || deleting) return;
-    setDeleting(true);
-    void Promise.resolve(onDeleteItem(displayPost))
-      .catch((error) => {
-        console.warn("workspace post delete failed", error);
-      })
-      .finally(() => setDeleting(false));
-  }, [deleting, displayPost, onDeleteItem]);
+
+  const updateLocalDocument = useCallback(
+    (nextDocument: DocumentSnapshot) => {
+      const projection = legacyProjectionFromDocument(nextDocument);
+      updatePost(poolPost.id, {
+        document: nextDocument,
+        template: nextDocument.presentation.template,
+        title: projection.title,
+        excerpt: projection.excerpt || undefined,
+        bodyPreview: projection.body.slice(0, 2048) || undefined,
+        accent: projection.accent ?? undefined,
+        cover: projection.cover ?? undefined,
+        coverCaption: projection.coverCaption ?? undefined,
+        coverHeight: projection.coverHeight ?? undefined,
+        gallery: projection.gallery,
+        links: projection.links ?? undefined,
+        tags: projection.tags,
+        videoUrl: projection.videoUrl ?? undefined,
+        venue: projection.venue ?? undefined,
+        duration: projection.duration ?? undefined,
+      });
+      updatePostBody(pool.blogId, poolPost.id, nextDocument.content.body);
+    },
+    [pool.blogId, poolPost.id],
+  );
+
+  const acknowledgeMaterialized = useCallback(
+    (nextDocument: DocumentSnapshot) => {
+      updateLocalDocument(nextDocument);
+      acknowledgePost(poolPost.id);
+      acknowledgePostBody(
+        pool.blogId,
+        poolPost.id,
+        nextDocument.content.body,
+      );
+    },
+    [pool.blogId, poolPost.id, updateLocalDocument],
+  );
 
   return (
-    <>
-      <PostActionBar
-        mode="edit"
-        owner={canManagePost}
-        canCommentPost={canCommentPost}
-        canEditPost
-        canManagePost={canManagePost}
-        blog={blog}
-        post={displayPost}
-        adjacent={adjacentPublishedPostsForPool(pool, displayPost.slug)}
-        homePath={containingFolderHref}
-        postPath={renderedPostPath}
-        draft={draft}
-        deleting={deleting}
-        hasHeaderImage={hasArticleHeaderImage}
-        folders={pool.folders}
-        onBookmarkCaptureChange={onCaptureResolved}
-        onDelete={deletePost}
-        onDone={async () => {
-          await onNavigate(renderedPostPath);
-        }}
-        onAddHeaderImage={shuffleCover}
-        onNavigate={async (path) => {
-          await onNavigate(path);
-        }}
-        onSearch={onSearch}
-        searchFocusRequestKey={searchFocusRequestKey}
-        searchValue={findQuery}
-        onSearchValueChange={setFindQuery}
-        onSlugBlur={() => {
-          updateDraft({ slug: slugify(draft.slug, post.slug) });
-        }}
-        onSlugInput={(value) => updateDraft({ slug: slugify(value, "") })}
-        onUpdateDraft={updateDraft}
-        onVisibilityChange={(status) => saveDraftNow({ status })}
-      />
-      <main
-        ref={editSurfaceRef}
-        className="local-workspace-edit"
-        aria-label="Edit post"
-        aria-busy={!draftHydrated}
-        data-write-edit-surface="true"
-        data-write-edit-post-id={poolPost.id}
-        data-write-draft-hydrated={draftHydrated ? "true" : "false"}
-      >
-        <EditReaderPreview
-          blog={blog}
-          post={displayPost}
-          slots={{
-            ...(displayPost.type === "article"
-              ? {
-                  cover: hasArticleHeaderImage ? (
-                    <WorkspaceEditableCover
-                      title={displayPost.title.trim() || "Untitled"}
-                      cover={resolvedHeaderCover}
-                      covers={COVER_PILE}
-                      coverHeight={draft.coverHeight}
-                      mediaEnabled
-                      uploading={coverUploading}
-                      error={coverUploadError}
-                      onSelectCover={selectCover}
-                      onCoverHeightChange={(coverHeight) =>
-                        updateDraft({ coverHeight })
-                      }
-                      onUploadFile={uploadCover}
-                      onRemoveCover={removeCover}
-                    />
-                  ) : null,
-                }
-              : {}),
-            title: (
-              <textarea
-                ref={titleRef}
-                className="reader-title edit-title-field"
-                aria-label="Title"
-                placeholder="Give it a title"
-                rows={1}
-                value={draft.title}
-                onSelect={(event) =>
-                  captureTextControlSelection("title", event.currentTarget)
-                }
-                onChange={(event) =>
-                  updateDraft({
-                    title: event.currentTarget.value.replace(/[\r\n]+/g, " "),
-                  })
-                }
-                onBlur={(event) =>
-                  deriveSlugFromTitle(event.currentTarget.value)
-                }
-                onKeyDown={(event) => {
-                  if (event.metaKey || event.ctrlKey || event.altKey) return;
-                  if (
-                    event.key === "Enter" ||
-                    event.key === "ArrowDown" ||
-                    (event.key === "Tab" && !event.shiftKey)
-                  ) {
-                    event.preventDefault();
-                    deriveSlugFromTitle(event.currentTarget.value);
-                    focusBody();
-                  }
-                }}
-              />
-            ),
-            tags: (
-              <TagEditor
-                tags={draft.tags}
-                suggestions={workspaceTags}
-                onChange={(tags) => updateDraft({ tags })}
-                onOpenTag={onOpenTag}
-              />
-            ),
-            body: (
-              <div
-                onKeyUp={captureBodySelection}
-                onMouseUp={captureBodySelection}
-                onSelectCapture={captureBodySelection}
-              >
-                <LocalWorkspaceBodyEditor
-                  value={draft.body}
-                  onChange={(body) =>
-                    updateDraft({ body, excerpt: markdownSubtitle(body) })
-                  }
-                  onNavigateField={(direction) => {
-                    if (direction === "next") {
-                      dateRef.current?.focus({ preventScroll: true });
-                    } else {
-                      titleRef.current?.focus({ preventScroll: true });
-                    }
-                  }}
-                  mediaEnabled
-                  uploadEndpoint={mediaUploadEndpointForHandle(blog.handle)}
-                  wikiLinkPosts={wikiLinkPosts}
-                  onCreateWikiLinkNote={createWikiLinkNote}
-                />
-              </div>
-            ),
-            byline: (
-              <PostByline
-                blog={blog}
-                post={displayPost}
-                dateControl={
-                  <label className="post-edit-date-control">
-                    <span className="sr-only">Post date</span>
-                    <input
-                      ref={dateRef}
-                      type="date"
-                      value={draft.date.slice(0, 10)}
-                      onChange={(event) =>
-                        updateDraft({ date: event.currentTarget.value })
-                      }
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "ArrowUp" ||
-                          (event.key === "Tab" && event.shiftKey)
-                        ) {
-                          event.preventDefault();
-                          focusBody();
-                        }
-                      }}
-                    />
-                  </label>
-                }
-              />
-            ),
-          }}
-        />
-        <ReaderFindHighlights query={findQuery} />
-        <BacklinksPanel
-          blog={blog}
-          posts={backlinks}
-          onNavigate={onNavigate}
-        />
-      </main>
-    </>
+    <UnifiedDocumentEditor
+      active={active}
+      blog={blog}
+      post={post}
+      template={template}
+      availableTemplates={pool.templates}
+      collab={{
+        postId: poolPost.id,
+        userName: blog.author || "You",
+        color: collaboratorColor(editorIdentity),
+        canEdit: true,
+      }}
+      onDocumentChange={updateLocalDocument}
+      onMaterialized={acknowledgeMaterialized}
+      onDelete={
+        onDeleteItem ? () => Promise.resolve(onDeleteItem(post)) : undefined
+      }
+      onDone={() =>
+        onNavigate(
+          template.id === "texttext.note"
+            ? containingFolderHref
+            : blogPostPath(blog, post),
+        )
+      }
+    />
   );
 }
 
@@ -4605,20 +3883,14 @@ function LocalWorkspaceContent({
       </div>
       {shouldWarmEditor && activePost && (
         <div className="local-workspace-surface" hidden={!editorVisible}>
-          <LocalWorkspacePostEditor
+          <LocalUnifiedWorkspacePostEditor
             key={itemIdentity.stableKey(activePost.id)}
             active={editorVisible}
             blog={blog}
-            canCommentPost={canCommentPost}
-            canManagePost={canManagePost}
             editorIdentity={itemIdentity.stableKey(activePost.id)}
             homePath={homePath}
-            onCaptureResolved={onCaptureResolved}
             onDeleteItem={onDeleteItem}
             onNavigate={onNavigate}
-            onOpenTag={onOpenTag}
-            onSearch={onSearch}
-            searchFocusRequestKey={searchFocusRequestKey}
             pool={pool}
             poolPost={activePost}
             returnToSearch={

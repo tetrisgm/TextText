@@ -45,6 +45,7 @@ function workspacePool(): WorkspacePoolPayload {
     ],
     posts: [],
     counts: {},
+    templates: [],
   };
 }
 

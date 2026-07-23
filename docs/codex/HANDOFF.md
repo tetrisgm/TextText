@@ -1,209 +1,145 @@
-# Texttext: Claude handoff
+# Texttext continuation handoff
 
-Updated 2026-07-22. This is the only current continuation document.
+Updated 2026-07-23. This is the only current continuation document.
 
 ## Start here
-
-The queued body of work is **AI-driven document types**: an engine of render
-primitives plus app-executed capabilities, over which a document type is
-validated data (fields, item render, container-as-page render, capability
-declaration), authored by AI or picked from a fork-to-own gallery, compiled to
-HTML, on the existing `.textpack` content model. It is DESIGN, not started, and
-is being built collaboratively with Codex, so treat the plan as a proposal to
-iterate and verify, not a spec to execute blindly. Otherwise continue from the
-user's newest request, and do not resurrect work from older prompts, screenshots,
-or the historical briefs under `docs/codex/` unless the user asks.
 
 Read these files before changing product code:
 
 1. `AGENTS.md`
 2. `CLAUDE.md`
 3. `DESIGN.md`
-4. `docs/plan-document-types.md` (the plan) and `docs/review-2026-07-22.md` (the
-   review that scoped it) for the document-types work
-5. `docs/ai-sidebar-architecture.md` for AI, assistant, or MCP work
+4. `docs/plan-document-types.md`
+5. `docs/review-2026-07-22.md`
+6. `docs/ai-sidebar-architecture.md` for assistant or MCP work
 
-## Repository state at handoff
+Confirm the live state with `git status`, `git worktree list`, and
+`git branch --no-merged main`. `main` is the only durable branch and release
+source. Do not trust a version number copied from this handoff; inspect generated
+release metadata, the public marker, appcast, and installed bundle.
 
-- Repository: `/Users/shokunin/dev/write`
-- Durable branch: `main` only
-- Remote: `origin/main`
-- Feature and release source commit: `aea7650` records Texttext `0.103`
-- The later commits on `main` only refresh continuation documentation.
-- No temporary worktrees, unmerged branches, or uncommitted product changes
-  existed when this handoff was prepared.
+## Current architecture
 
-Always confirm the live state with `git status`, `git worktree list`, and
-`git branch --no-merged main` rather than assuming this snapshot is still current.
+Texttext has one document model. Article, note, bookmark, gallery, and talk are
+validated presentation templates and capability defaults, not separate content
+models.
 
-## Shipped product state
+The implemented rebuild includes:
 
-Texttext `0.103`, build `109`, is the coherent shipped release for this body of
-work. At handoff time all of the following matched:
+- Strict schema-versioned `DocumentSnapshot` content and presentation data
+- Closed render primitives with type-compatible content bindings
+- Immutable built-in and workspace template versions
+- Constrained AI template operations shared by UI, native assistant, and MCP
+- Three-column keyboard-accessible template gallery using real engine previews
+- One renderer for app, public links, previews, and HTML export
+- Explicit fail-closed `private`, `link`, or `public` visibility
+- Revocable guest capability links with viewer, commenter, or editor roles
+- Full-document Yjs collaboration with awareness, cursors, selections, offline
+  IndexedDB outbox, bounded retry, and epoch fencing
+- Structured `.textpack` projection containing `text.md`, `document.json`, and
+  package-local assets
+- Raw Markdown compatibility for older clients
+- App-owned engine and native projection health evaluations
 
-- Source metadata: `src/generated/app-release.ts`
-- Mac source version: `mac/Info.plist`
-- Installed app: `/Applications/Write.app`
-- Public marker: `https://texttext.app/api/app/version`
-- Sparkle feed: `https://texttext.app/appcast.xml`
-- Immutable archive and signed enclosure named by the generated release metadata
+The bespoke Reader, ProjectReader, TalkReader, body editor, edit layer, and
+editor preview route were removed. Do not reintroduce them.
 
-The installed app was running from `/Applications/Write.app`. Release metadata
-files are authoritative. Never copy a version from this handoff into a ship
-command without checking those files and probing the public marker first.
+## Load-bearing contracts
 
-## Completed current feature set
-
-The current release includes and verifies:
-
-- Apple Foundation Models prewarming, readiness reporting, bounded retries, and
-  native assistant execution.
-- The shared 31-tool workspace contract used by the UI assistant and hosted MCP.
-- Reader text selection without accidental marquee selection.
-- Comments created from selected text and displayed as inline threads.
-- Bookmark recapture in the edit menu, original-source captions, and Reader or
-  Full display modes.
-- One responsive search control across workspace, folder, and item surfaces,
-  including find-in-item highlighting.
-- One Column views rendered as expanded vertical cards.
-- The former Grid view renamed Cards, with image and text-only card treatments
-  and the star inside each card.
-- Immediate removal of trashed items from Recent.
-- Work-unit instrumentation, exact-source verification receipts, release gate
-  reuse, and the one-command release workflow.
-
-Do not redo these features based on an old acceptance-criteria document. A newly
-observed regression is a new task and should be reproduced against the installed
-current release first.
-
-## Current body of work: AI-driven document types
-
-See `docs/plan-document-types.md` for the full plan and `docs/review-2026-07-22.md`
-for the review that scoped it. The load-bearing decisions:
-
-- One engine (a game-engine model): render primitives are pure and declarative
-  and a type composes them; capabilities (import, sync, collaboration, AI,
-  publish, search) are app-executed and a type only declares them. Compose-only:
-  a type is validated data, never code that runs alongside the engine.
-- Content stays portable data in the `.textpack` (Markdown body + typed fields +
-  assets). HTML is compiled output, never the stored source.
-- The hard prerequisite is the **fail-closed privacy rework**: today privacy is a
-  denylist, so a novel type would publish by default across four-plus sites. Flip
-  it to an allow-list before any type becomes user-definable. A closed
-  `validateRenderSpec` must gate any rendered spec.
-- The plan lists ordering constraints, not fixed phases; the public gallery is
-  last because import is the only untrusted-input surface.
-
-Intersecting pending work to coordinate with, not duplicate:
-
-- **Collaboration durability** (core, not a side feature): make the owner a
-  first-class Yjs co-editor, an invite/accept binding step, live cursors, and
-  close the known between-sessions holes. Its access half is the sharing and
-  permission model (public link, team, named writers). CRDT/sync only touch
-  document content; the render and the engine are separate layers.
-- **BYO cloud AI**: a "use my cloud key" override so the AI authoring loop can
-  reach Claude or GPT, not only the on-device model.
-
-A separately discussed idea, not assigned: a macOS-aware reading-size preference
-that respects system accessibility choices. Do not build it unless asked.
-
-## Architecture and safety contracts
-
-- `main` is the only durable branch and release source.
 - `src/lib/store.ts` is the only content access boundary.
-- Notes and bookmarks remain private and unlisted at every layer.
 - Every mutation writes an `action_audit` row.
-- UI, in-app assistant, and MCP consume one workspace command contract. The app
-  never calls its own MCP endpoint.
-- Apple on-device models are the default AI provider on eligible Macs. Optional
-  cloud providers and external MCP clients augment that local-first path.
-- Never reintroduce `Response.redirect()` in the OAuth approval route because its
-  immutable headers previously caused production approval failures.
-- Follow the typography, contrast, motion, theme, and copy rules in `DESIGN.md`.
-- Do not use em dashes in product copy, documentation, or release notes.
+- Notes and bookmarks remain private and unlisted.
+- Missing or unknown visibility is private.
+- Template identity and capability declarations never grant access.
+- Documents and templates are data only. No user HTML, CSS, JavaScript, React,
+  remote code, or arbitrary component names enter the engine.
+- Every render spec passes `validateTemplateDefinition` before rendering.
+- A document pins an exact immutable template version.
+- File Provider is a durable projection, not the local edit hot path.
+- The app renders local Yjs edits immediately and reconciles the network in the
+  background.
+- The server-mediated relay is the collaboration foundation. P2P is optional
+  future transport work only if measurements justify it.
+- The UI, in-app assistant, and MCP consume one workspace command contract. The
+  app never calls its own MCP endpoint.
+- Never reintroduce `Response.redirect()` in the OAuth approval route.
+- Use no em dashes in code, documentation, or product copy.
 
-The detailed implemented AI state lives in
-`docs/ai-sidebar-architecture.md`. The files `docs/codex/mcp-brief.md` and
-`docs/codex/ui-batch-brief.md` are historical inputs, not pending queues.
+## Key files
 
-## Local development environment (read before running anything)
+- Canonical model: `src/lib/documents/model.ts`
+- Markdown compatibility: `src/lib/documents/legacy.ts`
+- Structured sync: `src/lib/documents/sync.ts`
+- Visibility: `src/lib/documents/visibility.ts`
+- Render schema: `src/lib/presentation/schema.ts`
+- Built-ins: `src/lib/presentation/templates.ts`
+- Constrained authoring: `src/lib/presentation/operations.ts`
+- Renderer: `src/components/document/DocumentRenderer.tsx`
+- Unified editor: `src/components/document/UnifiedDocumentEditor.tsx`
+- Template chooser: `src/components/document/TemplateGallery.tsx`
+- Yjs mapping: `src/lib/collab/document.ts`
+- Relay provider: `src/lib/collab/provider.ts`
+- Store boundary: `src/lib/store.ts`
+- Native package projection: `mac/Sources/WriteFileProviderKit/TextBundlePackage.swift`
+- Migration: `scripts/migrate-unified-documents.mjs`
+- Release evaluation: `scripts/verify-document-engine.ts`
 
-The database is split local vs prod as of 2026-07-22, because dev, CI, and gate
-traffic against the prod Neon database burned its free-tier transfer cap. Do not
-undo this:
+## Local database safety
 
-- `.env.local` `DATABASE_URL` points at a LOCAL Postgres
-  (`postgres://<you>@localhost:5432/texttext_dev`, Homebrew `postgresql@17`). All
-  routine work (dev, tests, `npm run build`, `verify:release`) runs local and
-  never touches Neon. Set it up once with `bash scripts/setup-local-db.sh` (it
-  creates the `write_change_seq` sequence, pushes the schema, and seeds the demo).
-- `src/lib/db/client.ts` is dual-driver by URL: a `neon.tech` URL uses the Neon
-  HTTP driver (production), any other URL uses `node-postgres` (local).
-- Prod Neon is only ever touched by the deployed app and by release migrations,
-  which load prod creds from `.env.release.local` (gitignored, mode 600) and
-  refuse to migrate anything that is not the `neon.tech` endpoint.
-- Do NOT point `.env.local` at prod Neon, and do NOT run migrations or tests
-  against it. Schema changes for local work run against `texttext_dev`.
+`.env.local` must point to local Postgres `texttext_dev`. Routine development,
+tests, builds, and `verify:release` never touch production Neon. Run
+`bash scripts/setup-local-db.sh` once if local Postgres is not ready.
 
-## Work and verification workflow
+Production Neon is touched only by deployed code and release migrations using
+`.env.release.local`. Never point `.env.local` at Neon and never run tests or dev
+migrations against production.
 
-For each coherent body of work:
+## Work and release workflow
 
-1. Prove the repository and inspect branch hygiene before editing.
-2. Run `npm run work:start -- "short label"`.
-3. Work directly on `main` unless another integrator is already writing there.
-4. Run checks through the work-unit recipes so receipts include exact source and
-   closed, capped child processes.
-5. Use `npm run work:summary` while diagnosing slow work.
-6. Use `npm run verify:release` as the only full release gate.
-7. Run `npm run work:finish` after final verification.
-8. Commit and push one coherent unit once.
-9. Ship meaningful product work with `release/ship.sh`. It bumps the next free
-   version when no version is supplied, publishes immutable artifacts first,
-   flips public markers last, installs the Mac app, and verifies the result.
-10. Do not build or ship documentation-only changes.
+1. Prove repository root, branch, status, and worktrees.
+2. Start one work unit with `npm run work:start -- "short label"`.
+3. Work directly on `main` unless another integrator owns the checkout.
+4. Preserve unrelated work and batch one coherent change.
+5. Use `npm run verify:release` once as the full exact-source gate.
+6. Run `npm run work:finish` after verification.
+7. Commit and push the coherent unit once.
+8. Ship meaningful product work with `release/ship.sh`.
+9. Verify source, immutable archive, appcast, public marker, website, installed
+   bundle version and build, signature, and running app all agree.
+10. Add user-facing changes to the in-product Texttext Changelog note.
 
-For OAuth, MCP discovery, or MCP handler changes, also run:
+For OAuth, discovery, or MCP handler changes, also run the bounded OAuth MCP loop
+described in `AGENTS.md`. The current document rebuild extends MCP tools but does
+not alter OAuth discovery or approval.
 
-```sh
-AUTH_DEV_LOGIN=1 npm run dev
-python3 scripts/test-oauth-mcp-loop.py http://localhost:3000
-```
+## Intentional exclusions
 
-Use a bounded dev-server process and stop it after the gate. The OAuth loop is a
-release blocker for that surface.
-
-Meaningful user-facing work also gets a newest-first entry in the in-product
-`Texttext Changelog` note as described in `AGENTS.md`.
-
-## Handoff maintenance
-
-Update this file only when work is genuinely unfinished or architecture changes.
-Record exact completed, pending, verification, release, and blocker state. Do not
-paste an accumulating backlog into it. Completed detail belongs in Git history,
-the architecture documents, and the in-product changelog.
+Do not invent backlog work for arbitrary HTML, CSS, JavaScript, P2P, full website
+generation, or mandatory cloud AI. Those are deliberate first-version cuts.
+Continue from the user's newest request.
 
 ## Paste into Claude
 
 ```text
 cd /Users/shokunin/dev/write
 
-Continue the Texttext project from clean main. Read AGENTS.md, CLAUDE.md, DESIGN.md,
-docs/codex/HANDOFF.md, and docs/ai-sidebar-architecture.md before changing code.
-The handoff is authoritative: the previous feature batch is complete and shipped
-as Texttext 0.103 build 109, and the old MCP and UI briefs are historical references,
-not active task lists. Do not redo completed work.
+Continue Texttext from canonical main. Read AGENTS.md, CLAUDE.md, DESIGN.md,
+docs/codex/HANDOFF.md, docs/plan-document-types.md,
+docs/review-2026-07-22.md, and docs/ai-sidebar-architecture.md before editing.
 
-First fetch and fast-forward main, then verify branch hygiene and the current
-source, public release marker, appcast, installed app version, and running app.
-Continue from my newest request. If I have not supplied a new product request,
-report that there is no active implementation rather than inventing a backlog.
+Texttext now has one canonical DocumentSnapshot and a closed, data-only
+presentation engine. Article, note, bookmark, gallery, and talk are templates,
+not separate content models. The old bespoke readers and editor stack were
+deleted. Do not restore them. Preserve fail-closed visibility, store.ts as the
+only content boundary, audited mutations, notes/bookmarks private, exact
+immutable template versions, local-first Yjs editing, structured .textpack sync,
+and raw Markdown compatibility.
 
-For actual product work, start a work unit with npm run work:start, work directly
-on main, preserve unrelated changes, verify once through the receipt-based work
-commands, commit and push one coherent unit, ship it with release/ship.sh, update
-the installed app and in-product Texttext Changelog, and verify source, public
-artifacts, feed, website, installed version, and running behavior all agree.
-Do not create a feature branch or leave work for me to integrate. Do not ship
-documentation-only changes. Use no em dashes.
+First inspect live main, worktrees, unmerged branches, release metadata, public
+marker, appcast, and installed bundle. Continue only from my newest request. For
+product work, start one work unit, work directly on main, verify once with the
+receipt-based release gate, commit and push one coherent unit, ship once with
+release/ship.sh, update the installed app and in-product changelog, and verify
+the complete release. Do not create a feature branch or ask me to integrate it.
+Use no em dashes.
 ```

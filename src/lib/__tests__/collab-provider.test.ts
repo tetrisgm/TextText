@@ -10,6 +10,33 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
+const BASELINE_UPDATE = (() => {
+  const doc = new Y.Doc();
+  doc.getMap("document").set("schemaVersion", 1);
+  const update = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+  doc.destroy();
+  return update;
+})();
+
+function catchUpResponse({
+  updates = [],
+  seq = 0,
+  epoch = 0,
+  revision = 1,
+}: {
+  updates?: Array<{ seq: number; update: string }>;
+  seq?: number;
+  epoch?: number;
+  revision?: number;
+} = {}): Response {
+  return jsonResponse({
+    updates,
+    seq,
+    epoch,
+    baseline: { update: BASELINE_UPDATE, revision },
+  });
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((next) => {
@@ -70,10 +97,11 @@ describe("CollabProvider startup and outbox", () => {
     await vi.advanceTimersByTimeAsync(400);
     expect(pushed).toHaveLength(0);
 
-    initial.resolve(jsonResponse({ updates: [], seq: 0, epoch: 5 }));
+    initial.resolve(catchUpResponse({ epoch: 5 }));
     await expect(started).resolves.toEqual({
       authoritative: true,
       remoteEmpty: false,
+      baselineRevision: 1,
     });
     provider.destroy();
 
@@ -111,7 +139,7 @@ describe("CollabProvider startup and outbox", () => {
             : jsonResponse({ seq: 1 });
         }
         if (url.includes("wait=0")) {
-          return jsonResponse({ updates: [], seq: 0 });
+          return catchUpResponse();
         }
         return never;
       }),
@@ -122,6 +150,7 @@ describe("CollabProvider startup and outbox", () => {
     await expect(first.start()).resolves.toEqual({
       authoritative: true,
       remoteEmpty: true,
+      baselineRevision: 1,
     });
     firstDoc.getMap("body").set("text", "unsent");
     first.destroy();
@@ -134,6 +163,7 @@ describe("CollabProvider startup and outbox", () => {
     await expect(remounted.start()).resolves.toEqual({
       authoritative: true,
       remoteEmpty: false,
+      baselineRevision: 1,
     });
     expect(remountedDoc.getMap("body").get("text")).toBe("unsent");
     remounted.destroy();
@@ -158,7 +188,7 @@ describe("CollabProvider startup and outbox", () => {
           return jsonResponse({ error: "offline" }, 503);
         }
         if (url.includes("wait=0")) {
-          return jsonResponse({ updates: [], seq: 0, epoch });
+          return catchUpResponse({ epoch });
         }
         return new Promise<Response>(() => {});
       }),
@@ -224,7 +254,7 @@ describe("CollabProvider startup and outbox", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes("since=0") && url.includes("wait=0")) {
-          return jsonResponse({ updates: [{ seq: 7, update }], seq: 7 });
+          return catchUpResponse({ updates: [{ seq: 7, update }], seq: 7 });
         }
         if (url.includes("since=7") && url.includes("wait=0")) {
           return jsonResponse({ updates: [], seq: 7 });
@@ -243,6 +273,7 @@ describe("CollabProvider startup and outbox", () => {
     await expect(provider.start()).resolves.toEqual({
       authoritative: true,
       remoteEmpty: false,
+      baselineRevision: 1,
     });
     expect(target.getMap("body").get("text")).toBe("remote");
     provider.destroy();
@@ -267,7 +298,7 @@ describe("CollabProvider startup and outbox", () => {
         // First GET (catch-up) returns empty/authoritative; the poll GET parks.
         if (!catchUpDone) {
           catchUpDone = true;
-          return jsonResponse({ updates: [], seq: 0 });
+          return catchUpResponse();
         }
         return never;
       }),
@@ -319,7 +350,7 @@ describe("CollabProvider startup and outbox", () => {
         }
         if (!catchUpDone) {
           catchUpDone = true;
-          return jsonResponse({ updates: [], seq: 0, epoch: 5 });
+          return catchUpResponse({ epoch: 5 });
         }
         return new Promise<Response>(() => {});
       }),
@@ -358,7 +389,7 @@ describe("CollabProvider startup and outbox", () => {
         if (url.endsWith("/presence")) return jsonResponse({ presence: [] });
         if (url.includes("wait=0")) {
           catchUpDone = true;
-          return jsonResponse({ updates: [], seq: 0, epoch: 3 });
+          return catchUpResponse({ epoch: 3 });
         }
         // The long-poll returns a DIFFERENT (advanced) epoch with a row: the
         // generation was retired. The row must NOT be applied to the stale doc.
@@ -415,7 +446,7 @@ describe("CollabProvider startup and outbox", () => {
         if (init?.method === "POST") return new Promise<Response>(() => {}); // push never resolves: stays queued
         if (!catchUpDone) {
           catchUpDone = true;
-          return jsonResponse({ updates: [], seq: 0 });
+          return catchUpResponse();
         }
         return new Promise<Response>(() => {});
       }),
@@ -473,7 +504,7 @@ describe("CollabProvider startup and outbox", () => {
         }
         if (!catchUpDone) {
           catchUpDone = true;
-          return jsonResponse({ updates: [], seq: 0, epoch: 5 });
+          return catchUpResponse({ epoch: 5 });
         }
         return new Promise<Response>(() => {});
       }),
@@ -588,7 +619,7 @@ describe("CollabProvider startup and outbox", () => {
         }
         if (!caughtUp) {
           caughtUp = true;
-          return jsonResponse({ updates: [], seq: 0, epoch: 0 });
+          return catchUpResponse();
         }
         return new Promise<Response>(() => {});
       }),

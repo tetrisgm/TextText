@@ -7,13 +7,12 @@
 // closed tab drops out on its own. Any collaborator (viewer included) counts
 // as present.
 
-import { getCurrentUser } from "@/lib/session";
 import {
   activePresence,
-  collabAccess,
   removePresence,
   upsertPresence,
 } from "@/lib/collab";
+import { getCollabRequestAccess } from "@/lib/collab/access.server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +21,8 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const user = await getCurrentUser();
-  const role = await collabAccess(user, postId);
+  const access = await getCollabRequestAccess(postId);
+  const role = access.role;
   if (!role) {
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
@@ -32,6 +31,7 @@ export async function POST(
     clientId?: unknown;
     userName?: unknown;
     color?: unknown;
+    awareness?: unknown;
     leave?: unknown;
   };
   try {
@@ -47,14 +47,16 @@ export async function POST(
     await removePresence(postId, clientId);
     return Response.json({ presence: await activePresence(postId) });
   }
-  const userName =
-    (typeof body.userName === "string" ? body.userName.trim() : "").slice(0, 60) ||
-    "Someone";
-  const color =
-    typeof body.color === "string" && /^#[0-9a-fA-F]{6}$/.test(body.color)
-      ? body.color
-      : "#8a8a8f";
+  const awareness =
+    typeof body.awareness === "string" && body.awareness.length <= 64 * 1024
+      ? body.awareness
+      : null;
 
-  const presence = await upsertPresence(postId, { clientId, userName, color });
+  const presence = await upsertPresence(postId, {
+    clientId,
+    userName: access.userName,
+    color: access.color,
+    awareness,
+  });
   return Response.json({ presence });
 }

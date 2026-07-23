@@ -1667,7 +1667,11 @@ export async function setEditablePostStatusAction(
     : cleanStatus(statusInput);
   const saved = await savePost(
     handle,
-    { ...existing, status },
+    {
+      ...existing,
+      status,
+      visibility: status === "published" ? "public" : "private",
+    },
     { expectedRevision: existing.revision },
   );
   await auditEdit(

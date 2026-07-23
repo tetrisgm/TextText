@@ -20,7 +20,6 @@ import type { CaptureStatusResponse } from "@/components/bookmarks/useCaptureSta
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import { shortcutLabelForCommand } from "@/lib/commands/workspace";
-import { preloadPostEditLayer } from "@/components/preloadPostEditLayer";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
@@ -778,7 +777,6 @@ export function PostActionBar(props: Props) {
     // A supplied navigation handler owns an already-mounted local surface.
     // Warming the route would add server work to a local read/edit toggle.
     if (props.onNavigate) return;
-    preloadPostEditLayer();
     if (warmedEditPaths.has(editHref)) return;
     warmedEditPaths.add(editHref);
     router.prefetch(editHref);

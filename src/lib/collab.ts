@@ -18,9 +18,21 @@ import {
   collabUpdates,
   posts,
 } from "@/lib/db/schema";
+import {
+  documentSnapshotFromYDoc,
+  encodeDocumentBaseline,
+} from "@/lib/collab/document";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import type { DocumentSnapshot } from "@/lib/documents/model";
 import { resolveItemAccess, type AccessUser } from "@/lib/permissions";
+import { getPostStoreContext } from "@/lib/store";
 
 export type CollabRole = "editor" | "viewer";
+export type CollabBaseline = {
+  epoch: number;
+  revision: number;
+  update: string;
+};
 
 // A stable, pleasant cursor color per identity (deterministic so a person
 // keeps the same color across sessions and devices).
@@ -48,11 +60,17 @@ const UUID_RE =
 export async function collabAccess(
   user: AccessUser | null,
   postId: string,
+  capabilityRole: "viewer" | "commenter" | "editor" | null = null,
 ): Promise<CollabRole | null> {
-  if (!db || !user) return null;
+  if (!db) return null;
   // A non-UUID postId would make the Postgres uuid cast throw; reject it as
   // "no access" (403) rather than letting it surface as a 500.
   if (!UUID_RE.test(postId)) return null;
+  if (capabilityRole === "editor") return "editor";
+  if (capabilityRole === "commenter" || capabilityRole === "viewer") {
+    return "viewer";
+  }
+  if (!user) return null;
   const rows = await db
     .select({ handle: blogs.handle })
     .from(posts)
@@ -67,17 +85,6 @@ export async function collabAccess(
   return null;
 }
 
-/** The post's current revision (the sync CAS token), or null if gone. */
-export async function getPostRevision(postId: string): Promise<number | null> {
-  if (!db) return null;
-  const rows = await db
-    .select({ revision: posts.revision })
-    .from(posts)
-    .where(eq(posts.id, postId))
-    .limit(1);
-  return rows[0]?.revision ?? null;
-}
-
 /** The current log generation for a post (0 when it has no collab_state row). */
 export async function getCollabEpoch(postId: string): Promise<number> {
   if (!db) return 0;
@@ -87,6 +94,120 @@ export async function getCollabEpoch(postId: string): Promise<number> {
     .where(eq(collabState.postId, postId))
     .limit(1);
   return rows[0]?.epoch ?? 0;
+}
+
+export async function getCollabBaseline(
+  postId: string,
+): Promise<CollabBaseline | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({
+      epoch: collabState.epoch,
+      revision: collabState.baselineRevision,
+      update: collabState.baselineUpdate,
+    })
+    .from(collabState)
+    .where(eq(collabState.postId, postId))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.revision == null || !row.update) return null;
+  return { epoch: row.epoch, revision: row.revision, update: row.update };
+}
+
+/**
+ * Return the single server-owned Yjs baseline for the current epoch. A missing
+ * baseline is created from the canonical document. If an out-of-band write
+ * advanced posts.revision while no editor was live, the epoch rotates and the
+ * new canonical document becomes the next baseline. The epoch CAS fences late
+ * writers before old updates are swept.
+ */
+export async function prepareCollabBaseline(
+  postId: string,
+): Promise<CollabBaseline | null> {
+  if (!db) return null;
+  const context = await getPostStoreContext(postId);
+  if (!context) return null;
+  const revision = context.post.revision ?? 0;
+  const snapshot =
+    context.post.document ?? documentFromLegacyPost(context.post);
+  const encoded = Buffer.from(
+    encodeDocumentBaseline(snapshot, `${postId}:${revision}`),
+  ).toString("base64");
+
+  await db.execute(sql`
+    INSERT INTO ${collabState} (
+      post_id,
+      epoch,
+      baseline_update,
+      baseline_revision,
+      materialized_revision,
+      updated_at
+    )
+    VALUES (
+      ${postId}::uuid,
+      0,
+      ${encoded},
+      ${revision},
+      ${revision},
+      now()
+    )
+    ON CONFLICT (post_id) DO NOTHING
+  `);
+
+  const stateRows = await db
+    .select({
+      epoch: collabState.epoch,
+      baselineRevision: collabState.baselineRevision,
+      baselineUpdate: collabState.baselineUpdate,
+      materializedRevision: collabState.materializedRevision,
+    })
+    .from(collabState)
+    .where(eq(collabState.postId, postId))
+    .limit(1);
+  const state = stateRows[0];
+  if (!state) return null;
+
+  const missingBaseline =
+    state.baselineRevision == null || !state.baselineUpdate;
+  const externallyStale =
+    state.materializedRevision !== revision &&
+    state.baselineRevision !== revision;
+  if (missingBaseline || externallyStale) {
+    const active = await hasActiveCoEditors(postId);
+    if (missingBaseline || !active) {
+      const result = await db.execute(sql`
+        UPDATE ${collabState}
+        SET epoch = collab_state.epoch + 1,
+            baseline_update = ${encoded},
+            baseline_revision = ${revision},
+            materialized_revision = ${revision},
+            updated_at = now()
+        WHERE post_id = ${postId}::uuid
+          AND epoch = ${state.epoch}
+          AND (
+            baseline_update IS NULL
+            OR baseline_revision IS NULL
+            OR (
+              materialized_revision IS DISTINCT FROM ${revision}
+              AND baseline_revision IS DISTINCT FROM ${revision}
+            )
+          )
+        RETURNING epoch
+      `);
+      if (result.rows.length > 0) {
+        await db.execute(sql`
+          DELETE FROM ${collabUpdates}
+          WHERE post_id = ${postId}::uuid
+            AND epoch < (
+              SELECT epoch FROM ${collabState}
+              WHERE post_id = ${postId}::uuid
+            )
+        `);
+      }
+    }
+  }
+
+  return getCollabBaseline(postId);
 }
 
 /**
@@ -105,8 +226,12 @@ export async function appendCollabUpdate(
   const result = await db.execute(sql`
     INSERT INTO ${collabUpdates} (post_id, "update", epoch)
     SELECT ${postId}::uuid, ${updateBase64}, ${clientEpoch}::int
-    WHERE ${clientEpoch}::int = COALESCE(
-      (SELECT epoch FROM ${collabState} WHERE post_id = ${postId}::uuid), 0)
+    WHERE ${clientEpoch}::int = (
+      SELECT epoch FROM ${collabState}
+      WHERE post_id = ${postId}::uuid
+        AND baseline_update IS NOT NULL
+        AND baseline_revision IS NOT NULL
+    )
     RETURNING seq
   `);
   // A row means the fence matched and the append landed. `seq` is a bigserial,
@@ -172,111 +297,6 @@ export async function markCollabMaterialized(
   `);
 }
 
-/**
- * Retire a post's log generation when it is safe AND stale, so the next editor
- * reseeds from the authoritative posts.body instead of replaying a log left
- * stale between sessions (hole 2). Safe = no live co-editors. Stale = no
- * collab_state, or its materialized_revision is null or behind the current
- * posts.revision (an external write happened since the log last materialized).
- * Returns true when it retired, so the caller serves an empty log and the client
- * reseeds.
- *
- * There is NO quiescence delay on purpose: external writes become allowed the
- * moment presence goes stale (hasActiveCoEditors=false), so any delay before
- * retiring leaves a window in which a new joiner REPLAYS the stale log and
- * clobbers that external write. Retiring the instant it is stale-and-idle closes
- * that window; a lapsed editor that resumes and flushes retained edits is
- * rejected by the append epoch fence, so no delay is needed for its safety.
- *
- * The bump is a single-writer upsert CAS: it INSERTs epoch 1 when there is no
- * row (existing/backfill posts) or bumps `epoch + 1` guarded on the read epoch,
- * and in BOTH cases records `materialized_revision = postRevision` so the next
- * open is not stale (no reseed loop). Concurrent opens: one wins, the other's
- * CAS misses harmlessly and the epoch is still advanced.
- */
-export async function retireStaleCollabEpoch(
-  postId: string,
-  postRevision: number,
-): Promise<boolean> {
-  if (!db) return false;
-  if (await hasActiveCoEditors(postId)) return false;
-  // This path has already proved the post idle. Sweep only ghosts well beyond
-  // the live-presence window, retaining the existing 4x safety margin.
-  await db
-    .delete(collabPresence)
-    .where(
-      and(
-        eq(collabPresence.postId, postId),
-        lt(collabPresence.updatedAt, new Date(Date.now() - PRESENCE_STALE_MS * 4)),
-      ),
-    );
-  const rows = await db
-    .select({
-      epoch: collabState.epoch,
-      materializedRevision: collabState.materializedRevision,
-    })
-    .from(collabState)
-    .where(eq(collabState.postId, postId))
-    .limit(1);
-  const cur = rows[0];
-  const stale =
-    !cur ||
-    cur.materializedRevision == null ||
-    cur.materializedRevision !== postRevision;
-  const readEpoch = cur?.epoch ?? 0;
-  let retired = false;
-  if (stale) {
-    await db.execute(sql`
-      INSERT INTO ${collabState} (post_id, epoch, materialized_revision, updated_at)
-      VALUES (${postId}::uuid, 1, ${postRevision}, now())
-      ON CONFLICT (post_id) DO UPDATE
-        SET epoch = collab_state.epoch + 1,
-            materialized_revision = ${postRevision},
-            updated_at = now()
-        WHERE collab_state.epoch = ${readEpoch}
-    `);
-    retired = true;
-  } else {
-    // A materialized, idle current log is reconstructible from posts.body. Do
-    // not delete it in place: rotate the epoch with the same single-writer CAS
-    // used above, so a lapsed writer is fenced before the old generation is
-    // swept. The live posts.revision comparison closes the read-to-delete race,
-    // and EXISTS avoids pointless epoch churn when there is no log to clean.
-    const result = await db.execute(sql`
-      UPDATE ${collabState}
-      SET epoch = collab_state.epoch + 1,
-          updated_at = now()
-      WHERE post_id = ${postId}::uuid
-        AND epoch = ${readEpoch}
-        AND materialized_revision = ${postRevision}
-        AND EXISTS (
-          SELECT 1 FROM ${posts}
-          WHERE id = ${postId}::uuid
-            AND revision = collab_state.materialized_revision
-        )
-        AND EXISTS (
-          SELECT 1 FROM ${collabUpdates}
-          WHERE post_id = ${postId}::uuid
-            AND epoch = ${readEpoch}
-        )
-      RETURNING epoch
-    `);
-    retired = result.rows.length > 0;
-  }
-  // Storage sweep: rows from retired epochs are dead forever. The relay only
-  // serves the CURRENT epoch and the append fence rejects stale writers, so
-  // nothing can ever read or extend an older epoch's rows; deleting them is
-  // race-free at any time after the bump. The subquery (not our read epoch)
-  // keeps this correct even when a concurrent retire won the CAS.
-  await db.execute(sql`
-    DELETE FROM ${collabUpdates}
-    WHERE post_id = ${postId}::uuid
-      AND epoch < COALESCE(
-        (SELECT epoch FROM ${collabState} WHERE post_id = ${postId}::uuid), 0)
-  `);
-  return retired;
-}
-
 // Compact the append log once it grows past this many rows. Compaction
 // collapses the whole history into a single equivalent snapshot, so a new
 // joiner fetches one row instead of thousands and storage stays bounded.
@@ -284,6 +304,40 @@ const COMPACT_THRESHOLD = 200;
 
 function base64ToUpdate(b64: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, "base64"));
+}
+
+/**
+ * Rebuild the canonical document from the current Yjs generation. The caller
+ * may include its complete local state so edits still queued in its durable
+ * outbox participate in the merge. Yjs makes applying the same update twice
+ * harmless, so a state already present in the relay does not duplicate text.
+ */
+export async function materializeCollabDocument(
+  postId: string,
+  currentStateBase64?: string,
+): Promise<DocumentSnapshot | null> {
+  if (!db) return null;
+  const baseline = await prepareCollabBaseline(postId);
+  if (!baseline) return null;
+  const epoch = baseline.epoch;
+  const rows = await db
+    .select({ update: collabUpdates.update })
+    .from(collabUpdates)
+    .where(and(eq(collabUpdates.postId, postId), eq(collabUpdates.epoch, epoch)))
+    .orderBy(asc(collabUpdates.seq));
+  const document = new Y.Doc();
+  try {
+    Y.applyUpdate(document, base64ToUpdate(baseline.update));
+    for (const row of rows) Y.applyUpdate(document, base64ToUpdate(row.update));
+    if (currentStateBase64) {
+      Y.applyUpdate(document, base64ToUpdate(currentStateBase64));
+    }
+    return documentSnapshotFromYDoc(document);
+  } catch {
+    return null;
+  } finally {
+    document.destroy();
+  }
 }
 
 /**
@@ -335,26 +389,31 @@ export async function maybeCompactCollab(postId: string): Promise<void> {
     );
 }
 
-export type PresenceEntry = { clientId: string; userName: string; color: string };
-
-function presencePersonKey(entry: Pick<PresenceEntry, "clientId" | "userName">): string {
-  return entry.userName.trim().toLocaleLowerCase() || entry.clientId;
-}
+export type PresenceEntry = {
+  clientId: string;
+  userName: string;
+  color: string;
+  awareness: string | null;
+};
 
 function dedupePresenceRows(
   rows: Array<PresenceEntry & { updatedAt: Date }>,
 ): PresenceEntry[] {
   const people = new Map<string, PresenceEntry & { updatedAt: Date }>();
   for (const row of rows) {
-    const key = presencePersonKey(row);
-    const existing = people.get(key);
+    const existing = people.get(row.clientId);
     if (!existing || row.updatedAt.getTime() > existing.updatedAt.getTime()) {
-      people.set(key, row);
+      people.set(row.clientId, row);
     }
   }
   return Array.from(people.values())
     .sort((a, b) => a.userName.localeCompare(b.userName))
-    .map(({ clientId, userName, color }) => ({ clientId, userName, color }));
+    .map(({ clientId, userName, color, awareness }) => ({
+      clientId,
+      userName,
+      color,
+      awareness,
+    }));
 }
 
 /** Heartbeat this client's presence and return everyone currently active. */
@@ -370,11 +429,17 @@ export async function upsertPresence(
       clientId: entry.clientId,
       userName: entry.userName,
       color: entry.color,
+      awareness: entry.awareness,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: [collabPresence.postId, collabPresence.clientId],
-      set: { userName: entry.userName, color: entry.color, updatedAt: new Date() },
+      set: {
+        userName: entry.userName,
+        color: entry.color,
+        awareness: entry.awareness,
+        updatedAt: new Date(),
+      },
     });
   // Opportunistic cleanup: a tab that closed without a clean leave leaves a
   // stale row. Drop rows for this post well past the active window so the
@@ -412,6 +477,7 @@ export async function activePresence(postId: string): Promise<PresenceEntry[]> {
       clientId: collabPresence.clientId,
       userName: collabPresence.userName,
       color: collabPresence.color,
+      awareness: collabPresence.awareness,
       updatedAt: collabPresence.updatedAt,
     })
     .from(collabPresence)

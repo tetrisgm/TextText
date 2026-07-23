@@ -91,4 +91,94 @@ final class LiveWriteSyncAPITests: XCTestCase {
 
         XCTAssertEqual(representationHeader, "markdown")
     }
+
+    func testTextPackReadRequestsAndDecodesStructuredDocument() async throws {
+        var acceptHeader: String?
+        WriteSyncURLProtocol.handler = { request in
+            acceptHeader = request.value(forHTTPHeaderField: "Accept")
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 200,
+                httpVersion: nil, headerFields: ["ETag": "\"document-hash\""]))
+            let data = Data(##"{"schema":"texttext.sync-document.v1","markdown":"# Hello","document":{"schema":1,"content":{"body":"Hello"}}}"##.utf8)
+            return (response, data)
+        }
+        let api = makeAPI()
+
+        let result = await api.fileContent(postId: "p1", representation: .textpack)
+
+        XCTAssertEqual(
+            acceptHeader, "application/vnd.texttext.document+json")
+        guard case .success(let content) = result else {
+            return XCTFail("fileContent failed: \(result)")
+        }
+        XCTAssertEqual(content.text, "# Hello")
+        XCTAssertEqual(content.hash, "document-hash")
+        XCTAssertTrue(content.documentJSON?.contains("\"schema\" : 1") == true)
+    }
+
+    func testTextPackCreateSendsStructuredDocumentEnvelope() async throws {
+        var capturedRequest: URLRequest?
+        WriteSyncURLProtocol.handler = { request in
+            capturedRequest = request
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 201,
+                httpVersion: nil, headerFields: nil))
+            let data = Data(#"{"item":{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"markdown-hash","documentHash":"document-hash","id":"p1"}}"#.utf8)
+            return (response, data)
+        }
+        let api = makeAPI()
+
+        let result = await api.createFile(
+            body: "# Item", documentJSON: #"{"schema":1,"content":{"body":"Item"}}"#,
+            folderId: "notes", representation: .textpack,
+            idempotencyKey: "create-doc")
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Content-Type"),
+            "application/vnd.texttext.document+json")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody))
+                as? [String: Any])
+        XCTAssertEqual(object["schema"] as? String, "texttext.sync-document.v1")
+        XCTAssertEqual(object["markdown"] as? String, "# Item")
+        XCTAssertNotNil(object["document"] as? [String: Any])
+        guard case .success(let item) = result else {
+            return XCTFail("createFile failed: \(result)")
+        }
+        XCTAssertEqual(item.contentHash(), "document-hash")
+    }
+
+    func testStructuredPutUsesDocumentHashAsIfMatch() async throws {
+        var capturedRequest: URLRequest?
+        WriteSyncURLProtocol.handler = { request in
+            capturedRequest = request
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 200,
+                httpVersion: nil, headerFields: nil))
+            let data = Data(#"{"item":{"file":"posts/item.textpack","representation":"textpack","kind":"note","slug":"item","title":"Item","status":"draft","hash":"markdown-hash","documentHash":"next-document-hash","id":"p1"}}"#.utf8)
+            return (response, data)
+        }
+        let api = makeAPI()
+
+        _ = await api.putFile(
+            postId: "p1", body: "# Item",
+            documentJSON: #"{"schema":1,"content":{"body":"Next"}}"#,
+            ifMatch: "base-document-hash")
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "If-Match"),
+                       "\"base-document-hash\"")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Content-Type"),
+            "application/vnd.texttext.document+json")
+    }
+
+    private func makeAPI() -> LiveWriteSyncAPI {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [WriteSyncURLProtocol.self]
+        return LiveWriteSyncAPI(
+            origin: URL(string: "https://write.example")!, token: "wsk_test",
+            session: URLSession(configuration: configuration))
+    }
 }

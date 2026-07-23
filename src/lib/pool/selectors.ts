@@ -1,7 +1,5 @@
 import {
   BLOG_FOLDER_PATH,
-  isBlogBucketPath,
-  isPrivatePostType,
   readingTimeMinForWordCount,
 } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
@@ -17,6 +15,13 @@ import type {
   WikiLinkRenderTarget,
   WikiLinkRenderTargets,
 } from "@/lib/wikilinks";
+import { legacyTemplateId } from "@/lib/documents/legacy";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
+import {
+  BUILTIN_TEMPLATES,
+  requireBuiltinTemplate,
+  templateKey,
+} from "@/lib/presentation/templates";
 
 function fallbackFolderPathForType(type: WorkspacePoolPost["type"]): string {
   if (type === "note") return "notes";
@@ -33,6 +38,9 @@ export function narrowPostFromPost(
     id: post.id,
     blogId,
     folderId: post.folderId,
+    document: post.document,
+    visibility: post.visibility,
+    template: post.template,
     type: post.type,
     captureStatus: post.captureStatus,
     capture: post.capture,
@@ -70,6 +78,9 @@ export function postFromPoolPost(
 ): Post {
   return {
     id: post.id,
+    document: post.document,
+    visibility: post.visibility,
+    template: post.template,
     type: post.type,
     captureStatus: post.captureStatus,
     capture: post.capture,
@@ -126,6 +137,7 @@ export function workspacePoolFromParts({
   trashedFolders = [],
   trashedPosts = [],
   sharedEntries = [],
+  templates = [...BUILTIN_TEMPLATES],
   outboundLinks = {},
   slugAliases = {},
 }: {
@@ -137,6 +149,7 @@ export function workspacePoolFromParts({
   trashedFolders?: Folder[];
   trashedPosts?: Post[];
   sharedEntries?: WorkspacePoolPayload["sharedEntries"];
+  templates?: TemplateDefinition[];
   outboundLinks?: WorkspacePoolPayload["outboundLinks"];
   slugAliases?: WorkspacePoolPayload["slugAliases"];
 }): WorkspacePoolPayload {
@@ -159,11 +172,31 @@ export function workspacePoolFromParts({
       .filter((post): post is WorkspacePoolPost => Boolean(post)),
     trashedFolders,
     sharedEntries,
+    templates,
     initialBodies,
     outboundLinks,
     slugAliases,
     fetchedAt: new Date().toISOString(),
   };
+}
+
+export function templateForPoolPost(
+  pool: Pick<WorkspacePoolPayload, "templates">,
+  post: Pick<WorkspacePoolPost, "document" | "template" | "type">,
+): TemplateDefinition {
+  const reference =
+    post.template ??
+    post.document?.presentation.template ?? {
+      id: legacyTemplateId(post.type),
+      version: 1,
+    };
+  return (
+    pool.templates.find(
+      (template) =>
+        templateKey(template.id, template.version) ===
+        templateKey(reference.id, reference.version),
+    ) ?? requireBuiltinTemplate(reference.id, reference.version)
+  );
 }
 
 export function folderPathForPoolPost(
@@ -184,13 +217,9 @@ export function poolPostsForFolder(
     const postFolderPath = folderPathForPoolPost(pool, post);
     if (folderPath === BLOG_FOLDER_PATH) {
       return (
-        !isPrivatePostType(post.type) &&
-        (postFolderPath === BLOG_FOLDER_PATH ||
-          postFolderPath.startsWith(`${BLOG_FOLDER_PATH}/`))
+        postFolderPath === BLOG_FOLDER_PATH ||
+        postFolderPath.startsWith(`${BLOG_FOLDER_PATH}/`)
       );
-    }
-    if (isBlogBucketPath(folderPath) && isPrivatePostType(post.type)) {
-      return false;
     }
     return postFolderPath === folderPath;
   });
@@ -286,7 +315,7 @@ export function adjacentPublishedPostsForPool(
   slug: string,
 ): AdjacentPublishedPosts {
   const published = pool.posts
-    .filter((post) => post.status === "published" && !isPrivatePostType(post.type))
+    .filter((post) => post.visibility === "public")
     .slice()
     .sort((a, b) => {
       if (Boolean(a.pinned) !== Boolean(b.pinned)) {

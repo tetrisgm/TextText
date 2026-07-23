@@ -32,6 +32,52 @@ final class TextBundlePackageTests: XCTestCase {
         XCTAssertGreaterThan(decoded.logicalSize, 4)
     }
 
+    func testDocumentJSONAndAssetsRoundTripThroughTextPack() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let remoteURL = "https://example.public.blob.vercel-storage.com/documents/demo/post/assets/cover.png"
+        let documentJSON = #"{"schema":1,"assets":[{"id":"cover","url":"\#(remoteURL)"}],"content":{"body":"Hello"}}"#
+        let package = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: "# Hello\n\n![Cover](\(remoteURL))\n",
+            documentJSON: documentJSON,
+            assets: [.init(
+                filename: "cover.png", data: Data([1, 2, 3, 4]),
+                remoteURL: remoteURL, contentType: "image/png")],
+            sourceURL: nil, in: root)
+
+        let localJSON = try String(
+            contentsOf: package.url.appendingPathComponent("document.json"),
+            encoding: .utf8)
+        XCTAssertTrue(localJSON.contains("assets/cover.png"))
+        XCTAssertFalse(localJSON.contains(remoteURL))
+
+        let textpack = try WriteTextBundlePackage.zipToTextPack(
+            packageURL: package.url, in: root)
+        let decoded = try WriteTextBundlePackage.read(from: textpack, in: root)
+        let decodedObject = try JSONSerialization.jsonObject(
+            with: Data(try XCTUnwrap(decoded.documentJSON).utf8))
+        let sourceObject = try JSONSerialization.jsonObject(
+            with: Data(documentJSON.utf8))
+        XCTAssertEqual(decodedObject as? NSDictionary, sourceObject as? NSDictionary)
+        XCTAssertEqual(decoded.markdown, "# Hello\n\n![Cover](\(remoteURL))\n")
+    }
+
+    func testLegacyPackageWithoutDocumentJSONStillReads() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let package = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: "# Legacy\n", assets: [], sourceURL: nil, in: root)
+
+        let decoded = try WriteTextBundlePackage.read(from: package.url, in: root)
+
+        XCTAssertNil(decoded.documentJSON)
+        XCTAssertEqual(decoded.markdown, "# Legacy\n")
+    }
+
     func testTextPackZipsToASingleLeafFileAndReadsBack() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

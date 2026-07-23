@@ -1,5 +1,13 @@
 import { Extension } from "@tiptap/core";
 import type { Editor, Range } from "@tiptap/core";
+import "@tiptap/extension-blockquote";
+import "@tiptap/extension-bullet-list";
+import "@tiptap/extension-code-block";
+import "@tiptap/extension-heading";
+import "@tiptap/extension-horizontal-rule";
+import "@tiptap/extension-ordered-list";
+import "@tiptap/extension-paragraph";
+import "@tiptap/extension-task-list";
 import { PluginKey } from "@tiptap/pm/state";
 import { createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";

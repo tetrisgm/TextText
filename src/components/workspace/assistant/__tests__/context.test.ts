@@ -50,6 +50,7 @@ function pool(posts: WorkspacePoolPost[] = [post()]): WorkspacePoolPayload {
     ],
     posts,
     counts: {},
+    templates: [],
   };
 }
 

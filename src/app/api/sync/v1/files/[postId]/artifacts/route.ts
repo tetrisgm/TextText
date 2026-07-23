@@ -3,7 +3,12 @@ import { remoteMarkdownImageUrls } from "@/lib/markdown-images";
 import { resolveItemAccess } from "@/lib/permissions";
 import { getPostById } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../../auth";
-import { isUuid, renderSyncFile, syncError } from "../../../sync";
+import {
+  isUuid,
+  renderSyncDocumentFile,
+  renderSyncFile,
+  syncError,
+} from "../../../sync";
 
 interface Props {
   params: Promise<{ postId: string }>;
@@ -48,6 +53,7 @@ export async function GET(request: Request, { params }: Props) {
       postId,
       slug: post.slug,
       fileHash: renderSyncFile(workspace.blog, post).hash,
+      documentHash: renderSyncDocumentFile(workspace.blog, post).hash,
       artifacts: inlineArtifacts(post, workspace.blog.handle, postId),
     },
     { headers: { "Cache-Control": "private, no-store" } },
@@ -97,6 +103,16 @@ function inlineArtifacts(post: Post, handle: string, postId: string): Artifact[]
       originalURL: asset.originalUrl?.trim() || undefined,
       contentType: normalizedMediaContentType(asset.contentType),
     });
+  }
+  for (const asset of post.document?.content.assets ?? []) {
+    addCandidate({
+      url: asset.src,
+      contentType: asset.contentType,
+    });
+  }
+  const documentCover = post.document?.content.fields.cover;
+  if (typeof documentCover === "string") {
+    addCandidate({ url: documentCover });
   }
 
   const usedFilenames = new Set<string>();

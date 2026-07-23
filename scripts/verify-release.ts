@@ -35,6 +35,11 @@ async function verifyRelease() {
       command: ["npx", "tsc", "--noEmit"],
     },
     {
+      id: "workflow.document_engine",
+      timeoutSeconds: 300,
+      command: ["npx", "tsx", "scripts/verify-document-engine.ts"],
+    },
+    {
       id: "web.unit",
       timeoutSeconds: 1_800,
       command: ["npx", "vitest", "run"],

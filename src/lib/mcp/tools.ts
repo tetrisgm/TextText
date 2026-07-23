@@ -14,6 +14,7 @@ import {
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
 import type { Blog, Folder, Post } from "@/lib/content";
 import { NO_COVER_VALUE } from "@/lib/cover";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import {
   attachItemAsset,
   importItemAssetFromUrl,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { normalizeTags } from "@/lib/tags";
+import { applyTemplateOperations } from "@/lib/presentation/operations";
 import {
   inviteScopeShare,
   listScopeShares,
@@ -43,11 +45,13 @@ import {
 import type { ScopeShareRole } from "@/lib/shares";
 import {
   createItemComment,
+  createDocumentTemplateVersion,
   createDraftInFolder,
   createSubfolder,
   deletePost,
   deletePostAtomic,
   getBlog,
+  getDocumentTemplate,
   getAccessibleAllPostFiles,
   getAccessibleFolderCounts,
   getAccessibleFolderPostFiles,
@@ -56,6 +60,7 @@ import {
   getTrashedFolders,
   getTrashedPosts,
   listItemComments,
+  listDocumentTemplates,
   markCapturePending,
   movePostFile,
   PostConflictError,
@@ -88,7 +93,7 @@ const UUID_RE =
 const CLIENT_SAVE_ERRORS = new Set(["That URL is already used"]);
 
 type ToolContext = { authInfo?: AuthInfo };
-type ToolTargetType = "workspace" | "folder" | "item";
+type ToolTargetType = "workspace" | "folder" | "item" | "mode";
 type RegisteredCallback = (
   args: Record<string, unknown>,
   extra: ToolContext,
@@ -558,8 +563,127 @@ async function executeMcpTool(
           comments: true,
           bookmarkRecapture: true,
           itemAssets: true,
+          documentTemplates: true,
         },
       });
+    }
+
+    case "list_document_templates": {
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      return jsonResult({
+        templates: await listDocumentTemplates(resolved.access.blogId),
+      });
+    }
+
+    case "customize_document_template": {
+      const input = args as WorkspaceToolInput<"customize_document_template">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      const base = await getDocumentTemplate(resolved.access.blogId, {
+        id: input.base_template_id,
+        version: input.base_template_version,
+      });
+      if (!base) return errorResult("Base template not found.");
+      try {
+        const candidate = applyTemplateOperations(
+          {
+            ...base,
+            id: input.template_id,
+            version: 1,
+            name: input.name,
+          },
+          input.operations,
+        );
+        const template = await createDocumentTemplateVersion({
+          blogId: resolved.access.blogId,
+          definition: candidate,
+          createdById: resolved.access.userId,
+          actor: mcpAuditEntry(
+            extra,
+            "mcp.customize_document_template",
+            "mode",
+            input.template_id,
+            input.name,
+          ),
+        });
+        return jsonResult({ template });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error
+            ? `Template rejected: ${error.message}`
+            : "Template rejected.",
+        );
+      }
+    }
+
+    case "set_item_template": {
+      const input = args as WorkspaceToolInput<"set_item_template">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.canEditContent) {
+        return errorResult("You cannot change this item's template.");
+      }
+      const stale = hashConflict(resolved.blog, resolved.post, input.if_match_hash);
+      if (stale) return stale;
+      const revision = mutationRevision(resolved.post);
+      if (typeof revision !== "number") return revision;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      const reference = {
+        id: input.template_id,
+        version: input.template_version,
+      };
+      const template = await getDocumentTemplate(resolved.access.blogId, reference);
+      if (!template) return errorResult("Template not found.");
+      const current =
+        resolved.post.document ?? documentFromLegacyPost(resolved.post);
+      if (
+        current.presentation.template.id === reference.id &&
+        current.presentation.template.version === reference.version
+      ) {
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, resolved.post),
+          template,
+        });
+      }
+      try {
+        const saved = await savePost(
+          resolved.blog.handle,
+          {
+            ...resolved.post,
+            document: {
+              ...current,
+              presentation: {
+                ...current.presentation,
+                template: reference,
+              },
+            },
+            template: reference,
+          },
+          {
+            expectedRevision: revision,
+            audit: mcpAuditEntry(
+              extra,
+              "mcp.set_item_template",
+              "item",
+              resolved.post.id,
+              `${reference.id}@${reference.version}`,
+            ),
+          },
+        );
+        revalidateBlogPaths(resolved.blog, [saved.slug]);
+        return jsonResult({
+          item: await mcpItemEntry(extra, resolved.blog, saved),
+          template,
+        });
+      } catch (error) {
+        if (error instanceof PostConflictError) {
+          return conflictResult(resolved.post, "the template could be applied");
+        }
+        return saveErrorResult(error);
+      }
     }
 
     case "list_folders": {
@@ -1201,6 +1325,8 @@ async function executeMcpTool(
           {
             ...resolved.post,
             status: isAlwaysDraftType(resolved.post.type) ? "draft" : input.status,
+            visibility:
+              input.status === "published" ? "public" : "private",
             date:
               input.status === "published" ? resolved.post.date : undefined,
           },

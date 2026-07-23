@@ -1,20 +1,21 @@
-// Live proof of the co-editing GENERATION logic (hole 2) against the real DB:
-// the fenced append, the quiescence+staleness-gated upsert-CAS retire, the
-// materialization marker, and that a retire does not reseed-loop. Stands up an
-// isolated scratch post, exercises the raw SQL in src/lib/collab.ts, asserts, and
-// tears down in a finally.
+// Live proof of the canonical-document collaboration baseline against the local
+// database. It covers deterministic baseline creation, epoch fencing, baseline
+// rotation after an out-of-band canonical write, and materialization provenance.
+// The script stands up an isolated scratch document and tears it down in a
+// finally.
 //
 //   DATABASE_URL=... npx tsx scripts/verify-collab-epoch-live.ts
 
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { blogs, collabState, collabUpdates, posts, users } from "@/lib/db/schema";
 import { ensureWorkspaceFolders } from "@/lib/store";
 import {
   appendCollabUpdate,
+  getCollabBaseline,
   getCollabEpoch,
   markCollabMaterialized,
-  retireStaleCollabEpoch,
+  prepareCollabBaseline,
 } from "@/lib/collab";
 
 const STAMP = Date.now().toString(36);
@@ -49,61 +50,57 @@ async function main() {
     postId = p.id;
     console.log(`scratch post ${postId} ready\n`);
 
-    // Fresh post: epoch 0.
-    check("new post starts at epoch 0", (await getCollabEpoch(postId)) === 0);
+    const firstBaseline = await prepareCollabBaseline(postId);
+    check(
+      "new document gets a canonical baseline",
+      firstBaseline?.epoch === 0 && firstBaseline.revision === 0 && Boolean(firstBaseline.update),
+      JSON.stringify(firstBaseline),
+    );
+    check("new document starts at epoch 0", (await getCollabEpoch(postId)) === 0);
+    const repeatedBaseline = await prepareCollabBaseline(postId);
+    check(
+      "preparing the same revision reuses its baseline",
+      repeatedBaseline?.update === firstBaseline?.update &&
+        repeatedBaseline?.epoch === firstBaseline?.epoch,
+    );
 
-    // Fenced append: epoch 0 (current) lands; epoch 1 (stale) is retired.
+    // Fenced append: epoch 0 (current) lands; a future epoch is rejected.
     const a0 = await appendCollabUpdate(postId, "AAAA", 0);
     check("append fenced on the current epoch lands", "seq" in a0, JSON.stringify(a0));
     const a1 = await appendCollabUpdate(postId, "BBBB", 1);
-    check("append fenced on a stale epoch is retired", "retired" in a1, JSON.stringify(a1));
+    check("append outside the current epoch is rejected", "retired" in a1, JSON.stringify(a1));
 
-    // Materialize marks provenance without bumping the epoch.
-    await markCollabMaterialized(postId, 50);
+    // Materialization marks provenance without bumping the epoch.
+    await markCollabMaterialized(postId, 0);
     check("materialize does not change the epoch", (await getCollabEpoch(postId)) === 0);
 
-    // Not stale yet (materialized_revision 50 == postRevision 50): no retire.
-    const notStale = await retireStaleCollabEpoch(postId, 50);
-    check("consistent post is not retired", notStale === false);
-
-    // Age the log so it is quiescent (past COLLAB_SETTLE_MS), then an external
-    // write (postRevision 100 > materialized 50) with no co-editors -> retire.
-    await db
-      .update(collabUpdates)
-      .set({ createdAt: new Date(Date.now() - 120_000) })
-      .where(eq(collabUpdates.postId, postId));
-    const retired = await retireStaleCollabEpoch(postId, 100);
-    const [state] = await db
-      .select()
-      .from(collabState)
-      .where(eq(collabState.postId, postId));
+    // An out-of-band canonical write rotates the generation when no editor is
+    // active, and makes that revision the new baseline.
+    await db.update(posts).set({
+      title: "Externally changed",
+      body: "Canonical revision one",
+      revision: 1,
+      updatedAt: new Date(),
+    }).where(eq(posts.id, postId));
+    const rotated = await prepareCollabBaseline(postId);
     check(
-      "stale + quiescent + idle post is retired (epoch bumps, provenance set)",
-      retired === true && state?.epoch === 1 && state?.materializedRevision === 100,
-      `epoch=${state?.epoch} matRev=${state?.materializedRevision}`,
+      "external canonical write rotates and reseeds the baseline",
+      rotated?.epoch === 1 && rotated.revision === 1 && rotated.update !== firstBaseline?.update,
+      JSON.stringify(rotated),
     );
 
-    // After retire: the old epoch is fenced out, the new epoch accepts.
+    // After rotation, the old epoch is fenced out and the new epoch accepts.
     const oldEpochAppend = await appendCollabUpdate(postId, "CCCC", 0);
     check("append on the retired epoch is rejected", "retired" in oldEpochAppend);
     const newEpochAppend = await appendCollabUpdate(postId, "DDDD", 1);
     check("append on the new epoch lands", "seq" in newEpochAppend);
 
-    // No reseed loop: the retire set materialized_revision=100, so a second
-    // open at the same revision is NOT stale.
-    await db
-      .update(collabUpdates)
-      .set({ createdAt: new Date(Date.now() - 120_000) })
-      .where(eq(collabUpdates.postId, postId));
-    const secondRetire = await retireStaleCollabEpoch(postId, 100);
-    const [state2] = await db
-      .select()
-      .from(collabState)
-      .where(eq(collabState.postId, postId));
+    const stable = await prepareCollabBaseline(postId);
+    const persisted = await getCollabBaseline(postId);
     check(
-      "a consistent reopen does not retire again (no reseed loop)",
-      secondRetire === false && state2?.epoch === 1,
-      `retired=${secondRetire} epoch=${state2?.epoch}`,
+      "reopening a consistent revision does not rotate again",
+      stable?.epoch === 1 && stable.update === rotated?.update &&
+        persisted?.update === rotated?.update,
     );
   } finally {
     if (postId) {

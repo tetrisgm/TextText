@@ -1,4 +1,13 @@
 import type { Post } from "@/lib/content";
+import {
+  documentFromLegacyPost,
+  legacyProjectionFromDocument,
+} from "@/lib/documents/legacy";
+import {
+  mergeMarkdownIntoDocument,
+  parseSyncDocumentEnvelope,
+  requestUsesSyncDocument,
+} from "@/lib/documents/sync";
 import { parsePostMarkdownFile, slugForNewFile } from "@/lib/markdown-files";
 import {
   claimIdempotencyKey,
@@ -40,13 +49,21 @@ export async function POST(request: Request) {
   if (!representation) {
     return syncError(
       400,
-      `${WRITE_FILE_REPRESENTATION_HEADER} must be textbundle, markdown, or text`,
+      `${WRITE_FILE_REPRESENTATION_HEADER} must be textbundle, textpack, markdown, or text`,
     );
   }
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
+  let suppliedDocument: Post["document"];
   try {
-    parsed = parsePostMarkdownFile(await request.text());
+    const raw = await request.text();
+    if (requestUsesSyncDocument(request)) {
+      const envelope = parseSyncDocumentEnvelope(raw);
+      parsed = parsePostMarkdownFile(envelope.markdown);
+      suppliedDocument = envelope.document;
+    } else {
+      parsed = parsePostMarkdownFile(raw);
+    }
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
@@ -102,18 +119,32 @@ export async function POST(request: Request) {
     return syncError(400, errorMessage(error, "Could not create the file"));
   }
   try {
+    const document = mergeMarkdownIntoDocument(
+      suppliedDocument ?? created.document ?? documentFromLegacyPost(created),
+      parsed,
+    );
+    const projection = legacyProjectionFromDocument(document);
     // date comes from the file alone: created.date is the placeholder's
     // derived createdAt, and letting it through would backdate a publish to
     // midnight today instead of savePost stamping now.
     const saved = await savePost(blog.handle, {
       ...created,
+      ...projection,
       ...parsed.fields,
+      accent: projection.accent ?? undefined,
+      cover: projection.cover ?? undefined,
+      coverCaption: projection.coverCaption ?? undefined,
+      coverHeight: projection.coverHeight ?? undefined,
+      links: projection.links ?? undefined,
+      videoUrl: projection.videoUrl ?? undefined,
+      venue: projection.venue ?? undefined,
+      duration: projection.duration ?? undefined,
       // The target folder's kind is authoritative for a folder-scoped create;
       // it must not be overridden by a stray `type:` in the file's frontmatter.
       ...(forcedType ? { type: forcedType } : {}),
       date: parsed.fields.date,
       slug: slugForNewFile(parsed.fields, created.slug),
-      body: parsed.body,
+      document,
     });
     await enqueueBookmarkCaptureIfNeeded(blog.handle, saved);
     if (idempotencyKey && saved.id) {

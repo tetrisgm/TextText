@@ -21,6 +21,8 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
+import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
+import type { TemplateDefinition } from "../presentation/schema";
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
 export const fileRepresentation = pgEnum("file_representation", [
@@ -287,6 +289,17 @@ export const folders = pgTable(
     /** null for the three system roots; a folders.id for subfolders */
     parentId: uuid("parent_id"),
     mode: text("mode").notNull().default("blog"),
+    /**
+     * Presentation applied to new documents in this folder. Folder mode remains
+     * a compatibility projection for older clients; this immutable template
+     * reference is the canonical default.
+     */
+    defaultTemplateId: text("default_template_id")
+      .notNull()
+      .default("texttext.article"),
+    defaultTemplateVersion: integer("default_template_version")
+      .notNull()
+      .default(1),
     position: integer("position").notNull().default(0),
     /**
      * Monotonic per-mutation version from the shared `write_change_seq`
@@ -353,6 +366,19 @@ export const posts = pgTable(
     representation: fileRepresentation("file_representation")
       .notNull()
       .default("textpack"),
+    /**
+     * Canonical portable document state. Legacy content columns below are
+     * maintained as search, listing, and old-client projections while clients
+     * migrate to this snapshot.
+     */
+    document: jsonb("document").$type<DocumentSnapshot>(),
+    /** Explicit, fail-closed reader visibility. */
+    visibility: text("visibility")
+      .$type<DocumentVisibility>()
+      .notNull()
+      .default("private"),
+    templateId: text("template_id").notNull().default("texttext.article"),
+    templateVersion: integer("template_version").notNull().default(1),
     type: postType("type").notNull().default("article"),
     slug: text("slug").notNull(),
     /** previous public slugs, newest first; maintained atomically by a trigger */
@@ -422,8 +448,8 @@ export const posts = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index("posts_slug_history_gin_full_idx").using("gin", t.slugHistory),
     index("posts_tags_gin_full_idx").using("gin", t.tags),
-    index("posts_blog_public_order_idx")
-      .on(t.blogId, t.status, t.pinned.desc(), t.publishedAt.desc(), t.createdAt.desc())
+    index("posts_blog_visibility_order_idx")
+      .on(t.blogId, t.visibility, t.status, t.pinned.desc(), t.publishedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
     index("posts_blog_workspace_order_idx")
       .on(t.blogId, t.pinned.desc(), t.updatedAt.desc(), t.createdAt.desc())
@@ -431,6 +457,70 @@ export const posts = pgTable(
     index("posts_blog_starred_order_idx")
       .on(t.blogId, t.starred.desc(), t.updatedAt.desc(), t.createdAt.desc())
       .where(sql`${t.deletedAt} is null`),
+    check(
+      "posts_visibility_valid",
+      sql`${t.visibility} in ('private', 'link', 'public')`,
+    ),
+  ],
+);
+
+// Immutable workspace template versions. Built-ins ship in code; only
+// forked/AI-authored definitions need rows. A published document pins an exact
+// version so a later edit never changes old pages by accident.
+export const documentTemplates = pgTable(
+  "document_templates",
+  {
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    templateId: text("template_id").notNull(),
+    version: integer("version").notNull(),
+    name: text("name").notNull(),
+    definition: jsonb("definition").$type<TemplateDefinition>().notNull(),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({
+      name: "document_templates_blog_template_version_pk",
+      columns: [t.blogId, t.templateId, t.version],
+    }),
+    check("document_templates_version_positive", sql`${t.version} > 0`),
+  ],
+);
+
+// Bearer capability links make collaboration possible without an account. The
+// raw secret appears only in the URL fragment/client; the database stores its
+// SHA-256 digest. A grant is scoped to one document and can be revoked.
+export const documentCapabilityLinks = pgTable(
+  "document_capability_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    role: text("role").notNull().default("viewer"),
+    label: text("label"),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [
+    uniqueIndex("document_capability_links_token_hash_idx").on(t.tokenHash),
+    index("document_capability_links_post_active_idx")
+      .on(t.postId, t.createdAt)
+      .where(sql`${t.revokedAt} is null`),
+    check(
+      "document_capability_links_role_valid",
+      sql`${t.role} in ('viewer', 'commenter', 'editor')`,
+    ),
   ],
 );
 
@@ -454,6 +544,9 @@ export const itemComments = pgTable(
     anchorQuote: text("anchor_quote"),
     anchorStart: integer("anchor_start"),
     anchorEnd: integer("anchor_end"),
+    /** Base64 Y.RelativePosition anchors; quote/offsets remain fallbacks. */
+    anchorStartRelative: text("anchor_start_relative"),
+    anchorEndRelative: text("anchor_end_relative"),
     authorUserId: uuid("author_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -593,6 +686,10 @@ export const collabState = pgTable("collab_state", {
     .primaryKey()
     .references(() => posts.id),
   epoch: integer("epoch").notNull().default(0),
+  /** Complete Yjs update generated from the canonical document at epoch start. */
+  baselineUpdate: text("baseline_update"),
+  /** posts.revision used to generate baselineUpdate. */
+  baselineRevision: bigint("baseline_revision", { mode: "number" }),
   materializedRevision: bigint("materialized_revision", { mode: "number" }),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -611,6 +708,8 @@ export const collabPresence = pgTable(
     userName: text("user_name").notNull(),
     /** display color for the cursor caret */
     color: text("color").notNull(),
+    /** Base64 y-protocols Awareness update for cursor and selection state. */
+    awareness: text("awareness"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [

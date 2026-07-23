@@ -60,6 +60,7 @@ private struct WriteBuildAttestation: Decodable {
 }
 
 enum WriteWorkflowHealth {
+    static let documentEngine = "workflow.document_engine"
     static let folderTrashRestore = "workflow.folder_trash_restore"
     static let sharingAccess = "workflow.sharing_access"
     static let comments = "workflow.comments"
@@ -67,6 +68,7 @@ enum WriteWorkflowHealth {
     static let coverAssets = "workflow.cover_assets"
 
     static let requiredCheckIDs = [
+        documentEngine,
         folderTrashRestore,
         sharingAccess,
         comments,
@@ -370,10 +372,16 @@ final class AppHealthReporter {
             timedCheck(id: "selftest.markdown_identity", operation: checkMarkdownIdentity),
             timedCheck(id: "selftest.filename_codec", operation: checkFilenameCodec),
             timedCheck(id: "selftest.document_assets", operation: checkDocumentAssets),
+            timedCheck(
+                id: "selftest.document_projection",
+                operation: checkDocumentProjection),
             timedCheck(id: "selftest.public_link", operation: checkPublicLinkMapping),
             timedCheck(
                 id: "selftest.native_agent_contract",
                 operation: checkNativeAgentContract),
+            timedCheck(id: WriteWorkflowHealth.documentEngine) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.documentEngine)
+            },
             timedCheck(id: WriteWorkflowHealth.folderTrashRestore) {
                 checkAttestedWorkflow(id: WriteWorkflowHealth.folderTrashRestore)
             },
@@ -602,6 +610,88 @@ final class AppHealthReporter {
                 WriteDocumentAssets.validatedInlineAssets(
                     manifest, handle: "demo").count),
         ])
+    }
+
+    private func checkDocumentProjection() -> (WriteHealthStatus, [String: Double]) {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("write-document-health-\(UUID().uuidString)")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let remoteURL = "https://health.public.blob.vercel-storage.com/"
+            + "documents/demo/health-item/assets/cover.png"
+        let markdown = "# Health item\n\n![Cover](\(remoteURL))\n"
+        let documentJSON = """
+            {
+              "content" : {
+                "assets" : [
+                  {
+                    "id" : "cover",
+                    "kind" : "image",
+                    "src" : "\(remoteURL)"
+                  }
+                ],
+                "body" : "![Cover](\(remoteURL))",
+                "fields" : {
+                  "cover" : "\(remoteURL)"
+                },
+                "tags" : [],
+                "title" : "Health item"
+              },
+              "presentation" : {
+                "template" : {
+                  "id" : "texttext.article",
+                  "version" : 1
+                },
+                "theme" : {}
+              },
+              "schemaVersion" : 1
+            }
+            """
+        let assetData = Data("health-cover".utf8)
+
+        do {
+            try fileManager.createDirectory(
+                at: root, withIntermediateDirectories: true)
+            let materialized = try WriteTextBundlePackage.materialize(
+                canonicalMarkdown: markdown,
+                documentJSON: documentJSON,
+                assets: [.init(
+                    filename: "cover.png", data: assetData,
+                    remoteURL: remoteURL, contentType: "image/png")],
+                sourceURL: nil,
+                in: root)
+            let textpack = try WriteTextBundlePackage.zipToTextPack(
+                packageURL: materialized.url, in: root)
+            let read = try WriteTextBundlePackage.read(from: textpack, in: root)
+            let markdownRoundTrips = read.markdown == markdown
+            let documentRoot = try read.documentJSON.map {
+                try JSONSerialization.jsonObject(with: Data($0.utf8))
+            } as? [String: Any]
+            let content = documentRoot?["content"] as? [String: Any]
+            let fields = content?["fields"] as? [String: Any]
+            let assets = content?["assets"] as? [[String: Any]]
+            let documentRoundTrips = fields?["cover"] as? String == remoteURL
+                && assets?.first?["src"] as? String == remoteURL
+                && (content?["body"] as? String)?.contains(remoteURL) == true
+            let assetRoundTrips = read.assets.count == 1
+                && read.assets.first?.data == assetData
+                && read.assets.first?.remoteURL == remoteURL
+            let valid = markdownRoundTrips && documentRoundTrips && assetRoundTrips
+            return (valid ? .pass : .fail, [
+                "markdown_round_trip": markdownRoundTrips ? 1 : 0,
+                "document_round_trip": documentRoundTrips ? 1 : 0,
+                "asset_round_trip": assetRoundTrips ? 1 : 0,
+                "asset_count": Double(read.assets.count),
+            ])
+        } catch {
+            return (.fail, [
+                "markdown_round_trip": 0,
+                "document_round_trip": 0,
+                "asset_round_trip": 0,
+                "asset_count": 0,
+            ])
+        }
     }
 
     private func checkPublicLinkMapping() -> (WriteHealthStatus, [String: Double]) {

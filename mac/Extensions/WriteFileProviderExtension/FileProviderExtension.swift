@@ -297,17 +297,24 @@ public final class FileProviderExtension: NSObject,
                         let manifest: WriteArtifactManifest
                         switch await api.documentArtifacts(postId: postId) {
                         case .failure(.notFound) where revision.item.kind != .bookmark:
+                            let selectedHash = revision.content.hash ?? ""
                             manifest = WriteArtifactManifest(
                                 postId: postId,
                                 slug: "",
-                                fileHash: revision.content.hash ?? "",
+                                fileHash: representation.isTextBundleFamily
+                                    ? ""
+                                    : selectedHash,
+                                documentHash: representation.isTextBundleFamily
+                                    ? selectedHash
+                                    : nil,
                                 artifacts: [])
                         case .failure(let error):
                             _ = finish(nil, nil, Self.nsError(from: error)); return
                         case .success(let value): manifest = value
                         }
                         guard manifest.postId == postId,
-                              manifest.fileHash == revision.content.hash else {
+                              manifest.contentHash(for: representation)
+                                == revision.content.hash else {
                             _ = finish(
                                 nil, nil,
                                 Self.nsError(from: .network(
@@ -335,6 +342,7 @@ public final class FileProviderExtension: NSObject,
                         }
                         let package = try WriteTextBundlePackage.materialize(
                             canonicalMarkdown: revision.content.text,
+                            documentJSON: revision.content.documentJSON,
                             assets: assets,
                             sourceURL: revision.item.manifestURL,
                             in: dir)
@@ -789,7 +797,9 @@ public final class FileProviderExtension: NSObject,
                     // A package asset URL cannot be assigned until the server
                     // has issued a stable post id. Create an empty revision,
                     // upload immutable assets, then commit the Markdown last.
-                    body: hasLocalAssets ? "" : body, folderId: parentId,
+                    body: hasLocalAssets ? "" : body,
+                    documentJSON: hasLocalAssets ? nil : packageContents?.documentJSON,
+                    folderId: parentId,
                     representation: representation,
                     idempotencyKey: idempotencyKey
                 ) {
@@ -799,26 +809,29 @@ public final class FileProviderExtension: NSObject,
                         api, handle: handle, name: descriptorName(for: handle))
                     var created = initial
                     if hasLocalAssets, let packageContents {
+                        let initialHash = initial.contentHash(for: representation)
                         guard let postId = initial.id, !postId.isEmpty,
-                              !initial.hash.isEmpty else {
+                              !initialHash.isEmpty else {
                             done(nil, Self.fpError(.cannotSynchronize)); return
                         }
-                        let canonical: String
+                        let canonical: UploadedPackageContents
                         switch await uploadLocalPackageAssets(
                             packageContents, postId: postId, handle: handle, api: api
                         ) {
                         case .failure(let error):
-                            _ = await api.deleteFile(postId: postId, ifMatch: initial.hash)
+                            _ = await api.deleteFile(postId: postId, ifMatch: initialHash)
                             done(nil, Self.nsError(from: error)); return
                         case .success(let value): canonical = value
                         }
                         guard !Task.isCancelled else { return }
                         switch await api.putFile(
-                            postId: postId, body: canonical, ifMatch: initial.hash
+                            postId: postId, body: canonical.markdown,
+                            documentJSON: canonical.documentJSON,
+                            ifMatch: initialHash
                         ) {
                         case .failure(let error):
                             _ = await api.deleteFile(
-                                postId: postId, ifMatch: initial.hash)
+                                postId: postId, ifMatch: initialHash)
                             done(nil, Self.nsError(from: error)); return
                         case .success(let saved): created = saved
                         }
@@ -828,7 +841,8 @@ public final class FileProviderExtension: NSObject,
                     // server. Skip the PATCH when the title already matches.
                     let title = WriteFilename.titleFromFilename(
                         filename, representation: representation)
-                    guard let id = created.id, !created.hash.isEmpty,
+                    let createdHash = created.contentHash(for: representation)
+                    guard let id = created.id, !createdHash.isEmpty,
                           !title.isEmpty, created.title != title else {
                         await finishCreatedFile(
                             created, parentId: parentId, handle: handle,
@@ -836,7 +850,9 @@ public final class FileProviderExtension: NSObject,
                         return
                     }
                     guard !Task.isCancelled else { return }
-                    switch await api.patchFile(postId: id, folderId: nil, slug: nil, title: title, ifMatch: created.hash) {
+                    switch await api.patchFile(
+                        postId: id, folderId: nil, slug: nil, title: title,
+                        ifMatch: createdHash) {
                     case .success(let renamed):
                         await finishCreatedFile(
                             renamed, parentId: parentId, handle: handle,
@@ -1082,6 +1098,7 @@ public final class FileProviderExtension: NSObject,
             }
 
             var body: String?
+            var documentJSON: String?
             if changedFields.contains(.contents) {
                 guard let newContents else {
                     done(nil, Self.unreadableContentsError(nil)); return
@@ -1099,7 +1116,9 @@ public final class FileProviderExtension: NSObject,
                         ) {
                         case .failure(let error):
                             done(nil, Self.nsError(from: error)); return
-                        case .success(let canonical): body = canonical
+                        case .success(let canonical):
+                            body = canonical.markdown
+                            documentJSON = canonical.documentJSON
                         }
                     } else {
                         let local = try String(contentsOf: newContents, encoding: .utf8)
@@ -1126,6 +1145,7 @@ public final class FileProviderExtension: NSObject,
                 }
             } else {
                 body = nil
+                documentJSON = nil
             }
 
             // Validate the complete intent before applying either half of a
@@ -1180,7 +1200,9 @@ public final class FileProviderExtension: NSObject,
             var patchBaseHash = baseHash
             var savedContentItem: WriteManifestItem?
             if let body {
-                switch await api.putFile(postId: postId, body: body, ifMatch: baseHash) {
+                switch await api.putFile(
+                    postId: postId, body: body, documentJSON: documentJSON,
+                    ifMatch: baseHash) {
                 case .failure(.conflict):
                     await resolveModifyConflict(
                         identifier: .file(handle: handle, id: postId), core: core,
@@ -1188,10 +1210,12 @@ public final class FileProviderExtension: NSObject,
                     return
                 case .failure(let error): done(nil, Self.nsError(from: error)); return
                 case .success(let saved):
-                    guard !saved.hash.isEmpty else {
+                    let representation = currentItem?.representation ?? .markdown
+                    let savedHash = saved.contentHash(for: representation)
+                    guard !savedHash.isEmpty else {
                         done(nil, Self.fpError(.cannotSynchronize)); return
                     }
-                    patchBaseHash = saved.hash
+                    patchBaseHash = savedHash
                     savedContentItem = saved
                 }
             }
@@ -1301,10 +1325,15 @@ public final class FileProviderExtension: NSObject,
     /// URLs. Assets whose TextBundle metadata still matches their bytes retain
     /// their existing URL; new or replaced bytes upload first, and the caller
     /// commits the returned Markdown in one final PUT.
+    private struct UploadedPackageContents {
+        let markdown: String
+        let documentJSON: String?
+    }
+
     private func uploadLocalPackageAssets(
         _ contents: WriteTextBundleContents, postId: String, handle: String,
         api: WriteSyncAPI
-    ) async -> Result<String, WriteSyncError> {
+    ) async -> Result<UploadedPackageContents, WriteSyncError> {
         var markdown = contents.markdown
         var remoteURLsByFilename: [String: String] = [:]
         for asset in contents.assets
@@ -1337,7 +1366,15 @@ public final class FileProviderExtension: NSObject,
         }
         markdown = WriteDocumentAssets.canonicalMarkdown(
             local: markdown, remoteURLsByFilename: remoteURLsByFilename)
-        return .success(markdown)
+        do {
+            let documentJSON = try WriteTextBundlePackage.canonicalDocumentJSON(
+                local: contents.documentJSON,
+                remoteURLsByFilename: remoteURLsByFilename)
+            return .success(UploadedPackageContents(
+                markdown: markdown, documentJSON: documentJSON))
+        } catch {
+            return .failure(.decode("document.json could not be canonicalized"))
+        }
     }
 
     private struct PlainDocumentContext {
@@ -1419,7 +1456,9 @@ public final class FileProviderExtension: NSObject,
             }
 
             let content: WriteFileContent
-            switch await api.fileText(postId: postId) {
+            switch await api.fileContent(
+                postId: postId,
+                representation: before.representation ?? .markdown) {
             case .failure(let error): return .failure(error)
             case .success(let value): content = value
             }

@@ -71,6 +71,7 @@ function pool(): WorkspacePoolPayload {
       },
     ],
     counts: {},
+    templates: [],
   };
 }
 

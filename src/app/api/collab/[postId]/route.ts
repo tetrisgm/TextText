@@ -9,23 +9,21 @@
 // (co-editors are always signed-in users); collabAccess enforces owner/editor
 // for pushes and owner/editor/viewer for reads.
 //
-// Generations (hole 2): every append is FENCED on the epoch the client caught up
-// under; a push against a retired epoch returns {retired} instead of landing.
-// The since=0 catch-up retires a stale between-sessions log (bumps the epoch) so
-// the client reseeds from posts.body. See collab.ts + the hole-2 plan.
+// Every append is fenced on the epoch and server-owned baseline the client
+// caught up under. A push against a retired epoch is rejected instead of being
+// merged over an out-of-band write.
 
 import * as Y from "yjs";
-import { getCurrentUser } from "@/lib/session";
 import {
   appendCollabUpdate,
-  collabAccess,
   collabUpdatesSince,
+  getCollabBaseline,
   getCollabEpoch,
-  getPostRevision,
   latestCollabSeq,
   maybeCompactCollab,
-  retireStaleCollabEpoch,
+  prepareCollabBaseline,
 } from "@/lib/collab";
+import { getCollabRequestAccess } from "@/lib/collab/access.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -63,8 +61,7 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const user = await getCurrentUser();
-  const role = await collabAccess(user, postId);
+  const { role } = await getCollabRequestAccess(postId);
   if (role !== "editor") {
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
@@ -117,8 +114,7 @@ export async function GET(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const user = await getCurrentUser();
-  const role = await collabAccess(user, postId);
+  const { role } = await getCollabRequestAccess(postId);
   if (!role) {
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
@@ -130,17 +126,14 @@ export async function GET(
     MAX_WAIT_SECONDS,
   );
 
-  // ONLY the catch-up (since=0) retires a stale between-sessions log; a poll
-  // (since>0) never does, so a momentarily-stale live editor cannot self-retire.
-  // Editors can push, so retire only when the caller could be starting a session.
-  if (since === 0 && role === "editor") {
-    const revision = await getPostRevision(postId);
-    if (revision !== null) {
-      await retireStaleCollabEpoch(postId, revision).catch(() => {});
-    }
+  const baseline =
+    since === 0
+      ? await prepareCollabBaseline(postId)
+      : await getCollabBaseline(postId);
+  if (!baseline) {
+    return Response.json({ error: "Document baseline unavailable" }, { status: 409 });
   }
-  // Read the (possibly just-bumped) current generation and serve only its rows.
-  const epoch = await getCollabEpoch(postId);
+  const epoch = baseline.epoch;
 
   let updates = await collabUpdatesSince(postId, since, epoch);
   if (updates.length === 0 && wait > 0) {
@@ -157,5 +150,12 @@ export async function GET(
     }
   }
   const seq = updates.length > 0 ? updates[updates.length - 1].seq : since;
-  return Response.json({ updates, seq, epoch });
+  return Response.json({
+    updates,
+    seq,
+    epoch,
+    ...(since === 0
+      ? { baseline: { update: baseline.update, revision: baseline.revision } }
+      : {}),
+  });
 }

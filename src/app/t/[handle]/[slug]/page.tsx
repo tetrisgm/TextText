@@ -20,16 +20,18 @@ import {
   getTrashedPosts,
   getPost,
   getPostById,
+  getPostStoreContext,
   getPostSlugAliases,
+  getDocumentTemplate,
+  listDocumentTemplates,
+  resolveDocumentCapability,
   resolvePostSlug,
 } from "@/lib/store";
 import type { Blog, Post } from "@/lib/content";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
-import { Reader } from "@/components/Reader";
-import { TalkReader } from "@/components/TalkReader";
-import { ProjectReader } from "@/components/ProjectReader";
+import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
+import { StandaloneUnifiedDocumentEditor } from "@/components/document/StandaloneUnifiedDocumentEditor";
 import { PostActionBar } from "@/components/PostActionBar";
-import { PostEditLayer } from "@/components/PostEditLayer";
 import { PostReadWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { PostShortcuts } from "@/components/PostShortcuts";
 import { isNoCoverValue } from "@/lib/cover";
@@ -40,8 +42,6 @@ import {
   blogPostPath,
 } from "@/lib/public-paths";
 import {
-  backlinksForPost,
-  narrowPostFromPost,
   workspacePoolFromParts,
 } from "@/lib/pool/selectors";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
@@ -50,8 +50,9 @@ import {
   parseWorkspaceSidebarCollapsed,
 } from "@/lib/workspace-sidebar-state";
 import { tenantFromHost } from "@/lib/tenants";
-import { normalizeTags } from "@/lib/tags";
-import { resolveWikiLinkRenderTargets } from "@/lib/wikilinks";
+import { documentCapabilityCookieName } from "@/lib/document-capability";
+import { legacyTemplateId } from "@/lib/documents/legacy";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 
 interface Props {
   params: Promise<{ handle: string; slug: string }>;
@@ -88,12 +89,6 @@ function postEditPathForRequest(
   return `/${encodeURIComponent(post.slug)}?${params.toString()}`;
 }
 
-// Notes and bookmarks are unlisted forever: they exist only inside the
-// owner's workspace and must 404 for everyone else.
-function isUnlistedItem(post: Post): boolean {
-  return post.type === "note" || post.type === "bookmark";
-}
-
 function isEmptyOwnedPost(post: Post): boolean {
   const title = post.title.trim().toLowerCase();
   return (
@@ -113,10 +108,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     getPost(handle, slug),
   ]);
   if (!blog || !post) return {};
-  // Never describe a private post (an unlisted note or bookmark, or any
-  // unpublished draft) in page metadata; the page itself 404s for anyone who
-  // is not the owner or an invited collaborator.
-  if (isUnlistedItem(post) || post.status !== "published") return {};
+  if (post.visibility !== "public") return {};
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
@@ -170,18 +162,36 @@ export async function PostPageForHandle({
 
   if (!post) notFound();
   const viewer = await getCurrentUser();
+  const capabilityToken = post.id
+    ? cookieStore.get(documentCapabilityCookieName(post.id))?.value
+    : undefined;
+  const capability = capabilityToken
+    ? await resolveDocumentCapability(capabilityToken)
+    : null;
+  const capabilityAccess =
+    capability && capability.itemId === post.id ? capability : null;
   const itemAccess =
     !canEdit && post.id && viewer
       ? await resolveItemAccess({ handle, postId: post.id, user: viewer })
       : null;
-  // Private posts (any unpublished draft, plus notes and bookmarks which are
-  // unlisted forever) are visible only to the owner, an item editor, or an
-  // item viewer. Published blog posts stay public. A draft is no longer
-  // readable by anyone who merely has the URL.
-  const isPrivatePost = isUnlistedItem(post) || post.status !== "published";
-  if (isPrivatePost && !canEdit && !itemAccess?.canView) notFound();
-  const canEditPost = canEdit || Boolean(itemAccess?.canEditContent);
-  const canCommentPost = Boolean(viewer && (canEdit || itemAccess?.canView));
+  const isPrivatePost = post.visibility === "private";
+  if (
+    isPrivatePost &&
+    !canEdit &&
+    !itemAccess?.canView &&
+    !capabilityAccess
+  ) {
+    notFound();
+  }
+  const canEditPost =
+    canEdit ||
+    Boolean(itemAccess?.canEditContent) ||
+    capabilityAccess?.role === "editor";
+  const canCommentPost =
+    canEdit ||
+    Boolean(itemAccess?.canComment) ||
+    capabilityAccess?.role === "editor" ||
+    capabilityAccess?.role === "commenter";
   const editMode = canEditPost && editRequested;
   if (!canEdit && post.starred !== undefined) {
     post = { ...post, starred: undefined };
@@ -249,6 +259,10 @@ export async function PostPageForHandle({
     ? await Promise.all([getTrashedFolders(handle), getTrashedPosts(handle)])
     : [[], []];
   const sharedEntries = canEdit ? await getSharedPostsForUser(viewer) : [];
+  const workspaceTemplates =
+    canEdit && access.blogId
+      ? await listDocumentTemplates(access.blogId)
+      : undefined;
   const initialPool =
     canEdit && access.blogId
       ? workspacePoolFromParts({
@@ -260,38 +274,22 @@ export async function PostPageForHandle({
           trashedFolders,
           trashedPosts,
           sharedEntries,
+          templates: workspaceTemplates,
           ...workspaceWikiLinkMetadata(allPosts, slugAliases),
         })
       : null;
-  const usedSlugs = editMode
-    ? allPosts
-        .filter((candidate) =>
-          post.id ? candidate.id !== post.id : candidate.slug !== post.slug,
-        )
-        .map((candidate) => candidate.slug)
-    : [];
-  const availableTags = Array.from(
-    new Set(allPosts.flatMap((candidate) => normalizeTags(candidate.tags))),
-  ).sort((left, right) => left.localeCompare(right));
-  const wikiLinkTargets = await resolveWikiLinkRenderTargets({
-    blog,
-    handle,
-    includePrivate: canEdit,
-    markdown: post.body,
-  });
-  const initialPoolPost =
-    initialPool && post.id ? narrowPostFromPost(post, initialPool.blogId) : null;
-  const backlinks =
-    initialPool && initialPoolPost
-      ? backlinksForPost(initialPool, initialPoolPost)
-      : [];
-
-  const ReaderComponent =
-    post.type === "talk"
-      ? TalkReader
-      : post.type === "project"
-        ? ProjectReader
-        : Reader;
+  const templateReference =
+    post.template ??
+    post.document?.presentation.template ?? {
+      id: legacyTemplateId(post.type),
+      version: 1,
+    };
+  const postContext = post.id ? await getPostStoreContext(post.id) : null;
+  const template =
+    (postContext
+      ? await getDocumentTemplate(postContext.blogId, templateReference)
+      : null) ??
+    requireBuiltinTemplate(legacyTemplateId(post.type));
 
   // Any signed-in editor joins the same Yjs document; collabAccess enforces
   // the same effective item resolver on every poll and push.
@@ -302,13 +300,19 @@ export async function PostPageForHandle({
     canEdit: boolean;
   } | null = null;
   if (editMode && post.id) {
-    const editorUser = await getCurrentUser();
-    if (editorUser) {
+    const editorUser = viewer;
+    if (editorUser || capabilityAccess?.role === "editor") {
+      const identity = editorUser
+        ? editorUser.sub
+        : `capability:${capabilityAccess?.id ?? post.id}`;
       collab = {
         postId: post.id,
-        userName:
-          editorUser.name?.trim() || editorUser.email?.split("@")[0] || "You",
-        color: colorForSub(editorUser.sub),
+        userName: editorUser
+          ? editorUser.name?.trim() ||
+            editorUser.email?.split("@")[0] ||
+            "You"
+          : "Guest editor",
+        color: colorForSub(identity),
         canEdit: canEditPost,
       };
     }
@@ -317,10 +321,10 @@ export async function PostPageForHandle({
   if (editMode) {
     if (initialPool && canEdit) {
       const reader = (
-        <ReaderComponent
+        <UnifiedDocumentReader
           blog={blog}
           post={post}
-          wikiLinkTargets={wikiLinkTargets}
+          template={template}
         />
       );
       return (
@@ -349,55 +353,24 @@ export async function PostPageForHandle({
         </PostReadWorkspaceShell>
       );
     }
+    if (!collab) notFound();
     return (
-      <>
-        <PostShortcuts
-          homePath={homePath}
-          previousPath={
-            adjacent.previous
-              ? blogPostPath(blog, { slug: adjacent.previous.slug })
-              : undefined
-          }
-          nextPath={
-            adjacent.next
-              ? blogPostPath(blog, { slug: adjacent.next.slug })
-              : undefined
-          }
-          owner={canEdit}
-          handle={handle}
-        />
-        <PostEditLayer
-          key={post.id ?? post.slug}
-          blog={blog}
-          post={post}
-          adjacent={adjacent}
-          homePath={homePath}
-          mediaEnabled={access.isOwner}
-          counts={counts}
-          folders={folders}
-          initialSidebarCollapsed={initialSidebarCollapsed}
-          usedSlugs={usedSlugs}
-          collab={collab}
-          canManagePost={canEdit}
-          canCommentPost={canCommentPost}
-          workspaceBlogId={access.blogId ?? undefined}
-          availableTags={availableTags}
-          wikiLinkPosts={allPosts.map((candidate) => ({
-            slug: candidate.slug,
-            title: candidate.title.trim() || candidate.slug,
-          }))}
-          wikiLinkTargets={wikiLinkTargets}
-          backlinks={backlinks}
-        />
-      </>
+      <StandaloneUnifiedDocumentEditor
+        key={post.id ?? post.slug}
+        blog={blog}
+        post={post}
+        postPath={currentPostPath}
+        template={template}
+        collab={collab}
+      />
     );
   }
 
   const reader = (
-    <ReaderComponent
+    <UnifiedDocumentReader
       blog={blog}
       post={post}
-      wikiLinkTargets={wikiLinkTargets}
+      template={template}
     />
   );
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { templateOperationsSchema } from "@/lib/presentation/operations";
 
 export type WorkspaceToolMutability = "read" | "write";
 export type WorkspaceToolConfirmation = "none" | "destructive" | "audience";
@@ -121,6 +122,16 @@ const tags = z
   .array(z.string().trim().min(1).max(48))
   .max(24)
   .describe("The complete tag list; replaces existing tags.");
+const templateId = z
+  .string()
+  .trim()
+  .regex(/^[a-z][a-z0-9.-]{2,159}$/)
+  .describe("A document template identifier.");
+const customTemplateId = templateId.refine(
+  (value) => !value.startsWith("texttext."),
+  "Workspace templates cannot use the reserved texttext. prefix.",
+);
+const templateVersion = z.number().int().positive();
 
 const scopeType = z.enum(["workspace", "folder", "item"]);
 const accessRole = z.enum(["member", "guest", "editor", "viewer"]);
@@ -328,6 +339,42 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       .strict()
       .superRefine(validateAccessTarget),
     requiredScope: "sync",
+  }),
+  list_document_templates: defineTool("list_document_templates", {
+    title: "List document templates",
+    description:
+      "List the immutable built-in and workspace templates available for shaping documents.",
+    inputSchema: emptyInput(),
+  }),
+  customize_document_template: defineTool("customize_document_template", {
+    title: "Customize document template",
+    description:
+      "Create the next immutable workspace template version by applying constrained operations to an existing valid template. Templates are data only and cannot contain HTML, CSS, or JavaScript.",
+    inputSchema: z
+      .object({
+        base_template_id: templateId,
+        base_template_version: templateVersion,
+        template_id: customTemplateId,
+        name: z.string().trim().min(1).max(160),
+        operations: templateOperationsSchema,
+      })
+      .strict(),
+    mutability: "write",
+  }),
+  set_item_template: defineTool("set_item_template", {
+    title: "Set item template",
+    description:
+      "Apply one immutable document template version to an item without changing its content or audience.",
+    inputSchema: z
+      .object({
+        id,
+        template_id: templateId,
+        template_version: templateVersion,
+        if_match_hash: ifMatchHash,
+      })
+      .strict(),
+    mutability: "write",
+    idempotent: true,
   }),
   create_item: defineTool("create_item", {
     title: "Create item",

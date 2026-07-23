@@ -11,6 +11,7 @@ import {
   isUuid,
   parseSyncFileRepresentation,
   renderSyncFolderManifest,
+  renderSyncDocumentFile,
   renderSyncFile,
   syncError,
   syncFilePath,
@@ -207,6 +208,52 @@ describe("renderSyncFile", () => {
     for (const representation of ["markdown", "text"] as const) {
       expect(renderSyncFile(blog, { ...post, representation })).toEqual(baseline);
     }
+  });
+});
+
+describe("renderSyncDocumentFile", () => {
+  it("changes its validator for presentation-only edits", () => {
+    const baseline = renderSyncDocumentFile(blog, post);
+    const restyled = renderSyncDocumentFile(blog, {
+      ...post,
+      document: {
+        schemaVersion: 1,
+        content: {
+          title: post.title,
+          subtitle: post.excerpt,
+          body: post.body,
+          fields: {},
+          tags: [],
+          assets: [],
+        },
+        presentation: {
+          template: { id: "texttext.gallery", version: 1 },
+          theme: { accent: "#0066cc" },
+        },
+      },
+    });
+
+    expect(restyled.hash).not.toBe(baseline.hash);
+    expect(renderSyncFile(blog, { ...post, document: undefined })).toEqual(
+      renderSyncFile(blog, {
+        ...post,
+        document: {
+          schemaVersion: 1,
+          content: {
+            title: post.title,
+            subtitle: post.excerpt,
+            body: post.body,
+            fields: {},
+            tags: [],
+            assets: [],
+          },
+          presentation: {
+            template: { id: "texttext.gallery", version: 1 },
+            theme: { accent: "#0066cc" },
+          },
+        },
+      }),
+    );
   });
 });
 

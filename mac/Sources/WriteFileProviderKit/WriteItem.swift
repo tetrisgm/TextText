@@ -250,7 +250,7 @@ public enum WriteItemMapper {
             kind: WriteItemKind(kindString: entry.kind),
             typeIdentifier: entry.representation.typeIdentifier,
             serverId: id,
-            contentHash: entry.hash,
+            contentHash: entry.contentHash(),
             // Only the `.textbundle` DIRECTORY keeps documentSize nil: the
             // framework transports a package and owns its size. A `.textpack` is a
             // single leaf file and MUST advertise a size like every other leaf -
@@ -260,7 +260,9 @@ public enum WriteItemMapper {
             // Markdown length) is only a pre-download hint; documentSize is
             // informational and never truncates the fetched bytes, so fetch still
             // sets the exact zip size. Regular files retain their exact body size.
-            documentSize: entry.representation == .textbundle ? nil : entry.size,
+            documentSize: entry.representation == .textbundle
+                ? nil
+                : entry.contentSize(),
             creationDate: date(entry.createdAt) ?? date(entry.date),
             contentModificationDate: date(entry.updatedAt) ?? date(entry.createdAt),
             capabilities: caps,

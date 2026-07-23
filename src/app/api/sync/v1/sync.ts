@@ -15,6 +15,10 @@ import type {
 } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
 import {
+  renderSyncDocumentEnvelope,
+  serializeSyncDocumentEnvelope,
+} from "@/lib/documents/sync";
+import {
   renderFolderManifest,
   renderPostMarkdownFile,
   type MarkdownFolderItem,
@@ -140,6 +144,35 @@ export function renderSyncFile(
   return { text, hash: markdownFileHash(text) };
 }
 
+/**
+ * The complete `.textbundle` / `.textpack` source. The legacy Markdown hash
+ * remains stable for old clients, while package-aware clients use this second
+ * validator so presentation-only edits cannot disappear during sync.
+ */
+export function renderSyncDocumentFile(
+  blog: Blog,
+  post: Post,
+): { text: string; hash: string } {
+  const markdown = renderSyncFile(blog, post).text;
+  const text = serializeSyncDocumentEnvelope(
+    renderSyncDocumentEnvelope({ markdown, post }),
+  );
+  return { text, hash: markdownFileHash(text) };
+}
+
+export function ifMatchSatisfiedForSyncFile(
+  headerValue: string,
+  blog: Blog,
+  post: Post,
+): boolean {
+  const markdown = renderSyncFile(blog, post);
+  const document = renderSyncDocumentFile(blog, post);
+  return (
+    ifMatchSatisfied(headerValue, `"${markdown.hash}"`) ||
+    ifMatchSatisfied(headerValue, `"${document.hash}"`)
+  );
+}
+
 export function syncManifestOptions(
   blog: Blog,
   folder?: Folder,
@@ -155,6 +188,10 @@ export function syncManifestOptions(
 
 export type SyncManifestItem = MarkdownFolderItem & {
   representation: FileRepresentation;
+  /** Hash of the complete structured document envelope for package clients. */
+  documentHash: string;
+  /** UTF-8 size of the complete structured document envelope. */
+  documentSize: number;
 };
 
 /**
@@ -175,10 +212,13 @@ export function renderSyncFolderManifest(
     ...manifest,
     items: manifest.items.map((item, index): SyncManifestItem => {
       const post = posts[index];
+      const document = renderSyncDocumentFile(blog, post);
       return {
         ...item,
         file: syncFilePath(post),
         representation: syncFileRepresentation(post),
+        documentHash: document.hash,
+        documentSize: new TextEncoder().encode(document.text).length,
       };
     }),
   };

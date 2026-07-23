@@ -1,768 +1,368 @@
-# Plan: AI-driven document types
+# Texttext unified document architecture
 
-Status: design, not yet started. This is the buildable plan for the third item
-in `docs/review-2026-07-22.md` (custom item types). It is meant to be handed to
-Codex for a further iteration, so every claim is anchored to a real `file:line`
-and every risk carries a concrete fix. The owner iterates on this with Codex
-next; nothing here is implemented yet.
+Status: implemented on `main`. This document is the architecture contract for
+the unified document engine, not a future feature plan.
 
-Reference products: the vision named "Koda", but that name does not resolve to a
-document-type builder. The architecture described (the document as an interface
-over structured fields, custom document kinds at the document and page level) is
-**Coda**. The purest match to "a first-class Type that owns its fields, its item
-look, and its collection view" is **Anytype**. The best AI-authoring pattern is
-**Airtable Omni** (the model emits an editable spec, not opaque output). The
-distribution loop is **Coda "Copy doc" / Notion "Duplicate"** (a shared type is
-just a copyable unit with an owner-controlled copy flag).
+## Product contract
 
-## 0. The north star (what this is actually for)
+Texttext has one document model. Article, note, bookmark, gallery, and talk are
+presentation templates and capability defaults, not separate content types.
 
-The owner stated the goal plainly, and it sets the priorities for everything
-below:
+The product must preserve these outcomes:
 
-1. **Write documents really fast.**
-2. **Give them any shape** you want, by talking with AI or picking a template.
-3. **Publish to the internet** when you want, because the document has a link.
-4. **Or keep it gated**: reachable by link, or restricted to specific accounts /
-   a team.
-5. **Import something and make it editable**: bring an external thing in and turn
-   it into a first-class document you can reshape, improve, and save.
+1. A local edit is visible immediately and remains usable offline.
+2. A document can change its look without rewriting its content.
+3. A document can publish publicly, remain reachable by an unlisted link, or be
+   restricted to named people, a team, or a revocable guest link.
+4. Imported content becomes editable data, including locally stored assets.
+5. Multiple people can edit the same content without last-write-wins data loss.
+6. The engine, not a document, owns executable code.
+7. Existing Markdown clients continue to work while structured clients preserve
+   the complete document.
 
-The spine is 1 to 5, and **collaboration is part of the spine, not a side
-feature**: adding people to a document or page and editing together to improve it
-is core, and it is in goal 5 verbatim ("edit and collaborate and improve").
+## Canonical document
 
-The collaboration architecture, organized by one principle: **a CRDT (Yjs)
-decouples merge from transport**, so updates merge correctly however they arrive,
-which makes the P2P-versus-server choice a late, reversible layer rather than a
-foundational one. What the product requires regardless of transport is a durable,
-authoritative, permission-enforcing home that exists when nobody is online
-(publish-by-link, gating, multi-device, offline edits), which is the server. So
-the layers are: CRDT data model (transport-agnostic keystone); server as the
-authoritative persistence + permission + publish home; a server-mediated sync
-baseline covering solo/offline/async/live with one path (already partly built:
-the Yjs relay + presence + revision CAS); a lightweight live channel for
-presence/cursors. **P2P is not rejected, it is deferred**: because the CRDT makes
-transport swappable, a WebRTC data-channel fast-path for active co-editing
-sessions can be added later without changing the data model, if a real latency
-need appears (even local-first/P2P designs land on local replicas plus a sync
-server, so this layered shape is the principled form of P2P). The only thing to
-avoid is P2P as the FOUNDATION, since a persistent publishable document still
-needs a durable authoritative copy the server provides.
+The canonical value is `DocumentSnapshot` in
+`src/lib/documents/model.ts`:
 
-Collaboration is crucial and still has real work to be solid: make the owner a
-first-class co-editor, an invite / accept binding step, live cursors, and close
-the known between-sessions durability holes (tracked in the collaboration review
-and its follow-ups). It is a core parallel track to the document-types work, and
-the permission model in section 5 (public link, team, named writers) is its
-access half.
-Point 5 falls straight out of the content model: because a document is
-structured content-data (fields + body + assets), **import is just a capability
-that normalizes an external thing (a page, a file, a captured site, a template)
-into that model**, after which edit / reshape / publish / gate all work
-uniformly. It is bookmark capture generalized. The honest boundary is the render
-fork: import brings the CONTENT in cleanly (then shape the look with AI or a
-type); it does not clone the source's arbitrary CSS pixel-for-pixel.
+```ts
+type DocumentSnapshot = {
+  schemaVersion: 1;
+  content: {
+    title: string;
+    subtitle?: string;
+    body: string;
+    fields: Record<string, string | number | boolean | null | string[]>;
+    tags: string[];
+    assets: Array<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      src: string;
+      alt?: string;
+      caption?: string;
+      contentType?: string;
+      width?: number;
+      height?: number;
+    }>;
+  };
+  presentation: {
+    template: { id: string; version: number };
+    theme: ThemeTokens;
+  };
+};
+```
 
----
+Content and presentation are deliberately separate. A presentation edit never
+changes title, body, fields, tags, or assets. A content edit never invents a
+template.
 
-## 1. The vision, restated in this codebase's terms
+The old `Post` fields remain a compatibility projection for listing, search,
+feeds, and older clients. `src/lib/documents/legacy.ts` is the only conversion
+layer. Compatibility `type` is never derived from a custom template, because a
+look must not change privacy or folder behavior.
 
-Three capabilities, at three altitudes:
+## Portable file format
 
-1. **Fields.** A document type declares what structured fields it has (a recipe
-   has ingredients, time, servings; a review has a rating and a verdict). Today
-   the field vocabulary is a fixed frontmatter allowlist and there is no place
-   to put a custom field.
-2. **Item render.** One document of a type renders in a look that suits it. Today
-   the look is one of three hardcoded React readers picked by a ternary.
-3. **Container render (folder-as-page).** A folder that holds those documents is
-   a page with its own look (a 3-up gallery of covers, a timeline, an index).
-   Today a folder has no stored look; the public path uses one blog-wide layout
-   and the workspace path uses one of three hardcoded components.
+Every Texttext item is represented as a `.textpack`. Its package contains:
 
-Plus two cross-cutting capabilities:
+```text
+Document.textpack/
+  info.json
+  text.md
+  document.json
+  assets/
+```
 
-- **AI authoring and gallery-pick, identically.** A type is a validated JSON
-  object. The AI authors one by emitting that JSON; the gallery ships a library
-  of the same objects. Picking one and generating one produce the same artifact.
-- **Page-level permission.** A container page can be public by link, team-only,
-  or shared to named writers. Named-writer sharing on a folder already exists and
-  is solid; public-link and team-only do not exist yet.
+`text.md` is the human-editable Markdown projection. `document.json` is the
+strict structured snapshot. Assets are package-local. The Finder projection
+uses the package as a single tidy item.
 
-The bet of the whole product is taste, so the plan deliberately keeps rendering
-inside designer-controlled contracts and resists turning the type system into a
-programming environment.
+The sync protocol in `src/lib/documents/sync.ts` uses the versioned media type
+`application/vnd.texttext.document+json`. Structured clients transfer a strict
+envelope containing both Markdown and the document. Older clients continue to
+send and receive raw Markdown.
 
----
+When an external editor changes `text.md`, explicit Markdown title, body, and
+known frontmatter values win. Structured fields not represented in Markdown,
+assets, and presentation remain intact. Unknown frontmatter never becomes a
+render instruction. Deterministic key ordering prevents hash churn.
 
-## 2. The core model: `DocumentType`
+The native implementation in `mac/Sources/WriteFileProviderKit` materializes and
+uploads `document.json`, rewrites remote asset URLs to package-local paths, and
+selects the structured document hash when available. Legacy Markdown-only
+packages remain valid.
 
-One validated object with three sections, generalizing the existing
-`validateModeSpec` discipline in `src/lib/modes.ts` (schemaVersion gate, key
-allowlist, reject-unknown-keys, rebuild a fresh frozen object, validate the
-built-ins at module init, referential-integrity check). This is the pattern to
-extend, not replace.
+## Presentation engine
 
-```jsonc
+### Primitive boundary
+
+A primitive is a trusted engine implementation selected by a closed `type`
+discriminator. A document or template supplies validated bindings and tokens,
+not React, HTML, CSS, selectors, scripts, event handlers, URLs to code, or raw
+style strings.
+
+The closed render node vocabulary is defined in
+`src/lib/presentation/schema.ts`:
+
+- Layout: `stack`, `group`, `masthead`, `divider`, `spacer`
+- Text: `text`, `prose`, `byline`, `metadata`
+- Media: `cover`, `image`, `video`, `gallery`
+
+A representative primitive declaration is:
+
+```ts
 {
-  "schemaVersion": 1,
-  "id": "type.blogpost",          // stable id, never the display name
-  "slug": "blogpost",             // workspace-unique, cannot collide with built-ins
-  "name": "Blog post",
-  "visibility": "public",         // "public" | "unlisted"  (see section 8)
-
-  // (a) FIELDS: the document's data shape. A constrained JSON-Schema subset.
-  //     Every field has a STABLE id (rename changes only the label).
-  "fields": [
-    { "id": "f_title",    "type": "text",     "label": "Title",    "required": true },
-    { "id": "f_subtitle", "type": "text",     "label": "Subtitle", "visibility": "public" },
-    { "id": "f_cover",    "type": "image",    "label": "Cover" },
-    { "id": "f_body",     "type": "richtext", "label": "Body" }
-  ],
-
-  // (b) ITEM: how ONE document renders. An allowlisted layout tree.
-  //     Leaves bind a field id by path only. No expressions, no CSS, no code.
-  "item": {
-    "root": {
-      "type": "Stack", "direction": "vertical", "gap": "lg",
-      "children": [
-        { "type": "Cover", "bind": "f_cover" },
-        { "type": "Text",  "role": "title",    "bind": "f_title" },
-        { "type": "Text",  "role": "subtitle", "bind": "f_subtitle", "showWhen": "f_subtitle" },
-        { "type": "Body",  "bind": "f_body" }
-      ]
-    }
-  },
-
-  // (c) CONTAINER: how the FOLDER-as-PAGE renders its documents.
-  //     Reuses the existing ViewSort. A card is an item-tree reused per document.
-  "container": {
-    "views": [
-      { "id": "grid", "layout": "grid", "columns": 3, "gap": "md",
-        "sort": [{ "field": "publishedAt", "direction": "desc" }],
-        "card": { "root": { "type": "Stack", "children": [
-          { "type": "Cover", "bind": "f_cover" },
-          { "type": "Text", "role": "title", "bind": "f_title" }
-        ] } } }
-    ],
-    "defaultViewId": "grid"
-  }
+  type: "cover",
+  id?: "hero",
+  bind: "content.fields.cover",
+  alt?: "content.title",
+  showWhen?: "content.fields.cover",
+  fit: "cover" | "contain",
+  height: "compact" | "medium" | "large" | "viewport"
 }
 ```
 
-The built-in kinds (article, project, talk, note, bookmark) get recast as
-`DocumentType` rows so there is one code path, not a ternary plus a registry.
-The three sections above are the render half. A type also declares a fourth
-part, its **capabilities** (which app-executed verbs it uses, e.g. the bookmark
-type declares capture; any type can opt into collaboration), covered in section
-3. Capabilities are declared by reference and run by the app, never shipped as
-code in the document.
+Bindings can only address declared content paths. The validator checks that a
+primitive can consume the bound field kind. For example, a gallery can consume
+`content.assets`, while an image cannot consume a number.
 
-### Field types (the closed level-a vocabulary)
+### Template definition
 
-`text`, `richtext` (constrained markdown, the existing body pipeline),
-`image`, `date`, `url`, `enum`, `number`, `boolean`, `reference`. Each field
-carries `id`, `label`, `required`, an optional `visibility`, and type-specific
-constraints. This subset validates a document's data; it is not a layout
-language (JSON Schema describes data poorly for presentation, which is why item
-and container render are a separate tree).
+A `TemplateDefinition` has four parts:
 
----
-
-## 3. The safe render-spec grammar (the load-bearing safety design)
-
-This is where the feature is won or lost. Both adversarial passes and the render
-research converged on one conclusion: **the render spec must be data that names
-what to show, never data that is what to run.** Every prior system that let
-authored content reach an evaluator (MDX, unsandboxed templates, loose
-deserializers) produced RCE or XSS. The blueprint is Microsoft Adaptive Cards:
-a versioned JSON tree of allowlisted primitives where the host owns styling and
-content is bound by reference.
-
-### The mental model: a game engine
-
-The clearest frame for this is a game engine. The **engine** is a library of
-render primitives (cover, masthead, byline, gallery, prose, card, and whatever
-gets added), implemented by us in HTML, CSS, and JavaScript, versioned, and
-shipped with the app. A **document type is a game**: it does not carry its own
-rendering pipeline, it *refers to* engine primitives and composes them. Primitives
-evolve, and every type that uses them inherits the improvement, which is what
-makes global restyle work (patch the engine, every document re-renders). This is
-the same closed-vocabulary-of-primitives idea as Adaptive Cards and server-driven
-UI, in the language the product actually thinks in.
-
-Two rules make the engine model hold, and both come straight from the analogy:
-
-- **HTML and CSS live INSIDE the primitives, not in the per-document layer.** The
-  primitives are hand-written by us, trusted, theme-correct. A type author (human
-  or AI) composes them; the library emits the HTML. So "the renderer is HTML and
-  CSS" is true at the engine level and "a type is data" is true at the authoring
-  level, both at once. HTML is not given up, it is relocated into the trusted
-  engine.
-- **Compose-only, never run-alongside.** A library you *can* use is not a library
-  you can *only* use. A game engine gives primitives but does NOT sandbox the
-  game: a Unity build is still arbitrary code you would never run from a stranger.
-  So a type must be a **composition that can only reference library primitives**
-  (config and data), not free HTML/CSS/JS that merely imports the library. The
-  instant a type could run code alongside the engine, a shared or gallery-imported
-  type is arbitrary code in another user's browser. This single choice is what
-  buys taste, consistency, fields, global restyle, safety-when-shared,
-  portability, and AI reliability all at once.
-
-Content stays data, not baked HTML: the engine feeds on the document's content
-(text, images, typed fields) and compiles it to HTML for three outputs (in-app,
-the public URL, and a downloadable self-contained export). HTML is a build
-product, never the source, so a global restyle can always reach every document
-(a baked-HTML document is frozen and unreachable). See section 4 for where that
-content physically lives.
-
-### Where the HTML/CSS work lives, and the scope of the look
-
-Because the engine is JavaScript that decides what primitives look like, **the
-per-type and per-document layer touches almost no HTML or CSS.** Authoring a type
-is composing primitives and setting theme tokens (skinning), not writing markup.
-The real HTML and CSS craft is concentrated in one place: building and growing
-the primitive library and its theme system. That is the point, not a limitation.
-The craft compounds in the engine, every document inherits it, and consistency
-holds by construction. HTML/CSS does not shrink overall, it relocates from
-scattered-per-document to owned-in-the-engine.
-
-The scope of "any look" is deliberately bounded to the product's domain: this is
-for **good-looking notes, bookmarks, and blogs, not full websites.** The richness
-goal is that the AI interprets what you describe and builds a really good
-*approximation* with the engine's primitives. It is explicitly NOT pixel-perfect
-cloning of arbitrary pages, not elaborate per-document JavaScript, not a website
-builder. That deliberate scope is what makes the bounded, compose-only engine the
-right tool rather than a compromise: good documents are fully reachable by
-composing primitives, and that is all the product is trying to render.
-
-### What sync and collaboration actually touch
-
-A consequence worth making explicit: **CRDT co-editing and Dropbox-like file
-sync only ever touch the document's CONTENT (the textpack: body text, field
-values, assets), never the engine or the render.** The render is a pure function
-of content plus the engine, computed on demand, so the compiled HTML is derived
-and never synced (sync payloads stay tiny content deltas, not rendered pages).
-The engine ships with the app and is versioned like code. Type definitions do
-sync, but at the coarse workspace level (the `custom_types` registry, changing
-rarely, bumping the change cursor), NOT through per-document CRDT. So the hard
-distributed-systems problem is confined to a well-understood surface, a text
-document plus some fields, and the rendering and engine layers evolve
-independently of it.
-
-### Two kinds of primitive: render vs capability
-
-The engine provides two categories of thing, and conflating them is a mistake.
-A real game engine is not only a renderer; it also ships systems (physics,
-netcode, audio, asset loading). A game references those systems and triggers
-them; it does not implement them or embed a server in a level file. Same here:
-
-- **Render primitives** are pure and declarative (content + composition -> HTML,
-  no I/O, no state, no network). These are what a type composes, and they can
-  safely be data in the document.
-- **Capabilities (verbs / systems)** are things the app EXECUTES: import-to-
-  editable (normalize an external page / file / captured site / template into the
-  content model, of which bookmark capture is the first instance: screenshot,
-  parse, extract, convert to item format), sync (manifest, change cursor,
-  conflict resolution), collaboration (the Yjs relay, presence, revision CAS),
-  AI ops, publish-to-feed, search. These live in the app and server, never in
-  the document. A type DECLARES which capabilities it uses (the bookmark type
-  declares "on create, capture"); it never ships their code.
-
-So a `DocumentType` is really four parts: fields, item render, container render,
-and a **capability declaration**. The declaration follows the same compose-only
-rule as rendering: name the capability, the app runs it, the document carries no
-executable code.
-
-This is also the precise answer to "can collaboration just be JavaScript loaded
-in the item?" No. The CRDT *merge algorithm* (Yjs) is portable JS, but
-*multiplayer* is getting an edit to another person and back, live, with presence,
-durable state, and permission checks, which is irreducibly a shared
-server-mediated channel both peers connect to. A file cannot be its own relay,
-cannot host presence, cannot be the authoritative store, cannot enforce access.
-Even the "just import a library" stacks (y-webrtc, y-websocket, Liveblocks,
-PartyKit) are always a client library PLUS a server behind it. Collaboration is
-an engine capability the app provides (already built: the collab relay + append
-log + presence), invoked when a document is co-edited, not loaded from the file.
-The compose-only safety rule seals it from the other side: a document running
-loaded JS is the arbitrary-code-in-a-reader's-browser case we ruled out.
-
-### The three closed vocabularies
-
-- **Item layout primitives:** `Stack` (direction, gap, align), `Group`,
-  `Cover` (full-bleed image slot), `Field`, `Body` (renders the richtext field
-  through the existing sanitized markdown pipeline), `Text` (bound with a
-  token-named `role`: title, subtitle, caption, meta), `Image`, `Divider`,
-  `Spacer`. Every leaf either binds a field id or is static structure.
-- **Container layout:** `Collection` with `layout` in
-  `grid | list | gallery | timeline | index | single`, `columns`, `gap`, a
-  `sort` (reuse the existing `ViewSort`), an optional `filter`, and a `card`
-  sub-template (an item-tree reused per document).
-- **Binding:** a leaf references a field by id or dotted path only
-  (`{ "bind": "f_cover" }`). The only permitted logic is `showWhen: "<fieldId>"`
-  (present-or-absent). No arbitrary expressions, no string interpolation into
-  markup, no template string language.
-
-### The safety rules the validator must enforce (all six, from day one)
-
-1. **Allowlist every node `type`.** A node type not in the registry cannot
-   render (the server-driven-UI discipline).
-2. **Type-check every leaf, not just the node set.** A `bind` / `role` / `text`
-   slot that receives an array or object instead of a string is the ProseMirror
-   and React-Server-Components type-confusion attack (both shipped CVSS-10 RCEs).
-   Coerce-or-reject each leaf; build a fresh object; never spread untrusted
-   attrs into a serializer.
-3. **The body is sanitized markdown only.** remark to rehype with a URI-scheme
-   allowlist (`https:`, `mailto:`; never `data:` or `javascript:`), no raw-HTML
-   passthrough, never MDX, never author-supplied component code. Reuse the
-   existing `isSafeLinkHref` guard (`content.ts` / `markdown-files.ts:500`) for
-   every `image` and `url` field value.
-4. **Style props are token names, never raw CSS or color.** `role`, `tone`,
-   `gap`, `emphasis` resolve against the existing `tokens.css` and
-   `broadsheet.css`. The interpreter applies the DESIGN.md contracts (the 60%
-   ink-contrast floor via `color-mix(in srgb, var(--post-accent) 60%, var(--ink))`,
-   accent-as-structure-only, the measure widths, the motion rule). A spec can
-   pick which accent hue and which slots appear; it can never emit a color or a
-   class that floods a surface or breaks the floor. This is what keeps custom
-   types theme-correct in both light and dark by construction.
-5. **Per-field visibility is honored at render.** A field marked
-   `visibility: "unlisted"` can never be bound into a public render. Section 8's
-   privacy fix is doc-level; this is the field-level counterpart.
-6. **`schemaVersion` is checked first and a build refuses versions it does not
-   understand** (no silent tolerance). See section 9 for the version-tolerance
-   nuance that avoids a crash-on-boot.
-
-### The gate
-
-`validateRenderSpec` plus its rejection test becomes a release gate the way
-`python3 scripts/test-oauth-mcp-loop.py` gates OAuth. The interpreter contract
-is: pure data, no I/O, no network, no HTML passthrough, hard bounds on iteration
-and nesting, and re-validate on import (never trust a publisher's validation).
-
----
-
-## 4. Storage, sync, and how a type travels
-
-### The content-format decision
-
-The container stays `.textpack` (a zipped textbundle: `text.md` + `assets/` +
-`info.json`), unchanged. Markdown stays as the **body** format: in the engine
-model the file must hold content as data the engine feeds on, and for prose,
-portable Markdown is the right tool (it round-trips, opens in Bear/Ulysses, and
-is what the prose primitive renders). What changes is that a document is no
-longer *only* Markdown: it gains **typed fields** (carried as frontmatter, keyed
-by stable field id, emitted in a declared order) and a lightweight **`type:`
-reference**. Content stays data (text, images, typed fields); it never becomes
-baked HTML, because the engine compiles content to HTML as output, and a baked
-document would be unreachable by a global restyle. The type definition and its
-render composition do NOT live in the file (see below); the file references the
-type by slug, and an export writes a resolved snapshot sidecar so the artifact
-is self-describing.
-
-### The closed lists a custom field dies at today
-
-Anchored in the format map. A document is always one Markdown file: `---`
-frontmatter (each line one JSON scalar or array) plus body.
-`renderPostMarkdownFile` (`markdown-files.ts:169-221`) is the sole emitter;
-`parsePostMarkdownFile` (`:291-378`) the sole parser. A custom field currently
-dies at five closed lists: the parse `switch` allowlist (`:316-369`),
-`METADATA_KEYS` (`:271-279`), the `ParsedPostFields` type (`:236-258`), the
-`post_type` pgEnum (`schema.ts:34-40`), and the `savePost` write set
-(`store.ts:3501-3523`). There is no `metadata` column on `posts` and no jsonb
-bag beyond the three strongly-typed ones (gallery, links, capture).
-
-### Where the type definition lives: a `custom_types` table (the render authority)
-
-```
-custom_types {
-  id, workspace_id, slug, name, visibility,
-  schema_version,
-  fields jsonb,               // ordered array of field defs
-  item_render_spec jsonb,
-  container_render_spec jsonb,
-  origin_id, origin_version,  // provenance for gallery imports (section 7)
-  content_hash,               // immutable snapshot identity
-  revision                    // same CAS primitive as posts/folders
-}
+```ts
+type TemplateDefinition = {
+  schemaVersion: 1;
+  engineVersion: 1;
+  id: string;
+  version: number;
+  name: string;
+  description?: string;
+  fields: DocumentFieldDefinition[];
+  item: RenderNode;
+  collection: {
+    layout: "list" | "cards" | "timeline" | "index" | "single";
+    columns: 1 | 2 | 3 | 4;
+    gap: SpacingToken;
+    sort: SortRule[];
+    item: RenderNode;
+  };
+  capabilities: Capability[];
+  theme: ThemeTokens;
+};
 ```
 
-Validated on write by `validateTypeDef` in the spirit of `validateModeSpec`.
-This is the authority for both private and shared pages, because of a key
-architectural fact from the sharing map: **a shared or public page is not
-rendered by the visitor's client from a file. It is server-rendered by the
-owner's Next app reading the owner's Postgres through `src/lib/store.ts`.** There
-is no path where a non-owner downloads a raw textpack and renders it; the file
-endpoints all require a `wsk_` bearer scoped to the owner's blog. So the type
-def does not need to travel to a viewer at all: the same server that loads the
-post loads its type row and hands the render spec to the interpreter.
+Capabilities are declarations for app-owned verbs: assets, capture,
+collaboration, comments, import, publish, and search. A declaration can expose
+or hide product controls. It does not grant permission and cannot execute code.
+Permissions are always resolved below the tool and UI layers.
 
-### Where per-document field VALUES live: `posts.metadata jsonb`
+The built-ins in `src/lib/presentation/templates.ts` are the first five rows of
+the same model: article, note, bookmark, gallery, and talk. Built-in identifiers
+are reserved and immutable.
 
-New column. Holds the values keyed **by stable field id, never the display
-name** (see the migration hazard in section 9).
+### Validator
 
-### The frontmatter reference: `type: <slug>` round-trips the file
+`validateTemplateDefinition` is the render gate for built-ins, database rows,
+AI output, MCP output, previews, readers, and export. It enforces:
 
-Two policy flips, both already scoped: add the type slug to the recognized-key
-set so `type: recipe` is not shunted to `unknownKeys[]`, and replace the
-`post_type` pgEnum with a text column plus a soft ref to `custom_types.slug`.
-This mirrors the existing `writeId` / `writeFolderId` / `writeKind` precedent
-(`MarkdownIdentity.swift:17-19`), keys the Mac injects locally and strips before
-upload (`SyncEngine.swift:1300`): a proven pattern for extra frontmatter that
-lives with the file but is handled specially.
+- Strict objects with no unknown keys
+- Closed primitive, field, capability, token, and layout vocabularies
+- Declared and type-compatible bindings
+- Unique field ids, enum values, capabilities, and node ids
+- Maximum 12 levels, 160 nodes, 80 fields, and 40 children per container
+- Versioned engine and schema contracts
+- No HTML, CSS, JavaScript, arbitrary component names, or arbitrary URL fetches
 
-### The hazard the sync map surfaced: jsonb key order flaps the hash
+No invalid template reaches `DocumentRenderer`.
 
-The manifest hashes exact rendered bytes (`markdownFileHash`,
-`markdown-files.ts:162-163`) and `renderFrontmatter` emits keys in insertion
-order. **Postgres jsonb does not preserve key order** (it normalizes to sorted,
-deduped keys). If frontmatter emission derives its order from the jsonb, the
-Mac writes fields in order A, the server re-renders in order B, the bytes
-differ, the hash differs, and File Provider sees a phantom change with no edit.
-This is the exact revert-loop class that already burned this project (memory:
-`fp-rename-revert-loop-fix`).
+### Compilation targets
 
-**Fix, mandatory before any custom field syncs:** drive frontmatter emission
-from the type def's declared field list (an ordered array), rendering only
-declared keys in declared order, values re-serialized canonically. Add a
-round-trip byte-equality test (web-parse to store to render) mirroring the
-existing markdown round-trip test, and make it a gate.
+`src/components/document/DocumentRenderer.tsx` is the common compiler for the
+interactive app and public route. It resolves bindings, sanitizes links and
+media sources, renders Markdown without raw HTML, and applies only engine CSS.
 
-### The parser has no workspace context (why the naive "registry lookup" fails)
+`src/lib/presentation/export.server.tsx` uses the same renderer and engine CSS
+to produce standalone HTML. Exported asset references are resolved from the
+package by the export workflow. There is no second presentation implementation.
 
-`parsePostMarkdownFile(fileText)` takes only a string and throws on any unknown
-type via `fieldPostType` (`:420-428`). So a custom-typed file today would fail
-to sync entirely, not degrade, and unknown types would default to `blog`
-(public) folder mode. **Fix:** thread the resolved type registry into the
-parse/render pair as an argument (`parsePostMarkdownFile(text, typeRegistry)`).
-Every caller (sync route, MCP `tools.ts`, File Provider ingest) already has the
-workspace; pass its registry down. An unknown type resolves to a safe unlisted
-fallback kind, never a throw and never `blog`.
+The same template version therefore controls:
 
-### Self-contained export and offline render
+- In-app reading
+- Public and capability-link routes
+- Folder item previews
+- Template gallery previews
+- Server HTML export
 
-For interop (drag a textpack into Bear or another workspace) and future offline
-desktop render, write the **resolved type snapshot** into the exported textpack,
-and add a `types[]` array to the workspace sync doc (`WriteSyncWire.swift:86-95`
-currently carries `blog + folders` only) so the File Provider client can fetch
-and cache type defs alongside folders. A type-def change must bump the workspace
-change cursor (`schema.ts:119-128`) so clients re-fetch; the AFTER trigger fires
-on posts and folders today and would need to cover `custom_types`.
+## Template authoring
 
----
+Templates are immutable, workspace-scoped versions in `document_templates`.
+Built-ins ship in code. A gallery selection pins an exact template reference on
+the document. A customized template uses a workspace-owned id and creates the
+next immutable version. Existing documents never change presentation merely
+because a newer version exists.
 
-## 5. Sharing and the container-as-page
+AI does not emit an entire executable page. It emits at most 32 constrained
+operations from `src/lib/presentation/operations.ts`:
 
-From the container map: a folder is already a page, but through two disjoint
-paths with no shared spec seam.
+- Set name or description
+- Set capabilities
+- Replace the declared field list
+- Set closed theme tokens
+- Replace the item composition
+- Replace the collection item composition
+- Set collection layout and columns
 
-- **Public path:** `t/[handle]/c/[...path]/page.tsx` to `CategoryListing`, whose
-  look comes solely from `blog.homeLayout` (`CategoryListing.tsx:264-289`).
-  `resolveCategory` hard-gates on `folder.mode !== "blog"` (`categories.ts:105`),
-  so only blog-mode subfolders get a public page (the unlisted-forever contract).
-- **Workspace path:** `FolderPage.tsx`, whose look comes from a 3-value
-  `folder.mode` ternary (`:1355-1411`) plus a browser-local `localStorage` view
-  toggle (`WorkspaceViewModeControl.tsx:22-54`), which is not server-persisted,
-  not shared, and not a render spec.
+Every operation is applied to the previous valid template and the complete
+result is validated before the next operation. A failed step changes nothing.
 
-`folders.mode` is a free text column (`schema.ts:289`) but every read collapses
-it to one of three values via `cleanFolderMode` (`store.ts:1790-1793`), it is
-not user-settable (subfolders inherit `parent.mode`, `store.ts:916`), and there
-is no jsonb bag on folders at all. To make a folder a container page with its
-own look: add a container render-spec reference on the folder (either widen past
-`cleanFolderMode` or add `folders.render_spec jsonb` / `folders.type_id`), and
-make **both** `CategoryListing` and `FolderPage` render from that one spec.
+The UI assistant, native on-device provider, optional cloud providers, and MCP
+all consume the shared tool definitions in `src/lib/ai/tools.ts`. They execute
+through the same workspace command boundary. The app never calls its own MCP
+endpoint.
 
-### Permission: 60% built, two roles missing
+The small on-device model is the floor. It can select a base template and emit
+bounded token or composition operations. Preview is a real render through the
+validator, not a picture or generated HTML. Cloud models can propose broader
+operation sequences and research content, but receive no wider render authority.
 
-Named-people folder sharing is real and solid: `ShareDialog scopeType="folder"`
-to `shareScopeAction` (`actions.ts:1389-1420`) to `inviteScopeShare`
-(`shares.ts:109-195`), owner/manager-gated (`actions.ts:1350-1375`),
-editor/viewer roles, cascading to descendants
-(`resolveFolderAccess`, `permissions.ts:454-505`), every mutation audited. The
-"add named writers" case maps directly onto this.
+## Template gallery
 
-Missing:
+`src/components/document/TemplateGallery.tsx` presents three columns when space
+allows, does not preselect a look, and previews the current document through the
+actual engine. Arrow keys move spatially, Enter previews or confirms, and Escape
+or Backspace returns. Selecting a look updates presentation only.
 
-- **Public-link role.** `ShareDialog`'s "General access" is hardcoded
-  "Only people invited" (`ShareDialog.tsx:433-437`); Copy link just copies the
-  browser URL and grants nothing. No `public` / `anyone` string exists.
-- **Team-only role.** The closest is a workspace-scope `member` grant
-  (`permissions.ts:216-224`), which is workspace-wide, not per-folder. There is
-  no `folders.visibility` column.
+Imported gallery templates are always forked into a workspace-owned immutable
+version before use. Import never inserts a database definition without strict
+validation.
 
-The cascade plumbing is the right foundation to extend a visibility model
-(public / team / invited) onto. Permission stays orthogonal to the render spec:
-the spec never encodes access, so a type can be shared freely as pure
-presentation.
+## Privacy and access
 
----
+Privacy is explicit and fail-closed. `posts.visibility` is one of `private`,
+`link`, or `public`, with `private` as the database and application default.
 
-## 6. The AI authoring loop (what is actually achievable)
+`src/lib/documents/visibility.ts` is the common resolver:
 
-The AI contract is "AI generates specs, never code" and the default layer is
-Apple on-device foundation models (roughly 3B class). "Keep tweaking
-conversationally with live preview" cannot mean the small local model free-forms
-a valid nested render spec every turn; small models drift on nested schema and
-invent keys (the exact thing the validator rejects), so every rejected spec is a
-dead conversational turn the user watches fail.
+- Missing visibility is private.
+- Note and bookmark compatibility items remain private even if public is
+  requested.
+- A template id or capability declaration never changes visibility.
+- Public listings and adjacent navigation select only explicit public rows.
+- Folder membership, not template kind, controls containment.
 
-The honest, reliable design:
+Named account and team permissions continue through the item access model.
+Revocable document capability links add viewer, commenter, or editor access for
+guests. Only a SHA-256 token digest is stored. The access route exchanges the
+secret link for an HTTP-only scoped session cookie. Every capability creation,
+revocation, use, template mutation, and content mutation is audited through
+`src/lib/store.ts`.
 
-- **The model emits a constrained diff over an existing valid spec** (set field
-  X, add view Y from the fixed layout set), not a free-form spec. The
-  interpreter's closed vocabulary is the guardrail, not the model's care.
-- **Live preview is the validator.** Each turn: model proposes a constrained op,
-  `validateTypeDef` / `validateRenderSpec` checks it, and the preview updates
-  only on a valid result; on an invalid one the app repairs or rejects locally
-  and never shows a broken frame.
-- **The floor is on-device-reliable; cloud only widens the vocabulary.** The
-  realistic UX is "pick a starting template, then nudge it with words, with a
-  visible menu of what is changeable," not "describe any type and watch it
-  materialize." Open-ended natural-language type creation belongs to provider
-  ladder rung 2 (cloud, tool-calling) and even there is a support-ticket
-  generator, so it is a widening, not the floor.
-- **Type-by-tagging is the low-commitment entry (Tana / Anytype).** Let a user
-  write a plain document, then say "make this a Recipe," and back-fill fields.
-  Do not force type selection up front.
-- **The type can carry its own AI instructions (Flint Note).** Because the app
-  is AI-native, store per-type agent guidance (how to summarize, tag, or render
-  this kind) on the type row.
+## Collaboration
 
----
+Yjs is the merge model. It is independent of transport. The canonical Y document
+maps title, subtitle, body, fields, assets, tags, and presentation in
+`src/lib/collab/document.ts`.
 
-## 7. The gallery (fork-to-own): the untrusted-import surface, and why it is last
+The current baseline transport is the server-mediated relay in
+`src/lib/collab/provider.ts` and `src/app/api/collab`:
 
-Read this section together with the ordering constraints in section 10. The
-interpreter and the gallery are NOT one deferral. The interpreter renders YOUR
-OWN AI-authored types on your own content through your own server, so its trust
-surface is the same as any other post you write, and it is the heart of the
-vision (build it). The gallery is different: it is the point where
-**someone else's type definition flows into your workspace**, which is the only
-place custom types become untrusted input. That is what makes the gallery last,
-not the rendering.
+- Local Yjs mutations render immediately.
+- Updates enter an IndexedDB outbox before network success is required.
+- A bounded retry loop drains updates with epoch fencing.
+- Polling applies remote updates and materializes canonical document state.
+- Awareness carries user identity, cursor, and selection.
+- Owner, named editor, and guest editor sessions join the same document.
+- Access loss stops the loops instead of retrying forever.
+- Epoch retirement discards stale-generation edits rather than merging them
+  over an authoritative reset.
 
-Concrete holes both stress passes raised, all specific to import:
+The server remains authoritative for persistence, access, publication, and
+revision fencing. A local or peer fast path can implement the transport
+interface later if measurements justify it. P2P is not a dependency and is not
+part of the first version.
 
-- A shared render spec is remote input executing in other users' reader and
-  editor if the interpreter is anything more than pure data. Even pure data
-  leaks: unbounded repeat counts are a DoS, a raw-HTML field binding is stored
-  XSS, a background-image URL to an attacker host is exfiltration. The closed
-  `validateRenderSpec` already blocks these for your own types; the
-  gallery's addition is that it must **re-validate on import**, never trusting a
-  publisher's validation.
-- Forking plus updates is a supply-chain problem. Silent live updates of a
-  shared spec are a standing RCE-shaped surface. Imports must be pinned
-  snapshots (copy bytes, never live-link), and every update re-runs the full
-  import validation and is opt-in with a visible diff.
-- Slug collisions and provenance: a built-in slug like `article` must be
-  reserved; imported types need `origin_id` + `origin_version` + an immutable
-  content hash; sharing and MCP resolve types by workspace and id, never by bare
-  slug (two workspaces' "same" slug can diverge in fields).
+Template definitions sync as immutable workspace records, not character-level
+CRDT state. A document pins `{id, version}`, so concurrently created later
+versions do not mutate an open document.
 
-Recommendation: **the public fork-to-own gallery comes last, gated on
-import re-validation + pinned snapshots + provenance.** This is a moderation and
-supply-chain program, so it opens only after the type system is allow-list-safe
-(section 8) and the closed-vocabulary interpreter (section 3) is shipped and
-gated. Deferring the gallery does NOT defer the interpreter; the interpreter for
-your own types comes first.
+## Performance contract
 
----
+The browser editor operates on a preloaded local document and does not navigate
+to enter edit mode. The target budgets are:
 
-## 8. The non-negotiable prerequisites (do these BEFORE any type is user-definable)
+- Keystroke to local paint p95 below 32 ms
+- Cached item open below 100 ms
+- Edit toggle without a document reload
+- Network, capture, materialization, and presence updates never replace a newer
+  local value
 
-Both adversarial passes independently flagged this as the single most likely way
-the feature ships a leak. **Privacy today is a denylist, so every custom type is
-public by default**, decided by no line of code:
+File Provider is a durable projection and interoperability surface, not the edit
+hot path. Server refreshes reconcile by revision and cannot blindly overwrite an
+active local Y document.
 
-- `PRIVATE_POST_TYPES = ["note", "bookmark"]` (`content.ts:60`) and
-  `isPrivatePostType` (`content.ts:63-66`).
-- Public exposure filters as `!isPrivatePostType(p.type)`
-  (`store.ts:514`, `:541`).
-- `folderPathForPostType` sends anything unknown to `blog`, the public folder
-  (`store.ts:821`).
-- The same two literals are re-hardcoded on the public page
-  (`t/[handle]/[slug]/page.tsx:93-95`, `:277-280`) and a THIRD time in the
-  OG-image routes (`opengraph-image.tsx:25-26` on both `t` and `u`).
+## Migration and compatibility
 
-A novel type like `journal` flows into every one of these as not-private, so it
-publishes, feeds, and gets an OG card the instant it exists.
+`scripts/migrate-unified-documents.mjs` is additive and idempotent. It adds
+canonical document, explicit visibility, exact template reference, immutable
+template versions, guest capability links, relative comment anchors, and collab
+awareness/baseline columns. Existing rows are backfilled into schema version 1.
+Existing published articles, projects, and talks remain public; notes and
+bookmarks remain private.
 
-**Prerequisites (a leak-prevention checklist, not a feature; do these even if
-custom types slip):**
+During the compatibility window:
 
-1. **Flip to an allow-list.** Publishability is a positive property on the type
-   def (`visibility: "public" | "unlisted"`). Rewrite `isPrivatePostType` as a
-   registry lookup where **an unknown or unresolvable type defaults to
-   unlisted** (fail-closed). Collapse the four-plus duplicated denylists into
-   that one function and delete the inline literals in the page and OG routes.
-2. **`folderPathForPostType` default is a non-public quarantine**, not `blog`.
-   Unknown routes to the notes-equivalent unlisted bucket.
-3. **The markdown kind-mapping fall-through throws or quarantines**, never
-   coerces an unknown type to a public blog kind
-   (`markdown-files.ts:86-96`, `:116-120`).
-4. **Every registry mutation (create, fork, update, install) writes
-   `action_audit`** and goes through `store.ts`, never a side channel. An
-   unlogged capability change is the audit hole.
-5. **A public-route test:** an anonymous GET of a custom-typed unlisted doc must
-   404 and its `opengraph-image` must return empty, asserted against the
-   registry predicate, not a literal type list.
+- Structured clients use the versioned document envelope and document hash.
+- Old clients use raw Markdown and Markdown hash.
+- Writes update both canonical document and legacy projection atomically through
+  `store.ts`.
+- The migration verifies that no row is left without a document snapshot.
 
----
+Legacy bespoke readers and editor layers were removed after all routes moved to
+the unified renderer and editor. They must not be reintroduced.
 
-## 9. Versioning and migration
+## App-owned verification
 
-The revision and CAS machinery is already monotonic, so most of this comes free,
-but two traps are sharp:
+`scripts/verify-document-engine.ts` is a deterministic release evaluation. It
+proves built-in validation, constrained authoring, safe HTML compilation,
+deterministic sync projection, fail-closed privacy, and concurrent Yjs merging.
 
-- **Crash-on-boot from a strict version gate.** `validateModeSpec` pins
-  `schemaVersion === 1` and rejects any other version outright
-  (`modes.ts:201-205`), with the built-ins fed through it at module init
-  (`:246`). A `validateTypeDef` "in the spirit of" it inherits that: bump to
-  version 2 and every stored v1 spec throws at load, crashing the app on boot
-  unless all specs are rewritten atomically. **Fix:** make `validateTypeDef`
-  version-**tolerant**: accept `1..N` and upgrade older specs through explicit
-  migrators, never reject a known-older version.
-- **Field rename silently drops data.** `metadata` keyed by field name means a
-  rename orphans every existing post's value. **Fix:** key `metadata` by a
-  stable field **id** so a rename is a label-only change; make field removal a
-  soft tombstone, not a destructive drop; stamp each post with the `type_version`
-  it was authored against and render old docs through a compat path.
-- **Add-only within a version.** An additive change (new optional field, new
-  view) renders old docs immediately with the field simply absent, no backfill.
-  A breaking change mints a new `schema_version` (or a new row); existing docs
-  keep referencing the old one, the way `slugHistory` (`schema.ts:358-362`)
-  preserves old identity rather than rewriting it.
-- **Concurrency.** A `custom_types` row carries the same `revision` / CAS as
-  posts and folders (`schema.ts:301-303`, `406-408`) so two agents editing one
-  type def conflict with a 412 instead of clobbering. A type-def change bumps the
-  workspace change cursor so cached clients re-fetch.
+The Mac health reporter includes:
 
----
+- `workflow.document_engine` for the server evaluation
+- `selftest.document_projection` for native `.textpack` document and asset
+  round-trip
 
-## 10. Ordering: hard dependencies, not fixed phases
+The release gate runs these checks with the normal web, native, sync, and
+collaboration suites. Results are uploaded by the existing app health pipeline.
 
-There is no rigid phase plan here. What exists is a handful of **hard ordering
-constraints** (things that genuinely must precede other things), and beyond
-those the work can be sequenced by whatever delivers value soonest. The
-constraints:
+## Explicit first-version cuts
 
-- **Fail-closed privacy must land before any type becomes user-definable.**
-  Today privacy is a denylist, so a novel type publishes by default across
-  four-plus sites (section 8). Inverting it to an allow-list is a leak-prevention
-  prerequisite, not a feature, and it ships even if nothing else does.
-- **The closed validator must exist before any spec is rendered.**
-  `validateRenderSpec` (section 3) is the wall that makes an AI-authored or
-  imported spec safe. No renderer reads a spec until the validator and its
-  rejection test are a gate, the way `test-oauth-mcp-loop.py` gates OAuth.
-- **Fields plumbing must be solid before custom fields sync.** The
-  `posts.metadata` column (keyed by field id), the strict `validateTypeDef`,
-  declared-field-ordered frontmatter emission, and the round-trip byte test all
-  land before any custom field travels, or the jsonb key-order hash flap
-  reintroduces the revert-loop class (section 4).
-- **The renderer registry precedes spec-driven rendering.** Replacing the 5-site
-  ternary with `rendererForType(type)` (dispatch sites: `t/[handle]/[slug]/page.tsx:289`,
-  `t/[handle]/page.tsx:276` and `:534`, `PostWorkspaceShell.tsx:3496`,
-  `PostEditLayerClient.tsx:1562`) is a prerequisite for a `SpecReader` to exist
-  anywhere. Recasting the built-ins as `DocumentType` rows happens here.
-- **The public gallery comes after the type system is allow-list-safe and the
-  validator is gated**, because import is the only place a type becomes untrusted
-  input (section 7). It is the one genuinely-last thing.
-- **Collaboration is a parallel track**, gated only by its own durability work
-  (owner as first-class co-editor, invite/accept binding, cursors, the
-  between-sessions holes), not by the types work. It can proceed independently.
+The following are deliberately outside the engine contract:
 
-Two things worth holding onto through whatever ordering emerges:
+- Arbitrary user HTML, CSS, JavaScript, React, or remote code
+- Full websites or pixel-perfect cloning
+- General-purpose arbitrary file synchronization
+- P2P as the persistence or permission foundation
+- Character-level collaborative editing of template definitions
+- A distinct database content model per presentation
 
-- **The interpreter for your own types is the vision, not a deferral.** A type
-  you (or the AI) author renders on your own content through your own server; its
-  trust surface equals any other post you write. The closed, token-only
-  vocabulary (section 3) means a spec can only recompose the primitives the
-  engine already ships, with the DESIGN.md contracts applied by the interpreter,
-  so every output is inside the design system by construction.
-- **Fixed-layout curated types are a de-risking stepping stone**, useful to prove
-  the field and sync plumbing early, not the destination. `modes.ts` is the
-  validator pattern to generalize; the interpreter grows past its five fixed
-  views rather than stopping there.
+Cloud AI providers remain optional. The architecture is complete without them.
+The on-device model and gallery can produce valid looks, while external agents
+can use the same tools through MCP.
 
----
+## Dependency order for future engine changes
 
-## 11. File-level touch points (the map)
+Changes follow dependencies rather than marketing phases:
 
-Render and dispatch:
-- `src/components/{Reader,ProjectReader,TalkReader}.tsx` (the three readers; each
-  already exposes a half-built `slots` seam a `SpecReader` would fill), `PostCard.tsx`,
-  `PostByline.tsx`, `ProjectGallery.tsx`.
-- The renderer ternary duplicated at 5 sites (listed in section 10).
-- `src/styles/{tokens.css,broadsheet.css,cards.css,project.css,talk.css}` and
-  `DESIGN.md` (the contracts the interpreter must apply, never let a spec set).
+1. Extend the strict schema and validator.
+2. Add the trusted primitive implementation and engine CSS.
+3. Add deterministic renderer and export coverage.
+4. Extend the constrained operation grammar if AI must control it.
+5. Add storage and sync migration only if the content shape changed.
+6. Add app-owned health coverage.
+7. Expose the capability in gallery, UI, assistant, and MCP from the shared
+   command surface.
 
-Format, storage, sync:
-- `src/lib/markdown-files.ts` (sole emit/parse; the five closed lists; the
-  `type:` reference flip; declared-order emission; thread the registry into
-  parse).
-- `src/lib/db/schema.ts` (the `post_type` pgEnum to reopen; new
-  `custom_types` table; `posts.metadata jsonb`; `folders.render_spec` or
-  `type_id`; the change-cursor trigger).
-- `src/lib/store.ts` (the single content access point; `savePost` write set;
-  `mapPost` read set; `cleanFolderMode`; `folderPathForPostType` quarantine;
-  registry mutations must live here for audit).
-- `src/lib/mcp/tools.ts` and `src/lib/ai/tools.ts` (unknown-key handling; the
-  `.strict()` schemas and closed `itemKind` enum to widen).
-- Mac: `WriteSyncWire.swift` (add `types[]` to the workspace doc),
-  `TextBundlePackage.swift` (resolved snapshot on export),
-  `MarkdownIdentity.swift` and `SyncEngine.swift:1300` (the strip-before-upload
-  precedent for the `type:` reference).
-
-Container and sharing:
-- `src/components/{FolderPage,CategoryListing}.tsx`, `src/lib/categories.ts`
-  (the blog-mode-only public gate), `src/lib/permissions.ts` (the cascade to
-  extend with visibility), `src/lib/shares.ts`,
-  `src/components/workspace/ShareDialog.tsx` (add public-link and team-only),
-  `src/app/editor/actions.ts` (the share gate).
-
-Validation and gating:
-- `src/lib/modes.ts` (the validator pattern to generalize into `validateTypeDef`
-  and `validateRenderSpec`).
-- A new render-spec rejection test as a release gate, alongside
-  `scripts/test-oauth-mcp-loop.py`.
-- Privacy: `src/lib/content.ts` (`isPrivatePostType` to invert), the public page
-  and OG routes holding duplicated literals to delete.
-
----
-
-## 12. Open questions for the Codex iteration
-
-1. Do the built-in kinds (article, project, talk, note, bookmark) get fully
-   recast as `DocumentType` rows with the fields plumbing, or do they stay native
-   with only custom types going through the registry until later? Recasting is
-   cleaner but touches the hottest render paths.
-2. Container render: widen `folders.mode` past `cleanFolderMode`, or add a
-   dedicated `folders.render_spec` / `folders.type_id`? The latter is less likely
-   to collide with the three system modes.
-3. `posts.metadata`: `jsonb` (need declared-order emission regardless) or `json`
-   (preserves key order but loses jsonb query ability)? Declared-order emission
-   makes `jsonb` safe, so this is really "do we ever need to query into
-   metadata."
-4. Field `reference` type: in-workspace only for v1, or cross-workspace later?
-   Cross-workspace references interact with sharing and provenance.
-5. How much of the type def travels in the exported textpack snapshot: the full
-   resolved spec, or a minimal shape sufficient for Bear-style interop? Full is
-   more self-contained; minimal is smaller and less to keep in sync.
-6. Where does per-type AI instruction live and how is it scoped (workspace,
-   shared with the type on import)?
-
----
-
-Grounding: this plan was assembled from a nine-agent design pass (three code
-readers over the render, format, and container seams; two research agents over
-document-type products and safe-render-spec prior art; two adversarial
-stress-tests). The stress-test corrections are treated as the winning
-constraints on safety wherever they conflict with the first-pass design, which
-is why the fail-closed privacy allow-list must land before any user-definable
-type and the closed `validateRenderSpec` gate precedes any rendered spec (see
-the ordering constraints in section 10). The interpreter itself is NOT deferred:
-it is the vision, built on your own AI-authored types once those two walls exist.
-Only the public fork-to-own gallery comes last, because import is the one place a
-type becomes untrusted input. Baseline context: `docs/review-2026-07-22.md`.
+No new primitive or field ships if privacy, offline projection, export, or
+collaboration cannot preserve it.

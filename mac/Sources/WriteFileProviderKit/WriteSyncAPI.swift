@@ -17,9 +17,11 @@ public enum WriteSyncError: Error, Equatable, Sendable {
 /// The content of a materialized file plus the hash to base the next edit on.
 public struct WriteFileContent: Equatable, Sendable {
     public let text: String
+    public let documentJSON: String?
     public let hash: String?
-    public init(text: String, hash: String?) {
+    public init(text: String, documentJSON: String? = nil, hash: String?) {
         self.text = text
+        self.documentJSON = documentJSON
         self.hash = hash
     }
 }
@@ -35,6 +37,11 @@ public protocol WriteSyncAPI: Sendable {
     func manifest(folderId: String) async -> Result<[WriteManifestItem], WriteSyncError>
     /// GET /api/sync/v1/files/{id}
     func fileText(postId: String) async -> Result<WriteFileContent, WriteSyncError>
+    /// Representation-aware read. TextBundle-family files include the complete
+    /// validated document JSON alongside human-readable Markdown.
+    func fileContent(
+        postId: String, representation: WriteFileRepresentation
+    ) async -> Result<WriteFileContent, WriteSyncError>
     /// GET /api/sync/v1/files/{id}/artifacts. Only immutable binaries referenced
     /// by this document are returned by this endpoint.
     func documentArtifacts(postId: String) async
@@ -61,6 +68,10 @@ public protocol WriteSyncAPI: Sendable {
         body: String, folderId: String?, representation: WriteFileRepresentation,
         idempotencyKey: String?
     ) async -> Result<WriteManifestItem, WriteSyncError>
+    func createFile(
+        body: String, documentJSON: String?, folderId: String?,
+        representation: WriteFileRepresentation, idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError>
     /// Legacy create entry point retained while older extension/test clients
     /// roll forward. Its representation is always Markdown.
     func createFile(body: String, folderId: String?, idempotencyKey: String?) async
@@ -68,6 +79,9 @@ public protocol WriteSyncAPI: Sendable {
     /// PUT /api/sync/v1/files/{id} with If-Match: a content edit.
     func putFile(postId: String, body: String, ifMatch hash: String) async
         -> Result<WriteManifestItem, WriteSyncError>
+    func putFile(
+        postId: String, body: String, documentJSON: String?, ifMatch hash: String
+    ) async -> Result<WriteManifestItem, WriteSyncError>
     /// PATCH /api/sync/v1/files/{id}: move (folderId), retitle (title), and/or
     /// reslug (slug) without re-sending the body. A Finder rename retitles (the
     /// filename is the post title, not the slug). `ifMatch`, when present, guards
@@ -94,6 +108,12 @@ public protocol WriteSyncAPI: Sendable {
 /// Defaults keep older conformers and small test fakes source-compatible while
 /// clients roll onto representation-aware creates and document packages.
 public extension WriteSyncAPI {
+    func fileContent(
+        postId: String, representation: WriteFileRepresentation
+    ) async -> Result<WriteFileContent, WriteSyncError> {
+        await fileText(postId: postId)
+    }
+
     /// Old conformers remain valid and treat representation-aware calls as the
     /// pre-contract Markdown create until they implement the new requirement.
     func createFile(
@@ -113,6 +133,21 @@ public extension WriteSyncAPI {
         await createFile(
             body: body, folderId: folderId, representation: representation,
             idempotencyKey: idempotencyKey)
+    }
+
+    func createFile(
+        body: String, documentJSON: String?, folderId: String?,
+        representation: WriteFileRepresentation, idempotencyKey: String?
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await createFile(
+            body: body, folderId: folderId, representation: representation,
+            idempotencyKey: idempotencyKey)
+    }
+
+    func putFile(
+        postId: String, body: String, documentJSON: String?, ifMatch hash: String
+    ) async -> Result<WriteManifestItem, WriteSyncError> {
+        await putFile(postId: postId, body: body, ifMatch: hash)
     }
 
     func documentArtifacts(postId: String) async

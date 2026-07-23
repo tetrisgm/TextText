@@ -2,6 +2,12 @@
 // (no Intl/Date) so they render identically on server and client with no
 // timezone drift on the day.
 
+import type {
+  DocumentSnapshot,
+  DocumentVisibility,
+  TemplateReference,
+} from "@/lib/documents/model";
+
 export interface Blog {
   handle: string;
   username?: string;
@@ -86,6 +92,8 @@ export interface Folder {
    */
   path: string;
   mode: FolderMode;
+  /** Presentation applied to new documents in this folder. */
+  defaultTemplate?: TemplateReference;
   position: number;
   /** null/absent for the three system roots; the parent folder id below them */
   parentId?: string | null;
@@ -160,6 +168,12 @@ export interface Post {
   id?: string;
   /** immutable Finder/on-disk representation; persisted posts always have one */
   representation?: FileRepresentation;
+  /** Canonical content and presentation state. */
+  document?: DocumentSnapshot;
+  /** Explicit reader access; legacy status is only a publication projection. */
+  visibility?: DocumentVisibility;
+  /** Pinned immutable template version, repeated for list/query indexes. */
+  template?: TemplateReference;
   type: PostType;
   /** bookmark capture pipeline state; only bookmarks ever set these */
   captureStatus?: CaptureStatus;

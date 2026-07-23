@@ -10,11 +10,16 @@ import type {
 } from "@/lib/content";
 import type { SharedWithMeEntry } from "@/lib/shares";
 import type { WikiLinkReference } from "@/lib/wikilink-syntax";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 
 export type WorkspacePoolPost = {
   id: string;
   blogId: string;
   folderId?: string;
+  /** Canonical content + presentation. Legacy fields below are list indexes. */
+  document?: Post["document"];
+  visibility?: Post["visibility"];
+  template?: Post["template"];
   type: PostType;
   captureStatus?: CaptureStatus;
   capture?: BookmarkCapture;
@@ -50,6 +55,8 @@ export type WorkspacePoolPayload = {
   folders: Folder[];
   counts: Record<string, number>;
   posts: WorkspacePoolPost[];
+  /** Immutable template versions available to this workspace. */
+  templates: TemplateDefinition[];
   trashedPosts?: WorkspacePoolPost[];
   trashedFolders?: Folder[];
   sharedEntries?: SharedWithMeEntry[];

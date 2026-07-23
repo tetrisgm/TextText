@@ -7,6 +7,7 @@ import {
   getTrashedFolders,
   getTrashedPosts,
   getPostSlugAliases,
+  listDocumentTemplates,
 } from "@/lib/store";
 import { workspacePoolFromParts } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
@@ -46,6 +47,7 @@ export async function getWorkspacePoolForOwner(
     trashedFolders,
     trashedPosts,
     sharedEntries,
+    templates,
   ] = await Promise.all([
     getFolders(handle),
     getFolderCounts(handle),
@@ -54,6 +56,7 @@ export async function getWorkspacePoolForOwner(
     getTrashedFolders(handle),
     getTrashedPosts(handle),
     getSharedPostsForUser(user?.sub ? { ...user, sub: user.sub } : null),
+    listDocumentTemplates(access.blogId),
   ]);
   const wikiLinks = workspaceWikiLinkMetadata(posts, slugAliases);
 
@@ -66,6 +69,7 @@ export async function getWorkspacePoolForOwner(
     trashedFolders,
     trashedPosts,
     sharedEntries,
+    templates,
     ...wikiLinks,
   });
 }

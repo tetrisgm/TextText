@@ -1,6 +1,6 @@
-// Session-end body materialization for co-editing.
+// Session-end document materialization for co-editing.
 //
-//   POST /api/collab/{postId}/materialize  {handle, body}  -> {ok}
+//   POST /api/collab/{postId}/materialize  {handle, state}  -> {ok}
 //
 // The canonical posts.body is fed only by the editor's 800ms-debounced autosave,
 // a server action that cannot complete during a tab close. So an editor who
@@ -20,19 +20,18 @@
 // edit, so it is best-effort; the Yjs log (also flushed on pagehide) carries
 // anything a stale beacon missed, recovered on the next editor open.
 
-import { getCurrentUser } from "@/lib/session";
 import {
-  collabAccess,
-  hasActiveCoEditors,
   markCollabMaterialized,
+  materializeCollabDocument,
 } from "@/lib/collab";
+import { getCollabRequestAccess } from "@/lib/collab/access.server";
 import {
   getPostById,
   getUserIdBySub,
   PostConflictError,
-  savePostContentPatch,
+  savePost,
 } from "@/lib/store";
-import { recordAction } from "@/lib/audit";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { getBlog } from "@/lib/store";
 
@@ -43,22 +42,23 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const user = await getCurrentUser();
-  const role = await collabAccess(user, postId);
+  const access = await getCollabRequestAccess(postId);
+  const role = access.role;
   if (role !== "editor") {
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
 
-  let body: { handle?: unknown; body?: unknown };
+  let body: { handle?: unknown; state?: unknown; body?: unknown };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Send a JSON body" }, { status: 400 });
   }
   const handle = typeof body.handle === "string" ? body.handle : "";
-  const nextBody = typeof body.body === "string" ? body.body : null;
-  if (!handle || nextBody === null) {
-    return Response.json({ error: "handle and body are required" }, { status: 400 });
+  const state = typeof body.state === "string" ? body.state : undefined;
+  const legacyBody = typeof body.body === "string" ? body.body : undefined;
+  if (!handle || (!state && legacyBody === undefined)) {
+    return Response.json({ error: "handle and state are required" }, { status: 400 });
   }
 
   // getPostById is scoped to the handle, so a mismatched handle simply misses;
@@ -67,35 +67,45 @@ export async function POST(
   if (!post) {
     return Response.json({ error: "Post not found" }, { status: 404 });
   }
-  // Nothing to do if the canonical body already matches: avoid a redundant write
-  // and revision bump on every tab close.
-  if (post.body === nextBody) {
-    return Response.json({ ok: true, unchanged: true });
+  const currentDocument = post.document ?? documentFromLegacyPost(post);
+  const collabDocument = state
+    ? await materializeCollabDocument(postId, state)
+    : null;
+  const nextDocument = collabDocument ?? {
+    ...currentDocument,
+    content: {
+      ...currentDocument.content,
+      body: legacyBody ?? currentDocument.content.body,
+    },
+  };
+  if (JSON.stringify(currentDocument) === JSON.stringify(nextDocument)) {
+    return Response.json({
+      ok: true,
+      unchanged: true,
+      document: currentDocument,
+      revision: post.revision,
+    });
   }
 
-  // Only materialize while a live session still owns the document. First safety
-  // gate: presence stays fresh through a normal tab close (last heartbeat <=8s,
-  // stale window 15s), so a real session-end flush proceeds; a tab frozen past
-  // the window and then closed reads stale and skips.
-  if (!(await hasActiveCoEditors(postId))) {
-    return Response.json({ ok: true, skipped: "no active session" });
-  }
-
-  // Second safety gate, and the one that actually closes the clobber: the
-  // hasActiveCoEditors check above is check-then-write, not a lock, and it flips
-  // exactly at the presence-expiry boundary, which is when a mid-session-refused
-  // external writer (owner save, sync PUT, MCP) retries. So compare-and-swap on
-  // the revision we read, exactly like every other body-write path. If anything
-  // committed since (an external write at the boundary, or a co-editor's own
-  // autosave that already materialized a newer body), the guarded UPDATE matches
-  // nothing and we skip rather than overwrite it. The beacon body is this tab's
-  // local Y.Doc, which may trail another co-editor's in-flight edits, so this is
-  // best-effort: it never clobbers a newer revision, and the Yjs log (also
-  // flushed on pagehide) still carries anything a stale beacon missed.
+  // Presence is deliberately not a write gate. A tab can become backgrounded,
+  // lose its heartbeat, and still own durable local Yjs operations. Revision CAS
+  // is the actual safety boundary: this materialization either advances the
+  // canonical document from the revision it read or yields to a newer writer.
   let saved;
   try {
-    saved = await savePostContentPatch(handle, post, { body: nextBody }, {
+    saved = await savePost(handle, { ...post, document: nextDocument }, {
+      preservePublishedAt: true,
       expectedRevision: post.revision,
+      audit: {
+        actorUserId: access.user
+          ? access.user.userId ?? (await getUserIdBySub(access.user.sub))
+          : null,
+        actorType: "human",
+        actionName: "collab.materialize",
+        targetType: "item",
+        targetId: post.id,
+        inputSummary: post.title,
+      },
     });
   } catch (error) {
     if (error instanceof PostConflictError) {
@@ -109,15 +119,11 @@ export async function POST(
   if (typeof saved.revision === "number" && saved.id) {
     await markCollabMaterialized(saved.id, saved.revision).catch(() => {});
   }
-  await recordAction({
-    actorUserId: user ? user.userId ?? (await getUserIdBySub(user.sub)) : null,
-    actorType: "human",
-    actionName: "collab.materialize",
-    targetType: "item",
-    targetId: post.id,
-    inputSummary: post.title,
-  });
   const blog = await getBlog(handle).catch(() => null);
   revalidateBlogPaths(blog ?? { handle }, [post.slug]);
-  return Response.json({ ok: true });
+  return Response.json({
+    ok: true,
+    document: saved.document ?? nextDocument,
+    revision: saved.revision,
+  });
 }

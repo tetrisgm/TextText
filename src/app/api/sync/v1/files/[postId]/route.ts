@@ -1,4 +1,15 @@
 import type { Blog, Post } from "@/lib/content";
+import {
+  documentFromLegacyPost,
+  legacyProjectionFromDocument,
+} from "@/lib/documents/legacy";
+import {
+  mergeMarkdownIntoDocument,
+  parseSyncDocumentEnvelope,
+  requestAcceptsSyncDocument,
+  requestUsesSyncDocument,
+  SYNC_DOCUMENT_CONTENT_TYPE,
+} from "@/lib/documents/sync";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import type { EffectiveAccess } from "@/lib/permissions";
 import { resolveItemAccess } from "@/lib/permissions";
@@ -21,8 +32,10 @@ import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
   clientSaveError,
   ifMatchSatisfied,
+  ifMatchSatisfiedForSyncFile,
   ifNoneMatchSatisfied,
   isUuid,
+  renderSyncDocumentFile,
   renderSyncFile,
   syncError,
   syncManifestItem,
@@ -68,7 +81,10 @@ export async function GET(request: Request, { params }: Props) {
   if (resolved instanceof Response) return resolved;
   const { blog, post } = resolved;
 
-  const file = renderSyncFile(blog, post);
+  const structured = requestAcceptsSyncDocument(request);
+  const file = structured
+    ? renderSyncDocumentFile(blog, post)
+    : renderSyncFile(blog, post);
   const etag = `"${file.hash}"`;
   const headers: Record<string, string> = { ETag: etag };
   if (post.updatedAt) {
@@ -81,7 +97,12 @@ export async function GET(request: Request, { params }: Props) {
   }
 
   return new Response(file.text, {
-    headers: { ...headers, "Content-Type": "text/markdown; charset=utf-8" },
+    headers: {
+      ...headers,
+      "Content-Type": structured
+        ? `${SYNC_DOCUMENT_CONTENT_TYPE}; charset=utf-8`
+        : "text/markdown; charset=utf-8",
+    },
   });
 }
 
@@ -101,7 +122,10 @@ export async function PUT(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
-  const current = renderSyncFile(blog, post);
+  const structured = requestUsesSyncDocument(request);
+  const current = structured
+    ? renderSyncDocumentFile(blog, post)
+    : renderSyncFile(blog, post);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
   }
@@ -119,11 +143,21 @@ export async function PUT(request: Request, { params }: Props) {
   const expectedRevision = post.revision;
 
   let parsed: ReturnType<typeof parsePostMarkdownFile>;
+  let suppliedDocument = post.document ?? documentFromLegacyPost(post);
   try {
-    parsed = parsePostMarkdownFile(await request.text());
+    const raw = await request.text();
+    if (structured) {
+      const envelope = parseSyncDocumentEnvelope(raw);
+      parsed = parsePostMarkdownFile(envelope.markdown);
+      suppliedDocument = envelope.document;
+    } else {
+      parsed = parsePostMarkdownFile(raw);
+    }
   } catch (error) {
     return syncError(400, errorMessage(error, "Could not parse the file"));
   }
+  const document = mergeMarkdownIntoDocument(suppliedDocument, parsed);
+  const projection = legacyProjectionFromDocument(document);
 
   // The file's kind may only change within the item's folder (same rule as
   // the editor and the MCP update_item tool): the store never moves a post
@@ -145,10 +179,19 @@ export async function PUT(request: Request, { params }: Props) {
           blog.handle,
           {
             ...post,
+            ...projection,
             ...parsed.fields,
+            accent: projection.accent ?? undefined,
+            cover: projection.cover ?? undefined,
+            coverCaption: projection.coverCaption ?? undefined,
+            coverHeight: projection.coverHeight ?? undefined,
+            links: projection.links ?? undefined,
+            videoUrl: projection.videoUrl ?? undefined,
+            venue: projection.venue ?? undefined,
+            duration: projection.duration ?? undefined,
             date: parsed.fields.date,
             slug: parsed.fields.slug ?? post.slug,
-            body: parsed.body,
+            document,
           },
           { expectedRevision },
         )
@@ -156,12 +199,7 @@ export async function PUT(request: Request, { params }: Props) {
           blog.handle,
           post,
           {
-            title: parsed.fields.title ?? post.title,
-            cover: parsed.fields.cover ?? post.cover,
-            coverCaption: parsed.fields.coverCaption ?? post.coverCaption,
-            coverHeight: parsed.fields.coverHeight ?? post.coverHeight,
-            tags: parsed.fields.tags ?? post.tags,
-            body: parsed.body,
+            document,
           },
           { expectedRevision },
         );
@@ -213,8 +251,7 @@ export async function DELETE(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
-  const current = renderSyncFile(blog, post);
-  if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
+  if (!ifMatchSatisfiedForSyncFile(ifMatch, blog, post)) {
     return syncError(412, "The post changed since this file was fetched");
   }
 
@@ -292,8 +329,7 @@ export async function PATCH(request: Request, { params }: Props) {
   if (ifMatch.trim() === "*") {
     return syncError(412, "A specific If-Match validator is required");
   }
-  const baseFile = renderSyncFile(blog, post);
-  if (!ifMatchSatisfied(ifMatch, `"${baseFile.hash}"`)) {
+  if (!ifMatchSatisfiedForSyncFile(ifMatch, blog, post)) {
     return syncError(412, "The post changed since this file was fetched");
   }
   if (post.revision === undefined) {

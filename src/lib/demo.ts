@@ -30,6 +30,7 @@ export const DEMO_POSTS: Post[] = [
     accent: "#0f766e",
     date: "2026-07-03",
     status: "published",
+    visibility: "public",
     pinned: true,
     body: `The fastest way to make a product essay feel disposable is to treat it like a feed item. Product writing needs room for argument, evidence, and a visible sense of care. A broadsheet layout does that without asking the interface to perform.
 
@@ -72,6 +73,7 @@ The broadsheet still works because it is not nostalgic. It is a compact system f
     accent: "#1b7f5a",
     date: "2026-07-02",
     status: "published",
+    visibility: "public",
     gallery: [
       {
         src: "/covers/cover-001.jpg",
@@ -128,6 +130,7 @@ The result is not a louder dashboard. It is a calmer record of why the team chos
     accent: "#366c4f",
     date: "2026-06-29",
     status: "published",
+    visibility: "public",
     body: `Defaults are where a product quietly states its values. They decide what gets named, what gets saved, what gets shared, and how much cleanup a person has to do before the work feels presentable.
 
 ## Every default is a sentence
@@ -170,6 +173,7 @@ The question is simple: does this choice help a thoughtful person move forward, 
     duration: "1 hr",
     date: "2026-06-25",
     status: "published",
+    visibility: "public",
     body: `A useful design talk for anyone making writing tools, editorial systems, or AI-assisted product surfaces. Norman's argument is not that complexity should disappear. It is that complexity should be organized so people can build a reliable mental model.
 
 ## Why it belongs here
@@ -190,6 +194,7 @@ For Texttext, that means drafts, covers, galleries, video, status, feeds, and ed
     accent: "#6f4f1f",
     date: "2026-06-18",
     status: "published",
+    visibility: "public",
     body: `The empty state is the first editorial surface in a product. Before a person writes a title, uploads a cover, or chooses a format, the product has already said something about what kind of work belongs there.
 
 ## Name the next move
@@ -227,6 +232,7 @@ That small promise is the craft of an empty state: begin here, leave when ready,
     title: "Ideas for the next issue",
     date: "2026-07-04",
     status: "draft",
+    visibility: "private",
     body: `Working list, in no particular order.
 
 - The economics of quiet interfaces
@@ -240,6 +246,7 @@ That small promise is the craft of an empty state: begin here, leave when ready,
     title: "Reading list notes",
     date: "2026-06-27",
     status: "draft",
+    visibility: "private",
     body: `Highlights from this month's reading. "The Shape of Design" holds up on structure as generosity; the chapter on improvisation pairs well with the durable-defaults draft. Pull one quote, not three.`,
   },
   {
@@ -254,6 +261,7 @@ That small promise is the craft of an empty state: begin here, leave when ready,
     ],
     date: "2026-07-01",
     status: "draft",
+    visibility: "private",
     body: "The cleanest baseline reference to hand a team before their first study.",
   },
   {
@@ -268,6 +276,7 @@ That small promise is the craft of an empty state: begin here, leave when ready,
     ],
     date: "2026-06-24",
     status: "draft",
+    visibility: "private",
     body: "Butterick's checklist earns a place next to every reader stylesheet decision.",
   },
 ];

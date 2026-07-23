@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Blog, FileRepresentation, Post } from "@/lib/content";
+import {
+  serializeSyncDocumentEnvelope,
+  SYNC_DOCUMENT_CONTENT_TYPE,
+  SYNC_DOCUMENT_SCHEMA,
+} from "@/lib/documents/sync";
 
 const mocks = vi.hoisted(() => ({
   claimIdempotencyKey: vi.fn(),
@@ -84,6 +89,38 @@ function createRequest(
   });
 }
 
+function createStructuredRequest(folderId = "notes-folder"): Request {
+  const document = {
+    schemaVersion: 1 as const,
+    content: {
+      title: "Structured title",
+      body: "Structured body",
+      fields: {},
+      tags: [],
+      assets: [],
+    },
+    presentation: {
+      template: { id: "texttext.gallery", version: 1 },
+      theme: { accent: "#0066cc" as const },
+    },
+  };
+  return new Request(
+    `https://write.example/api/sync/v1/files?folder=${folderId}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
+        "Write-File-Representation": "textpack",
+      },
+      body: serializeSyncDocumentEnvelope({
+        schema: SYNC_DOCUMENT_SCHEMA,
+        markdown: "---\ntitle: Markdown title\n---\n\nMarkdown body\n",
+        document,
+      }),
+    },
+  );
+}
+
 describe("sync file POST representation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -142,13 +179,41 @@ describe("sync file POST representation", () => {
     });
   });
 
+  it("creates a canonical document from a structured textpack", async () => {
+    const response = await POST(createStructuredRequest());
+
+    expect(response.status).toBe(201);
+    expect(mocks.createDraftInFolder).toHaveBeenCalledWith(
+      "sync-test",
+      "notes-folder",
+      { representation: "textpack" },
+    );
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "sync-test",
+      expect.objectContaining({
+        title: "Markdown title",
+        body: "Markdown body\n",
+        document: expect.objectContaining({
+          content: expect.objectContaining({
+            title: "Markdown title",
+            body: "Markdown body\n",
+          }),
+          presentation: {
+            template: { id: "texttext.gallery", version: 1 },
+            theme: { accent: "#0066cc" },
+          },
+        }),
+      }),
+    );
+  });
+
   it("rejects an invalid representation before creating a placeholder", async () => {
     const response = await POST(createRequest("pdf"));
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Write-File-Representation must be textbundle, markdown, or text",
+        "Write-File-Representation must be textbundle, textpack, markdown, or text",
     });
     expect(mocks.createDraft).not.toHaveBeenCalled();
     expect(mocks.createDraftInFolder).not.toHaveBeenCalled();

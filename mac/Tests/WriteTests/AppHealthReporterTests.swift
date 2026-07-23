@@ -29,7 +29,9 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertEqual(report.appIdentifier, "net.writeapp.write.test")
         XCTAssertEqual(report.appVersion, "9.8")
         XCTAssertEqual(report.buildNumber, "76")
-        XCTAssertEqual(report.status, .pass)
+        XCTAssertEqual(
+            report.status, .pass,
+            "Failed checks: \(report.checks.filter { $0.status != .pass })")
         XCTAssertEqual(report.checks.map(\.id), [
             "bundle.release",
             "build.attestation",
@@ -37,8 +39,10 @@ final class AppHealthReporterTests: XCTestCase {
             "selftest.markdown_identity",
             "selftest.filename_codec",
             "selftest.document_assets",
+            "selftest.document_projection",
             "selftest.public_link",
             "selftest.native_agent_contract",
+            "workflow.document_engine",
             "workflow.folder_trash_restore",
             "workflow.sharing_access",
             "workflow.comments",
