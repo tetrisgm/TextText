@@ -3,6 +3,7 @@
   "requiredChecks": [
     "web.types",
     "workflow.document_engine",
+    "workflow.collaboration",
     "web.unit",
     "native.unit",
     "native.live_ai",

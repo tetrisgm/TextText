@@ -18,6 +18,7 @@ import * as schema from "./schema";
 type Db = NeonHttpDatabase<typeof schema>;
 
 const url = process.env.DATABASE_URL;
+let localPool: Pool | null = null;
 
 function makeDb(): Db | null {
   if (!url) return null;
@@ -26,9 +27,15 @@ function makeDb(): Db | null {
   }
   // Local Postgres exposes the same Drizzle query API for everything store.ts
   // uses, so treat it as the same Db type.
-  return drizzlePg(new Pool({ connectionString: url }), {
+  localPool = new Pool({ connectionString: url });
+  return drizzlePg(localPool, {
     schema,
   }) as unknown as Db;
 }
 
 export const db = makeDb();
+
+export async function closeDatabaseConnections(): Promise<void> {
+  await localPool?.end();
+  localPool = null;
+}

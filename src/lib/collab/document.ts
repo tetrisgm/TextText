@@ -24,6 +24,11 @@ function map(rootMap: Y.Map<unknown>, key: string): Y.Map<unknown> {
   const existing = rootMap.get(key);
   if (existing instanceof Y.Map) return existing;
   const value = new Y.Map<unknown>();
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    for (const [entryKey, entryValue] of Object.entries(existing)) {
+      value.set(entryKey, entryValue);
+    }
+  }
   rootMap.set(key, value);
   return value;
 }
@@ -45,14 +50,20 @@ function replaceText(target: Y.Text, value: string): void {
 function replaceMap(
   target: Y.Map<unknown>,
   value: Record<string, unknown>,
+  preservedKeys: ReadonlySet<string> = new Set(),
 ): void {
   for (const key of Array.from(target.keys())) {
-    if (!(key in value)) target.delete(key);
+    if (!preservedKeys.has(key) && !(key in value)) target.delete(key);
   }
-  for (const [key, entry] of Object.entries(value)) target.set(key, entry);
+  for (const [key, entry] of Object.entries(value)) {
+    if (JSON.stringify(target.get(key)) !== JSON.stringify(entry)) {
+      target.set(key, entry);
+    }
+  }
 }
 
 function replaceArray(target: Y.Array<unknown>, value: unknown[]): void {
+  if (JSON.stringify(target.toArray()) === JSON.stringify(value)) return;
   if (target.length) target.delete(0, target.length);
   if (value.length) target.insert(0, value);
 }
@@ -72,11 +83,12 @@ export function applyDocumentSnapshot(
     replaceMap(map(rootMap, "fields"), snapshot.content.fields);
     replaceArray(array(rootMap, "tags"), snapshot.content.tags);
     replaceArray(array(rootMap, "assets"), snapshot.content.assets);
-    replaceMap(map(rootMap, "presentation"), {
+    const presentation = map(rootMap, "presentation");
+    replaceMap(presentation, {
       templateId: snapshot.presentation.template.id,
       templateVersion: snapshot.presentation.template.version,
-      theme: snapshot.presentation.theme,
-    });
+    }, new Set(["theme"]));
+    replaceMap(map(presentation, "theme"), snapshot.presentation.theme);
   }, origin);
 }
 
@@ -87,6 +99,13 @@ function cleanFields(value: Record<string, unknown>): Record<string, DocumentFie
 export function documentSnapshotFromYDoc(doc: Y.Doc): DocumentSnapshot {
   const rootMap = root(doc);
   const presentation = map(rootMap, "presentation");
+  const storedTheme = presentation.get("theme");
+  const theme =
+    storedTheme instanceof Y.Map
+      ? storedTheme.toJSON()
+      : storedTheme && typeof storedTheme === "object" && !Array.isArray(storedTheme)
+        ? storedTheme
+        : {};
   return validateDocumentSnapshot({
     schemaVersion: 1,
     content: {
@@ -102,9 +121,7 @@ export function documentSnapshotFromYDoc(doc: Y.Doc): DocumentSnapshot {
         id: String(presentation.get("templateId") ?? "texttext.article"),
         version: Number(presentation.get("templateVersion") ?? 1),
       },
-      theme:
-        (presentation.get("theme") as DocumentSnapshot["presentation"]["theme"] | undefined) ??
-        {},
+      theme,
     },
   });
 }
@@ -159,4 +176,24 @@ export function hasDocumentSnapshot(doc: Y.Doc): boolean {
 
 export function documentText(doc: Y.Doc, key: "title" | "subtitle" | "body"): Y.Text {
   return text(root(doc), key);
+}
+
+export function documentFields(doc: Y.Doc): Y.Map<unknown> {
+  return map(root(doc), "fields");
+}
+
+export function documentTags(doc: Y.Doc): Y.Array<unknown> {
+  return array(root(doc), "tags");
+}
+
+export function documentAssets(doc: Y.Doc): Y.Array<unknown> {
+  return array(root(doc), "assets");
+}
+
+export function documentPresentation(doc: Y.Doc): Y.Map<unknown> {
+  return map(root(doc), "presentation");
+}
+
+export function documentTheme(doc: Y.Doc): Y.Map<unknown> {
+  return map(documentPresentation(doc), "theme");
 }

@@ -40,6 +40,11 @@ async function verifyRelease() {
       command: ["npx", "tsx", "scripts/verify-document-engine.ts"],
     },
     {
+      id: "workflow.collaboration",
+      timeoutSeconds: 120,
+      command: ["npx", "tsx", "scripts/verify-collaboration.ts"],
+    },
+    {
       id: "web.unit",
       timeoutSeconds: 1_800,
       command: ["npx", "vitest", "run"],

@@ -6,9 +6,10 @@ integrations, and reports can be reviewed without collecting document content.
 
 ## Lifecycle
 
-1. `npm run verify:release` runs TypeScript, web unit tests, Swift unit tests,
-   the live on-device assistant probe, and the Apple acceptance matrix once for
-   an exact source fingerprint. Each bounded command writes a duration receipt.
+1. `npm run verify:release` runs TypeScript, deterministic document-engine and
+   four-client collaboration checks, web unit tests, Swift unit tests, the live
+   on-device assistant probe, and the Apple acceptance matrix once for an exact
+   source fingerprint. Each bounded command writes a duration receipt.
 2. `release/ship.sh` consumes that exact receipt, runs the deterministic
    workflow capability evaluator, and performs the real Vercel production build
    once. The ship process writes a build attestation containing stable suite
@@ -73,6 +74,22 @@ durable mutation and its `action_audit` row, then tears the scratch workspace
 down in a `finally`. It never touches a real workspace. This proves the
 workflows run end-to-end and are audited, which the content-blind receipts
 cannot; the two together cover contract-shape and real execution.
+
+Collaboration uses the same split between a fast release proof and deeper local
+evidence. `workflow.collaboration` creates browser, native Mac, agent, and
+delayed offline Yjs clients and requires identical content and state vectors
+after out-of-order relay rounds. The check includes presence and independent
+presentation-token edits. It is deterministic, content-blind, and embedded in
+the build attestation.
+
+`npm run eval:collaboration:live` is the out-of-band local database evaluator.
+It creates an isolated scratch workspace, sends the same four-client update
+pattern through the real relay, persists the materialized document through
+`src/lib/store.ts` with revision fencing, checks presence and the audit row,
+then deletes all scratch state in a `finally` block. It reports only numeric
+timings and counts. This evaluator is required when relay, materialization,
+presence, revision, or collaboration persistence code changes, but it is not a
+network-variable ship gate.
 
 The release also has one architecture identity from build through update. The
 Texttext executable and its three extensions must be arm64-only, while Sparkle is

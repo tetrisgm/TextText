@@ -44,6 +44,7 @@ required = {
     "selftest.public_link",
     "selftest.native_agent_contract",
     "workflow.document_engine",
+    "workflow.collaboration",
     "workflow.folder_trash_restore",
     "workflow.sharing_access",
     "workflow.comments",

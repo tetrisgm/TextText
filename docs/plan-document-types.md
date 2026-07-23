@@ -286,6 +286,22 @@ Template definitions sync as immutable workspace records, not character-level
 CRDT state. A document pins `{id, version}`, so concurrently created later
 versions do not mutate an open document.
 
+Collaboration has two app-owned evaluators:
+
+- `scripts/verify-collaboration.ts` is the fast deterministic release check. It
+  makes browser, native Mac, agent, and delayed offline clients edit one
+  document, exchanges updates in different orders, replays the offline update,
+  and requires identical content and state vectors. It also proves awareness
+  for all four clients and token-level presentation merging.
+- `npm run eval:collaboration:live` is the destructive local soak. It uses a
+  scratch local Postgres workspace and the real relay, presence, materializer,
+  revision fence, store boundary, and audit log. It removes every scratch row
+  in a `finally` block and reports content-blind counts and timings only.
+
+The release check catches deterministic merge regressions without network or
+database variability. The local soak proves the full persistence path when
+collaboration or sync code changes.
+
 ## Performance contract
 
 The browser editor operates on a preloaded local document and does not navigate
@@ -330,11 +346,14 @@ deterministic sync projection, fail-closed privacy, and concurrent Yjs merging.
 The Mac health reporter includes:
 
 - `workflow.document_engine` for the server evaluation
+- `workflow.collaboration` for deterministic four-client convergence
 - `selftest.document_projection` for native `.textpack` document and asset
   round-trip
 
-The release gate runs these checks with the normal web, native, sync, and
-collaboration suites. Results are uploaded by the existing app health pipeline.
+The release gate runs these checks with the normal web, native, and sync suites.
+Results are uploaded by the existing app health pipeline. The real-relay
+collaboration soak stays out of the fast ship path and runs against the local
+database when relevant collaboration code changes.
 
 ## Explicit first-version cuts
 

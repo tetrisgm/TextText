@@ -11,6 +11,7 @@ import {
   index,
   integer,
   jsonb,
+  pgSequence,
   pgTable,
   primaryKey,
   text,
@@ -23,6 +24,8 @@ import {
 import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
 import type { TemplateDefinition } from "../presentation/schema";
+
+export const writeChangeSequence = pgSequence("write_change_seq");
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
 export const fileRepresentation = pgEnum("file_representation", [

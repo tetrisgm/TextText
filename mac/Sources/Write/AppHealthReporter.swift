@@ -61,6 +61,7 @@ private struct WriteBuildAttestation: Decodable {
 
 enum WriteWorkflowHealth {
     static let documentEngine = "workflow.document_engine"
+    static let collaboration = "workflow.collaboration"
     static let folderTrashRestore = "workflow.folder_trash_restore"
     static let sharingAccess = "workflow.sharing_access"
     static let comments = "workflow.comments"
@@ -69,6 +70,7 @@ enum WriteWorkflowHealth {
 
     static let requiredCheckIDs = [
         documentEngine,
+        collaboration,
         folderTrashRestore,
         sharingAccess,
         comments,
@@ -381,6 +383,9 @@ final class AppHealthReporter {
                 operation: checkNativeAgentContract),
             timedCheck(id: WriteWorkflowHealth.documentEngine) {
                 checkAttestedWorkflow(id: WriteWorkflowHealth.documentEngine)
+            },
+            timedCheck(id: WriteWorkflowHealth.collaboration) {
+                checkAttestedWorkflow(id: WriteWorkflowHealth.collaboration)
             },
             timedCheck(id: WriteWorkflowHealth.folderTrashRestore) {
                 checkAttestedWorkflow(id: WriteWorkflowHealth.folderTrashRestore)
