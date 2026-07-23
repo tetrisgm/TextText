@@ -15,7 +15,9 @@ final class FileProviderStatusMonitorTests: XCTestCase {
         // v12 rebuilds so the post-.textpack mount recreates fresh placeholders
         // that materialize with a non-nil documentSize (v11 left them 0-byte).
         XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 11))
-        XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 12))
+        // v13 rebuilds the disposable provider cache after canonical documents
+        // became mandatory, removing stale live projections without touching Trash.
+        XCTAssertTrue(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 12))
         XCTAssertFalse(AppDelegate.needsFileProviderSchemaRepair(storedVersion: 13))
     }
 
