@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDuration,
+  requiredReleaseChecks,
   safeReceiptName,
   validateReleaseReceipt,
   type ReleaseGateReceipt,
@@ -17,14 +18,7 @@ function validReceipt(): ReleaseGateReceipt {
     ...identity,
     generatedAt: "2026-07-18T00:00:00.000Z",
     totalDurationMilliseconds: 1_500,
-    checks: [
-      "web.types",
-      "workflow.document_engine",
-      "web.unit",
-      "native.unit",
-      "native.live_ai",
-      "apple.eval",
-    ].map((id) => ({
+    checks: [...requiredReleaseChecks].map((id) => ({
       id,
       status: "pass" as const,
       durationMilliseconds: 300,

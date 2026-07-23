@@ -368,14 +368,22 @@ function exactRequiredChecks(receipt: ReleaseGateReceipt) {
   return new Set(receipt.checks.map((check) => check.id));
 }
 
-export const requiredReleaseChecks = new Set([
-  "web.types",
-  "workflow.document_engine",
-  "web.unit",
-  "native.unit",
-  "native.live_ai",
-  "apple.eval",
-]);
+const releaseGateContract = JSON.parse(
+  readFileSync(join(repositoryRoot, "scripts", "release-gates.json"), "utf8"),
+) as { schemaVersion: number; requiredChecks: unknown };
+if (
+  releaseGateContract.schemaVersion !== 1 ||
+  !Array.isArray(releaseGateContract.requiredChecks) ||
+  releaseGateContract.requiredChecks.length === 0 ||
+  releaseGateContract.requiredChecks.some((id) => typeof id !== "string") ||
+  new Set(releaseGateContract.requiredChecks).size !==
+    releaseGateContract.requiredChecks.length
+) {
+  throw new Error("Invalid release gate contract.");
+}
+export const requiredReleaseChecks = new Set<string>(
+  releaseGateContract.requiredChecks as string[],
+);
 
 export function validateReleaseReceipt(
   receipt: ReleaseGateReceipt,

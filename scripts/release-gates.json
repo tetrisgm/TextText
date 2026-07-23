@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "requiredChecks": [
+    "web.types",
+    "workflow.document_engine",
+    "web.unit",
+    "native.unit",
+    "native.live_ai",
+    "apple.eval"
+  ]
+}

@@ -23,25 +23,31 @@ fi
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 WORKFLOW_CONTRACT_HASH="$(shasum -a 256 "$ROOT/src/lib/ai/tools.ts" | awk '{print $1}')"
+RELEASE_GATE_CONTRACT="$ROOT/scripts/release-gates.json"
 mkdir -p "$(dirname "$OUTPUT")"
 
 python3 - \
   "$OUTPUT" "$VERSION" "$BUILD" "$SOURCE_COMMIT" \
   "$WORKFLOW_CONTRACT_HASH" "$CAPABILITY_RECEIPT" \
-  "$RELEASE_GATE_RECEIPT" <<'PY'
+  "$RELEASE_GATE_RECEIPT" "$RELEASE_GATE_CONTRACT" <<'PY'
 import datetime
 import json
 import os
 import sys
 
-output, version, build, commit, contract_hash, capability_path, gate_path = sys.argv[1:]
-required_gates = {
-    "web.types",
-    "web.unit",
-    "native.unit",
-    "native.live_ai",
-    "apple.eval",
-}
+output, version, build, commit, contract_hash, capability_path, gate_path, gate_contract_path = sys.argv[1:]
+with open(gate_contract_path, encoding="utf-8") as handle:
+    gate_contract = json.load(handle)
+required_gates = gate_contract.get("requiredChecks")
+if gate_contract.get("schemaVersion") != 1:
+    raise SystemExit("Release gate contract has the wrong schema.")
+if not isinstance(required_gates, list) or not required_gates:
+    raise SystemExit("Release gate contract has no required checks.")
+if any(not isinstance(check_id, str) for check_id in required_gates):
+    raise SystemExit("Release gate contract contains an invalid check.")
+if len(set(required_gates)) != len(required_gates):
+    raise SystemExit("Release gate contract contains duplicate checks.")
+required_gates = set(required_gates)
 required_capabilities = {
     "workflow.folder_trash_restore",
     "workflow.sharing_access",
@@ -79,7 +85,7 @@ if not isinstance(gate_receipt.get("sourceFingerprint"), str) or len(gate_receip
 if not isinstance(gate_checks, list):
     raise SystemExit("Release gate receipt has no checks.")
 gate_ids = [check.get("id") for check in gate_checks if isinstance(check, dict)]
-if set(gate_ids) != required_gates or len(gate_ids) != len(required_gates):
+if not required_gates.issubset(set(gate_ids)):
     raise SystemExit("Release gate receipt does not contain the required checks.")
 for check in gate_checks:
     duration = check.get("durationMilliseconds")
