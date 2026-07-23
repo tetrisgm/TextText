@@ -217,6 +217,40 @@ product, never the source, so a global restyle can always reach every document
 (a baked-HTML document is frozen and unreachable). See section 4 for where that
 content physically lives.
 
+### Where the HTML/CSS work lives, and the scope of the look
+
+Because the engine is JavaScript that decides what primitives look like, **the
+per-type and per-document layer touches almost no HTML or CSS.** Authoring a type
+is composing primitives and setting theme tokens (skinning), not writing markup.
+The real HTML and CSS craft is concentrated in one place: building and growing
+the primitive library and its theme system. That is the point, not a limitation.
+The craft compounds in the engine, every document inherits it, and consistency
+holds by construction. HTML/CSS does not shrink overall, it relocates from
+scattered-per-document to owned-in-the-engine.
+
+The scope of "any look" is deliberately bounded to the product's domain: this is
+for **good-looking notes, bookmarks, and blogs, not full websites.** The richness
+goal is that the AI interprets what you describe and builds a really good
+*approximation* with the engine's primitives. It is explicitly NOT pixel-perfect
+cloning of arbitrary pages, not elaborate per-document JavaScript, not a website
+builder. That deliberate scope is what makes the bounded, compose-only engine the
+right tool rather than a compromise: good documents are fully reachable by
+composing primitives, and that is all the product is trying to render.
+
+### What sync and collaboration actually touch
+
+A consequence worth making explicit: **CRDT co-editing and Dropbox-like file
+sync only ever touch the document's CONTENT (the textpack: body text, field
+values, assets), never the engine or the render.** The render is a pure function
+of content plus the engine, computed on demand, so the compiled HTML is derived
+and never synced (sync payloads stay tiny content deltas, not rendered pages).
+The engine ships with the app and is versioned like code. Type definitions do
+sync, but at the coarse workspace level (the `custom_types` registry, changing
+rarely, bumping the change cursor), NOT through per-document CRDT. So the hard
+distributed-systems problem is confined to a well-understood surface, a text
+document plus some fields, and the rendering and engine layers evolve
+independently of it.
+
 ### Two kinds of primitive: render vs capability
 
 The engine provides two categories of thing, and conflating them is a mistake.
@@ -500,11 +534,11 @@ The honest, reliable design:
 
 ## 7. The gallery (fork-to-own): the untrusted-import surface, and why it is last
 
-Read this section together with the phasing correction in section 10. The
+Read this section together with the ordering constraints in section 10. The
 interpreter and the gallery are NOT one deferral. The interpreter renders YOUR
 OWN AI-authored types on your own content through your own server, so its trust
 surface is the same as any other post you write, and it is the heart of the
-vision (build it in Phase 2). The gallery is different: it is the point where
+vision (build it). The gallery is different: it is the point where
 **someone else's type definition flows into your workspace**, which is the only
 place custom types become untrusted input. That is what makes the gallery last,
 not the rendering.
@@ -515,7 +549,7 @@ Concrete holes both stress passes raised, all specific to import:
   editor if the interpreter is anything more than pure data. Even pure data
   leaks: unbounded repeat counts are a DoS, a raw-HTML field binding is stored
   XSS, a background-image URL to an attacker host is exfiltration. The closed
-  `validateRenderSpec` from Phase 2 already blocks these for your own types; the
+  `validateRenderSpec` already blocks these for your own types; the
   gallery's addition is that it must **re-validate on import**, never trusting a
   publisher's validation.
 - Forking plus updates is a supply-chain problem. Silent live updates of a
@@ -527,12 +561,12 @@ Concrete holes both stress passes raised, all specific to import:
   content hash; sharing and MCP resolve types by workspace and id, never by bare
   slug (two workspaces' "same" slug can diverge in fields).
 
-Recommendation: **the public fork-to-own gallery is the last phase, gated on
+Recommendation: **the public fork-to-own gallery comes last, gated on
 import re-validation + pinned snapshots + provenance.** This is a moderation and
 supply-chain program, so it opens only after the type system is allow-list-safe
 (section 8) and the closed-vocabulary interpreter (section 3) is shipped and
 gated. Deferring the gallery does NOT defer the interpreter; the interpreter for
-your own types comes first, in Phase 2.
+your own types comes first.
 
 ---
 
@@ -607,79 +641,50 @@ but two traps are sharp:
 
 ---
 
-## 10. Phasing: build the interpreter, sequence it behind two walls
+## 10. Ordering: hard dependencies, not fixed phases
 
-The review's original 1 to 6 order front-loads the enum-to-registry migration
-and touches the privacy invariants first, which is the highest-risk,
-lowest-visible-value place to start. The correction is a sequencing one, not a
-cut: the AI-authored render interpreter IS the vision (describe how a document
-looks, keep tweaking it, then describe the container page), so the plan builds
-it. What must precede it is two safety walls, and what genuinely comes last is
-the PUBLIC gallery, because import is the only place a type becomes untrusted
-input.
+There is no rigid phase plan here. What exists is a handful of **hard ordering
+constraints** (things that genuinely must precede other things), and beyond
+those the work can be sequenced by whatever delivers value soonest. The
+constraints:
 
-Two claims must be kept apart, because an earlier draft of this doc conflated
-them:
+- **Fail-closed privacy must land before any type becomes user-definable.**
+  Today privacy is a denylist, so a novel type publishes by default across
+  four-plus sites (section 8). Inverting it to an allow-list is a leak-prevention
+  prerequisite, not a feature, and it ships even if nothing else does.
+- **The closed validator must exist before any spec is rendered.**
+  `validateRenderSpec` (section 3) is the wall that makes an AI-authored or
+  imported spec safe. No renderer reads a spec until the validator and its
+  rejection test are a gate, the way `test-oauth-mcp-loop.py` gates OAuth.
+- **Fields plumbing must be solid before custom fields sync.** The
+  `posts.metadata` column (keyed by field id), the strict `validateTypeDef`,
+  declared-field-ordered frontmatter emission, and the round-trip byte test all
+  land before any custom field travels, or the jsonb key-order hash flap
+  reintroduces the revert-loop class (section 4).
+- **The renderer registry precedes spec-driven rendering.** Replacing the 5-site
+  ternary with `rendererForType(type)` (dispatch sites: `t/[handle]/[slug]/page.tsx:289`,
+  `t/[handle]/page.tsx:276` and `:534`, `PostWorkspaceShell.tsx:3496`,
+  `PostEditLayerClient.tsx:1562`) is a prerequisite for a `SpecReader` to exist
+  anywhere. Recasting the built-ins as `DocumentType` rows happens here.
+- **The public gallery comes after the type system is allow-list-safe and the
+  validator is gated**, because import is the only place a type becomes untrusted
+  input (section 7). It is the one genuinely-last thing.
+- **Collaboration is a parallel track**, gated only by its own durability work
+  (owner as first-class co-editor, invite/accept binding, cursors, the
+  between-sessions holes), not by the types work. It can proceed independently.
 
-- **The interpreter on your own types is tractable and is the goal.** A custom
-  type you author (or the AI authors) in your own workspace renders on your own
-  content through your own server. Its trust surface is identical to any other
-  post you write. The closed, token-only render vocabulary (section 3) means a
-  spec can only recompose the primitives the designer already built, on the
-  existing tokens, with the DESIGN.md contracts (60% ink floor, accent rule,
-  measure, motion) applied BY the interpreter. So the interpreter does not
-  trade away taste the way a pixel-canvas would: every output is inside the
-  design system by construction. The one thing it cannot do without new React
-  is a genuinely novel body BLOCK (a recipe ingredient table); recomposition of
-  existing primitives, which is what "make my posts look this way" needs, is
-  fully in reach.
-- **The public gallery is a moderation and supply-chain program, and it is
-  last.** Not because rendering is risky, but because importing a stranger's
-  spec is (section 7).
+Two things worth holding onto through whatever ordering emerges:
 
-Fixed-layout curated types are a de-risking stepping stone for the field and
-sync plumbing, not the destination; the earlier "80% of the value" framing
-oversold them. `modes.ts` is still the model to generalize (a fixed five view
-primitives, each real code), but the interpreter grows past it rather than
-stopping there.
-
-**Build order:**
-
-- **Phase 0 (wall 1, ship even if the rest slips): fail-closed privacy.**
-  Section 8 in full. Invert to an allow-list, quarantine unknown-type folder
-  routing, make the kind-mapping fall-through non-public, one fail-closed
-  predicate replacing the four-plus denylists, plus the public-route test. No
-  custom type ships until this lands.
-- **Phase 1: typed fields plumbing (de-risk sync/round-trip).** Add a `fields`
-  schema and `posts.metadata jsonb` (keyed by field id), a `validateTypeDef`
-  strict reject-unknown validator, declared-field-ordered frontmatter emission,
-  and the round-trip byte test. Recast the built-ins as `DocumentType` rows and
-  replace the 5-site renderer ternary with a `rendererForType(type)` registry
-  (dispatch sites: `t/[handle]/[slug]/page.tsx:289`, `t/[handle]/page.tsx:276`
-  and `:534`, `PostWorkspaceShell.tsx:3496`, `PostEditLayerClient.tsx:1562`).
-  Optionally ship one or two curated fixed-layout types here to prove demand
-  while the interpreter is being built. No spec is interpreted yet, so this
-  stays on safe ground.
-- **Phase 2 (wall 2 + the vision): the interpreter for your own types.** Define
-  the closed render-spec grammar (section 3) and its `validateRenderSpec` gate
-  (wall 2, must exist before any spec renders), then build the `SpecReader` that
-  interprets item AND container specs into the existing primitives. This is the
-  whole vision, all on your own AI-authored types:
-  - item render from a spec (the readers already expose a half-built `slots`
-    seam a `SpecReader` fills);
-  - the container-as-page: one render path both `CategoryListing` and
-    `FolderPage` read from, driven by a spec on the folder, plus the public-link
-    and team-only visibility roles on the existing collaborator cascade;
-  - the AI authoring loop: constrained nudges over a valid spec, validated every
-    turn, preview-as-validator, on-device floor and cloud widening (section 6).
-- **Phase 3 (last, untrusted import): the public fork-to-own gallery.** Import
-  re-validation, pinned snapshots, provenance, diff-before-update, moderation
-  (section 7). This opens only after Phase 2 is shipped and gated.
-
-The sequencing is deliberate: the two walls (fail-closed privacy, closed
-`validateRenderSpec`) make the interpreter safe for your own content, and the
-gallery's untrusted-import surface is the only thing that waits for a later
-phase.
+- **The interpreter for your own types is the vision, not a deferral.** A type
+  you (or the AI) author renders on your own content through your own server; its
+  trust surface equals any other post you write. The closed, token-only
+  vocabulary (section 3) means a spec can only recompose the primitives the
+  engine already ships, with the DESIGN.md contracts applied by the interpreter,
+  so every output is inside the design system by construction.
+- **Fixed-layout curated types are a de-risking stepping stone**, useful to prove
+  the field and sync plumbing early, not the destination. `modes.ts` is the
+  validator pattern to generalize; the interpreter grows past its five fixed
+  views rather than stopping there.
 
 ---
 
@@ -689,7 +694,7 @@ Render and dispatch:
 - `src/components/{Reader,ProjectReader,TalkReader}.tsx` (the three readers; each
   already exposes a half-built `slots` seam a `SpecReader` would fill), `PostCard.tsx`,
   `PostByline.tsx`, `ProjectGallery.tsx`.
-- The renderer ternary duplicated at 5 sites (listed in Phase 2).
+- The renderer ternary duplicated at 5 sites (listed in section 10).
 - `src/styles/{tokens.css,broadsheet.css,cards.css,project.css,talk.css}` and
   `DESIGN.md` (the contracts the interpreter must apply, never let a spec set).
 
@@ -730,9 +735,9 @@ Validation and gating:
 ## 12. Open questions for the Codex iteration
 
 1. Do the built-in kinds (article, project, talk, note, bookmark) get fully
-   recast as `DocumentType` rows in Phase 1, or do they stay native with only
-   custom types going through the registry until later? Recasting is cleaner but
-   touches the hottest render paths.
+   recast as `DocumentType` rows with the fields plumbing, or do they stay native
+   with only custom types going through the registry until later? Recasting is
+   cleaner but touches the hottest render paths.
 2. Container render: widen `folders.mode` past `cleanFolderMode`, or add a
    dedicated `folders.render_spec` / `folders.type_id`? The latter is less likely
    to collide with the three system modes.
@@ -755,9 +760,9 @@ readers over the render, format, and container seams; two research agents over
 document-type products and safe-render-spec prior art; two adversarial
 stress-tests). The stress-test corrections are treated as the winning
 constraints on safety wherever they conflict with the first-pass design, which
-is why the fail-closed privacy allow-list is Phase 0 and the closed
-`validateRenderSpec` gate precedes any rendered spec. The interpreter itself is
-NOT deferred: it is the vision, built in Phase 2 on your own AI-authored types
-once those two walls exist. Only the public fork-to-own gallery waits for a
-later phase, because import is the one place a type becomes untrusted input.
-Baseline context: `docs/review-2026-07-22.md`.
+is why the fail-closed privacy allow-list must land before any user-definable
+type and the closed `validateRenderSpec` gate precedes any rendered spec (see
+the ordering constraints in section 10). The interpreter itself is NOT deferred:
+it is the vision, built on your own AI-authored types once those two walls exist.
+Only the public fork-to-own gallery comes last, because import is the one place a
+type becomes untrusted input. Baseline context: `docs/review-2026-07-22.md`.
