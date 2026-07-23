@@ -16,6 +16,9 @@ final class NativeAIToolParityTests: XCTestCase {
         "list_trash",
         "list_comments",
         "list_access",
+        "list_document_templates",
+        "customize_document_template",
+        "set_item_template",
         "create_item",
         "update_item",
         "append_to_item",
@@ -83,6 +86,8 @@ final class NativeAIToolParityTests: XCTestCase {
         @available(macOS 26.0, *)
         func testEveryNativeToolBuildsAFoundationModelsSchema() throws {
             for spec in NativeAIBridge.agentToolSpecs {
+                FileHandle.standardError.write(
+                    Data("Building native schema: \(spec.name)\n".utf8))
                 _ = try spec.makeGenerationSchema()
             }
         }

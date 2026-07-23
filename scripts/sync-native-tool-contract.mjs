@@ -2,25 +2,13 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import {
-  WORKSPACE_TOOL_DEFINITIONS,
-  WORKSPACE_TOOL_NAMES,
-} from "../src/lib/ai/tools.ts";
+import { NATIVE_WORKSPACE_TOOL_CONTRACT } from "../src/lib/ai/native-contract.ts";
 
 const swiftPath = fileURLToPath(
   new URL("../mac/Sources/Write/NativeAI.swift", import.meta.url),
 );
 const source = readFileSync(swiftPath, "utf8");
-const contract = WORKSPACE_TOOL_NAMES.map((name) => {
-  const definition = WORKSPACE_TOOL_DEFINITIONS[name];
-  const inputSchema = { ...definition.jsonSchema };
-  delete inputSchema.$schema;
-  return {
-    name,
-    description: definition.description,
-    inputSchema,
-  };
-});
+const contract = NATIVE_WORKSPACE_TOOL_CONTRACT;
 const manifest = JSON.stringify(contract, null, 2)
   .split("\n")
   .map((line) => `        ${line}`)

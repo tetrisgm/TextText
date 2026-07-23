@@ -6,6 +6,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
+import { NATIVE_WORKSPACE_TOOL_CONTRACT } from "@/lib/ai/native-contract";
 
 type NativeToolContract = {
   name: string;
@@ -26,19 +27,41 @@ function nativeToolContract(): NativeToolContract[] {
 }
 
 describe("native workspace tool parity", () => {
-  it("matches every canonical tool name, description, and input schema", () => {
-    const canonical = WORKSPACE_TOOL_NAMES.map((name) => {
-      const definition = WORKSPACE_TOOL_DEFINITIONS[name];
-      const inputSchema = { ...definition.jsonSchema };
-      delete inputSchema.$schema;
-      return {
-        name,
-        description: definition.description,
-        inputSchema,
-      };
-    });
+  it("matches the reproducible native projection of every canonical tool", () => {
+    expect(nativeToolContract()).toEqual(NATIVE_WORKSPACE_TOOL_CONTRACT);
+    expect(NATIVE_WORKSPACE_TOOL_CONTRACT.map((tool) => tool.name)).toEqual(
+      WORKSPACE_TOOL_NAMES,
+    );
+    expect(NATIVE_WORKSPACE_TOOL_CONTRACT.map((tool) => tool.description)).toEqual(
+      WORKSPACE_TOOL_NAMES.map(
+        (name) => WORKSPACE_TOOL_DEFINITIONS[name].description,
+      ),
+    );
+  });
 
-    expect(nativeToolContract()).toEqual(canonical);
+  it("keeps native template operations inside the canonical grammar", () => {
+    const native = NATIVE_WORKSPACE_TOOL_CONTRACT.find(
+      (tool) => tool.name === "customize_document_template",
+    );
+    const canonical = WORKSPACE_TOOL_DEFINITIONS.customize_document_template
+      .jsonSchema as {
+      properties: {
+        operations: { items: { oneOf: Array<Record<string, unknown>> } };
+      };
+    };
+    const nativeOperations = (
+      native?.inputSchema as {
+        properties: {
+          operations: { items: { oneOf: Array<Record<string, unknown>> } };
+        };
+      }
+    ).properties.operations.items.oneOf;
+    const canonicalOperations = canonical.properties.operations.items.oneOf;
+
+    expect(nativeOperations.length).toBeGreaterThan(0);
+    for (const operation of nativeOperations) {
+      expect(canonicalOperations).toContainEqual(operation);
+    }
   });
 
   it("keeps legacy aliases and permanent deletion out of the native surface", () => {

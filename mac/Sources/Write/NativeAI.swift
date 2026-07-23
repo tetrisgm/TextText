@@ -453,6 +453,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         let properties: [String: AgentPropertySchema]
         let required: [String]?
         let additionalProperties: Bool
+        let definitions: [String: AgentPropertySchema]?
 
         #if canImport(FoundationModels)
             @available(macOS 26.0, *)
@@ -468,7 +469,8 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                         name: propertyName,
                         description: property.generationDescription,
                         schema: try property.makeDynamicGenerationSchema(
-                            named: "\(name)_\(propertyName)"),
+                            named: "\(name)_\(propertyName)",
+                            definitions: definitions ?? [:]),
                         isOptional: !required.contains(propertyName))
                 }
                 return try GenerationSchema(
@@ -479,24 +481,32 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         #endif
     }
 
-    struct AgentPropertySchema: Decodable, Sendable {
+    final class AgentPropertySchema: Decodable, @unchecked Sendable {
         let type: String?
         let description: String?
         let minLength: Int?
         let maxLength: Int?
         let minItems: Int?
         let maxItems: Int?
-        let items: AgentArrayItemSchema?
+        let items: AgentPropertySchema?
         let minimum: Int?
+        let exclusiveMinimum: Int?
         let maximum: Int?
         let pattern: String?
         let choices: [String]?
-        let constant: String?
+        let constant: AgentSchemaConstant?
         let anyOf: [AgentPropertySchema]?
+        let oneOf: [AgentPropertySchema]?
+        let properties: [String: AgentPropertySchema]?
+        let required: [String]?
+        let additionalProperties: Bool?
+        let reference: String?
 
         enum CodingKeys: String, CodingKey {
             case type, description, minLength, maxLength, minItems, maxItems, items
-            case minimum, maximum, pattern, anyOf
+            case minimum, exclusiveMinimum, maximum, pattern, anyOf, oneOf
+            case properties, required, additionalProperties
+            case reference = "$ref"
             case choices = "enum"
             case constant = "const"
         }
@@ -516,25 +526,39 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
         #if canImport(FoundationModels)
             @available(macOS 26.0, *)
-            func makeDynamicGenerationSchema(named name: String) throws
+            func makeDynamicGenerationSchema(
+                named name: String,
+                definitions: [String: AgentPropertySchema]
+            ) throws
                 -> DynamicGenerationSchema
             {
-                if let anyOf {
+                if let reference {
+                    let prefix = "#/definitions/"
+                    guard reference.hasPrefix(prefix),
+                          let definition = definitions[String(reference.dropFirst(prefix.count))]
+                    else { throw AgentToolSchemaError.invalidProperty(name) }
+                    return try definition.makeDynamicGenerationSchema(
+                        named: name, definitions: definitions)
+                }
+
+                if let alternatives = anyOf ?? oneOf {
                     let schemas: [DynamicGenerationSchema]
                     if #available(macOS 26.4, *) {
-                        schemas = try anyOf.enumerated().map { index, choice in
+                        schemas = try alternatives.enumerated().map { index, choice in
                             if choice.isNull { return .null }
                             return try choice.makeDynamicGenerationSchema(
-                                named: "\(name)_choice_\(index)")
+                                named: "\(name)_choice_\(index)",
+                                definitions: definitions)
                         }
                     } else {
                         // Explicit null schemas arrived in macOS 26.4. On the
                         // initial 26.x runtime the field stays optional; the
                         // page validator remains the final contract authority.
-                        schemas = try anyOf.enumerated().compactMap { index, choice in
+                        schemas = try alternatives.enumerated().compactMap { index, choice in
                             guard !choice.isNull else { return nil }
                             return try choice.makeDynamicGenerationSchema(
-                                named: "\(name)_choice_\(index)")
+                                named: "\(name)_choice_\(index)",
+                                definitions: definitions)
                         }
                     }
                     guard let first = schemas.first else {
@@ -552,7 +576,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                         }
                         return DynamicGenerationSchema(name: name, anyOf: choices)
                     }
-                    if let constant {
+                    if case .string(let constant) = constant {
                         return DynamicGenerationSchema(name: name, anyOf: [constant])
                     }
                     // Foundation Models rejects some valid JSON Schema regexes
@@ -566,7 +590,10 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
 
                 case "integer":
                     let guides: [GenerationGuide<Int>]
-                    switch (minimum, maximum) {
+                    let exact = constant?.integerValue
+                    let lower = exact ?? minimum ?? exclusiveMinimum.map { $0 + 1 }
+                    let upper = exact ?? maximum
+                    switch (lower, upper) {
                     case (.some(let lower), .some(let upper)):
                         guides = [.range(lower...upper)]
                     case (.some(let lower), .none):
@@ -578,6 +605,13 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                     }
                     return DynamicGenerationSchema(type: Int.self, guides: guides)
 
+                case "number":
+                    if let exact = constant?.integerValue {
+                        return DynamicGenerationSchema(
+                            type: Int.self, guides: [.range(exact...exact)])
+                    }
+                    return DynamicGenerationSchema(type: Double.self)
+
                 case "boolean":
                     return DynamicGenerationSchema(type: Bool.self)
 
@@ -587,10 +621,33 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                     }
                     return DynamicGenerationSchema(
                         arrayOf: try items.makeDynamicGenerationSchema(
-                            named: "\(name)_item"),
+                            named: "\(name)_item", definitions: definitions),
                         minimumElements: minItems,
                         maximumElements: maxItems
                     )
+
+                case "object":
+                    guard let properties, additionalProperties != true else {
+                        throw AgentToolSchemaError.invalidObject(name)
+                    }
+                    let required = Set(required ?? [])
+                    guard required.isSubset(of: Set(properties.keys)) else {
+                        throw AgentToolSchemaError.invalidObject(name)
+                    }
+                    let generatedProperties = try properties.sorted { $0.key < $1.key }
+                        .map { propertyName, property in
+                            DynamicGenerationSchema.Property(
+                                name: propertyName,
+                                description: property.generationDescription,
+                                schema: try property.makeDynamicGenerationSchema(
+                                    named: "\(name)_\(propertyName)",
+                                    definitions: definitions),
+                                isOptional: !required.contains(propertyName))
+                        }
+                    return DynamicGenerationSchema(
+                        name: name,
+                        description: generationDescription,
+                        properties: generatedProperties)
 
                 default:
                     throw AgentToolSchemaError.invalidProperty(name)
@@ -599,20 +656,41 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
         #endif
     }
 
-    struct AgentArrayItemSchema: Decodable, Sendable {
-        let type: String
+    enum AgentSchemaConstant: Decodable, Sendable {
+        case string(String)
+        case integer(Int)
+        case number(Double)
+        case boolean(Bool)
+        case null
 
-        #if canImport(FoundationModels)
-            @available(macOS 26.0, *)
-            func makeDynamicGenerationSchema(named name: String) throws
-                -> DynamicGenerationSchema
-            {
-                guard type == "string" else {
-                    throw AgentToolSchemaError.invalidProperty(name)
-                }
-                return DynamicGenerationSchema(type: String.self)
+        init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer()
+            if value.decodeNil() {
+                self = .null
+            } else if let decoded = try? value.decode(Bool.self) {
+                self = .boolean(decoded)
+            } else if let decoded = try? value.decode(String.self) {
+                self = .string(decoded)
+            } else if let decoded = try? value.decode(Int.self) {
+                self = .integer(decoded)
+            } else if let decoded = try? value.decode(Double.self) {
+                self = .number(decoded)
+            } else {
+                throw DecodingError.typeMismatch(
+                    AgentSchemaConstant.self,
+                    .init(
+                        codingPath: decoder.codingPath,
+                        debugDescription: "Expected a JSON scalar constant."))
             }
-        #endif
+        }
+
+        var integerValue: Int? {
+            switch self {
+            case .integer(let value): value
+            case .number(let value) where value.rounded() == value: Int(value)
+            default: nil
+            }
+        }
     }
 
     private enum AgentToolSchemaError: LocalizedError {
@@ -892,486 +970,6 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                         "properties": {
                           "op": {
                             "type": "string",
-                            "const": "set-fields"
-                          },
-                          "fields": {
-                            "maxItems": 80,
-                            "type": "array",
-                            "items": {
-                              "oneOf": [
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "text"
-                                    },
-                                    "maxLength": {
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 2000000
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "richtext"
-                                    },
-                                    "maxLength": {
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 10000000
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "image"
-                                    },
-                                    "allowedContentTypes": {
-                                      "default": [],
-                                      "maxItems": 20,
-                                      "type": "array",
-                                      "items": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "maxLength": 200
-                                      }
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type",
-                                    "allowedContentTypes"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "date"
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "url"
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "enum"
-                                    },
-                                    "options": {
-                                      "minItems": 1,
-                                      "maxItems": 100,
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "value": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 120
-                                          },
-                                          "label": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 160
-                                          }
-                                        },
-                                        "required": [
-                                          "value",
-                                          "label"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type",
-                                    "options"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "number"
-                                    },
-                                    "min": {
-                                      "type": "number"
-                                    },
-                                    "max": {
-                                      "type": "number"
-                                    },
-                                    "step": {
-                                      "type": "number",
-                                      "exclusiveMinimum": 0
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "boolean"
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "string",
-                                      "pattern": "^[a-z][A-Za-z0-9_.-]{0,119}$"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 160
-                                    },
-                                    "required": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    },
-                                    "visibility": {
-                                      "default": "public",
-                                      "type": "string",
-                                      "enum": [
-                                        "public",
-                                        "editor",
-                                        "hidden"
-                                      ]
-                                    },
-                                    "help": {
-                                      "type": "string",
-                                      "maxLength": 500
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "reference"
-                                    },
-                                    "target": {
-                                      "default": "document",
-                                      "type": "string",
-                                      "enum": [
-                                        "document",
-                                        "folder"
-                                      ]
-                                    },
-                                    "multiple": {
-                                      "default": false,
-                                      "type": "boolean"
-                                    }
-                                  },
-                                  "required": [
-                                    "id",
-                                    "label",
-                                    "required",
-                                    "visibility",
-                                    "type",
-                                    "target",
-                                    "multiple"
-                                  ],
-                                  "additionalProperties": false
-                                }
-                              ]
-                            }
-                          }
-                        },
-                        "required": [
-                          "op",
-                          "fields"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "op": {
-                            "type": "string",
                             "const": "set-theme"
                           },
                           "theme": {
@@ -1461,40 +1059,6 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                         "properties": {
                           "op": {
                             "type": "string",
-                            "const": "replace-item"
-                          },
-                          "item": {
-                            "$ref": "#/definitions/__schema0"
-                          }
-                        },
-                        "required": [
-                          "op",
-                          "item"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "op": {
-                            "type": "string",
-                            "const": "replace-collection-item"
-                          },
-                          "item": {
-                            "$ref": "#/definitions/__schema0"
-                          }
-                        },
-                        "required": [
-                          "op",
-                          "item"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "op": {
-                            "type": "string",
                             "const": "set-collection-layout"
                           },
                           "layout": {
@@ -1546,358 +1110,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 "name",
                 "operations"
               ],
-              "additionalProperties": false,
-              "definitions": {
-                "__schema0": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "const": "stack"
-                        },
-                        "direction": {
-                          "default": "vertical",
-                          "type": "string",
-                          "enum": [
-                            "vertical",
-                            "horizontal"
-                          ]
-                        },
-                        "gap": {
-                          "default": "md",
-                          "type": "string",
-                          "enum": [
-                            "none",
-                            "xs",
-                            "sm",
-                            "md",
-                            "lg",
-                            "xl"
-                          ]
-                        },
-                        "align": {
-                          "default": "stretch",
-                          "type": "string",
-                          "enum": [
-                            "start",
-                            "center",
-                            "end",
-                            "stretch"
-                          ]
-                        },
-                        "children": {
-                          "minItems": 1,
-                          "maxItems": 40,
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/definitions/__schema0"
-                          }
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "direction",
-                        "gap",
-                        "align",
-                        "children"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "group",
-                            "masthead"
-                          ]
-                        },
-                        "gap": {
-                          "default": "sm",
-                          "type": "string",
-                          "enum": [
-                            "none",
-                            "xs",
-                            "sm",
-                            "md",
-                            "lg",
-                            "xl"
-                          ]
-                        },
-                        "children": {
-                          "minItems": 1,
-                          "maxItems": 40,
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/definitions/__schema0"
-                          }
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "gap",
-                        "children"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "const": "text"
-                        },
-                        "bind": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "role": {
-                          "type": "string",
-                          "enum": [
-                            "eyebrow",
-                            "title",
-                            "subtitle",
-                            "heading",
-                            "body",
-                            "caption",
-                            "meta"
-                          ]
-                        },
-                        "fallback": {
-                          "type": "string",
-                          "maxLength": 500
-                        },
-                        "href": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "bind",
-                        "role"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "const": "prose"
-                        },
-                        "bind": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "bind"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "cover",
-                            "image",
-                            "video"
-                          ]
-                        },
-                        "bind": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "alt": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "fit": {
-                          "default": "cover",
-                          "type": "string",
-                          "enum": [
-                            "cover",
-                            "contain"
-                          ]
-                        },
-                        "height": {
-                          "default": "medium",
-                          "type": "string",
-                          "enum": [
-                            "compact",
-                            "medium",
-                            "large",
-                            "viewport"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "bind",
-                        "fit",
-                        "height"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "const": "gallery"
-                        },
-                        "bind": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "columns": {
-                          "default": 3,
-                          "anyOf": [
-                            {
-                              "type": "number",
-                              "const": 1
-                            },
-                            {
-                              "type": "number",
-                              "const": 2
-                            },
-                            {
-                              "type": "number",
-                              "const": 3
-                            },
-                            {
-                              "type": "number",
-                              "const": 4
-                            }
-                          ]
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "bind",
-                        "columns"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "byline",
-                            "metadata"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "type"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_-]{0,79}$"
-                        },
-                        "showWhen": {
-                          "type": "string",
-                          "pattern": "^content\\.(?:title|subtitle|body|tags|assets|fields\\.[a-z][A-Za-z0-9_.-]{0,119})$"
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "divider",
-                            "spacer"
-                          ]
-                        },
-                        "size": {
-                          "default": "md",
-                          "type": "string",
-                          "enum": [
-                            "none",
-                            "xs",
-                            "sm",
-                            "md",
-                            "lg",
-                            "xl"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "size"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                }
-              }
+              "additionalProperties": false
             }
           },
           {
