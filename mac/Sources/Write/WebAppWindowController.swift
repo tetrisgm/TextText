@@ -240,6 +240,16 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         return request
     }
 
+    static func sessionRecoveryPath(for statusCode: Int) -> String? {
+        if statusCode == 401 || statusCode == 403 {
+            return "/signin?app=1"
+        }
+        if statusCode >= 400 {
+            return "/signin?error=Configuration"
+        }
+        return nil
+    }
+
     func establishSession(token: String, nextPath: String = "/start?to=home") {
         webView.load(Self.sessionRequest(
             origin: origin, token: token, nextPath: nextPath))
@@ -373,13 +383,25 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             return
         }
 
+        guard let recoveryPath = Self.sessionRecoveryPath(
+            for: response.statusCode
+        ) else {
+            decisionHandler(.allow)
+            return
+        }
+
         decisionHandler(.cancel)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if response.statusCode == 401 || response.statusCode == 403 {
+                // A token from a retired or reset database must never leave
+                // the native window as a blank WebKit surface. Keep a useful
+                // sign-in state visible while the system-browser device flow
+                // replaces the stale credential.
+                self.webView.load(self.request(for: recoveryPath))
                 self.onSystemSignInRequested()
             } else {
-                self.webView.load(self.request(for: "/signin?error=Configuration"))
+                self.webView.load(self.request(for: recoveryPath))
             }
         }
     }

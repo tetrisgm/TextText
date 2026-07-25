@@ -22,4 +22,23 @@ final class WebAppSessionRequestTests: XCTestCase {
             "/t/workspace/post?edit=1"
         )
     }
+
+    func testRejectedLegacySessionShowsRelinkState() {
+        XCTAssertEqual(
+            WebAppWindowController.sessionRecoveryPath(for: 401),
+            "/signin?app=1"
+        )
+        XCTAssertEqual(
+            WebAppWindowController.sessionRecoveryPath(for: 403),
+            "/signin?app=1"
+        )
+    }
+
+    func testServerSessionFailureShowsConfigurationState() {
+        XCTAssertEqual(
+            WebAppWindowController.sessionRecoveryPath(for: 500),
+            "/signin?error=Configuration"
+        )
+        XCTAssertNil(WebAppWindowController.sessionRecoveryPath(for: 302))
+    }
 }
