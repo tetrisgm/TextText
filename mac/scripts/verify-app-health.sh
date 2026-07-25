@@ -8,7 +8,7 @@ APP="${1:-}"
 EXPECTED_VERSION="${2:-}"
 EXPECTED_BUILD="${3:-}"
 if [ ! -x "$APP/Contents/MacOS/Write" ] || [ -z "$EXPECTED_VERSION" ] || [ -z "$EXPECTED_BUILD" ]; then
-  echo "Usage: verify-app-health.sh <Write.app> <version> <build>" >&2
+  echo "Usage: verify-app-health.sh <Texttext.app> <version> <build>" >&2
   exit 1
 fi
 

@@ -83,7 +83,7 @@ export default async function DownloadPage() {
           <h2>Mac, Apple silicon</h2>
           <p>macOS 14 Sonoma or later. Requires an Apple silicon Mac.</p>
           {macAvailable ? (
-            <a className="write-landing-primary" href="/download/Write.zip">
+            <a className="write-landing-primary" href="/download/Texttext.zip">
               Download for Apple silicon
             </a>
           ) : (

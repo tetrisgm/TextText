@@ -24,7 +24,24 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
       new Promise<void>((resolve) => setTimeout(resolve, ms));
 
     type PollResult =
-      { cursor?: string; changed?: boolean; build?: string } | null | false;
+      | {
+          kind: "changes";
+          cursor?: string;
+          changed?: boolean;
+          build?: string;
+        }
+      | { kind: "retry"; retryAfterMs?: number }
+      | { kind: "stop" };
+
+    function retryAfterMs(response: Response): number | undefined {
+      const value = response.headers.get("retry-after");
+      if (!value) return undefined;
+      const seconds = Number(value);
+      if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+      const date = Date.parse(value);
+      if (!Number.isFinite(date)) return undefined;
+      return Math.max(0, date - Date.now());
+    }
 
     async function poll(wait: number): Promise<PollResult> {
       controller = new AbortController();
@@ -42,29 +59,46 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
         );
         // Guest and shared read-only shells have no owner change feed. A 404 is
         // permanent for this mounted workspace, so do not keep waking the app.
+        // A quota-paused database is also not recoverable by hammering it from
+        // every open window. A fresh mount or navigation starts a new feed after
+        // the service has been restored.
         if (
           response.status === 401 ||
+          response.status === 402 ||
           response.status === 403 ||
           response.status === 404
         ) {
-          return false;
+          return { kind: "stop" };
         }
-        if (!response.ok) return null;
-        return (await response.json()) as {
+        if (!response.ok) {
+          return {
+            kind: "retry",
+            retryAfterMs: retryAfterMs(response),
+          };
+        }
+        const body = (await response.json()) as {
           cursor?: string;
           changed?: boolean;
           build?: string;
         };
+        return { kind: "changes", ...body };
       } catch {
-        return null; // aborted or network blip; the loop backs off and retries
+        return { kind: "retry" }; // aborted or network blip
       }
     }
 
     async function run() {
       const initial = await poll(0);
       if (cancelled) return;
-      if (initial === false) return;
-      if (initial?.cursor) cursor = initial.cursor;
+      if (initial.kind === "stop") return;
+      if (initial.kind === "changes" && initial.cursor) {
+        cursor = initial.cursor;
+      }
+      let failureDelayMs = 3000;
+      if (initial.kind === "retry") {
+        await sleep(Math.max(failureDelayMs, initial.retryAfterMs ?? 0));
+        failureDelayMs = Math.min(failureDelayMs * 2, 5 * 60 * 1000);
+      }
 
       while (!cancelled) {
         if (typeof document !== "undefined" && document.hidden) {
@@ -73,11 +107,13 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
         }
         const result = await poll(20);
         if (cancelled) return;
-        if (result === false) return;
-        if (!result) {
-          await sleep(3000); // error backoff
+        if (result.kind === "stop") return;
+        if (result.kind === "retry") {
+          await sleep(Math.max(failureDelayMs, result.retryAfterMs ?? 0));
+          failureDelayMs = Math.min(failureDelayMs * 2, 5 * 60 * 1000);
           continue;
         }
+        failureDelayMs = 3000;
         if (result.changed) {
           void refreshWorkspacePool(handle, blogId);
         }

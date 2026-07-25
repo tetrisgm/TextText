@@ -113,6 +113,26 @@ fi
 
 if [ "$NO_PUBLISH" != "1" ]; then
   node "$ROOT/scripts/release-version.mjs" assert-free "$VERSION"
+
+  # Fail before expensive release gates when production cannot accept the
+  # migration or serve the deployed app. This query is read-only.
+  if [ ! -f "$ROOT/.env.release.local" ]; then
+    echo "Missing .env.release.local (production DB creds required to ship)." >&2
+    exit 1
+  fi
+  echo ">> preflight production database"
+  (
+    set -a
+    . "$ROOT/.env.release.local"
+    set +a
+    case "${DATABASE_URL:-}" in
+      *neon.tech*) ;;
+      *) echo "Refusing: release DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
+    esac
+    DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
+      --name database.preflight --timeout 60 --no-reuse -- \
+      node "$ROOT/scripts/verify-production-database.mjs"
+  )
 fi
 
 echo ">> ship Texttext $VERSION"
@@ -146,16 +166,16 @@ if [ "$NO_PUBLISH" = "1" ]; then
   APP_BUILD_NUMBER="$DRY_BUILD" \
   WRITE_BUILD_ATTESTATION="$DRY_ATTESTATION" \
     "$ROOT/mac/scripts/build-app.sh"
-  DRY_PLIST="$ROOT/mac/build/Write.app/Contents/Info.plist"
+  DRY_PLIST="$ROOT/mac/build/Texttext.app/Contents/Info.plist"
   [ "$("$PB" -c 'Print :CFBundleShortVersionString' "$DRY_PLIST")" = "$VERSION" ]
   [ "$("$PB" -c 'Print :CFBundleVersion' "$DRY_PLIST")" = "$DRY_BUILD" ]
   [ "$("$PB" -c 'Print :SUFeedURL' "$DRY_PLIST")" = "${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" ]
   "$ROOT/mac/scripts/verify-app-health.sh" \
-    "$ROOT/mac/build/Write.app" "$VERSION" "$DRY_BUILD"
+    "$ROOT/mac/build/Texttext.app" "$VERSION" "$DRY_BUILD"
   echo
   echo "Verified Texttext $VERSION (not published)"
   echo "  web build: .next (one production build)"
-  echo "  app build: mac/build/Write.app ($VERSION build $DRY_BUILD)"
+  echo "  app build: mac/build/Texttext.app ($VERSION build $DRY_BUILD)"
   exit 0
 fi
 
@@ -164,11 +184,9 @@ echo ">> migrate database (production only)"
 # production Neon creds from the release-only file. Guard hard: never migrate
 # anything that is not the prod Neon endpoint, so a misconfigured machine can
 # never point a release at a local or throwaway database.
-if [ ! -f "$ROOT/.env.release.local" ]; then
-  echo "Missing .env.release.local (production DB creds required to migrate)." >&2
-  exit 1
-fi
-set -a; . "$ROOT/.env.release.local"; set +a
+set -a
+. "$ROOT/.env.release.local"
+set +a
 case "${DATABASE_URL:-}" in
   *neon.tech*) ;;
   *) echo "Refusing: migration DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
@@ -249,6 +267,7 @@ if [ -n "$ORIGIN" ]; then
   [ -n "$PUBLIC_ZIP_URL" ] || { echo "Public appcast is missing an enclosure URL." >&2; exit 1; }
   [ -n "$PUBLIC_SIGNATURE" ] || { echo "Public appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
   curl -fsSI "$PUBLIC_ZIP_URL" >/dev/null
+  curl -fsSI "$ORIGIN/download/Texttext.zip" >/dev/null
   curl -fsSI "$ORIGIN/download/Write.zip" >/dev/null
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
@@ -288,15 +307,21 @@ if [ -n "$ORIGIN" ]; then
 fi
 
 echo ">> install verified Mac app"
-INSTALL_PATH="${WRITE_INSTALLED_APP_PATH:-/Applications/Write.app}"
+INSTALL_PATH="${TEXTTEXT_INSTALLED_APP_PATH:-${WRITE_INSTALLED_APP_PATH:-/Applications/Texttext.app}}"
+LEGACY_INSTALL_PATH="/Applications/Write.app"
 INSTALL_PARENT="$(dirname "$INSTALL_PATH")"
-INSTALL_NEW="$INSTALL_PARENT/.Write.app.new.$$"
-INSTALL_OLD="$INSTALL_PARENT/.Write.app.previous.$$"
+INSTALL_NEW="$INSTALL_PARENT/.Texttext.app.new.$$"
+INSTALL_OLD="$INSTALL_PARENT/.Texttext.app.previous.$$"
+LEGACY_OLD="$INSTALL_PARENT/.Write.app.previous.$$"
 INSTALL_EXECUTABLE="$INSTALL_PATH/Contents/MacOS/Write"
+LEGACY_EXECUTABLE="$LEGACY_INSTALL_PATH/Contents/MacOS/Write"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 installed_write_pids() {
-  ps ax -o pid=,command= | awk -v executable="$INSTALL_EXECUTABLE" '$2 == executable { print $1 }'
+  ps ax -o pid=,command= | awk \
+    -v executable="$INSTALL_EXECUTABLE" \
+    -v legacy="$LEGACY_EXECUTABLE" \
+    '$2 == executable || $2 == legacy { print $1 }'
 }
 
 installed_write_is_running() {
@@ -332,12 +357,17 @@ stop_installed_write() {
 
 launch_installed_write() {
   local attempt
+  local launch_path
   local settle
   local stable
 
-  "$LSREGISTER" -f "$INSTALL_PATH" </dev/null >/dev/null 2>&1 || true
+  launch_path="$INSTALL_PATH"
+  if [ ! -e "$launch_path" ] && [ -e "$LEGACY_INSTALL_PATH" ]; then
+    launch_path="$LEGACY_INSTALL_PATH"
+  fi
+  "$LSREGISTER" -f "$launch_path" </dev/null >/dev/null 2>&1 || true
   for attempt in {1..5}; do
-    if open -g "$INSTALL_PATH" </dev/null >/dev/null 2>&1; then
+    if open -g "$launch_path" </dev/null >/dev/null 2>&1; then
       for settle in {1..20}; do
         if installed_write_is_running; then
           for stable in {1..8}; do
@@ -355,19 +385,21 @@ launch_installed_write() {
 }
 
 rollback_installed_write() {
-  local failed_install="$INSTALL_PARENT/.Write.app.failed.$$"
+  local failed_install="$INSTALL_PARENT/.Texttext.app.failed.$$"
 
   stop_installed_write || true
   rm -rf "$failed_install"
   [ ! -e "$INSTALL_PATH" ] || mv "$INSTALL_PATH" "$failed_install"
   if [ -e "$INSTALL_OLD" ]; then
     mv "$INSTALL_OLD" "$INSTALL_PATH"
-    "$LSREGISTER" -f "$INSTALL_PATH" </dev/null >/dev/null 2>&1 || true
-    if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
-      launch_installed_write || true
-    fi
   fi
-  rm -rf "$failed_install" "$INSTALL_NEW"
+  if [ -e "$LEGACY_OLD" ]; then
+    mv "$LEGACY_OLD" "$LEGACY_INSTALL_PATH"
+  fi
+  if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
+    launch_installed_write || true
+  fi
+  rm -rf "$failed_install" "$INSTALL_NEW" "$INSTALL_OLD" "$LEGACY_OLD"
 }
 
 fail_installed_write() {
@@ -376,8 +408,8 @@ fail_installed_write() {
   exit 1
 }
 
-rm -rf "$INSTALL_NEW" "$INSTALL_OLD"
-ditto "$ROOT/mac/build/Write.app" "$INSTALL_NEW"
+rm -rf "$INSTALL_NEW" "$INSTALL_OLD" "$LEGACY_OLD"
+ditto "$ROOT/mac/build/Texttext.app" "$INSTALL_NEW"
 INSTALL_WAS_RUNNING=0
 installed_write_is_running && INSTALL_WAS_RUNNING=1
 if ! stop_installed_write; then
@@ -386,6 +418,9 @@ if ! stop_installed_write; then
   exit 1
 fi
 if [ -e "$INSTALL_PATH" ]; then mv "$INSTALL_PATH" "$INSTALL_OLD"; fi
+if [ "$LEGACY_INSTALL_PATH" != "$INSTALL_PATH" ] && [ -e "$LEGACY_INSTALL_PATH" ]; then
+  mv "$LEGACY_INSTALL_PATH" "$LEGACY_OLD"
+fi
 mv "$INSTALL_NEW" "$INSTALL_PATH"
 defaults write net.writeapp.write.mac SUEnableAutomaticChecks -bool true
 defaults write net.writeapp.write.mac SUAutomaticallyUpdate -bool true
@@ -401,7 +436,7 @@ fi
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
   launch_installed_write || fail_installed_write "Installed Texttext app did not launch after bounded retries."
 fi
-rm -rf "$INSTALL_OLD"
+rm -rf "$INSTALL_OLD" "$LEGACY_OLD"
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then

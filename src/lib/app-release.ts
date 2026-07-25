@@ -3,10 +3,10 @@ import { generatedAppRelease } from "@/generated/app-release";
 // The Mac app release lives at immutable Blob paths selected by a generated
 // manifest.
 // Each release uploads (via scripts/publish-mac-release.mjs):
-//   downloads/Write-<version>.zip  immutable, referenced by the appcast enclosure
+//   downloads/Texttext-<version>.zip  immutable, referenced by the appcast enclosure
 //   downloads/appcast-<version>.xml immutable, proxied by /appcast.xml
 // The public website deployment is the final version marker: it includes the
-// generated manifest that points /appcast.xml, /download/Write.zip, and
+// generated manifest that points /appcast.xml, /download/Texttext.zip, and
 // /api/app/version at the same immutable release.
 //
 // The Blob-base fallback remains for older deployments and local experiments.
@@ -63,7 +63,7 @@ export function releaseZipUrl(): string | null {
     return generatedAppRelease.zipUrl;
   }
   const base = blobBaseUrl();
-  return base ? `${base}/${DOWNLOADS_PREFIX}/Write.zip` : null;
+  return base ? `${base}/${DOWNLOADS_PREFIX}/Texttext.zip` : null;
 }
 
 export interface AdvertisedVersion {

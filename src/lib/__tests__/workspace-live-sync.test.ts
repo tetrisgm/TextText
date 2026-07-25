@@ -11,7 +11,11 @@ function jsonResponse(value: unknown): Response {
 }
 
 function errorResponse(status: number): Response {
-  return { ok: false, status } as Response;
+  return {
+    ok: false,
+    status,
+    headers: new Headers(),
+  } as Response;
 }
 
 async function loadLiveSync(refreshWorkspacePool: ReturnType<typeof vi.fn>) {
@@ -53,6 +57,42 @@ describe("workspace live sync", () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(refreshWorkspacePool).not.toHaveBeenCalled();
+    liveSync.cleanup();
+  });
+
+  it("stops polling when production storage is quota-paused", async () => {
+    const refreshWorkspacePool = vi.fn();
+    const fetch = vi.fn().mockResolvedValue(errorResponse(402));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("document", { hidden: false });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("writer", "blog-1");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(refreshWorkspacePool).not.toHaveBeenCalled();
+    liveSync.cleanup();
+  });
+
+  it("backs off repeated server failures instead of hot-looping", async () => {
+    const refreshWorkspacePool = vi.fn();
+    const fetch = vi.fn().mockResolvedValue(errorResponse(503));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("document", { hidden: false });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("writer", "blog-1");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // Exponential delays produce only a handful of attempts in a minute. The
+    // previous fixed three-second loop would have made about twenty.
+    expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(4);
+    expect(fetch.mock.calls.length).toBeLessThanOrEqual(6);
     expect(refreshWorkspacePool).not.toHaveBeenCalled();
     liveSync.cleanup();
   });

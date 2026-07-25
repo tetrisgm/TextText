@@ -64,7 +64,7 @@ async function artifactStatus(url) {
 
 async function assertVersionFree(version, blobBase) {
   const urls = [
-    `${blobBase}/downloads/Write-${version}.zip`,
+    `${blobBase}/downloads/Texttext-${version}.zip`,
     `${blobBase}/downloads/appcast-${version}.xml`,
   ];
   const statuses = await Promise.all(urls.map(artifactStatus));
@@ -91,6 +91,7 @@ async function nextVersion() {
   const candidates = [
     generated.version,
     plistVersion(new URL("mac/Info.plist", root)),
+    plistVersion("/Applications/Texttext.app/Contents/Info.plist"),
     plistVersion("/Applications/Write.app/Contents/Info.plist"),
   ].filter(Boolean);
   let candidate = incrementVersion(

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble mac/build/Write.app: the Swift binary + Sparkle.framework, signed
+# Assemble mac/build/Texttext.app: the Swift binary + Sparkle.framework, signed
 # inside-out (the partyparty recipe, minus the Helpers tree).
 #
 #   mac/scripts/build-app.sh                 -> auto-detects a Developer ID
@@ -16,14 +16,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MAC="$(pwd)"
-APP="$MAC/build/Write.app"
+APP="$MAC/build/Texttext.app"
 ENT="$MAC/write.entitlements"
 PB=/usr/libexec/PlistBuddy
 
 require_release_env() {
   local name="$1"
   if [ -z "${!name:-}" ]; then
-    echo "Refusing: $name must be set to build Write.app." >&2
+    echo "Refusing: $name must be set to build Texttext.app." >&2
     exit 1
   fi
 }

@@ -36,9 +36,12 @@ src/generated/app-release.ts.
    auto-update, sign-in, or the build)
 - Bundle id `net.writeapp.write.mac` (Sparkle, login items, TCC anchor to it) and the other
   net.writeapp.* Apple identifiers.
-- The installed app path /Applications/Write.app and the Sparkle feed FILENAMES
-  (download/Write.zip, appcast.xml) - keep them "Write*" so installed 0.10x apps still
-  auto-update. (Display name changes; the bundle on disk stays Write.app.)
+- The Sparkle feed path `appcast.xml`, bundle identifiers, executable name, and
+  legacy `/download/Write.zip` alias. New releases install as
+  `/Applications/Texttext.app`, publish immutable `Texttext-<version>.zip`
+  artifacts, and expose `/download/Texttext.zip`. The ship flow retains the
+  legacy alias and migrates `/Applications/Write.app` so installed 0.10x apps
+  keep updating.
 - The repo directory ~/dev/write, git remote, and all CODE SYMBOLS: class/type/file names
   (WriteFileProviderExtension, WriteAppWindow, WriteFilename, etc.), WRITE_* env var NAMES,
   css class prefixes. Rename only human-readable strings, never identifiers.

@@ -1,5 +1,5 @@
 // Typed client for the Mac app's on-device AI bridge (NativeAI.swift). The
-// bridge exists only inside Write.app on the workspace origin; on the plain
+// bridge exists only inside Texttext.app on the workspace origin; on the plain
 // web these helpers report unavailable. The in-app assistant uses this bridge
 // directly and does not route its requests through a cloud provider or MCP.
 

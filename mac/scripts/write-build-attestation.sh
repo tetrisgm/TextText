@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write the content-blind release-gate receipt embedded in Write.app.
+# Write the content-blind release-gate receipt embedded in Texttext.app.
 set -euo pipefail
 
 OUTPUT="${1:-}"

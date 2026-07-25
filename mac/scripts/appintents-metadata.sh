@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build App Intents metadata for a SwiftPM-built Write.app bundle.
+# Build App Intents metadata for a SwiftPM-built Texttext.app bundle.
 #
 # Usage:
 #   mac/scripts/appintents-metadata.sh <built-binary-path> <bundle-path>

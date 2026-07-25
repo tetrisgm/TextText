@@ -8,11 +8,11 @@ REQUIRE_EXTENSIONS=0
 if [ "${2:-}" = "--require-extensions" ]; then
   REQUIRE_EXTENSIONS=1
 elif [ -n "${2:-}" ]; then
-  echo "Usage: verify-apple-silicon-app.sh <Write.app> [--require-extensions]" >&2
+  echo "Usage: verify-apple-silicon-app.sh <Texttext.app> [--require-extensions]" >&2
   exit 64
 fi
 if [ -z "$APP" ] || [ ! -f "$APP/Contents/Info.plist" ]; then
-  echo "Usage: verify-apple-silicon-app.sh <Write.app> [--require-extensions]" >&2
+  echo "Usage: verify-apple-silicon-app.sh <Texttext.app> [--require-extensions]" >&2
   exit 64
 fi
 

@@ -110,7 +110,7 @@ enum OpenFileHandler {
         )
     }
 
-    /// Whether Write.app is the system default for markdown files.
+    /// Whether Texttext.app is the system default for markdown files.
     static func isDefaultMarkdownApp() -> Bool {
         guard let appURL = NSWorkspace.shared.urlForApplication(toOpen: markdownType) else {
             return false
@@ -118,7 +118,7 @@ enum OpenFileHandler {
         return sameFile(appURL, Bundle.main.bundleURL)
     }
 
-    /// Make (or stop making) Write.app the default app for .md files.
+    /// Make (or stop making) Texttext.app the default app for .md files.
     static func setDefaultMarkdownApp(_ enabled: Bool) {
         let appURL = enabled
             ? Bundle.main.bundleURL

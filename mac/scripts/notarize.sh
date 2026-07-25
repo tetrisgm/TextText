@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Notarize + staple mac/build/Write.app so Gatekeeper fully accepts it.
+# Notarize + staple mac/build/Texttext.app so Gatekeeper fully accepts it.
 #
 # REFUSES to run unless WRITE_NOTARY_PROFILE is set: notarization submits the
 # binary to Apple, and that must never happen implicitly.
@@ -16,8 +16,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MAC="$(pwd)"
-APP="$MAC/build/Write.app"
-ZIP="$MAC/build/Write-notarize.zip"
+APP="$MAC/build/Texttext.app"
+ZIP="$MAC/build/Texttext-notarize.zip"
 
 PROFILE="${WRITE_NOTARY_PROFILE:-}"
 if [ -z "$PROFILE" ]; then

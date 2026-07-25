@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build, embed, and sign the Share, Quick Look, and File Provider extensions into an
-# already-assembled Write.app, inside-out, before the main app is signed.
+# already-assembled Texttext.app, inside-out, before the main app is signed.
 #
 #   mac/scripts/embed-extensions.sh <app-bundle> <sign-id> <app-group> <bundle-id> <version> <build>
 #

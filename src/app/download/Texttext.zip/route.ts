@@ -1,4 +1,4 @@
-// Legacy stable URL retained for existing bookmarks and old download pages.
+// Stable app-zip URL: redirects to the current immutable Texttext release.
 
 import { releaseZipUrl } from "@/lib/app-release";
 
