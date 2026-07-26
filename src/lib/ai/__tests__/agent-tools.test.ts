@@ -120,21 +120,45 @@ describe("native workspace tool adapter", () => {
     });
   });
 
-  it("keeps creation at folder level and limits an open item to item actions", () => {
+  it("keeps creation at folder level and narrows an open item to requested actions", () => {
     expect(workspaceAgentToolNamesForView({ level: "section" })).toContain(
       "create_item",
     );
-    const itemTools = workspaceAgentToolNamesForView({
-      level: "post",
-      folderPath: "blog",
-      postId: "post-1",
-    });
-    expect(itemTools).toContain("read_item");
+    const itemTools = workspaceAgentToolNamesForView(
+      {
+        level: "post",
+        folderPath: "blog",
+        postId: "post-1",
+      },
+      "Make this into a haiku",
+    );
     expect(itemTools).toContain("update_item");
     expect(itemTools).toContain("append_to_item");
+    expect(itemTools).not.toContain("read_item");
     expect(itemTools).not.toContain("create_item");
     expect(itemTools).not.toContain("create_folder");
     expect(itemTools).not.toContain("delete_folder");
+    expect(itemTools).not.toContain("delete_item");
+    expect(itemTools).not.toContain("set_access");
+  });
+
+  it("adds only prompt-relevant tools for an open item", () => {
+    const itemTools = workspaceAgentToolNamesForView(
+      {
+        level: "post",
+        folderPath: "bookmarks",
+        postId: "post-1",
+      },
+      "Recapture this bookmark and change its cover image",
+    );
+
+    expect(itemTools).toEqual([
+      "update_item",
+      "append_to_item",
+      "add_item_asset",
+      "remove_item_asset",
+      "recapture_bookmark",
+    ]);
   });
 
   it("describes references to the open item as edits, not creation", () => {

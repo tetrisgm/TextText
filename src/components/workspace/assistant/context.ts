@@ -40,6 +40,8 @@ const FIELD_LABELS = {
   body: "body",
 } as const;
 
+const MAX_ASSISTANT_ITEM_BODY_CHARS = 6_000;
+
 export function assistantContextChipWithSelection(
   chip: AssistantContext,
   selection: WorkspaceItemTextSelection | null,
@@ -55,12 +57,22 @@ export function appendAssistantSelectionContext(
   context: string,
   item: WorkspaceItemTextSnapshot,
 ): string {
+  const itemContext = [
+    context,
+    "Current item content:",
+    `Title: ${JSON.stringify(item.title)}`,
+    `Excerpt: ${JSON.stringify(item.excerpt)}`,
+    `Body: ${JSON.stringify(item.body.slice(0, MAX_ASSISTANT_ITEM_BODY_CHARS))}`,
+    item.body.length > MAX_ASSISTANT_ITEM_BODY_CHARS
+      ? `The body was truncated after ${MAX_ASSISTANT_ITEM_BODY_CHARS} characters. Use read_item before replacing the whole body.`
+      : "The full current item is included above.",
+  ].join("\n");
   const selection = resolveWorkspaceItemTextSelection(item);
   if (!selection) {
-    return `${context}\nNo editor text is selected; use the whole current item when appropriate.`;
+    return `${itemContext}\nNo editor text is selected; use the whole current item when appropriate.`;
   }
   return [
-    context,
+    itemContext,
     `The user selected ${selection.field} text at source range [${selection.start}, ${selection.end}).`,
     `Selected text: ${JSON.stringify(selection.text)}`,
     "Treat that exact range as the active editing context. Do not imply that unselected text is selected.",

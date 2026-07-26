@@ -618,8 +618,10 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
-        const editingItem =
-          submittedView.level === "edit" && submittedView.postId
+        const openItem =
+          (submittedView.level === "post" ||
+            submittedView.level === "edit") &&
+          submittedView.postId
             ? await readItemTextRef.current(submittedView.postId)
             : null;
         const current = await nativeAICapabilities();
@@ -638,8 +640,8 @@ export function useNativeAssistant({
         const prepared = await buildNativeAssistantPrompt(prompt, attachments);
         fallbackPrompt = prepared.prompt;
         const baseContext = tools.describeContext(submittedView);
-        const context = editingItem
-          ? appendAssistantSelectionContext(baseContext, editingItem)
+        const context = openItem
+          ? appendAssistantSelectionContext(baseContext, openItem)
           : baseContext;
         const { instructions } = composeInstructions(
           handle,
@@ -650,7 +652,7 @@ export function useNativeAssistant({
           nativeAgent(prepared.prompt, {
             context,
             instructions,
-            tools: tools.toolNamesForView(submittedView),
+            tools: tools.toolNamesForView(submittedView, prepared.prompt),
             onEvent: (event) => {
               if (event.type === "tool") {
                 const activity =

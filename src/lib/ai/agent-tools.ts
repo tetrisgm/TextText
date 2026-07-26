@@ -88,12 +88,70 @@ const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
   "revoke_access",
 ]);
 
+const ITEM_EDIT_TOOL_NAMES: WorkspaceToolName[] = [
+  "update_item",
+  "append_to_item",
+];
+
+const PROMPT_TOOL_GROUPS: Array<{
+  pattern: RegExp;
+  tools: WorkspaceToolName[];
+}> = [
+  {
+    pattern: /\b(delete|remove|trash)\b/i,
+    tools: ["delete_item"],
+  },
+  {
+    pattern: /\b(publish|unpublish|draft|status)\b/i,
+    tools: ["set_item_status"],
+  },
+  {
+    pattern: /\b(move|folder)\b/i,
+    tools: ["move_item"],
+  },
+  {
+    pattern: /\b(comment|resolve)\b/i,
+    tools: ["list_comments", "add_comment", "set_comment_resolved"],
+  },
+  {
+    pattern: /\b(share|access|permission|invite|viewer|editor)\b/i,
+    tools: ["list_access", "set_access", "revoke_access"],
+  },
+  {
+    pattern: /\b(cover|image|asset|photo|picture)\b/i,
+    tools: ["add_item_asset", "remove_item_asset"],
+  },
+  {
+    pattern: /\b(recapture|capture bookmark)\b/i,
+    tools: ["recapture_bookmark"],
+  },
+  {
+    pattern: /\b(template|look|layout|design|style)\b/i,
+    tools: [
+      "list_document_templates",
+      "customize_document_template",
+      "set_item_template",
+    ],
+  },
+  {
+    pattern: /\b(search|find)\b/i,
+    tools: ["search"],
+  },
+];
+
 export function workspaceAgentToolNamesForView(
   view?: WorkspaceAgentView,
+  prompt = "",
 ): WorkspaceToolName[] {
   if (view?.postId && (view.level === "post" || view.level === "edit")) {
-    return WORKSPACE_TOOL_NAMES.filter((name) =>
-      ITEM_AGENT_TOOL_NAMES.has(name),
+    const selected = new Set<WorkspaceToolName>(ITEM_EDIT_TOOL_NAMES);
+    for (const group of PROMPT_TOOL_GROUPS) {
+      if (group.pattern.test(prompt)) {
+        for (const name of group.tools) selected.add(name);
+      }
+    }
+    return WORKSPACE_TOOL_NAMES.filter(
+      (name) => ITEM_AGENT_TOOL_NAMES.has(name) && selected.has(name),
     );
   }
   return [...WORKSPACE_TOOL_NAMES];
@@ -240,7 +298,10 @@ export function createWorkspaceAgentTools(
 ): {
   executor: NativeAgentToolExecutor;
   toolNames: WorkspaceToolName[];
-  toolNamesForView: (view?: WorkspaceAgentView) => WorkspaceToolName[];
+  toolNamesForView: (
+    view?: WorkspaceAgentView,
+    prompt?: string,
+  ) => WorkspaceToolName[];
   toolDefinitions: typeof WORKSPACE_AGENT_TOOL_DEFINITIONS;
   describeContext: (view?: WorkspaceAgentView) => string;
 } {

@@ -154,6 +154,8 @@ describe("workspace assistant context", () => {
     expect(context).toContain(
       "selected excerpt text at source range [4, 17)",
     );
+    expect(context).toContain('Title: "Draft"');
+    expect(context).toContain('Body: "Body"');
     expect(context).toContain('Selected text: "selected text"');
     expect(
       assistantContextChipWithSelection(
@@ -165,5 +167,18 @@ describe("workspace assistant context", () => {
       label: "Draft",
       detail: "Selected excerpt text",
     });
+  });
+
+  it("includes bounded current item content without an editor selection", () => {
+    const context = appendAssistantSelectionContext("Item is open.", {
+      title: "Why local files matter",
+      excerpt: "A short introduction.",
+      body: "Body text",
+    });
+
+    expect(context).toContain('Title: "Why local files matter"');
+    expect(context).toContain('Excerpt: "A short introduction."');
+    expect(context).toContain('Body: "Body text"');
+    expect(context).toContain("The full current item is included above.");
   });
 });
