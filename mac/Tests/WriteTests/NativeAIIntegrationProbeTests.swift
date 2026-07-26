@@ -58,7 +58,11 @@ final class NativeAIIntegrationProbeTests: XCTestCase {
             else { throw XCTSkip("Set WRITE_LIVE_AI_PROBE=1 to run") }
 
             let recorder = NativeAIIntegrationProbeRecorder()
-            let tools: [any Tool] = try NativeAIBridge.agentToolSpecs.map {
+            let requestedSpecs = NativeAIBridge.agentToolSpecs.filter {
+                $0.name == "update_item"
+            }
+            XCTAssertEqual(requestedSpecs.map(\.name), ["update_item"])
+            let tools: [any Tool] = try requestedSpecs.map {
                 try NativeAIIntegrationProbeTool(spec: $0, recorder: recorder)
             }
             let session = LanguageModelSession(
