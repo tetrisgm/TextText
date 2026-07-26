@@ -206,10 +206,10 @@ const createItemInput = z
       value.body !== undefined ||
       value.excerpt !== undefined ||
       value.kind !== undefined;
-    if (!value.markdown && !value.title) {
+    if (!value.markdown && !value.title && !value.body?.trim()) {
       context.addIssue({
         code: "custom",
-        message: "Pass either markdown or a title for the new item.",
+        message: "Pass markdown, a title, or body text for the new item.",
       });
     }
     if (value.markdown && structured) {

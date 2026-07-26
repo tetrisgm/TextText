@@ -258,6 +258,36 @@ describe("native workspace tool adapter", () => {
     );
   });
 
+  it("repairs a native create call that supplied a body without a title", async () => {
+    const executeTool = vi.fn().mockResolvedValue({
+      item: {
+        id: "new-1",
+        title: "A complete draft",
+        status: "draft",
+      },
+    });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      executeTool,
+      refreshPool: async () => {},
+    });
+
+    await expect(
+      tools.executor("create_item", {
+        body: "# A complete draft\n\nFinished body.",
+        kind: "article",
+      }),
+    ).resolves.toMatchObject({ id: "new-1" });
+
+    expect(executeTool).toHaveBeenCalledWith("create_item", {
+      body: "# A complete draft\n\nFinished body.",
+      folder_path: "blog",
+      kind: "article",
+      title: "A complete draft",
+    });
+  });
+
   it("fails closed for an audience-changing restore without confirmation", async () => {
     const executeTool = vi.fn();
     const tools = createWorkspaceAgentTools({

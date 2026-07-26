@@ -77,7 +77,8 @@ editor preview route were removed. Do not reintroduce them.
 - The same creation surface appears on Home and inside folders. It accepts plain
   text, Markdown, or a URL. A URL selects the bookmark look automatically. The
   first nonempty line becomes the initial title and the full pasted text remains
-  the document body.
+  the document body. For a pasted ChatGPT, Claude, or Codex transcript, the first
+  user prompt becomes the title while the full conversation remains intact.
 - Article, note, bookmark, gallery, and talk choices in the creation surface are
   looks for the same canonical item. Do not add folder-specific creation forms or
   duplicate folder renderers.

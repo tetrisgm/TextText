@@ -129,6 +129,11 @@ describe("workspace tool contract", () => {
   });
 
   it("strictly validates mutation inputs", () => {
+    expect(
+      parseWorkspaceToolInput("create_item", {
+        body: "# Draft from body\n\nComplete text.",
+      }),
+    ).toEqual({ body: "# Draft from body\n\nComplete text." });
     expect(() =>
       parseWorkspaceToolInput("create_item", {
         folder_path: "blog",

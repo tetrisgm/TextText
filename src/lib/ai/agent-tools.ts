@@ -22,6 +22,7 @@ import {
   itemKindForPostType,
   parsePostMarkdownFile,
 } from "@/lib/markdown-files";
+import { parseItemInput } from "@/lib/item-creation";
 import {
   ensurePostBody,
   getCachedWorkspacePostBody,
@@ -227,6 +228,14 @@ function normalizeLegacyNativeArgs(
       !normalized.folder_path.trim())
   ) {
     normalized.folder_path = defaultBlogFolderPath(folders);
+  }
+  if (
+    name === "create_item" &&
+    (typeof normalized.title !== "string" || !normalized.title.trim()) &&
+    typeof normalized.body === "string" &&
+    normalized.body.trim()
+  ) {
+    normalized.title = parseItemInput(normalized.body).title;
   }
   if (
     name === "append_to_item" &&

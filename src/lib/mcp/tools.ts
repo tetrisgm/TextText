@@ -21,6 +21,7 @@ import {
   listItemAssetReferences,
   removeItemAssetReferences,
 } from "@/lib/item-assets";
+import { parseItemInput } from "@/lib/item-creation";
 import {
   parsePostMarkdownFile,
   postTypeForItemKind,
@@ -933,7 +934,9 @@ async function executeMcpTool(
           ? parsePostMarkdownFile(input.markdown)
           : {
               fields: {
-                title: input.title,
+                title:
+                  input.title ??
+                  (input.body ? parseItemInput(input.body).title : undefined),
                 excerpt: input.excerpt ?? undefined,
                 type: input.kind ? postTypeForItemKind(input.kind) : undefined,
               },

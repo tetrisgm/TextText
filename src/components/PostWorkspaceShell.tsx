@@ -2855,7 +2855,7 @@ function WorkspaceRootLanding({
                 <div className="workspace-recent-empty">
                   <p>Your recently touched items will appear here.</p>
                   <span>
-                    Press <kbd>C</kbd> to create a post.
+                    Press <kbd>C</kbd> to create an item.
                   </span>
                 </div>
               ) : (

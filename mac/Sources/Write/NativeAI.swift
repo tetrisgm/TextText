@@ -2038,6 +2038,9 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                 until every single item is done. A request naming three posts \
                 needs three create_item calls. Never stop after the first item. \
                 Write real, complete content whenever the user asks for content. \
+                Every create_item call must include a non-empty title and the \
+                complete body when content was requested. Never call it with \
+                an empty object. \
                 Never delete or publish unless the user explicitly asked. When \
                 every item is done, reply with one short sentence listing what \
                 you did.

@@ -43,6 +43,7 @@ import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { parseItemInput } from "@/lib/item-creation";
 import {
   BUILTIN_TEMPLATES,
   getBuiltinTemplate,
@@ -85,19 +86,6 @@ export type FolderCreateRequest =
 
 export type FolderCreateItem = (request: FolderCreateRequest) => void;
 
-function itemDraftFromInput(value: string): { title: string; body: string } {
-  const lines = value.split(/\r?\n/);
-  const firstContentIndex = lines.findIndex((line) => line.trim());
-  if (firstContentIndex < 0) return { title: "", body: "" };
-  const firstLine = lines[firstContentIndex].trim().replace(/^#{1,6}\s+/, "");
-  return {
-    title:
-      firstLine.length > 120
-        ? `${firstLine.slice(0, 117).trimEnd()}...`
-        : firstLine,
-    body: lines.length > 1 ? value.trim() : "",
-  };
-}
 export type FolderDeleteItem = (post: Post) => Promise<void> | void;
 export type FolderCaptureResolved = (post: Post) => void;
 export type FolderViewMode = WorkspaceViewMode;
@@ -183,23 +171,6 @@ function previewLine(body: string): string {
   const sliced = line.slice(0, 147).trimEnd();
   const wordBreak = sliced.lastIndexOf(" ");
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
-}
-
-function normalizedHttpUrl(value: string): string | null {
-  const raw = value.trim();
-  if (!raw || /\s/.test(raw)) return null;
-  if (!/^https?:\/\//i.test(raw) && !raw.includes(".")) return null;
-  for (const candidate of [raw, `https://${raw}`]) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") {
-        return url.toString();
-      }
-    } catch {
-      // Try the forgiving candidate.
-    }
-  }
-  return null;
 }
 
 function defaultTemplateForFolder(folder: Folder): TemplateReference {
@@ -663,17 +634,16 @@ export function UniversalItemComposer({
         return;
       }
 
-      const sourceUrl = normalizedHttpUrl(value);
-      const type = compatibilityTypeForTemplate(template, sourceUrl);
-      const draft = itemDraftFromInput(value);
+      const draft = parseItemInput(value);
+      const type = compatibilityTypeForTemplate(template, draft.sourceUrl);
       const request: FolderCreateRequest =
         type === "bookmark"
-          ? sourceUrl
+          ? draft.sourceUrl
             ? {
                 type,
                 folderPath: folder.path,
                 template,
-                url: sourceUrl,
+                url: draft.sourceUrl,
               }
             : {
                 type,
@@ -733,7 +703,7 @@ export function UniversalItemComposer({
                 );
         void creation
           .then((post) => {
-            if (sourceUrl) router.refresh();
+            if (draft.sourceUrl) router.refresh();
             else router.push(blogPostEditPath(blog, post));
           })
           .catch((createError) => {

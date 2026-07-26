@@ -3,37 +3,52 @@ import { getCurrentUser } from "@/lib/session";
 import { LandingHeader } from "@/components/LandingHeader";
 import { LandingFooter } from "@/components/LandingFooter";
 
-const starterFolders = [
+const workspacePlaces = [
   {
-    name: "Blog",
-    meta: "Public",
-    title: "Publish the clean work",
-    body: "Articles, projects, and talks live here as portable Markdown files.",
+    name: "Home",
+    meta: "Create",
   },
   {
-    name: "Notes",
-    meta: "Unlisted",
-    title: "Keep the rough thinking",
-    body: "Private notes stay out of the public blog and still sync as files.",
+    name: "Writing",
+    meta: "12",
   },
   {
-    name: "Bookmarks",
-    meta: "Unlisted",
-    title: "Save the source trail",
-    body: "Capture links and excerpts beside the writing they support.",
+    name: "Read later",
+    meta: "8",
+  },
+];
+
+const productSteps = [
+  {
+    name: "Create",
+    meta: "Start instantly",
+    title: "Begin with whatever you have",
+    body: "Type a thought, paste a URL, or bring in a useful answer from ChatGPT, Claude, or Codex.",
+  },
+  {
+    name: "Shape",
+    meta: "Pick a look",
+    title: "Make one item take any form",
+    body: "Choose a template or ask the assistant to reshape the same content as a note, article, collection, or reader page.",
+  },
+  {
+    name: "Share",
+    meta: "Publish or collaborate",
+    title: "Send a link when it is ready",
+    body: "Publish openly, keep it reachable only by link, or invite people to edit and comment with you.",
   },
 ];
 
 const trustPoints = [
-  "Every post exports as Markdown.",
-  "Notes and bookmarks stay unlisted.",
-  "Agents use scoped tokens you can revoke.",
+  "Your content stays in portable textpacks.",
+  "Private items fail closed.",
+  "Collaboration merges edits without replacing your local work.",
 ];
 
 const previewFiles = [
-  { label: "File", value: "field-notes/index.md" },
-  { label: "Status", value: "Published" },
-  { label: "Sync", value: "If-Match checked" },
+  { label: "Input", value: "Text, link, or conversation" },
+  { label: "Look", value: "Article" },
+  { label: "Access", value: "Only me" },
 ];
 
 const actionHref = "/start";
@@ -63,11 +78,11 @@ function ProductPreview() {
     <div className="write-landing-product" aria-label="Texttext product preview">
       <div className="write-landing-sidebar" aria-hidden="true">
         <div className="write-landing-sidebar-dot" />
-        {starterFolders.map((folder) => (
+        {workspacePlaces.map((folder) => (
           <div
             key={folder.name}
             className={`write-landing-folder${
-              folder.name === "Blog" ? " is-active" : ""
+              folder.name === "Home" ? " is-active" : ""
             }`}
           >
             <span>{folder.name}</span>
@@ -77,14 +92,14 @@ function ProductPreview() {
       </div>
       <article className="write-landing-document">
         <div className="write-landing-editor-bar">
-          <span>Blog</span>
-          <span>Saved as Markdown</span>
+          <span>Create an item</span>
+          <span>Saved locally</span>
         </div>
-        <p className="write-landing-document-eyebrow">Published post</p>
-        <h2>Field notes from a portable workspace</h2>
+        <p className="write-landing-document-eyebrow">Your next item</p>
+        <h2>Start with words, a URL, or a conversation</h2>
         <p>
-          Start with a folder, write in Markdown, publish when it is ready, and
-          keep the file when you leave.
+          The item appears immediately. Pick a look, work with the assistant,
+          and share only when you decide it is ready.
         </p>
         <dl className="write-landing-file-list">
           {previewFiles.map((file) => (
@@ -144,7 +159,7 @@ function TrustList() {
 function FolderCards() {
   return (
     <div className="write-landing-folders">
-      {starterFolders.map((folder) => (
+      {productSteps.map((folder) => (
         <article key={folder.name} className="write-landing-folder-card">
           <span>{folder.meta}</span>
           <h3>{folder.name}</h3>
@@ -188,12 +203,12 @@ function LandingSections() {
     <>
       <section
         className="write-landing-folder-section"
-        aria-label="Starter folders"
+        aria-label="How Texttext works"
       >
         <SectionHeading
-          kicker="The workspace"
-          title="Three folders, one source of truth"
-          body="Blog is public when you publish. Notes and Bookmarks stay unlisted and keep their own file shape."
+          kicker="One item, any shape"
+          title="Create first. Decide the format later."
+          body="Every item uses the same durable content model. Its template controls how it looks, while access controls who can see or change it."
         />
         <FolderCards />
       </section>
@@ -201,14 +216,14 @@ function LandingSections() {
       <section className="write-landing-portability" aria-label="Portability">
         <div className="write-landing-band-inner">
           <div>
-            <p className="write-landing-kicker">Portability first</p>
-            <h2>Leave with your files</h2>
+            <p className="write-landing-kicker">Local and collaborative</p>
+            <h2>Your files stay yours</h2>
           </div>
           <div className="write-landing-band-copy">
             <p>
-              Texttext treats the Markdown file as the durable shape of your
-              work. Sync, exports, public blog pages, and agent access all
-              speak the same vocabulary.
+              Texttext keeps your writing and assets in portable textpacks.
+              The Mac app works from local files, sync keeps devices current,
+              and live collaboration adds people without changing the source.
             </p>
             <TrustList />
             <TextLink href="/security">Read security</TextLink>
@@ -219,19 +234,19 @@ function LandingSections() {
       <section className="write-landing-split" aria-label="Product paths">
         <article>
           <p className="write-landing-kicker">Live example</p>
-          <h2>See the reader before you sign in</h2>
+          <h2>See what a shared item can become</h2>
           <p>
-            The demo is a real public blog, with the same Broadsheet reader
-            your published work uses.
+            The demo uses the same content engine and templates available in
+            your workspace.
           </p>
           <TextLink href="/@demo">See a live blog</TextLink>
         </article>
         <article>
           <p className="write-landing-kicker">For agents</p>
-          <h2>Connect tools without giving them your account</h2>
+          <h2>Bring your writing conversations with you</h2>
           <p>
-            Use scoped <code>wsk_</code> tokens, the sync API, MCP, and
-            <code> llms.txt</code> to read and update Markdown files.
+            Paste useful answers directly, use the private on-device assistant,
+            or connect ChatGPT, Claude, Codex, and other tools through MCP.
           </p>
           <TextLink href="/docs/ai">Read the AI docs</TextLink>
         </article>
@@ -253,12 +268,12 @@ export default async function Home() {
 
       <section className="write-landing-hero">
         <div className="write-landing-copy">
-          <p className="write-landing-kicker">Folders. Markdown. Publishing.</p>
-          <h1>Publish from a folder, not a maze.</h1>
+          <p className="write-landing-kicker">Write first. Shape it later.</p>
+          <h1>Create the item. Make it yours.</h1>
           <p>
-            Texttext gives you Blog, Notes, and Bookmarks as portable Markdown
-            files. Start on the web, keep the same workspace on your Mac, and
-            publish the clean parts when they are ready.
+            Type a thought, paste a link or conversation, or choose a template.
+            Then write, reshape it with AI, collaborate live, and publish it
+            with a link.
           </p>
           <div className="write-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />
