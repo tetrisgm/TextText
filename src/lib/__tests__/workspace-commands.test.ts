@@ -183,6 +183,36 @@ describe("workspace commands", () => {
     expect(toggleEditablePostStarredAction).not.toHaveBeenCalled();
   });
 
+  it("passes every selected item to the keyboard trash action", () => {
+    const requestDeleteTarget = vi.fn();
+    const command = WORKSPACE_COMMANDS.find(
+      (candidate) => candidate.id === "post.delete",
+    );
+    const ctx = context({
+      canManagePost: true,
+      getPost: (postId) =>
+        ({
+          id: postId,
+          blogId: "workspace-1",
+          type: "note",
+          slug: postId,
+          title: postId,
+          status: "draft",
+        }) as WorkspacePoolPayload["posts"][number],
+      requestDeleteTarget,
+      selectedPostId: "post-1",
+      selectedPostIds: ["post-1", "post-2", "post-3"],
+    });
+
+    command!.run(ctx);
+
+    expect(requestDeleteTarget).toHaveBeenCalledWith([
+      "post-1",
+      "post-2",
+      "post-3",
+    ]);
+  });
+
   it("creates a blank bookmark through the workspace create surface", async () => {
     let created: string | null = null;
     const command = WORKSPACE_COMMANDS.find(

@@ -531,7 +531,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
       { key: "Delete", ctrl: true, label: "Ctrl Delete", allowTypingTarget: true },
     ],
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
-    run: (ctx) => ctx.workspace?.requestDeleteTarget(),
+    run: (ctx) =>
+      ctx.workspace?.requestDeleteTarget(ctx.workspace.selectedPostIds),
   },
   {
     id: "post.star",

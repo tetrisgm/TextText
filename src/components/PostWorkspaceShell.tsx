@@ -4055,9 +4055,7 @@ function LocalWorkspaceShell({
   const [searchFocusRequestKey, setSearchFocusRequestKey] = useState(0);
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const [editFolderRequestKey, setEditFolderRequestKey] = useState(0);
-  const [pendingDeletePostId, setPendingDeletePostId] = useState<string | null>(
-    null,
-  );
+  const [pendingDeletePostIds, setPendingDeletePostIds] = useState<string[]>([]);
   const [deletingTarget, setDeletingTarget] = useState(false);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences();
@@ -4847,35 +4845,6 @@ function LocalWorkspaceShell({
     [canManageFolders, navigateRoot],
   );
 
-  const requestDeleteTarget = useCallback(() => {
-    const current = viewRef.current;
-    const postId =
-      selectedPostId ??
-      (current.level === "post" || current.level === "edit"
-        ? current.postId
-        : null);
-    if (postId && findPoolPostById(displayPoolRef.current, postId)) {
-      setPendingDeletePostId(postId);
-    }
-  }, [selectedPostId]);
-
-  const confirmDeleteTarget = useCallback(() => {
-    if (!pendingDeletePostId || deletingTarget) return;
-    const poolPost = findPoolPostById(
-      displayPoolRef.current,
-      pendingDeletePostId,
-    );
-    if (!poolPost) {
-      setPendingDeletePostId(null);
-      return;
-    }
-    setDeletingTarget(true);
-    void Promise.resolve(deleteWorkspaceItem(postFromPoolPost(poolPost)))
-      .then(() => setPendingDeletePostId(null))
-      .catch((error) => console.warn("workspace item delete failed", error))
-      .finally(() => setDeletingTarget(false));
-  }, [deleteWorkspaceItem, deletingTarget, pendingDeletePostId]);
-
   const applyResolvedCapture = useCallback<FolderCaptureResolved>((post) => {
     if (!post.id) return;
     updatePost(post.id, {
@@ -4996,78 +4965,126 @@ function LocalWorkspaceShell({
     [canManageFolders, clearPostSelection, selectedPoolPosts],
   );
 
-  const deleteSelectedPosts = useCallback(async () => {
-    if (!canManageFolders || selectedPoolPosts.length === 0) return;
-    const currentPool = displayPoolRef.current;
-    const persistentPosts = selectedPoolPosts.filter(
-      (post) => !isOptimisticPostId(post.id),
-    );
-    const rollback = new Map<
-      string,
-      {
-        draft: DraftState | undefined;
-        draftRevision: number | undefined;
-        serverRevision: string | undefined;
-        pendingSave: boolean;
-      }
-    >();
+  const deleteWorkspaceItems = useCallback(
+    async (posts: readonly WorkspacePoolPost[]) => {
+      if (!canManageFolders || posts.length === 0) return;
+      const currentPool = displayPoolRef.current;
+      const persistentPosts = posts.filter(
+        (post) => !isOptimisticPostId(post.id),
+      );
+      const rollback = new Map<
+        string,
+        {
+          draft: DraftState | undefined;
+          draftRevision: number | undefined;
+          serverRevision: string | undefined;
+          pendingSave: boolean;
+        }
+      >();
 
-    for (const post of selectedPoolPosts) {
-      if (isOptimisticPostId(post.id)) {
-        void deletePersistedWorkspaceDraft(currentPool.blogId, post.id);
-        cancelledOptimisticPostIdsRef.current.add(post.id);
+      for (const post of posts) {
+        if (isOptimisticPostId(post.id)) {
+          void deletePersistedWorkspaceDraft(currentPool.blogId, post.id);
+          cancelledOptimisticPostIdsRef.current.add(post.id);
+          localWorkspacePendingSaveIds.delete(post.id);
+          localWorkspaceDraftSessions.delete(post.id);
+          localWorkspaceDraftRevisions.delete(post.id);
+          localWorkspaceServerRevisions.delete(post.id);
+          removePost(post.id);
+          continue;
+        }
+        rollback.set(post.id, {
+          draft: localWorkspaceDraftSessions.get(post.id),
+          draftRevision: localWorkspaceDraftRevisions.get(post.id),
+          serverRevision: localWorkspaceServerRevisions.get(post.id),
+          pendingSave: localWorkspacePendingSaveIds.has(post.id),
+        });
         localWorkspacePendingSaveIds.delete(post.id);
         localWorkspaceDraftSessions.delete(post.id);
         localWorkspaceDraftRevisions.delete(post.id);
         localWorkspaceServerRevisions.delete(post.id);
-        removePost(post.id);
-        continue;
+        movePostToTrash(post.id);
       }
-      rollback.set(post.id, {
-        draft: localWorkspaceDraftSessions.get(post.id),
-        draftRevision: localWorkspaceDraftRevisions.get(post.id),
-        serverRevision: localWorkspaceServerRevisions.get(post.id),
-        pendingSave: localWorkspacePendingSaveIds.has(post.id),
-      });
-      localWorkspacePendingSaveIds.delete(post.id);
-      localWorkspaceDraftSessions.delete(post.id);
-      localWorkspaceDraftRevisions.delete(post.id);
-      localWorkspaceServerRevisions.delete(post.id);
-      movePostToTrash(post.id);
-    }
-    clearPostSelection();
+      clearPostSelection();
 
-    if (persistentPosts.length === 0) return;
-    try {
-      await deleteEditablePostsAction(
-        currentPool.blog.handle,
-        persistentPosts.map((post) => post.id),
-      );
-      await Promise.all(
-        persistentPosts.map((post) =>
-          deletePersistedWorkspaceDraft(currentPool.blogId, post.id),
-        ),
-      );
-    } catch (error) {
-      for (const post of persistentPosts) {
-        const previous = rollback.get(post.id);
-        if (previous?.draft) {
-          localWorkspaceDraftSessions.set(post.id, previous.draft);
+      if (persistentPosts.length === 0) return;
+      try {
+        await deleteEditablePostsAction(
+          currentPool.blog.handle,
+          persistentPosts.map((post) => post.id),
+        );
+        await Promise.all(
+          persistentPosts.map((post) =>
+            deletePersistedWorkspaceDraft(currentPool.blogId, post.id),
+          ),
+        );
+      } catch (error) {
+        for (const post of persistentPosts) {
+          const previous = rollback.get(post.id);
+          if (previous?.draft) {
+            localWorkspaceDraftSessions.set(post.id, previous.draft);
+          }
+          if (previous?.draftRevision !== undefined) {
+            localWorkspaceDraftRevisions.set(post.id, previous.draftRevision);
+          }
+          if (previous?.serverRevision !== undefined) {
+            localWorkspaceServerRevisions.set(
+              post.id,
+              previous.serverRevision,
+            );
+          }
+          if (previous?.pendingSave) {
+            localWorkspacePendingSaveIds.add(post.id);
+          }
+          restorePostFromTrash(post.id);
         }
-        if (previous?.draftRevision !== undefined) {
-          localWorkspaceDraftRevisions.set(post.id, previous.draftRevision);
-        }
-        if (previous?.serverRevision !== undefined) {
-          localWorkspaceServerRevisions.set(post.id, previous.serverRevision);
-        }
-        if (previous?.pendingSave) {
-          localWorkspacePendingSaveIds.add(post.id);
-        }
-        restorePostFromTrash(post.id);
+        throw error;
       }
-      throw error;
+    },
+    [canManageFolders, clearPostSelection],
+  );
+  const deleteSelectedPosts = useCallback(
+    () => deleteWorkspaceItems(selectedPoolPosts),
+    [deleteWorkspaceItems, selectedPoolPosts],
+  );
+  const requestDeleteTarget = useCallback(
+    (requestedPostIds: readonly string[] = []) => {
+      const pool = displayPoolRef.current;
+      const requestedIds = Array.from(new Set(requestedPostIds)).filter(
+        (postId) => Boolean(findPoolPostById(pool, postId)),
+      );
+      if (requestedIds.length > 0) {
+        setPendingDeletePostIds(requestedIds);
+        return;
+      }
+
+      const current = viewRef.current;
+      const postId =
+        selectedPostId ??
+        (current.level === "post" || current.level === "edit"
+          ? current.postId
+          : null);
+      if (postId && findPoolPostById(pool, postId)) {
+        setPendingDeletePostIds([postId]);
+      }
+    },
+    [selectedPostId],
+  );
+  const confirmDeleteTarget = useCallback(() => {
+    if (pendingDeletePostIds.length === 0 || deletingTarget) return;
+    const posts = pendingDeletePostIds
+      .map((postId) => findPoolPostById(displayPoolRef.current, postId))
+      .filter((post): post is WorkspacePoolPost => Boolean(post));
+    if (posts.length === 0) {
+      setPendingDeletePostIds([]);
+      return;
     }
-  }, [canManageFolders, clearPostSelection, selectedPoolPosts]);
+    setDeletingTarget(true);
+    void deleteWorkspaceItems(posts)
+      .then(() => setPendingDeletePostIds([]))
+      .catch((error) => console.warn("workspace item delete failed", error))
+      .finally(() => setDeletingTarget(false));
+  }, [deleteWorkspaceItems, deletingTarget, pendingDeletePostIds]);
   const effectiveSelectedSectionPath = validRootSectionPath(
     displayPool,
     selectedSectionPath,
@@ -6434,13 +6451,21 @@ function LocalWorkspaceShell({
         onConfirm={assistantConfirmationController.confirm}
       />
       <ConfirmationDialog
-        open={Boolean(pendingDeletePostId)}
-        title="Move this item to Trash?"
-        message="You can restore it later from Trash."
+        open={pendingDeletePostIds.length > 0}
+        title={
+          pendingDeletePostIds.length > 1
+            ? `Move ${pendingDeletePostIds.length} items to Trash?`
+            : "Move this item to Trash?"
+        }
+        message={
+          pendingDeletePostIds.length > 1
+            ? "You can restore them later from Trash."
+            : "You can restore it later from Trash."
+        }
         confirmLabel="Move to Trash"
         confirmingLabel="Moving"
         confirming={deletingTarget}
-        onCancel={() => setPendingDeletePostId(null)}
+        onCancel={() => setPendingDeletePostIds([])}
         onConfirm={confirmDeleteTarget}
       />
     </div>
