@@ -3303,6 +3303,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 7px;
   outline: none;
 }
+.workspace-item-option,
+.post-folder-row-shell,
+.universal-item-card,
+.bookmark-folder-card {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .workspace-item-option.is-command-selected,
 .workspace-search-folder-option.is-command-selected {
   outline: 0;

@@ -527,8 +527,8 @@ export const WORKSPACE_COMMANDS: AppCommand[] = [
     group: "Act",
     shortcut: [
       { key: "Delete", label: "Del" },
-      { key: "Backspace", meta: true, label: "⌘Delete", allowTypingTarget: true },
-      { key: "Delete", ctrl: true, label: "Ctrl Delete", allowTypingTarget: true },
+      { key: "Backspace", meta: true, label: "⌘Delete" },
+      { key: "Delete", ctrl: true, label: "Ctrl Delete" },
     ],
     when: (ctx) => Boolean(commandTargetPost(ctx) && ctx.workspace?.canManagePost),
     run: (ctx) =>

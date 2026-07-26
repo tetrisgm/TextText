@@ -4,6 +4,18 @@ export type WorkspaceSelectionState = {
   selectedIds: Set<string>;
 };
 
+export function shouldSuppressNativeItemSelection({
+  ctrlKey,
+  metaKey,
+  shiftKey,
+}: {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}): boolean {
+  return ctrlKey || metaKey || shiftKey;
+}
+
 export function orderedSelectionRange(
   orderedIds: readonly string[],
   anchorId: string,

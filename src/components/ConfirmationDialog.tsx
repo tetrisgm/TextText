@@ -96,15 +96,6 @@ export function ConfirmationDialog({
           runConfirm();
           return;
         }
-        if (
-          (event.key === "Backspace" || event.key === "Delete") &&
-          (event.metaKey || event.ctrlKey)
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          runConfirm();
-          return;
-        }
         if (event.key === "ArrowRight" || event.key === "ArrowDown") {
           event.preventDefault();
           focusButton("next");

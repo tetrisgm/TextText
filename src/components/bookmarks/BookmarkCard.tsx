@@ -20,6 +20,7 @@ import { bookmarkFaviconUrl, resolveCoverSource } from "@/lib/cover";
 import { useCaptureStatus } from "./useCaptureStatus";
 import { workspaceMouseMoved } from "@/lib/workspace-hover";
 import { postSubtitle } from "@/lib/markdown-subtitle";
+import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
 import styles from "./BookmarkCard.module.css";
 
 function classNames(...names: Array<string | false | undefined>): string {
@@ -319,6 +320,11 @@ export function BookmarkCard({
           className={styles.main}
           href={editPath}
           prefetch={onOpenPost ? false : undefined}
+          onMouseDown={(event) => {
+            if (shouldSuppressNativeItemSelection(event)) {
+              event.preventDefault();
+            }
+          }}
           onClick={openItem}
         >
           {mainContent}

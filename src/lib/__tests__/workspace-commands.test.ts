@@ -211,6 +211,11 @@ describe("workspace commands", () => {
       "post-2",
       "post-3",
     ]);
+    expect(shortcutList(command!)).toEqual([
+      { key: "Delete", label: "Del" },
+      { key: "Backspace", meta: true, label: "⌘Delete" },
+      { key: "Delete", ctrl: true, label: "Ctrl Delete" },
+    ]);
   });
 
   it("creates a blank bookmark through the workspace create surface", async () => {

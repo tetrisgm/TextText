@@ -50,6 +50,7 @@ import {
 } from "@/lib/presentation/templates";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
+import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
 
 export type FolderCreateRequest =
   | {
@@ -869,6 +870,11 @@ function UniversalFolderContents({
                     className="post-folder-row"
                     href={blogPostPath(blog, post)}
                     prefetch={onOpenPost ? false : undefined}
+                    onMouseDown={(event) => {
+                      if (shouldSuppressNativeItemSelection(event)) {
+                        event.preventDefault();
+                      }
+                    }}
                     onClick={(event) => {
                       if (
                         post.id &&
@@ -959,6 +965,11 @@ function UniversalFolderContents({
                     className="universal-item-card-link"
                     href={blogPostPath(blog, post)}
                     prefetch={onOpenPost ? false : undefined}
+                    onMouseDown={(event) => {
+                      if (shouldSuppressNativeItemSelection(event)) {
+                        event.preventDefault();
+                      }
+                    }}
                     onClick={(event) => {
                       if (
                         post.id &&

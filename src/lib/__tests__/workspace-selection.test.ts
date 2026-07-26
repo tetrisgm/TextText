@@ -3,11 +3,36 @@ import {
   extendSelectionByKeyboard,
   marqueeSelectionIds,
   selectionFromClick,
+  shouldSuppressNativeItemSelection,
 } from "@/lib/workspace-selection";
 
 const ordered = ["a", "b", "c", "d"];
 
 describe("workspace multi-selection", () => {
+  it("suppresses native text selection for modifier item gestures", () => {
+    expect(
+      shouldSuppressNativeItemSelection({
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSuppressNativeItemSelection({
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressNativeItemSelection({
+        ctrlKey: false,
+        metaKey: true,
+        shiftKey: false,
+      }),
+    ).toBe(true);
+  });
+
   it("opens a plain click and toggles membership with Cmd or Ctrl click", () => {
     const plain = selectionFromClick({
       anchorId: null,

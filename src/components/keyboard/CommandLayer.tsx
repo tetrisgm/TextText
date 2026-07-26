@@ -247,6 +247,7 @@ export function CommandLayer({ children }: { children: ReactNode }) {
         if (typingTarget && !shortcut.allowTypingTarget) continue;
         if (shortcut.requiresWorkspace && !ctx.workspace) continue;
         event.preventDefault();
+        if (event.repeat) return true;
         runCommand(() => command.run(ctx));
         return true;
       }

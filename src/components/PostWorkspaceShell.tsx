@@ -252,6 +252,7 @@ import {
   extendSelectionByKeyboard,
   marqueeSelectionIds,
   selectionFromClick,
+  shouldSuppressNativeItemSelection,
   type SelectionRectangle,
 } from "@/lib/workspace-selection";
 import {
@@ -2342,6 +2343,9 @@ function WorkspacePostOption({
       <button
         type="button"
         className="workspace-item-option-main"
+        onMouseDown={(event) => {
+          if (shouldSuppressNativeItemSelection(event)) event.preventDefault();
+        }}
         onClick={(event) => {
           if (onItemClick(post.id, event)) onOpen(post.id);
         }}
@@ -6162,6 +6166,7 @@ function LocalWorkspaceShell({
       const baseIds = additive ? new Set(selectedPostIds) : new Set<string>();
       let dragging = false;
       bodySelectionActiveRef.current = false;
+      event.preventDefault();
       event.currentTarget.focus({ preventScroll: true });
       clearPostSelection();
       setSelectedSectionPath(null);
