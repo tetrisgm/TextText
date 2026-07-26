@@ -72,4 +72,14 @@ describe("batch 4 workspace UI contract", () => {
     expect(shellSource).toContain('aria-label="Choose a folder"');
     expect(shellSource).toContain("onCreateItem={onCreateItem}");
   });
+
+  it("keeps the library collection-first and embeds the destination in the capture row", () => {
+    expect(shellSource).toContain('className="workspace-library-header"');
+    expect(shellSource).toContain('id="workspace-root-title">Library</h1>');
+    expect(shellSource).toMatch(
+      /<UniversalItemComposer[\s\S]*?leading=\{[\s\S]*?workspace-root-create-destination/,
+    );
+    expect(folderSource).toContain('className="post-folder-page-count"');
+    expect(folderSource).toMatch(/\{items\.length\} \{items\.length/);
+  });
 });

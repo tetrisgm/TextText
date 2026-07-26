@@ -591,11 +591,13 @@ export function UniversalItemComposer({
   blog,
   folder,
   handle,
+  leading,
   onCreateItem,
 }: {
   blog: Blog;
   folder: Folder;
   handle: string;
+  leading?: ReactNode;
   onCreateItem?: FolderCreateItem;
 }) {
   const router = useRouter();
@@ -717,6 +719,15 @@ export function UniversalItemComposer({
   return (
     <>
       <form className="universal-item-composer" onSubmit={createItem}>
+        {leading ? (
+          <>
+            <div className="universal-item-composer-leading">{leading}</div>
+            <span
+              className="universal-item-composer-divider"
+              aria-hidden="true"
+            />
+          </>
+        ) : null}
         <textarea
           ref={inputRef}
           name="item"
@@ -1145,6 +1156,9 @@ export function FolderPage({
           handle={handle}
           canEdit={canEditItems}
         />
+        <p className="post-folder-page-count">
+          {items.length} {items.length === 1 ? "item" : "items"}
+        </p>
       </header>
       {filterQuery && (
         <div className="post-folder-filter-chip" role="status">

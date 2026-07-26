@@ -2803,31 +2803,42 @@ function WorkspaceRootLanding({
           </section>
         ) : (
           <>
+            <header className="workspace-library-header">
+              <div>
+                <h1 id="workspace-root-title">Library</h1>
+                <p>
+                  {pool.posts.length}{" "}
+                  {pool.posts.length === 1 ? "item" : "items"}
+                </p>
+              </div>
+            </header>
             {canManageItems && creationFolder ? (
               <section
                 className="workspace-root-create"
                 aria-label="Create an item"
               >
-                <label className="workspace-root-create-destination">
-                  <span>Save in</span>
-                  <select
-                    aria-label="Choose a folder"
-                    value={creationFolder.path}
-                    onChange={(event) =>
-                      setCreationFolderPath(event.currentTarget.value)
-                    }
-                  >
-                    {creationFolders.map((folder) => (
-                      <option key={folder.id} value={folder.path}>
-                        {folder.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <UniversalItemComposer
                   blog={pool.blog}
                   folder={creationFolder}
                   handle={pool.blog.handle}
+                  leading={
+                    <label className="workspace-root-create-destination">
+                      <span className="sr-only">Save in</span>
+                      <select
+                        aria-label="Choose a folder"
+                        value={creationFolder.path}
+                        onChange={(event) =>
+                          setCreationFolderPath(event.currentTarget.value)
+                        }
+                      >
+                        {creationFolders.map((folder) => (
+                          <option key={folder.id} value={folder.path}>
+                            {folder.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  }
                   onCreateItem={onCreateItem}
                 />
               </section>
