@@ -13,7 +13,7 @@
 
 import { workspaceChangeCursor } from "@/lib/sync-cursor";
 import { resolveSyncWorkspace } from "../auth";
-import { syncDatabaseUnavailable } from "../sync";
+import { syncChangePollUnavailable } from "../sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -56,8 +56,10 @@ export async function GET(request: Request) {
     }
     return Response.json({ cursor, changed: cursor !== since });
   } catch (error) {
-    const unavailable = syncDatabaseUnavailable(error);
-    if (unavailable) return unavailable;
-    throw error;
+    console.error("sync changes poll failed", {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : typeof error,
+    });
+    return syncChangePollUnavailable(error);
   }
 }

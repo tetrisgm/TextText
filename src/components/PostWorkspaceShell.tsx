@@ -4535,6 +4535,9 @@ function LocalWorkspaceShell({
                       pool.blog.handle,
                       "bookmark",
                       request.folderPath,
+                      request.title,
+                      request.template,
+                      request.body,
                     )
                   : await createFolderItemAction(
                       pool.blog.handle,
@@ -4542,17 +4545,25 @@ function LocalWorkspaceShell({
                       {
                         url: request.url,
                         description: request.description,
+                        folderPath: request.folderPath,
+                        template: request.template,
                         title: request.title,
                       },
                     )
                 : request.type === "note"
                   ? await createFolderItemAction(pool.blog.handle, "notes", {
+                      folderPath: request.folderPath,
+                      template: request.template,
                       title: request.title,
+                      body: request.body,
                     })
                   : await createWorkspacePostAction(
                       pool.blog.handle,
                       "article",
                       request.folderPath,
+                      request.title,
+                      request.template,
+                      request.body,
                     );
             const poolPost = narrowPostFromPost(saved, pool.blogId);
             if (!poolPost) {

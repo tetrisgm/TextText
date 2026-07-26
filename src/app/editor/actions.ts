@@ -103,6 +103,8 @@ import { sanitizePostSlug } from "@/lib/post-slug";
 import { normalizeTags } from "@/lib/tags";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import type { TemplateReference } from "@/lib/documents/model";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
 // client can never target another user's blog. Writing always requires auth;
@@ -166,6 +168,20 @@ function cleanWorkspaceCreateType(value: unknown): Extract<
   return WORKSPACE_CREATE_TYPES.includes(value as PostType)
     ? (value as Extract<PostType, "article" | "note" | "bookmark">)
     : "article";
+}
+
+function cleanTemplateReference(value: unknown): TemplateReference | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as { id?: unknown; version?: unknown };
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.version !== "number" ||
+    !Number.isInteger(candidate.version) ||
+    !getBuiltinTemplate(candidate.id, candidate.version)
+  ) {
+    throw new Error("Template not found");
+  }
+  return { id: candidate.id, version: candidate.version };
 }
 
 // Notes and bookmarks live in their own folders and are always unlisted.
@@ -642,17 +658,31 @@ export async function createWorkspacePostAction(
   handleInput: unknown,
   typeInput: PostType = "article",
   folderPathInput?: unknown,
+  titleInput?: unknown,
+  templateInput?: unknown,
+  bodyInput?: unknown,
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
   await enforceAnonymousPostLimit(handle, access);
   const type = cleanWorkspaceCreateType(typeInput);
-  const created = await createDraft(handle, type);
+  const template = cleanTemplateReference(templateInput);
+  const created = await createDraft(handle, type, { template });
+  const title = cleanOptionalLine(titleInput, "Title");
+  const body = cleanBody(bodyInput);
+  const titled =
+    title || body
+      ? await savePost(handle, {
+          ...created,
+          ...(title ? { title } : {}),
+          ...(body ? { body } : {}),
+        })
+      : created;
   const folderPath =
     typeof folderPathInput === "string" ? folderPathInput.trim() : "";
   const saved =
-    type === "article" && folderPath && folderPath !== "blog" && created.id
-      ? await setPostFolder(handle, created.id, folderPath)
-      : created;
+    folderPath && titled.id
+      ? await setPostFolder(handle, titled.id, folderPath)
+      : titled;
   if (!saved) throw new Error("Post not found");
   await auditEdit(
     access,
@@ -706,16 +736,38 @@ function cleanBookmarkUrl(value: unknown): URL {
 export async function createFolderItemAction(
   handleInput: unknown,
   folderInput: "notes" | "bookmarks",
-  input?: { description?: string; title?: string; url?: string },
+  input?: {
+    body?: string;
+    description?: string;
+    folderPath?: string;
+    title?: string;
+    template?: TemplateReference;
+    url?: string;
+  },
 ): Promise<Post> {
   const folder = cleanItemFolder(folderInput);
   const { handle, access } = await editableHandleFor(handleInput);
   await enforceAnonymousPostLimit(handle, access);
 
   if (folder === "notes") {
-    const created = await createDraft(handle, "note");
+    const created = await createDraft(handle, "note", {
+      template: cleanTemplateReference(input?.template),
+    });
     const title = cleanOptionalLine(input?.title, "Title");
-    const post = title ? await savePost(handle, { ...created, title }) : created;
+    const body = cleanBody(input?.body);
+    const titled =
+      title || body
+        ? await savePost(handle, {
+            ...created,
+            ...(title ? { title } : {}),
+            ...(body ? { body } : {}),
+          })
+        : created;
+    const folderPath = input?.folderPath?.trim();
+    const post =
+      folderPath && titled.id
+        ? (await setPostFolder(handle, titled.id, folderPath)) ?? titled
+        : titled;
     await auditEdit(access, "create_note", "item", post.id, post.title);
     await revalidateBlog(handle, [post.slug]);
     return post;
@@ -725,7 +777,9 @@ export async function createFolderItemAction(
   const host = url.hostname.replace(/^www\./, "");
   const title = cleanOptionalLine(input?.title, "Title") || host;
   const description = cleanOptionalLine(input?.description, "Description");
-  const created = await createDraft(handle, "bookmark");
+  const created = await createDraft(handle, "bookmark", {
+    template: cleanTemplateReference(input?.template),
+  });
   const saved = await savePost(handle, {
     ...created,
     title,
@@ -733,21 +787,26 @@ export async function createFolderItemAction(
     links: [{ label: host || title, href: url.toString() }],
     body: "",
   });
+  const folderPath = input?.folderPath?.trim();
+  const placed =
+    folderPath && saved.id
+      ? (await setPostFolder(handle, saved.id, folderPath)) ?? saved
+      : saved;
   // Enter the capture pipeline: pending until a capture agent (the Mac app)
   // grabs the readable text, original HTML, and screenshot. The server's own
   // light fetch fills title/description meanwhile without settling the state.
-  if (saved.id) {
-    await markCapturePending(handle, saved.id, url.toString());
-    void lightCaptureBookmark(handle, saved.id, url.toString()).catch(
+  if (placed.id) {
+    await markCapturePending(handle, placed.id, url.toString());
+    void lightCaptureBookmark(handle, placed.id, url.toString()).catch(
       (error) => console.warn("bookmark light capture failed", error),
     );
   }
-  await auditEdit(access, "create_bookmark", "item", saved.id, url.toString());
-  await revalidateBlog(handle, [saved.slug]);
+  await auditEdit(access, "create_bookmark", "item", placed.id, url.toString());
+  await revalidateBlog(handle, [placed.slug]);
   return {
-    ...saved,
+    ...placed,
     captureStatus: "pending",
-    capture: { ...(saved.capture ?? {}), url: url.toString() },
+    capture: { ...(placed.capture ?? {}), url: url.toString() },
   };
 }
 

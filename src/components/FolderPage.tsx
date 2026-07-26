@@ -20,11 +20,13 @@ import {
   createWorkspacePostAction,
   renameFolderAction,
 } from "@/app/editor/actions";
-import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import {
+  DocumentCollectionRenderer,
+  DocumentEngineStyles,
+} from "@/components/document/DocumentRenderer";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
-import { PostCard } from "@/components/PostCard";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
@@ -39,28 +41,63 @@ import {
 } from "@/components/workspace/WorkspaceViewModeControl";
 import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
+import type { TemplateReference } from "@/lib/documents/model";
+import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import {
+  BUILTIN_TEMPLATES,
+  getBuiltinTemplate,
+} from "@/lib/presentation/templates";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
 
 export type FolderCreateRequest =
-  | { type: "article"; folderPath: string }
-  | { type: "note"; folderPath: string; title?: string }
+  | {
+      type: "article";
+      folderPath: string;
+      template?: TemplateReference;
+      title?: string;
+      body?: string;
+    }
+  | {
+      type: "note";
+      folderPath: string;
+      template?: TemplateReference;
+      title?: string;
+      body?: string;
+    }
   | {
       type: "bookmark";
       folderPath: string;
       blank: true;
+      template?: TemplateReference;
       title?: string;
+      body?: string;
     }
   | {
       type: "bookmark";
       folderPath: string;
       blank?: false;
       description?: string;
+      template?: TemplateReference;
       url: string;
       title?: string;
     };
 
 export type FolderCreateItem = (request: FolderCreateRequest) => void;
+
+function itemDraftFromInput(value: string): { title: string; body: string } {
+  const lines = value.split(/\r?\n/);
+  const firstContentIndex = lines.findIndex((line) => line.trim());
+  if (firstContentIndex < 0) return { title: "", body: "" };
+  const firstLine = lines[firstContentIndex].trim().replace(/^#{1,6}\s+/, "");
+  return {
+    title:
+      firstLine.length > 120
+        ? `${firstLine.slice(0, 117).trimEnd()}...`
+        : firstLine,
+    body: lines.length > 1 ? value.trim() : "",
+  };
+}
 export type FolderDeleteItem = (post: Post) => Promise<void> | void;
 export type FolderCaptureResolved = (post: Post) => void;
 export type FolderViewMode = WorkspaceViewMode;
@@ -146,6 +183,45 @@ function previewLine(body: string): string {
   const sliced = line.slice(0, 147).trimEnd();
   const wordBreak = sliced.lastIndexOf(" ");
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
+}
+
+function normalizedHttpUrl(value: string): string | null {
+  const raw = value.trim();
+  if (!raw || /\s/.test(raw)) return null;
+  if (!/^https?:\/\//i.test(raw) && !raw.includes(".")) return null;
+  for (const candidate of [raw, `https://${raw}`]) {
+    try {
+      const url = new URL(candidate);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        return url.toString();
+      }
+    } catch {
+      // Try the forgiving candidate.
+    }
+  }
+  return null;
+}
+
+function defaultTemplateForFolder(folder: Folder): TemplateReference {
+  if (folder.defaultTemplate) return folder.defaultTemplate;
+  return {
+    id:
+      folder.mode === "notes"
+        ? "texttext.note"
+        : folder.mode === "bookmarks"
+          ? "texttext.bookmark"
+          : "texttext.article",
+    version: 1,
+  };
+}
+
+function compatibilityTypeForTemplate(
+  template: TemplateReference,
+  sourceUrl: string | null,
+): "article" | "note" | "bookmark" {
+  if (sourceUrl || template.id === "texttext.bookmark") return "bookmark";
+  if (template.id === "texttext.note") return "note";
+  return "article";
 }
 
 function bookmarkUrlParts(rawUrl: string): { href: string; host: string } {
@@ -282,12 +358,7 @@ function FolderActionBar({
       document.removeEventListener("pointerdown", onPointerDown, true);
   }, [closeMenu, menuOpen]);
 
-  const createLabel =
-    folder.mode === "notes"
-      ? "Create note"
-      : folder.mode === "bookmarks"
-        ? "Create bookmark"
-        : "Create post";
+  const createLabel = "Create item";
 
   const confirmDelete = useCallback(() => {
     if (!onDeleteFolder || deleting) return;
@@ -547,13 +618,13 @@ function FolderTitleEditor({
   );
 }
 
-function NotesFolderContents({
+function UniversalFolderContents({
   blog,
+  folder,
   handle,
   items,
+  canCreateItems,
   canEditItems,
-  folderId,
-  folderPath,
   onCreateItem,
   onDeleteItem,
   onItemClick,
@@ -565,11 +636,11 @@ function NotesFolderContents({
   viewMode,
 }: {
   blog: Blog;
+  folder: Folder;
   handle: string;
   items: Post[];
+  canCreateItems: boolean;
   canEditItems: boolean;
-  folderId: string;
-  folderPath: string;
   onCreateItem?: FolderCreateItem;
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
@@ -581,186 +652,253 @@ function NotesFolderContents({
   viewMode: FolderViewMode;
 }) {
   const router = useRouter();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const initialTemplate = defaultTemplateForFolder(folder);
+  const [template, setTemplate] = useState<TemplateReference>(initialTemplate);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  const createNote = useCallback(() => {
-    if (creating) return;
-    if (onCreateItem) {
-      setError(null);
-      onCreateItem({ type: "note", folderPath });
-      return;
-    }
-    setCreating(true);
-    setError(null);
-    startTransition(() => {
-      void createFolderItemAction(handle, "notes")
-        .then((post) => {
-          router.push(blogPostEditPath(blog, post));
-        })
-        .catch((createError) => {
-          setCreating(false);
-          setError(
-            actionErrorMessage(createError, "Could not create the note"),
-          );
-        });
-    });
-  }, [blog, creating, folderPath, handle, onCreateItem, router]);
+  useEffect(() => {
+    setTemplate(defaultTemplateForFolder(folder));
+  }, [folder]);
 
-  const notes = useMemo(
+  useEffect(() => {
+    const createRequested = (event: Event) => {
+      if (!isFolderUiEvent(event, folder.id)) return;
+      inputRef.current?.focus();
+    };
+    window.addEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
+    return () =>
+      window.removeEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
+  }, [folder.id]);
+
+  const createItem = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (creating) return;
+      const form = event.currentTarget;
+      const data = new FormData(form);
+      const value = String(data.get("item") ?? "").trim();
+      if (!value) {
+        inputRef.current?.focus();
+        return;
+      }
+
+      const sourceUrl = normalizedHttpUrl(value);
+      const type = compatibilityTypeForTemplate(template, sourceUrl);
+      const draft = itemDraftFromInput(value);
+      const request: FolderCreateRequest =
+        type === "bookmark"
+          ? sourceUrl
+            ? {
+                type,
+                folderPath: folder.path,
+                template,
+                url: sourceUrl,
+              }
+            : {
+                type,
+                blank: true,
+                body: draft.body,
+                folderPath: folder.path,
+                template,
+                title: draft.title,
+              }
+          : {
+              type,
+              body: draft.body,
+              folderPath: folder.path,
+              template,
+              title: draft.title,
+            };
+
+      form.reset();
+      setError(null);
+      if (onCreateItem) {
+        onCreateItem(request);
+        return;
+      }
+
+      setCreating(true);
+      startTransition(() => {
+        const creation =
+          request.type === "bookmark"
+            ? request.blank
+              ? createWorkspacePostAction(
+                  handle,
+                  "bookmark",
+                  request.folderPath,
+                  request.title,
+                  request.template,
+                  request.body,
+                )
+              : createFolderItemAction(handle, "bookmarks", {
+                  folderPath: request.folderPath,
+                  template: request.template,
+                  url: request.url,
+                })
+            : request.type === "note"
+              ? createFolderItemAction(handle, "notes", {
+                  folderPath: request.folderPath,
+                  template: request.template,
+                  title: request.title,
+                  body: request.body,
+                })
+              : createWorkspacePostAction(
+                  handle,
+                  "article",
+                  request.folderPath,
+                  request.title,
+                  request.template,
+                  request.body,
+                );
+        void creation
+          .then((post) => {
+            if (sourceUrl) router.refresh();
+            else router.push(blogPostEditPath(blog, post));
+          })
+          .catch((createError) => {
+            setError(actionErrorMessage(createError, "Could not create item"));
+            inputRef.current?.focus();
+          })
+          .finally(() => setCreating(false));
+      });
+    },
+    [blog, creating, folder.path, handle, onCreateItem, router, template],
+  );
+
+  const sorted = useMemo(
     () =>
       sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? ""),
     [items],
   );
 
-  useEffect(() => {
-    const createRequested = (event: Event) => {
-      if (isFolderUiEvent(event, folderId)) createNote();
-    };
-    window.addEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
-    return () =>
-      window.removeEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
-  }, [createNote, folderId]);
-
   return (
     <>
+      {canCreateItems && (
+        <form className="universal-item-composer" onSubmit={createItem}>
+          <textarea
+            ref={inputRef}
+            name="item"
+            className="universal-item-composer-input"
+            placeholder="Type a title, paste text, or paste a link"
+            aria-label="Create an item"
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            rows={1}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                event.metaKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+          <label className="universal-item-template">
+            <span className="sr-only">Look</span>
+            <select
+              aria-label="Choose a look"
+              value={`${template.id}@${template.version}`}
+              onChange={(event) => {
+                const [id, rawVersion] = event.currentTarget.value.split("@");
+                setTemplate({ id, version: Number(rawVersion) || 1 });
+              }}
+            >
+              {BUILTIN_TEMPLATES.map((definition) => (
+                <option
+                  key={`${definition.id}@${definition.version}`}
+                  value={`${definition.id}@${definition.version}`}
+                >
+                  {definition.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="ac-icon-btn universal-item-create"
+            aria-label="Create item"
+            disabled={creating}
+          >
+            <span aria-hidden="true">↑</span>
+          </button>
+        </form>
+      )}
       {error && (
         <span className="post-folder-error" role="alert">
           {error}
         </span>
       )}
-      <section className="post-folder-page-items" aria-label="Notes">
-        {notes.length === 0 ? (
-          <FolderEmptyCard
-            shortcutHint={canEditItems ? "to create a note." : undefined}
-          >
-            Write your first private note.
+      <section className="post-folder-page-items" aria-label="Folder items">
+        {sorted.length === 0 ? (
+          <FolderEmptyCard>
+            Type a title or paste a link to create the first item.
           </FolderEmptyCard>
-        ) : viewMode !== "list" ? (
-          <div
-            className="tv-grid post-folder-card-grid"
-            role="listbox"
-            aria-label="Notes"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            {notes.map((note) => {
-              const selected = Boolean(
-                note.id &&
-                (selectedPostIds?.has(note.id) ?? note.id === selectedPostId),
-              );
-              return (
-                <div
-                  key={itemKey(note)}
-                  id={postOptionId(note.id)}
-                  className={`post-folder-card-option${
-                    selected ? " is-command-selected" : ""
-                  }`}
-                  role="option"
-                  aria-selected={selected}
-                  tabIndex={note.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={note.id}
-                  onFocus={() => note.id && onSelectPost?.(note.id)}
-                >
-                  <PostCard
-                    blog={blog}
-                    handle={handle}
-                    post={note}
-                    owner={canEditItems}
-                    variant={viewMode === "column" ? "expanded" : "card"}
-                    href={
-                      onOpenPost
-                        ? blogPostPath(blog, note)
-                        : canEditItems
-                          ? blogPostEditPath(blog, note)
-                          : blogPostPath(blog, note)
-                    }
-                    onOpen={
-                      onOpenPost
-                        ? (event) => {
-                            if (
-                              note.id &&
-                              onItemClick &&
-                              !onItemClick(note.id, event)
-                            ) {
-                              event.preventDefault();
-                              return;
-                            }
-                            if (!shouldOpenLocally(event)) return;
-                            event.preventDefault();
-                            onOpenPost(note);
-                          }
-                        : undefined
-                    }
-                    onDeletePost={onDeleteItem}
-                    onOpenTag={onOpenTag}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ) : (
+        ) : viewMode === "list" ? (
           <div
             className="post-folder-list"
             role="listbox"
-            aria-label="Notes"
+            aria-label="Folder items"
             aria-activedescendant={postOptionId(selectedPostId)}
           >
-            {notes.map((note) => {
-              const preview = previewLine(postBodyPreview(note));
+            {sorted.map((post) => {
+              const preview = previewLine(
+                post.excerpt || postBodyPreview(post),
+              );
               const selected = Boolean(
-                note.id &&
-                (selectedPostIds?.has(note.id) ?? note.id === selectedPostId),
+                post.id &&
+                  (selectedPostIds?.has(post.id) ??
+                    post.id === selectedPostId),
               );
               return (
                 <div
-                  key={itemKey(note)}
-                  id={postOptionId(note.id)}
+                  key={itemKey(post)}
+                  id={postOptionId(post.id)}
                   className={`post-folder-row-shell${
                     selected ? " is-command-selected" : ""
                   }`}
                   role="option"
                   aria-selected={selected}
-                  tabIndex={note.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={note.id}
-                  onFocus={() => note.id && onSelectPost?.(note.id)}
+                  tabIndex={post.id === selectedPostId ? 0 : -1}
+                  data-workspace-post-id={post.id}
+                  onFocus={() => post.id && onSelectPost?.(post.id)}
                 >
                   <WorkspaceItemStar
                     handle={handle}
                     owner={canEditItems}
-                    post={note}
+                    post={post}
                   />
                   <Link
                     className="post-folder-row"
-                    href={
-                      onOpenPost
-                        ? blogPostPath(blog, note)
-                        : canEditItems
-                          ? blogPostEditPath(blog, note)
-                          : blogPostPath(blog, note)
-                    }
+                    href={blogPostPath(blog, post)}
                     prefetch={onOpenPost ? false : undefined}
                     onClick={(event) => {
                       if (
-                        note.id &&
+                        post.id &&
                         onItemClick &&
-                        !onItemClick(note.id, event)
+                        !onItemClick(post.id, event)
                       ) {
                         event.preventDefault();
                         return;
                       }
                       if (!onOpenPost || !shouldOpenLocally(event)) return;
                       event.preventDefault();
-                      onOpenPost(note);
+                      onOpenPost(post);
                     }}
                   >
                     <span className="post-folder-row-title">
-                      {itemTitle(note)}
+                      {itemTitle(post)}
                     </span>
                     <span className="post-folder-row-meta">
-                      {formatArticleDate(note.updatedAt ?? note.date, {
-                        style: "short",
-                      })}
+                      {post.captureStatus === "pending"
+                        ? "Saving"
+                        : formatArticleDate(post.updatedAt ?? post.date, {
+                            style: "short",
+                          })}
                     </span>
                     {preview && (
                       <span className="post-folder-row-excerpt">{preview}</span>
@@ -770,15 +908,15 @@ function NotesFolderContents({
                     blog={blog}
                     className="post-folder-row-tags"
                     onOpenTag={onOpenTag}
-                    tags={note.tags}
+                    tags={post.tags}
                   />
                   {canEditItems && (
                     <WorkspaceItemActions
                       blog={blog}
                       handle={handle}
-                      href={blogPostPath(blog, note)}
+                      href={blogPostPath(blog, post)}
                       owner
-                      post={note}
+                      post={post}
                       onDeletePost={onDeleteItem}
                     />
                   )}
@@ -786,376 +924,31 @@ function NotesFolderContents({
               );
             })}
           </div>
-        )}
-      </section>
-    </>
-  );
-}
-
-function BookmarksFolderContents({
-  blog,
-  handle,
-  items,
-  canCreateItems,
-  canEditItems,
-  folderId,
-  folderPath,
-  onCaptureResolved,
-  onCreateItem,
-  onDeleteItem,
-  onItemClick,
-  onOpenPost,
-  onOpenTag,
-  onSelectPost,
-  selectedPostId,
-  selectedPostIds,
-  viewMode,
-}: {
-  blog: Blog;
-  handle: string;
-  items: Post[];
-  canCreateItems: boolean;
-  canEditItems: boolean;
-  folderId: string;
-  folderPath: string;
-  onCaptureResolved?: FolderCaptureResolved;
-  onCreateItem?: FolderCreateItem;
-  onDeleteItem?: FolderDeleteItem;
-  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
-  onOpenPost?: (post: Post) => void;
-  onOpenTag?: (tag: string) => void;
-  onSelectPost?: (postId: string) => void;
-  selectedPostId?: string | null;
-  selectedPostIds?: ReadonlySet<string>;
-  viewMode: FolderViewMode;
-}) {
-  const router = useRouter();
-  const urlRef = useRef<HTMLInputElement>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [localBookmarks, setLocalBookmarks] = useState<Post[]>([]);
-  const [, startTransition] = useTransition();
-
-  const openForm = useCallback(() => {
-    setError(null);
-    setFormOpen(true);
-    window.requestAnimationFrame(() => {
-      urlRef.current?.focus();
-    });
-  }, []);
-
-  useEffect(() => {
-    const createRequested = (event: Event) => {
-      if (isFolderUiEvent(event, folderId)) openForm();
-    };
-    window.addEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
-    return () =>
-      window.removeEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
-  }, [folderId, openForm]);
-
-  const closeForm = useCallback(() => {
-    setFormOpen(false);
-    setError(null);
-  }, []);
-
-  const addBookmark = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (saving) return;
-
-      const form = event.currentTarget;
-      const data = new FormData(form);
-      const url = String(data.get("url") ?? "").trim();
-      const title = String(data.get("title") ?? "").trim();
-      const description = String(data.get("description") ?? "").trim();
-      if (!url) {
-        setError("A bookmark needs a link");
-        return;
-      }
-
-      if (onCreateItem) {
-        form.reset();
-        setFormOpen(false);
-        setError(null);
-        onCreateItem({
-          type: "bookmark",
-          folderPath,
-          url,
-          description: description || undefined,
-          title: title || undefined,
-        });
-        return;
-      }
-
-      const optimistic = optimisticBookmarkPost({
-        url,
-        title: title || undefined,
-        description: description || undefined,
-      });
-      setLocalBookmarks((current) => [optimistic, ...current]);
-      form.reset();
-      setFormOpen(false);
-      setError(null);
-      startTransition(() => {
-        void createFolderItemAction(handle, "bookmarks", {
-          url,
-          description: description || undefined,
-          title: title || undefined,
-        })
-          .then((saved) => {
-            setLocalBookmarks((current) =>
-              current.map((bookmark) =>
-                bookmark.id === optimistic.id ? saved : bookmark,
-              ),
-            );
-            router.refresh();
-          })
-          .catch((saveError) => {
-            setLocalBookmarks((current) =>
-              current.filter((bookmark) => bookmark.id !== optimistic.id),
-            );
-            setError(
-              actionErrorMessage(saveError, "Could not save the bookmark"),
-            );
-          })
-          .finally(() => setSaving(false));
-      });
-    },
-    [folderPath, handle, onCreateItem, router, saving],
-  );
-
-  const bookmarks = useMemo(() => {
-    const persistedIds = new Set(
-      items.flatMap((post) => (post.id ? [post.id] : [])),
-    );
-    const pending = localBookmarks.filter(
-      (post) => !post.id || !persistedIds.has(post.id),
-    );
-    return sortedByTimestampDesc(
-      [...pending, ...items],
-      (post) => post.createdAt ?? post.date ?? "",
-    );
-  }, [items, localBookmarks]);
-
-  return (
-    <>
-      {error && (
-        <span className="post-folder-error" role="alert">
-          {error}
-        </span>
-      )}
-      {canCreateItems && formOpen && (
-        <div className="post-folder-inline-create">
-          <form className="post-folder-new-form" onSubmit={addBookmark}>
-            <input
-              ref={urlRef}
-              className="post-folder-field is-url"
-              name="url"
-              type="text"
-              inputMode="url"
-              placeholder="https://example.com"
-              aria-label="Bookmark link"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              required
-            />
-            <input
-              className="post-folder-field is-title"
-              name="title"
-              type="text"
-              placeholder="Title (optional)"
-              aria-label="Bookmark title"
-            />
-            <input
-              className="post-folder-field is-description"
-              name="description"
-              type="text"
-              placeholder="Description (optional)"
-              aria-label="Bookmark description"
-            />
-            <button
-              type="submit"
-              className="ac-btn ac-btn-filled"
-              disabled={saving}
-            >
-              {saving ? "Adding" : "Add"}
-            </button>
-            <button
-              type="button"
-              className="ac-btn ac-btn-gray"
-              disabled={saving}
-              onClick={closeForm}
-            >
-              Cancel
-            </button>
-          </form>
-        </div>
-      )}
-      <section className="post-folder-page-items" aria-label="Bookmarks">
-        {bookmarks.length === 0 ? (
-          <FolderEmptyCard
-            shortcutHint={canCreateItems ? "to create a bookmark." : undefined}
-          >
-            Save your first link.
-          </FolderEmptyCard>
         ) : (
           <div
-            className="post-folder-list"
-            role="listbox"
-            aria-label="Bookmarks"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            {bookmarks.map((bookmark) => {
-              const selected = Boolean(
-                bookmark.id &&
-                (selectedPostIds?.has(bookmark.id) ??
-                  bookmark.id === selectedPostId),
-              );
-              return (
-                <BookmarkCard
-                  key={itemKey(bookmark)}
-                  post={bookmark}
-                  selected={selected}
-                  optionId={postOptionId(bookmark.id)}
-                  optionTabIndex={bookmark.id === selectedPostId ? 0 : -1}
-                  owner={canEditItems}
-                  handle={handle}
-                  editPath={
-                    onOpenPost
-                      ? blogPostPath(blog, bookmark)
-                      : canEditItems
-                        ? blogPostEditPath(blog, bookmark)
-                        : blogPostPath(blog, bookmark)
-                  }
-                  onCaptureResolved={onCaptureResolved}
-                  onDeletePost={onDeleteItem}
-                  onOpenPost={onOpenPost}
-                  onOpenTag={onOpenTag}
-                  onItemClick={(event) =>
-                    bookmark.id
-                      ? (onItemClick?.(bookmark.id, event) ?? true)
-                      : true
-                  }
-                  onSelect={() => bookmark.id && onSelectPost?.(bookmark.id)}
-                  viewMode={viewMode}
-                />
-              );
-            })}
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-
-function BlogFolderContents({
-  blog,
-  handle,
-  items,
-  canEditItems,
-  folderId,
-  folderPath,
-  onCreateItem,
-  onDeleteItem,
-  onItemClick,
-  onOpenPost,
-  onOpenTag,
-  onSelectPost,
-  selectedPostId,
-  selectedPostIds,
-  viewMode,
-}: {
-  blog: Blog;
-  handle: string;
-  items: Post[];
-  canEditItems: boolean;
-  folderId: string;
-  folderPath: string;
-  onCreateItem?: FolderCreateItem;
-  onDeleteItem?: FolderDeleteItem;
-  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
-  onOpenPost?: (post: Post) => void;
-  onOpenTag?: (tag: string) => void;
-  onSelectPost?: (postId: string) => void;
-  selectedPostId?: string | null;
-  selectedPostIds?: ReadonlySet<string>;
-  viewMode: FolderViewMode;
-}) {
-  const router = useRouter();
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
-  const sorted = useMemo(
-    () =>
-      sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? ""),
-    [items],
-  );
-
-  const createArticle = useCallback(() => {
-    if (creating) return;
-    if (onCreateItem) {
-      setError(null);
-      onCreateItem({ type: "article", folderPath });
-      return;
-    }
-    setCreating(true);
-    setError(null);
-    startTransition(() => {
-      void createWorkspacePostAction(handle, "article", "blog")
-        .then((post) => {
-          router.push(blogPostEditPath(blog, post));
-        })
-        .catch((createError) => {
-          setCreating(false);
-          setError(
-            actionErrorMessage(createError, "Could not create the article"),
-          );
-        });
-    });
-  }, [blog, creating, folderPath, handle, onCreateItem, router]);
-
-  useEffect(() => {
-    const createRequested = (event: Event) => {
-      if (isFolderUiEvent(event, folderId)) createArticle();
-    };
-    window.addEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
-    return () =>
-      window.removeEventListener(CREATE_FOLDER_ITEM_EVENT, createRequested);
-  }, [createArticle, folderId]);
-
-  return (
-    <>
-      {error && (
-        <span className="post-folder-error" role="alert">
-          {error}
-        </span>
-      )}
-      <section className="post-folder-page-items" aria-label="Folder items">
-        {sorted.length === 0 ? (
-          <FolderEmptyCard
-            shortcutHint={canEditItems ? "to create a post." : undefined}
-          >
-            Start the first post in this folder.
-          </FolderEmptyCard>
-        ) : (
-          <div
-            className="tv-grid post-folder-card-grid"
+            className={`universal-item-collection is-${viewMode}`}
             role="listbox"
             aria-label="Folder items"
             aria-activedescendant={postOptionId(selectedPostId)}
           >
+            <DocumentEngineStyles />
             {sorted.map((post) => {
               const selected = Boolean(
                 post.id &&
-                (selectedPostIds?.has(post.id) ?? post.id === selectedPostId),
+                  (selectedPostIds?.has(post.id) ??
+                    post.id === selectedPostId),
               );
+              const document = post.document ?? documentFromLegacyPost(post);
+              const reference =
+                post.template ?? document.presentation.template;
+              const definition =
+                getBuiltinTemplate(reference.id, reference.version) ??
+                getBuiltinTemplate("texttext.article", 1)!;
               return (
                 <div
                   key={itemKey(post)}
                   id={postOptionId(post.id)}
-                  className={`post-folder-card-option${
+                  className={`universal-item-card${
                     selected ? " is-command-selected" : ""
                   }`}
                   role="option"
@@ -1164,38 +957,50 @@ function BlogFolderContents({
                   data-workspace-post-id={post.id}
                   onFocus={() => post.id && onSelectPost?.(post.id)}
                 >
-                  <PostCard
-                    blog={blog}
+                  <WorkspaceItemStar
                     handle={handle}
-                    post={post}
                     owner={canEditItems}
-                    showTypeChip={false}
-                    href={
-                      canEditItems
-                        ? blogPostPath(blog, post)
-                        : blogPostPath(blog, post)
-                    }
-                    onOpen={
-                      onOpenPost
-                        ? (event) => {
-                            if (
-                              post.id &&
-                              onItemClick &&
-                              !onItemClick(post.id, event)
-                            ) {
-                              event.preventDefault();
-                              return;
-                            }
-                            if (!shouldOpenLocally(event)) return;
-                            event.preventDefault();
-                            onOpenPost(post);
-                          }
-                        : undefined
-                    }
-                    onDeletePost={onDeleteItem}
-                    onOpenTag={onOpenTag}
-                    variant={viewMode === "column" ? "expanded" : "card"}
+                    post={post}
                   />
+                  <Link
+                    className="universal-item-card-link"
+                    href={blogPostPath(blog, post)}
+                    prefetch={onOpenPost ? false : undefined}
+                    onClick={(event) => {
+                      if (
+                        post.id &&
+                        onItemClick &&
+                        !onItemClick(post.id, event)
+                      ) {
+                        event.preventDefault();
+                        return;
+                      }
+                      if (!onOpenPost || !shouldOpenLocally(event)) return;
+                      event.preventDefault();
+                      onOpenPost(post);
+                    }}
+                  >
+                    <DocumentCollectionRenderer
+                      document={document}
+                      template={definition}
+                      documentId={`collection-${post.id ?? post.slug}`}
+                      metadata={{
+                        date: formatArticleDate(post.updatedAt ?? post.date, {
+                          style: "short",
+                        }),
+                      }}
+                    />
+                  </Link>
+                  {canEditItems && (
+                    <WorkspaceItemActions
+                      blog={blog}
+                      handle={handle}
+                      href={blogPostPath(blog, post)}
+                      owner
+                      post={post}
+                      onDeletePost={onDeleteItem}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -1352,63 +1157,23 @@ export function FolderPage({
           </button>
         </div>
       )}
-      {folder.mode === "blog" ? (
-        <BlogFolderContents
-          blog={blog}
-          handle={handle}
-          items={filteredItems}
-          canEditItems={canEditItems}
-          folderId={folder.id}
-          folderPath={folder.path}
-          onCreateItem={onCreateItem}
-          onDeleteItem={onDeleteItem}
-          onItemClick={onItemClick}
-          onOpenPost={onOpenPost}
-          onOpenTag={onOpenTag}
-          onSelectPost={onSelectPost}
-          selectedPostId={visibleSelectedPostId}
-          selectedPostIds={selectedPostIds}
-          viewMode={viewMode}
-        />
-      ) : folder.mode === "bookmarks" ? (
-        <BookmarksFolderContents
-          blog={blog}
-          handle={handle}
-          items={filteredItems}
-          canCreateItems={canCreateItems}
-          canEditItems={canEditItems}
-          folderId={folder.id}
-          folderPath={folder.path}
-          onCaptureResolved={onCaptureResolved}
-          onCreateItem={onCreateItem}
-          onDeleteItem={onDeleteItem}
-          onItemClick={onItemClick}
-          onOpenPost={onOpenPost}
-          onOpenTag={onOpenTag}
-          onSelectPost={onSelectPost}
-          selectedPostId={visibleSelectedPostId}
-          selectedPostIds={selectedPostIds}
-          viewMode={viewMode}
-        />
-      ) : (
-        <NotesFolderContents
-          blog={blog}
-          handle={handle}
-          items={filteredItems}
-          canEditItems={canEditItems}
-          folderId={folder.id}
-          folderPath={folder.path}
-          onCreateItem={onCreateItem}
-          onDeleteItem={onDeleteItem}
-          onItemClick={onItemClick}
-          onOpenPost={onOpenPost}
-          onOpenTag={onOpenTag}
-          onSelectPost={onSelectPost}
-          selectedPostId={visibleSelectedPostId}
-          selectedPostIds={selectedPostIds}
-          viewMode={viewMode}
-        />
-      )}
+      <UniversalFolderContents
+        blog={blog}
+        folder={folder}
+        handle={handle}
+        items={filteredItems}
+        canCreateItems={canCreateItems}
+        canEditItems={canEditItems}
+        onCreateItem={onCreateItem}
+        onDeleteItem={onDeleteItem}
+        onItemClick={onItemClick}
+        onOpenPost={onOpenPost}
+        onOpenTag={onOpenTag}
+        onSelectPost={onSelectPost}
+        selectedPostId={visibleSelectedPostId}
+        selectedPostIds={selectedPostIds}
+        viewMode={viewMode}
+      />
     </main>
   );
 }

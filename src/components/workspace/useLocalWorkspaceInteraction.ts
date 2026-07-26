@@ -62,7 +62,7 @@ export function createOptimisticWorkspacePost(
   const folder = folderForCreateRequest(pool, request);
   const slug = `untitled-${token}`;
   const template =
-    folder?.defaultTemplate ?? {
+    request.template ?? folder?.defaultTemplate ?? {
       id: legacyTemplateId(request.type),
       version: 1,
     };
@@ -114,25 +114,22 @@ export function createOptimisticWorkspacePost(
       ...document,
       content: {
         ...document.content,
-        title:
-          request.type === "note" || request.type === "bookmark"
-            ? (request.title?.trim() ?? "")
-            : "",
+        title: request.title?.trim() ?? "",
+        body: request.body?.trim() ?? "",
       },
     },
     visibility: "private",
     template,
     type: request.type,
     slug,
-    title:
-      request.type === "note" || request.type === "bookmark"
-        ? (request.title?.trim() ?? "")
-        : "",
+    title: request.title?.trim() ?? "",
     excerpt: "",
     status: "draft",
     pinned: false,
     starred: false,
-    wordCount: 0,
+    wordCount: request.body?.trim()
+      ? request.body.trim().split(/\s+/).length
+      : 0,
     createdAt,
     updatedAt: createdAt,
   };

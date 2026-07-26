@@ -130,6 +130,7 @@ export type NativeAgentToolExecutor = (
 ) => Promise<unknown>;
 
 let toolExecutor: NativeAgentToolExecutor | null = null;
+const scopedToolExecutors = new Map<string, NativeAgentToolExecutor>();
 const agentEventHandlers = new Map<string, (event: NativeAgentEvent) => void>();
 let globalsInstalled = false;
 
@@ -147,8 +148,7 @@ function postToolReply(callId: string, ok: boolean, result: string) {
 }
 
 function installAgentGlobals() {
-  if (globalsInstalled || typeof window === "undefined") return;
-  globalsInstalled = true;
+  if (typeof window === "undefined") return;
   const target = window as unknown as {
     __writeNativeAIToolCall?: (
       callId: string,
@@ -158,8 +158,16 @@ function installAgentGlobals() {
     ) => boolean;
     __writeNativeAIAgentEvent?: (tag: string, event: NativeAgentEvent) => void;
   };
+  if (
+    globalsInstalled &&
+    target.__writeNativeAIToolCall &&
+    target.__writeNativeAIAgentEvent
+  ) {
+    return;
+  }
+  globalsInstalled = true;
   target.__writeNativeAIToolCall = (callId, name, argsJSON, eventTag) => {
-    const executor = toolExecutor;
+    const executor = scopedToolExecutors.get(eventTag) ?? toolExecutor;
     if (!executor) return false;
     void (async () => {
       try {
@@ -208,12 +216,16 @@ export async function nativeAgent(
     context?: string;
     instructions?: string;
     tools?: string[];
+    toolExecutor?: NativeAgentToolExecutor;
     onEvent?: (event: NativeAgentEvent) => void;
   } = {},
 ): Promise<{ text: string; truncated: boolean }> {
   installAgentGlobals();
   const eventTag = `tag${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   if (options.onEvent) agentEventHandlers.set(eventTag, options.onEvent);
+  if (options.toolExecutor) {
+    scopedToolExecutors.set(eventTag, options.toolExecutor);
+  }
   try {
     return await request("agent", {
       prompt,
@@ -224,5 +236,6 @@ export async function nativeAgent(
     });
   } finally {
     agentEventHandlers.delete(eventTag);
+    scopedToolExecutors.delete(eventTag);
   }
 }

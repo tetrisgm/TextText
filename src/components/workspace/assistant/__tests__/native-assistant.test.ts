@@ -328,6 +328,60 @@ describe("native assistant submissions", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("uses the request-scoped tool executor without a global registration", async () => {
+    const replies: unknown[] = [];
+    const scopedExecutor = vi.fn(async () => ({ updated: true }));
+    const request = vi.fn(async (_op: string, payload?: Record<string, unknown>) => {
+      const target = window as unknown as {
+        __writeNativeAIToolCall: (
+          callId: string,
+          name: string,
+          argsJSON: string,
+          eventTag: string,
+        ) => boolean;
+      };
+      expect(
+        target.__writeNativeAIToolCall(
+          "call-1",
+          "update_item",
+          JSON.stringify({ title: "New title" }),
+          String(payload?.eventTag),
+        ),
+      ).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return { text: "Done", truncated: false };
+    });
+    vi.stubGlobal("window", {
+      writeNativeAI: { request },
+      webkit: {
+        messageHandlers: {
+          nativeAI: { postMessage: (value: unknown) => replies.push(value) },
+        },
+      },
+    });
+
+    await expect(
+      nativeAgent("Update this item", {
+        tools: ["update_item"],
+        toolExecutor: scopedExecutor,
+      }),
+    ).resolves.toEqual({ text: "Done", truncated: false });
+    expect(scopedExecutor).toHaveBeenCalledWith(
+      "update_item",
+      { title: "New title" },
+      expect.any(String),
+    );
+    expect(replies).toEqual([
+      {
+        toolReply: {
+          callId: "call-1",
+          ok: true,
+          result: JSON.stringify({ updated: true }),
+        },
+      },
+    ]);
+  });
+
   it("creates an applyable title preview through the on-device bridge", async () => {
     const request = vi.fn(async (op: string) => {
       expect(op).toBe("title");

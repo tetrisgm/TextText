@@ -97,6 +97,21 @@ export function syncDatabaseUnavailable(error: unknown): Response | null {
   });
 }
 
+/**
+ * The changes feed is a retry loop, not a data mutation. Any failure can be
+ * retried safely, so keep connected clients on their bounded backoff path even
+ * when a new server failure does not match the known database signatures.
+ */
+export function syncChangePollUnavailable(error: unknown): Response {
+  return (
+    syncDatabaseUnavailable(error) ??
+    syncError(503, "Sync is temporarily unavailable", {
+      "Cache-Control": "no-store",
+      "Retry-After": "30",
+    })
+  );
+}
+
 // The savePost failures a client can fix by editing its file (message strings
 // owned by src/lib/store.ts). Anything else, e.g. a transient driver error,
 // must NOT map to a 4xx: the client would treat the file as rejected instead

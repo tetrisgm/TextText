@@ -117,6 +117,33 @@ describe("local workspace optimistic creation", () => {
     expect(blankBookmark.capture).toBeUndefined();
   });
 
+  it("shows pasted content and the selected look before the server responds", () => {
+    const optimistic = createOptimisticWorkspacePost(
+      workspacePool(),
+      {
+        type: "article",
+        folderPath: "blog",
+        title: "A captured answer",
+        body: "The answer body is available immediately.",
+        template: { id: "texttext.project", version: 1 },
+      },
+      Date.parse("2026-07-14T12:00:00.000Z"),
+    );
+
+    expect(optimistic).toMatchObject({
+      folderId: "blog",
+      title: "A captured answer",
+      template: { id: "texttext.project", version: 1 },
+      wordCount: 6,
+      document: {
+        content: {
+          title: "A captured answer",
+          body: "The answer body is available immediately.",
+        },
+      },
+    });
+  });
+
   it("keeps the logical item and editor key stable across server identity", () => {
     const pool = workspacePool();
     const temporary = createOptimisticWorkspacePost(

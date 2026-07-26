@@ -23,12 +23,20 @@ export type DocumentRenderSlots = {
   metadata?: ReactNode;
 };
 
+export function DocumentEngineStyles() {
+  return <style>{DOCUMENT_ENGINE_CSS}</style>;
+}
+
 type RendererProps = {
   document: DocumentSnapshot;
   template: TemplateDefinition;
   documentId?: string;
   metadata?: DocumentRenderMetadata;
   slots?: DocumentRenderSlots;
+  className?: string;
+};
+
+type CollectionRendererProps = Omit<RendererProps, "className"> & {
   className?: string;
 };
 
@@ -311,8 +319,50 @@ export function DocumentRenderer({
       data-media={theme.media ?? "full"}
       style={style}
     >
-      <style>{DOCUMENT_ENGINE_CSS}</style>
+      <DocumentEngineStyles />
       <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} />
+    </article>
+  );
+}
+
+export function DocumentCollectionRenderer({
+  document,
+  template,
+  documentId = "tt-collection-item",
+  metadata = {},
+  slots,
+  className,
+}: CollectionRendererProps) {
+  const scopeId = `tt-${documentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "collection-item"}`;
+  const theme = { ...template.theme, ...document.presentation.theme };
+  const style = theme.accent
+    ? ({ "--tt-accent": theme.accent } as CSSProperties)
+    : undefined;
+
+  return (
+    <article
+      id={scopeId}
+      className={["tt-document", "tt-collection-item", className]
+        .filter(Boolean)
+        .join(" ")}
+      data-template={template.id}
+      data-typography={theme.typography ?? "system"}
+      data-density={theme.density ?? "comfortable"}
+      data-measure="full"
+      data-corners={theme.corners ?? "subtle"}
+      data-surface={theme.surface ?? "system"}
+      data-title-scale="compact"
+      data-alignment="start"
+      data-media={theme.media ?? "full"}
+      style={style}
+    >
+      <NodeRenderer
+        node={template.collection.item}
+        path="collection.item"
+        document={document}
+        metadata={metadata}
+        slots={slots}
+      />
     </article>
   );
 }

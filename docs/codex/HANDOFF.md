@@ -1,6 +1,6 @@
 # Texttext continuation handoff
 
-Updated 2026-07-23. This is the only current continuation document.
+Updated 2026-07-26. This is the only current continuation document.
 
 ## Start here
 
@@ -27,6 +27,10 @@ models.
 The implemented rebuild includes:
 
 - Strict schema-versioned `DocumentSnapshot` content and presentation data
+- One item-first creation surface for notes, links, drafts, and pasted content
+- One collection renderer with List, One column, and Cards views for every folder
+- Immediate local creation with title, body, and selected look preserved while
+  server persistence and capture continue in the background
 - Closed render primitives with type-compatible content bindings
 - Immutable built-in and workspace template versions
 - Constrained AI template operations shared by UI, native assistant, and MCP
@@ -40,6 +44,9 @@ The implemented rebuild includes:
   package-local assets
 - Raw Markdown compatibility for older clients
 - App-owned engine and native projection health evaluations
+- Request-scoped on-device assistant tools so an item command edits the active
+  item instead of accidentally creating a second one
+- Retryable sync polling failures with bounded backoff instead of raw 500 errors
 
 The bespoke Reader, ProjectReader, TalkReader, body editor, edit layer, and
 editor preview route were removed. Do not reintroduce them.
@@ -66,6 +73,12 @@ editor preview route were removed. Do not reintroduce them.
   future transport work only if measurements justify it.
 - The UI, in-app assistant, and MCP consume one workspace command contract. The
   app never calls its own MCP endpoint.
+- The creation surface accepts plain text, Markdown, or a URL. A URL selects the
+  bookmark look automatically. The first nonempty line becomes the initial title
+  and the full pasted text remains the document body.
+- Article, note, bookmark, gallery, and talk choices in the creation surface are
+  looks for the same canonical item. Do not add folder-specific creation forms or
+  duplicate folder renderers.
 - Never reintroduce `Response.redirect()` in the OAuth approval route.
 - Use no em dashes in code, documentation, or product copy.
 

@@ -13,6 +13,7 @@ import {
   renderSyncFolderManifest,
   renderSyncDocumentFile,
   renderSyncFile,
+  syncChangePollUnavailable,
   syncError,
   syncDatabaseUnavailable,
   syncFilePath,
@@ -175,6 +176,27 @@ describe("syncDatabaseUnavailable", () => {
 
   it("does not hide an unrelated programming error", () => {
     expect(syncDatabaseUnavailable(new TypeError("bad code"))).toBeNull();
+  });
+});
+
+describe("syncChangePollUnavailable", () => {
+  it("keeps an unknown long-poll failure on the retry path", async () => {
+    const response = syncChangePollUnavailable(new TypeError("bad code"));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("30");
+    await expect(response.json()).resolves.toEqual({
+      error: "Sync is temporarily unavailable",
+    });
+  });
+
+  it("preserves the longer backoff for a known database outage", () => {
+    const response = syncChangePollUnavailable(
+      Object.assign(new Error("quota"), { status: 402 }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("300");
   });
 });
 

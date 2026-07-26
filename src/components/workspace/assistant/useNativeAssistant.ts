@@ -31,6 +31,7 @@ import {
   type NativeAICapabilities,
 } from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
+import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import {
   cloudAssistantStatus,
   type CloudAssistantProviderLabel,
@@ -653,6 +654,44 @@ export function useNativeAssistant({
             context,
             instructions,
             tools: tools.toolNamesForView(submittedView, prepared.prompt),
+            toolExecutor: async (name, args, requestTag) => {
+              if (
+                name !== "create_item" ||
+                !submittedView.postId ||
+                (submittedView.level !== "post" &&
+                  submittedView.level !== "edit")
+              ) {
+                return tools.executor(name, args, requestTag);
+              }
+              const markdown =
+                typeof args.markdown === "string" ? args.markdown : "";
+              const parsed = markdown ? parsePostMarkdownFile(markdown) : null;
+              const title =
+                typeof args.title === "string"
+                  ? args.title
+                  : parsed?.fields.title;
+              const body =
+                typeof args.body === "string" ? args.body : parsed?.body;
+              const excerpt =
+                typeof args.excerpt === "string" || args.excerpt === null
+                  ? args.excerpt
+                  : parsed?.fields.excerpt;
+              if (!title && !body && excerpt === undefined) {
+                throw new Error(
+                  "The assistant did not return an edit. Try the request again.",
+                );
+              }
+              return tools.executor(
+                "update_item",
+                {
+                  id: submittedView.postId,
+                  ...(title ? { title } : {}),
+                  ...(body !== undefined ? { body } : {}),
+                  ...(excerpt !== undefined ? { excerpt } : {}),
+                },
+                requestTag,
+              );
+            },
             onEvent: (event) => {
               if (event.type === "tool") {
                 const activity =
