@@ -58,11 +58,11 @@ describe("batch 4 workspace UI contract", () => {
     expect(shellSource).toContain("<ReaderFindHighlights query={findQuery}");
   });
 
-  it("names the image-led grid Cards and reuses PostCard for expanded notes", () => {
+  it("names the image-led grid Cards and uses the shared document collection renderer", () => {
     expect(viewModeSource).toContain('grid: "Cards"');
+    expect(folderSource).toContain("<DocumentCollectionRenderer");
     expect(folderSource).toContain(
-      'variant={viewMode === "column" ? "expanded" : "card"}',
+      "className={`universal-item-collection is-${viewMode}`}",
     );
-    expect(folderSource).toContain('viewMode !== "list"');
   });
 });
