@@ -157,6 +157,18 @@ const TOOL_PROGRESS_LABELS: Record<string, string> = {
 
 const MODEL_READINESS_POLL_MS = 10_000;
 
+function assistantAgentError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (
+    /Pass either markdown or a title|invalid_type|too_small|unrecognized_keys/i.test(
+      message,
+    )
+  ) {
+    return "The assistant chose an action that did not fit this item. Try the request again.";
+  }
+  return message.trim() || "The assistant could not finish that.";
+}
+
 function sameNativeCapabilities(
   left: NativeAICapabilities | null,
   right: NativeAICapabilities,
@@ -638,7 +650,7 @@ export function useNativeAssistant({
           nativeAgent(prepared.prompt, {
             context,
             instructions,
-            tools: tools.toolNames,
+            tools: tools.toolNamesForView(submittedView),
             onEvent: (event) => {
               if (event.type === "tool") {
                 const activity =
@@ -672,9 +684,7 @@ export function useNativeAssistant({
         appendToThread(
           thread,
           "error",
-          error instanceof Error && error.message
-            ? error.message
-            : "The assistant could not finish that.",
+          assistantAgentError(error),
         );
         updateAssistantJob(jobId, { status: "error" });
       } finally {

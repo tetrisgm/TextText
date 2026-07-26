@@ -59,6 +59,46 @@ export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map(
   },
 );
 
+type WorkspaceAgentView = {
+  level?: string;
+  folderPath?: string;
+  postId?: string;
+};
+
+const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
+  "get_workspace",
+  "read_item",
+  "search",
+  "list_comments",
+  "list_access",
+  "list_document_templates",
+  "customize_document_template",
+  "set_item_template",
+  "update_item",
+  "append_to_item",
+  "set_item_status",
+  "move_item",
+  "delete_item",
+  "add_item_asset",
+  "remove_item_asset",
+  "recapture_bookmark",
+  "add_comment",
+  "set_comment_resolved",
+  "set_access",
+  "revoke_access",
+]);
+
+export function workspaceAgentToolNamesForView(
+  view?: WorkspaceAgentView,
+): WorkspaceToolName[] {
+  if (view?.postId && (view.level === "post" || view.level === "edit")) {
+    return WORKSPACE_TOOL_NAMES.filter((name) =>
+      ITEM_AGENT_TOOL_NAMES.has(name),
+    );
+  }
+  return [...WORKSPACE_TOOL_NAMES];
+}
+
 type ToolArgs = Record<string, unknown>;
 
 export type WorkspaceAgentToolsOptions = {
@@ -200,12 +240,9 @@ export function createWorkspaceAgentTools(
 ): {
   executor: NativeAgentToolExecutor;
   toolNames: WorkspaceToolName[];
+  toolNamesForView: (view?: WorkspaceAgentView) => WorkspaceToolName[];
   toolDefinitions: typeof WORKSPACE_AGENT_TOOL_DEFINITIONS;
-  describeContext: (view?: {
-    level?: string;
-    folderPath?: string;
-    postId?: string;
-  }) => string;
+  describeContext: (view?: WorkspaceAgentView) => string;
 } {
   const {
     handle,
@@ -933,6 +970,7 @@ export function createWorkspaceAgentTools(
   return {
     executor,
     toolNames: [...WORKSPACE_TOOL_NAMES],
+    toolNamesForView: workspaceAgentToolNamesForView,
     toolDefinitions: WORKSPACE_AGENT_TOOL_DEFINITIONS,
     describeContext: (view) => {
       if (!view || view.level === "root" || !view.level) {
@@ -951,7 +989,7 @@ export function createWorkspaceAgentTools(
       const title = post?.title || "Untitled";
       return `The user has the item "${title}" (id ${view.postId}) open in ${
         view.level === "edit" ? "the editor" : "the reader"
-      }.`;
+      }. This is the active item. Requests using "this", "it", "the title", or "add a section" modify this item. Do not create another item unless the user explicitly asks for a separate new item.`;
     },
   };
 }

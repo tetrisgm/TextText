@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WORKSPACE_AGENT_TOOL_DEFINITIONS,
   createWorkspaceAgentTools,
+  workspaceAgentToolNamesForView,
 } from "@/lib/ai/agent-tools";
 import { WORKSPACE_TOOL_NAMES } from "@/lib/ai/tools";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
@@ -117,6 +118,34 @@ describe("native workspace tool adapter", () => {
         itemAssets: true,
       },
     });
+  });
+
+  it("keeps creation at folder level and limits an open item to item actions", () => {
+    expect(workspaceAgentToolNamesForView({ level: "section" })).toContain(
+      "create_item",
+    );
+    const itemTools = workspaceAgentToolNamesForView({
+      level: "post",
+      folderPath: "blog",
+      postId: "post-1",
+    });
+    expect(itemTools).toContain("read_item");
+    expect(itemTools).toContain("update_item");
+    expect(itemTools).toContain("append_to_item");
+    expect(itemTools).not.toContain("create_item");
+    expect(itemTools).not.toContain("create_folder");
+    expect(itemTools).not.toContain("delete_folder");
+  });
+
+  it("describes references to the open item as edits, not creation", () => {
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+    });
+
+    expect(
+      tools.describeContext({ level: "post", postId: "post-1" }),
+    ).toContain('"add a section" modify this item');
   });
 
   it("normalizes the current native bridge's folder alias before validation", async () => {
