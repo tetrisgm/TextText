@@ -14,6 +14,7 @@ import {
   renderSyncDocumentFile,
   renderSyncFile,
   syncError,
+  syncDatabaseUnavailable,
   syncFilePath,
   syncFileUrl,
   syncManifestItem,
@@ -153,6 +154,27 @@ describe("syncError", () => {
     expect(response.status).toBe(412);
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(await response.json()).toEqual({ error: "conflict" });
+  });
+});
+
+describe("syncDatabaseUnavailable", () => {
+  it("returns a retryable 503 for a Neon quota outage", async () => {
+    const response = syncDatabaseUnavailable(
+      Object.assign(new Error("Your project has exceeded the data transfer quota"), {
+        status: 402,
+        retryable: true,
+      }),
+    );
+
+    expect(response?.status).toBe(503);
+    expect(response?.headers.get("retry-after")).toBe("300");
+    await expect(response?.json()).resolves.toEqual({
+      error: "Sync is temporarily unavailable",
+    });
+  });
+
+  it("does not hide an unrelated programming error", () => {
+    expect(syncDatabaseUnavailable(new TypeError("bad code"))).toBeNull();
   });
 });
 

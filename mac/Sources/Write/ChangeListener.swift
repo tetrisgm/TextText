@@ -30,6 +30,33 @@ struct ChangeListenerBackoff {
     }
 }
 
+struct ChangeListenerRetryPolicy {
+    static let maximumServerDelay: TimeInterval = 15 * 60
+
+    static func serverDelay(
+        response: HTTPURLResponse?,
+        now: Date = Date()
+    ) -> TimeInterval? {
+        guard let response, response.statusCode == 429 || response.statusCode == 503 else {
+            return nil
+        }
+        guard let value = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        if let seconds = TimeInterval(value), seconds >= 0 {
+            return min(seconds, maximumServerDelay)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss z"
+        guard let date = formatter.date(from: value) else { return nil }
+        return min(max(date.timeIntervalSince(now), 0), maximumServerDelay)
+    }
+}
+
 /// Near-instant remote sync: long-polls GET /api/sync/v1/changes and fires
 /// `onRemoteChange` whenever the workspace's change cursor moves, so a post
 /// deleted or edited on the web reaches this Mac within a couple of seconds
@@ -56,6 +83,7 @@ final class ChangeListener {
     private var pathMonitor: NWPathMonitor?
     private var pathWasSatisfied: Bool?
     private var backoff = ChangeListenerBackoff()
+    private var serverRetryNotBefore: Date?
 
     /// Missing credentials are not a network failure. Keep probing at a fixed
     /// interval so a newly linked app starts polling promptly.
@@ -154,6 +182,14 @@ final class ChangeListener {
     // except the network wait itself and the main-queue callback.
     private func cycle(generation: UInt64) {
         guard running, generation == self.generation, activeTask == nil else { return }
+        if let retryAt = serverRetryNotBefore {
+            let remaining = retryAt.timeIntervalSinceNow
+            if remaining > 0 {
+                schedule(after: remaining, generation: generation)
+                return
+            }
+            serverRetryNotBefore = nil
+        }
         guard let credentials = store.loadCredentials() else {
             backoff.reset()
             schedule(after: unlinkedRetrySeconds, generation: generation)
@@ -197,10 +233,11 @@ final class ChangeListener {
               http.statusCode == 200,
               let data,
               let body = try? JSONDecoder().decode(ChangesResponse.self, from: data) else {
-            scheduleAfterFailure(generation: generation)
+            scheduleAfterFailure(response: response as? HTTPURLResponse, generation: generation)
             return
         }
 
+        serverRetryNotBefore = nil
         backoff.reset()
         // First cycle only records the baseline; a move after that is a real
         // remote change.
@@ -210,7 +247,15 @@ final class ChangeListener {
         schedule(after: 0, generation: generation)
     }
 
-    private func scheduleAfterFailure(generation: UInt64) {
+    private func scheduleAfterFailure(
+        response: HTTPURLResponse? = nil,
+        generation: UInt64
+    ) {
+        if let delay = ChangeListenerRetryPolicy.serverDelay(response: response) {
+            serverRetryNotBefore = Date().addingTimeInterval(delay)
+            schedule(after: delay, generation: generation)
+            return
+        }
         let delay = backoff.nextDelay(randomUnitInterval: Double.random(in: 0...1))
         schedule(after: delay, generation: generation)
     }

@@ -42,3 +42,40 @@ final class ChangeListenerBackoffTests: XCTestCase {
         }
     }
 }
+
+final class ChangeListenerRetryPolicyTests: XCTestCase {
+    func testHonorsRetryAfterSecondsForServiceUnavailable() throws {
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "https://texttext.app/api/sync/v1/changes")!,
+            statusCode: 503,
+            httpVersion: nil,
+            headerFields: ["Retry-After": "300"]
+        ))
+
+        XCTAssertEqual(
+            ChangeListenerRetryPolicy.serverDelay(response: response),
+            300
+        )
+    }
+
+    func testCapsServerRetryAndIgnoresUnrelatedResponses() throws {
+        let unavailable = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "https://texttext.app/api/sync/v1/changes")!,
+            statusCode: 503,
+            httpVersion: nil,
+            headerFields: ["Retry-After": "99999"]
+        ))
+        let unauthorized = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "https://texttext.app/api/sync/v1/changes")!,
+            statusCode: 401,
+            httpVersion: nil,
+            headerFields: ["Retry-After": "300"]
+        ))
+
+        XCTAssertEqual(
+            ChangeListenerRetryPolicy.serverDelay(response: unavailable),
+            ChangeListenerRetryPolicy.maximumServerDelay
+        )
+        XCTAssertNil(ChangeListenerRetryPolicy.serverDelay(response: unauthorized))
+    }
+}

@@ -13,6 +13,7 @@
 
 import { workspaceChangeCursor } from "@/lib/sync-cursor";
 import { resolveSyncWorkspace } from "../auth";
+import { syncDatabaseUnavailable } from "../sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,30 +28,36 @@ const POLL_MAX_INTERVAL_MS = 5000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function GET(request: Request) {
-  const workspace = await resolveSyncWorkspace(request);
-  if (workspace instanceof Response) return workspace;
-  const { blog } = workspace;
+  try {
+    const workspace = await resolveSyncWorkspace(request);
+    if (workspace instanceof Response) return workspace;
+    const { blog } = workspace;
 
-  const url = new URL(request.url);
-  const since = url.searchParams.get("cursor");
-  const wait = Math.min(
-    Math.max(Number(url.searchParams.get("wait")) || 0, 0),
-    MAX_WAIT_SECONDS,
-  );
+    const url = new URL(request.url);
+    const since = url.searchParams.get("cursor");
+    const wait = Math.min(
+      Math.max(Number(url.searchParams.get("wait")) || 0, 0),
+      MAX_WAIT_SECONDS,
+    );
 
-  let cursor = await workspaceChangeCursor(blog.handle);
-  if (!since || wait === 0) {
-    return Response.json({ cursor, changed: since ? cursor !== since : false });
+    let cursor = await workspaceChangeCursor(blog.handle);
+    if (!since || wait === 0) {
+      return Response.json({ cursor, changed: since ? cursor !== since : false });
+    }
+
+    const deadline = Date.now() + wait * 1000;
+    let interval = POLL_INTERVAL_MS;
+    while (cursor === since && Date.now() < deadline) {
+      // Stop burning cycles for a client that already went away.
+      if (request.signal?.aborted) break;
+      await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
+      cursor = await workspaceChangeCursor(blog.handle);
+      interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
+    }
+    return Response.json({ cursor, changed: cursor !== since });
+  } catch (error) {
+    const unavailable = syncDatabaseUnavailable(error);
+    if (unavailable) return unavailable;
+    throw error;
   }
-
-  const deadline = Date.now() + wait * 1000;
-  let interval = POLL_INTERVAL_MS;
-  while (cursor === since && Date.now() < deadline) {
-    // Stop burning cycles for a client that already went away.
-    if (request.signal?.aborted) break;
-    await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
-    cursor = await workspaceChangeCursor(blog.handle);
-    interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
-  }
-  return Response.json({ cursor, changed: cursor !== since });
 }

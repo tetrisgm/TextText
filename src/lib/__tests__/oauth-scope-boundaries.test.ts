@@ -121,4 +121,23 @@ describe("OAuth scope boundaries", () => {
     expect((result as Response).status).toBe(403);
     expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
   });
+
+  it("turns a retryable database outage into a 503", async () => {
+    mocks.resolveApiToken.mockRejectedValue(
+      Object.assign(new Error("data transfer quota exceeded"), {
+        status: 402,
+        retryable: true,
+      }),
+    );
+
+    const result = await resolveSyncWorkspace(
+      new Request("https://write.example/api/sync/v1/changes", {
+        headers: { Authorization: `Bearer wsk_${"a".repeat(43)}` },
+      }),
+    );
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(503);
+    expect((result as Response).headers.get("retry-after")).toBe("300");
+  });
 });

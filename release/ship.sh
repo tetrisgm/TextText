@@ -217,6 +217,17 @@ export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-write-${DEPLOYMENT_VERSION}-${E
 echo "   web deployment identity: $NEXT_DEPLOYMENT_ID"
 
 if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
+  echo ">> align Vercel runtime database"
+  # Production migrations and the deployed app must use the same database.
+  # Feed the secret over stdin so it never appears in process arguments or logs.
+  [ -n "${DATABASE_URL:-}" ] || {
+    echo "Release DATABASE_URL is missing before the Vercel deployment." >&2
+    exit 1
+  }
+  npx tsx "$ROOT/scripts/work-unit.ts" run \
+    --name web.production_database --timeout 300 --no-reuse -- \
+    node "$ROOT/scripts/sync-vercel-runtime-env.mjs"
+
   echo ">> deploy public web app"
   # A linked Vercel project can turn `vercel --prod` into a Git deployment,
   # which clones HEAD and silently omits the release marker generated above.

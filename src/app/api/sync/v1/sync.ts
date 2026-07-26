@@ -54,8 +54,47 @@ export function parseSyncFileRepresentation(
 }
 
 /** Every sync API error is a JSON {error} with the right status. */
-export function syncError(status: number, error: string): Response {
-  return Response.json({ error }, { status });
+export function syncError(
+  status: number,
+  error: string,
+  headers?: HeadersInit,
+): Response {
+  return Response.json({ error }, { status, headers });
+}
+
+const TRANSIENT_DATABASE_MESSAGE =
+  /data transfer quota|temporarily unavailable|connection (?:refused|terminated)|fetch failed/i;
+
+/**
+ * Turn a retryable database outage into a stable sync response without leaking
+ * driver details. Unknown failures stay exceptional so programming errors are
+ * still visible instead of being mislabeled as infrastructure trouble.
+ */
+export function syncDatabaseUnavailable(error: unknown): Response | null {
+  const candidate =
+    typeof error === "object" && error !== null
+      ? (error as {
+          status?: unknown;
+          statusCode?: unknown;
+          retryable?: unknown;
+          message?: unknown;
+        })
+      : null;
+  const status = Number(candidate?.status ?? candidate?.statusCode);
+  const message =
+    typeof candidate?.message === "string" ? candidate.message : String(error);
+  const retryable =
+    candidate?.retryable === true ||
+    status === 402 ||
+    status === 429 ||
+    status >= 500 ||
+    TRANSIENT_DATABASE_MESSAGE.test(message);
+
+  if (!retryable) return null;
+  return syncError(503, "Sync is temporarily unavailable", {
+    "Cache-Control": "no-store",
+    "Retry-After": "300",
+  });
 }
 
 // The savePost failures a client can fix by editing its file (message strings

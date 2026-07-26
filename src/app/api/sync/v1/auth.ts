@@ -5,7 +5,7 @@
 import { resolveApiToken, type ApiTokenIdentity } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
 import { getOwnedBlog } from "@/lib/store";
-import { syncError } from "./sync";
+import { syncDatabaseUnavailable, syncError } from "./sync";
 
 export type SyncWorkspace = ApiTokenIdentity & { blog: Blog };
 
@@ -17,7 +17,14 @@ export type SyncWorkspace = ApiTokenIdentity & { blog: Blog };
 export async function resolveSyncWorkspace(
   request: Request,
 ): Promise<SyncWorkspace | Response> {
-  const identity = await resolveApiToken(request.headers.get("authorization"));
+  let identity: ApiTokenIdentity | null;
+  try {
+    identity = await resolveApiToken(request.headers.get("authorization"));
+  } catch (error) {
+    const unavailable = syncDatabaseUnavailable(error);
+    if (unavailable) return unavailable;
+    throw error;
+  }
   if (!identity) {
     return Response.json(
       { error: "A valid API token is required" },
@@ -27,7 +34,14 @@ export async function resolveSyncWorkspace(
   if (!identity.scopes.split(/\s+/).includes("sync")) {
     return syncError(403, "This token does not have the sync scope");
   }
-  const blog = await getOwnedBlog(identity.sub);
+  let blog: Blog | null;
+  try {
+    blog = await getOwnedBlog(identity.sub);
+  } catch (error) {
+    const unavailable = syncDatabaseUnavailable(error);
+    if (unavailable) return unavailable;
+    throw error;
+  }
   if (!blog) return syncError(404, "No blog exists for this token's user");
   return { ...identity, blog };
 }
