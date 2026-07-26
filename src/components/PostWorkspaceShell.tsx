@@ -2960,6 +2960,7 @@ function TrashPage({
   const permanentlyDelete = useCallback(() => {
     if (!deleteTarget || busyId) return;
     const target = deleteTarget;
+    setDeleteTarget(null);
     setBusyId(target.id);
     setError(null);
     if (target.kind === "post") removeTrashedPost(target.id);
@@ -2969,7 +2970,6 @@ function TrashPage({
         ? permanentlyDeleteEditablePostAction(handle, target.id)
         : permanentlyDeleteFolderAction(handle, target.id);
     void request
-      .then(() => setDeleteTarget(null))
       .catch((deleteError) => {
         setError(
           workspaceActionErrorMessage(
@@ -2986,10 +2986,10 @@ function TrashPage({
 
   const emptyAll = useCallback(() => {
     if (busyId) return;
+    setEmptyTrashOpen(false);
     setBusyId("empty-trash");
     setError(null);
     void emptyTrashAction(handle)
-      .then(() => setEmptyTrashOpen(false))
       .catch((emptyError) => {
         setError(
           workspaceActionErrorMessage(emptyError, "Could not empty Trash"),
@@ -3106,7 +3106,6 @@ function TrashPage({
         message="This cannot be undone."
         confirmLabel="Delete permanently"
         confirmingLabel="Deleting"
-        confirming={Boolean(deleteTarget && busyId === deleteTarget.id)}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={permanentlyDelete}
       />
@@ -3116,7 +3115,6 @@ function TrashPage({
         message={`This permanently deletes ${trashedCount === 1 ? "1 item" : `${trashedCount} items`}. This cannot be undone.`}
         confirmLabel="Empty Trash"
         confirmingLabel="Emptying"
-        confirming={busyId === "empty-trash"}
         onCancel={() => setEmptyTrashOpen(false)}
         onConfirm={emptyAll}
       />
@@ -3242,9 +3240,10 @@ function WorkspaceSelectionToolbar({
   };
   const confirmDelete = () => {
     if (busy) return;
+    setDeleteOpen(false);
     setBusy(true);
     void Promise.resolve(onDelete())
-      .then(() => setDeleteOpen(false))
+      .catch((error) => console.warn("workspace selection delete failed", error))
       .finally(() => setBusy(false));
   };
 
@@ -3306,8 +3305,6 @@ function WorkspaceSelectionToolbar({
         title={`Move ${posts.length} items to Trash?`}
         message="You can restore them later from Trash."
         confirmLabel="Move to Trash"
-        confirmingLabel="Moving"
-        confirming={busy}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={confirmDelete}
       />
@@ -4060,7 +4057,6 @@ function LocalWorkspaceShell({
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const [editFolderRequestKey, setEditFolderRequestKey] = useState(0);
   const [pendingDeletePostIds, setPendingDeletePostIds] = useState<string[]>([]);
-  const [deletingTarget, setDeletingTarget] = useState(false);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences();
   useSyncExternalStore(
@@ -5075,20 +5071,17 @@ function LocalWorkspaceShell({
     [selectedPostId],
   );
   const confirmDeleteTarget = useCallback(() => {
-    if (pendingDeletePostIds.length === 0 || deletingTarget) return;
+    if (pendingDeletePostIds.length === 0) return;
     const posts = pendingDeletePostIds
       .map((postId) => findPoolPostById(displayPoolRef.current, postId))
       .filter((post): post is WorkspacePoolPost => Boolean(post));
+    setPendingDeletePostIds([]);
     if (posts.length === 0) {
-      setPendingDeletePostIds([]);
       return;
     }
-    setDeletingTarget(true);
     void deleteWorkspaceItems(posts)
-      .then(() => setPendingDeletePostIds([]))
-      .catch((error) => console.warn("workspace item delete failed", error))
-      .finally(() => setDeletingTarget(false));
-  }, [deleteWorkspaceItems, deletingTarget, pendingDeletePostIds]);
+      .catch((error) => console.warn("workspace item delete failed", error));
+  }, [deleteWorkspaceItems, pendingDeletePostIds]);
   const effectiveSelectedSectionPath = validRootSectionPath(
     displayPool,
     selectedSectionPath,
@@ -6468,8 +6461,6 @@ function LocalWorkspaceShell({
             : "You can restore it later from Trash."
         }
         confirmLabel="Move to Trash"
-        confirmingLabel="Moving"
-        confirming={deletingTarget}
         onCancel={() => setPendingDeletePostIds([])}
         onConfirm={confirmDeleteTarget}
       />

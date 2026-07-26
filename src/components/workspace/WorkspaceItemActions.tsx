@@ -241,18 +241,15 @@ export function WorkspaceItemActions({
 
   const confirmDelete = () => {
     if (!post.id || busy) return;
+    setDeleteOpen(false);
+    setOpen(false);
     setBusy(true);
     const request = onDeletePost
       ? Promise.resolve(onDeletePost(post))
       : deleteEditablePostAction(handle, post.id).then(() => router.refresh());
     void request
-      .then(() => {
-        setDeleteOpen(false);
-        setOpen(false);
-      })
       .catch((actionError) => {
         setError(actionErrorMessage(actionError, "Could not move to Trash"));
-        setDeleteOpen(false);
         setOpen(true);
       })
       .finally(() => setBusy(false));
@@ -332,8 +329,6 @@ export function WorkspaceItemActions({
         title={`Move ${itemTitle(post)} to Trash?`}
         message="You can restore it later from Trash."
         confirmLabel="Move to Trash"
-        confirmingLabel="Moving"
-        confirming={busy}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={confirmDelete}
       />

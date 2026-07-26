@@ -334,15 +334,14 @@ function FolderActionBar({
 
   const confirmDelete = useCallback(() => {
     if (!onDeleteFolder || deleting) return;
+    setDeleteOpen(false);
     setDeleting(true);
     setError(null);
     void Promise.resolve(onDeleteFolder(folder))
-      .then(() => setDeleteOpen(false))
       .catch((deleteError) => {
         setError(
           actionErrorMessage(deleteError, "Could not move folder to Trash"),
         );
-        setDeleteOpen(false);
         setMenuOpen(true);
       })
       .finally(() => setDeleting(false));
@@ -461,8 +460,6 @@ function FolderActionBar({
         title={`Move ${folder.name} to Trash?`}
         message="The folder and everything in it can be restored later."
         confirmLabel="Move to Trash"
-        confirmingLabel="Moving"
-        confirming={deleting}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={confirmDelete}
       />

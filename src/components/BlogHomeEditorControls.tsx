@@ -388,22 +388,20 @@ function BlogFolderMenu({ handle }: { handle: string }) {
 
   const trashFolder = useCallback(() => {
     if (pending) return;
+    setTrashDialogOpen(false);
     setPending("trash");
     startTransition(() => {
       void trashEditableBlogAction(handle)
         .then((result) => {
           if (!result.ok) {
-            setTrashDialogOpen(false);
             setOpen(true);
             setError(result.error);
             return;
           }
           setOpen(false);
-          setTrashDialogOpen(false);
           navigateAfterAction(result.path, { openSidebar: result.openSidebar });
         })
         .catch(() => {
-          setTrashDialogOpen(false);
           setOpen(true);
           setError("Could not move folder to Trash");
         })
@@ -451,8 +449,6 @@ function BlogFolderMenu({ handle }: { handle: string }) {
         title="Move folder to Trash?"
         message="This moves every post in this folder to Trash."
         confirmLabel="Move to Trash"
-        confirmingLabel="Moving"
-        confirming={pending === "trash"}
         onCancel={() => setTrashDialogOpen(false)}
         onConfirm={trashFolder}
       />
