@@ -68,6 +68,7 @@ async function stopServer() {
 
 async function waitForServer() {
   const deadline = Date.now() + 120_000;
+  const readinessPaths = ["/signin", "/api/sync/v1/files"];
   while (Date.now() < deadline) {
     if (server?.exitCode !== null) {
       throw new Error(
@@ -75,11 +76,21 @@ async function waitForServer() {
       );
     }
     try {
-      const response = await fetch(`${origin}/signin`, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(2_000),
-      });
-      if (response.status >= 200 && response.status < 500) return;
+      const responses = await Promise.all(
+        readinessPaths.map((path) =>
+          fetch(`${origin}${path}`, {
+            redirect: "manual",
+            signal: AbortSignal.timeout(5_000),
+          }),
+        ),
+      );
+      const ready = responses.every(
+        (response) => response.status !== 404 && response.status < 500,
+      );
+      await Promise.all(
+        responses.map((response) => response.body?.cancel()),
+      );
+      if (ready) return;
     } catch {
       // Startup connection failures are expected until Next is listening.
     }
