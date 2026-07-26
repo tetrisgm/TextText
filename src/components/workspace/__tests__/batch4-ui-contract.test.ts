@@ -65,4 +65,11 @@ describe("batch 4 workspace UI contract", () => {
       "className={`universal-item-collection is-${viewMode}`}",
     );
   });
+
+  it("uses the same universal item composer on Home and inside folders", () => {
+    expect(folderSource).toContain("export function UniversalItemComposer");
+    expect(shellSource).toContain("<UniversalItemComposer");
+    expect(shellSource).toContain('aria-label="Choose a folder"');
+    expect(shellSource).toContain("onCreateItem={onCreateItem}");
+  });
 });

@@ -618,38 +618,16 @@ function FolderTitleEditor({
   );
 }
 
-function UniversalFolderContents({
+export function UniversalItemComposer({
   blog,
   folder,
   handle,
-  items,
-  canCreateItems,
-  canEditItems,
   onCreateItem,
-  onDeleteItem,
-  onItemClick,
-  onOpenPost,
-  onOpenTag,
-  onSelectPost,
-  selectedPostId,
-  selectedPostIds,
-  viewMode,
 }: {
   blog: Blog;
   folder: Folder;
   handle: string;
-  items: Post[];
-  canCreateItems: boolean;
-  canEditItems: boolean;
   onCreateItem?: FolderCreateItem;
-  onDeleteItem?: FolderDeleteItem;
-  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
-  onOpenPost?: (post: Post) => void;
-  onOpenTag?: (tag: string) => void;
-  onSelectPost?: (postId: string) => void;
-  selectedPostId?: string | null;
-  selectedPostIds?: ReadonlySet<string>;
-  viewMode: FolderViewMode;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -768,6 +746,100 @@ function UniversalFolderContents({
     [blog, creating, folder.path, handle, onCreateItem, router, template],
   );
 
+  return (
+    <>
+      <form className="universal-item-composer" onSubmit={createItem}>
+        <textarea
+          ref={inputRef}
+          name="item"
+          className="universal-item-composer-input"
+          placeholder="Type a title, paste text, or paste a link"
+          aria-label="Create an item"
+          autoCapitalize="sentences"
+          autoCorrect="on"
+          rows={1}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              event.metaKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+        />
+        <label className="universal-item-template">
+          <span className="sr-only">Look</span>
+          <select
+            aria-label="Choose a look"
+            value={`${template.id}@${template.version}`}
+            onChange={(event) => {
+              const [id, rawVersion] = event.currentTarget.value.split("@");
+              setTemplate({ id, version: Number(rawVersion) || 1 });
+            }}
+          >
+            {BUILTIN_TEMPLATES.map((definition) => (
+              <option
+                key={`${definition.id}@${definition.version}`}
+                value={`${definition.id}@${definition.version}`}
+              >
+                {definition.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          className="ac-icon-btn universal-item-create"
+          aria-label="Create item"
+          disabled={creating}
+        >
+          <span aria-hidden="true">↑</span>
+        </button>
+      </form>
+      {error && (
+        <span className="post-folder-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+function UniversalFolderContents({
+  blog,
+  folder,
+  handle,
+  items,
+  canCreateItems,
+  canEditItems,
+  onCreateItem,
+  onDeleteItem,
+  onItemClick,
+  onOpenPost,
+  onOpenTag,
+  onSelectPost,
+  selectedPostId,
+  selectedPostIds,
+  viewMode,
+}: {
+  blog: Blog;
+  folder: Folder;
+  handle: string;
+  items: Post[];
+  canCreateItems: boolean;
+  canEditItems: boolean;
+  onCreateItem?: FolderCreateItem;
+  onDeleteItem?: FolderDeleteItem;
+  onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
+  onOpenPost?: (post: Post) => void;
+  onOpenTag?: (tag: string) => void;
+  onSelectPost?: (postId: string) => void;
+  selectedPostId?: string | null;
+  selectedPostIds?: ReadonlySet<string>;
+  viewMode: FolderViewMode;
+}) {
   const sorted = useMemo(
     () =>
       sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? ""),
@@ -777,61 +849,12 @@ function UniversalFolderContents({
   return (
     <>
       {canCreateItems && (
-        <form className="universal-item-composer" onSubmit={createItem}>
-          <textarea
-            ref={inputRef}
-            name="item"
-            className="universal-item-composer-input"
-            placeholder="Type a title, paste text, or paste a link"
-            aria-label="Create an item"
-            autoCapitalize="sentences"
-            autoCorrect="on"
-            rows={1}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                event.metaKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-          />
-          <label className="universal-item-template">
-            <span className="sr-only">Look</span>
-            <select
-              aria-label="Choose a look"
-              value={`${template.id}@${template.version}`}
-              onChange={(event) => {
-                const [id, rawVersion] = event.currentTarget.value.split("@");
-                setTemplate({ id, version: Number(rawVersion) || 1 });
-              }}
-            >
-              {BUILTIN_TEMPLATES.map((definition) => (
-                <option
-                  key={`${definition.id}@${definition.version}`}
-                  value={`${definition.id}@${definition.version}`}
-                >
-                  {definition.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="ac-icon-btn universal-item-create"
-            aria-label="Create item"
-            disabled={creating}
-          >
-            <span aria-hidden="true">↑</span>
-          </button>
-        </form>
-      )}
-      {error && (
-        <span className="post-folder-error" role="alert">
-          {error}
-        </span>
+        <UniversalItemComposer
+          blog={blog}
+          folder={folder}
+          handle={handle}
+          onCreateItem={onCreateItem}
+        />
       )}
       <section className="post-folder-page-items" aria-label="Folder items">
         {sorted.length === 0 ? (

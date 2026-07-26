@@ -45,6 +45,7 @@ import {
 } from "@/components/keyboard/CommandLayer";
 import {
   FolderPage,
+  UniversalItemComposer,
   type FolderCaptureResolved,
   type FolderCreateItem,
   type FolderDeleteItem,
@@ -2384,6 +2385,7 @@ function WorkspacePostOption({
 function WorkspaceRootLanding({
   canManageItems,
   focusRequestKey,
+  onCreateItem,
   onOpenPost,
   onOpenSection,
   onOpenTag,
@@ -2401,6 +2403,7 @@ function WorkspaceRootLanding({
 }: {
   canManageItems: boolean;
   focusRequestKey: number;
+  onCreateItem?: FolderCreateItem;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
   onOpenTag: (tag: string) => void;
@@ -2427,6 +2430,13 @@ function WorkspaceRootLanding({
     "recent",
     "list",
   );
+  const creationFolders = useMemo(() => rootSectionFolders(pool), [pool]);
+  const [creationFolderPath, setCreationFolderPath] = useState(
+    () => creationFolders[0]?.path ?? "",
+  );
+  const creationFolder =
+    creationFolders.find((folder) => folder.path === creationFolderPath) ??
+    creationFolders[0];
   const [openHistory, setOpenHistory] = useState<WorkspaceDocumentOpenHistory>(
     () =>
       readWorkspaceDocumentOpenHistory(
@@ -2484,6 +2494,16 @@ function WorkspaceRootLanding({
     () => sortSidebarDocuments(pool.posts, sort, openHistory).slice(0, 30),
     [openHistory, pool.posts, sort],
   );
+
+  useEffect(() => {
+    if (
+      creationFolderPath &&
+      creationFolders.some((folder) => folder.path === creationFolderPath)
+    ) {
+      return;
+    }
+    setCreationFolderPath(creationFolders[0]?.path ?? "");
+  }, [creationFolderPath, creationFolders]);
 
   useEffect(() => {
     const opened = (event: Event) => {
@@ -2778,6 +2798,35 @@ function WorkspaceRootLanding({
           </section>
         ) : (
           <>
+            {canManageItems && creationFolder ? (
+              <section
+                className="workspace-root-create"
+                aria-label="Create an item"
+              >
+                <label className="workspace-root-create-destination">
+                  <span>Save in</span>
+                  <select
+                    aria-label="Choose a folder"
+                    value={creationFolder.path}
+                    onChange={(event) =>
+                      setCreationFolderPath(event.currentTarget.value)
+                    }
+                  >
+                    {creationFolders.map((folder) => (
+                      <option key={folder.id} value={folder.path}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <UniversalItemComposer
+                  blog={pool.blog}
+                  folder={creationFolder}
+                  handle={pool.blog.handle}
+                  onCreateItem={onCreateItem}
+                />
+              </section>
+            ) : null}
             <section
               className={`workspace-recent is-view-${recentViewMode}`}
             >
@@ -3745,6 +3794,7 @@ function LocalWorkspaceContent({
     <WorkspaceRootLanding
       canManageItems={canManagePost}
       focusRequestKey={searchFocusRequestKey}
+      onCreateItem={onCreateItem}
       onOpenPost={onOpenPostId}
       onOpenSection={onOpenSection}
       onOpenTag={onOpenTag}

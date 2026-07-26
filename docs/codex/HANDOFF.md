@@ -27,7 +27,8 @@ models.
 The implemented rebuild includes:
 
 - Strict schema-versioned `DocumentSnapshot` content and presentation data
-- One item-first creation surface for notes, links, drafts, and pasted content
+- One item-first creation surface on Home and inside every folder for notes,
+  links, drafts, and pasted content
 - One collection renderer with List, One column, and Cards views for every folder
 - Immediate local creation with title, body, and selected look preserved while
   server persistence and capture continue in the background
@@ -73,9 +74,10 @@ editor preview route were removed. Do not reintroduce them.
   future transport work only if measurements justify it.
 - The UI, in-app assistant, and MCP consume one workspace command contract. The
   app never calls its own MCP endpoint.
-- The creation surface accepts plain text, Markdown, or a URL. A URL selects the
-  bookmark look automatically. The first nonempty line becomes the initial title
-  and the full pasted text remains the document body.
+- The same creation surface appears on Home and inside folders. It accepts plain
+  text, Markdown, or a URL. A URL selects the bookmark look automatically. The
+  first nonempty line becomes the initial title and the full pasted text remains
+  the document body.
 - Article, note, bookmark, gallery, and talk choices in the creation surface are
   looks for the same canonical item. Do not add folder-specific creation forms or
   duplicate folder renderers.
