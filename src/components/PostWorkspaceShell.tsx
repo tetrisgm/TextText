@@ -23,6 +23,7 @@ import {
   createSubfolderAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
+  deleteEditablePostsAction,
   emptyTrashAction,
   saveEditablePostAction,
   permanentlyDeleteEditablePostAction,
@@ -4996,11 +4997,77 @@ function LocalWorkspaceShell({
   );
 
   const deleteSelectedPosts = useCallback(async () => {
+    if (!canManageFolders || selectedPoolPosts.length === 0) return;
+    const currentPool = displayPoolRef.current;
+    const persistentPosts = selectedPoolPosts.filter(
+      (post) => !isOptimisticPostId(post.id),
+    );
+    const rollback = new Map<
+      string,
+      {
+        draft: DraftState | undefined;
+        draftRevision: number | undefined;
+        serverRevision: string | undefined;
+        pendingSave: boolean;
+      }
+    >();
+
     for (const post of selectedPoolPosts) {
-      await deleteWorkspaceItem(postFromPoolPost(post));
+      if (isOptimisticPostId(post.id)) {
+        void deletePersistedWorkspaceDraft(currentPool.blogId, post.id);
+        cancelledOptimisticPostIdsRef.current.add(post.id);
+        localWorkspacePendingSaveIds.delete(post.id);
+        localWorkspaceDraftSessions.delete(post.id);
+        localWorkspaceDraftRevisions.delete(post.id);
+        localWorkspaceServerRevisions.delete(post.id);
+        removePost(post.id);
+        continue;
+      }
+      rollback.set(post.id, {
+        draft: localWorkspaceDraftSessions.get(post.id),
+        draftRevision: localWorkspaceDraftRevisions.get(post.id),
+        serverRevision: localWorkspaceServerRevisions.get(post.id),
+        pendingSave: localWorkspacePendingSaveIds.has(post.id),
+      });
+      localWorkspacePendingSaveIds.delete(post.id);
+      localWorkspaceDraftSessions.delete(post.id);
+      localWorkspaceDraftRevisions.delete(post.id);
+      localWorkspaceServerRevisions.delete(post.id);
+      movePostToTrash(post.id);
     }
     clearPostSelection();
-  }, [clearPostSelection, deleteWorkspaceItem, selectedPoolPosts]);
+
+    if (persistentPosts.length === 0) return;
+    try {
+      await deleteEditablePostsAction(
+        currentPool.blog.handle,
+        persistentPosts.map((post) => post.id),
+      );
+      await Promise.all(
+        persistentPosts.map((post) =>
+          deletePersistedWorkspaceDraft(currentPool.blogId, post.id),
+        ),
+      );
+    } catch (error) {
+      for (const post of persistentPosts) {
+        const previous = rollback.get(post.id);
+        if (previous?.draft) {
+          localWorkspaceDraftSessions.set(post.id, previous.draft);
+        }
+        if (previous?.draftRevision !== undefined) {
+          localWorkspaceDraftRevisions.set(post.id, previous.draftRevision);
+        }
+        if (previous?.serverRevision !== undefined) {
+          localWorkspaceServerRevisions.set(post.id, previous.serverRevision);
+        }
+        if (previous?.pendingSave) {
+          localWorkspacePendingSaveIds.add(post.id);
+        }
+        restorePostFromTrash(post.id);
+      }
+      throw error;
+    }
+  }, [canManageFolders, clearPostSelection, selectedPoolPosts]);
   const effectiveSelectedSectionPath = validRootSectionPath(
     displayPool,
     selectedSectionPath,

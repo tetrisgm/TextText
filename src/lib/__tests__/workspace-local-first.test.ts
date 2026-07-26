@@ -13,6 +13,7 @@ vi.mock("@/lib/pool/storage", () => ({
 function pool(
   fetchedAt: string,
   posts: WorkspacePoolPayload["posts"],
+  trashedPosts: WorkspacePoolPayload["posts"] = [],
 ): WorkspacePoolPayload {
   return {
     version: 1,
@@ -28,7 +29,7 @@ function pool(
     },
     folders: [],
     posts,
-    trashedPosts: [],
+    trashedPosts,
     trashedFolders: [],
     counts: {},
     templates: [],
@@ -113,6 +114,22 @@ describe("workspace local authority", () => {
     store.seedWorkspacePool(
       pool("2026-07-10T10:01:00.000Z", [
         { ...original, updatedAt: "2026-07-10T10:01:00.000Z" },
+      ]),
+    );
+
+    expect(store.getWorkspacePost(original.id)).toBeNull();
+  });
+
+  it("does not let a stale response restore an item after trash was confirmed", async () => {
+    const store = await import("@/lib/pool/store");
+    const original = post();
+    store.seedWorkspacePool(pool("2026-07-10T10:00:00.000Z", [original]));
+    store.movePostToTrash(original.id);
+
+    store.seedWorkspacePool(pool("2026-07-10T10:01:00.000Z", [], [original]));
+    store.seedWorkspacePool(
+      pool("2026-07-10T10:02:00.000Z", [
+        { ...original, updatedAt: "2026-07-10T10:02:00.000Z" },
       ]),
     );
 

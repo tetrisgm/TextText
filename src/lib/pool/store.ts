@@ -156,9 +156,6 @@ function mergeIncomingPool(pool: WorkspacePoolPayload): WorkspacePoolPayload {
   const confirmedTrashedIds = new Set(
     (pool.trashedPosts ?? []).map((post) => post.id),
   );
-  for (const postId of confirmedTrashedIds) {
-    locallyTrashedPosts.delete(postKey(pool.blogId, postId));
-  }
   const incomingPosts = pool.posts.filter(
     (post) =>
       !confirmedTrashedIds.has(post.id) &&
@@ -644,6 +641,7 @@ export function restorePostFromTrash(postId: string): WorkspacePoolPost | null {
 export function removeTrashedPost(postId: string) {
   if (!state.pool) return;
   markPoolMutation();
+  locallyTrashedPosts.delete(postKey(state.pool.blogId, postId));
   setState({
     pool: {
       ...state.pool,
