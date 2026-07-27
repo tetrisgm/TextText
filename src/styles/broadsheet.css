@@ -3757,27 +3757,34 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .universal-item-collection.is-grid .universal-item-card,
 .workspace-recent.is-view-grid .workspace-item-option {
   transform:
-    translateY(0)
+    translate3d(0, 0, 0)
     rotateX(var(--card-rx))
     rotateY(var(--card-ry));
   transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform-origin: center center;
   box-shadow:
     0 2px 5px rgba(0, 0, 0, 0.1),
     0 14px 30px rgba(0, 0, 0, 0.17),
     inset 0 1px 0 color-mix(in srgb, var(--ink) 9%, transparent);
   transition:
-    transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
-    border-color 0.2s var(--ease),
+    transform 0.14s cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 0.12s var(--ease),
     background-color 0.16s var(--ease),
-    box-shadow 0.24s var(--ease);
+    box-shadow 0.12s var(--ease);
   will-change: transform;
 }
 .universal-item-collection.is-grid .universal-item-card.is-spatial-hover,
 .workspace-recent.is-view-grid .workspace-item-option.is-spatial-hover {
   z-index: 2;
   border-color: color-mix(in srgb, var(--ink) 24%, var(--hairline));
+  transition:
+    transform 0s,
+    border-color 0.12s var(--ease),
+    background-color 0.16s var(--ease),
+    box-shadow 0.12s var(--ease);
   transform:
-    translateY(-3px)
+    translate3d(0, -3px, 0)
     scale(1.018)
     rotateX(var(--card-rx))
     rotateY(var(--card-ry));

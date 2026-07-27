@@ -79,7 +79,7 @@ describe("batch 4 workspace UI contract", () => {
     );
     expect(broadsheetStyles).toContain("perspective: 1800px");
     expect(broadsheetStyles).toContain("rotateX(var(--card-rx))");
-    expect(broadsheetStyles).toContain("translateY(-3px)");
+    expect(broadsheetStyles).toContain("translate3d(0, -3px, 0)");
     expect(broadsheetStyles).toContain(
       ".workspace-recent.is-view-grid .workspace-item-option.is-spatial-hover",
     );
@@ -89,6 +89,9 @@ describe("batch 4 workspace UI contract", () => {
     expect(spatialCardSource).toContain(
       'card.classList.add("is-spatial-hover")',
     );
+    expect(spatialCardSource).toContain("requestAnimationFrame");
+    expect(spatialCardSource).toContain("new WeakMap");
+    expect(spatialCardSource).toContain("card.getBoundingClientRect()");
     expect(spatialCardSource).toContain('event.pointerType === "touch"');
     expect(spatialCardSource).not.toContain(
       'event.pointerType !== "mouse"',
