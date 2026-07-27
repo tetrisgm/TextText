@@ -2537,6 +2537,15 @@ function WorkspaceRootLanding({
         : sorted.filter((post) => post.type === itemFilter);
     return filtered.slice(0, 30);
   }, [itemFilter, openHistory, pool.posts, sort]);
+  const itemCounts = useMemo(
+    () => ({
+      all: pool.posts.length,
+      article: pool.posts.filter((post) => post.type === "article").length,
+      note: pool.posts.filter((post) => post.type === "note").length,
+      bookmark: pool.posts.filter((post) => post.type === "bookmark").length,
+    }),
+    [pool.posts],
+  );
 
   useEffect(() => {
     if (
@@ -2849,24 +2858,6 @@ function WorkspaceRootLanding({
                   {pool.posts.length === 1 ? "item" : "items"}
                 </p>
               </div>
-              <div className="workspace-library-controls">
-                <select
-                  value={sort}
-                  aria-label="Sort library items"
-                  onChange={(event) =>
-                    setSort(event.currentTarget.value as SidebarDocumentSort)
-                  }
-                >
-                  <option value="recent">Recently updated</option>
-                  <option value="alphabetical">Alphabetical</option>
-                  <option value="created">Date created</option>
-                  <option value="edited">Last edited</option>
-                </select>
-                <WorkspaceViewModeControl
-                  mode={recentViewMode}
-                  onChange={setRecentViewMode}
-                />
-              </div>
             </header>
             {canManageItems && creationFolder ? (
               <section
@@ -2902,7 +2893,7 @@ function WorkspaceRootLanding({
             <section
               className={`workspace-recent is-view-${recentViewMode}`}
             >
-              <header>
+              <header className="workspace-library-toolbar">
                 <div
                   className="workspace-library-filters"
                   role="group"
@@ -2922,9 +2913,28 @@ function WorkspaceRootLanding({
                       aria-pressed={itemFilter === value}
                       onClick={() => setItemFilter(value)}
                     >
-                      {label}
+                      <span>{label}</span>
+                      <small>{itemCounts[value]}</small>
                     </button>
                   ))}
+                </div>
+                <div className="workspace-library-controls">
+                  <select
+                    value={sort}
+                    aria-label="Sort library items"
+                    onChange={(event) =>
+                      setSort(event.currentTarget.value as SidebarDocumentSort)
+                    }
+                  >
+                    <option value="recent">Recently updated</option>
+                    <option value="alphabetical">Alphabetical</option>
+                    <option value="created">Date created</option>
+                    <option value="edited">Last edited</option>
+                  </select>
+                  <WorkspaceViewModeControl
+                    mode={recentViewMode}
+                    onChange={setRecentViewMode}
+                  />
                 </div>
               </header>
               {recent.length === 0 ? (

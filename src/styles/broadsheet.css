@@ -6721,12 +6721,12 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   gap: 18px;
 }
 .workspace-library-header {
-  min-height: 62px;
+  min-height: 54px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding-bottom: 14px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--hairline);
 }
 .workspace-library-header > div {
@@ -6756,7 +6756,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-root-create {
   display: block;
-  margin: 2px 0 12px;
+  margin: 0 0 4px;
 }
 .workspace-root-create-destination {
   display: block;
@@ -6769,12 +6769,14 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding: 0 7px;
 }
 .universal-item-composer {
-  width: min(100%, 1120px);
-  min-height: 46px;
+  width: 100%;
+  min-height: 48px;
   grid-template-columns: minmax(0, 1fr) auto 32px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   padding: 5px 7px 5px 14px;
   background: var(--bg);
+  border-color: color-mix(in srgb, var(--ink) 15%, var(--hairline));
+  box-shadow: 0 8px 24px -24px color-mix(in srgb, var(--ink) 70%, transparent);
 }
 .universal-item-composer:has(.universal-item-composer-leading) {
   grid-template-columns: auto 1px minmax(0, 1fr) auto 32px;
@@ -6796,7 +6798,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding-left: 0;
 }
 .workspace-recent.is-view-grid .workspace-recent-list {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   gap: 18px;
 }
 .workspace-recent:is(.is-view-column, .is-view-grid)
@@ -6858,7 +6860,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 
 .post-editor-nav-heading {
-  margin: 12px 10px 4px;
+  margin: 16px 10px 6px;
   color: var(--muted);
   font: 700 11px/1.2 var(--font-body);
   letter-spacing: 0;
@@ -6867,22 +6869,36 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin-top: 4px;
 }
 .post-editor-nav-heading.is-collections {
-  margin-top: 18px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
 }
 .workspace-library-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
 }
 .workspace-library-filters button {
   min-height: 30px;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
   background: transparent;
   color: var(--muted);
   font: 650 13px/1 var(--font-body);
   cursor: pointer;
+}
+.workspace-library-filters button small {
+  min-width: 18px;
+  border-radius: 999px;
+  padding: 3px 5px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: inherit;
+  font: 650 10px/1 var(--font-body);
+  text-align: center;
 }
 .workspace-library-filters button:hover {
   background: var(--bg-soft);
@@ -6893,14 +6909,20 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   background: var(--bg-soft);
   color: var(--ink);
 }
-.workspace-recent > header {
-  min-height: 34px;
+.workspace-library-toolbar {
+  min-height: 42px;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
 }
 .workspace-recent.is-view-grid .workspace-item-option {
   min-width: 0;
   border: 1px solid var(--hairline);
-  border-radius: 18px;
+  border-radius: 8px;
   background: var(--bg);
   overflow: hidden;
 }
@@ -6912,8 +6934,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   background: var(--bg);
 }
 .workspace-recent.is-view-grid .workspace-item-option-copy strong {
-  font-size: 17px;
-  line-height: 1.25;
+  font-size: 18px;
+  line-height: 1.2;
 }
 .workspace-recent.is-view-grid .workspace-item-option-copy small {
   font-size: 13px;
@@ -6936,7 +6958,44 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-recent.is-view-grid .workspace-item-option-main:has(.workspace-item-thumbnail.is-icon)
   .workspace-item-option-copy strong {
-  font-size: 21px;
+  font-size: 22px;
+}
+
+/* Home and folder cards use one collection shell. Spatial motion is defined
+   above and intentionally remains independent from this visual treatment. */
+.universal-item-card,
+.workspace-recent.is-view-grid .workspace-item-option {
+  border-radius: 8px;
+  background: var(--bg);
+}
+.universal-item-card .workspace-item-star,
+.universal-item-card .workspace-item-actions,
+.workspace-recent.is-view-grid .workspace-item-leading-star,
+.workspace-recent.is-view-grid .workspace-item-actions {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.universal-item-card .tt-collection-item {
+  min-height: 320px;
+}
+.universal-item-card .tt-collection-item > .tt-stack {
+  padding: 18px;
+}
+.universal-item-card .tt-collection-item .tt-cover:first-child {
+  width: calc(100% + 36px);
+  margin: -18px -18px 12px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.universal-item-card .tt-text-heading {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.universal-item-card .tt-text-body {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 @media (max-width: 720px) {
@@ -6953,6 +7012,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .workspace-library-controls {
     width: 100%;
     justify-content: space-between;
+  }
+  .workspace-library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
   .universal-item-composer:has(.universal-item-composer-leading) {
     grid-template-columns: minmax(72px, auto) 1px minmax(0, 1fr) 32px;
