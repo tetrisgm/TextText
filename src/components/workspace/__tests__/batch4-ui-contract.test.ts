@@ -76,9 +76,15 @@ describe("batch 4 workspace UI contract", () => {
   it("keeps the library collection-first and embeds the destination in the capture row", () => {
     expect(shellSource).toContain('className="workspace-library-header"');
     expect(shellSource).toContain('id="workspace-root-title">Library</h1>');
+    expect(shellSource).toContain('"library-v2"');
+    expect(shellSource).toContain('"grid"');
+    expect(shellSource).toContain(">Collections</p>");
+    expect(shellSource).toContain('aria-label="Filter library items"');
     expect(shellSource).toMatch(
       /<UniversalItemComposer[\s\S]*?leading=\{[\s\S]*?workspace-root-create-destination/,
     );
+    expect(folderSource).toContain("const defaultViewMode: FolderViewMode = \"grid\"");
+    expect(folderSource).toContain("`folder:v2:${folder.id}`");
     expect(folderSource).toContain('className="post-folder-page-count"');
     expect(folderSource).toMatch(/\{items\.length\} \{items\.length/);
   });

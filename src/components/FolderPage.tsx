@@ -1066,10 +1066,9 @@ export function FolderPage({
   onDeleteFolder?: FolderDeleteFolder;
   canShareFolders?: boolean;
 }) {
-  const defaultViewMode: FolderViewMode =
-    folder.mode === "blog" ? "grid" : "list";
+  const defaultViewMode: FolderViewMode = "grid";
   const [viewMode, changeView] = useWorkspaceViewMode(
-    `folder:${folder.id}`,
+    `folder:v2:${folder.id}`,
     defaultViewMode,
   );
   const [filterQuery, setFilterQuery] = useState("");

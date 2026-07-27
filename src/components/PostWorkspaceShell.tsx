@@ -1695,6 +1695,7 @@ export function PostFolderSidebar({
         tabIndex={-1}
         onKeyDown={(event) => onSidebarNavKeyDown(event, onReturnToBody)}
       >
+        <p className="post-editor-nav-heading">Library</p>
         <div
           className={`post-editor-folder-row post-editor-home-row${
             homeActive ? " is-active" : ""
@@ -1713,19 +1714,6 @@ export function PostFolderSidebar({
             <span className="post-editor-folder-name">Home</span>
           </button>
         </div>
-        <FolderTreeNav
-          blog={blog}
-          folders={navFolders}
-          activeFolder={activeFolder}
-          counts={counts}
-          collapsed={collapsed}
-          prefetchFolders={prefetchFolders}
-          canManageFolders={canManageFolders}
-          canManageSharing={canManageSharing}
-          homePath={homePath}
-          onSelectFolder={onSelectFolder}
-          onShareFolder={setSharingFolder}
-        />
         <div className="post-editor-special-folders">
           {canManageFolders && (
             <div
@@ -1808,6 +1796,20 @@ export function PostFolderSidebar({
             )}
           </div>
         </div>
+        <p className="post-editor-nav-heading is-collections">Collections</p>
+        <FolderTreeNav
+          blog={blog}
+          folders={navFolders}
+          activeFolder={activeFolder}
+          counts={counts}
+          collapsed={collapsed}
+          prefetchFolders={prefetchFolders}
+          canManageFolders={canManageFolders}
+          canManageSharing={canManageSharing}
+          homePath={homePath}
+          onSelectFolder={onSelectFolder}
+          onShareFolder={setSharingFolder}
+        />
       </nav>
 
       {!collapsed && (
@@ -2432,9 +2434,12 @@ function WorkspaceRootLanding({
   const [bodyRevision, setBodyRevision] = useState(0);
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
   const [recentViewMode, setRecentViewMode] = useWorkspaceViewMode(
-    "recent",
-    "list",
+    "library-v2",
+    "grid",
   );
+  const [itemFilter, setItemFilter] = useState<
+    "all" | "article" | "note" | "bookmark"
+  >("all");
   const creationFolders = useMemo(() => rootSectionFolders(pool), [pool]);
   const [creationFolderPath, setCreationFolderPath] = useState(
     () => creationFolders[0]?.path ?? "",
@@ -2495,10 +2500,14 @@ function WorkspaceRootLanding({
         : { created: [], edited: [] },
     [dateKey, pool.posts],
   );
-  const recent = useMemo(
-    () => sortSidebarDocuments(pool.posts, sort, openHistory).slice(0, 30),
-    [openHistory, pool.posts, sort],
-  );
+  const recent = useMemo(() => {
+    const sorted = sortSidebarDocuments(pool.posts, sort, openHistory);
+    const filtered =
+      itemFilter === "all"
+        ? sorted
+        : sorted.filter((post) => post.type === itemFilter);
+    return filtered.slice(0, 30);
+  }, [itemFilter, openHistory, pool.posts, sort]);
 
   useEffect(() => {
     if (
@@ -2811,6 +2820,24 @@ function WorkspaceRootLanding({
                   {pool.posts.length === 1 ? "item" : "items"}
                 </p>
               </div>
+              <div className="workspace-library-controls">
+                <select
+                  value={sort}
+                  aria-label="Sort library items"
+                  onChange={(event) =>
+                    setSort(event.currentTarget.value as SidebarDocumentSort)
+                  }
+                >
+                  <option value="recent">Recently updated</option>
+                  <option value="alphabetical">Alphabetical</option>
+                  <option value="created">Date created</option>
+                  <option value="edited">Last edited</option>
+                </select>
+                <WorkspaceViewModeControl
+                  mode={recentViewMode}
+                  onChange={setRecentViewMode}
+                />
+              </div>
             </header>
             {canManageItems && creationFolder ? (
               <section
@@ -2847,24 +2874,28 @@ function WorkspaceRootLanding({
               className={`workspace-recent is-view-${recentViewMode}`}
             >
               <header>
-                <h2>Recent</h2>
-                <div className="workspace-recent-controls">
-                  <select
-                    value={sort}
-                    aria-label="Sort recent items"
-                    onChange={(event) =>
-                      setSort(event.currentTarget.value as SidebarDocumentSort)
-                    }
-                  >
-                    <option value="recent">Recent</option>
-                    <option value="alphabetical">Alphabetical</option>
-                    <option value="created">Date created</option>
-                    <option value="edited">Last edited</option>
-                  </select>
-                  <WorkspaceViewModeControl
-                    mode={recentViewMode}
-                    onChange={setRecentViewMode}
-                  />
+                <div
+                  className="workspace-library-filters"
+                  role="group"
+                  aria-label="Filter library items"
+                >
+                  {(
+                    [
+                      ["all", "All"],
+                      ["article", "Articles"],
+                      ["note", "Notes"],
+                      ["bookmark", "Bookmarks"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={itemFilter === value}
+                      onClick={() => setItemFilter(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </header>
               {recent.length === 0 ? (
