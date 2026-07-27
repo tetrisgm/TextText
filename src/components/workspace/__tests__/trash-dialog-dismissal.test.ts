@@ -5,6 +5,10 @@ const shellSource = readFileSync(
   new URL("../../PostWorkspaceShell.tsx", import.meta.url),
   "utf8",
 );
+const serverActionsSource = readFileSync(
+  new URL("../../../app/editor/actions.ts", import.meta.url),
+  "utf8",
+);
 const itemActionsSource = readFileSync(
   new URL("../WorkspaceItemActions.tsx", import.meta.url),
   "utf8",
@@ -51,6 +55,28 @@ describe("Trash confirmation dismissal", () => {
       /setEmptyTrashOpen\(false\);\s+setBusyId\("empty-trash"\)/,
     );
     expect(shellSource).toContain('fetch("/api/workspace/trash"');
-    expect(shellSource).not.toContain("emptyTrashAction(handle)");
+  });
+
+  it("keeps every Trash mutation off deployment-bound Server Actions", () => {
+    expect(shellSource).toContain(
+      'runTrashOperation("restore-post", handle, postId)',
+    );
+    expect(shellSource).toContain(
+      'runTrashOperation("restore-folder", handle, folderId)',
+    );
+    expect(shellSource).toContain('runTrashOperation("empty", handle)');
+    expect(shellSource).toMatch(
+      /target\.kind === "post" \? "delete-post" : "delete-folder"/,
+    );
+    for (const action of [
+      "emptyTrashAction",
+      "restoreEditablePostAction",
+      "restoreFolderAction",
+      "permanentlyDeleteEditablePostAction",
+      "permanentlyDeleteFolderAction",
+    ]) {
+      expect(shellSource).not.toContain(action);
+      expect(serverActionsSource).not.toContain(`function ${action}(`);
+    }
   });
 });

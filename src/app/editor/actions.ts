@@ -22,9 +22,6 @@ import {
   createDraft,
   createSubfolder,
   deletePost,
-  emptyTrash,
-  permanentlyDeleteFolder,
-  permanentlyDeletePost,
   getAllPosts,
   getFolders,
   getBlog,
@@ -35,8 +32,6 @@ import {
   listItemComments,
   markCapturePending,
   renameFolder,
-  restoreFolder,
-  restorePost,
   savePost,
   savePostContentPatch,
   setPostFolder,
@@ -1606,30 +1601,6 @@ export async function trashFolderAction(
   return { folderId };
 }
 
-export async function restoreFolderAction(
-  handleInput: unknown,
-  folderIdInput: unknown,
-): Promise<{ folderId: string }> {
-  const { handle, access } = await editableHandleFor(handleInput);
-  const folderId = cleanPostId(folderIdInput);
-  await restoreFolder(handle, folderId);
-  await auditEdit(access, "restore_folder", "workspace", folderId);
-  await revalidateBlog(handle);
-  return { folderId };
-}
-
-export async function permanentlyDeleteFolderAction(
-  handleInput: unknown,
-  folderIdInput: unknown,
-): Promise<{ folderId: string }> {
-  const { handle, access } = await editableHandleFor(handleInput);
-  const folderId = cleanPostId(folderIdInput);
-  await permanentlyDeleteFolder(handle, folderId);
-  await auditEdit(access, "permanently_delete_folder", "workspace", folderId);
-  await revalidateBlog(handle);
-  return { folderId };
-}
-
 export async function movePostToFolderAction(
   handleInput: unknown,
   postIdInput: unknown,
@@ -1789,40 +1760,6 @@ export async function deleteEditablePostsAction(
     existing.map((post) => post.slug),
   );
   return { handle, postIds: existing.map((post) => post.id) };
-}
-
-export async function restoreEditablePostAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-): Promise<Post> {
-  const { handle, access } = await editableHandleFor(handleInput);
-  const postId = cleanPostId(postIdInput);
-  const restored = await restorePost(handle, postId);
-  await auditEdit(access, "restore_post", "item", postId, restored.title);
-  await revalidateBlog(handle, [restored.slug]);
-  return restored;
-}
-
-export async function permanentlyDeleteEditablePostAction(
-  handleInput: unknown,
-  postIdInput: unknown,
-): Promise<{ postId: string }> {
-  const { handle, access } = await editableHandleFor(handleInput);
-  const postId = cleanPostId(postIdInput);
-  await permanentlyDeletePost(handle, postId);
-  await auditEdit(access, "permanently_delete_post", "item", postId);
-  await revalidateBlog(handle);
-  return { postId };
-}
-
-export async function emptyTrashAction(
-  handleInput: unknown,
-): Promise<{ removed: number }> {
-  const { handle, access } = await editableHandleFor(handleInput);
-  const removed = await emptyTrash(handle);
-  await auditEdit(access, "empty_trash", "workspace", handle, `${removed} items`);
-  await revalidateBlog(handle);
-  return { removed };
 }
 
 export async function trashEditableBlogAction(
