@@ -50,5 +50,7 @@ describe("Trash confirmation dismissal", () => {
     expect(shellSource).toMatch(
       /setEmptyTrashOpen\(false\);\s+setBusyId\("empty-trash"\)/,
     );
+    expect(shellSource).toContain('fetch("/api/workspace/trash"');
+    expect(shellSource).not.toContain("emptyTrashAction(handle)");
   });
 });

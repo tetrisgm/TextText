@@ -24,12 +24,7 @@ import {
   createWorkspacePostAction,
   deleteEditablePostAction,
   deleteEditablePostsAction,
-  emptyTrashAction,
   saveEditablePostAction,
-  permanentlyDeleteEditablePostAction,
-  permanentlyDeleteFolderAction,
-  restoreEditablePostAction,
-  restoreFolderAction,
   movePostToFolderAction,
   renameFolderAction,
   toggleEditablePostStarredAction,
@@ -78,6 +73,31 @@ import {
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
 import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
+
+type TrashApiOperation =
+  | "empty"
+  | "restore-post"
+  | "restore-folder"
+  | "delete-post"
+  | "delete-folder";
+
+async function runTrashOperation(
+  operation: TrashApiOperation,
+  handle: string,
+  targetId?: string,
+): Promise<void> {
+  const response = await fetch("/api/workspace/trash", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operation, handle, targetId }),
+  });
+  if (response.ok) return;
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string }
+    | null;
+  throw new Error(payload?.error || "Trash operation failed");
+}
 import {
   useWorkspaceViewMode,
   WorkspaceViewModeControl,
@@ -2966,7 +2986,7 @@ function TrashPage({
       setBusyId(postId);
       setError(null);
       restorePostFromTrash(postId);
-      void restoreEditablePostAction(handle, postId)
+      void runTrashOperation("restore-post", handle, postId)
         .catch((restoreError) => {
           movePostToTrash(postId);
           setError(
@@ -2984,7 +3004,7 @@ function TrashPage({
       setBusyId(folderId);
       setError(null);
       restoreFolderFromTrash(folderId);
-      void restoreFolderAction(handle, folderId)
+      void runTrashOperation("restore-folder", handle, folderId)
         .catch((restoreError) => {
           moveFolderToTrash(folderId);
           setError(
@@ -3007,10 +3027,11 @@ function TrashPage({
     setError(null);
     if (target.kind === "post") removeTrashedPost(target.id);
     else removeTrashedFolder(target.id);
-    const request =
-      target.kind === "post"
-        ? permanentlyDeleteEditablePostAction(handle, target.id)
-        : permanentlyDeleteFolderAction(handle, target.id);
+    const request = runTrashOperation(
+      target.kind === "post" ? "delete-post" : "delete-folder",
+      handle,
+      target.id,
+    );
     void request
       .catch((deleteError) => {
         setError(
@@ -3031,7 +3052,7 @@ function TrashPage({
     setEmptyTrashOpen(false);
     setBusyId("empty-trash");
     setError(null);
-    void emptyTrashAction(handle)
+    void runTrashOperation("empty", handle)
       .catch((emptyError) => {
         setError(
           workspaceActionErrorMessage(emptyError, "Could not empty Trash"),
