@@ -103,6 +103,10 @@ import {
   WorkspaceViewModeControl,
 } from "@/components/workspace/WorkspaceViewModeControl";
 import {
+  resetSpatialCardTilt,
+  updateSpatialCardTilt,
+} from "@/components/workspace/spatial-card";
+import {
   createOptimisticWorkspacePost,
   mergeCreatedWorkspacePost,
   nextWorkspacePostAfterDelete,
@@ -2356,6 +2360,8 @@ function WorkspacePostOption({
       tabIndex={active ? 0 : -1}
       title={showUpdatedAt ? sidebarDocumentTitle(post) : undefined}
       onFocus={() => onSelect(post.id)}
+      onPointerMove={updateSpatialCardTilt}
+      onPointerLeave={resetSpatialCardTilt}
     >
       <WorkspaceItemStar
         handle={handle}

@@ -69,6 +69,10 @@ describe("batch 4 workspace UI contract", () => {
       "className={`universal-item-collection is-${viewMode}`}",
     );
     expect(folderSource).toContain("onPointerMove={updateSpatialCardTilt}");
+    expect(shellSource).toContain("onPointerMove={updateSpatialCardTilt}");
+    expect(broadsheetStyles).toContain(
+      ".workspace-recent.is-view-grid .workspace-item-option",
+    );
     expect(broadsheetStyles).toContain("perspective: 1800px");
     expect(broadsheetStyles).toContain("rotateX(var(--card-rx))");
     expect(broadsheetStyles).toContain("translateY(-3px)");

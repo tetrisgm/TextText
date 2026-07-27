@@ -15,7 +15,6 @@ import {
 import type {
   FormEvent,
   MouseEvent,
-  PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
 import Link from "next/link";
@@ -44,6 +43,10 @@ import {
   WorkspaceViewModeControl,
   type WorkspaceViewMode,
 } from "@/components/workspace/WorkspaceViewModeControl";
+import {
+  resetSpatialCardTilt,
+  updateSpatialCardTilt,
+} from "@/components/workspace/spatial-card";
 import { formatArticleDate, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
 import type { TemplateReference } from "@/lib/documents/model";
@@ -99,30 +102,12 @@ export type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
 
 const CREATE_FOLDER_ITEM_EVENT = "write:create-folder-item";
 const EDIT_FOLDER_TITLE_EVENT = "write:edit-folder-title";
-const CARD_TILT_X = 8.25;
-const CARD_TILT_Y = 9;
-
 type FolderUiEventDetail = { folderId: string };
 
 function dispatchFolderUiEvent(type: string, folderId: string) {
   window.dispatchEvent(
     new CustomEvent<FolderUiEventDetail>(type, { detail: { folderId } }),
   );
-}
-
-function updateSpatialCardTilt(event: ReactPointerEvent<HTMLDivElement>) {
-  if (event.pointerType !== "mouse") return;
-  const card = event.currentTarget;
-  const bounds = card.getBoundingClientRect();
-  const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
-  const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
-  card.style.setProperty("--card-rx", `${(0.5 - y) * CARD_TILT_X * 2}deg`);
-  card.style.setProperty("--card-ry", `${(x - 0.5) * CARD_TILT_Y * 2}deg`);
-}
-
-function resetSpatialCardTilt(event: ReactPointerEvent<HTMLDivElement>) {
-  event.currentTarget.style.setProperty("--card-rx", "0deg");
-  event.currentTarget.style.setProperty("--card-ry", "0deg");
 }
 
 function isFolderUiEvent(event: Event, folderId: string): boolean {

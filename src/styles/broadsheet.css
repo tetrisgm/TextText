@@ -3733,7 +3733,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(100%, 1120px);
   margin-inline: auto;
 }
-.universal-item-collection.is-grid {
+.universal-item-collection.is-grid,
+.workspace-recent.is-view-grid .workspace-recent-list {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 22px;
   perspective: 1800px;
@@ -3742,7 +3743,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   grid-template-columns: minmax(0, 760px);
   justify-content: center;
 }
-.universal-item-card {
+.universal-item-card,
+.workspace-recent.is-view-grid .workspace-item-option {
   --card-rx: 0deg;
   --card-ry: 0deg;
   position: relative;
@@ -3752,7 +3754,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-radius: 18px;
   background: var(--bg);
 }
-.universal-item-collection.is-grid .universal-item-card {
+.universal-item-collection.is-grid .universal-item-card,
+.workspace-recent.is-view-grid .workspace-item-option {
   transform:
     translateY(0)
     rotateX(var(--card-rx))
@@ -3765,11 +3768,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   transition:
     transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
     border-color 0.2s var(--ease),
+    background-color 0.16s var(--ease),
     box-shadow 0.24s var(--ease);
   will-change: transform;
 }
 @media (hover: hover) {
-  .universal-item-collection.is-grid .universal-item-card:hover {
+  .universal-item-collection.is-grid .universal-item-card:hover,
+  .workspace-recent.is-view-grid .workspace-item-option:hover {
     z-index: 2;
     border-color: color-mix(in srgb, var(--ink) 24%, var(--hairline));
     transform:
@@ -3783,7 +3788,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
       inset 0 1px 0 color-mix(in srgb, var(--ink) 12%, transparent);
   }
 }
-.universal-item-card.is-command-selected {
+.universal-item-card.is-command-selected,
+.workspace-recent.is-view-grid .workspace-item-option.is-command-selected {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, var(--ink));
   outline-offset: 2px;
 }
@@ -3827,7 +3833,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 @media (prefers-reduced-motion: reduce) {
   .universal-item-collection.is-grid .universal-item-card,
-  .universal-item-collection.is-grid .universal-item-card:hover {
+  .universal-item-collection.is-grid .universal-item-card:hover,
+  .workspace-recent.is-view-grid .workspace-item-option,
+  .workspace-recent.is-view-grid .workspace-item-option:hover {
     transform: none;
     transition: none;
   }
@@ -4510,7 +4518,8 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-recent.is-view-grid .workspace-recent-list {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 22px;
+  perspective: 1800px;
 }
 .workspace-recent:is(.is-view-column, .is-view-grid) .workspace-item-option-main {
   min-height: 74px;
@@ -4569,7 +4578,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   flex: 0 0 auto;
   border: 0;
   border-bottom: 1px solid var(--hairline);
-  border-radius: 8px 8px 0 0;
+  border-radius: 17px 17px 0 0;
   aspect-ratio: 4 / 3;
 }
 
@@ -6846,9 +6855,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .universal-item-card {
   background: var(--bg);
-  transition:
-    border-color 0.16s var(--ease),
-    background-color 0.16s var(--ease);
 }
 .universal-item-card:hover {
   border-color: color-mix(in srgb, var(--ink) 24%, var(--hairline));
@@ -6898,18 +6904,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-recent.is-view-grid .workspace-item-option {
   min-width: 0;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 18px;
   background: var(--bg);
   overflow: hidden;
-  transition:
-    border-color 0.16s var(--ease),
-    box-shadow 0.16s var(--ease),
-    transform 0.16s var(--ease);
-}
-.workspace-recent.is-view-grid .workspace-item-option:hover {
-  border-color: color-mix(in srgb, var(--ink) 25%, var(--hairline));
-  box-shadow: 0 12px 30px -24px color-mix(in srgb, var(--ink) 46%, transparent);
-  transform: translateY(-1px);
 }
 .workspace-recent.is-view-grid .workspace-item-option-main {
   border: 0;
