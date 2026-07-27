@@ -29,6 +29,10 @@ const broadsheetStyles = readFileSync(
   new URL("../../../styles/broadsheet.css", import.meta.url),
   "utf8",
 );
+const spatialCardSource = readFileSync(
+  new URL("../spatial-card.ts", import.meta.url),
+  "utf8",
+);
 
 describe("batch 4 workspace UI contract", () => {
   it("keeps reader prose selectable instead of starting marquee selection", () => {
@@ -76,7 +80,19 @@ describe("batch 4 workspace UI contract", () => {
     expect(broadsheetStyles).toContain("perspective: 1800px");
     expect(broadsheetStyles).toContain("rotateX(var(--card-rx))");
     expect(broadsheetStyles).toContain("translateY(-3px)");
-    expect(broadsheetStyles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(broadsheetStyles).toContain(
+      ".workspace-recent.is-view-grid .workspace-item-option.is-spatial-hover",
+    );
+    expect(broadsheetStyles).not.toContain(
+      ".workspace-item-option:hover {\n    transform: none;",
+    );
+    expect(spatialCardSource).toContain(
+      'card.classList.add("is-spatial-hover")',
+    );
+    expect(spatialCardSource).toContain('event.pointerType === "touch"');
+    expect(spatialCardSource).not.toContain(
+      'event.pointerType !== "mouse"',
+    );
   });
 
   it("uses the same universal item composer on Home and inside folders", () => {

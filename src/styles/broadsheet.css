@@ -3772,21 +3772,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     box-shadow 0.24s var(--ease);
   will-change: transform;
 }
-@media (hover: hover) {
-  .universal-item-collection.is-grid .universal-item-card:hover,
-  .workspace-recent.is-view-grid .workspace-item-option:hover {
-    z-index: 2;
-    border-color: color-mix(in srgb, var(--ink) 24%, var(--hairline));
-    transform:
-      translateY(-3px)
-      scale(1.018)
-      rotateX(var(--card-rx))
-      rotateY(var(--card-ry));
-    box-shadow:
-      0 4px 9px rgba(0, 0, 0, 0.12),
-      0 22px 44px rgba(0, 0, 0, 0.23),
-      inset 0 1px 0 color-mix(in srgb, var(--ink) 12%, transparent);
-  }
+.universal-item-collection.is-grid .universal-item-card.is-spatial-hover,
+.workspace-recent.is-view-grid .workspace-item-option.is-spatial-hover {
+  z-index: 2;
+  border-color: color-mix(in srgb, var(--ink) 24%, var(--hairline));
+  transform:
+    translateY(-3px)
+    scale(1.018)
+    rotateX(var(--card-rx))
+    rotateY(var(--card-ry));
+  box-shadow:
+    0 4px 9px rgba(0, 0, 0, 0.12),
+    0 22px 44px rgba(0, 0, 0, 0.23),
+    inset 0 1px 0 color-mix(in srgb, var(--ink) 12%, transparent);
 }
 .universal-item-card.is-command-selected,
 .workspace-recent.is-view-grid .workspace-item-option.is-command-selected {
@@ -3830,15 +3828,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .universal-item-card .tt-text-heading {
   padding-right: 28px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .universal-item-collection.is-grid .universal-item-card,
-  .universal-item-collection.is-grid .universal-item-card:hover,
-  .workspace-recent.is-view-grid .workspace-item-option,
-  .workspace-recent.is-view-grid .workspace-item-option:hover {
-    transform: none;
-    transition: none;
-  }
 }
 @media (max-width: 620px) {
   .universal-item-composer {
