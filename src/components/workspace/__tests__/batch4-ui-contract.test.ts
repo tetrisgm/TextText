@@ -25,6 +25,10 @@ const viewModeSource = readFileSync(
   new URL("../WorkspaceViewModeControl.tsx", import.meta.url),
   "utf8",
 );
+const broadsheetStyles = readFileSync(
+  new URL("../../../styles/broadsheet.css", import.meta.url),
+  "utf8",
+);
 
 describe("batch 4 workspace UI contract", () => {
   it("keeps reader prose selectable instead of starting marquee selection", () => {
@@ -64,6 +68,11 @@ describe("batch 4 workspace UI contract", () => {
     expect(folderSource).toContain(
       "className={`universal-item-collection is-${viewMode}`}",
     );
+    expect(folderSource).toContain("onPointerMove={updateSpatialCardTilt}");
+    expect(broadsheetStyles).toContain("perspective: 1800px");
+    expect(broadsheetStyles).toContain("rotateX(var(--card-rx))");
+    expect(broadsheetStyles).toContain("translateY(-3px)");
+    expect(broadsheetStyles).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
   it("uses the same universal item composer on Home and inside folders", () => {
