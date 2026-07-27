@@ -94,6 +94,12 @@ const ITEM_EDIT_TOOL_NAMES: WorkspaceToolName[] = [
   "append_to_item",
 ];
 
+const WORKSPACE_BASE_TOOL_NAMES: WorkspaceToolName[] = [
+  "get_workspace",
+  "list_folders",
+  "create_item",
+];
+
 const PROMPT_TOOL_GROUPS: Array<{
   pattern: RegExp;
   tools: WorkspaceToolName[];
@@ -155,7 +161,13 @@ export function workspaceAgentToolNamesForView(
       (name) => ITEM_AGENT_TOOL_NAMES.has(name) && selected.has(name),
     );
   }
-  return [...WORKSPACE_TOOL_NAMES];
+  const selected = new Set<WorkspaceToolName>(WORKSPACE_BASE_TOOL_NAMES);
+  for (const group of PROMPT_TOOL_GROUPS) {
+    if (group.pattern.test(prompt)) {
+      for (const name of group.tools) selected.add(name);
+    }
+  }
+  return WORKSPACE_TOOL_NAMES.filter((name) => selected.has(name));
 }
 
 type ToolArgs = Record<string, unknown>;

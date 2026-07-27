@@ -121,9 +121,11 @@ describe("native workspace tool adapter", () => {
   });
 
   it("keeps creation at folder level and narrows an open item to requested actions", () => {
-    expect(workspaceAgentToolNamesForView({ level: "section" })).toContain(
+    expect(workspaceAgentToolNamesForView({ level: "section" })).toEqual([
+      "get_workspace",
+      "list_folders",
       "create_item",
-    );
+    ]);
     const itemTools = workspaceAgentToolNamesForView(
       {
         level: "post",
@@ -140,6 +142,22 @@ describe("native workspace tool adapter", () => {
     expect(itemTools).not.toContain("delete_folder");
     expect(itemTools).not.toContain("delete_item");
     expect(itemTools).not.toContain("set_access");
+  });
+
+  it("keeps styled workspace creation small enough for the on-device model", () => {
+    expect(
+      workspaceAgentToolNamesForView(
+        { level: "workspace" },
+        "Create an article with a Medium-style editorial look",
+      ),
+    ).toEqual([
+      "get_workspace",
+      "list_folders",
+      "list_document_templates",
+      "customize_document_template",
+      "set_item_template",
+      "create_item",
+    ]);
   });
 
   it("adds only prompt-relevant tools for an open item", () => {

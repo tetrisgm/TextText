@@ -167,6 +167,13 @@ function assistantAgentError(error: unknown): string {
   ) {
     return "The assistant chose an action that did not fit this item. Try the request again.";
   }
+  if (
+    /FoundationModels\.LanguageModelError|LanguageModelError error -?\d+/i.test(
+      message,
+    )
+  ) {
+    return "The on-device model could not complete that request. Texttext has kept your workspace unchanged. Try a shorter request.";
+  }
   return message.trim() || "The assistant could not finish that.";
 }
 
