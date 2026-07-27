@@ -1,9 +1,12 @@
 import { recordAction } from "@/lib/audit";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
+import type { Post } from "@/lib/content";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import {
+  deletePost,
   emptyTrash,
   getBlog,
+  getPostById,
   permanentlyDeleteFolder,
   permanentlyDeletePost,
   restoreFolder,
@@ -14,6 +17,7 @@ export const dynamic = "force-dynamic";
 
 type TrashOperation =
   | { operation: "empty"; handle: string }
+  | { operation: "trash-posts"; handle: string; targetIds: string[] }
   | { operation: "restore-post"; handle: string; targetId: string }
   | { operation: "restore-folder"; handle: string; targetId: string }
   | { operation: "delete-post"; handle: string; targetId: string }
@@ -32,6 +36,14 @@ function parseOperation(value: unknown): TrashOperation {
   const operation = cleanText(input.operation, "operation");
   const handle = cleanText(input.handle, "workspace handle");
   if (operation === "empty") return { operation, handle };
+  if (operation === "trash-posts") {
+    if (!Array.isArray(input.targetIds)) throw new Error("Missing targets");
+    const targetIds = Array.from(
+      new Set(input.targetIds.map((targetId) => cleanText(targetId, "target"))),
+    ).slice(0, 100);
+    if (targetIds.length === 0) throw new Error("Missing targets");
+    return { operation, handle, targetIds };
+  }
   const targetId = cleanText(input.targetId, "target");
   if (
     operation === "restore-post" ||
@@ -68,6 +80,28 @@ export async function POST(request: Request) {
     case "empty":
       removed = await emptyTrash(input.handle);
       break;
+    case "trash-posts": {
+      const posts = (
+        await Promise.all(
+          input.targetIds.map((targetId) =>
+            getPostById(input.handle, targetId),
+          ),
+        )
+      ).filter((post): post is Post & { id: string } => Boolean(post?.id));
+      for (const post of posts) {
+        await deletePost(input.handle, post.id);
+        await recordAction({
+          actorUserId: access.isOwner ? access.ownerId : null,
+          actorType: "human",
+          actionName: "delete_post",
+          targetType: "item",
+          targetId: post.id,
+          inputSummary: post.title,
+        });
+      }
+      removed = posts.length;
+      break;
+    }
     case "restore-post":
       title = (await restorePost(input.handle, input.targetId)).title;
       break;
@@ -84,20 +118,23 @@ export async function POST(request: Request) {
 
   const auditNames: Record<TrashOperation["operation"], string> = {
     empty: "empty_trash",
+    "trash-posts": "delete_post",
     "restore-post": "restore_post",
     "restore-folder": "restore_folder",
     "delete-post": "permanently_delete_post",
     "delete-folder": "permanently_delete_folder",
   };
-  await recordAction({
-    actorUserId: access.isOwner ? access.ownerId : null,
-    actorType: "human",
-    actionName: auditNames[input.operation],
-    targetType: input.operation === "empty" ? "workspace" : "item",
-    targetId: input.operation === "empty" ? input.handle : input.targetId,
-    inputSummary:
-      input.operation === "empty" ? `${removed} items` : title,
-  });
+  if (input.operation !== "trash-posts") {
+    await recordAction({
+      actorUserId: access.isOwner ? access.ownerId : null,
+      actorType: "human",
+      actionName: auditNames[input.operation],
+      targetType: input.operation === "empty" ? "workspace" : "item",
+      targetId: input.operation === "empty" ? input.handle : input.targetId,
+      inputSummary:
+        input.operation === "empty" ? `${removed} items` : title,
+    });
+  }
 
   const blog = await getBlog(input.handle);
   revalidateBlogPaths(blog ?? { handle: input.handle });

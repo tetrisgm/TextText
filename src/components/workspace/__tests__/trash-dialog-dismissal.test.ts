@@ -59,6 +59,9 @@ describe("Trash confirmation dismissal", () => {
 
   it("keeps every Trash mutation off deployment-bound Server Actions", () => {
     expect(shellSource).toContain(
+      'runTrashOperation(\n          "trash-posts"',
+    );
+    expect(shellSource).toContain(
       'runTrashOperation("restore-post", handle, postId)',
     );
     expect(shellSource).toContain(
@@ -74,6 +77,7 @@ describe("Trash confirmation dismissal", () => {
       "restoreFolderAction",
       "permanentlyDeleteEditablePostAction",
       "permanentlyDeleteFolderAction",
+      "deleteEditablePostsAction",
     ]) {
       expect(shellSource).not.toContain(action);
       expect(serverActionsSource).not.toContain(`function ${action}(`);

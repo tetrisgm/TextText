@@ -23,7 +23,6 @@ import {
   createSubfolderAction,
   createWorkspacePostAction,
   deleteEditablePostAction,
-  deleteEditablePostsAction,
   saveEditablePostAction,
   movePostToFolderAction,
   renameFolderAction,
@@ -76,6 +75,7 @@ import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThum
 
 type TrashApiOperation =
   | "empty"
+  | "trash-posts"
   | "restore-post"
   | "restore-folder"
   | "delete-post"
@@ -84,13 +84,16 @@ type TrashApiOperation =
 async function runTrashOperation(
   operation: TrashApiOperation,
   handle: string,
-  targetId?: string,
+  target?: string | readonly string[],
 ): Promise<void> {
+  const targets = Array.isArray(target)
+    ? { targetIds: target }
+    : { targetId: target };
   const response = await fetch("/api/workspace/trash", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operation, handle, targetId }),
+    body: JSON.stringify({ operation, handle, ...targets }),
   });
   if (response.ok) return;
   const payload = (await response.json().catch(() => null)) as
@@ -5041,16 +5044,6 @@ function LocalWorkspaceShell({
       const persistentPosts = posts.filter(
         (post) => !isOptimisticPostId(post.id),
       );
-      const rollback = new Map<
-        string,
-        {
-          draft: DraftState | undefined;
-          draftRevision: number | undefined;
-          serverRevision: string | undefined;
-          pendingSave: boolean;
-        }
-      >();
-
       for (const post of posts) {
         if (isOptimisticPostId(post.id)) {
           void deletePersistedWorkspaceDraft(currentPool.blogId, post.id);
@@ -5062,12 +5055,6 @@ function LocalWorkspaceShell({
           removePost(post.id);
           continue;
         }
-        rollback.set(post.id, {
-          draft: localWorkspaceDraftSessions.get(post.id),
-          draftRevision: localWorkspaceDraftRevisions.get(post.id),
-          serverRevision: localWorkspaceServerRevisions.get(post.id),
-          pendingSave: localWorkspacePendingSaveIds.has(post.id),
-        });
         localWorkspacePendingSaveIds.delete(post.id);
         localWorkspaceDraftSessions.delete(post.id);
         localWorkspaceDraftRevisions.delete(post.id);
@@ -5078,7 +5065,8 @@ function LocalWorkspaceShell({
 
       if (persistentPosts.length === 0) return;
       try {
-        await deleteEditablePostsAction(
+        await runTrashOperation(
+          "trash-posts",
           currentPool.blog.handle,
           persistentPosts.map((post) => post.id),
         );
@@ -5088,25 +5076,9 @@ function LocalWorkspaceShell({
           ),
         );
       } catch (error) {
-        for (const post of persistentPosts) {
-          const previous = rollback.get(post.id);
-          if (previous?.draft) {
-            localWorkspaceDraftSessions.set(post.id, previous.draft);
-          }
-          if (previous?.draftRevision !== undefined) {
-            localWorkspaceDraftRevisions.set(post.id, previous.draftRevision);
-          }
-          if (previous?.serverRevision !== undefined) {
-            localWorkspaceServerRevisions.set(
-              post.id,
-              previous.serverRevision,
-            );
-          }
-          if (previous?.pendingSave) {
-            localWorkspacePendingSaveIds.add(post.id);
-          }
-          restorePostFromTrash(post.id);
-        }
+        // Keep the local-first result in place. A refresh or live-sync retry can
+        // reconcile a failed request without resurrecting cards in front of the
+        // user immediately after they confirmed the action.
         throw error;
       }
     },

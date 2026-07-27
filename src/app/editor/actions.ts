@@ -1735,33 +1735,6 @@ export async function deleteEditablePostAction(
   return { handle };
 }
 
-export async function deleteEditablePostsAction(
-  handleInput: unknown,
-  postIdsInput: unknown,
-): Promise<{ handle: string; postIds: string[] }> {
-  const handle = cleanHandle(handleInput);
-  const access = await getBlogEditAccess(handle);
-  if (!access.canEdit) throw new Error("You cannot edit this blog");
-  if (!Array.isArray(postIdsInput)) throw new Error("Post ids are required");
-  const postIds = Array.from(
-    new Set(postIdsInput.map((postId) => cleanPostId(postId))),
-  ).slice(0, 100);
-  if (postIds.length === 0) return { handle, postIds: [] };
-
-  const existing = (
-    await Promise.all(postIds.map((postId) => getPostById(handle, postId)))
-  ).filter((post): post is Post & { id: string } => Boolean(post?.id));
-  for (const post of existing) {
-    await deletePost(handle, post.id);
-    await auditEdit(access, "delete_post", "item", post.id, post.title);
-  }
-  await revalidateBlog(
-    handle,
-    existing.map((post) => post.slug),
-  );
-  return { handle, postIds: existing.map((post) => post.id) };
-}
-
 export async function trashEditableBlogAction(
   handleInput: unknown,
 ): Promise<
