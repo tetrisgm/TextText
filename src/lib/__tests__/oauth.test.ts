@@ -262,30 +262,33 @@ describe("OAuth redirect_uri validation", () => {
     ).toBe(false);
   });
 
-  it("requires https except flagged dev localhost clients", () => {
-    const prodClient: OAuthClient = {
-      clientId: "prod",
-      name: "Prod",
+  it("allows exact loopback callbacks for native clients", () => {
+    const nativeClient: OAuthClient = {
+      clientId: "native",
+      name: "Native",
       redirectUris: ["http://localhost:3456/callback"],
-    };
-    const devClient: OAuthClient = {
-      ...prodClient,
-      clientId: "dev",
-      dev: true,
     };
 
     expect(
-      validateOAuthRedirectUri(devClient, "http://localhost:3456/callback").ok,
-    ).toBe(false);
-    expect(
-      validateOAuthRedirectUri(devClient, "http://localhost:3456/callback", {
-        allowInsecureLocalhost: true,
-      }).ok,
+      validateOAuthRedirectUri(
+        nativeClient,
+        "http://localhost:3456/callback",
+      ).ok,
     ).toBe(true);
+  });
+
+  it("rejects insecure non-loopback callbacks", () => {
+    const insecureClient: OAuthClient = {
+      clientId: "insecure",
+      name: "Insecure",
+      redirectUris: ["http://client.example/callback"],
+    };
+
     expect(
-      validateOAuthRedirectUri(prodClient, "http://localhost:3456/callback", {
-        allowInsecureLocalhost: true,
-      }).ok,
+      validateOAuthRedirectUri(
+        insecureClient,
+        "http://client.example/callback",
+      ).ok,
     ).toBe(false);
   });
 

@@ -84,6 +84,40 @@ describe("OAuth dynamic client registration", () => {
     );
   });
 
+  it("registers a native client with an exact loopback callback", async () => {
+    const response = await POST(
+      registrationRequest({
+        client_name: "Codex",
+        redirect_uris: ["http://127.0.0.1:3456/callback"],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+        scope: "sync",
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.createRegisteredOAuthClient).toHaveBeenCalledWith({
+      clientName: "Codex",
+      redirectUris: ["http://127.0.0.1:3456/callback"],
+      scope: "sync",
+    });
+  });
+
+  it("rejects insecure callbacks outside the loopback interface", async () => {
+    const response = await POST(
+      registrationRequest({
+        redirect_uris: ["http://connector.example/callback"],
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "invalid_redirect_uri",
+    });
+    expect(mocks.createRegisteredOAuthClient).not.toHaveBeenCalled();
+  });
+
   it("normalizes a request for all advertised scopes", async () => {
     const response = await POST(
       registrationRequest({

@@ -545,7 +545,7 @@ function isLocalhostUrl(url: URL): boolean {
 export function validateOAuthRedirectUri(
   client: OAuthClient,
   redirectUri: string,
-  options: { allowInsecureLocalhost?: boolean } = {},
+  _options: { allowInsecureLocalhost?: boolean } = {},
 ): OAuthRedirectValidation {
   if (
     !redirectUri ||
@@ -593,12 +593,11 @@ export function validateOAuthRedirectUri(
   }
   if (parsed.protocol === "https:") return { ok: true };
 
-  const allowLocalhost =
-    client.dev === true &&
-    options.allowInsecureLocalhost === true &&
-    parsed.protocol === "http:" &&
-    isLocalhostUrl(parsed);
-  if (allowLocalhost) return { ok: true };
+  // Native OAuth clients use an ephemeral loopback listener for the callback.
+  // Exact URI registration still binds the request to the originating client.
+  const allowLoopback =
+    parsed.protocol === "http:" && isLocalhostUrl(parsed);
+  if (allowLoopback) return { ok: true };
 
   return {
     ok: false,

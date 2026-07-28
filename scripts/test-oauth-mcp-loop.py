@@ -33,7 +33,9 @@ import urllib.parse
 import urllib.request
 
 BASE = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://localhost:3000"
-REDIRECT = "https://connector-test.example.com/callback"
+# Native MCP clients such as Codex receive OAuth on a temporary loopback
+# listener. The test captures the redirect instead of opening this port.
+REDIRECT = "http://127.0.0.1:34567/callback"
 DEV_EMAIL = "connector-loop-test@example.com"
 EXPECTED_TOOLS = [
     "get_workspace",
