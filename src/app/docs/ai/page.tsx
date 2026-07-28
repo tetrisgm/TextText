@@ -21,10 +21,6 @@ export const metadata: Metadata = {
   description: `Connect an AI assistant to Texttext's ${WORKSPACE_TOOL_NAMES.length} workspace tools.`,
 };
 
-function base64(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64");
-}
-
 function ToolTable({ names }: { names: typeof WORKSPACE_TOOL_NAMES }) {
   return (
     <div className="connect-table-wrap">
@@ -51,17 +47,14 @@ function ToolTable({ names }: { names: typeof WORKSPACE_TOOL_NAMES }) {
 }
 
 export default function AiDocsPage() {
-  const cursorInstallUrl = `cursor://anysphere.cursor-deeplink/mcp/install?name=write&config=${encodeURIComponent(
-    base64(JSON.stringify({ url: MCP_URL })),
-  )}`;
-  const cursorConfig = `{ "mcpServers": { "write": { "url": "${MCP_URL}" } } }`;
-  const vscodeConfig = `{ "servers": { "write": { "type": "http", "url": "${MCP_URL}" } } }`;
-  const codexConfig = `[mcp_servers.write]\nurl = "${MCP_URL}"`;
+  const localMcpUrl = "http://127.0.0.1:47118/mcp";
+  const cursorConfig = `{ "mcpServers": { "texttext": { "url": "${MCP_URL}" } } }`;
+  const vscodeConfig = `{ "servers": { "texttext": { "type": "http", "url": "${MCP_URL}" } } }`;
   const remoteConfig = `{
-  "mcpServers": { "write": { "command": "npx", "args": ["-y", "mcp-remote", "${MCP_URL}"] } }
+  "mcpServers": { "texttext": { "command": "npx", "args": ["-y", "mcp-remote", "${MCP_URL}"] } }
 }`;
   const tokenConfig = `{
-  "mcpServers": { "write": { "url": "${MCP_URL}", "headers": { "Authorization": "Bearer wsk_..." } } }
+  "mcpServers": { "texttext": { "url": "${MCP_URL}", "headers": { "Authorization": "Bearer wsk_..." } } }
 }`;
 
   return (
@@ -70,72 +63,101 @@ export default function AiDocsPage() {
         <h1 className="connect-title">Connect your AI to Texttext</h1>
 
         <section className="connect-section">
-          <h2 className="connect-section-title">Overview</h2>
+          <h2 className="connect-section-title">Three ways to connect</h2>
           <p className="connect-body">
-            An MCP server is an authenticated API that an AI assistant can call
-            on your behalf. Connect one once, and your assistant can read and
-            write your Texttext workspace from wherever it runs.
+            Claude Code and Codex on this Mac can use Texttext&apos;s local MCP
+            bridge while the app is open. It is immediate, stays on this Mac,
+            and needs no Texttext token.
           </p>
           <p className="connect-body">
-            Texttext&apos;s server reads and writes the folders and markdown items in
-            your one workspace. It respects your sharing, keeps notes and
-            bookmarks unlisted, and logs every change.
+            Claude.ai, hosted Codex, ChatGPT, and other remote clients connect
+            to Texttext&apos;s hosted MCP endpoint using OAuth. They open
+            Texttext once so you can approve read or sync access.
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{MCP_URL}</pre>
           </div>
           <p className="connect-body">
-            <code className="connect-inline-code">read</code> inspects and{" "}
-            <code className="connect-inline-code">sync</code> also writes. The
-            approval page shows which scope a client asked for.
+            The assistant sidebar inside Texttext is separate. It uses a
+            workspace-owned Anthropic or OpenAI API key. API billing is separate
+            from Claude.ai and ChatGPT subscriptions.
           </p>
         </section>
 
         <section className="connect-section">
-          <h2 className="connect-section-title">Getting started</h2>
-
-          <h3>ChatGPT</h3>
+          <h2 className="connect-section-title">Claude</h2>
+          <h3>Claude Code on this Mac</h3>
           <div className="connect-code-wrap">
             <pre className="connect-code">
-              {`Settings → Apps → Advanced settings → Developer mode\nCreate app → paste ${MCP_URL}\nConnect, then approve read or sync access.`}
+              {`claude mcp add --transport http --scope user texttext ${localMcpUrl}`}
             </pre>
           </div>
-
-          <h3>Claude Code (CLI)</h3>
+          <p className="connect-body">
+            Keep Texttext open. Claude Code can now read and edit the current
+            workspace through the local app.
+          </p>
+          <h3>Claude Code remotely</h3>
           <div className="connect-code-wrap">
             <pre className="connect-code">
-              {`claude mcp add --transport http write ${MCP_URL}\n/mcp\nThen approve in your browser.`}
+              {`claude mcp add --transport http --scope user texttext ${MCP_URL}\n/mcp\nThen approve in your browser.`}
             </pre>
           </div>
-
-          <h3>Claude Desktop / claude.ai</h3>
+          <h3>Claude.ai</h3>
           <div className="connect-code-wrap">
             <pre className="connect-code">
               {`Settings → Connectors → Add custom connector\nPaste ${MCP_URL} → Add\nApprove in your browser.`}
             </pre>
           </div>
+        </section>
 
-          <h3>Cursor</h3>
-          <p className="connect-link-actions">
-            <a className="ac-btn ac-btn-filled" href={cursorInstallUrl}>
-              Add to Cursor
-            </a>
+        <section className="connect-section">
+          <h2 className="connect-section-title">Codex</h2>
+          <h3>Codex on this Mac</h3>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">
+              {`codex mcp add texttext --url ${localMcpUrl}`}
+            </pre>
+          </div>
+          <p className="connect-body">
+            The Codex app and CLI share the same MCP configuration. Keep
+            Texttext open while using the local bridge.
           </p>
+          <h3>Hosted Texttext</h3>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">
+              {`codex mcp add texttext --url ${MCP_URL}\ncodex mcp login texttext`}
+            </pre>
+          </div>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">ChatGPT</h2>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">
+              {`Settings or Workspace Settings → Apps\nEnable developer mode → Create\nPaste ${MCP_URL} → Scan tools → Connect\nApprove Texttext in your browser.`}
+            </pre>
+          </div>
+          <p className="connect-body">
+            Full MCP apps currently require an eligible ChatGPT workspace plan.
+            Your ChatGPT account supplies the model and billing.
+          </p>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Other MCP clients</h2>
+          <p className="connect-body">
+            Texttext follows the standard MCP and OAuth discovery flow, so
+            Cursor, VS Code, and other compatible clients remain supported.
+          </p>
+          <h3>Cursor</h3>
           <div className="connect-code-wrap">
             <pre className="connect-code">{`.cursor/mcp.json\n${cursorConfig}\nThen approve in your browser.`}</pre>
           </div>
-
-          <h3>VS Code / Copilot</h3>
+          <h3>VS Code</h3>
           <div className="connect-code-wrap">
             <pre className="connect-code">{`.vscode/mcp.json\n${vscodeConfig}\nThen approve in your browser.`}</pre>
           </div>
-
-          <h3>Codex CLI</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{`~/.codex/config.toml: ${codexConfig}\nThen approve in your browser.`}</pre>
-          </div>
-
-          <h3>Any other client</h3>
+          <h3>Legacy stdio-only clients</h3>
           <p className="connect-body">Use the mcp-remote fallback:</p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{remoteConfig}</pre>

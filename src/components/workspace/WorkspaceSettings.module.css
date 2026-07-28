@@ -310,6 +310,74 @@
   color: var(--ac-red);
 }
 
+.connect :global(.connect-provider-list) {
+  display: grid;
+  gap: 14px;
+}
+
+.connect :global(.connect-provider) {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ac-bg) 88%, var(--ac-fill));
+}
+
+.connect :global(.connect-provider-heading) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.connect :global(.connect-provider-heading h3) {
+  margin: 2px 0 0;
+  color: var(--ac-label);
+  font: 700 17px/1.2 var(--ac-font-text);
+}
+
+.connect :global(.connect-provider-kicker) {
+  margin: 0;
+  color: var(--ac-accent);
+  font: 700 11px/1.2 var(--ac-font-text);
+  text-transform: uppercase;
+}
+
+.connect :global(.connect-scope) {
+  color: var(--ac-label-2);
+  font: 600 12px/1.35 var(--ac-font-text);
+  text-align: right;
+}
+
+.connect :global(.connect-steps) {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ac-label-2);
+  font: 500 13px/1.5 var(--ac-font-text);
+}
+
+.connect :global(.connect-details) {
+  color: var(--ac-label);
+  font: 600 13px/1.4 var(--ac-font-text);
+}
+
+.connect :global(.connect-details summary) {
+  cursor: pointer;
+}
+
+.connect :global(.connect-details[open] summary) {
+  margin-bottom: 10px;
+}
+
+.connect :global(.connect-minor-title) {
+  margin: 2px 0 0;
+  color: var(--ac-label);
+  font: 700 14px/1.3 var(--ac-font-text);
+}
+
 @media (max-width: 680px) {
   .page {
     padding: 72px 18px 48px;
@@ -329,5 +397,14 @@
   .connect :global(.connect-row) {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .connect :global(.connect-provider-heading) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .connect :global(.connect-scope) {
+    text-align: left;
   }
 }

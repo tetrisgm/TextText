@@ -32,6 +32,10 @@ import {
   type NativeQuickActionScope,
 } from "@/lib/ai/quick-actions";
 import {
+  installLocalAgentBridge,
+  LOCAL_AGENT_BRIDGE_VERSION,
+} from "@/lib/ai/local-agent-bridge";
+import {
   createWorkspaceItemTextEdit,
   resolveWorkspaceItemTextEdit,
   resolveWorkspaceItemTextSelection,
@@ -292,6 +296,23 @@ export function useNativeAssistant({
           confirmDestructive ? confirmDestructive(description) : false,
       }),
     [applyItemPatch, confirmDestructive, getPool, handle, readItemText],
+  );
+
+  useEffect(
+    () =>
+      installLocalAgentBridge(window, {
+        call: (name, args) => tools.executor(name, args, "local-mcp"),
+        manifest: () => {
+          const view = getViewRef.current();
+          return {
+            version: LOCAL_AGENT_BRIDGE_VERSION,
+            context: tools.describeContext(view),
+            view,
+            tools: tools.toolDefinitions,
+          };
+        },
+      }),
+    [tools],
   );
 
   useEffect(() => {

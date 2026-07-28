@@ -144,7 +144,7 @@ describe("native workspace tool adapter", () => {
     expect(itemTools).not.toContain("set_access");
   });
 
-  it("keeps styled workspace creation small enough for the on-device model", () => {
+  it("keeps styled workspace creation small enough for constrained providers", () => {
     expect(
       workspaceAgentToolNamesForView(
         { level: "workspace" },

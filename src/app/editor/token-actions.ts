@@ -1,8 +1,8 @@
 "use server";
 
-// API token management for the signed-in user. No UI yet; the settings surface
-// will call these. Raw token values leave the server exactly once, from
-// createApiTokenAction; list and revoke never see a hash or a secret.
+// Agent connection management for the signed-in user. Raw manual token values
+// leave the server exactly once. OAuth connections retain only revocable grant
+// metadata here; the AI client keeps its own model, account, and billing.
 
 import { isAuthConfigured } from "@/auth";
 import {
@@ -11,6 +11,11 @@ import {
   revokeApiToken,
   type ApiTokenSummary,
 } from "@/lib/api-tokens";
+import {
+  listOAuthConnections,
+  revokeOAuthConnection,
+  type OAuthConnectionSummary,
+} from "@/lib/oauth-connections";
 import { getCurrentUser } from "@/lib/session";
 import { getUserIdBySub } from "@/lib/store";
 
@@ -62,4 +67,20 @@ export async function revokeApiTokenAction(id: unknown): Promise<void> {
   const userId = await tokenOwnerId();
   const revoked = await revokeApiToken(userId, cleanTokenId(id));
   if (!revoked) throw new Error("Token not found");
+}
+
+export async function listOAuthConnectionsAction(): Promise<
+  OAuthConnectionSummary[]
+> {
+  return listOAuthConnections(await tokenOwnerId());
+}
+
+export async function revokeOAuthConnectionAction(
+  clientId: unknown,
+): Promise<void> {
+  const revoked = await revokeOAuthConnection(
+    await tokenOwnerId(),
+    clientId,
+  );
+  if (!revoked) throw new Error("Connection not found");
 }

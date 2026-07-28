@@ -379,8 +379,8 @@ final class AppHealthReporter {
                 operation: checkDocumentProjection),
             timedCheck(id: "selftest.public_link", operation: checkPublicLinkMapping),
             timedCheck(
-                id: "selftest.native_agent_contract",
-                operation: checkNativeAgentContract),
+                id: "selftest.local_agent_bridge",
+                operation: checkLocalAgentBridge),
             timedCheck(id: WriteWorkflowHealth.documentEngine) {
                 checkAttestedWorkflow(id: WriteWorkflowHealth.documentEngine)
             },
@@ -718,21 +718,24 @@ final class AppHealthReporter {
         ])
     }
 
-    private func checkNativeAgentContract() -> (WriteHealthStatus, [String: Double]) {
-        #if canImport(FoundationModels)
-            if #available(macOS 26.0, *) {
-                let compatible = NativeAIBridge.agentToolSchemasAreRuntimeCompatible()
-                return (compatible ? .pass : .fail, [
-                    "applicable": 1,
-                    "schema_compatible": compatible ? 1 : 0,
-                    "tool_count": Double(NativeAIBridge.agentToolSpecs.count),
-                ])
-            }
-        #endif
-        return (.pass, [
-            "applicable": 0,
-            "schema_compatible": 1,
-            "tool_count": 0,
+    private func checkLocalAgentBridge() -> (WriteHealthStatus, [String: Double]) {
+        let request = LocalAgentHTTPRequest.parse(Data(
+            "GET /health HTTP/1.1\r\nHost: 127.0.0.1:\(LocalAgentServer.port)\r\n\r\n".utf8))
+        let response = LocalAgentHTTPResponse.json([
+            "ok": true,
+            "service": "texttext-local-mcp",
+        ]).encoded()
+        let responseText = String(decoding: response, as: UTF8.self)
+        let loopbackOnly = request?.isLoopbackHost == true
+        let framingValid = responseText.contains("\r\n\r\n")
+            && responseText.hasPrefix("HTTP/1.1 200 OK\r\n")
+        let endpointValid =
+            LocalAgentServer.endpoint == "http://127.0.0.1:47118/mcp"
+        let valid = loopbackOnly && framingValid && endpointValid
+        return (valid ? .pass : .fail, [
+            "loopback_only": loopbackOnly ? 1 : 0,
+            "http_framing": framingValid ? 1 : 0,
+            "endpoint": endpointValid ? 1 : 0,
         ])
     }
 

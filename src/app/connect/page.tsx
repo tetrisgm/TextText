@@ -3,16 +3,21 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { listApiTokensAction } from "@/app/editor/token-actions";
+import {
+  listApiTokensAction,
+  listOAuthConnectionsAction,
+} from "@/app/editor/token-actions";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
+import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 import { getCurrentUser } from "@/lib/session";
 import { rootDomainUrl } from "@/lib/site-url";
 import "@/styles/connect.css";
 
 export const metadata: Metadata = {
-  title: "Connect",
-  description: "API tokens and endpoints for agents and sync clients.",
+  title: "Connect Claude, Codex, and ChatGPT",
+  description:
+    "Connect Claude, Codex, ChatGPT, and other agents to Texttext.",
 };
 
 export default async function ConnectPage() {
@@ -25,10 +30,12 @@ export default async function ConnectPage() {
         <main className="connect-main">
           <h1 className="connect-title">Connect</h1>
           <p className="connect-lede">
-            Connect at <code className="connect-inline-code">https://texttext.app/api/mcp</code>.{" "}
-            <code className="connect-inline-code">read</code> inspects and{" "}
-            <code className="connect-inline-code">sync</code> writes. Sign in to
-            create a token.
+            Claude, Codex, and ChatGPT can work with your Texttext documents
+            through MCP. Paste{" "}
+            <code className="connect-inline-code">
+              https://texttext.app/api/mcp
+            </code>{" "}
+            in the client and approve access when Texttext opens.
           </p>
           <p>
             <a
@@ -39,7 +46,8 @@ export default async function ConnectPage() {
             </a>
           </p>
           <p className="connect-sub" style={{ marginTop: 16 }}>
-            <Link href="/docs/ai">Setup for Claude, Cursor, VS Code, and Codex</Link>.
+            Sign in here to manage connected apps and advanced access.{" "}
+            <Link href="/docs/ai">Read the complete setup guide</Link>.
           </p>
         </main>
       </div>
@@ -49,10 +57,14 @@ export default async function ConnectPage() {
   // A signed-in user without a users row yet (never opened the editor) has
   // no tokens; the list degrades to empty instead of failing the page.
   let tokens: ApiTokenSummary[] = [];
-  try {
-    tokens = await listApiTokensAction();
-  } catch {
-    tokens = [];
+  let connections: OAuthConnectionSummary[] = [];
+  const [tokenResult, connectionResult] = await Promise.allSettled([
+    listApiTokensAction(),
+    listOAuthConnectionsAction(),
+  ]);
+  if (tokenResult.status === "fulfilled") tokens = tokenResult.value;
+  if (connectionResult.status === "fulfilled") {
+    connections = connectionResult.value;
   }
 
   return (
@@ -60,12 +72,15 @@ export default async function ConnectPage() {
       <main className="connect-main">
         <h1 className="connect-title">Connect</h1>
         <p className="connect-lede">
-          Connect at <code className="connect-inline-code">https://texttext.app/api/mcp</code>.{" "}
-          <code className="connect-inline-code">read</code> inspects and{" "}
-          <code className="connect-inline-code">sync</code> writes.{" "}
-          <Link href="/docs/ai">Setup for Claude, Cursor, VS Code, and Codex</Link>.
+          Use Claude, Codex, or ChatGPT to create, edit, organize, publish, and
+          collaborate on Texttext documents.{" "}
+          <Link href="/docs/ai">Open the complete setup guide</Link>.
         </p>
-        <ConnectPanel initialTokens={tokens} origin={origin} />
+        <ConnectPanel
+          initialConnections={connections}
+          initialTokens={tokens}
+          origin={origin}
+        />
       </main>
     </div>
   );

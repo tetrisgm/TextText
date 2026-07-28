@@ -7,9 +7,8 @@
 // the current context, then composed with the base instructions and sent
 // with the agent request.
 //
-// The on-device model has a small context window (about 4k tokens), so the
-// base stays under ~150 words, each skill under ~180, and at most two
-// skills ride along per request.
+// Keep the base under ~150 words, each skill under ~180, and at most two
+// skills per request so constrained providers can still act reliably.
 //
 // Roadmap (owner-approved direction): skills as markdown items in the
 // workspace itself, so they sync, are editable in-app like any note, and
@@ -106,7 +105,7 @@ function saveCustomSkills(handle: string, skills: CustomSkill[]) {
 /**
  * Install a skill from skills.sh or GitHub by URL or owner/repo/skill
  * reference. The server route fetches SKILL.md (GitHub raw only) and trims
- * it for the on-device context budget. Installed skill text becomes part of
+ * it for a constrained provider context budget. Installed skill text becomes part of
  * the model's instructions, so installing is an act of trust, like
  * installing any agent skill; the confirm lives in the UI.
  */

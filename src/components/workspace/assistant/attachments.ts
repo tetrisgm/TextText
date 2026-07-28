@@ -1,12 +1,15 @@
-import { nativeOcr } from "@/lib/ai/native";
-import type { NativeAICapabilities } from "@/lib/ai/native";
+import { nativeOcr } from "@/lib/ai/native-ocr";
 import type { AssistantAttachment } from "./AssistantSidebar";
 
 export const ASSISTANT_ATTACHMENT_ACCEPT = "image/*,.txt,.md,.markdown";
 export const ASSISTANT_TEXT_ATTACHMENT_ACCEPT = ".txt,.md,.markdown";
 
+export type NativeOcrCapabilities = {
+  ocr?: boolean;
+};
+
 export function assistantAttachmentAccept(
-  capabilities: NativeAICapabilities | null,
+  capabilities: NativeOcrCapabilities | null,
 ): string {
   return capabilities?.ocr
     ? ASSISTANT_ATTACHMENT_ACCEPT

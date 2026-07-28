@@ -8,11 +8,15 @@ import {
   saveWorkspaceAiSettingsAction,
   type WorkspaceAiSettingsState,
 } from "@/app/editor/ai-config-actions";
-import { listApiTokensAction } from "@/app/editor/token-actions";
+import {
+  listApiTokensAction,
+  listOAuthConnectionsAction,
+} from "@/app/editor/token-actions";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import type { AssistantSkill } from "@/lib/ai/skills";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
+import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 import {
   CLOUD_AI_CATALOG,
   defaultCloudAiModel,
@@ -46,6 +50,8 @@ export function WorkspaceSettings({
   const [nameError, setNameError] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const [tokens, setTokens] = useState<ApiTokenSummary[] | null>(null);
+  const [connections, setConnections] =
+    useState<OAuthConnectionSummary[] | null>(null);
   const [installValue, setInstallValue] = useState("");
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -61,13 +67,20 @@ export function WorkspaceSettings({
 
   useEffect(() => {
     let cancelled = false;
-    void listApiTokensAction()
-      .then((next) => {
-        if (!cancelled) setTokens(next);
-      })
-      .catch(() => {
-        if (!cancelled) setTokens([]);
-      });
+    void Promise.allSettled([
+      listApiTokensAction(),
+      listOAuthConnectionsAction(),
+    ]).then(([tokenResult, connectionResult]) => {
+      if (cancelled) return;
+      setTokens(
+        tokenResult.status === "fulfilled" ? tokenResult.value : [],
+      );
+      setConnections(
+        connectionResult.status === "fulfilled"
+          ? connectionResult.value
+          : [],
+      );
+    });
     return () => {
       cancelled = true;
     };
@@ -221,7 +234,7 @@ export function WorkspaceSettings({
           <section className={styles.section} aria-labelledby="settings-ai">
             <div className={styles.sectionHeader}>
               <div>
-                <h2 id="settings-ai">AI connections</h2>
+                <h2 id="settings-ai">In-app assistant</h2>
                 <p>
                   Connect your own provider API account and choose the model
                   Texttext uses. Keys are encrypted and scoped to this
@@ -436,19 +449,24 @@ export function WorkspaceSettings({
           )}
         </section>
 
-        <section className={`${styles.section} ${styles.connect}`} aria-labelledby="settings-connect">
+        <section
+          className={`${styles.section} ${styles.connect}`}
+          aria-labelledby="settings-connect"
+        >
           <div className={styles.sectionHeader}>
             <div>
-              <h2 id="settings-connect">Connect an agent</h2>
-              <p>Create tokens and copy setup for MCP or file sync.</p>
+              <h2 id="settings-connect">Claude, Codex, and ChatGPT</h2>
+              <p>
+                Let the AI clients you already use work directly with this
+                workspace.
+              </p>
             </div>
           </div>
-          {tokens ? (
+          {tokens && connections ? (
             <ConnectPanel
+              initialConnections={connections}
               initialTokens={tokens}
-              origin={
-                typeof window === "undefined" ? "" : window.location.origin
-              }
+              origin="https://texttext.app"
             />
           ) : (
             <p className={styles.loading} role="status">

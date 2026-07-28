@@ -8,7 +8,7 @@ import {
   parseWorkspaceToolInput,
 } from "@/lib/ai/tools";
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
-import type { NativeAgentToolExecutor } from "@/lib/ai/native";
+import type { WorkspaceAgentToolExecutor } from "@/lib/ai/agent-protocol";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import type {
   WorkspaceItemTextPatch,
@@ -59,6 +59,9 @@ export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map(
     });
   },
 );
+
+export type WorkspaceAgentToolDefinition =
+  (typeof WORKSPACE_AGENT_TOOL_DEFINITIONS)[number];
 
 type WorkspaceAgentView = {
   level?: string;
@@ -317,7 +320,7 @@ function searchSnippet(text: string, query: string): string {
 export function createWorkspaceAgentTools(
   options: WorkspaceAgentToolsOptions,
 ): {
-  executor: NativeAgentToolExecutor;
+  executor: WorkspaceAgentToolExecutor;
   toolNames: WorkspaceToolName[];
   toolNamesForView: (
     view?: WorkspaceAgentView,
@@ -516,7 +519,7 @@ export function createWorkspaceAgentTools(
     return await confirmDestructive(description);
   }
 
-  const executor: NativeAgentToolExecutor = async (
+  const executor: WorkspaceAgentToolExecutor = async (
     rawName,
     rawArgs,
     requestTag,

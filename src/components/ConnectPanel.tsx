@@ -1,26 +1,22 @@
 "use client";
 
-// The signed-in body of /connect: token management plus copy-ready recipes
-// for MCP clients and sync clients. Raw token values exist in the browser
-// exactly once, right after creation; revoking uses a two-tap inline confirm
-// instead of a dialog.
-
 import { useRef, useState } from "react";
 import {
   createApiTokenAction,
   revokeApiTokenAction,
+  revokeOAuthConnectionAction,
 } from "@/app/editor/token-actions";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
+import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 
 type FreshToken = { id: string; name: string; token: string };
 
+const LOCAL_MCP_URL = "http://127.0.0.1:47118/mcp";
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-// UTC on purpose: the same string renders on server and client, so hydration
-// never disagrees about a date near midnight.
 function formatDay(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
@@ -32,34 +28,48 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 const EXAMPLE_PROMPTS = [
-  "What did I publish last month? Read my latest post and draft a follow-up.",
-  "Save this link to my bookmarks with a one-line note on why it matters.",
-  "Append today's progress to my weeknotes draft.",
+  "Create one project note for every repository I am working on.",
+  "Append today's shipped changes to each matching project changelog.",
+  "Save the useful decisions from this conversation as a Texttext note.",
 ];
 
 export function ConnectPanel({
+  initialConnections,
   initialTokens,
   origin,
 }: {
+  initialConnections: OAuthConnectionSummary[];
   initialTokens: ApiTokenSummary[];
   origin: string;
 }) {
+  const [connections, setConnections] =
+    useState<OAuthConnectionSummary[]>(initialConnections);
   const [tokens, setTokens] = useState<ApiTokenSummary[]>(initialTokens);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState<FreshToken | null>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteOrigin =
+    origin ||
+    (typeof window === "undefined"
+      ? "https://texttext.app"
+      : window.location.origin);
+  const remoteMcpUrl = `${remoteOrigin}/api/mcp`;
 
-  const mcpConfig = `{
+  const commands = {
+    claudeLocal: `claude mcp add --transport http --scope user texttext ${LOCAL_MCP_URL}`,
+    claudeRemote: `claude mcp add --transport http --scope user texttext ${remoteMcpUrl}`,
+    codexLocal: `codex mcp add texttext --url ${LOCAL_MCP_URL}`,
+    codexRemote: `codex mcp add texttext --url ${remoteMcpUrl}\ncodex mcp login texttext`,
+  };
+  const tokenConfig = `{
   "mcpServers": {
-    "write": {
-      "url": "${origin}/api/mcp",
-      "headers": {
-        "Authorization": "Bearer <your token>"
-      }
+    "texttext": {
+      "url": "${remoteMcpUrl}",
+      "headers": { "Authorization": "Bearer <your token>" }
     }
   }
 }`;
@@ -71,7 +81,7 @@ export function ConnectPanel({
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopiedKey(null), 2000);
     } catch {
-      // Clipboard can be denied; the values stay selectable by hand.
+      setError("Clipboard access was denied. Select and copy the text instead.");
     }
   }
 
@@ -100,6 +110,20 @@ export function ConnectPanel({
     }
   }
 
+  async function handleDisconnect(clientId: string) {
+    setError(null);
+    try {
+      await revokeOAuthConnectionAction(clientId);
+      setConnections((previous) =>
+        previous.filter((connection) => connection.clientId !== clientId),
+      );
+    } catch (err) {
+      setError(errorMessage(err, "The app could not be disconnected."));
+    } finally {
+      setConfirming(null);
+    }
+  }
+
   async function handleRevoke(id: string) {
     setError(null);
     try {
@@ -109,19 +133,197 @@ export function ConnectPanel({
     } catch (err) {
       setError(errorMessage(err, "The token could not be revoked."));
     } finally {
-      setConfirmingId(null);
+      setConfirming(null);
     }
+  }
+
+  function CodeRecipe({
+    copyKey,
+    value,
+  }: {
+    copyKey: string;
+    value: string;
+  }) {
+    return (
+      <div className="connect-code-wrap">
+        <pre className="connect-code">{value}</pre>
+        <button
+          className="ac-btn ac-btn-gray connect-code-copy"
+          type="button"
+          onClick={() => void copy(value, copyKey)}
+        >
+          {copiedKey === copyKey ? "Copied" : "Copy"}
+        </button>
+      </div>
+    );
   }
 
   return (
     <div>
-      <section className="connect-section" aria-labelledby="connect-tokens">
-        <h2 className="connect-section-title" id="connect-tokens">
-          API tokens
+      <section className="connect-section" aria-labelledby="connect-primary">
+        <h2 className="connect-section-title" id="connect-primary">
+          Use your AI account
         </h2>
         <p className="connect-sub">
-          A token gives an agent or sync client full access to your blog.
-          Name it after the machine or tool it is for.
+          Claude, Codex, and ChatGPT keep their own model, account, and billing.
+          Texttext gives them permission to work with your documents through MCP.
+        </p>
+
+        <div className="connect-provider-list">
+          <section className="connect-provider" aria-labelledby="connect-claude">
+            <div className="connect-provider-heading">
+              <div>
+                <p className="connect-provider-kicker">Anthropic</p>
+                <h3 id="connect-claude">Claude</h3>
+              </div>
+              <span className="connect-scope">Claude.ai or Claude Code</span>
+            </div>
+            <p className="connect-body">
+              In Claude.ai, open Settings, choose Connectors, add a custom
+              connector, and paste{" "}
+              <code className="connect-inline-code">{remoteMcpUrl}</code>.
+              Claude opens Texttext for approval.
+            </p>
+            <p className="connect-body">
+              Claude Code on this Mac can use the local bridge while Texttext is
+              open. It needs no token and keeps local file changes immediate.
+            </p>
+            <CodeRecipe copyKey="claude-local" value={commands.claudeLocal} />
+            <details className="connect-details">
+              <summary>Use Claude Code remotely</summary>
+              <CodeRecipe copyKey="claude-remote" value={commands.claudeRemote} />
+            </details>
+          </section>
+
+          <section className="connect-provider" aria-labelledby="connect-codex">
+            <div className="connect-provider-heading">
+              <div>
+                <p className="connect-provider-kicker">OpenAI</p>
+                <h3 id="connect-codex">Codex</h3>
+              </div>
+              <span className="connect-scope">Codex app or CLI</span>
+            </div>
+            <p className="connect-body">
+              Codex on this Mac can use the local bridge while Texttext is open.
+              The Codex app and CLI share the same MCP configuration.
+            </p>
+            <CodeRecipe copyKey="codex-local" value={commands.codexLocal} />
+            <details className="connect-details">
+              <summary>Use hosted Texttext from Codex</summary>
+              <CodeRecipe copyKey="codex-remote" value={commands.codexRemote} />
+            </details>
+          </section>
+
+          <section className="connect-provider" aria-labelledby="connect-chatgpt">
+            <div className="connect-provider-heading">
+              <div>
+                <p className="connect-provider-kicker">OpenAI</p>
+                <h3 id="connect-chatgpt">ChatGPT</h3>
+              </div>
+              <span className="connect-scope">Apps with full MCP</span>
+            </div>
+            <ol className="connect-steps">
+              <li>Open ChatGPT Settings or Workspace Settings.</li>
+              <li>Open Apps, enable developer mode, then choose Create.</li>
+              <li>
+                Paste <code className="connect-inline-code">{remoteMcpUrl}</code>,
+                scan tools, and approve Texttext.
+              </li>
+            </ol>
+            <p className="connect-sub">
+              Full MCP apps currently require an eligible ChatGPT workspace plan.
+            </p>
+          </section>
+        </div>
+
+        <p className="connect-body">Once connected, try:</p>
+        <ul className="connect-prompts">
+          {EXAMPLE_PROMPTS.map((prompt) => (
+            <li key={prompt}>{prompt}</li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="connect-section" aria-labelledby="connect-apps">
+        <h2 className="connect-section-title" id="connect-apps">
+          Connected apps
+        </h2>
+        <p className="connect-sub">
+          These clients approved access through Texttext. Disconnecting revokes
+          every active grant for that client.
+        </p>
+        {connections.length === 0 ? (
+          <p className="connect-empty">No OAuth apps are connected.</p>
+        ) : (
+          <ul className="connect-rows">
+            {connections.map((connection) => (
+              <li className="connect-row" key={connection.clientId}>
+                <div className="connect-row-main">
+                  <div className="connect-row-name">{connection.name}</div>
+                  <div className="connect-row-meta">
+                    {connection.scope === "sync" ? "Can read and write" : "Read only"}
+                    {" · "}Connected {formatDay(connection.connectedAt)}
+                    {connection.lastUsedAt
+                      ? ` · Last used ${formatDay(connection.lastUsedAt)}`
+                      : ""}
+                  </div>
+                </div>
+                <div className="connect-row-actions">
+                  {confirming === `oauth:${connection.clientId}` ? (
+                    <>
+                      <span className="connect-confirm-label">Disconnect?</span>
+                      <button
+                        className="ac-btn ac-btn-plain ac-danger"
+                        type="button"
+                        onClick={() => void handleDisconnect(connection.clientId)}
+                      >
+                        Disconnect
+                      </button>
+                      <button
+                        className="ac-btn ac-btn-plain"
+                        type="button"
+                        onClick={() => setConfirming(null)}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="ac-btn ac-btn-plain ac-danger"
+                      type="button"
+                      onClick={() => setConfirming(`oauth:${connection.clientId}`)}
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {error && (
+          <p className="connect-error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+
+      <section className="connect-section" aria-labelledby="connect-in-app">
+        <h2 className="connect-section-title" id="connect-in-app">
+          In-app assistant
+        </h2>
+        <p className="connect-body">
+          To use the Texttext assistant sidebar, add a workspace-owned Anthropic
+          or OpenAI API key in Workspace Settings and choose a model. Provider
+          API billing is separate from Claude.ai and ChatGPT subscriptions.
+        </p>
+      </section>
+
+      <details className="connect-section connect-advanced">
+        <summary className="connect-section-title">Advanced connections</summary>
+        <p className="connect-sub">
+          Manual tokens are for clients that cannot complete OAuth and for file
+          sync integrations. Prefer the setup above when your client supports it.
         </p>
 
         <form className="connect-form" onSubmit={handleCreate}>
@@ -130,7 +332,7 @@ export function ConnectPanel({
             type="text"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Token name, e.g. Claude on my laptop"
+            placeholder="Token name, e.g. automation on my Mac"
             maxLength={80}
             aria-label="Token name"
           />
@@ -151,24 +353,16 @@ export function ConnectPanel({
               <button
                 className="ac-btn ac-btn-gray"
                 type="button"
-                onClick={() => copy(fresh.token, "fresh")}
+                onClick={() => void copy(fresh.token, "fresh")}
               >
                 {copiedKey === "fresh" ? "Copied" : "Copy"}
               </button>
             </div>
-            <p className="connect-warn">
-              Save it now. It is not shown again.
-            </p>
+            <p className="connect-warn">Save it now. It is not shown again.</p>
           </div>
         )}
 
-        {error && <p className="connect-error">{error}</p>}
-
-        {tokens.length === 0 ? (
-          <p className="connect-empty">
-            No tokens yet. Create one to connect an agent.
-          </p>
-        ) : (
+        {tokens.length > 0 && (
           <ul className="connect-rows">
             {tokens.map((token) => (
               <li className="connect-row" key={token.id}>
@@ -182,20 +376,20 @@ export function ConnectPanel({
                   </div>
                 </div>
                 <div className="connect-row-actions">
-                  {confirmingId === token.id ? (
+                  {confirming === `token:${token.id}` ? (
                     <>
                       <span className="connect-confirm-label">Revoke?</span>
                       <button
                         className="ac-btn ac-btn-plain ac-danger"
                         type="button"
-                        onClick={() => handleRevoke(token.id)}
+                        onClick={() => void handleRevoke(token.id)}
                       >
-                        Yes
+                        Revoke
                       </button>
                       <button
                         className="ac-btn ac-btn-plain"
                         type="button"
-                        onClick={() => setConfirmingId(null)}
+                        onClick={() => setConfirming(null)}
                       >
                         Cancel
                       </button>
@@ -204,7 +398,7 @@ export function ConnectPanel({
                     <button
                       className="ac-btn ac-btn-plain ac-danger"
                       type="button"
-                      onClick={() => setConfirmingId(token.id)}
+                      onClick={() => setConfirming(`token:${token.id}`)}
                     >
                       Revoke
                     </button>
@@ -214,67 +408,16 @@ export function ConnectPanel({
             ))}
           </ul>
         )}
-      </section>
 
-      <section className="connect-section" aria-labelledby="connect-mcp">
-        <h2 className="connect-section-title" id="connect-mcp">
-          Use with Claude, ChatGPT, Cursor, or any MCP client
-        </h2>
-        <p className="connect-sub">
-          Texttext speaks MCP over streamable HTTP. Add this to your client's
-          MCP configuration and replace the placeholder with a token from
-          above.
-        </p>
-        <div className="connect-code-wrap">
-          <pre className="connect-code">{mcpConfig}</pre>
-          <button
-            className="ac-btn ac-btn-gray connect-code-copy"
-            type="button"
-            onClick={() => copy(mcpConfig, "mcp")}
-          >
-            {copiedKey === "mcp" ? "Copied" : "Copy"}
-          </button>
-        </div>
-        <p className="connect-body">Then try prompts like these:</p>
-        <ul className="connect-prompts">
-          {EXAMPLE_PROMPTS.map((prompt) => (
-            <li key={prompt}>{prompt}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="connect-section" aria-labelledby="connect-sync">
-        <h2 className="connect-section-title" id="connect-sync">
-          Sync files
-        </h2>
+        <h3 className="connect-minor-title">Bearer configuration</h3>
+        <CodeRecipe copyKey="token-config" value={tokenConfig} />
         <p className="connect-body">
-          Every post is a plain markdown file with one-line{" "}
-          <code className="connect-inline-code">key: value</code> frontmatter.
-          The sync API lives at{" "}
-          <code className="connect-inline-code">{origin}/api/sync/v1</code>{" "}
-          and takes the same tokens:{" "}
-          <code className="connect-inline-code">GET /workspace</code> lists
-          your folders, and{" "}
-          <code className="connect-inline-code">
-            GET /folders/{"{folderId}"}/manifest
-          </code>{" "}
-          returns every item with a sha256 hash of its file, so a client can
-          tell what changed without downloading anything twice.
+          File sync lives at{" "}
+          <code className="connect-inline-code">{remoteOrigin}/api/sync/v1</code>.
+          See <a href="/docs/ai">the complete AI and agent guide</a> for tool,
+          privacy, conflict, and automation details.
         </p>
-        <p className="connect-body">
-          <code className="connect-inline-code">
-            GET /files/{"{id}"}
-          </code>{" "}
-          returns a file with its hash as the ETag. To write, send the whole
-          file back with{" "}
-          <code className="connect-inline-code">PUT</code> and set{" "}
-          <code className="connect-inline-code">If-Match</code> to that ETag:
-          if the post changed on the server in the meantime, the request
-          fails with 412 instead of overwriting it, and your client refetches
-          and merges. New files are POSTed to{" "}
-          <code className="connect-inline-code">/files</code>.
-        </p>
-      </section>
+      </details>
     </div>
   );
 }

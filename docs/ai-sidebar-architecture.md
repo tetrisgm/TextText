@@ -1,18 +1,18 @@
 # Assistant and workspace command architecture
 
-This document describes the implemented AI architecture as of 2026-07-15.
-Texttext has one shared workspace tool contract, a native on-device assistant in
-the Mac app, and a hosted MCP adapter for external agents. The web product does
-not call its own MCP server.
+This document describes the implemented AI architecture as of 2026-07-28.
+Texttext has one shared workspace tool contract, an in-app provider adapter, a
+local Mac agent bridge, and a hosted MCP adapter for external agents. The web
+product does not call its own MCP server.
 
 ## Architectural invariants
 
 - `src/lib/ai/tools.ts` is the source of truth for the 31 public workspace
   tool names, Zod input schemas, JSON schemas, mutability, confirmation class,
   and MCP annotations.
-- The native assistant and MCP server consume that same contract. Their
-  execution adapters differ because one runs in the signed-in page and the
-  other runs on the server.
+- The in-app assistant, local Mac bridge, and hosted MCP server consume that
+  same contract. Their execution adapters differ because they run in different
+  trust and transport boundaries.
 - Product UI and assistant mutations use the same pool mutations and server
   actions. MCP mutations enter through server-side handlers and the same
   content store.
@@ -72,8 +72,8 @@ confirmation immediately before execution.
 
 MCP live-item mutations accept an optional `if_match_hash`. External callers
 should always send the latest hash from `list_items`, `search`, or the previous
-mutation. The native adapter instead saves against the current pool revision
-through the normal UI actions. A stale native save fails and rolls back its
+mutation. The in-app adapter instead saves against the current pool revision
+through the normal UI actions. A stale in-app save fails and rolls back its
 optimistic state rather than relying on a model-supplied hash.
 
 ## Execution adapters
@@ -107,6 +107,14 @@ browser.
 Texttext does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
 
+### Local Mac agent bridge
+
+The Mac app exposes a loopback-only MCP endpoint at
+`http://127.0.0.1:47118/mcp` while Texttext is open. Claude Code and Codex can
+use it without a Texttext token. The bridge executes the same workspace
+commands against the signed-in Mac app and is never exposed beyond localhost.
+It is a transport for external local agents, not an AI model inside Texttext.
+
 ## Assistant status
 
 The assistant is available on the Mac app and web after a workspace owner
@@ -137,15 +145,18 @@ leaking workspace data or provider credentials.
    key stays server-side and is never returned to the browser. The assistant
    exposes only tools that need no confirmation and cannot fetch a
    model-chosen URL.
-2. **External agents over MCP: shipped.** ChatGPT, Claude, Cursor, Claude
-   Code, and other MCP hosts can connect to `/api/mcp`. Their model and billing
-   remain in the external client. This is how an existing ChatGPT or Claude.ai
-   subscription works with Texttext.
+2. **Local agents over MCP: shipped.** Claude Code and Codex can connect to the
+   Mac app at `http://127.0.0.1:47118/mcp`. Their model and billing remain in the
+   external client, and local file changes remain immediate.
+3. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
+   ChatGPT, Cursor, and other MCP hosts can connect to `/api/mcp` using OAuth.
+   Claude, Codex, and ChatGPT are the primary documented clients. Cursor and
+   other standards-compatible hosts remain supported secondary clients.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains
 opt-in and executes the same workspace contract rather than creating a
-parallel command system. The legacy native bridge remains dormant code and is
-not an active provider or fallback.
+parallel command system. Apple Foundation Models are not an active provider or
+fallback.
 
 ## Context model
 
@@ -215,6 +226,6 @@ to fail.
 - Add or change a workspace tool in the shared registry first, then implement
   both execution adapters and their tests.
 - Keep privacy and auditing below the tool layer.
-- Reusable versions live in `~/dev/stack` under `mcp-kit` and
-  `mac-kit/templates/native-ai`. Port contract or OAuth hardening back to the
-  kit and note it in the kit README.
+- Reusable versions live in `~/dev/stack` under `mcp-kit` and the Mac kit
+  templates. Port command-contract, local-bridge, or OAuth hardening back to
+  the relevant kit and note it in the kit README.

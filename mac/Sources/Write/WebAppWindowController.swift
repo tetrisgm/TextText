@@ -46,9 +46,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     /// Starts the system-browser account and device approval flow.
     private let onSystemSignInRequested: () -> Void
     private var startupNavigation: WebAppStartupNavigation
-    /// On-device AI over the `nativeAI` bridge; owned here, weak-proxied into
-    /// the user content controller like the `writeApp` handler.
-    private let aiBridge = NativeAIBridge()
+    private let ocrBridge = NativeOCRBridge()
+    private let localAgentServer = LocalAgentServer()
 
     static let cacheWebView = true
 
@@ -97,14 +96,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // On-device AI: same origin gate as the flags above, so the bridge
-        // never exists in third-party OAuth page contexts.
+        // Vision OCR is origin-gated so the native bridge never exists in a
+        // third-party OAuth page context.
         ucc.addUserScript(WKUserScript(
             source: """
             (function () {
               var h = location.hostname, base = "\(origin.host ?? "")";
               if (base && h !== base && !h.endsWith("." + base)) return;
-              \(NativeAIBridge.shimScript)
+              \(NativeOCRBridge.shimScript)
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -135,8 +134,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         // Registered AFTER super.init so self is available; the weak proxy
         // keeps the retain cycle from pinning the window open.
         ucc.add(WeakScriptHandler(self), name: "writeApp")
-        aiBridge.webView = webView
-        ucc.add(WeakScriptHandler(aiBridge), name: NativeAIBridge.handlerName)
+        ocrBridge.webView = webView
+        ucc.add(WeakScriptHandler(ocrBridge), name: NativeOCRBridge.handlerName)
+        localAgentServer.webView = webView
+        localAgentServer.start()
         webView.navigationDelegate = self
         webView.uiDelegate = self
         // Tag every request as coming from the app BEFORE the first load, so
