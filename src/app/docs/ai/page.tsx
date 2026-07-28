@@ -1,14 +1,21 @@
-// /docs/ai: the canonical hosted OAuth setup and tool reference for Texttext MCP.
+// /docs/ai: the canonical provider-first setup and tool reference for Texttext.
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import {
+  AGENT_INTEGRATIONS,
+  AGENT_WORKFLOWS,
+  CLAUDE_PLUGIN_INSTALL_COMMAND,
+  CODEX_PLUGIN_INSTALL_COMMAND,
+  TEXTTEXT_HOSTED_MCP_URL,
+  TEXTTEXT_LOCAL_MCP_URL,
+} from "@/lib/agent-integrations";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
 import "@/styles/connect.css";
 
-const MCP_URL = "https://texttext.app/api/mcp";
 const READ_TOOLS = WORKSPACE_TOOL_NAMES.filter(
   (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read",
 );
@@ -17,8 +24,9 @@ const WRITE_TOOLS = WORKSPACE_TOOL_NAMES.filter(
 );
 
 export const metadata: Metadata = {
-  title: "Connect your AI to Texttext",
-  description: `Connect an AI assistant to Texttext's ${WORKSPACE_TOOL_NAMES.length} workspace tools.`,
+  title: "Add Texttext to your AI",
+  description:
+    "Install Texttext in Claude and Codex, connect ChatGPT, or use any MCP client.",
 };
 
 function ToolTable({ names }: { names: typeof WORKSPACE_TOOL_NAMES }) {
@@ -46,296 +54,242 @@ function ToolTable({ names }: { names: typeof WORKSPACE_TOOL_NAMES }) {
   );
 }
 
+function InstallCommand({
+  children,
+  command,
+}: {
+  children: React.ReactNode;
+  command: string;
+}) {
+  return (
+    <div className="connect-code-wrap">
+      <p className="connect-code-label">{children}</p>
+      <pre className="connect-code">{command}</pre>
+    </div>
+  );
+}
+
 export default function AiDocsPage() {
-  const localMcpUrl = "http://127.0.0.1:47118/mcp";
-  const cursorConfig = `{ "mcpServers": { "texttext": { "url": "${MCP_URL}" } } }`;
-  const vscodeConfig = `{ "servers": { "texttext": { "type": "http", "url": "${MCP_URL}" } } }`;
-  const remoteConfig = `{
-  "mcpServers": { "texttext": { "command": "npx", "args": ["-y", "mcp-remote", "${MCP_URL}"] } }
-}`;
   const tokenConfig = `{
-  "mcpServers": { "texttext": { "url": "${MCP_URL}", "headers": { "Authorization": "Bearer wsk_..." } } }
+  "mcpServers": {
+    "texttext": {
+      "url": "${TEXTTEXT_HOSTED_MCP_URL}",
+      "headers": { "Authorization": "Bearer wsk_..." }
+    }
+  }
 }`;
 
   return (
     <div className="applecms connect-shell">
       <main className="connect-main connect-doc">
-        <h1 className="connect-title">Connect your AI to Texttext</h1>
+        <p className="connect-provider-kicker">Agents and integrations</p>
+        <h1 className="connect-title">Add Texttext to your AI</h1>
+        <p className="connect-lede">
+          Texttext becomes the durable document workspace for Claude, Codex,
+          ChatGPT, and other agents. Your AI keeps its own account and model.
+          Texttext supplies the documents, permissions, collaboration, and
+          publishing tools.
+        </p>
 
         <section className="connect-section">
-          <h2 className="connect-section-title">Three ways to connect</h2>
-          <p className="connect-body">
-            Claude Code and Codex on this Mac can use Texttext&apos;s local MCP
-            bridge while the app is open. It is immediate, stays on this Mac,
-            and needs no Texttext token.
-          </p>
-          <p className="connect-body">
-            Claude.ai, hosted Codex, ChatGPT, and other remote clients connect
-            to Texttext&apos;s hosted MCP endpoint using OAuth. They open
-            Texttext once so you can approve read or sync access.
-          </p>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{MCP_URL}</pre>
+          <h2 className="connect-section-title">Choose your AI</h2>
+          <div className="connect-integration-grid">
+            {AGENT_INTEGRATIONS.map((integration) => (
+              <article
+                className="connect-integration-card"
+                key={integration.id}
+              >
+                <div className="connect-integration-heading">
+                  <span
+                    className={`connect-integration-mark is-${integration.id}`}
+                    aria-hidden="true"
+                  >
+                    {integration.monogram}
+                  </span>
+                  <div>
+                    <p className="connect-provider-kicker">
+                      {integration.company}
+                    </p>
+                    <h3>{integration.name}</h3>
+                  </div>
+                </div>
+                <p className="connect-integration-description">
+                  {integration.description}
+                </p>
+                <p className="connect-integration-environment">
+                  {integration.environment}
+                </p>
+              </article>
+            ))}
           </div>
-          <p className="connect-body">
-            The assistant sidebar inside Texttext is separate. It uses a
-            workspace-owned Anthropic or OpenAI API key. API billing is separate
-            from Claude.ai and ChatGPT subscriptions.
-          </p>
         </section>
 
         <section className="connect-section">
           <h2 className="connect-section-title">Claude</h2>
-          <h3>Claude Code on this Mac</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">
-              {`claude mcp add --transport http --scope user texttext ${localMcpUrl}`}
-            </pre>
-          </div>
           <p className="connect-body">
-            Keep Texttext open. Claude Code can now read and edit the current
-            workspace through the local app.
+            The Texttext plugin gives Claude Code the MCP connection and the
+            skills for conversation capture, project changelogs, publishing,
+            and collaboration. Install it once:
           </p>
-          <h3>Claude Code remotely</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">
-              {`claude mcp add --transport http --scope user texttext ${MCP_URL}\n/mcp\nThen approve in your browser.`}
-            </pre>
-          </div>
-          <h3>Claude.ai</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">
-              {`Settings → Connectors → Add custom connector\nPaste ${MCP_URL} → Add\nApprove in your browser.`}
-            </pre>
-          </div>
+          <InstallCommand command={CLAUDE_PLUGIN_INSTALL_COMMAND}>
+            Claude Code
+          </InstallCommand>
+          <p className="connect-body">
+            Claude opens Texttext so you can approve access. In Claude.ai or
+            Claude Desktop, add a custom connector and paste{" "}
+            <code className="connect-inline-code">
+              {TEXTTEXT_HOSTED_MCP_URL}
+            </code>
+            .
+          </p>
         </section>
 
         <section className="connect-section">
           <h2 className="connect-section-title">Codex</h2>
-          <h3>Codex on this Mac</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">
-              {`codex mcp add texttext --url ${localMcpUrl}`}
-            </pre>
-          </div>
           <p className="connect-body">
-            The Codex app and CLI share the same MCP configuration. Keep
-            Texttext open while using the local bridge.
+            The Texttext plugin gives the Codex app and CLI the same connection
+            and reusable skills:
           </p>
-          <h3>Hosted Texttext</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">
-              {`codex mcp add texttext --url ${MCP_URL}\ncodex mcp login texttext`}
-            </pre>
-          </div>
+          <InstallCommand command={CODEX_PLUGIN_INSTALL_COMMAND}>
+            Codex app or CLI
+          </InstallCommand>
+          <p className="connect-body">
+            Codex opens Texttext during installation so you can approve access.
+            The plugin is then available in future tasks without repeating the
+            setup.
+          </p>
         </section>
 
         <section className="connect-section">
           <h2 className="connect-section-title">ChatGPT</h2>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">
-              {`Settings or Workspace Settings → Apps\nEnable developer mode → Create\nPaste ${MCP_URL} → Scan tools → Connect\nApprove Texttext in your browser.`}
-            </pre>
-          </div>
+          <ol className="connect-steps">
+            <li>Open ChatGPT Settings or Workspace Settings.</li>
+            <li>Open Apps, enable developer mode, then choose Create.</li>
+            <li>
+              Paste{" "}
+              <code className="connect-inline-code">
+                {TEXTTEXT_HOSTED_MCP_URL}
+              </code>{" "}
+              and scan the tools.
+            </li>
+            <li>Choose Connect and approve Texttext in the browser.</li>
+          </ol>
           <p className="connect-body">
-            Full MCP apps currently require an eligible ChatGPT workspace plan.
-            Your ChatGPT account supplies the model and billing.
+            ChatGPT supplies the model and billing. Texttext never needs your
+            ChatGPT password or API key.
           </p>
         </section>
 
         <section className="connect-section">
-          <h2 className="connect-section-title">Other MCP clients</h2>
+          <h2 className="connect-section-title">Ready-made skills</h2>
           <p className="connect-body">
-            Texttext follows the standard MCP and OAuth discovery flow, so
-            Cursor, VS Code, and other compatible clients remain supported.
+            Claude and Codex install these workflows with the plugin. ChatGPT
+            and other MCP clients can run the same workflows from the prompts.
           </p>
-          <h3>Cursor</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{`.cursor/mcp.json\n${cursorConfig}\nThen approve in your browser.`}</pre>
+          <div className="connect-workflow-grid">
+            {AGENT_WORKFLOWS.map((workflow) => (
+              <article className="connect-workflow" key={workflow.id}>
+                <h3>{workflow.title}</h3>
+                <p>{workflow.description}</p>
+                <blockquote>{workflow.prompt}</blockquote>
+              </article>
+            ))}
           </div>
-          <h3>VS Code</h3>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{`.vscode/mcp.json\n${vscodeConfig}\nThen approve in your browser.`}</pre>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">What agents can do</h2>
+          <div className="connect-capability-strip">
+            <span>{WORKSPACE_TOOL_NAMES.length} document tools</span>
+            <span>OAuth approval</span>
+            <span>Audited mutations</span>
+            <span>Conflict-safe edits</span>
           </div>
-          <h3>Legacy stdio-only clients</h3>
-          <p className="connect-body">Use the mcp-remote fallback:</p>
-          <div className="connect-code-wrap">
-            <pre className="connect-code">{remoteConfig}</pre>
-          </div>
+          <ul className="connect-feature-list">
+            <li>Create notes, articles, bookmarks, folders, and assets.</li>
+            <li>Find, read, append to, reshape, move, and organize documents.</li>
+            <li>Maintain one project changelog without duplicate retry entries.</li>
+            <li>Publish articles and manage collaborators after confirmation.</li>
+            <li>Comment, restore from Trash, and recapture bookmarks.</li>
+          </ul>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Verify the connection</h2>
           <p className="connect-body">
-            If the host does not support OAuth, mint a{" "}
-            <code className="connect-inline-code">sync</code> token at{" "}
-            <Link href="/connect">Connect</Link> and send it as a bearer header:
+            Ask: <em>&quot;What folders are in my Texttext workspace?&quot;</em>{" "}
+            The agent should request approval if needed, then list your folders.
+          </p>
+          <p className="connect-body">
+            Then ask:{" "}
+            <em>
+              &quot;Create a draft note in Texttext titled MCP test and read it
+              back to verify it.&quot;
+            </em>
+          </p>
+        </section>
+
+        <details className="connect-section connect-advanced">
+          <summary className="connect-section-title">
+            Advanced and manual connections
+          </summary>
+          <p className="connect-body">
+            Use these only for clients that cannot install the plugin or finish
+            OAuth.
+          </p>
+          <h3>Local Mac bridge</h3>
+          <p className="connect-body">
+            While the Texttext Mac app is open, local agents can connect to{" "}
+            <code className="connect-inline-code">
+              {TEXTTEXT_LOCAL_MCP_URL}
+            </code>
+            .
+          </p>
+          <h3>Hosted MCP</h3>
+          <p className="connect-body">
+            Any standards-compatible MCP client can connect to{" "}
+            <code className="connect-inline-code">
+              {TEXTTEXT_HOSTED_MCP_URL}
+            </code>{" "}
+            and use Texttext OAuth.
+          </p>
+          <h3>Bearer token fallback</h3>
+          <p className="connect-body">
+            If a host cannot complete OAuth, create a revocable token at{" "}
+            <Link href="/connect">Connect</Link>.
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{tokenConfig}</pre>
           </div>
-        </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Verifying the connection</h2>
-          <p className="connect-body">
-            Ask your assistant: <em>&quot;What folders are in my Texttext workspace?&quot;</em>{" "}
-            It calls <code className="connect-inline-code">list_folders</code>,
-            asks to connect if it has not, and lists Blog, Notes, and Bookmarks.
-          </p>
-          <p className="connect-body">
-            To verify writes, ask: <em>&quot;Create a draft note in Texttext titled
-            &apos;MCP test&apos;.&quot;</em> It creates a draft in Notes and nothing goes
-            public.
-          </p>
-        </section>
+        </details>
 
         <section className="connect-section">
           <h2 className="connect-section-title">Troubleshooting</h2>
-          <h3>Reconnect a stale session</h3>
-          <p className="connect-body">
-            The most common problem is a long-running assistant session that
-            connected before you approved access. Restart the session, or run{" "}
-            <code className="connect-inline-code">/mcp</code> in Claude Code,
-            and try again.
-          </p>
           <h3>The client shows no Texttext tools</h3>
           <p className="connect-body">
-            Restart the MCP host after editing its configuration.
-          </p>
-          <h3>Approval page will not open</h3>
-          <p className="connect-body">
-            The client does not support OAuth. Mint a token at{" "}
-            <Link href="/connect">Connect</Link> and use the bearer-header
-            configuration above.
+            Restart the AI client after installing the plugin. If approval was
+            interrupted, remove the connection and install it again.
           </p>
           <h3>A write was rejected as a conflict</h3>
           <p className="connect-body">
-            The item changed since you read it. Read it again and retry. This
-            is the content hash guard working.
+            The document changed after the agent read it. Ask the agent to read
+            the latest version, merge the intended edit, and retry.
           </p>
-          <h3>Read-only connection</h3>
+          <h3>Manage or revoke access</h3>
           <p className="connect-body">
-            You approved <code className="connect-inline-code">read</code>.
-            Reconnect and approve <code className="connect-inline-code">sync</code>{" "}
-            to write.
+            Open <Link href="/connect">Connect</Link> to see every approved app
+            and revoke one without changing your Claude, Codex, or ChatGPT
+            account.
           </p>
         </section>
 
-        <section className="connect-section">
-          <h2 className="connect-section-title">Guides</h2>
-
-          <h3>Keep one document per software project</h3>
-          <p className="connect-body">
-            <strong>Prompt:</strong> &quot;For every project I work on, keep one
-            project document in my Texttext Notes folder. Create missing project
-            documents, then append a dated changelog entry after every shipped
-            update. Use the repository URL as the stable project identity and
-            the commit SHA as the update identity.&quot;
-          </p>
-          <p className="connect-body">
-            Hosts that support MCP prompts can start with{" "}
-            <code className="connect-inline-code">maintain_project_documents</code>.
-            The assistant uses a stable{" "}
-            <code className="connect-inline-code">idempotency_key</code> for each{" "}
-            <code className="connect-inline-code">create_item</code> and{" "}
-            <code className="connect-inline-code">append_to_item</code> call.
-            Retrying after a timeout returns the original result instead of
-            creating another document or duplicate changelog entry.
-          </p>
-
-          <h3>Capture an AI conversation</h3>
-          <p className="connect-body">
-            <strong>Prompt:</strong> &quot;Save the useful decisions and final answer
-            from this conversation as a Texttext note. Preserve the important
-            prompts, conclusions, and source context.&quot;
-          </p>
-          <p className="connect-body">
-            Hosts can use the{" "}
-            <code className="connect-inline-code">capture_conversation</code>{" "}
-            prompt. Texttext also exposes{" "}
-            <code className="connect-inline-code">texttext://workspace</code> and{" "}
-            <code className="connect-inline-code">texttext://items/&#123;id&#125;</code>{" "}
-            resources so capable clients can load relevant context without
-            guessing storage paths.
-          </p>
-
-          <h3>Capture research into Notes</h3>
-          <p className="connect-body">
-            <strong>Prompt:</strong> &quot;Research the current EU AI Act enforcement
-            timeline and save what you find as a note in my Texttext workspace.&quot;
-          </p>
-          <p className="connect-body">
-            The assistant calls <code className="connect-inline-code">get_workspace</code>,{" "}
-            <code className="connect-inline-code">list_folders</code>, then{" "}
-            <code className="connect-inline-code">create_item</code> in the Notes
-            folder. As it gathers more, it uses{" "}
-            <code className="connect-inline-code">append_to_item</code> so it does
-            not rewrite the whole body. It reads the item back to confirm. The
-            note stays a draft and remains unlisted forever. The{" "}
-            <code className="connect-inline-code">markdown_fragment</code> input is
-            part of the external MCP flow shown here. The in-app assistant uses
-            the shared workspace command surface directly.
-          </p>
-
-          <h3>Publish a drafted article</h3>
-          <p className="connect-body">
-            <strong>Prompt:</strong> &quot;Polish my &apos;Ship logs&apos; draft in Texttext and
-            publish it.&quot;
-          </p>
-          <p className="connect-body">
-            The assistant searches for the draft, reads its markdown, tags, and
-            current hash, then calls <code className="connect-inline-code">update_item</code>{" "}
-            with the edited body, complete tag list, and hash. Publishing changes
-            the audience, so it asks for confirmation before calling{" "}
-            <code className="connect-inline-code">set_item_status</code>. If the
-            hash is stale, it reads, merges, and retries.
-          </p>
-
-          <h3>Sync tags across a workspace</h3>
-          <p className="connect-body">
-            <strong>Prompt:</strong> &quot;Find every Texttext post tagged &apos;draft-idea&apos;
-            and add the tag &apos;q3&apos; to each.&quot;
-          </p>
-          <p className="connect-body">
-            The assistant searches or lists folders, reads each match for its{" "}
-            <code className="connect-inline-code">tags</code> and current hash,
-            then calls <code className="connect-inline-code">update_item</code>{" "}
-            once per item. Tags are a full-list replacement, so it sends the
-            existing tags plus <code className="connect-inline-code">q3</code>.
-          </p>
-        </section>
-
-        <section className="connect-section">
-          <h2 className="connect-section-title">Reference</h2>
-          <h3>Resources and prompts</h3>
-          <p className="connect-body">
-            Texttext exposes workspace and item resources plus reusable prompts
-            for project journals, conversation capture, and release notes.
-            Clients that only support tools can perform the same workflows with
-            the tools below.
-          </p>
-
+        <details className="connect-section connect-advanced">
+          <summary className="connect-section-title">Tool reference</summary>
           <h3>Read tools ({READ_TOOLS.length})</h3>
-          <p className="connect-body">Any connected assistant can call these.</p>
           <ToolTable names={READ_TOOLS} />
-
-          <h3>Texttext tools ({WRITE_TOOLS.length})</h3>
-          <p className="connect-body">
-            These require the <code className="connect-inline-code">sync</code>{" "}
-            scope. Texttext marks publishing, moving to Trash, restoring, and
-            sharing as destructive or audience-changing. Clients that support
-            confirmations will ask you first.
-          </p>
+          <h3>Write tools ({WRITE_TOOLS.length})</h3>
           <ToolTable names={WRITE_TOOLS} />
-
-          <ul>
-            <li>The approval page shows the client name and requested scope.</li>
-            <li>Every mutation is recorded in the action audit log.</li>
-            <li>Delete tools only move content to Trash.</li>
-            <li>Revoke a connection anytime from <Link href="/connect">Connect</Link>.</li>
-            <li>
-              Content can contain prompt injection. Stop and review unexpected
-              tool calls.
-            </li>
-          </ul>
-        </section>
+        </details>
       </main>
     </div>
   );

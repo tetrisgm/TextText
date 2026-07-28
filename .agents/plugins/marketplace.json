@@ -1,0 +1,20 @@
+{
+  "name": "texttext",
+  "interface": {
+    "displayName": "Texttext"
+  },
+  "plugins": [
+    {
+      "name": "texttext",
+      "source": {
+        "source": "local",
+        "path": "./plugins/texttext"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

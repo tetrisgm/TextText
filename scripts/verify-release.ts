@@ -60,6 +60,11 @@ async function verifyRelease() {
       command: ["npx", "tsx", "scripts/verify-agent-interoperability.ts"],
     },
     {
+      id: "workflow.agent_integrations",
+      timeoutSeconds: 60,
+      command: ["npm", "run", "verify:agent-integrations"],
+    },
+    {
       id: "workflow.live_clients",
       timeoutSeconds: 900,
       command: ["npm", "run", "eval:clients:live"],

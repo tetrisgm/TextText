@@ -6,12 +6,17 @@ import {
   revokeApiTokenAction,
   revokeOAuthConnectionAction,
 } from "@/app/editor/token-actions";
+import {
+  AGENT_INTEGRATIONS,
+  AGENT_WORKFLOWS,
+  hostedMcpUrl,
+  TEXTTEXT_LOCAL_MCP_URL,
+} from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 
 type FreshToken = { id: string; name: string; token: string };
 
-const LOCAL_MCP_URL = "http://127.0.0.1:47118/mcp";
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -26,12 +31,6 @@ function formatDay(iso: string): string {
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
-
-const EXAMPLE_PROMPTS = [
-  "Create one project note for every repository I am working on.",
-  "Append today's shipped changes to each matching project changelog.",
-  "Save the useful decisions from this conversation as a Texttext note.",
-];
 
 export function ConnectPanel({
   initialConnections,
@@ -57,12 +56,12 @@ export function ConnectPanel({
     (typeof window === "undefined"
       ? "https://texttext.app"
       : window.location.origin);
-  const remoteMcpUrl = `${remoteOrigin}/api/mcp`;
+  const remoteMcpUrl = hostedMcpUrl(remoteOrigin);
 
   const commands = {
-    claudeLocal: `claude mcp add --transport http --scope user texttext ${LOCAL_MCP_URL}`,
+    claudeLocal: `claude mcp add --transport http --scope user texttext ${TEXTTEXT_LOCAL_MCP_URL}`,
     claudeRemote: `claude mcp add --transport http --scope user texttext ${remoteMcpUrl}`,
-    codexLocal: `codex mcp add texttext --url ${LOCAL_MCP_URL}`,
+    codexLocal: `codex mcp add texttext --url ${TEXTTEXT_LOCAL_MCP_URL}`,
     codexRemote: `codex mcp add texttext --url ${remoteMcpUrl}\ncodex mcp login texttext`,
   };
   const tokenConfig = `{
@@ -162,86 +161,112 @@ export function ConnectPanel({
     <div>
       <section className="connect-section" aria-labelledby="connect-primary">
         <h2 className="connect-section-title" id="connect-primary">
-          Use your AI account
+          Add Texttext to your agents
         </h2>
         <p className="connect-sub">
-          Claude, Codex, and ChatGPT keep their own model, account, and billing.
-          Texttext gives them permission to work with your documents through MCP.
+          Install Texttext once in the AI products you already use. Each agent
+          keeps its own model, account, and billing while Texttext stays the
+          durable home for your documents.
         </p>
 
-        <div className="connect-provider-list">
-          <section className="connect-provider" aria-labelledby="connect-claude">
-            <div className="connect-provider-heading">
-              <div>
-                <p className="connect-provider-kicker">Anthropic</p>
-                <h3 id="connect-claude">Claude</h3>
-              </div>
-              <span className="connect-scope">Claude.ai or Claude Code</span>
-            </div>
-            <p className="connect-body">
-              In Claude.ai, open Settings, choose Connectors, add a custom
-              connector, and paste{" "}
-              <code className="connect-inline-code">{remoteMcpUrl}</code>.
-              Claude opens Texttext for approval.
-            </p>
-            <p className="connect-body">
-              Claude Code on this Mac can use the local bridge while Texttext is
-              open. It needs no token and keeps local file changes immediate.
-            </p>
-            <CodeRecipe copyKey="claude-local" value={commands.claudeLocal} />
-            <details className="connect-details">
-              <summary>Use Claude Code remotely</summary>
-              <CodeRecipe copyKey="claude-remote" value={commands.claudeRemote} />
-            </details>
-          </section>
-
-          <section className="connect-provider" aria-labelledby="connect-codex">
-            <div className="connect-provider-heading">
-              <div>
-                <p className="connect-provider-kicker">OpenAI</p>
-                <h3 id="connect-codex">Codex</h3>
-              </div>
-              <span className="connect-scope">Codex app or CLI</span>
-            </div>
-            <p className="connect-body">
-              Codex on this Mac can use the local bridge while Texttext is open.
-              The Codex app and CLI share the same MCP configuration.
-            </p>
-            <CodeRecipe copyKey="codex-local" value={commands.codexLocal} />
-            <details className="connect-details">
-              <summary>Use hosted Texttext from Codex</summary>
-              <CodeRecipe copyKey="codex-remote" value={commands.codexRemote} />
-            </details>
-          </section>
-
-          <section className="connect-provider" aria-labelledby="connect-chatgpt">
-            <div className="connect-provider-heading">
-              <div>
-                <p className="connect-provider-kicker">OpenAI</p>
-                <h3 id="connect-chatgpt">ChatGPT</h3>
-              </div>
-              <span className="connect-scope">Apps with full MCP</span>
-            </div>
-            <ol className="connect-steps">
-              <li>Open ChatGPT Settings or Workspace Settings.</li>
-              <li>Open Apps, enable developer mode, then choose Create.</li>
-              <li>
-                Paste <code className="connect-inline-code">{remoteMcpUrl}</code>,
-                scan tools, and approve Texttext.
-              </li>
-            </ol>
-            <p className="connect-sub">
-              Full MCP apps currently require an eligible ChatGPT workspace plan.
-            </p>
-          </section>
+        <div className="connect-integration-grid">
+          {AGENT_INTEGRATIONS.map((integration) => {
+            const action = integration.action;
+            const actionKey = `integration:${integration.id}`;
+            const copied = copiedKey === actionKey;
+            return (
+              <article className="connect-integration-card" key={integration.id}>
+                <div className="connect-integration-heading">
+                  <span
+                    className={`connect-integration-mark is-${integration.id}`}
+                    aria-hidden="true"
+                  >
+                    {integration.monogram}
+                  </span>
+                  <div>
+                    <p className="connect-provider-kicker">
+                      {integration.company}
+                    </p>
+                    <h3>{integration.name}</h3>
+                  </div>
+                </div>
+                <p className="connect-integration-description">
+                  {integration.description}
+                </p>
+                <p className="connect-integration-environment">
+                  {integration.environment}
+                </p>
+                <div className="connect-integration-actions">
+                  {action.kind === "copy" ? (
+                    <button
+                      className="ac-btn ac-btn-filled"
+                      type="button"
+                      onClick={() => void copy(action.value, actionKey)}
+                    >
+                      {copied
+                        ? action.copiedLabel
+                        : action.label}
+                    </button>
+                  ) : (
+                    <a
+                      className="ac-btn ac-btn-filled"
+                      href={action.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {action.label}
+                    </a>
+                  )}
+                  {integration.secondaryAction && (
+                    <a
+                      className="ac-btn ac-btn-plain"
+                      href={integration.secondaryAction.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {integration.secondaryAction.label}
+                    </a>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
 
-        <p className="connect-body">Once connected, try:</p>
-        <ul className="connect-prompts">
-          {EXAMPLE_PROMPTS.map((prompt) => (
-            <li key={prompt}>{prompt}</li>
+        <div className="connect-capability-strip" aria-label="Connection features">
+          <span>29 document tools</span>
+          <span>Texttext OAuth</span>
+          <span>Read, write, publish, and collaborate</span>
+        </div>
+      </section>
+
+      <section className="connect-section" aria-labelledby="connect-workflows">
+        <h2 className="connect-section-title" id="connect-workflows">
+          Ready-made workflows
+        </h2>
+        <p className="connect-sub">
+          The plugins teach Claude and Codex how to use Texttext safely. These
+          same workflows work in ChatGPT and other MCP clients.
+        </p>
+        <div className="connect-workflow-grid">
+          {AGENT_WORKFLOWS.map((workflow) => (
+            <article className="connect-workflow" key={workflow.id}>
+              <h3>{workflow.title}</h3>
+              <p>{workflow.description}</p>
+              <button
+                className="ac-btn ac-btn-gray"
+                type="button"
+                onClick={() =>
+                  void copy(workflow.prompt, `workflow:${workflow.id}`)
+                }
+              >
+                {copiedKey === `workflow:${workflow.id}`
+                  ? "Prompt copied"
+                  : "Copy prompt"}
+              </button>
+            </article>
           ))}
-        </ul>
+        </div>
       </section>
 
       <section className="connect-section" aria-labelledby="connect-apps">
@@ -322,10 +347,22 @@ export function ConnectPanel({
       <details className="connect-section connect-advanced">
         <summary className="connect-section-title">Advanced connections</summary>
         <p className="connect-sub">
-          Manual tokens are for clients that cannot complete OAuth and for file
-          sync integrations. Prefer the setup above when your client supports it.
+          Use direct MCP commands or bearer tokens only when a client cannot
+          install the Texttext plugin or complete OAuth.
         </p>
 
+        <h3 className="connect-minor-title">Direct local connection</h3>
+        <p className="connect-body">
+          The Texttext Mac app exposes a local MCP bridge while it is open.
+        </p>
+        <CodeRecipe copyKey="claude-local" value={commands.claudeLocal} />
+        <CodeRecipe copyKey="codex-local" value={commands.codexLocal} />
+
+        <h3 className="connect-minor-title">Direct hosted connection</h3>
+        <CodeRecipe copyKey="claude-remote" value={commands.claudeRemote} />
+        <CodeRecipe copyKey="codex-remote" value={commands.codexRemote} />
+
+        <h3 className="connect-minor-title">Manual access tokens</h3>
         <form className="connect-form" onSubmit={handleCreate}>
           <input
             className="ac-field"

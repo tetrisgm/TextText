@@ -1,0 +1,41 @@
+{
+  "name": "texttext",
+  "version": "0.1.0",
+  "description": "Create, reshape, publish, and maintain Texttext documents from Codex.",
+  "author": {
+    "name": "Texttext",
+    "email": "support@texttext.app",
+    "url": "https://texttext.app"
+  },
+  "homepage": "https://texttext.app/connect",
+  "repository": "https://github.com/tetrisgm/write",
+  "license": "MIT",
+  "keywords": [
+    "documents",
+    "notes",
+    "publishing",
+    "collaboration",
+    "mcp"
+  ],
+  "skills": [
+    "./skills/texttext",
+    "./skills/capture-conversation",
+    "./skills/project-changelog",
+    "./skills/publish-collaborate"
+  ],
+  "interface": {
+    "displayName": "Texttext",
+    "shortDescription": "Create and maintain durable documents",
+    "longDescription": "Use Texttext as the durable document home for notes, articles, bookmarks, project changelogs, publishing, and collaboration.",
+    "developerName": "Texttext",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://texttext.app",
+    "privacyPolicyURL": "https://texttext.app/privacy",
+    "termsOfServiceURL": "https://texttext.app/terms",
+    "defaultPrompt": "Use Texttext to save this work as a durable document, update the matching project changelog, or publish a finished result."
+  }
+}

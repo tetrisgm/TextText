@@ -152,6 +152,16 @@ leaking workspace data or provider credentials.
    ChatGPT, Cursor, and other MCP hosts can connect to `/api/mcp` using OAuth.
    Claude, Codex, and ChatGPT are the primary documented clients. Cursor and
    other standards-compatible hosts remain supported secondary clients.
+4. **Native agent plugins: shipped.** The repository is a Claude and Codex
+   plugin marketplace. `plugins/texttext` packages the hosted OAuth MCP
+   connection with reusable skills for conversation capture, project
+   changelogs, publishing, and collaboration. The product connection center
+   leads with these installs. Raw MCP commands and bearer tokens are advanced
+   fallbacks, not the primary experience.
+
+ChatGPT connects as a hosted app because it does not install repository plugins.
+It uses the same OAuth endpoint and command surface. Texttext never receives a
+user's Claude, ChatGPT, or Codex password.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains
 opt-in and executes the same workspace contract rather than creating a

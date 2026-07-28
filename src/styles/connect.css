@@ -1,8 +1,7 @@
 /* ============================================================
    /connect + /docs/ai: the agent surface pages.
    Scope: .connect-shell inside .applecms, so every color rides the
-   ac tokens and flips with them in dark mode. Quiet by design: one
-   column, hairline separators, no cards fighting for attention.
+   ac tokens and flips with them in dark mode.
    ============================================================ */
 
 .connect-shell {
@@ -12,13 +11,13 @@
 }
 
 .connect-main {
-  max-width: 640px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 56px 20px 96px;
 }
 
 .connect-topbar {
-  max-width: 640px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 16px 12px 0;
   display: flex;
@@ -71,30 +70,68 @@
   margin: 0 0 12px;
 }
 
-/* --- primary provider setup --- */
+/* --- provider catalog --- */
 
-.connect-provider-list {
-  border-top: 1px solid var(--ac-separator);
+.connect-integration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin-top: 20px;
 }
 
-.connect-provider {
-  padding: 24px 0;
-  border-bottom: 1px solid var(--ac-separator);
-}
-
-.connect-provider-heading {
+.connect-integration-card {
+  min-width: 0;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 8px;
+  background: var(--ac-bg);
 }
 
-.connect-provider-heading h3 {
+.connect-integration-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connect-integration-heading h3 {
   font: 600 var(--ac-fs-title3)/var(--ac-lh-title3) var(--ac-font-text);
   letter-spacing: var(--ac-tr-title3);
   margin: 0;
+}
+
+.connect-integration-mark {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ac-separator);
+  border-radius: 8px;
+  background: var(--ac-bg-2);
+  color: var(--ac-label);
+  font: 700 17px/1 var(--ac-font-text);
+}
+
+.connect-integration-mark.is-claude {
+  background: #d97757;
+  border-color: #d97757;
+  color: #fff;
+}
+
+.connect-integration-mark.is-codex,
+.connect-integration-mark.is-chatgpt {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+}
+
+.connect-integration-mark.is-mcp {
+  background: #654ff0;
+  border-color: #654ff0;
+  color: #fff;
 }
 
 .connect-provider-kicker {
@@ -104,39 +141,104 @@
   margin: 0 0 2px;
 }
 
-.connect-scope {
+.connect-integration-description {
+  min-height: 48px;
+  margin: 0;
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-callout)/1.45 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-callout);
+}
+
+.connect-integration-environment {
+  margin: auto 0 0;
   color: var(--ac-label-2);
   font: 400 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
   letter-spacing: var(--ac-tr-footnote);
-  text-align: right;
 }
 
-.connect-steps {
-  margin: 0 0 12px;
-  padding-left: 22px;
+.connect-integration-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.connect-steps li {
-  font: 400 var(--ac-fs-callout)/1.55 var(--ac-font-text);
-  letter-spacing: var(--ac-tr-callout);
-  margin: 5px 0;
+.connect-capability-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-footnote);
 }
 
-.connect-details,
+.connect-capability-strip span {
+  position: relative;
+}
+
+.connect-capability-strip span + span::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -10px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ac-label-3);
+  transform: translateY(-50%);
+}
+
+.connect-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.connect-workflow {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 8px;
+  background: var(--ac-bg);
+}
+
+.connect-workflow h3 {
+  margin: 0;
+  font: 600 var(--ac-fs-headline)/var(--ac-lh-headline) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-headline);
+}
+
+.connect-workflow p {
+  flex: 1;
+  margin: 0 0 6px;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-subheadline)/1.45 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-subheadline);
+}
+
+.connect-workflow blockquote {
+  margin: 8px 0 0;
+  padding: 12px;
+  border: 1px solid var(--ac-separator);
+  border-radius: 6px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-footnote)/1.45 var(--ac-font-text);
+}
+
 .connect-advanced {
   color: var(--ac-label);
 }
 
-.connect-details > summary,
 .connect-advanced > summary {
   cursor: pointer;
   list-style-position: outside;
-}
-
-.connect-details > summary {
-  color: var(--ac-accent);
-  font: 500 var(--ac-fs-subheadline)/var(--ac-lh-subheadline) var(--ac-font-text);
-  margin: 8px 0 12px 18px;
 }
 
 .connect-minor-title {
@@ -256,6 +358,12 @@
   margin: 0 0 12px;
 }
 
+.connect-code-label {
+  margin: 0 0 8px;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-footnote)/var(--ac-lh-footnote) var(--ac-font-text);
+}
+
 .connect-code {
   display: block;
   margin: 0;
@@ -281,6 +389,15 @@
   border-radius: 4px;
   padding: 1px 5px;
   overflow-wrap: anywhere;
+}
+
+.connect-feature-list {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 0;
+  padding-left: 20px;
+  color: var(--ac-label-2);
+  line-height: 1.5;
 }
 
 /* --- example prompts --- */
@@ -353,11 +470,21 @@
 @media (max-width: 480px) {
   .connect-main { padding-top: 36px; }
   .connect-form { flex-direction: column; }
-  .connect-provider-heading { display: block; }
-  .connect-scope {
-    display: block;
-    margin-top: 4px;
-    text-align: left;
+  .connect-integration-actions { align-items: stretch; }
+  .connect-integration-actions .ac-btn { justify-content: center; }
+}
+
+@media (max-width: 760px) {
+  .connect-integration-grid,
+  .connect-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+  .connect-integration-description { min-height: 0; }
+}
+
+@media (min-width: 761px) and (max-width: 900px) {
+  .connect-workflow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

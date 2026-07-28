@@ -21,6 +21,7 @@
     "work:summary": "tsx scripts/work-unit.ts summary",
     "work:finish": "tsx scripts/work-unit.ts finish",
     "verify:release": "tsx scripts/verify-release.ts",
+    "verify:agent-integrations": "node scripts/verify-agent-integrations.mjs",
     "verify:workflows": "node --env-file=.env.local --import tsx scripts/verify-workflow-live.ts",
     "eval:sync:live": "node --env-file=.env.local --import tsx scripts/verify-sync-live.ts",
     "eval:clients:live": "node --env-file=.env.local --import tsx scripts/verify-local-live.ts",

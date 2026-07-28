@@ -8,6 +8,11 @@ import {
   listOAuthConnectionsAction,
 } from "@/app/editor/token-actions";
 import { ConnectPanel } from "@/components/ConnectPanel";
+import {
+  AGENT_INTEGRATIONS,
+  CLAUDE_PLUGIN_INSTALL_COMMAND,
+  CODEX_PLUGIN_INSTALL_COMMAND,
+} from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 import { getCurrentUser } from "@/lib/session";
@@ -28,21 +33,56 @@ export default async function ConnectPage() {
     return (
       <div className="applecms connect-shell">
         <main className="connect-main">
-          <h1 className="connect-title">Connect</h1>
+          <p className="connect-provider-kicker">Agents and integrations</p>
+          <h1 className="connect-title">Add Texttext to your AI</h1>
           <p className="connect-lede">
-            Claude, Codex, and ChatGPT can work with your Texttext documents
-            through MCP. Paste{" "}
-            <code className="connect-inline-code">
-              https://texttext.app/api/mcp
-            </code>{" "}
-            in the client and approve access when Texttext opens.
+            Install Texttext in Claude or Codex, connect it to ChatGPT, or use
+            any MCP client. Your AI keeps its account and model while Texttext
+            becomes its durable document workspace.
           </p>
+          <div className="connect-integration-grid">
+            {AGENT_INTEGRATIONS.map((integration) => (
+              <article
+                className="connect-integration-card"
+                key={integration.id}
+              >
+                <div className="connect-integration-heading">
+                  <span
+                    className={`connect-integration-mark is-${integration.id}`}
+                    aria-hidden="true"
+                  >
+                    {integration.monogram}
+                  </span>
+                  <div>
+                    <p className="connect-provider-kicker">
+                      {integration.company}
+                    </p>
+                    <h3>{integration.name}</h3>
+                  </div>
+                </div>
+                <p className="connect-integration-description">
+                  {integration.description}
+                </p>
+                <p className="connect-integration-environment">
+                  {integration.environment}
+                </p>
+              </article>
+            ))}
+          </div>
+          <div className="connect-code-wrap">
+            <p className="connect-code-label">Claude Code</p>
+            <pre className="connect-code">{CLAUDE_PLUGIN_INSTALL_COMMAND}</pre>
+          </div>
+          <div className="connect-code-wrap">
+            <p className="connect-code-label">Codex</p>
+            <pre className="connect-code">{CODEX_PLUGIN_INSTALL_COMMAND}</pre>
+          </div>
           <p>
             <a
               className="ac-btn ac-btn-filled"
               href="/api/auth/signin?callbackUrl=/connect"
             >
-              Sign in
+              Sign in to connect
             </a>
           </p>
           <p className="connect-sub" style={{ marginTop: 16 }}>

@@ -2891,6 +2891,22 @@ function WorkspaceRootLanding({
               </section>
             ) : null}
             <section
+              className="workspace-agent-entry"
+              aria-labelledby="workspace-agent-entry-title"
+            >
+              <div>
+                <p>Agents and integrations</p>
+                <h2 id="workspace-agent-entry-title">
+                  Use Texttext from Claude, Codex, and ChatGPT
+                </h2>
+                <span>
+                  Install native skills, connect with OAuth, and keep project
+                  notes and changelogs current from the agents you already use.
+                </span>
+              </div>
+              <a href="/connect">Connect agents</a>
+            </section>
+            <section
               className={`workspace-recent is-view-${recentViewMode}`}
             >
               <header className="workspace-library-toolbar">
