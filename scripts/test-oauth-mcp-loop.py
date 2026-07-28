@@ -76,6 +76,7 @@ EXPECTED_RESOURCE_TEMPLATES = {
 }
 EXPECTED_PROMPTS = {
     "maintain_project_documents",
+    "use_live_document_canvas",
     "capture_conversation",
     "prepare_release_note",
 }

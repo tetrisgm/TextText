@@ -49,10 +49,11 @@ describe("MCP agent surface", () => {
     expect(String(resources[1]?.target)).toBe("texttext://workspace");
   });
 
-  it("publishes reusable project, conversation, and release prompts", () => {
+  it("publishes reusable project, live canvas, conversation, and release prompts", () => {
     const { prompts } = registrations();
     expect(prompts.map((prompt) => prompt.name)).toEqual([
       "maintain_project_documents",
+      "use_live_document_canvas",
       "capture_conversation",
       "prepare_release_note",
     ]);
@@ -66,7 +67,9 @@ describe("MCP agent surface", () => {
     expect(guide.contents[0]?.text).toContain("idempotency_key");
     expect(guide.contents[0]?.text).toContain("append_to_item");
 
-    const projectPrompt = await prompts[0]!.callback({
+    const projectPrompt = await prompts
+      .find((prompt) => prompt.name === "maintain_project_documents")!
+      .callback({
       projects: "alpha, beta",
       folder_path: "notes",
       namespace: "workspace-1",
@@ -77,5 +80,28 @@ describe("MCP agent surface", () => {
     expect(JSON.stringify(projectPrompt)).toContain(
       "workspace-1:event:<stable-project-id>:<stable-event-id>",
     );
+  });
+
+  it("teaches agents to keep one live document current", async () => {
+    const { resources, prompts } = registrations();
+    const guide = (await resources[0]!.callback(new URL("texttext://agent-guide"), {})) as {
+      contents: Array<{ text: string }>;
+    };
+    expect(guide.contents[0]?.text).toContain("Live document canvases");
+    expect(guide.contents[0]?.text).toContain("collaboration document");
+
+    const canvasPrompt = await prompts
+      .find((prompt) => prompt.name === "use_live_document_canvas")!
+      .callback({
+        title: "Premium features",
+        goal: "Keep the product specification current.",
+        folder_path: "notes",
+        source_id: "premium-features",
+      });
+    const text = JSON.stringify(canvasPrompt);
+    expect(text).toContain("canvas:premium-features");
+    expect(text).toContain("which item to open");
+    expect(text).toContain("append_to_item");
+    expect(text).toContain("mutation conflicts");
   });
 });

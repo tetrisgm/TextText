@@ -32,6 +32,16 @@ share, delete, or revoke access without an explicit user instruction.
 Create one item per project with a stable creation key. Keep the returned item
 ID. Append one dated Markdown section for each meaningful update with a stable
 event key. This makes repeated agent runs safe and prevents duplicate entries.
+
+## Live document canvases
+
+Use one durable Texttext item as the visible canvas for a body of work. Search
+for it first or create it once with a stable key, keep its item ID, and tell the
+user which item to open. Keep updating that same item while the work develops.
+When it is open in Texttext, agent changes and the user's edits share the live
+collaboration document. Use guarded update_item calls for coherent rewrites and
+append_to_item with a stable source-event key for incremental additions. If an
+edit conflicts, read the latest item, merge both intents, and retry.
 `;
 
 function textFromToolResult(result: CallToolResult): string {
@@ -172,6 +182,55 @@ append_to_item and an idempotency_key in the form
 "${namespace || "projects"}:event:<stable-project-id>:<stable-event-id>".
 Reuse keys on retries. Read before other mutations and use if_match_hash.
 Do not publish, share, or delete anything without explicit confirmation.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "use_live_document_canvas",
+    {
+      title: "Use a live document canvas",
+      description:
+        "Create or find one durable document and keep it current while the user works alongside the agent.",
+      argsSchema: {
+        title: z.string().min(1),
+        goal: z.string().min(1),
+        folder_path: z
+          .string()
+          .optional()
+          .describe('Destination folder path. Defaults to "notes".'),
+        source_id: z
+          .string()
+          .min(1)
+          .describe("Stable identity for this body of work."),
+      },
+    },
+    async ({ title, goal, folder_path, source_id }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Use one Texttext item as the live document canvas for this work.
+
+Title: ${title}
+Goal: ${goal}
+Destination: ${folder_path || "notes"}
+Stable source ID: ${source_id}
+
+Search for the existing item first. If it does not exist, call create_item once
+with idempotency_key "canvas:${source_id}". Keep its returned item ID and tell
+the user exactly which item to open in Texttext. Keep that same item current as
+the work develops. Use guarded update_item calls for coherent rewrites. Use
+append_to_item for incremental additions with an idempotency_key derived from
+the durable source event. Reuse that event key on retries.
+
+The user may edit the open item while you work. Texttext routes active edits
+through its collaboration document. Preserve the user's concurrent changes. If
+a mutation conflicts, read the latest item, merge both intents, and retry. Do
+not publish, share, delete, or change access without explicit confirmation.`,
           },
         },
       ],

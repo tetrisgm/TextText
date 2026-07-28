@@ -9,6 +9,7 @@
   },
   "skills": [
     "./skills/texttext",
+    "./skills/live-document",
     "./skills/capture-conversation",
     "./skills/project-changelog",
     "./skills/publish-collaborate"

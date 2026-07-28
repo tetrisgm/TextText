@@ -7,6 +7,7 @@ const pluginName = "texttext";
 const pluginVersion = "0.1.0";
 const skillNames = [
   "texttext",
+  "live-document",
   "capture-conversation",
   "project-changelog",
   "publish-collaborate",
@@ -35,6 +36,7 @@ const claudeManifest = readJson("plugins/texttext/.claude-plugin/plugin.json");
 const mcpConfig = readJson("plugins/texttext/.mcp.json");
 const integrationSource = read("src/lib/agent-integrations.ts");
 const pluginReadme = read("plugins/texttext/README.md");
+const commandNames = ["canvas", "changelog"];
 
 const codexEntry = codexMarketplace.plugins?.find(
   (entry) => entry.name === pluginName,
@@ -97,6 +99,15 @@ for (const skillName of skillNames) {
   assert(!skill.includes("\u2014"), `${path} contains an em dash`);
 }
 
+for (const commandName of commandNames) {
+  const path = `plugins/texttext/commands/${commandName}.md`;
+  const command = read(path);
+  assert(command.startsWith("---\n"), `${path} is missing YAML frontmatter`);
+  assert(command.includes("$ARGUMENTS"), `${path} does not accept arguments`);
+  assert(!command.includes("TODO"), `${path} contains unfinished guidance`);
+  assert(!command.includes("\u2014"), `${path} contains an em dash`);
+}
+
 for (const required of [
   hostedMcpUrl,
   "claude plugin marketplace add tetrisgm/write",
@@ -117,6 +128,8 @@ for (const required of [
   "codex plugin marketplace add tetrisgm/write",
   "codex plugin add texttext@texttext",
   hostedMcpUrl,
+  "/texttext:canvas",
+  "/texttext:changelog",
 ]) {
   assert(
     pluginReadme.includes(required),
@@ -125,5 +138,5 @@ for (const required of [
 }
 
 console.log(
-  `Agent integrations verified: 2 native plugins, ${skillNames.length} skills, hosted OAuth MCP, and ChatGPT setup.`,
+  `Agent integrations verified: 2 native plugins, ${skillNames.length} skills, ${commandNames.length} Claude commands, hosted OAuth MCP, and ChatGPT setup.`,
 );

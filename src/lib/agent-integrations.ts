@@ -99,6 +99,14 @@ export type AgentWorkflow = {
 
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   {
+    id: "live-document",
+    title: "Use a live document canvas",
+    description:
+      "Keep one Texttext document open while you and an agent develop the work together.",
+    prompt:
+      "Use Texttext as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.",
+  },
+  {
     id: "capture-conversation",
     title: "Capture a conversation",
     description:
@@ -112,7 +120,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
     description:
       "Keep one durable project document current without creating duplicate entries on retries.",
     prompt:
-      "Find the changelog for this project and append today's shipped user-facing changes. Create it only if it does not exist.",
+      "Find the changelog for this project and append today's shipped user-facing changes exactly once. Create it only if it does not exist, keep using the same item, and derive a stable idempotency key from the source commit or release.",
   },
   {
     id: "publish-collaborate",

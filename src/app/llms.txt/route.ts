@@ -75,6 +75,7 @@ Protocol-native context:
 Reusable prompts:
 
 - maintain_project_documents: one durable document per project with retry-safe updates
+- use_live_document_canvas: keep one visible item current while a person and agent work together
 - capture_conversation: save useful prompts, answers, and decisions
 - prepare_release_note: append one release entry exactly once
 

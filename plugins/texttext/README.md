@@ -12,7 +12,10 @@ claude plugin install texttext@texttext
 ```
 
 Claude asks you to approve access to your Texttext workspace. The plugin includes
-the Texttext MCP connection and four reusable skills.
+the Texttext MCP connection, five reusable skills, and two slash commands.
+
+Use `/texttext:canvas project-name` to maintain one document while you work.
+Use `/texttext:changelog release-details` to append a release exactly once.
 
 ## Install in Codex
 
@@ -38,6 +41,8 @@ Choose OAuth and approve access in Texttext. No API token needs to be copied.
 
 - `texttext`: create, find, reshape, publish, share, comment on, and maintain
   Texttext documents.
+- `live-document`: use one open document as a shared canvas for human and agent
+  edits.
 - `capture-conversation`: turn a useful answer or discussion into a durable note.
 - `project-changelog`: maintain one project record without duplicate entries.
 - `publish-collaborate`: apply a validated look, publish safely, and manage

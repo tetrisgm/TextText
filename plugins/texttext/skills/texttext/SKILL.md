@@ -30,6 +30,7 @@ documents it manages.
 
 ## Common work
 
+- Work in one open item with the `live-document` skill.
 - Capture a useful answer with the `capture-conversation` skill.
 - Maintain project records with the `project-changelog` skill.
 - Shape and publish a finished document with the `publish-collaborate` skill.

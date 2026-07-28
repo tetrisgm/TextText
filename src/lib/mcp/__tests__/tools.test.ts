@@ -4,6 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  applyLiveDocumentMutation: vi.fn(),
   attachItemAsset: vi.fn(),
   claimIdempotencyKey: vi.fn(),
   createItemComment: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getBlog: vi.fn(),
   getOwnedBlog: vi.fn(),
   getPostById: vi.fn(),
+  getPostStoreContext: vi.fn(),
   getTrashedFolders: vi.fn(),
   hasActiveCoEditors: vi.fn(async () => false),
   importItemAssetFromUrl: vi.fn(),
@@ -23,7 +25,9 @@ const mocks = vi.hoisted(() => ({
   listItemAssetReferences: vi.fn(),
   listItemComments: vi.fn(),
   listScopeShares: vi.fn(),
+  markCollabMaterialized: vi.fn(),
   markCapturePending: vi.fn(),
+  materializeCollabDocument: vi.fn(),
   recordAction: vi.fn(),
   removeItemAssetReferences: vi.fn(),
   resolveItemAccess: vi.fn(),
@@ -35,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   restoreFolder: vi.fn(),
   revokeScopeShare: vi.fn(),
   savePost: vi.fn(),
+  savePostContentPatch: vi.fn(),
   setItemCommentResolved: vi.fn(),
   trashFolder: vi.fn(),
   updateScopeShareRole: vi.fn(),
@@ -42,7 +47,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/collab", () => ({
+  applyLiveDocumentMutation: mocks.applyLiveDocumentMutation,
   hasActiveCoEditors: mocks.hasActiveCoEditors,
+  markCollabMaterialized: mocks.markCollabMaterialized,
+  materializeCollabDocument: mocks.materializeCollabDocument,
 }));
 vi.mock("@/lib/item-assets", () => ({
   attachItemAsset: mocks.attachItemAsset,
@@ -77,6 +85,7 @@ vi.mock("@/lib/store", () => ({
   getBlog: mocks.getBlog,
   getOwnedBlog: mocks.getOwnedBlog,
   getPostById: mocks.getPostById,
+  getPostStoreContext: mocks.getPostStoreContext,
   getTrashedFolders: mocks.getTrashedFolders,
   getTrashedPosts: vi.fn(),
   listItemComments: mocks.listItemComments,
@@ -89,7 +98,7 @@ vi.mock("@/lib/store", () => ({
   restorePost: vi.fn(),
   resolvePostSlug: mocks.resolvePostSlug,
   savePost: mocks.savePost,
-  savePostContentPatch: vi.fn(),
+  savePostContentPatch: mocks.savePostContentPatch,
   setItemCommentResolved: mocks.setItemCommentResolved,
   trashFolder: mocks.trashFolder,
 }));
@@ -153,6 +162,10 @@ describe("MCP workspace tool adapter", () => {
     // no dangling Once leaks into a later test's default.
     mocks.hasActiveCoEditors.mockReset();
     mocks.hasActiveCoEditors.mockResolvedValue(false);
+    mocks.applyLiveDocumentMutation.mockReset();
+    mocks.materializeCollabDocument.mockReset();
+    mocks.markCollabMaterialized.mockReset();
+    mocks.getPostStoreContext.mockReset();
     mocks.claimIdempotencyKey.mockResolvedValue({ status: "claimed" });
     mocks.releaseIdempotencyKey.mockResolvedValue(undefined);
     mocks.resolveIdempotencyKey.mockResolvedValue(undefined);
@@ -163,6 +176,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.listItemComments.mockResolvedValue([]);
     mocks.listScopeShares.mockResolvedValue([]);
     mocks.recordAction.mockResolvedValue(undefined);
+    mocks.markCollabMaterialized.mockResolvedValue(undefined);
     mocks.getOwnedBlog.mockResolvedValue({
       handle: "local",
       name: "Local Workspace",
@@ -308,8 +322,16 @@ describe("MCP workspace tool adapter", () => {
       { sub: "owner-sub", userId: "owner-uuid", handle: "local" },
     );
     expect(result.isError).not.toBe(true);
-    expect(mocks.recordAction).toHaveBeenCalledWith(
-      expect.objectContaining({ actorType: "ai", actionName: "mcp.update_item" }),
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.objectContaining({ id, body: "After" }),
+      expect.objectContaining({
+        expectedRevision: 5,
+        audit: expect.objectContaining({
+          actorType: "ai",
+          actionName: "mcp.update_item",
+        }),
+      }),
     );
   });
 
@@ -367,13 +389,13 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.savePost).toHaveBeenCalledWith(
       "local",
       expect.objectContaining({ id, body: "After" }),
-      { expectedRevision: 42 },
-    );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        actorType: "external_agent",
-        actionName: "mcp.update_item",
-        targetId: id,
+        expectedRevision: 42,
+        audit: expect.objectContaining({
+          actorType: "external_agent",
+          actionName: "mcp.update_item",
+          targetId: id,
+        }),
       }),
     );
   });
@@ -472,15 +494,21 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.savePost).toHaveBeenCalledWith(
       "local",
       expect.objectContaining({ tags: ["design", "notes"] }),
-      { expectedRevision: 7 },
+      expect.objectContaining({
+        expectedRevision: 7,
+        audit: expect.objectContaining({
+          actionName: "mcp.update_item",
+          inputSummary: "content (tags)",
+        }),
+      }),
     );
   });
 
-  it("refuses a body overwrite while the item is being co-edited", async () => {
+  it("routes a body overwrite through the live document while it is co-edited", async () => {
     const id = "44444444-4444-4444-8444-444444444444";
     mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
-    mocks.getPostById.mockResolvedValue({
+    const post = {
       id,
       folderId: "blog",
       type: "article",
@@ -491,14 +519,55 @@ describe("MCP workspace tool adapter", () => {
       status: "draft",
       pinned: false,
       revision: 42,
-    });
+    } as const;
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: "Draft",
+        subtitle: "",
+        body: "After",
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.getPostById.mockResolvedValue(post);
     mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
+    mocks.applyLiveDocumentMutation.mockResolvedValue({
+      snapshot,
+      epoch: 1,
+      seq: 2,
+    });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockResolvedValue({
+      ...post,
+      body: "After",
+      document: snapshot,
+      revision: 43,
+    });
     const updateItem = registrations().find((entry) => entry.name === "update_item");
     const result = await updateItem!.callback({ id, body: "After" }, auth(["sync"]));
-    // A live session owns the body: refuse rather than clobber, never save.
-    expect(result.isError).toBe(true);
-    expect(toolText(result)).toMatch(/co-edited/i);
-    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(result.isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, {
+      title: undefined,
+      subtitle: undefined,
+      body: "After",
+      tags: undefined,
+    });
+    expect(mocks.savePost).toHaveBeenCalledWith(
+      "local",
+      expect.objectContaining({ body: "After", document: snapshot }),
+      expect.objectContaining({
+        expectedRevision: 42,
+        audit: expect.objectContaining({ actionName: "mcp.update_item" }),
+      }),
+    );
+    expect(mocks.markCollabMaterialized).toHaveBeenCalledWith(id, 43);
   });
 
   it("writes a body change when no one is co-editing", async () => {
@@ -525,7 +594,7 @@ describe("MCP workspace tool adapter", () => {
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
-  it("allows a title-only edit while co-edited (does not touch the body)", async () => {
+  it("routes a title-only edit through the live document while co-edited", async () => {
     const id = "55555555-5555-4555-8555-555555555555";
     mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
@@ -542,19 +611,50 @@ describe("MCP workspace tool adapter", () => {
       revision: 42,
     } as const;
     mocks.getPostById.mockResolvedValue(post);
-    mocks.savePost.mockResolvedValue({ ...post, title: "Renamed", revision: 43 });
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: "Renamed",
+        subtitle: "",
+        body: "Body",
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.applyLiveDocumentMutation.mockResolvedValue({
+      snapshot,
+      epoch: 1,
+      seq: 2,
+    });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockResolvedValue({
+      ...post,
+      title: "Renamed",
+      document: snapshot,
+      revision: 43,
+    });
     mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
     const updateItem = registrations().find((entry) => entry.name === "update_item");
     const result = await updateItem!.callback({ id, title: "Renamed" }, auth(["sync"]));
     expect(result.isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ title: "Renamed" }),
+    );
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses append_to_item while the item is being co-edited", async () => {
+  it("appends through the live document while the item is being co-edited", async () => {
     const id = "77777777-7777-4777-8777-777777777777";
     mocks.getOwnedBlog.mockResolvedValue({ handle: "local", name: "Local Workspace" });
     mocks.resolveItemAccess.mockResolvedValue({ canView: true, canEditContent: true, isOwner: true });
-    mocks.getPostById.mockResolvedValue({
+    const post = {
       id,
       folderId: "blog",
       type: "article",
@@ -565,18 +665,47 @@ describe("MCP workspace tool adapter", () => {
       status: "draft",
       pinned: false,
       revision: 42,
-    });
-    // Append always rewrites the whole body, so it must refuse unconditionally
-    // while a live session owns the document.
+    } as const;
+    const snapshot = {
+      schemaVersion: 1 as const,
+      content: {
+        title: "Draft",
+        subtitle: "",
+        body: "Before\n\nMore text",
+        fields: {},
+        tags: [],
+        assets: [],
+      },
+      presentation: {
+        template: { id: "texttext.article", version: 1 },
+        theme: {},
+      },
+    };
+    mocks.getPostById.mockResolvedValue(post);
     mocks.hasActiveCoEditors.mockResolvedValueOnce(true);
+    mocks.applyLiveDocumentMutation.mockResolvedValue({
+      snapshot,
+      epoch: 1,
+      seq: 2,
+    });
+    mocks.getPostStoreContext.mockResolvedValue({ handle: "local", post });
+    mocks.materializeCollabDocument.mockResolvedValue(snapshot);
+    mocks.savePost.mockResolvedValue({
+      ...post,
+      body: snapshot.content.body,
+      document: snapshot,
+      revision: 43,
+    });
     const appendItem = registrations().find((entry) => entry.name === "append_to_item");
     const result = await appendItem!.callback(
       { id, markdown_fragment: "More text" },
       auth(["sync"]),
     );
-    expect(result.isError).toBe(true);
-    expect(toolText(result)).toMatch(/co-edited/i);
-    expect(mocks.savePost).not.toHaveBeenCalled();
+    expect(result.isError).not.toBe(true);
+    expect(mocks.applyLiveDocumentMutation).toHaveBeenCalledWith(id, {
+      appendBody: "More text",
+    });
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 
   it("appends when no one is co-editing", async () => {
@@ -1127,7 +1256,13 @@ describe("MCP workspace tool adapter", () => {
         coverCaption: "Cover caption",
         coverHeight: 420,
       }),
-      { expectedRevision: 5 },
+      expect.objectContaining({
+        expectedRevision: 5,
+        audit: expect.objectContaining({
+          actionName: "mcp.update_item",
+          inputSummary: "metadata (cover, cover_caption, cover_height)",
+        }),
+      }),
     );
     expect(mocks.recordAction).toHaveBeenCalledWith(
       expect.objectContaining({ actionName: "mcp.add_item_asset", targetId: id }),
@@ -1137,9 +1272,6 @@ describe("MCP workspace tool adapter", () => {
         actionName: "mcp.remove_item_asset",
         targetId: id,
       }),
-    );
-    expect(mocks.recordAction).toHaveBeenCalledWith(
-      expect.objectContaining({ actionName: "mcp.update_item", targetId: id }),
     );
   });
 

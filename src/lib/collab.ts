@@ -19,8 +19,10 @@ import {
   posts,
 } from "@/lib/db/schema";
 import {
+  applyDocumentMutation,
   documentSnapshotFromYDoc,
   encodeDocumentBaseline,
+  type DocumentMutation,
 } from "@/lib/collab/document";
 import {
   requireDocumentSnapshot,
@@ -310,6 +312,85 @@ function base64ToUpdate(b64: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, "base64"));
 }
 
+async function loadCurrentCollabDocument(
+  postId: string,
+): Promise<{ document: Y.Doc; epoch: number } | null> {
+  const baseline = await prepareCollabBaseline(postId);
+  if (!baseline) return null;
+  const rows = await db!
+    .select({ update: collabUpdates.update })
+    .from(collabUpdates)
+    .where(
+      and(
+        eq(collabUpdates.postId, postId),
+        eq(collabUpdates.epoch, baseline.epoch),
+      ),
+    )
+    .orderBy(asc(collabUpdates.seq));
+  const document = new Y.Doc();
+  try {
+    Y.applyUpdate(document, base64ToUpdate(baseline.update));
+    for (const row of rows) Y.applyUpdate(document, base64ToUpdate(row.update));
+    return { document, epoch: baseline.epoch };
+  } catch {
+    document.destroy();
+    return null;
+  }
+}
+
+/**
+ * Apply an app or agent mutation to the same Yjs document used by open editors.
+ * The relay delta reaches active clients immediately; callers then materialize
+ * and persist the merged snapshot through the audited store.
+ */
+export async function applyLiveDocumentMutation(
+  postId: string,
+  mutation: DocumentMutation,
+): Promise<{
+  snapshot: DocumentSnapshot;
+  epoch: number;
+  seq: number;
+  applied: boolean;
+} | null> {
+  if (!db) return null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const loaded = await loadCurrentCollabDocument(postId);
+    if (!loaded) return null;
+    try {
+      const before = Y.encodeStateVector(loaded.document);
+      const applied = applyDocumentMutation(
+        loaded.document,
+        mutation,
+        "external-agent",
+      );
+      if (!applied) {
+        return {
+          snapshot: documentSnapshotFromYDoc(loaded.document),
+          epoch: loaded.epoch,
+          seq: await latestCollabSeq(postId, loaded.epoch),
+          applied: false,
+        };
+      }
+      const update = Y.encodeStateAsUpdate(loaded.document, before);
+      const appended = await appendCollabUpdate(
+        postId,
+        Buffer.from(update).toString("base64"),
+        loaded.epoch,
+      );
+      if ("retired" in appended) continue;
+      return {
+        snapshot: documentSnapshotFromYDoc(loaded.document),
+        epoch: loaded.epoch,
+        seq: appended.seq,
+        applied: true,
+      };
+    } finally {
+      loaded.document.destroy();
+    }
+  }
+  return null;
+}
+
 /**
  * Rebuild the canonical document from the current Yjs generation. The caller
  * may include its complete local state so edits still queued in its durable
@@ -321,26 +402,17 @@ export async function materializeCollabDocument(
   currentStateBase64?: string,
 ): Promise<DocumentSnapshot | null> {
   if (!db) return null;
-  const baseline = await prepareCollabBaseline(postId);
-  if (!baseline) return null;
-  const epoch = baseline.epoch;
-  const rows = await db
-    .select({ update: collabUpdates.update })
-    .from(collabUpdates)
-    .where(and(eq(collabUpdates.postId, postId), eq(collabUpdates.epoch, epoch)))
-    .orderBy(asc(collabUpdates.seq));
-  const document = new Y.Doc();
+  const loaded = await loadCurrentCollabDocument(postId);
+  if (!loaded) return null;
   try {
-    Y.applyUpdate(document, base64ToUpdate(baseline.update));
-    for (const row of rows) Y.applyUpdate(document, base64ToUpdate(row.update));
     if (currentStateBase64) {
-      Y.applyUpdate(document, base64ToUpdate(currentStateBase64));
+      Y.applyUpdate(loaded.document, base64ToUpdate(currentStateBase64));
     }
-    return documentSnapshotFromYDoc(document);
+    return documentSnapshotFromYDoc(loaded.document);
   } catch {
     return null;
   } finally {
-    document.destroy();
+    loaded.document.destroy();
   }
 }
 
@@ -461,12 +533,8 @@ export async function upsertPresence(
 
 /**
  * True while at least one editor is actively co-editing this post (a presence
- * heartbeat within the stale window). The canonical `posts.body` and the live
- * Yjs document are separate write paths bridged only by the editor's own
- * autosave, with NO store -> Yjs path, so an external raw body overwrite (a
- * Finder/sync PUT or an MCP update) made during a live session would be
- * silently discarded by the next co-editor autosave. Callers use this to refuse
- * such a write with a conflict instead of losing it.
+ * heartbeat within the stale window). Callers use this to route content
+ * mutations through applyLiveDocumentMutation instead of writing around Yjs.
  */
 export async function hasActiveCoEditors(postId: string): Promise<boolean> {
   if (!db) return false;
@@ -508,13 +576,3 @@ export async function removePresence(
       ),
     );
 }
-
-// NOTE: an earlier revision retired the append log after an external body write
-// (resetCollabLog + reconcileCollabLogAfterExternalWrite). An adversarial review
-// showed an unbounded delete is unsafe: it can drop a co-editor's final edits
-// that posts.body never absorbed (the autosave cannot flush on tab close) and
-// can corrupt a still-live-but-stale-presence session's log (orphaned deltas,
-// no snapshot preserved, unlike maybeCompactCollab). Retiring a stale log needs
-// a materialization/staleness marker so the next open prefers posts.body
-// without deleting; that is tracked as a follow-up. The live-session write guard
-// (hasActiveCoEditors, consulted by the editor/sync/MCP write paths) stays.

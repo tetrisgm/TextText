@@ -7,6 +7,17 @@ import {
 } from "@/lib/documents/model";
 
 const ROOT_KEY = "document";
+const APPLIED_OPERATIONS_KEY = "agentOperations";
+const MAX_APPLIED_OPERATIONS = 256;
+
+export type DocumentMutation = {
+  title?: string;
+  subtitle?: string | null;
+  body?: string;
+  appendBody?: string;
+  tags?: string[];
+  operationId?: string;
+};
 
 function root(doc: Y.Doc): Y.Map<unknown> {
   return doc.getMap(ROOT_KEY);
@@ -90,6 +101,63 @@ export function applyDocumentSnapshot(
     }, new Set(["theme"]));
     replaceMap(map(presentation, "theme"), snapshot.presentation.theme);
   }, origin);
+}
+
+export function applyDocumentMutation(
+  doc: Y.Doc,
+  mutation: DocumentMutation,
+  origin: unknown = "document-mutation",
+): boolean {
+  let applied = true;
+  doc.transact(() => {
+    const rootMap = root(doc);
+    const operations = map(rootMap, APPLIED_OPERATIONS_KEY);
+    if (mutation.operationId && operations.has(mutation.operationId)) {
+      applied = false;
+      return;
+    }
+    if (mutation.title !== undefined) {
+      replaceText(text(rootMap, "title"), mutation.title);
+    }
+    if (mutation.subtitle !== undefined) {
+      replaceText(text(rootMap, "subtitle"), mutation.subtitle ?? "");
+    }
+    if (mutation.body !== undefined) {
+      replaceText(text(rootMap, "body"), mutation.body);
+    }
+    if (mutation.appendBody !== undefined) {
+      const fragment = mutation.appendBody.trim();
+      if (fragment) {
+        const body = text(rootMap, "body");
+        const current = body.toString().trimEnd();
+        if (current.length < body.length) {
+          body.delete(current.length, body.length - current.length);
+        }
+        body.insert(body.length, current ? `\n\n${fragment}` : fragment);
+      }
+    }
+    if (mutation.tags !== undefined) {
+      replaceArray(array(rootMap, "tags"), mutation.tags);
+    }
+    if (mutation.operationId) {
+      operations.set(mutation.operationId, Date.now());
+      if (operations.size > MAX_APPLIED_OPERATIONS) {
+        const oldest = Array.from(operations.entries())
+          .map(([key, value]) => ({
+            key,
+            timestamp: typeof value === "number" ? value : 0,
+          }))
+          .sort(
+            (left, right) =>
+              left.timestamp - right.timestamp ||
+              left.key.localeCompare(right.key),
+          )
+          .slice(0, operations.size - MAX_APPLIED_OPERATIONS);
+        for (const entry of oldest) operations.delete(entry.key);
+      }
+    }
+  }, origin);
+  return applied;
 }
 
 function cleanFields(value: Record<string, unknown>): Record<string, DocumentFieldValue> {

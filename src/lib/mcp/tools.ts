@@ -3,7 +3,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import { recordAction, type AuditActorType, type AuditEntry } from "@/lib/audit";
-import { hasActiveCoEditors } from "@/lib/collab";
+import {
+  applyLiveDocumentMutation,
+  hasActiveCoEditors,
+  markCollabMaterialized,
+  materializeCollabDocument,
+} from "@/lib/collab";
+import type { DocumentMutation } from "@/lib/collab/document";
 import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -59,6 +65,7 @@ import {
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
   getPostById,
+  getPostStoreContext,
   getTrashedFolders,
   getTrashedPosts,
   listItemComments,
@@ -183,17 +190,6 @@ function conflictResult(post: Pick<Post, "slug" | "title">, action: string) {
   );
 }
 
-/** A raw body overwrite while people are co-editing the item in the browser
- * would be silently discarded by the next co-editor autosave (the canonical
- * body and the live Yjs document are separate write paths). Refuse instead of
- * losing the write; the agent can retry once the session ends. */
-function coEditingConflictResult(post: Pick<Post, "slug" | "title">) {
-  return errorResult(
-    `"${post.title || post.slug}" is being co-edited right now. ` +
-      "Its body is owned by the live editing session; try again after it ends.",
-  );
-}
-
 function accessUser(extra: ToolContext): AccessUser {
   const sub = extra.authInfo?.extra?.sub;
   const userId = extra.authInfo?.extra?.userId;
@@ -248,6 +244,74 @@ function mcpAuditEntry(
     targetId,
     inputSummary: summary,
   };
+}
+
+async function saveLiveContentMutation({
+  blog,
+  post,
+  access,
+  mutation,
+  ownerPatch,
+  audit,
+}: {
+  blog: Blog;
+  post: Post;
+  access: EffectiveAccess;
+  mutation: DocumentMutation;
+  ownerPatch?: Partial<Post>;
+  audit: AuditEntry;
+}): Promise<Post> {
+  if (!post.id) throw new Error("The item has no stable id");
+  const applied = await applyLiveDocumentMutation(post.id, mutation);
+  if (!applied) throw new Error("The live document could not be updated");
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const context = await getPostStoreContext(post.id);
+    if (!context || context.handle !== blog.handle) {
+      throw new Error("The item no longer exists");
+    }
+    const snapshot =
+      (await materializeCollabDocument(post.id)) ?? applied.snapshot;
+    const current = context.post;
+    const revision = current.revision;
+    if (typeof revision !== "number") {
+      throw new Error("The item has no revision");
+    }
+    try {
+      const saved = access.isOwner
+        ? await savePost(
+            blog.handle,
+            {
+              ...current,
+              ...ownerPatch,
+              document: snapshot,
+              title: snapshot.content.title,
+              excerpt: snapshot.content.subtitle,
+              body: snapshot.content.body,
+              tags: snapshot.content.tags,
+              status: isAlwaysDraftType(current.type)
+                ? "draft"
+                : current.status,
+              date:
+                current.status === "published"
+                  ? (ownerPatch?.date ?? current.date)
+                  : undefined,
+            },
+            { expectedRevision: revision, audit },
+          )
+        : await savePostContentPatch(
+            blog.handle,
+            current,
+            { document: snapshot },
+            { expectedRevision: revision, audit },
+          );
+      await markCollabMaterialized(post.id, saved.revision ?? revision);
+      return saved;
+    } catch (error) {
+      if (!(error instanceof PostConflictError) || attempt === 2) throw error;
+    }
+  }
+  throw new PostConflictError();
 }
 
 function isToolResult<T extends object>(
@@ -1135,12 +1199,6 @@ async function executeMcpTool(
       ) {
         return errorResult("Import or attach that asset before using it as the cover.");
       }
-      // Only a real body change can clobber a live co-editing session; a
-      // title/excerpt-only edit leaves the Yjs document alone.
-      if (content.body !== post.body && post.id && (await hasActiveCoEditors(post.id))) {
-        return coEditingConflictResult(post);
-      }
-
       const next: Post = {
         ...post,
         ...content,
@@ -1174,25 +1232,64 @@ async function executeMcpTool(
       ]
         .filter((group): group is string => group !== null)
         .join("; ");
+      const audit = mcpAuditEntry(
+        extra,
+        "mcp.update_item",
+        "item",
+        post.id,
+        summary,
+      );
+      const useLiveDocument =
+        contentFields.length > 0 &&
+        Boolean(post.id && (await hasActiveCoEditors(post.id)));
 
       try {
-        const saved = access.isOwner
-          ? await savePost(
-              blog.handle,
-              next,
-              { expectedRevision: revision },
-            )
-          : await savePostContentPatch(
-              blog.handle,
+        const saved = useLiveDocument
+          ? await saveLiveContentMutation({
+              blog,
               post,
-              {
-                title: content.title,
-                body: content.body,
-                tags: content.tags,
+              access,
+              mutation: {
+                title:
+                  content.title !== post.title ? content.title : undefined,
+                subtitle:
+                  content.excerpt !== post.excerpt
+                    ? (content.excerpt ?? null)
+                    : undefined,
+                body: content.body !== post.body ? content.body : undefined,
+                tags: !sameValue(content.tags, normalizeTags(post.tags))
+                  ? content.tags
+                  : undefined,
               },
-              { expectedRevision: revision },
-            );
-        await auditMcp(extra, "mcp.update_item", "item", saved.id, summary);
+              ownerPatch: access.isOwner
+                ? {
+                    slug: content.slug,
+                    accent: content.accent,
+                    cover: content.cover,
+                    coverCaption: content.coverCaption,
+                    coverHeight: content.coverHeight,
+                    date: content.date,
+                    pinned: content.pinned,
+                  }
+                : undefined,
+              audit,
+            })
+          : access.isOwner
+            ? await savePost(
+                blog.handle,
+                next,
+                { expectedRevision: revision, audit },
+              )
+            : await savePostContentPatch(
+                blog.handle,
+                post,
+                {
+                  title: content.title,
+                  body: content.body,
+                  tags: content.tags,
+                },
+                { expectedRevision: revision, audit },
+              );
         if (pinChanged) {
           await auditMcp(
             extra,
@@ -1248,14 +1345,6 @@ async function executeMcpTool(
         }
         return revision;
       }
-      // Appending rewrites the whole body, which a live co-editing session
-      // owns; refuse rather than have the next autosave discard it.
-      if (post.id && (await hasActiveCoEditors(post.id))) {
-        if (retryKey) {
-          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
-        }
-        return coEditingConflictResult(post);
-      }
       const fragment = input.markdown_fragment.trim();
       const base = post.body.replace(/\s+$/, "");
       const body = base ? `${base}\n\n${fragment}` : fragment;
@@ -1266,24 +1355,38 @@ async function executeMcpTool(
         post.id,
         post.title,
       );
+      const useLiveDocument = Boolean(
+        post.id && (await hasActiveCoEditors(post.id)),
+      );
       try {
-        const saved = access.isOwner
-          ? await savePost(
-              blog.handle,
-              {
-                ...post,
-                body,
-                status: isAlwaysDraftType(post.type) ? "draft" : post.status,
-                date: post.status === "published" ? post.date : undefined,
-              },
-              { expectedRevision: revision, audit },
-            )
-          : await savePostContentPatch(
-              blog.handle,
+        const saved = useLiveDocument
+          ? await saveLiveContentMutation({
+              blog,
               post,
-              { body },
-              { expectedRevision: revision, audit },
-            );
+              access,
+              mutation: {
+                appendBody: fragment,
+                operationId: retryKey ?? undefined,
+              },
+              audit,
+            })
+          : access.isOwner
+            ? await savePost(
+                blog.handle,
+                {
+                  ...post,
+                  body,
+                  status: isAlwaysDraftType(post.type) ? "draft" : post.status,
+                  date: post.status === "published" ? post.date : undefined,
+                },
+                { expectedRevision: revision, audit },
+              )
+            : await savePostContentPatch(
+                blog.handle,
+                post,
+                { body },
+                { expectedRevision: revision, audit },
+              );
         if (retryKey && saved.id) {
           await resolveIdempotencyKey(blog.handle, retryKey, "post", saved.id);
         }

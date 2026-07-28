@@ -10,11 +10,14 @@ description: Create or update a durable Texttext project record and append user-
 2. If several matches exist, read them and use the one whose project identity
    matches the current repository or product.
 3. Summarize user-facing results, not internal implementation noise.
-4. Append a newest-on-top or project-consistent entry using an
-   `idempotency_key` based on the source commit or release identifier.
+4. Append a project-consistent entry using an `idempotency_key` based on the
+   source commit or release identifier.
 5. If no matching document exists, create one with a stable project title and
    the same idempotency key discipline.
-6. Read the saved item and confirm the new entry is present exactly once.
+6. Keep using the same item id for the life of the project.
+7. If the document is open in Texttext, the entry appears live and merges with
+   the user's edits. Read it again only when confirmation or conflict recovery
+   requires it.
 
 Never create a second changelog only because a retry timed out. Do not publish a
 private project record without explicit permission.

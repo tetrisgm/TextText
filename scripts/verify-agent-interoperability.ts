@@ -74,6 +74,7 @@ for (const name of [
 }
 for (const name of [
   "maintain_project_documents",
+  "use_live_document_canvas",
   "capture_conversation",
   "prepare_release_note",
 ]) {
@@ -90,8 +91,9 @@ assert(
   "Public agent docs must advertise the production MCP endpoint",
 );
 assert(
-  publicDocs.includes("maintain_project_documents"),
-  "Public agent docs must advertise the project-document workflow",
+  publicDocs.includes("maintain_project_documents") &&
+    publicDocs.includes("use_live_document_canvas"),
+  "Public agent docs must advertise project-document and live-canvas workflows",
 );
 assert(
   publicDocs.includes("idempotency"),

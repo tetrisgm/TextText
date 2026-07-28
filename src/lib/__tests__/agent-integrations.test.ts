@@ -42,7 +42,11 @@ describe("agent integrations", () => {
     expect(new Set(AGENT_WORKFLOWS.map((workflow) => workflow.id)).size).toBe(
       AGENT_WORKFLOWS.length,
     );
-    expect(AGENT_WORKFLOWS).toHaveLength(3);
+    expect(AGENT_WORKFLOWS).toHaveLength(4);
+    expect(AGENT_WORKFLOWS[0]).toMatchObject({
+      id: "live-document",
+      title: "Use a live document canvas",
+    });
     expect(
       AGENT_WORKFLOWS.every(
         (workflow) => workflow.prompt.length > workflow.title.length,
