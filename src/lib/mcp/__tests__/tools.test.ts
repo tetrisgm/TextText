@@ -5,8 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   attachItemAsset: vi.fn(),
+  claimIdempotencyKey: vi.fn(),
   createItemComment: vi.fn(),
+  createDraftInFolder: vi.fn(),
   createSubfolder: vi.fn(),
+  deletePost: vi.fn(),
   deletePostAtomic: vi.fn(),
   getAccessibleFolders: vi.fn(),
   getAccessibleAllPostFiles: vi.fn(),
@@ -24,8 +27,11 @@ const mocks = vi.hoisted(() => ({
   recordAction: vi.fn(),
   removeItemAssetReferences: vi.fn(),
   resolveItemAccess: vi.fn(),
+  resolveFolderAccess: vi.fn(),
   resolvePostSlug: vi.fn(),
   resolveWorkspaceAccess: vi.fn(),
+  releaseIdempotencyKey: vi.fn(),
+  resolveIdempotencyKey: vi.fn(),
   restoreFolder: vi.fn(),
   revokeScopeShare: vi.fn(),
   savePost: vi.fn(),
@@ -45,7 +51,7 @@ vi.mock("@/lib/item-assets", () => ({
   removeItemAssetReferences: mocks.removeItemAssetReferences,
 }));
 vi.mock("@/lib/permissions", () => ({
-  resolveFolderAccess: vi.fn(),
+  resolveFolderAccess: mocks.resolveFolderAccess,
   resolveItemAccess: mocks.resolveItemAccess,
   resolveWorkspaceAccess: mocks.resolveWorkspaceAccess,
 }));
@@ -58,10 +64,11 @@ vi.mock("@/lib/shares", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   PostConflictError: class PostConflictError extends Error {},
+  claimIdempotencyKey: mocks.claimIdempotencyKey,
   createItemComment: mocks.createItemComment,
-  createDraftInFolder: vi.fn(),
+  createDraftInFolder: mocks.createDraftInFolder,
   createSubfolder: mocks.createSubfolder,
-  deletePost: vi.fn(),
+  deletePost: mocks.deletePost,
   deletePostAtomic: mocks.deletePostAtomic,
   getAccessibleAllPostFiles: mocks.getAccessibleAllPostFiles,
   getAccessibleFolderCounts: vi.fn(async () => ({})),
@@ -76,6 +83,8 @@ vi.mock("@/lib/store", () => ({
   markCapturePending: mocks.markCapturePending,
   movePostFile: vi.fn(),
   renameFolder: vi.fn(),
+  releaseIdempotencyKey: mocks.releaseIdempotencyKey,
+  resolveIdempotencyKey: mocks.resolveIdempotencyKey,
   restoreFolder: mocks.restoreFolder,
   restorePost: vi.fn(),
   resolvePostSlug: mocks.resolvePostSlug,
@@ -144,6 +153,9 @@ describe("MCP workspace tool adapter", () => {
     // no dangling Once leaks into a later test's default.
     mocks.hasActiveCoEditors.mockReset();
     mocks.hasActiveCoEditors.mockResolvedValue(false);
+    mocks.claimIdempotencyKey.mockResolvedValue({ status: "claimed" });
+    mocks.releaseIdempotencyKey.mockResolvedValue(undefined);
+    mocks.resolveIdempotencyKey.mockResolvedValue(undefined);
     mocks.getAccessibleFolders.mockResolvedValue([]);
     mocks.getAccessibleAllPostFiles.mockResolvedValue([]);
     mocks.getTrashedFolders.mockResolvedValue([]);
@@ -176,6 +188,16 @@ describe("MCP workspace tool adapter", () => {
       workspaceRole: null,
     });
     mocks.resolveItemAccess.mockResolvedValue({
+      role: "owner",
+      canView: true,
+      canEditContent: true,
+      canManage: true,
+      isOwner: true,
+      userId: "user-1",
+      blogId: "blog-1",
+      workspaceRole: null,
+    });
+    mocks.resolveFolderAccess.mockResolvedValue({
       role: "owner",
       canView: true,
       canEditContent: true,
@@ -581,6 +603,124 @@ describe("MCP workspace tool adapter", () => {
       auth(["sync"]),
     );
     expect(result.isError).not.toBe(true);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates an item once when an agent retries with the same key", async () => {
+    const id = "99999999-9999-4999-8999-999999999999";
+    const folder = {
+      id: "blog",
+      name: "Blog",
+      path: "blog",
+      mode: "blog",
+    };
+    const draft = {
+      id,
+      folderId: "blog",
+      type: "article",
+      slug: "untitled",
+      title: "Untitled",
+      excerpt: "",
+      body: "",
+      status: "draft",
+      pinned: false,
+      revision: 1,
+    };
+    const saved = {
+      ...draft,
+      slug: "project-alpha",
+      title: "Project Alpha",
+      body: "# Project Alpha",
+      revision: 2,
+    };
+    mocks.getAccessibleFolders.mockResolvedValue([folder]);
+    mocks.createDraftInFolder.mockResolvedValue(draft);
+    mocks.savePost.mockResolvedValue(saved);
+    mocks.getPostById.mockResolvedValue(saved);
+    const createItem = registrations().find((entry) => entry.name === "create_item");
+    const input = {
+      folder_path: "blog",
+      title: "Project Alpha",
+      body: "# Project Alpha",
+      idempotency_key: "project:https://example.com/alpha",
+    };
+
+    const first = await createItem!.callback(input, auth(["sync"]));
+    expect(first.isError).not.toBe(true);
+    expect(JSON.parse(toolText(first))).toMatchObject({ replayed: false });
+    expect(mocks.createDraftInFolder).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveIdempotencyKey).toHaveBeenCalledWith(
+      "local",
+      "agent:create:project:https://example.com/alpha",
+      "post",
+      id,
+    );
+
+    mocks.claimIdempotencyKey.mockResolvedValue({
+      status: "done",
+      kind: "post",
+      id,
+    });
+    const replay = await createItem!.callback(input, auth(["sync"]));
+    expect(replay.isError).not.toBe(true);
+    expect(JSON.parse(toolText(replay))).toMatchObject({
+      replayed: true,
+      item: { id, title: "Project Alpha" },
+    });
+    expect(mocks.createDraftInFolder).toHaveBeenCalledTimes(1);
+    expect(mocks.savePost).toHaveBeenCalledTimes(1);
+  });
+
+  it("appends a changelog entry once when an agent retries", async () => {
+    const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const post = {
+      id,
+      folderId: "notes",
+      type: "note",
+      slug: "project-alpha",
+      title: "Project Alpha",
+      excerpt: "",
+      body: "# Project Alpha",
+      status: "draft",
+      pinned: false,
+      revision: 8,
+    };
+    const saved = {
+      ...post,
+      body: "# Project Alpha\n\n## 1.2.0\n\nShipped sync.",
+      revision: 9,
+    };
+    mocks.getPostById.mockResolvedValue(post);
+    mocks.savePost.mockResolvedValue(saved);
+    const appendItem = registrations().find((entry) => entry.name === "append_to_item");
+    const input = {
+      id,
+      markdown_fragment: "## 1.2.0\n\nShipped sync.",
+      idempotency_key: "release:alpha:1.2.0",
+    };
+
+    const first = await appendItem!.callback(input, auth(["sync"]));
+    expect(first.isError).not.toBe(true);
+    expect(JSON.parse(toolText(first))).toMatchObject({ replayed: false });
+    expect(mocks.resolveIdempotencyKey).toHaveBeenCalledWith(
+      "local",
+      "agent:append:release:alpha:1.2.0",
+      "post",
+      id,
+    );
+
+    mocks.claimIdempotencyKey.mockResolvedValue({
+      status: "done",
+      kind: "post",
+      id,
+    });
+    mocks.getPostById.mockResolvedValue(saved);
+    const replay = await appendItem!.callback(input, auth(["sync"]));
+    expect(replay.isError).not.toBe(true);
+    expect(JSON.parse(toolText(replay))).toMatchObject({
+      replayed: true,
+      item: { id, title: "Project Alpha" },
+    });
     expect(mocks.savePost).toHaveBeenCalledTimes(1);
   });
 

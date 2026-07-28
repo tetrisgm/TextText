@@ -183,6 +183,15 @@ function validateAccessTarget(
 
 const createItemInput = z
   .object({
+    idempotency_key: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe(
+        "Stable caller key for retry-safe creation. Reuse the same key after timeouts to receive the original item instead of creating a duplicate.",
+      ),
     folder_path: folderPath
       .optional()
       .describe('The destination folder path. Defaults to the Blog folder at "blog".'),
@@ -379,7 +388,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   create_item: defineTool("create_item", {
     title: "Create item",
     description:
-      "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned.",
+      "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates.",
     inputSchema: createItemInput,
     mutability: "write",
   }),
@@ -394,12 +403,21 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   append_to_item: defineTool("append_to_item", {
     title: "Append to item",
     description:
-      "Append a markdown block to the end of one item's body without touching its metadata.",
+      "Append a markdown block to the end of one item's body without touching its metadata. Automated clients should pass an idempotency_key derived from the source event or commit.",
     inputSchema: z
       .object({
         id,
         markdown_fragment: z.string().min(1).max(1_000_000),
         if_match_hash: ifMatchHash,
+        idempotency_key: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe(
+            "Stable event key for exactly-once append behavior. Reuse it when retrying the same update.",
+          ),
       })
       .strict(),
     mutability: "write",

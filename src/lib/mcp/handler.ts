@@ -9,13 +9,17 @@
 
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { enforceMcpToolScope, verifyWriteApiToken } from "./auth";
+import { registerAgentSurface } from "./agent-surface";
 import { registerWriteTools } from "./tools";
 
 export function buildMcpRouteHandler(
   endpoint: string,
 ): (request: Request) => Promise<Response> {
   const handler = createMcpHandler(
-    (server) => registerWriteTools(server),
+    (server) => {
+      registerWriteTools(server);
+      registerAgentSurface(server);
+    },
     { serverInfo: { name: "write", version: "1.0.0" } },
     {
       streamableHttpEndpoint: endpoint,

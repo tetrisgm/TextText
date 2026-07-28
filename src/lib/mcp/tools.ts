@@ -46,6 +46,7 @@ import {
 import type { ScopeShareRole } from "@/lib/shares";
 import {
   createItemComment,
+  claimIdempotencyKey,
   createDocumentTemplateVersion,
   createDraftInFolder,
   createSubfolder,
@@ -66,6 +67,8 @@ import {
   movePostFile,
   PostConflictError,
   renameFolder,
+  releaseIdempotencyKey,
+  resolveIdempotencyKey,
   restoreFolder,
   restorePost,
   savePost,
@@ -136,7 +139,24 @@ function textResult(text: string): CallToolResult {
 }
 
 function jsonResult(value: unknown): CallToolResult {
-  return textResult(JSON.stringify(value, null, 2));
+  const text = JSON.stringify(value, null, 2);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return {
+      content: [{ type: "text", text }],
+      structuredContent: value as Record<string, unknown>,
+    };
+  }
+  return textResult(text);
+}
+
+function automationKey(operation: "create" | "append", key: string): string {
+  return `agent:${operation}:${key}`;
+}
+
+function idempotencyInflightResult(): CallToolResult {
+  return errorResult(
+    "This operation is already in progress. Retry shortly with the same idempotency_key.",
+  );
 }
 
 function errorResult(message: string): CallToolResult {
@@ -975,7 +995,37 @@ async function executeMcpTool(
         );
       }
 
-      const created = await createDraftInFolder(blog.handle, folder.id);
+      const retryKey = input.idempotency_key
+        ? automationKey("create", input.idempotency_key)
+        : null;
+      if (retryKey) {
+        const claim = await claimIdempotencyKey(blog.handle, retryKey);
+        if (claim.status === "inflight") return idempotencyInflightResult();
+        if (claim.status === "done") {
+          if (claim.kind !== "post") {
+            return errorResult("The idempotency key belongs to a different operation.");
+          }
+          const existing = await getPostById(blog.handle, claim.id);
+          if (!existing) {
+            return errorResult(
+              "The original item for this idempotency key is unavailable.",
+            );
+          }
+          return jsonResult({
+            item: await mcpItemEntry(extra, blog, existing),
+            replayed: true,
+          });
+        }
+      }
+      let created: Post;
+      try {
+        created = await createDraftInFolder(blog.handle, folder.id);
+      } catch (error) {
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
+        return saveErrorResult(error);
+      }
       try {
         const saved = await savePost(blog.handle, {
           ...created,
@@ -986,12 +1036,28 @@ async function executeMcpTool(
           date: undefined,
           slug: slugForNewFile(parsed.fields, created.slug),
           body: parsed.body,
+        }, {
+          audit: mcpAuditEntry(
+            extra,
+            "mcp.create_item",
+            "item",
+            created.id,
+            parsed.fields.title ?? created.title,
+          ),
         });
-        await auditMcp(extra, "mcp.create_item", "item", saved.id, saved.title);
+        if (retryKey && saved.id) {
+          await resolveIdempotencyKey(blog.handle, retryKey, "post", saved.id);
+        }
         revalidateBlogPaths(blog, [saved.slug]);
-        return jsonResult({ item: await mcpItemEntry(extra, blog, saved) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, blog, saved),
+          replayed: false,
+        });
       } catch (error) {
         if (created.id) await deletePost(blog.handle, created.id).catch(() => {});
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
         return saveErrorResult(error);
       }
     }
@@ -1152,18 +1218,54 @@ async function executeMcpTool(
       if (isToolResult(resolved)) return resolved;
       const { blog, post, access } = resolved;
       if (!access.canEditContent) return errorResult("You cannot edit this item.");
+      const retryKey = input.idempotency_key
+        ? automationKey("append", input.idempotency_key)
+        : null;
+      if (retryKey) {
+        const claim = await claimIdempotencyKey(blog.handle, retryKey);
+        if (claim.status === "inflight") return idempotencyInflightResult();
+        if (claim.status === "done") {
+          if (claim.kind !== "post" || claim.id !== post.id) {
+            return errorResult("The idempotency key belongs to a different item.");
+          }
+          return jsonResult({
+            item: await mcpItemEntry(extra, blog, post),
+            replayed: true,
+          });
+        }
+      }
       const stale = hashConflict(blog, post, input.if_match_hash);
-      if (stale) return stale;
+      if (stale) {
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
+        return stale;
+      }
       const revision = mutationRevision(post);
-      if (typeof revision !== "number") return revision;
+      if (typeof revision !== "number") {
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
+        return revision;
+      }
       // Appending rewrites the whole body, which a live co-editing session
       // owns; refuse rather than have the next autosave discard it.
       if (post.id && (await hasActiveCoEditors(post.id))) {
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
         return coEditingConflictResult(post);
       }
       const fragment = input.markdown_fragment.trim();
       const base = post.body.replace(/\s+$/, "");
       const body = base ? `${base}\n\n${fragment}` : fragment;
+      const audit = mcpAuditEntry(
+        extra,
+        "mcp.append_to_item",
+        "item",
+        post.id,
+        post.title,
+      );
       try {
         const saved = access.isOwner
           ? await savePost(
@@ -1174,18 +1276,26 @@ async function executeMcpTool(
                 status: isAlwaysDraftType(post.type) ? "draft" : post.status,
                 date: post.status === "published" ? post.date : undefined,
               },
-              { expectedRevision: revision },
+              { expectedRevision: revision, audit },
             )
           : await savePostContentPatch(
               blog.handle,
               post,
               { body },
-              { expectedRevision: revision },
+              { expectedRevision: revision, audit },
             );
-        await auditMcp(extra, "mcp.append_to_item", "item", saved.id, saved.title);
+        if (retryKey && saved.id) {
+          await resolveIdempotencyKey(blog.handle, retryKey, "post", saved.id);
+        }
         revalidateBlogPaths(blog, [saved.slug]);
-        return jsonResult({ item: await mcpItemEntry(extra, blog, saved) });
+        return jsonResult({
+          item: await mcpItemEntry(extra, blog, saved),
+          replayed: false,
+        });
       } catch (error) {
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
         if (error instanceof PostConflictError) {
           return conflictResult(post, "the append could be saved");
         }
@@ -1680,5 +1790,13 @@ export async function runWorkspaceToolForSession(
       },
     },
   };
+  return executeMcpTool(name, args, extra);
+}
+
+export async function runWorkspaceToolForAuth(
+  name: WorkspaceToolName,
+  args: Record<string, unknown>,
+  extra: ToolContext,
+): Promise<CallToolResult> {
   return executeMcpTool(name, args, extra);
 }

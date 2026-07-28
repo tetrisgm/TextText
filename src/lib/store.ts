@@ -4166,7 +4166,7 @@ export async function savePostContentPatch(
   handle: string,
   existing: Post,
   patch: PostContentPatch,
-  options: { expectedRevision?: number } = {},
+  options: { expectedRevision?: number; audit?: AuditEntry } = {},
 ): Promise<Post> {
   const next: Post = {
     ...existing,
@@ -4214,6 +4214,7 @@ export async function savePostContentPatch(
   return savePost(handle, next, {
     preservePublishedAt: true,
     expectedRevision: options.expectedRevision,
+    audit: options.audit,
   });
 }
 

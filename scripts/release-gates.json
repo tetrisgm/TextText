@@ -5,6 +5,7 @@
     "workflow.document_engine",
     "workflow.collaboration",
     "workflow.client_reliability",
+    "workflow.agent_interoperability",
     "workflow.live_clients",
     "web.unit",
     "native.unit",

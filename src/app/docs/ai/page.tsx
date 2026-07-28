@@ -94,6 +94,13 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Getting started</h2>
 
+          <h3>ChatGPT</h3>
+          <div className="connect-code-wrap">
+            <pre className="connect-code">
+              {`Settings → Apps → Advanced settings → Developer mode\nCreate app → paste ${MCP_URL}\nConnect, then approve read or sync access.`}
+            </pre>
+          </div>
+
           <h3>Claude Code (CLI)</h3>
           <div className="connect-code-wrap">
             <pre className="connect-code">
@@ -192,6 +199,41 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Guides</h2>
 
+          <h3>Keep one document per software project</h3>
+          <p className="connect-body">
+            <strong>Prompt:</strong> &quot;For every project I work on, keep one
+            project document in my Texttext Notes folder. Create missing project
+            documents, then append a dated changelog entry after every shipped
+            update. Use the repository URL as the stable project identity and
+            the commit SHA as the update identity.&quot;
+          </p>
+          <p className="connect-body">
+            Hosts that support MCP prompts can start with{" "}
+            <code className="connect-inline-code">maintain_project_documents</code>.
+            The assistant uses a stable{" "}
+            <code className="connect-inline-code">idempotency_key</code> for each{" "}
+            <code className="connect-inline-code">create_item</code> and{" "}
+            <code className="connect-inline-code">append_to_item</code> call.
+            Retrying after a timeout returns the original result instead of
+            creating another document or duplicate changelog entry.
+          </p>
+
+          <h3>Capture an AI conversation</h3>
+          <p className="connect-body">
+            <strong>Prompt:</strong> &quot;Save the useful decisions and final answer
+            from this conversation as a Texttext note. Preserve the important
+            prompts, conclusions, and source context.&quot;
+          </p>
+          <p className="connect-body">
+            Hosts can use the{" "}
+            <code className="connect-inline-code">capture_conversation</code>{" "}
+            prompt. Texttext also exposes{" "}
+            <code className="connect-inline-code">texttext://workspace</code> and{" "}
+            <code className="connect-inline-code">texttext://items/&#123;id&#125;</code>{" "}
+            resources so capable clients can load relevant context without
+            guessing storage paths.
+          </p>
+
           <h3>Capture research into Notes</h3>
           <p className="connect-body">
             <strong>Prompt:</strong> &quot;Research the current EU AI Act enforcement
@@ -240,6 +282,14 @@ export default function AiDocsPage() {
 
         <section className="connect-section">
           <h2 className="connect-section-title">Reference</h2>
+          <h3>Resources and prompts</h3>
+          <p className="connect-body">
+            Texttext exposes workspace and item resources plus reusable prompts
+            for project journals, conversation capture, and release notes.
+            Clients that only support tools can perform the same workflows with
+            the tools below.
+          </p>
+
           <h3>Read tools ({READ_TOOLS.length})</h3>
           <p className="connect-body">Any connected assistant can call these.</p>
           <ToolTable names={READ_TOOLS} />

@@ -66,6 +66,18 @@ The shared ${WORKSPACE_TOOL_NAMES.length} tools are:
 - Read: ${readTools.join(", ")}
 - Mutations: ${mutationTools.join(", ")}
 
+Protocol-native context:
+
+- texttext://agent-guide: reliability, privacy, and automation rules
+- texttext://workspace: connected workspace and visible folders
+- texttext://items/{id}: one item with Markdown, metadata, and assets
+
+Reusable prompts:
+
+- maintain_project_documents: one durable document per project with retry-safe updates
+- capture_conversation: save useful prompts, answers, and decisions
+- prepare_release_note: append one release entry exactly once
+
 delete_item and delete_folder are soft deletes. list_trash exposes restorable
 items and folder restoration units. restore_item and restore_folder restore
 them. A restored published item can become public again. There is no
@@ -78,6 +90,12 @@ Every mutation is audited.
 New items are drafts. Notes and bookmarks cannot publish. Existing-item writes
 should send the latest if_match_hash; stale writes are rejected. Every mutation
 is audited.
+
+Automations should pass idempotency_key to create_item and append_to_item.
+Derive creation keys from stable source identities, such as repository URLs.
+Derive append keys from stable events, such as commit SHAs or release versions.
+Reuse the same key after a timeout. Successful replays return replayed: true and
+do not duplicate content.
 
 ## Sync API and OpenAPI actions
 

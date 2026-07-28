@@ -3,8 +3,9 @@ r"""End-to-end test of the click-to-approve connector loop.
 
 Walks the exact path an MCP client (ChatGPT, Claude) takes:
     discovery -> dynamic client registration -> sign in -> consent approval ->
-    PKCE token exchange -> authenticated MCP initialize + tools/list -> refresh
-    rotation -> replay rejection and family revocation.
+    PKCE token exchange -> authenticated MCP initialize + tools/list +
+    resources/list + prompts/list -> refresh rotation -> replay rejection and
+    family revocation.
 
 Run against a dev server with AUTH_DEV_LOGIN=1 (dev-login must be enabled;
 it is off on production, so this script cannot run against prod):
@@ -66,6 +67,18 @@ EXPECTED_TOOLS = [
     "revoke_access",
 ]
 EXPECTED_OPEN_WORLD_TOOLS = {"recapture_bookmark", "add_item_asset"}
+EXPECTED_RESOURCES = {
+    "texttext://agent-guide",
+    "texttext://workspace",
+}
+EXPECTED_RESOURCE_TEMPLATES = {
+    "texttext://items/{id}",
+}
+EXPECTED_PROMPTS = {
+    "maintain_project_documents",
+    "capture_conversation",
+    "prepare_release_note",
+}
 
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -301,6 +314,56 @@ for tool in listed_tools:
 print(f"6. MCP tools/list: {len(tool_names)} canonical tools")
 
 code, _, body = call(opener, f"{BASE}/api/mcp", {
+    "jsonrpc": "2.0", "method": "resources/list", "id": 21, "params": {},
+}, headers=mcp_headers)
+if code != 200:
+    fail("mcp-resources", code, body)
+try:
+    resources = rpc_payload(body)["result"]["resources"]
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    fail("mcp-resources-shape", code, body)
+resource_uris = {resource.get("uri") for resource in resources}
+if resource_uris != EXPECTED_RESOURCES:
+    fail("mcp-resources-contract", code, json.dumps(sorted(resource_uris)))
+
+code, _, body = call(opener, f"{BASE}/api/mcp", {
+    "jsonrpc": "2.0", "method": "resources/templates/list", "id": 22, "params": {},
+}, headers=mcp_headers)
+if code != 200:
+    fail("mcp-resource-templates", code, body)
+try:
+    resource_templates = rpc_payload(body)["result"]["resourceTemplates"]
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    fail("mcp-resource-templates-shape", code, body)
+resource_template_uris = {
+    resource.get("uriTemplate") for resource in resource_templates
+}
+if resource_template_uris != EXPECTED_RESOURCE_TEMPLATES:
+    fail(
+        "mcp-resource-templates-contract",
+        code,
+        json.dumps(sorted(resource_template_uris)),
+    )
+print(
+    "6a. MCP resources/list: "
+    f"{len(resource_uris)} resources, {len(resource_template_uris)} template"
+)
+
+code, _, body = call(opener, f"{BASE}/api/mcp", {
+    "jsonrpc": "2.0", "method": "prompts/list", "id": 23, "params": {},
+}, headers=mcp_headers)
+if code != 200:
+    fail("mcp-prompts", code, body)
+try:
+    prompts = rpc_payload(body)["result"]["prompts"]
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    fail("mcp-prompts-shape", code, body)
+prompt_names = {prompt.get("name") for prompt in prompts}
+if prompt_names != EXPECTED_PROMPTS:
+    fail("mcp-prompts-contract", code, json.dumps(sorted(prompt_names)))
+print(f"6b. MCP prompts/list: {len(prompt_names)} reusable prompts")
+
+code, _, body = call(opener, f"{BASE}/api/mcp", {
     "jsonrpc": "2.0", "method": "tools/call", "id": 3,
     "params": {"name": "get_workspace", "arguments": {}},
 }, headers=mcp_headers)
@@ -314,9 +377,9 @@ except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
     fail("mcp-get-workspace-shape", code, body)
 if workspace_result.get("isError") or not workspace.get("workspace", {}).get("handle"):
     fail("mcp-get-workspace-result", code, body)
-print("6a. MCP get_workspace: ok")
+print("6c. MCP get_workspace: ok")
 
-# 6b. A separately approved read connection can inspect but cannot mutate.
+# 6d. A separately approved read connection can inspect but cannot mutate.
 read_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
 read_challenge = (
     base64.urlsafe_b64encode(hashlib.sha256(read_verifier.encode()).digest())
@@ -383,7 +446,7 @@ code, headers, body = call(opener, f"{BASE}/api/mcp", {
 www = headers.get("WWW-Authenticate", headers.get("www-authenticate", ""))
 if code != 403 or "insufficient_scope" not in body or 'scope="sync"' not in www:
     fail("read-scope-mutation", code, f"{body}\nWWW-Authenticate: {www}")
-print("6b. read scope: reads allowed, mutation rejected")
+print("6d. read scope: reads allowed, mutation rejected")
 
 # 7. Rotate the refresh token and use the replacement access token.
 code, _, body = call(opener, f"{BASE}/oauth/token", {

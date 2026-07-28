@@ -1152,10 +1152,16 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "create_item",
-            "description": "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned.",
+            "description": "Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates.",
             "inputSchema": {
               "type": "object",
               "properties": {
+                "idempotency_key": {
+                  "description": "Stable caller key for retry-safe creation. Reuse the same key after timeouts to receive the original item instead of creating a duplicate.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
                 "folder_path": {
                   "description": "The destination folder path. Defaults to the Blog folder at \"blog\".",
                   "type": "string",
@@ -1327,7 +1333,7 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
           },
           {
             "name": "append_to_item",
-            "description": "Append a markdown block to the end of one item's body without touching its metadata.",
+            "description": "Append a markdown block to the end of one item's body without touching its metadata. Automated clients should pass an idempotency_key derived from the source event or commit.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -1347,6 +1353,12 @@ final class NativeAIBridge: NSObject, WKScriptMessageHandler {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256
+                },
+                "idempotency_key": {
+                  "description": "Stable event key for exactly-once append behavior. Reuse it when retrying the same update.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
                 }
               },
               "required": [
