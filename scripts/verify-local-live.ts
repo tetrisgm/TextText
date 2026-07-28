@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import {
   formatLocalLiveReadiness,
   isLocalLiveServerReady,
@@ -22,6 +24,8 @@ if (!["localhost", "127.0.0.1", "::1"].includes(databaseHost)) {
 // through that same public origin so OAuth's same-origin approval check tests
 // the real browser contract instead of an equivalent 127.0.0.1 alias.
 const origin = `http://localhost:${port}`;
+const evaluationDistDir = ".write/next-live-eval";
+const evaluationDistPath = join(process.cwd(), evaluationDistDir);
 const commandTimeoutMilliseconds = 300_000;
 const suiteNames = new Set([
   "workflow",
@@ -70,6 +74,10 @@ async function stopServer() {
   if (server.exitCode === null) {
     killProcessGroup(server, "SIGKILL");
   }
+}
+
+async function cleanEvaluationBuild() {
+  await rm(evaluationDistPath, { recursive: true, force: true });
 }
 
 async function waitForServer() {
@@ -151,6 +159,7 @@ async function runBounded(
 async function main() {
   const startedAt = performance.now();
   const durations: Record<string, number> = {};
+  await cleanEvaluationBuild();
   server = spawn(
     process.execPath,
     [
@@ -168,6 +177,7 @@ async function main() {
         ...process.env,
         AUTH_DEV_LOGIN: "1",
         NEXT_TELEMETRY_DISABLED: "1",
+        WRITE_NEXT_DIST_DIR: evaluationDistDir,
         WRITE_ORIGIN: origin,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -178,6 +188,13 @@ async function main() {
 
   try {
     await waitForServer();
+    if (shouldRun("oauth")) {
+      durations.oauthMcpMilliseconds = await runBounded(
+        "OAuth and MCP connection",
+        "python3",
+        ["scripts/test-oauth-mcp-loop.py", origin],
+      );
+    }
     if (shouldRun("workflow")) {
       durations.workflowMilliseconds = await runBounded(
         "sharing and access workflows",
@@ -199,15 +216,9 @@ async function main() {
         ["--import", "tsx", "scripts/verify-collaboration-live.ts"],
       );
     }
-    if (shouldRun("oauth")) {
-      durations.oauthMcpMilliseconds = await runBounded(
-        "OAuth and MCP connection",
-        "python3",
-        ["scripts/test-oauth-mcp-loop.py", origin],
-      );
-    }
   } finally {
     await stopServer();
+    await cleanEvaluationBuild();
   }
 
   console.log(
@@ -223,7 +234,9 @@ async function main() {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void stopServer().finally(() => process.exit(128));
+    void stopServer()
+      .then(cleanEvaluationBuild)
+      .finally(() => process.exit(128));
   });
 }
 
