@@ -64,6 +64,7 @@ export type OAuthErrorCode =
   | "invalid_client"
   | "invalid_grant"
   | "invalid_scope"
+  | "invalid_target"
   | "unsupported_grant_type"
   | "unsupported_response_type"
   | "access_denied"

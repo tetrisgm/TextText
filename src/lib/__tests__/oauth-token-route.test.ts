@@ -27,7 +27,10 @@ const clients = [
   },
 ];
 
-function tokenRequest(fields: Record<string, string>, headers: HeadersInit = {}) {
+function tokenRequest(
+  fields: Record<string, string> | URLSearchParams,
+  headers: HeadersInit = {},
+) {
   return new Request("https://write.example/oauth/token", {
     method: "POST",
     headers: {
@@ -81,6 +84,60 @@ describe("OAuth token route", () => {
       expect.objectContaining({ clients }),
     );
     expect(mocks.refreshOAuthAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("accepts the canonical protected resource for both token grants", async () => {
+    const authorizationResponse = await POST(
+      tokenRequest({
+        grant_type: "authorization_code",
+        code: `woc_${"e".repeat(43)}`,
+        redirect_uri: clients[0].redirectUris[0],
+        client_id: clients[0].clientId,
+        code_verifier: "v".repeat(43),
+        resource: "https://write.example/api/mcp",
+      }),
+    );
+    expect(authorizationResponse.status).toBe(200);
+
+    const refreshResponse = await POST(
+      tokenRequest({
+        grant_type: "refresh_token",
+        refresh_token: `wrt_${"f".repeat(43)}`,
+        client_id: clients[0].clientId,
+        resource: "https://write.example/api/mcp",
+      }),
+    );
+    expect(refreshResponse.status).toBe(200);
+  });
+
+  it("rejects a different or repeated protected resource", async () => {
+    const wrongResource = await POST(
+      tokenRequest({
+        grant_type: "authorization_code",
+        code: `woc_${"e".repeat(43)}`,
+        redirect_uri: clients[0].redirectUris[0],
+        client_id: clients[0].clientId,
+        code_verifier: "v".repeat(43),
+        resource: "https://attacker.example/api/mcp",
+      }),
+    );
+    expect(wrongResource.status).toBe(400);
+    await expect(wrongResource.json()).resolves.toMatchObject({
+      error: "invalid_target",
+    });
+
+    const repeated = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: `wrt_${"f".repeat(43)}`,
+      client_id: clients[0].clientId,
+    });
+    repeated.append("resource", "https://write.example/api/mcp");
+    repeated.append("resource", "https://write.example/api/mcp");
+    const repeatedResource = await POST(tokenRequest(repeated));
+    expect(repeatedResource.status).toBe(400);
+    await expect(repeatedResource.json()).resolves.toMatchObject({
+      error: "invalid_request",
+    });
   });
 
   it("dispatches refresh_token with optional unchanged scope", async () => {

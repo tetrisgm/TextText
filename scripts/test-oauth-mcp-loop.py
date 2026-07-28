@@ -223,6 +223,7 @@ authorize_query = urllib.parse.urlencode({
     "code_challenge": challenge,
     "code_challenge_method": "S256",
     "state": "teststate123",
+    "resource": f"{BASE}/api/mcp",
 })
 code, _, body = call(opener, f"{BASE}/oauth/authorize?{authorize_query}")
 if (
@@ -260,6 +261,7 @@ code, _, body = call(opener, f"{BASE}/oauth/token", {
     "redirect_uri": REDIRECT,
     "client_id": client_id,
     "code_verifier": verifier,
+    "resource": f"{BASE}/api/mcp",
 }, form=True)
 if code != 200:
     fail("token", code, body)
@@ -397,6 +399,7 @@ read_authorize_query = urllib.parse.urlencode({
     "code_challenge": read_challenge,
     "code_challenge_method": "S256",
     "state": "readonly123",
+    "resource": f"{BASE}/api/mcp",
 })
 code, _, body = call(opener, f"{BASE}/oauth/authorize?{read_authorize_query}")
 if code != 200 or "Read-only" not in body:
@@ -423,6 +426,7 @@ code, _, body = call(opener, f"{BASE}/oauth/token", {
     "redirect_uri": REDIRECT,
     "client_id": client_id,
     "code_verifier": read_verifier,
+    "resource": f"{BASE}/api/mcp",
 }, form=True)
 if code != 200:
     fail("read-token", code, body)
@@ -456,6 +460,7 @@ code, _, body = call(opener, f"{BASE}/oauth/token", {
     "grant_type": "refresh_token",
     "refresh_token": refresh_token,
     "client_id": client_id,
+    "resource": f"{BASE}/api/mcp",
 }, form=True)
 if code != 200:
     fail("refresh", code, body)

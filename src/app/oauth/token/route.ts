@@ -4,6 +4,7 @@ import {
   exchangeOAuthAuthorizationCode,
   refreshOAuthAccessToken,
 } from "@/lib/oauth";
+import { getPublicOrigin } from "mcp-handler";
 import { loadOAuthClients } from "../clients";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ const TOKEN_FORM_KEYS = new Set([
   "code_verifier",
   "refresh_token",
   "scope",
+  "resource",
 ]);
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -144,6 +146,22 @@ function assertOnlyGrantParams(
   }
 }
 
+function validateRequestedResource(
+  params: URLSearchParams,
+  request: Request,
+): void {
+  const resource = optionalSingle(params, "resource");
+  if (resource === undefined) return;
+
+  const expected = `${getPublicOrigin(request)}/api/mcp`;
+  if (resource !== expected) {
+    throw new OAuthRequestError(
+      "invalid_target",
+      `resource must be ${expected}`,
+    );
+  }
+}
+
 export async function POST(request: Request) {
   if (!checkTokenRateLimit(request)) {
     return oauthJson(
@@ -177,8 +195,10 @@ export async function POST(request: Request) {
           "redirect_uri",
           "client_id",
           "code_verifier",
+          "resource",
         ]),
       );
+      validateRequestedResource(params, request);
       const clients = await loadOAuthClients();
       const token = await exchangeOAuthAuthorizationCode(
         {
@@ -198,8 +218,15 @@ export async function POST(request: Request) {
     if (grantType === "refresh_token") {
       assertOnlyGrantParams(
         params,
-        new Set(["grant_type", "refresh_token", "client_id", "scope"]),
+        new Set([
+          "grant_type",
+          "refresh_token",
+          "client_id",
+          "scope",
+          "resource",
+        ]),
       );
+      validateRequestedResource(params, request);
       const clients = await loadOAuthClients();
       const token = await refreshOAuthAccessToken(
         {
