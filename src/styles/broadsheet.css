@@ -6889,51 +6889,134 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(100%, 980px);
   margin-bottom: 10px;
 }
-.blog-folder-post-grid {
-  width: min(100%, 1120px);
+.blog-folder-feed {
+  width: min(100%, 980px);
   margin-inline: auto;
-  align-items: stretch;
+  border-top: 1px solid var(--hairline-2);
 }
-.post-folder-page.is-mode-blog.is-view-grid .blog-folder-post-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-  gap: 28px;
-}
-.post-folder-page.is-mode-blog.is-view-column .blog-folder-post-grid {
-  grid-template-columns: minmax(0, min(100%, 720px));
-  justify-content: center;
-  gap: 18px;
-}
-.blog-folder-card-option {
+.blog-folder-feed-item {
   position: relative;
-  min-height: 320px;
-  border-radius: 24px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  padding: 34px 0;
+  border-bottom: 1px solid var(--hairline-2);
 }
-.blog-folder-card-option > .tvcard-shell,
-.blog-folder-card-option .tvcard {
-  min-height: inherit;
+.blog-folder-feed-star {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: 2px;
 }
-.blog-folder-card-option > .tvcard-shell {
+.blog-folder-feed-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 40px;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+.blog-folder-feed-item.is-no-cover .blog-folder-feed-link {
+  grid-template-columns: minmax(0, 1fr);
+}
+.blog-folder-feed-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 9px;
+}
+.blog-folder-feed-meta {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.blog-folder-feed-title {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(28px, 3.2vw, 38px);
+  font-weight: 780;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+.blog-folder-feed-excerpt {
+  max-width: 680px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.blog-folder-feed-cover {
+  display: block;
+  width: 220px;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.blog-folder-feed-cover img,
+.blog-folder-feed-cover video {
+  display: block;
+  width: 100%;
   height: 100%;
+  object-fit: cover;
 }
-.post-folder-page.is-mode-blog.is-view-column .blog-folder-card-option {
-  min-height: 360px;
+.blog-folder-feed-item:hover .blog-folder-feed-title {
+  color: color-mix(in srgb, var(--accent) 58%, var(--ink));
 }
-.blog-folder-card-option.is-command-selected {
-  background: transparent;
-  box-shadow: none;
+.blog-folder-feed-tags {
+  grid-column: 2;
+  margin-top: 12px;
 }
-.blog-folder-card-option.is-command-selected .tvcard-inner {
+.blog-folder-feed-actions {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.blog-folder-feed-item:hover .blog-folder-feed-actions,
+.blog-folder-feed-item:focus-within .blog-folder-feed-actions {
+  opacity: 1;
+}
+.blog-folder-feed-item.is-command-selected {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, var(--ink));
-  outline-offset: 3px;
+  outline-offset: 6px;
 }
-.blog-folder-card-option:focus-visible {
-  box-shadow: none;
+.blog-folder-feed-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, var(--ink));
+  outline-offset: 6px;
 }
-.blog-folder-card-option:focus-visible .tvcard-inner {
-  box-shadow:
-    var(--ac-focus),
-    0 2px 6px rgba(0, 0, 0, 0.08),
-    0 16px 36px rgba(0, 0, 0, 0.16);
+@media (max-width: 760px) {
+  .post-folder-page.is-mode-blog {
+    padding-top: 88px;
+  }
+  .post-folder-page.is-mode-blog .post-folder-page-header h1,
+  .post-folder-page.is-mode-blog .post-folder-title-input {
+    font-size: clamp(48px, 17vw, 76px);
+  }
+  .blog-folder-feed-item {
+    grid-template-columns: 24px minmax(0, 1fr);
+    padding: 26px 0;
+  }
+  .blog-folder-feed-link {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    gap: 18px;
+  }
+  .blog-folder-feed-cover {
+    width: 112px;
+    aspect-ratio: 1;
+  }
+  .blog-folder-feed-title {
+    font-size: 26px;
+  }
+  .blog-folder-feed-excerpt {
+    font-size: 15px;
+  }
 }
 .universal-item-card {
   background: var(--bg);

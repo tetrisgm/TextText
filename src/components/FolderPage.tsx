@@ -31,7 +31,6 @@ import {
 } from "@/components/document/DocumentRenderer";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
-import { PostCard } from "@/components/PostCard";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
@@ -48,8 +47,9 @@ import {
   resetSpatialCardTilt,
   updateSpatialCardTilt,
 } from "@/components/workspace/spatial-card";
-import { formatArticleDate, postBodyPreview } from "@/lib/content";
+import { formatArticleDate, isVideoFile, postBodyPreview } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
+import { resolveCoverSource } from "@/lib/cover";
 import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { parseItemInput } from "@/lib/item-creation";
@@ -388,7 +388,9 @@ function FolderActionBar({
               </button>
             </ShortcutTooltip>
           )}
-          <WorkspaceViewModeControl mode={viewMode} onChange={onChangeView} />
+          {folder.mode !== "blog" && (
+            <WorkspaceViewModeControl mode={viewMode} onChange={onChangeView} />
+          )}
           {canEdit && (
             <div className="post-action-popover-wrap" ref={menuRef}>
               <ShortcutTooltip label="Folder options" placement="bottom">
@@ -848,6 +850,120 @@ function UniversalFolderContents({
           <FolderEmptyCard>
             Type a title or paste a link to create the first item.
           </FolderEmptyCard>
+        ) : folder.mode === "blog" ? (
+          <div
+            className="blog-folder-feed"
+            role="listbox"
+            aria-label="Blog posts"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
+            {sorted.map((post) => {
+              const selected = Boolean(
+                post.id &&
+                  (selectedPostIds?.has(post.id) ??
+                    post.id === selectedPostId),
+              );
+              const preview = previewLine(
+                post.excerpt || postBodyPreview(post),
+              );
+              const cover = resolveCoverSource(post).src;
+              return (
+                <article
+                  key={itemKey(post)}
+                  id={postOptionId(post.id)}
+                  className={`blog-folder-feed-item${
+                    cover ? "" : " is-no-cover"
+                  }${selected ? " is-command-selected" : ""}`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={post.id === selectedPostId ? 0 : -1}
+                  data-workspace-post-id={post.id}
+                  onFocus={() => post.id && onSelectPost?.(post.id)}
+                  onMouseDown={(event) => {
+                    if (shouldSuppressNativeItemSelection(event)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <div className="blog-folder-feed-star">
+                    <WorkspaceItemStar
+                      handle={handle}
+                      owner={canEditItems}
+                      post={post}
+                    />
+                  </div>
+                  <Link
+                    className="blog-folder-feed-link"
+                    href={blogPostPath(blog, post)}
+                    prefetch={onOpenPost ? false : undefined}
+                    onClick={(event) => {
+                      if (
+                        post.id &&
+                        onItemClick &&
+                        !onItemClick(post.id, event)
+                      ) {
+                        event.preventDefault();
+                        return;
+                      }
+                      if (!onOpenPost || !shouldOpenLocally(event)) return;
+                      event.preventDefault();
+                      onOpenPost(post);
+                    }}
+                  >
+                    <span className="blog-folder-feed-copy">
+                      <span className="blog-folder-feed-meta">
+                        {formatArticleDate(post.updatedAt ?? post.date, {
+                          style: "short",
+                        })}
+                      </span>
+                      <span className="blog-folder-feed-title">
+                        {itemTitle(post)}
+                      </span>
+                      {preview && (
+                        <span className="blog-folder-feed-excerpt">
+                          {preview}
+                        </span>
+                      )}
+                    </span>
+                    {cover && (
+                      <span className="blog-folder-feed-cover" aria-hidden="true">
+                        {isVideoFile(cover) ? (
+                          <video
+                            src={cover}
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        ) : (
+                          // User media can be remote, so plain img avoids config.
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={cover} alt="" decoding="async" />
+                        )}
+                      </span>
+                    )}
+                  </Link>
+                  <TagChips
+                    blog={blog}
+                    className="blog-folder-feed-tags"
+                    onOpenTag={onOpenTag}
+                    tags={post.tags}
+                  />
+                  {canEditItems && (
+                    <div className="blog-folder-feed-actions">
+                      <WorkspaceItemActions
+                        blog={blog}
+                        handle={handle}
+                        href={blogPostPath(blog, post)}
+                        owner
+                        post={post}
+                        onDeletePost={onDeleteItem}
+                      />
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
         ) : viewMode === "list" ? (
           <div
             className="post-folder-list"
@@ -935,63 +1051,6 @@ function UniversalFolderContents({
                       onDeletePost={onDeleteItem}
                     />
                   )}
-                </div>
-              );
-            })}
-          </div>
-        ) : folder.mode === "blog" ? (
-          <div
-            className={`tv-grid blog-folder-post-grid is-${viewMode}`}
-            role="listbox"
-            aria-label="Blog posts"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            {sorted.map((post) => {
-              const selected = Boolean(
-                post.id &&
-                  (selectedPostIds?.has(post.id) ??
-                    post.id === selectedPostId),
-              );
-              return (
-                <div
-                  key={itemKey(post)}
-                  id={postOptionId(post.id)}
-                  className={`post-folder-card-option blog-folder-card-option${
-                    selected ? " is-command-selected" : ""
-                  }`}
-                  role="option"
-                  aria-selected={selected}
-                  tabIndex={post.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={post.id}
-                  onFocus={() => post.id && onSelectPost?.(post.id)}
-                  onMouseDown={(event) => {
-                    if (shouldSuppressNativeItemSelection(event)) {
-                      event.preventDefault();
-                    }
-                  }}
-                >
-                  <PostCard
-                    blog={blog}
-                    handle={handle}
-                    href={blogPostPath(blog, post)}
-                    owner={canEditItems}
-                    post={post}
-                    onDeletePost={canEditItems ? onDeleteItem : undefined}
-                    onOpen={(event) => {
-                      if (
-                        post.id &&
-                        onItemClick &&
-                        !onItemClick(post.id, event)
-                      ) {
-                        event.preventDefault();
-                        return;
-                      }
-                      if (!onOpenPost || !shouldOpenLocally(event)) return;
-                      event.preventDefault();
-                      onOpenPost(post);
-                    }}
-                    onOpenTag={onOpenTag}
-                  />
                 </div>
               );
             })}
