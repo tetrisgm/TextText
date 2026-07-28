@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { WORKSPACE_TOOL_DEFINITIONS } from "../src/lib/ai/tools";
+import { TEXTTEXT_HOSTED_MCP_URL } from "../src/lib/agent-integrations";
 import { registerAgentSurface } from "../src/lib/mcp/agent-surface";
 import { repositoryRoot } from "./work-unit";
 
@@ -84,7 +85,8 @@ const publicDocs = [
   readFileSync(join(repositoryRoot, "src/app/llms.txt/route.ts"), "utf8"),
 ].join("\n");
 assert(
-  publicDocs.includes("https://texttext.app/api/mcp"),
+  TEXTTEXT_HOSTED_MCP_URL === "https://texttext.app/api/mcp" &&
+    publicDocs.includes("TEXTTEXT_HOSTED_MCP_URL"),
   "Public agent docs must advertise the production MCP endpoint",
 );
 assert(
@@ -102,6 +104,6 @@ console.log(
     tools: requiredTools.length,
     resources: resources.size,
     prompts: prompts.size,
-    endpoint: "https://texttext.app/api/mcp",
+    endpoint: TEXTTEXT_HOSTED_MCP_URL,
   }),
 );
