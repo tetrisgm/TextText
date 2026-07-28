@@ -31,6 +31,7 @@ import {
 } from "@/components/document/DocumentRenderer";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
+import { PostCard } from "@/components/PostCard";
 import { TagChips } from "@/components/TagChips";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSearch";
@@ -938,6 +939,63 @@ function UniversalFolderContents({
               );
             })}
           </div>
+        ) : folder.mode === "blog" ? (
+          <div
+            className={`tv-grid blog-folder-post-grid is-${viewMode}`}
+            role="listbox"
+            aria-label="Blog posts"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
+            {sorted.map((post) => {
+              const selected = Boolean(
+                post.id &&
+                  (selectedPostIds?.has(post.id) ??
+                    post.id === selectedPostId),
+              );
+              return (
+                <div
+                  key={itemKey(post)}
+                  id={postOptionId(post.id)}
+                  className={`post-folder-card-option blog-folder-card-option${
+                    selected ? " is-command-selected" : ""
+                  }`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={post.id === selectedPostId ? 0 : -1}
+                  data-workspace-post-id={post.id}
+                  onFocus={() => post.id && onSelectPost?.(post.id)}
+                  onMouseDown={(event) => {
+                    if (shouldSuppressNativeItemSelection(event)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <PostCard
+                    blog={blog}
+                    handle={handle}
+                    href={blogPostPath(blog, post)}
+                    owner={canEditItems}
+                    post={post}
+                    onDeletePost={canEditItems ? onDeleteItem : undefined}
+                    onOpen={(event) => {
+                      if (
+                        post.id &&
+                        onItemClick &&
+                        !onItemClick(post.id, event)
+                      ) {
+                        event.preventDefault();
+                        return;
+                      }
+                      if (!onOpenPost || !shouldOpenLocally(event)) return;
+                      event.preventDefault();
+                      onOpenPost(post);
+                    }}
+                    onOpenTag={onOpenTag}
+                  />
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div
             className={`universal-item-collection is-${viewMode}`}
@@ -1136,7 +1194,7 @@ export function FolderPage({
 
   return (
     <main
-      className={`post-folder-page is-view-${viewMode}`}
+      className={`post-folder-page is-mode-${folder.mode} is-view-${viewMode}`}
       aria-labelledby="post-folder-page-title"
     >
       <FolderActionBar

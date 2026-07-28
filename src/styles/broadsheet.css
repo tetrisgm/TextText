@@ -6851,6 +6851,90 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-folder-page-items {
   width: min(100%, 1120px);
 }
+.post-folder-page.is-mode-blog {
+  gap: 30px;
+  padding-top: clamp(104px, 9vw, 148px);
+}
+.post-folder-page.is-mode-blog .post-folder-page-header {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding-bottom: 28px;
+  text-align: center;
+}
+.post-folder-page.is-mode-blog .post-folder-page-header .post-folder-title-row {
+  justify-content: center;
+  width: 100%;
+}
+.post-folder-page.is-mode-blog .post-folder-page-header .post-folder-page-count {
+  justify-self: center;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  text-transform: none;
+}
+.post-folder-page.is-mode-blog .post-folder-page-header h1,
+.post-folder-page.is-mode-blog .post-folder-title-input {
+  max-width: min(100%, 980px);
+  font-family: var(--display);
+  font-size: clamp(58px, 8vw, 118px);
+  font-weight: 850;
+  line-height: 0.9;
+  text-align: center;
+}
+.post-folder-page.is-mode-blog .post-folder-title-form {
+  justify-content: center;
+}
+.post-folder-page.is-mode-blog .universal-item-composer {
+  width: min(100%, 980px);
+  margin-bottom: 10px;
+}
+.blog-folder-post-grid {
+  width: min(100%, 1120px);
+  margin-inline: auto;
+  align-items: stretch;
+}
+.post-folder-page.is-mode-blog.is-view-grid .blog-folder-post-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 28px;
+}
+.post-folder-page.is-mode-blog.is-view-column .blog-folder-post-grid {
+  grid-template-columns: minmax(0, min(100%, 720px));
+  justify-content: center;
+  gap: 18px;
+}
+.blog-folder-card-option {
+  position: relative;
+  min-height: 320px;
+  border-radius: 24px;
+}
+.blog-folder-card-option > .tvcard-shell,
+.blog-folder-card-option .tvcard {
+  min-height: inherit;
+}
+.blog-folder-card-option > .tvcard-shell {
+  height: 100%;
+}
+.post-folder-page.is-mode-blog.is-view-column .blog-folder-card-option {
+  min-height: 360px;
+}
+.blog-folder-card-option.is-command-selected {
+  background: transparent;
+  box-shadow: none;
+}
+.blog-folder-card-option.is-command-selected .tvcard-inner {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, var(--ink));
+  outline-offset: 3px;
+}
+.blog-folder-card-option:focus-visible {
+  box-shadow: none;
+}
+.blog-folder-card-option:focus-visible .tvcard-inner {
+  box-shadow:
+    var(--ac-focus),
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 16px 36px rgba(0, 0, 0, 0.16);
+}
 .universal-item-card {
   background: var(--bg);
 }

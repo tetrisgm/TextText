@@ -72,6 +72,12 @@ describe("batch 4 workspace UI contract", () => {
     expect(folderSource).toContain(
       "className={`universal-item-collection is-${viewMode}`}",
     );
+    expect(folderSource).toContain(
+      'import { PostCard } from "@/components/PostCard"',
+    );
+    expect(folderSource).toContain('folder.mode === "blog"');
+    expect(folderSource).toContain("blog-folder-post-grid");
+    expect(folderSource).toContain("<PostCard");
     expect(folderSource).toContain("onPointerMove={updateSpatialCardTilt}");
     expect(shellSource).toContain("onPointerMove={updateSpatialCardTilt}");
     expect(broadsheetStyles).toContain(
