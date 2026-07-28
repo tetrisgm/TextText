@@ -18,6 +18,8 @@ const LAST_USED_TOUCH_MS = 60 * 60 * 1000;
 
 export type ApiTokenIdentity = {
   userId: string;
+  /** user-visible connection name, including OAuth client names */
+  name: string;
   /** the owning user's Apple sub, the key getOwnedBlog resolves blogs by */
   sub: string;
   /** space-separated scopes, e.g. "sync" */
@@ -128,6 +130,7 @@ export async function resolveApiToken(
     .select({
       id: apiTokens.id,
       userId: apiTokens.userId,
+      name: apiTokens.name,
       scopes: apiTokens.scopes,
       expiresAt: apiTokens.expiresAt,
       lastUsedAt: apiTokens.lastUsedAt,
@@ -162,6 +165,7 @@ export async function resolveApiToken(
 
   return {
     userId: row.userId,
+    name: row.name,
     sub: row.sub,
     scopes: row.scopes,
     expiresAt: row.expiresAt,

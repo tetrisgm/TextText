@@ -200,6 +200,48 @@
 .applecms .post-presence-avatar:first-child {
   margin-left: 0;
 }
+.applecms .post-presence-agent {
+  display: inline-flex;
+  align-items: center;
+  max-width: 132px;
+  min-width: 0;
+  margin-left: 3px;
+  padding: 2px 8px 2px 2px;
+  gap: 5px;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 999px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-caption1)/1 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.applecms .post-presence-agent:first-child {
+  margin-left: 0;
+}
+.applecms .post-presence-agent .post-presence-avatar {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-left: 0;
+  box-shadow: none;
+}
+.applecms .post-presence-agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.applecms .post-presence-avatar.is-agent {
+  border-style: double;
+  border-width: 3px;
+}
+.applecms .post-presence-avatar.is-agent > span {
+  display: contents;
+}
+.applecms .post-presence-avatar.is-agent svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
 .applecms .post-presence-overflow {
   background: var(--ac-fill-2);
   color: var(--ac-label);

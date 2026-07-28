@@ -19,6 +19,7 @@ import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import type { Blog, Post } from "@/lib/content";
 import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
+import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import {
   applyDocumentBaseline,
   applyDocumentSnapshot,
@@ -295,15 +296,32 @@ function CollaborativeTextarea({
 function Presence({ peers }: { peers: PresencePeer[] }) {
   if (peers.length === 0) return null;
   return (
-    <div className="tt-unified-presence" aria-label="People in this document">
+    <div className="tt-unified-presence" aria-label="Collaborators in this document">
       {peers.slice(0, 5).map((peer) => (
-        <span
-          key={peer.clientId}
-          style={{ backgroundColor: peer.color }}
-          title={peer.userName}
-        >
-          {peer.userName.trim().slice(0, 1).toUpperCase() || "?"}
-        </span>
+        peer.participantType === "agent" ? (
+          <span
+            key={peer.clientId}
+            className="tt-agent-presence"
+            title={`${peer.userName} is collaborating through MCP`}
+          >
+            <span
+              className="tt-agent-avatar"
+              style={{ backgroundColor: peer.color }}
+            >
+              <CollaboratorMark provider={peer.provider} name={peer.userName} />
+            </span>
+            <span className="tt-agent-name">{peer.userName}</span>
+          </span>
+        ) : (
+          <span
+            key={peer.clientId}
+            className="tt-person-presence"
+            style={{ backgroundColor: peer.color }}
+            title={peer.userName}
+          >
+            {peer.userName.trim().slice(0, 1).toUpperCase() || "?"}
+          </span>
+        )
       ))}
     </div>
   );
@@ -789,8 +807,14 @@ export function UnifiedDocumentEditor({
         .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:48vh;text-align:start}
         .tt-document-editor .tt-field-body textarea{resize:vertical}
-        .tt-unified-presence{display:flex;align-items:center;padding-inline:3px}
-        .tt-unified-presence span{display:grid;place-items:center;width:25px;height:25px;margin-inline-start:-5px;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:10px;font-weight:700}
+        .tt-unified-presence{display:flex;align-items:center;gap:4px;padding-inline:3px}
+        .tt-person-presence,.tt-agent-avatar{display:grid;place-items:center;width:25px;height:25px;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:10px;font-weight:700}
+        .tt-person-presence+.tt-person-presence{margin-inline-start:-9px}
+        .tt-agent-presence{display:inline-flex;align-items:center;max-width:132px;min-width:0;padding:2px 8px 2px 2px;gap:5px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:var(--ac-fill-4,rgba(118,118,128,.08));color:var(--ink,#1d1d1f);font-size:11px;font-weight:600}
+        .tt-agent-avatar{flex:0 0 auto;border-style:double;border-width:3px}
+        .tt-agent-avatar>span{display:contents}
+        .tt-agent-avatar svg{width:13px;height:13px;fill:currentColor}
+        .tt-agent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .tt-save-state{position:fixed;right:12px;bottom:12px;z-index:220;min-height:1rem;padding:5px 8px;border-radius:6px;background:color-mix(in srgb,var(--paper,#fff) 90%,transparent);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}
         @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}}

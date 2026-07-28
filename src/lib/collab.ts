@@ -9,6 +9,11 @@
 // edit of an unclaimed blog) are solo and never enter collab.
 
 import { and, asc, eq, gt, lt, lte, sql } from "drizzle-orm";
+import {
+  Awareness,
+  applyAwarenessUpdate,
+  encodeAwarenessUpdate,
+} from "y-protocols/awareness";
 import * as Y from "yjs";
 import { db } from "@/lib/db/client";
 import {
@@ -470,7 +475,66 @@ export type PresenceEntry = {
   userName: string;
   color: string;
   awareness: string | null;
+  participantType?: "person" | "agent";
+  provider?: string;
 };
+
+type PresenceAwarenessUser = {
+  participantType?: "person" | "agent";
+  provider?: string;
+};
+
+function awarenessIdentity(
+  encoded: string | null,
+): PresenceAwarenessUser {
+  if (!encoded) return {};
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  try {
+    applyAwarenessUpdate(
+      awareness,
+      Uint8Array.from(Buffer.from(encoded, "base64")),
+      "presence",
+    );
+    for (const state of awareness.getStates().values()) {
+      const user = state?.user as PresenceAwarenessUser | undefined;
+      if (user?.participantType || user?.provider) return user;
+    }
+  } catch {
+    return {};
+  } finally {
+    awareness.destroy();
+    doc.destroy();
+  }
+  return {};
+}
+
+export function createAgentAwareness(input: {
+  clientId: string;
+  userName: string;
+  color: string;
+  provider: string;
+}): string {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  try {
+    awareness.setLocalState({
+      user: {
+        clientId: input.clientId,
+        name: input.userName,
+        color: input.color,
+        participantType: "agent",
+        provider: input.provider,
+      },
+    });
+    return Buffer.from(
+      encodeAwarenessUpdate(awareness, [awareness.clientID]),
+    ).toString("base64");
+  } finally {
+    awareness.destroy();
+    doc.destroy();
+  }
+}
 
 function dedupePresenceRows(
   rows: Array<PresenceEntry & { updatedAt: Date }>,
@@ -484,12 +548,17 @@ function dedupePresenceRows(
   }
   return Array.from(people.values())
     .sort((a, b) => a.userName.localeCompare(b.userName))
-    .map(({ clientId, userName, color, awareness }) => ({
-      clientId,
-      userName,
-      color,
-      awareness,
-    }));
+    .map(({ clientId, userName, color, awareness }) => {
+      const identity = awarenessIdentity(awareness);
+      return {
+        clientId,
+        userName,
+        color,
+        awareness,
+        participantType: identity.participantType,
+        provider: identity.provider,
+      };
+    });
 }
 
 /** Heartbeat this client's presence and return everyone currently active. */

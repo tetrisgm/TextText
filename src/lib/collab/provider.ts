@@ -61,6 +61,8 @@ export type PresencePeer = {
   userName: string;
   color: string;
   awareness: string | null;
+  participantType?: "person" | "agent";
+  provider?: string;
 };
 
 export type CollabStartResult =

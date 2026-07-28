@@ -24,5 +24,8 @@ for migration in "${migrations[@]}"; do
   node "$migration"
 done
 
+echo ">> backfill content: AI guide notes"
+npx tsx scripts/migrate-agent-guide-notes.ts
+
 echo ">> audit database: canonical documents"
 npx tsx scripts/audit-canonical-documents.ts

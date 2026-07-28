@@ -26,6 +26,10 @@ export async function verifyWriteApiToken(
   const identity = await resolveApiToken(request.headers.get("authorization"));
   if (!identity) return undefined;
   const scopes = [...new Set(identity.scopes.split(/\s+/).filter(Boolean))];
+  const connectionName =
+    typeof identity.name === "string"
+      ? identity.name.replace(/^OAuth:\s*/i, "").trim()
+      : "";
   return {
     token: bearerToken ?? "",
     clientId: identity.userId,
@@ -33,7 +37,11 @@ export async function verifyWriteApiToken(
     expiresAt: identity.expiresAt
       ? Math.floor(identity.expiresAt.getTime() / 1000)
       : undefined,
-    extra: { userId: identity.userId, sub: identity.sub },
+    extra: {
+      userId: identity.userId,
+      sub: identity.sub,
+      ...(connectionName ? { connectionName } : {}),
+    },
   };
 }
 

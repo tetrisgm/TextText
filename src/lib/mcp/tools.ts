@@ -1,15 +1,23 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { recordAction, type AuditActorType, type AuditEntry } from "@/lib/audit";
 import {
   applyLiveDocumentMutation,
+  colorForSub,
+  createAgentAwareness,
   hasActiveCoEditors,
   markCollabMaterialized,
   materializeCollabDocument,
+  upsertPresence,
 } from "@/lib/collab";
 import type { DocumentMutation } from "@/lib/collab/document";
+import {
+  agentIdentity,
+  agentProviderColor,
+} from "@/lib/collab/agent-identity";
 import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -208,6 +216,33 @@ function mcpActorType(extra: ToolContext): AuditActorType {
   return value === "ai" || value === "human" ? value : "external_agent";
 }
 
+function agentPresence(extra: ToolContext) {
+  if (mcpActorType(extra) !== "external_agent") return null;
+  const userId = extra.authInfo?.extra?.userId;
+  const rawName = extra.authInfo?.extra?.connectionName;
+  if (typeof userId !== "string" || !userId) return null;
+  const connectionName =
+    typeof rawName === "string" && rawName.trim() ? rawName.trim() : "AI agent";
+  const identity = agentIdentity(connectionName);
+  const clientId = `agent-${createHash("sha256")
+    .update(`${userId}:${connectionName}`, "utf8")
+    .digest("hex")
+    .slice(0, 16)}`;
+  const color = agentProviderColor(identity.provider) ?? colorForSub(clientId);
+  const userName = identity.displayName;
+  return {
+    clientId,
+    userName,
+    color,
+    awareness: createAgentAwareness({
+      clientId,
+      userName,
+      color,
+      provider: identity.provider,
+    }),
+  };
+}
+
 async function auditMcp(
   extra: ToolContext,
   actionName: string,
@@ -253,6 +288,7 @@ async function saveLiveContentMutation({
   mutation,
   ownerPatch,
   audit,
+  extra,
 }: {
   blog: Blog;
   post: Post;
@@ -260,8 +296,11 @@ async function saveLiveContentMutation({
   mutation: DocumentMutation;
   ownerPatch?: Partial<Post>;
   audit: AuditEntry;
+  extra: ToolContext;
 }): Promise<Post> {
   if (!post.id) throw new Error("The item has no stable id");
+  const presence = agentPresence(extra);
+  if (presence) await upsertPresence(post.id, presence);
   const applied = await applyLiveDocumentMutation(post.id, mutation);
   if (!applied) throw new Error("The live document could not be updated");
 
@@ -1273,6 +1312,7 @@ async function executeMcpTool(
                   }
                 : undefined,
               audit,
+              extra,
             })
           : access.isOwner
             ? await savePost(
@@ -1369,6 +1409,7 @@ async function executeMcpTool(
                 operationId: retryKey ?? undefined,
               },
               audit,
+              extra,
             })
           : access.isOwner
             ? await savePost(

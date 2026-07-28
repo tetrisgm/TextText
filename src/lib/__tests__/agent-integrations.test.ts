@@ -17,6 +17,12 @@ describe("agent integrations", () => {
       "chatgpt",
       "mcp",
     ]);
+    expect(AGENT_INTEGRATIONS.map((integration) => integration.name)).toEqual([
+      "Claude",
+      "Codex",
+      "ChatGPT",
+      "Other agents",
+    ]);
   });
 
   it("publishes native plugin installation before manual MCP setup", () => {

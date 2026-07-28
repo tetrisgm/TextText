@@ -66,6 +66,7 @@ import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSea
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import { WorkspaceSettings } from "@/components/workspace/WorkspaceSettings";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
+import { AgentIntegrationHome } from "@/components/workspace/AgentIntegrationHome";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import {
   WorkspaceItemActions,
@@ -2890,22 +2891,7 @@ function WorkspaceRootLanding({
                 />
               </section>
             ) : null}
-            <section
-              className="workspace-agent-entry"
-              aria-labelledby="workspace-agent-entry-title"
-            >
-              <div>
-                <p>Agents and integrations</p>
-                <h2 id="workspace-agent-entry-title">
-                  Use Texttext from Claude, Codex, and ChatGPT
-                </h2>
-                <span>
-                  Install native skills, connect with OAuth, and keep project
-                  notes and changelogs current from the agents you already use.
-                </span>
-              </div>
-              <a href="/connect">Connect agents</a>
-            </section>
+            <AgentIntegrationHome />
             <section
               className={`workspace-recent is-view-${recentViewMode}`}
             >

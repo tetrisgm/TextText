@@ -93,6 +93,12 @@ import {
   startCaptureGeneration,
   type BookmarkCaptureGeneration,
 } from "./bookmark-capture-generation";
+import {
+  CHATGPT_CONNECTOR_URL,
+  CLAUDE_PLUGIN_INSTALL_COMMAND,
+  CODEX_PLUGIN_INSTALL_COMMAND,
+  TEXTTEXT_HOSTED_MCP_URL,
+} from "./agent-integrations";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalizeTag, normalizeTags } from "./tags";
 import {
@@ -880,10 +886,82 @@ const STARTER_BOOKMARK = {
   title: "Texttext AI setup guide",
 };
 
+const STARTER_AGENT_GUIDES = [
+  {
+    slug: "connect-your-ai-tools",
+    title: "Connect your AI tools",
+    body: `Texttext works beside the AI tools you already use. Each connected agent appears in live documents with its own name and avatar.
+
+## Claude
+
+Install the Texttext plugin from Terminal:
+
+\`\`\`text
+${CLAUDE_PLUGIN_INSTALL_COMMAND}
+\`\`\`
+
+For Claude.ai, open **Settings > Connectors**, add ${TEXTTEXT_HOSTED_MCP_URL}, and approve the connection in Texttext.
+
+## Codex
+
+Install the Texttext plugin from Terminal:
+
+\`\`\`text
+${CODEX_PLUGIN_INSTALL_COMMAND}
+\`\`\`
+
+Codex appears as **Codex** while it works in an open document.
+
+## ChatGPT
+
+Open ${CHATGPT_CONNECTOR_URL}, add a custom app using ${TEXTTEXT_HOSTED_MCP_URL}, and approve access in Texttext.
+
+ChatGPT appears as **ChatGPT** while it works in an open document.
+
+## Other MCP clients
+
+Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with OAuth. Give the connection a descriptive name. Texttext uses that approved name when the client is not Claude, Codex, ChatGPT, or Cursor.
+
+## What agents can do
+
+Connected agents can create and find documents, update or append content, move items, publish articles, manage access, add comments, recapture bookmarks, and work in the same live document as you. Privacy and audit rules apply no matter which client performs the action.`,
+  },
+  {
+    slug: "use-texttext-as-a-live-ai-canvas",
+    title: "Use Texttext as a live AI canvas",
+    body: `Keep a Texttext document open beside Claude, Codex, ChatGPT, or another connected agent. The document stays the main surface. The agent assists inside it.
+
+## Start with one document
+
+Tell the agent:
+
+> Use Texttext as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.
+
+Open the item in Texttext. When the agent writes, its provider name and avatar appear with the other collaborators. You can keep typing while it works.
+
+## Capture useful AI conversations
+
+Tell the agent:
+
+> Save the useful decisions from this conversation as a Texttext note. Include the source context and verify the saved note.
+
+## Maintain a project changelog
+
+Tell the agent:
+
+> Find the changelog for this project and append today's shipped user-facing changes exactly once. Create it only if it does not exist, keep using the same item, and derive a stable idempotency key from the source commit or release.
+
+## Work safely
+
+Ask the agent to find an existing item before creating one. For repeated automation, require a stable idempotency key. Keep the target document open when you want to watch and edit alongside the agent. Use sharing controls to decide who can view, comment, or edit.`,
+  },
+] as const;
+
 const WORKSPACE_STARTER_POST_SLUGS = [
   STARTER_BLOG_POST.slug,
   STARTER_NOTE.slug,
   STARTER_BOOKMARK.slug,
+  ...STARTER_AGENT_GUIDES.map((guide) => guide.slug),
 ] as const;
 
 export function isWorkspaceStarterPost(post: Pick<Post, "slug">): boolean {
@@ -900,6 +978,34 @@ function starterBookmarkLabel(url: string): string {
   } catch {
     return rootDomainUrl().hostname.replace(/^www\./, "");
   }
+}
+
+function starterAgentGuideValues(blogId: string, folderId: string) {
+  return STARTER_AGENT_GUIDES.map((guide) => {
+    const document = validateDocumentSnapshot({
+      ...emptyDocumentSnapshot({ id: "texttext.note", version: 1 }),
+      content: {
+        ...emptyDocumentSnapshot({ id: "texttext.note", version: 1 }).content,
+        title: guide.title,
+        body: guide.body,
+      },
+    });
+    return {
+      blogId,
+      folderId,
+      representation: DEFAULT_FILE_REPRESENTATION,
+      document,
+      visibility: "private" as const,
+      templateId: "texttext.note",
+      templateVersion: 1,
+      type: "note" as const,
+      slug: guide.slug,
+      title: guide.title,
+      body: guide.body,
+      wordCount: wordCountForMarkdown(guide.body),
+      status: "draft" as const,
+    };
+  });
 }
 
 /** The system folder path a post of this type lives in. */
@@ -2039,6 +2145,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
         wordCount: 0,
         status: "draft",
       },
+      ...starterAgentGuideValues(blogId, notesFolderId),
     ])
     .onConflictDoNothing({
       target: [posts.blogId, posts.slug],
@@ -2051,8 +2158,54 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
     actionName: "provision_workspace_defaults",
     targetType: "workspace",
     targetId: blogId,
-    inputSummary: "starter article, note, bookmark",
+    inputSummary: "starter article, notes, bookmark, and AI guides",
   });
+}
+
+/**
+ * Add the durable AI connection and live-canvas guides to workspaces created
+ * before they became provisioning defaults. Safe to run on every release.
+ */
+export async function backfillWorkspaceAgentGuides(): Promise<{
+  workspaces: number;
+  inserted: number;
+}> {
+  if (!db) return { workspaces: 0, inserted: 0 };
+
+  const workspaceRows = await db.select({ id: blogs.id }).from(blogs);
+  let inserted = 0;
+
+  for (const workspace of workspaceRows) {
+    const workspaceFolders = await ensureWorkspaceFolders(workspace.id);
+    const notesFolder = workspaceFolders.find(
+      (folder) => folder.path === folderPathForPostType("note"),
+    );
+    if (!notesFolder) {
+      throw new Error(`notes folder missing for workspace ${workspace.id}`);
+    }
+
+    const added = await db
+      .insert(posts)
+      .values(starterAgentGuideValues(workspace.id, notesFolder.id))
+      .onConflictDoNothing({
+        target: [posts.blogId, posts.slug],
+        where: sql`${posts.deletedAt} is null`,
+      })
+      .returning({ id: posts.id });
+
+    if (added.length > 0) {
+      inserted += added.length;
+      await recordAction({
+        actorType: "external_agent",
+        actionName: "backfill_workspace_agent_guides",
+        targetType: "workspace",
+        targetId: workspace.id,
+        inputSummary: `${added.length} private AI guide notes`,
+      });
+    }
+  }
+
+  return { workspaces: workspaceRows.length, inserted };
 }
 
 // Resolve the default "blog" folder. Creation is handled during workspace

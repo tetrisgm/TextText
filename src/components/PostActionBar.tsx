@@ -25,6 +25,7 @@ import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSea
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import type { Blog, Folder, Post, PostType } from "@/lib/content";
 import type { PresencePeer } from "@/lib/collab/provider";
+import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import {
   initialDraft,
   payloadFor,
@@ -152,7 +153,11 @@ function initials(name: string): string {
 }
 
 function presencePersonKey(peer: PresencePeer): string {
-  return peer.userName.trim().toLocaleLowerCase() || peer.clientId;
+  return [
+    peer.participantType ?? "person",
+    peer.provider ?? "",
+    peer.userName.trim().toLocaleLowerCase() || peer.clientId,
+  ].join(":");
 }
 
 function uniquePresencePeers(peers: PresencePeer[]): PresencePeer[] {
@@ -178,26 +183,43 @@ function PresenceStack({ peers }: { peers: PresencePeer[] }) {
   const visible = people.slice(0, 5);
   const overflow = people.slice(5);
   const names = people.map((peer) => peer.userName).join(", ");
-  const label = `People editing: ${names}`;
+  const label = `Collaborators active: ${names}`;
 
   return (
     <div className="post-presence-stack" aria-label={label} title={names}>
       {visible.map((peer) => (
-        <span
-          key={presencePersonKey(peer)}
-          className="post-presence-avatar"
-          style={{ backgroundColor: peer.color }}
-          title={peer.userName}
-          aria-label={peer.userName}
-        >
-          {initials(peer.userName)}
-        </span>
+        peer.participantType === "agent" ? (
+          <span
+            key={presencePersonKey(peer)}
+            className="post-presence-agent"
+            title={`${peer.userName} is collaborating through MCP`}
+            aria-label={`${peer.userName} is collaborating through MCP`}
+          >
+            <span
+              className="post-presence-avatar is-agent"
+              style={{ backgroundColor: peer.color }}
+            >
+              <CollaboratorMark provider={peer.provider} name={peer.userName} />
+            </span>
+            <span className="post-presence-agent-name">{peer.userName}</span>
+          </span>
+        ) : (
+          <span
+            key={presencePersonKey(peer)}
+            className="post-presence-avatar"
+            style={{ backgroundColor: peer.color }}
+            title={peer.userName}
+            aria-label={peer.userName}
+          >
+            {initials(peer.userName)}
+          </span>
+        )
       ))}
       {overflow.length > 0 && (
         <span
           className="post-presence-avatar post-presence-overflow"
           title={overflow.map((peer) => peer.userName).join(", ")}
-          aria-label={`${overflow.length} more people editing`}
+          aria-label={`${overflow.length} more collaborators active`}
         >
           +{overflow.length}
         </span>

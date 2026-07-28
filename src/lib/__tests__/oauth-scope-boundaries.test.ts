@@ -58,6 +58,7 @@ describe("OAuth scope boundaries", () => {
     mocks.resolveApiToken.mockResolvedValue({
       userId: "user-1",
       sub: "provider-subject",
+      name: "OAuth: ChatGPT",
       scopes: "read read",
       expiresAt,
     });
@@ -74,7 +75,11 @@ describe("OAuth scope boundaries", () => {
       clientId: "user-1",
       scopes: ["read"],
       expiresAt: expiresAt.getTime() / 1000,
-      extra: { userId: "user-1", sub: "provider-subject" },
+      extra: {
+        userId: "user-1",
+        sub: "provider-subject",
+        connectionName: "ChatGPT",
+      },
     });
   });
 

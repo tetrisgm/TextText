@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   applyLiveDocumentMutation: vi.fn(),
   attachItemAsset: vi.fn(),
   claimIdempotencyKey: vi.fn(),
+  colorForSub: vi.fn(),
+  createAgentAwareness: vi.fn(),
   createItemComment: vi.fn(),
   createDraftInFolder: vi.fn(),
   createSubfolder: vi.fn(),
@@ -43,14 +45,18 @@ const mocks = vi.hoisted(() => ({
   setItemCommentResolved: vi.fn(),
   trashFolder: vi.fn(),
   updateScopeShareRole: vi.fn(),
+  upsertPresence: vi.fn(),
 }));
 
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/collab", () => ({
   applyLiveDocumentMutation: mocks.applyLiveDocumentMutation,
+  colorForSub: mocks.colorForSub,
+  createAgentAwareness: mocks.createAgentAwareness,
   hasActiveCoEditors: mocks.hasActiveCoEditors,
   markCollabMaterialized: mocks.markCollabMaterialized,
   materializeCollabDocument: mocks.materializeCollabDocument,
+  upsertPresence: mocks.upsertPresence,
 }));
 vi.mock("@/lib/item-assets", () => ({
   attachItemAsset: mocks.attachItemAsset,
@@ -163,6 +169,8 @@ describe("MCP workspace tool adapter", () => {
     mocks.hasActiveCoEditors.mockReset();
     mocks.hasActiveCoEditors.mockResolvedValue(false);
     mocks.applyLiveDocumentMutation.mockReset();
+    mocks.colorForSub.mockReturnValue("#0a84ff");
+    mocks.createAgentAwareness.mockReturnValue("encoded-awareness");
     mocks.materializeCollabDocument.mockReset();
     mocks.markCollabMaterialized.mockReset();
     mocks.getPostStoreContext.mockReset();
@@ -176,6 +184,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.listItemComments.mockResolvedValue([]);
     mocks.listScopeShares.mockResolvedValue([]);
     mocks.recordAction.mockResolvedValue(undefined);
+    mocks.upsertPresence.mockResolvedValue(undefined);
     mocks.markCollabMaterialized.mockResolvedValue(undefined);
     mocks.getOwnedBlog.mockResolvedValue({
       handle: "local",
