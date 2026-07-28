@@ -216,15 +216,14 @@ operations from `src/lib/presentation/operations.ts`:
 Every operation is applied to the previous valid template and the complete
 result is validated before the next operation. A failed step changes nothing.
 
-The UI assistant, native on-device provider, optional cloud providers, and MCP
-all consume the shared tool definitions in `src/lib/ai/tools.ts`. They execute
-through the same workspace command boundary. The app never calls its own MCP
-endpoint.
+The UI assistant, workspace-configured provider, and MCP all consume the shared
+tool definitions in `src/lib/ai/tools.ts`. They execute through the same
+workspace command boundary. The app never calls its own MCP endpoint.
 
-The small on-device model is the floor. It can select a base template and emit
-bounded token or composition operations. Preview is a real render through the
-validator, not a picture or generated HTML. Cloud models can propose broader
-operation sequences and research content, but receive no wider render authority.
+The configured provider selects a base template and emits bounded token or
+composition operations. Preview is a real render through the validator, not a
+picture or generated HTML. More capable models can propose broader operation
+sequences and research content, but receive no wider render authority.
 
 ## Template gallery
 
@@ -374,9 +373,8 @@ The following are deliberately outside the engine contract:
 - Character-level collaborative editing of template definitions
 - A distinct database content model per presentation
 
-Cloud AI providers remain optional. The architecture is complete without them.
-The on-device model and gallery can produce valid looks, while external agents
-can use the same tools through MCP.
+The gallery can produce valid looks without AI. A connected provider or an
+external agent can propose constrained changes through the same command surface.
 
 ## Dependency order for future engine changes
 

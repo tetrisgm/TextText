@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
@@ -53,22 +53,23 @@ const turn = { messages: [{ role: "user", content: "Summarize my draft" }] };
 describe("/api/ai cloud assistant route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.AI_GATEWAY_API_KEY = "test-key";
     mocks.getCurrentUser.mockResolvedValue(user);
     mocks.getOwnedBlog.mockResolvedValue({ handle: "demo-blog" });
-    mocks.getWorkspaceAiConfigForOwner.mockResolvedValue(null);
+    mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      apiKey: "workspace-secret-key",
+    });
     mocks.getWorkspaceAiConfigStatusForOwner.mockResolvedValue({
-      configured: false,
-      provider: null,
+      configured: true,
+      provider: "anthropic",
+      model: "claude-sonnet-5",
     });
     mocks.generateText.mockResolvedValue({ text: "Here is a summary." });
   });
-  afterEach(() => {
-    delete process.env.AI_GATEWAY_API_KEY;
-  });
 
-  it("is disabled (404) when no gateway key is set", async () => {
-    delete process.env.AI_GATEWAY_API_KEY;
+  it("is disabled (404) when no workspace provider is connected", async () => {
+    mocks.getWorkspaceAiConfigForOwner.mockResolvedValue(null);
     const res = await POST(post(turn));
     expect(res.status).toBe(404);
     expect(mocks.generateText).not.toHaveBeenCalled();
@@ -100,6 +101,7 @@ describe("/api/ai cloud assistant route", () => {
     expect(await res.json()).toEqual({
       text: "Here is a summary.",
       provider: "Anthropic",
+      model: "claude-sonnet-5",
     });
     // The session actor is threaded into the tool factory.
     expect(mocks.cloudAssistantTools).toHaveBeenCalledWith({
@@ -116,10 +118,10 @@ describe("/api/ai cloud assistant route", () => {
     ]);
   });
 
-  it("uses a workspace OpenAI key directly when the gateway key is absent", async () => {
-    delete process.env.AI_GATEWAY_API_KEY;
+  it("uses the selected workspace OpenAI model", async () => {
     mocks.getWorkspaceAiConfigForOwner.mockResolvedValue({
       provider: "openai",
+      model: "gpt-5.6",
       apiKey: "workspace-secret-key",
     });
 
@@ -133,6 +135,7 @@ describe("/api/ai cloud assistant route", () => {
     expect(await res.json()).toEqual({
       text: "Here is a summary.",
       provider: "OpenAI",
+      model: "gpt-5.6",
     });
   });
 
@@ -147,15 +150,17 @@ describe("/api/ai cloud assistant route", () => {
     expect(await (await GET()).json()).toEqual({
       enabled: true,
       provider: "Anthropic",
+      model: "claude-sonnet-5",
     });
-    delete process.env.AI_GATEWAY_API_KEY;
     mocks.getWorkspaceAiConfigStatusForOwner.mockResolvedValue({
       configured: true,
       provider: "openai",
+      model: "gpt-5.6",
     });
     expect(await (await GET()).json()).toEqual({
       enabled: true,
       provider: "OpenAI",
+      model: "gpt-5.6",
     });
     mocks.getCurrentUser.mockResolvedValue(null);
     expect((await (await GET()).json()).enabled).toBe(false);

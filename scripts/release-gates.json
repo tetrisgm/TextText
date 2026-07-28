@@ -8,7 +8,6 @@
     "workflow.live_clients",
     "web.unit",
     "native.unit",
-    "native.live_ai",
     "apple.eval"
   ]
 }

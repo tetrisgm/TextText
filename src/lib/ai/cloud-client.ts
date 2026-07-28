@@ -1,7 +1,5 @@
-// Client for the opt-in cloud assistant fallback. The status probe exposes only
-// enabled/provider metadata, never the configured key. Content is posted only
-// after the native capability probe has failed and the server confirms a cloud
-// provider is configured for this owner.
+// Client for the workspace-owned AI connection. The browser sees provider and
+// model metadata, never the configured key.
 
 export type CloudAssistantProviderLabel = "Anthropic" | "OpenAI";
 
@@ -14,6 +12,7 @@ export type CloudAssistantContext = {
 export type CloudAssistantStatus = {
   enabled: boolean;
   provider: CloudAssistantProviderLabel | null;
+  model: string | null;
 };
 
 export type CloudAssistantOutcome =
@@ -25,16 +24,21 @@ export async function cloudAssistantStatus(): Promise<CloudAssistantStatus> {
     method: "GET",
     cache: "no-store",
   });
-  if (!response.ok) return { enabled: false, provider: null };
+  if (!response.ok) return { enabled: false, provider: null, model: null };
   const data = (await response.json()) as {
     enabled?: unknown;
     provider?: unknown;
+    model?: unknown;
   };
   const provider =
     data.provider === "Anthropic" || data.provider === "OpenAI"
       ? data.provider
       : null;
-  return { enabled: data.enabled === true && Boolean(provider), provider };
+  return {
+    enabled: data.enabled === true && Boolean(provider),
+    provider,
+    model: typeof data.model === "string" ? data.model : null,
+  };
 }
 
 export async function cloudAssistantTurn(
@@ -49,7 +53,7 @@ export async function cloudAssistantTurn(
       context,
     }),
   });
-  // 404 is the off-by-default gate: this owner has no configured cloud rung.
+  // 404 is the off-by-default gate: this owner has no configured provider.
   if (response.status === 404) return { disabled: true };
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as {

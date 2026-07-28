@@ -1,9 +1,9 @@
 # Texttext MCP workspace command reference
 
 Texttext exposes one file-backed workspace command surface to three consumers:
-the product UI, the on-device assistant in Texttext for Mac, and external agents
-over MCP. The application calls the commands directly. It does not call its
-own MCP endpoint.
+the product UI, the workspace-configured assistant, and external agents over
+MCP. The application calls the commands directly. It does not call its own MCP
+endpoint.
 
 `src/lib/ai/tools.ts` is the source of truth for the 31 tool names, schemas,
 mutability, confirmation requirements, and MCP annotations. The MCP adapter
@@ -137,15 +137,13 @@ confirmation callback.
 
 ## In-app assistant status
 
-Texttext for Mac currently runs the assistant through Apple's on-device
-Foundation Models bridge. The model receives the same 31 tool definitions,
-but calls execute in the signed-in page through the normal workspace actions.
-The assistant is unavailable in the plain web app and does not silently send
-workspace content to a cloud provider.
+The workspace owner can connect an Anthropic or OpenAI API account and choose
+the model used by the in-app assistant. The API key is encrypted on the server,
+is write-only in Settings, and is sent only to the selected provider.
 
-OpenAI and Anthropic are not implemented as in-app assistant providers.
-ChatGPT, Claude, Cursor, and other hosts can use Texttext as external MCP clients
-through the endpoint documented here.
+A ChatGPT or Claude consumer subscription does not include provider API usage.
+People who want to work from those subscribed products can connect ChatGPT,
+Claude, Cursor, or another MCP host to the endpoint documented here.
 
 ## Sibling surface: sync API
 

@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
-import type { NativeAICapabilities } from "@/lib/ai/native";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
-import { unavailableExplanation } from "./unavailable-fallback";
 import styles from "./AssistantConversation.module.css";
 
 const PROMPT_STARTERS = [
@@ -15,81 +13,15 @@ const PROMPT_STARTERS = [
   { label: "Draft follow-ups", prompt: "Draft three related posts" },
 ] as const;
 
-const LEGACY_MODEL_NOT_READY_COPY =
-  "The on-device model is still downloading. Try again in a few minutes.";
-
 function displayedMessageText(message: AssistantMessage): string {
-  if (message.text === LEGACY_MODEL_NOT_READY_COPY) {
-    return unavailableExplanation({
-      available: false,
-      reason: "modelNotReady",
-      ocr: false,
-      imageUnderstanding: false,
-    });
-  }
-  if (message.text === "Downloading the on-device model") {
-    return "Waiting for macOS to prepare Apple Intelligence";
-  }
-  if (message.text === "Preparing the on-device model") {
-    return "Preparing Apple Intelligence on this Mac";
-  }
   return message.text;
 }
 
-function NativeModelReadiness({
-  capabilities,
-  onRefresh,
-}: {
-  capabilities: NativeAICapabilities | null;
-  onRefresh?: () => Promise<NativeAICapabilities>;
-}) {
-  const [checking, setChecking] = useState(false);
-  if (capabilities?.reason !== "modelNotReady") return null;
-
-  return (
-    <section className={styles.modelStatus} aria-label="On-device model status">
-      <div className={styles.modelStatusHeading}>
-        <span>Preparing Apple Intelligence</span>
-        <span className={styles.modelStatusLocation}>On this Mac</span>
-      </div>
-      <p className={styles.modelStatusBody}>
-        Apple Intelligence runs locally. macOS installs and manages its model
-        separately from Texttext, so first use can require a system download.
-      </p>
-      <progress
-        className={styles.modelStatusProgress}
-        aria-label="macOS is preparing the on-device model"
-      />
-      <div className={styles.modelStatusFooter}>
-        <span>
-          macOS is preparing it automatically. Exact progress is not exposed to
-          apps.
-        </span>
-        {onRefresh && (
-          <button
-            type="button"
-            disabled={checking}
-            onClick={() => {
-              setChecking(true);
-              void onRefresh()
-                .catch(() => undefined)
-                .finally(() => setChecking(false));
-            }}
-          >
-            {checking ? "Checking..." : "Check now"}
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
 // The transcript inside the assistant sidebar: user and assistant turns,
-// lightweight progress rows while the on-device model drives tools, a jobs
+// lightweight progress rows while the selected provider drives tools, a jobs
 // strip so background work stays visible from anywhere.
 export function AssistantConversation({
   activeCloudProvider,
-  capabilities,
   cloudProvider,
   jobs,
   messages,
@@ -97,13 +29,11 @@ export function AssistantConversation({
   submitting,
   onApplyProposal,
   onOpenJob,
-  onRefreshCapabilities,
   onUsePrompt,
   onQuickAction,
   onUndoProposal,
 }: {
   activeCloudProvider?: CloudAssistantProviderLabel | null;
-  capabilities: NativeAICapabilities | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
   jobs?: AssistantJob[];
   messages: AssistantMessage[];
@@ -115,7 +45,6 @@ export function AssistantConversation({
   submitting: boolean;
   onApplyProposal?: (messageId: string) => Promise<void> | void;
   onOpenJob?: (job: AssistantJob) => void;
-  onRefreshCapabilities?: () => Promise<NativeAICapabilities>;
   onUsePrompt?: (prompt: string) => void;
   onQuickAction?: (action: NativeQuickActionId) => Promise<void> | void;
   onUndoProposal?: (messageId: string) => Promise<void> | void;
@@ -127,12 +56,6 @@ export function AssistantConversation({
   }, [messages.length, submitting]);
 
   const visibleJobs = (jobs ?? []).slice(0, 6);
-  const nativeModelReadiness = (
-    <NativeModelReadiness
-      capabilities={capabilities}
-      onRefresh={onRefreshCapabilities}
-    />
-  );
   const quickActionBar =
     quickActions && quickActions.length > 0 ? (
       <div className={styles.quickActions} aria-label="Assistant actions">
@@ -142,7 +65,7 @@ export function AssistantConversation({
             type="button"
             className={styles.quickAction}
             disabled={submitting}
-            title={action.description ?? `${action.label} on this Mac`}
+            title={action.description ?? `${action.label} with your AI provider`}
             onClick={() => void onQuickAction?.(action.id)}
           >
             {action.label}
@@ -184,22 +107,13 @@ export function AssistantConversation({
       <div className={styles.empty}>
         {jobsStrip}
         {quickActionBar}
-        {nativeModelReadiness}
         <p className={styles.emptyTitle}>
-          {capabilities?.available
-            ? "Private on this Mac"
-            : "Ask about your workspace"}
+          {cloudProvider ? `Using ${cloudProvider}` : "Connect an AI provider"}
         </p>
         <p className={styles.emptyBody}>
-          {capabilities?.available
-            ? `Answers and edits run on Apple's on-device model. Nothing leaves this Mac, and it works offline.${
-                cloudProvider
-                  ? ` ${cloudProvider} is configured as an off-device fallback and runs only if the on-device model is unavailable.`
-                  : ""
-              }`
-            : cloudProvider
-              ? `${cloudProvider} is configured as an off-device fallback. It runs only when Apple's private on-device model is unavailable.`
-              : unavailableExplanation(capabilities)}
+          {cloudProvider
+            ? `Texttext sends requests to the ${cloudProvider} connection saved for this workspace.`
+            : "Add an Anthropic or OpenAI API key in Workspace Settings. To use an existing ChatGPT or Claude subscription, connect Texttext from that app through MCP."}
         </p>
         {onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">
@@ -239,7 +153,6 @@ export function AssistantConversation({
     >
       {jobsStrip}
       {quickActionBar}
-      {nativeModelReadiness}
       {messages.map((message) => {
         if (message.role === "progress") {
           return (
@@ -365,7 +278,7 @@ export function AssistantConversation({
           >
             {message.provider && (
               <span className={styles.providerLabel}>
-                Answered by {message.provider} (off this Mac)
+                Answered by {message.provider}
               </span>
             )}
             <span>{displayedMessageText(message)}</span>
@@ -375,8 +288,8 @@ export function AssistantConversation({
       {submitting && (
         <div className={styles.progress} role="status">
           {activeCloudProvider
-            ? `Thinking with ${activeCloudProvider} (off this Mac)`
-            : "Thinking on this Mac"}
+            ? `Thinking with ${activeCloudProvider}`
+            : "Contacting your AI provider"}
         </div>
       )}
       <div ref={endRef} aria-hidden="true" />

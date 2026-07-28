@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   recordAction: vi.fn(),
   removeConfig: vi.fn(),
   saveConfig: vi.fn(),
+  validateConnection: vi.fn(),
 }));
 
 vi.mock("@/lib/blog-edit-auth", () => ({
@@ -18,6 +19,7 @@ vi.mock("@/lib/ai/workspace-ai-config.server", () => ({
     value === "anthropic" || value === "openai",
   removeWorkspaceAiConfig: mocks.removeConfig,
   saveWorkspaceAiConfig: mocks.saveConfig,
+  validateWorkspaceAiConnection: mocks.validateConnection,
 }));
 
 import {
@@ -40,24 +42,32 @@ describe("workspace AI settings actions", () => {
     const result = await saveWorkspaceAiSettingsAction(
       "local",
       "anthropic",
+      "claude-sonnet-5",
       apiKey,
     );
 
     expect(mocks.saveConfig).toHaveBeenCalledWith(
       "blog-1",
       "anthropic",
+      "claude-sonnet-5",
+      apiKey,
+    );
+    expect(mocks.validateConnection).toHaveBeenCalledWith(
+      "anthropic",
+      "claude-sonnet-5",
       apiKey,
     );
     expect(result).toEqual({
       allowed: true,
       configured: true,
       provider: "anthropic",
+      model: "claude-sonnet-5",
     });
     expect(JSON.stringify(result)).not.toContain(apiKey);
     expect(mocks.recordAction).toHaveBeenCalledWith(
       expect.objectContaining({
         actionName: "configure_cloud_ai",
-        inputSummary: "anthropic",
+        inputSummary: "anthropic:claude-sonnet-5",
       }),
     );
     expect(JSON.stringify(mocks.recordAction.mock.calls)).not.toContain(apiKey);
@@ -74,6 +84,7 @@ describe("workspace AI settings actions", () => {
       allowed: false,
       configured: false,
       provider: null,
+      model: null,
     });
   });
 });

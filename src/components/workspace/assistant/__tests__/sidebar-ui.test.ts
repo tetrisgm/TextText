@@ -129,10 +129,10 @@ describe("assistant sidebar UI", () => {
     ).toBe(false);
   });
 
-  it("renders native quick actions and an undoable edit preview", () => {
+  it("renders provider quick actions and an undoable edit preview", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
-        capabilities: { available: true, ocr: true, imageUnderstanding: false },
+        cloudProvider: "Anthropic",
         messages: [
           {
             id: "proposal-1",
@@ -157,7 +157,7 @@ describe("assistant sidebar UI", () => {
           {
             id: "summarize",
             label: "Summarize",
-            description: "Summarize selected text on this Mac",
+            description: "Summarize selected text with Anthropic",
           },
           { id: "title", label: "Title", description: "Suggest a title" },
         ],
@@ -166,7 +166,7 @@ describe("assistant sidebar UI", () => {
     );
 
     expect(html).toContain('aria-label="Assistant actions"');
-    expect(html).toContain('title="Summarize selected text on this Mac"');
+    expect(html).toContain('title="Summarize selected text with Anthropic"');
     expect(html).toContain('role="log"');
     expect(html).toContain("Summarize");
     expect(html).toContain("title selection, source offsets 0 to 5");
@@ -177,16 +177,10 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain(">Apply<");
   });
 
-  it("labels cloud work and answers as off-device", () => {
+  it("labels provider work and answers", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
         activeCloudProvider: "OpenAI",
-        capabilities: {
-          available: false,
-          reason: "modelNotReady",
-          ocr: false,
-          imageUnderstanding: false,
-        },
         cloudProvider: "OpenAI",
         messages: [
           {
@@ -200,51 +194,15 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain("Answered by OpenAI (off this Mac)");
-    expect(html).toContain("Thinking with OpenAI (off this Mac)");
-    expect(html).not.toContain("Thinking on this Mac");
-  });
-
-  it("shows honest system-managed readiness without claiming cloud execution", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(AssistantConversation, {
-        capabilities: {
-          available: false,
-          reason: "modelNotReady",
-          ocr: false,
-          imageUnderstanding: false,
-        },
-        messages: [
-          {
-            id: "legacy-model-message",
-            role: "assistant",
-            text: "The on-device model is still downloading. Try again in a few minutes.",
-          },
-        ],
-        submitting: false,
-        onRefreshCapabilities: async () => ({
-          available: false,
-          reason: "modelNotReady" as const,
-          ocr: false,
-          imageUnderstanding: false,
-        }),
-      }),
-    );
-
-    expect(html).toContain("Preparing Apple Intelligence");
-    expect(html).toContain("On this Mac");
-    expect(html).toContain("Apple Intelligence runs locally");
-    expect(html).toContain("Exact progress is not exposed to apps");
-    expect(html).toContain("<progress");
-    expect(html).toContain(">Check now<");
-    expect(html).not.toContain("still downloading");
+    expect(html).toContain("Answered by OpenAI");
+    expect(html).toContain("Thinking with OpenAI");
     expect(html).not.toContain("off this Mac");
   });
 
   it("offers concise prompt starters that fill the composer", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
-        capabilities: { available: true, ocr: true, imageUnderstanding: false },
+        cloudProvider: "Anthropic",
         messages: [],
         submitting: false,
         onUsePrompt: () => {},
@@ -252,7 +210,7 @@ describe("assistant sidebar UI", () => {
     );
 
     expect(html).toContain('aria-label="Prompt starters"');
-    expect(html).toContain("Private on this Mac");
+    expect(html).toContain("Using Anthropic");
     expect(html).toContain("Improve title");
     expect(html).toContain("Summarize page");
     expect(html).toContain("Draft follow-ups");
@@ -276,13 +234,13 @@ describe("assistant sidebar UI", () => {
           detail: "Selected body text",
         },
         attachmentDisabled: true,
-        attachmentTitle: "Attachments require the on-device assistant",
+        attachmentTitle: "Attachments are not available for provider connections yet",
       }),
     );
 
     expect(html).toContain('aria-label="Context: Draft, Selected body text"');
     expect(html).toContain(
-      'title="Attachments require the on-device assistant"',
+      'title="Attachments are not available for provider connections yet"',
     );
     expect(html).toContain('aria-label="Choose assistant attachments"');
     expect(html).toContain('aria-keyshortcuts="Enter"');

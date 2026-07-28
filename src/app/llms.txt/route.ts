@@ -95,11 +95,11 @@ ${WORKSPACE_TOOL_NAMES.length}-tool MCP contract.
 
 ## In-app assistant
 
-Texttext for Mac uses Apple's on-device Foundation Models runtime and calls the
-same ${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the signed-in page. It does not use
-Texttext's MCP endpoint. The plain web app has no assistant model fallback.
-OpenAI and Anthropic are not implemented as in-app providers; they can connect
-as external MCP clients.
+The workspace owner can connect an Anthropic or OpenAI API account and choose
+the model used by the in-app assistant. It calls the same
+${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the signed-in
+page and does not use Texttext's MCP endpoint. ChatGPT, Claude, Cursor, and
+other hosts can connect as external MCP clients.
 
 Human setup: ${origin}/docs/ai. Approval flow: ${origin}/api/mcp advertises OAuth from its 401.
 `;

@@ -1,20 +1,15 @@
 "use client";
 
-// The assistant's brain, layer 1 of the provider ladder: Apple's on-device
-// foundation model through the Mac app's nativeAI bridge. Free, private,
-// offline. The hook probes capabilities, registers the workspace tool
-// executor (agent tool calls EXECUTE here in the page), routes submissions
-// to the on-device agent, and keeps one transcript PER CONTEXT: the root,
-// each folder, and each item own their own thread, keyed by contextKey.
+// The assistant's workspace-scoped provider client. It routes requests to the
+// Anthropic or OpenAI connection selected by the workspace owner and keeps one
+// transcript per context: the root, each folder, and each item own a thread.
 //
 // Transcripts live in a module store mirrored to sessionStorage, so they
 // survive component remounts, route changes (the full editor is a different
 // route), and pool refreshes. A reply always lands in the thread that
 // SUBMITTED it, even if the user navigates elsewhere while the model works.
 //
-// When the bridge or model is unavailable, the hook uses the owner's explicit
-// cloud setting when present and otherwise explains the local state calmly.
-// Every cloud reply is marked as off-device in the transcript.
+// Credentials remain server-side. The browser only receives provider metadata.
 
 import {
   useCallback,
@@ -24,21 +19,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import {
-  nativeAgent,
-  nativeAICapabilities,
-  registerNativeAgentTools,
-  type NativeAICapabilities,
-} from "@/lib/ai/native";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
-import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import {
+  cloudAssistantTurn,
   cloudAssistantStatus,
   type CloudAssistantProviderLabel,
 } from "@/lib/ai/cloud-client";
 import {
   NATIVE_QUICK_ACTIONS,
-  runNativeQuickAction,
   type NativeQuickActionField,
   type NativeQuickActionId,
   type NativeQuickActionScope,
@@ -59,7 +47,6 @@ import {
   updateAssistantJob,
 } from "@/lib/ai/jobs";
 import {
-  composeInstructions,
   installSkill,
   removeSkill,
   setSkillEnabled,
@@ -69,19 +56,8 @@ import { findPoolPostById } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
 import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
-import {
-  assistantAttachmentAccept,
-  buildNativeAssistantPrompt,
-  formatAssistantSubmission,
-} from "./attachments";
-import {
-  appendAssistantSelectionContext,
-  type AssistantViewSnapshot,
-} from "./context";
-import {
-  fallbackForNativeAssetError,
-  runUnavailableAssistantFallback,
-} from "./unavailable-fallback";
+import { formatAssistantSubmission } from "./attachments";
+import { type AssistantViewSnapshot } from "./context";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -138,26 +114,6 @@ type UseNativeAssistantOptions = {
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
 
-const TOOL_PROGRESS_LABELS: Record<string, string> = {
-  get_workspace: "Checking workspace access",
-  list_folders: "Looking at your folders",
-  create_folder: "Creating a folder",
-  rename_folder: "Renaming a folder",
-  list_items: "Listing items",
-  list_trash: "Looking in Trash",
-  read_item: "Reading an item",
-  search: "Searching your workspace",
-  create_item: "Creating an item",
-  update_item: "Updating an item",
-  append_to_item: "Appending to an item",
-  move_item: "Moving an item",
-  delete_item: "Moving an item to Trash",
-  restore_item: "Restoring an item",
-  set_item_status: "Changing publish status",
-};
-
-const MODEL_READINESS_POLL_MS = 10_000;
-
 function assistantAgentError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "");
   if (
@@ -167,29 +123,7 @@ function assistantAgentError(error: unknown): string {
   ) {
     return "The assistant chose an action that did not fit this item. Try the request again.";
   }
-  if (
-    /FoundationModels\.LanguageModelError|LanguageModelError error -?\d+/i.test(
-      message,
-    )
-  ) {
-    return "The on-device model could not complete that request. Texttext has kept your workspace unchanged. Try a shorter request.";
-  }
   return message.trim() || "The assistant could not finish that.";
-}
-
-function sameNativeCapabilities(
-  left: NativeAICapabilities | null,
-  right: NativeAICapabilities,
-): boolean {
-  return (
-    left?.available === right.available &&
-    left?.reason === right.reason &&
-    left?.os === right.os &&
-    left?.ocr === right.ocr &&
-    left?.imageUnderstanding === right.imageUnderstanding &&
-    (left?.textOps ?? []).join("\u0000") ===
-      (right.textOps ?? []).join("\u0000")
-  );
 }
 
 // ---- Per-context transcript store (module scope, sessionStorage mirror) ----
@@ -307,48 +241,6 @@ function proposalEdit(
   return edit;
 }
 
-type NativeQuickActionResult = Awaited<ReturnType<typeof runNativeQuickAction>>;
-
-function appendQuickActionResult(
-  thread: string,
-  postId: string,
-  result: NativeQuickActionResult,
-) {
-  if (result.kind === "response") {
-    appendToThread(thread, "assistant", result.text || "Done.");
-    return;
-  }
-  if (result.kind === "tags-proposal") {
-    appendToThread(thread, "assistant", result.label, {
-      kind: "tags",
-      itemId: postId,
-      label: result.label,
-      beforeTags: result.beforeTags,
-      afterTags: result.afterTags,
-      addedTags: result.addedTags,
-      canApply: result.canApply,
-      note: result.note,
-      status: "pending",
-    });
-    return;
-  }
-  appendToThread(thread, "assistant", result.label, {
-    kind: "text",
-    itemId: postId,
-    field: result.field,
-    label: result.label,
-    before: result.before,
-    after: result.after,
-    source: result.source,
-    result: result.result,
-    range: result.range,
-    scope: result.scope,
-    canApply: result.canApply,
-    note: result.note,
-    status: "pending",
-  });
-}
-
 export function useNativeAssistant({
   handle,
   contextKey,
@@ -358,9 +250,6 @@ export function useNativeAssistant({
   applyItemPatch,
   confirmDestructive,
 }: UseNativeAssistantOptions) {
-  const [capabilities, setCapabilities] = useState<NativeAICapabilities | null>(
-    null,
-  );
   const [cloudProvider, setCloudProvider] =
     useState<CloudAssistantProviderLabel | null>(null);
   const getPoolRef = useRef(getPool);
@@ -405,56 +294,6 @@ export function useNativeAssistant({
     [applyItemPatch, confirmDestructive, getPool, handle, readItemText],
   );
 
-  const refreshCapabilities = useCallback(async () => {
-    const result = await nativeAICapabilities();
-    setCapabilities((current) =>
-      sameNativeCapabilities(current, result) ? current : result,
-    );
-    return result;
-  }, []);
-
-  // Registration is deliberately sticky (no unregister on unmount): a job
-  // started here must keep executing its tool calls while the user is on the
-  // full-editor route, where this shell is unmounted. The pool store and the
-  // executor's refs are module-lived, and the next mount re-registers.
-  useEffect(() => {
-    registerNativeAgentTools(tools.executor);
-  }, [tools]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void nativeAICapabilities().then((result) => {
-      if (!cancelled) {
-        setCapabilities((current) =>
-          sameNativeCapabilities(current, result) ? current : result,
-        );
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (capabilities?.reason !== "modelNotReady") return;
-
-    const check = () => {
-      void refreshCapabilities().catch(() => undefined);
-    };
-    const interval = window.setInterval(check, MODEL_READINESS_POLL_MS);
-    const checkWhenVisible = () => {
-      if (document.visibilityState === "visible") check();
-    };
-
-    window.addEventListener("focus", check);
-    document.addEventListener("visibilitychange", checkWhenVisible);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", check);
-      document.removeEventListener("visibilitychange", checkWhenVisible);
-    };
-  }, [capabilities?.reason, refreshCapabilities]);
-
   useEffect(() => {
     let cancelled = false;
     void cloudAssistantStatus()
@@ -489,119 +328,6 @@ export function useNativeAssistant({
     return "Workspace";
   }, []);
 
-  const runGracefulFallback = useCallback(
-    async ({
-      capabilities: current,
-      jobId,
-      prompt,
-      thread,
-      view,
-    }: {
-      capabilities?: NativeAICapabilities;
-      jobId?: string;
-      prompt: string;
-      thread: string;
-      view: AssistantViewSnapshot;
-    }): Promise<void> => {
-      const context = {
-        level: view.level,
-        folderPath: view.folderPath,
-        postId: view.postId,
-      };
-      const onCloudStart = (provider: CloudAssistantProviderLabel) => {
-        setCloudProvider(provider);
-        setThreadCloudProvider(thread, provider);
-        if (jobId) {
-          updateAssistantJob(jobId, {
-            activity: `Thinking with ${provider}`,
-          });
-        }
-      };
-      const message = await runUnavailableAssistantFallback({
-        capabilities: current ?? null,
-        context,
-        onCloudStart,
-        prompt,
-      });
-      appendToThread(
-        thread,
-        message.role,
-        message.text,
-        undefined,
-        message.provider,
-      );
-    },
-    [],
-  );
-
-  const recoverNativeAssetFailure = useCallback(
-    async <T>({
-      error,
-      jobId,
-      prompt,
-      retryNative,
-      thread,
-      view,
-    }: {
-      error: unknown;
-      jobId?: string;
-      prompt: string;
-      retryNative: () => Promise<T>;
-      thread: string;
-      view: AssistantViewSnapshot;
-    }) => {
-      let preparationAnnounced = false;
-      const result = await fallbackForNativeAssetError({
-        context: {
-          level: view.level,
-          folderPath: view.folderPath,
-          postId: view.postId,
-        },
-        error,
-        onCloudStart: (provider) => {
-          setCloudProvider(provider);
-          setThreadCloudProvider(thread, provider);
-          if (jobId) {
-            updateAssistantJob(jobId, {
-              activity: `Thinking with ${provider}`,
-            });
-          }
-        },
-        onPreparing: (state, attempt, maximumAttempts) => {
-          const activity =
-            state === "downloading"
-              ? "Waiting for macOS to prepare Apple Intelligence"
-              : "Preparing Apple Intelligence on this Mac";
-          if (!preparationAnnounced) {
-            preparationAnnounced = true;
-            appendToThread(thread, "progress", activity);
-          }
-          if (jobId) {
-            updateAssistantJob(jobId, {
-              activity: `${activity} (${attempt} of ${maximumAttempts})`,
-            });
-          }
-        },
-        prompt,
-        reprobe: nativeAICapabilities,
-        retryNative,
-      });
-      if (!result) return null;
-      setCapabilities(result.capabilities);
-      if (result.kind === "fallback") {
-        appendToThread(
-          thread,
-          result.message.role,
-          result.message.text,
-          undefined,
-          result.message.provider,
-        );
-      }
-      return result;
-    },
-    [],
-  );
-
   const submit = useCallback(
     async (text: string, attachments: readonly AssistantAttachment[] = []) => {
       const prompt = text.trim();
@@ -614,9 +340,6 @@ export function useNativeAssistant({
       }
       const displayPrompt = formatAssistantSubmission(prompt, attachments);
       const submittedView = getViewRef.current();
-      let fallbackPrompt = prompt;
-      let retryNativeAgent: (() => ReturnType<typeof nativeAgent>) | null =
-        null;
       appendToThread(thread, "user", displayPrompt);
       setThreadBusy(thread, true);
       const jobId = startAssistantJob({
@@ -626,114 +349,33 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
-        const openItem =
-          (submittedView.level === "post" ||
-            submittedView.level === "edit") &&
-          submittedView.postId
-            ? await readItemTextRef.current(submittedView.postId)
-            : null;
-        const current = await nativeAICapabilities();
-        setCapabilities(current);
-        if (!current.available) {
-          await runGracefulFallback({
-            capabilities: current,
-            jobId,
-            prompt: fallbackPrompt,
+        updateAssistantJob(jobId, { activity: "Contacting your AI provider" });
+        const result = await cloudAssistantTurn(prompt, {
+          level: submittedView.level,
+          folderPath: submittedView.folderPath,
+          postId: submittedView.postId,
+        });
+        if ("disabled" in result) {
+          appendToThread(
             thread,
-            view: submittedView,
-          });
-          updateAssistantJob(jobId, { status: "done" });
+            "error",
+            "Connect Anthropic or OpenAI in Workspace Settings.",
+          );
+          updateAssistantJob(jobId, { status: "error" });
           return;
         }
-        const prepared = await buildNativeAssistantPrompt(prompt, attachments);
-        fallbackPrompt = prepared.prompt;
-        const baseContext = tools.describeContext(submittedView);
-        const context = openItem
-          ? appendAssistantSelectionContext(baseContext, openItem)
-          : baseContext;
-        const { instructions } = composeInstructions(
-          handle,
-          prepared.prompt,
-          context,
-        );
-        retryNativeAgent = () =>
-          nativeAgent(prepared.prompt, {
-            context,
-            instructions,
-            tools: tools.toolNamesForView(submittedView, prepared.prompt),
-            toolExecutor: async (name, args, requestTag) => {
-              if (
-                name !== "create_item" ||
-                !submittedView.postId ||
-                (submittedView.level !== "post" &&
-                  submittedView.level !== "edit")
-              ) {
-                return tools.executor(name, args, requestTag);
-              }
-              const markdown =
-                typeof args.markdown === "string" ? args.markdown : "";
-              const parsed = markdown ? parsePostMarkdownFile(markdown) : null;
-              const title =
-                typeof args.title === "string"
-                  ? args.title
-                  : parsed?.fields.title;
-              const body =
-                typeof args.body === "string" ? args.body : parsed?.body;
-              const excerpt =
-                typeof args.excerpt === "string" || args.excerpt === null
-                  ? args.excerpt
-                  : parsed?.fields.excerpt;
-              if (!title && !body && excerpt === undefined) {
-                throw new Error(
-                  "The assistant did not return an edit. Try the request again.",
-                );
-              }
-              return tools.executor(
-                "update_item",
-                {
-                  id: submittedView.postId,
-                  ...(title ? { title } : {}),
-                  ...(body !== undefined ? { body } : {}),
-                  ...(excerpt !== undefined ? { excerpt } : {}),
-                },
-                requestTag,
-              );
-            },
-            onEvent: (event) => {
-              if (event.type === "tool") {
-                const activity =
-                  TOOL_PROGRESS_LABELS[event.name] ?? `Running ${event.name}`;
-                appendToThread(thread, "progress", activity);
-                updateAssistantJob(jobId, { activity });
-              }
-            },
-          });
-        const reply = await retryNativeAgent();
-        appendToThread(thread, "assistant", reply.text || "Done.");
-        updateAssistantJob(jobId, { status: "done" });
-      } catch (error) {
-        const recovery = retryNativeAgent
-          ? await recoverNativeAssetFailure({
-              error,
-              jobId,
-              prompt: fallbackPrompt,
-              retryNative: retryNativeAgent,
-              thread,
-              view: submittedView,
-            })
-          : null;
-        if (recovery) {
-          if (recovery.kind === "recovered") {
-            appendToThread(thread, "assistant", recovery.value.text || "Done.");
-          }
-          updateAssistantJob(jobId, { status: "done" });
-          return;
-        }
+        setCloudProvider(result.provider);
+        setThreadCloudProvider(thread, result.provider);
         appendToThread(
           thread,
-          "error",
-          assistantAgentError(error),
+          "assistant",
+          result.text || "Done.",
+          undefined,
+          result.provider,
         );
+        updateAssistantJob(jobId, { status: "done" });
+      } catch (error) {
+        appendToThread(thread, "error", assistantAgentError(error));
         updateAssistantJob(jobId, { status: "error" });
       } finally {
         setThreadCloudProvider(thread, null);
@@ -743,11 +385,7 @@ export function useNativeAssistant({
     [
       contextKey,
       contextLabel,
-      handle,
-      recoverNativeAssetFailure,
-      runGracefulFallback,
       threadKey,
-      tools,
     ],
   );
 
@@ -761,9 +399,7 @@ export function useNativeAssistant({
         NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
           ?.label ?? action;
       setThreadBusy(thread, true);
-      let fallbackPrompt = `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
-      let retryNativeAction:
-        (() => ReturnType<typeof runNativeQuickAction>) | null = null;
+      let actionPrompt = `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
       try {
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);
@@ -776,59 +412,44 @@ export function useNativeAssistant({
             : actionLabel,
         );
         if (selection && selectionAction) {
-          fallbackPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.\n\n${selection.text}`;
+          actionPrompt = `${actionLabel} this selected ${selection.field} text. Return the suggestion only. Do not change the item.\n\n${selection.text}`;
         }
-        const current = await nativeAICapabilities();
-        setCapabilities(current);
-        if (!current.available) {
-          await runGracefulFallback({
-            capabilities: current,
-            prompt: fallbackPrompt,
-            thread,
-            view,
-          });
-          return;
-        }
-        if (current.textOps && !current.textOps.includes(action)) {
+        const result = await cloudAssistantTurn(actionPrompt, {
+          level: view.level,
+          folderPath: view.folderPath,
+          postId: view.postId,
+        });
+        if ("disabled" in result) {
           appendToThread(
             thread,
             "error",
-            `${actionLabel} is not available on this Mac.`,
+            "Connect Anthropic or OpenAI in Workspace Settings.",
           );
           return;
         }
-        retryNativeAction = () => runNativeQuickAction(action, item);
-        const result = await retryNativeAction();
-        appendQuickActionResult(thread, view.postId, result);
+        setCloudProvider(result.provider);
+        setThreadCloudProvider(thread, result.provider);
+        appendToThread(
+          thread,
+          "assistant",
+          result.text || "Done.",
+          undefined,
+          result.provider,
+        );
       } catch (error) {
-        const recovery = retryNativeAction
-          ? await recoverNativeAssetFailure({
-              error,
-              prompt: fallbackPrompt,
-              retryNative: retryNativeAction,
-              thread,
-              view,
-            })
-          : null;
-        if (recovery) {
-          if (recovery.kind === "recovered") {
-            appendQuickActionResult(thread, view.postId, recovery.value);
-          }
-          return;
-        }
         appendToThread(
           thread,
           "error",
           error instanceof Error && error.message
             ? error.message
-            : "The on-device action could not finish.",
+            : "The AI provider could not finish.",
         );
       } finally {
         setThreadCloudProvider(thread, null);
         setThreadBusy(thread, false);
       }
     },
-    [recoverNativeAssetFailure, runGracefulFallback, threadKey],
+    [threadKey],
   );
 
   const applyProposalValue = useCallback(
@@ -987,26 +608,16 @@ export function useNativeAssistant({
     [applyProposalValue],
   );
 
-  const textOps = capabilities?.textOps;
   const quickActions =
-    getView().postId && (capabilities?.available || cloudProvider)
-      ? capabilities?.available
-        ? NATIVE_QUICK_ACTIONS.filter(
-            (action) => !textOps || textOps.includes(action.id),
-          )
-        : NATIVE_QUICK_ACTIONS.map((action) => ({
-            ...action,
-            description: `${action.label} with ${cloudProvider} off this Mac`,
-          }))
+    getView().postId && cloudProvider
+      ? NATIVE_QUICK_ACTIONS.map((action) => ({
+          ...action,
+          description: `${action.label} with ${cloudProvider}`,
+        }))
       : [];
-  const attachmentsAvailable = capabilities?.available === true;
-  const attachmentTitle = attachmentsAvailable
-    ? capabilities.ocr
-      ? "Add a text file or image for private on-device processing"
-      : "Add a text file for private on-device processing"
-    : capabilities
-      ? "Attachments require the on-device assistant"
-      : "Checking on-device attachment support";
+  const attachmentsAvailable = false;
+  const attachmentTitle =
+    "Attachments are not available for provider connections yet";
 
   // Skill toggles for the sidebar; a plain version counter re-reads
   // localStorage-backed state after each change.
@@ -1054,17 +665,15 @@ export function useNativeAssistant({
   return {
     addSkill,
     activeCloudProvider,
-    attachmentAccept: assistantAttachmentAccept(capabilities),
+    attachmentAccept: "",
     attachmentsAvailable,
     attachmentTitle,
     applyProposal,
-    capabilities,
     cloudProvider,
     deleteSkill,
     jobs,
     messages,
     quickActions,
-    refreshCapabilities,
     runQuickAction,
     runningJobs,
     skills,

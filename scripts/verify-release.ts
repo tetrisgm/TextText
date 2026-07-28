@@ -70,19 +70,6 @@ async function verifyRelease() {
       command: ["swift", "test", "--package-path", "mac"],
     },
     {
-      id: "native.live_ai",
-      timeoutSeconds: 900,
-      command: [
-        "swift",
-        "test",
-        "--package-path",
-        "mac",
-        "--filter",
-        "NativeAIIntegrationProbeTests/testLiveAgentToolSession",
-      ],
-      environment: { WRITE_LIVE_AI_PROBE: "1" },
-    },
-    {
       id: "apple.eval",
       timeoutSeconds: 600,
       command: ["mac/scripts/apple-plan-eval.sh", "--skip-tests"],

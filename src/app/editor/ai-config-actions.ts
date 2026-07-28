@@ -3,10 +3,15 @@
 import { recordAction } from "@/lib/audit";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import {
+  defaultCloudAiModel,
+  isCloudAiModel,
+} from "@/lib/ai/provider-catalog";
+import {
   getWorkspaceAiConfigStatus,
   isCloudAiProvider,
   removeWorkspaceAiConfig,
   saveWorkspaceAiConfig,
+  validateWorkspaceAiConnection,
   type CloudAiProvider,
 } from "@/lib/ai/workspace-ai-config.server";
 
@@ -14,6 +19,7 @@ export type WorkspaceAiSettingsState = {
   allowed: boolean;
   configured: boolean;
   provider: CloudAiProvider | null;
+  model: string | null;
 };
 
 function cleanHandle(value: unknown): string {
@@ -49,30 +55,40 @@ export async function getWorkspaceAiSettingsAction(
     const status = await getWorkspaceAiConfigStatus(access.blogId);
     return { allowed: true, ...status };
   } catch {
-    return { allowed: false, configured: false, provider: null };
+    return { allowed: false, configured: false, provider: null, model: null };
   }
 }
 
 export async function saveWorkspaceAiSettingsAction(
   handleInput: unknown,
   providerInput: unknown,
+  modelInput: unknown,
   apiKeyInput: unknown,
 ): Promise<WorkspaceAiSettingsState> {
   const access = await ownerAccess(handleInput);
   if (!isCloudAiProvider(providerInput)) {
     throw new Error("Choose Anthropic or OpenAI.");
   }
+  const model = isCloudAiModel(providerInput, modelInput)
+    ? modelInput
+    : defaultCloudAiModel(providerInput);
   const apiKey = cleanApiKey(apiKeyInput);
-  await saveWorkspaceAiConfig(access.blogId, providerInput, apiKey);
+  await validateWorkspaceAiConnection(providerInput, model, apiKey);
+  await saveWorkspaceAiConfig(access.blogId, providerInput, model, apiKey);
   await recordAction({
     actorUserId: access.ownerId,
     actorType: "human",
     actionName: "configure_cloud_ai",
     targetType: "workspace",
     targetId: access.blogId,
-    inputSummary: providerInput,
+    inputSummary: `${providerInput}:${model}`,
   });
-  return { allowed: true, configured: true, provider: providerInput };
+  return {
+    allowed: true,
+    configured: true,
+    provider: providerInput,
+    model,
+  };
 }
 
 export async function removeWorkspaceAiSettingsAction(
@@ -89,5 +105,5 @@ export async function removeWorkspaceAiSettingsAction(
     targetId: access.blogId,
     inputSummary: previous.provider ?? undefined,
   });
-  return { allowed: true, configured: false, provider: null };
+  return { allowed: true, configured: false, provider: null, model: null };
 }

@@ -10,32 +10,38 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { blogs, users, workspaceAiConfigs } from "@/lib/db/schema";
+import {
+  CLOUD_AI_CATALOG,
+  defaultCloudAiModel,
+  isCloudAiModel,
+  isCloudAiProvider,
+  type CloudAiProvider,
+} from "@/lib/ai/provider-catalog";
 
-export const CLOUD_AI_PROVIDERS = ["anthropic", "openai"] as const;
-export type CloudAiProvider = (typeof CLOUD_AI_PROVIDERS)[number];
+export type { CloudAiProvider } from "@/lib/ai/provider-catalog";
 export type CloudProviderLabel = "Anthropic" | "OpenAI";
 
 export type WorkspaceAiConfig = {
   provider: CloudAiProvider;
+  model: string;
   apiKey: string;
 };
 
 export type WorkspaceAiConfigStatus = {
   configured: boolean;
   provider: CloudAiProvider | null;
+  model: string | null;
 };
 
 const CIPHER_VERSION = "v1";
 const IV_BYTES = 12;
 
-export function isCloudAiProvider(value: unknown): value is CloudAiProvider {
-  return CLOUD_AI_PROVIDERS.some((provider) => provider === value);
-}
+export { isCloudAiProvider };
 
 export function cloudProviderLabel(
   provider: CloudAiProvider,
 ): CloudProviderLabel {
-  return provider === "anthropic" ? "Anthropic" : "OpenAI";
+  return CLOUD_AI_CATALOG[provider].label;
 }
 
 function encryptionKey(): Buffer {
@@ -88,50 +94,99 @@ export function decryptWorkspaceAiKey(value: string): string {
   ]).toString("utf8");
 }
 
+export async function validateWorkspaceAiConnection(
+  provider: CloudAiProvider,
+  model: string,
+  apiKey: string,
+): Promise<void> {
+  const endpoint =
+    provider === "openai"
+      ? `https://api.openai.com/v1/models/${encodeURIComponent(model)}`
+      : `https://api.anthropic.com/v1/models/${encodeURIComponent(model)}`;
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers:
+      provider === "openai"
+        ? { Authorization: `Bearer ${apiKey}` }
+        : {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+    signal: AbortSignal.timeout(8_000),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(
+      response.status === 401 || response.status === 403
+        ? `That ${cloudProviderLabel(provider)} API key was not accepted.`
+        : `The selected ${cloudProviderLabel(provider)} model is not available to this API account.`,
+    );
+  }
+}
+
 export async function getWorkspaceAiConfigStatus(
   blogId: string,
 ): Promise<WorkspaceAiConfigStatus> {
-  if (!db) return { configured: false, provider: null };
+  if (!db) return { configured: false, provider: null, model: null };
   const [row] = await db
-    .select({ provider: workspaceAiConfigs.provider })
+    .select({
+      provider: workspaceAiConfigs.provider,
+      model: workspaceAiConfigs.model,
+    })
     .from(workspaceAiConfigs)
     .where(eq(workspaceAiConfigs.blogId, blogId))
     .limit(1);
   const provider = row?.provider;
   return isCloudAiProvider(provider)
-    ? { configured: true, provider }
-    : { configured: false, provider: null };
+    ? {
+        configured: true,
+        provider,
+        model: isCloudAiModel(provider, row.model)
+          ? row.model
+          : defaultCloudAiModel(provider),
+      }
+    : { configured: false, provider: null, model: null };
 }
 
 export async function getWorkspaceAiConfigStatusForOwner(
   sub: string,
 ): Promise<WorkspaceAiConfigStatus> {
-  if (!db) return { configured: false, provider: null };
+  if (!db) return { configured: false, provider: null, model: null };
   const [row] = await db
-    .select({ provider: workspaceAiConfigs.provider })
+    .select({
+      provider: workspaceAiConfigs.provider,
+      model: workspaceAiConfigs.model,
+    })
     .from(workspaceAiConfigs)
     .innerJoin(blogs, eq(workspaceAiConfigs.blogId, blogs.id))
     .innerJoin(users, eq(blogs.ownerId, users.id))
     .where(and(eq(users.appleSub, sub), isNull(blogs.deletedAt)))
     .limit(1);
   return isCloudAiProvider(row?.provider)
-    ? { configured: true, provider: row.provider }
-    : { configured: false, provider: null };
+    ? {
+        configured: true,
+        provider: row.provider,
+        model: isCloudAiModel(row.provider, row.model)
+          ? row.model
+          : defaultCloudAiModel(row.provider),
+      }
+    : { configured: false, provider: null, model: null };
 }
 
 export async function saveWorkspaceAiConfig(
   blogId: string,
   provider: CloudAiProvider,
+  model: string,
   apiKey: string,
 ): Promise<void> {
   if (!db) throw new Error("Cloud AI settings need a configured database.");
   const apiKeyCiphertext = encryptWorkspaceAiKey(apiKey);
   await db
     .insert(workspaceAiConfigs)
-    .values({ blogId, provider, apiKeyCiphertext })
+    .values({ blogId, provider, model, apiKeyCiphertext })
     .onConflictDoUpdate({
       target: workspaceAiConfigs.blogId,
-      set: { provider, apiKeyCiphertext, updatedAt: new Date() },
+      set: { provider, model, apiKeyCiphertext, updatedAt: new Date() },
     });
 }
 
@@ -152,6 +207,7 @@ export async function getWorkspaceAiConfigForOwner(
   const [row] = await db
     .select({
       provider: workspaceAiConfigs.provider,
+      model: workspaceAiConfigs.model,
       apiKeyCiphertext: workspaceAiConfigs.apiKeyCiphertext,
     })
     .from(workspaceAiConfigs)
@@ -162,6 +218,9 @@ export async function getWorkspaceAiConfigForOwner(
   if (!row || !isCloudAiProvider(row.provider)) return null;
   return {
     provider: row.provider,
+    model: isCloudAiModel(row.provider, row.model)
+      ? row.model
+      : defaultCloudAiModel(row.provider),
     apiKey: decryptWorkspaceAiKey(row.apiKeyCiphertext),
   };
 }

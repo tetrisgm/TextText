@@ -96,31 +96,22 @@ The scope guard in `src/lib/mcp/auth.ts` runs before tool execution:
 MCP exposes every canonical definition in `tools/list`; authorization determines which
 ones the current token may call.
 
-### Native assistant
+### In-app assistant
 
-`src/lib/ai/agent-tools.ts` projects the same canonical definitions into the native
-agent format. Its executor runs in the signed-in page and maps calls onto the
-same optimistic pool updates and server actions used by the workspace UI.
-Failed server writes roll back optimistic state. Native tool results are
-compact, context-window-aware projections of workspace state; they are not the
-MCP wire responses.
-
-`src/lib/ai/native.ts` is the typed page-side client for the Mac app's
-`nativeAI` bridge. Tool calls originate in Apple's on-device model, cross into
-the page through a request-correlated callback, run in the registered page
-executor, and return to the model. The native model therefore cannot perform
-an operation that the current signed-in page cannot perform.
+The in-app assistant calls the workspace command surface through the
+workspace-configured Anthropic or OpenAI provider. The workspace owner chooses
+the provider and model in Settings and supplies the API key. The key is
+encrypted server-side, is write-only in the UI, and is never returned to the
+browser.
 
 Texttext does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
 
 ## Assistant status
 
-The assistant is implemented and available inside Texttext for Mac when Apple's
-Foundation Models runtime reports available. Text generation and agent tool
-calling require macOS 26 or later, eligible hardware, Apple Intelligence
-enabled, and a ready on-device model. Vision OCR is used for image text on
-supported Mac releases.
+The assistant is available on the Mac app and web after a workspace owner
+connects Anthropic or OpenAI. Texttext does not use an owner-funded shared
+gateway and does not automatically fall back to an on-device model.
 
 Current assistant behavior includes:
 
@@ -133,37 +124,28 @@ Current assistant behavior includes:
   asset changes
 - quick actions for summarize, rewrite, title, tags, and excerpt
 - preview, apply, undo, and stale-source checks for quick-action edits
-- text attachments and private on-device OCR for image attachments when the
-  capability probe allows it
 - background job state that keeps a reply attached to the context that
   submitted it even if the user navigates elsewhere
 
-On the plain web, or when the bridge or model is unavailable, the assistant
-uses a workspace owner's configured cloud provider when present. Without that
-explicit setting it explains why the local model cannot run. Cloud replies and
-progress are marked as off-device.
+Attachments are deferred until provider uploads can be implemented without
+leaking workspace data or provider credentials.
 
-## Provider ladder
+## Provider connections
 
-The intended order remains local first, optional cloud second, and external
-agents third. Only the following states are implemented today:
-
-1. **Apple on-device: shipped.** This is the in-app assistant provider in
-   Texttext for Mac. Utility operations and agent commands run locally through
-   `mac/Sources/Write/NativeAI.swift` and the `nativeAI` bridge.
-2. **Bring-your-own cloud: shipped.** A workspace owner can add an Anthropic or
-   OpenAI key in Settings. The encrypted key stays server-side and is never
-   returned to the browser. The assistant uses it only when the on-device model
-   is unavailable, labels that work as off-device, and exposes only tools that
-   need no confirmation and cannot fetch a model-chosen URL. The existing owner
-   AI Gateway key remains available when configured on the server.
-3. **External agents over MCP: shipped.** ChatGPT, Claude, Cursor, Claude
+1. **Bring-your-own API key: shipped.** A workspace owner can add an Anthropic
+   or OpenAI API key and select a supported model in Settings. The encrypted
+   key stays server-side and is never returned to the browser. The assistant
+   exposes only tools that need no confirmation and cannot fetch a
+   model-chosen URL.
+2. **External agents over MCP: shipped.** ChatGPT, Claude, Cursor, Claude
    Code, and other MCP hosts can connect to `/api/mcp`. Their model and billing
-   remain in the external client. That is not an in-app provider integration.
+   remain in the external client. This is how an existing ChatGPT or Claude.ai
+   subscription works with Texttext.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains
-opt-in, preserves the local-first default, and executes the same workspace
-contract rather than creating a parallel command system.
+opt-in and executes the same workspace contract rather than creating a
+parallel command system. The legacy native bridge remains dormant code and is
+not an active provider or fallback.
 
 ## Context model
 

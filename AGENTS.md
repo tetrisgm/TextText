@@ -61,17 +61,15 @@ This version has breaking changes. APIs, conventions, and file structure may all
 Full architecture: docs/ai-sidebar-architecture.md. The short contract every
 agent working here follows:
 
-- **The provider ladder, in order.** (1) Apple on-device foundation models
-  are the DEFAULT AI layer on Apple devices (the Mac app's `nativeAI` bridge,
-  `mac/Sources/Write/NativeAI.swift` + `src/lib/ai/native.ts` +
-  `src/lib/ai/agent-tools.ts`): free, private, offline; it owns the instant
-  utility ops (title, tags, excerpt, summarize, rewrite, categorize, OCR)
-  AND agent commands via on-device tool calling (the `agent` op; tools
-  defined in Swift, executed by the page through the registered executor). (2) Bring-your-own cloud keys
-  (workspace settings) augment it for long-context, tool-calling, and web
-  research. (3) External agents connect via MCP (`/api/mcp`,
-  click-to-approve OAuth). Never send content to a cloud model when the
-  local layer can do the job.
+- **Two explicit ways to connect AI.** (1) The in-app assistant uses a
+  workspace-owned Anthropic or OpenAI API key and the model selected in
+  Workspace Settings. Texttext never silently spends an owner-funded shared
+  key. Provider API billing is separate from ChatGPT and Claude.ai
+  subscriptions. (2) Existing ChatGPT, Claude, Cursor, and other agent
+  subscriptions connect externally through MCP (`/api/mcp`,
+  click-to-approve OAuth) and keep their model and billing in that client.
+  The legacy Apple Foundation Models bridge is not an active product provider
+  and must not be restored as an automatic fallback.
 - **One command surface, three consumers.** The UI, the in-app assistant,
   and the MCP server call the same workspace commands. The app never
   consumes its own MCP server over the network.

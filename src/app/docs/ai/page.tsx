@@ -206,8 +206,8 @@ export default function AiDocsPage() {
             not rewrite the whole body. It reads the item back to confirm. The
             note stays a draft and remains unlisted forever. The{" "}
             <code className="connect-inline-code">markdown_fragment</code> input is
-            an MCP-only affordance, so this fragment step applies to external
-            MCP clients rather than the native on-device assistant.
+            part of the external MCP flow shown here. The in-app assistant uses
+            the shared workspace command surface directly.
           </p>
 
           <h3>Publish a drafted article</h3>

@@ -1,6 +1,5 @@
-// Cloud assistant rung. A workspace key uses its provider directly; the owner's
-// server AI Gateway key remains the default fallback. Both paths are off until
-// explicitly configured, and both call the same filtered workspace tools.
+// Workspace-owned cloud assistant. Texttext never spends a shared provider key:
+// the owner explicitly connects a provider and chooses a model.
 //
 // MVP: non-streaming (returns the final reply). The cloud tool set excludes
 // confirmation-gated destructive/sharing/publish tools until an interactive
@@ -13,7 +12,6 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { getCurrentUser } from "@/lib/session";
 import { getOwnedBlog, getUserIdBySub } from "@/lib/store";
 import { cloudAssistantTools } from "@/lib/ai/cloud-tools";
-import { cloudEnabled } from "@/lib/ai/cloud-gate";
 import {
   cloudProviderLabel,
   getWorkspaceAiConfigForOwner,
@@ -23,17 +21,12 @@ import {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const GATEWAY_MODEL = "anthropic/claude-sonnet-5";
-const ANTHROPIC_MODEL = "claude-sonnet-5";
-const OPENAI_MODEL = "gpt-5.5";
 const MAX_STEPS = 8;
 const MAX_HISTORY = 20;
 // Bound one request's input tokens: a single oversized message cannot balloon
 // the model bill. Generous for a real prompt, small enough to defeat abuse.
 const MAX_MESSAGE_CHARS = 16_000;
-// Best-effort per-user throttle so one owner cannot spin the shared gateway
-// budget. In-memory and per-instance (serverless), a backstop rather than a
-// hard quota; the real gate is off-by-default + owner-only below.
+// Best-effort per-user throttle. Provider-side limits remain authoritative.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_WINDOW = 20;
 const recentHits = new Map<string, number[]>();
@@ -107,14 +100,12 @@ export async function GET() {
   const workspace = await getOwnedBlog(user.sub);
   if (!workspace) return Response.json({ enabled: false, provider: null });
   const status = await getWorkspaceAiConfigStatusForOwner(user.sub);
-  const enabled = status.configured || Boolean(process.env.AI_GATEWAY_API_KEY);
+  const enabled = status.configured;
   return Response.json({
     enabled,
-    provider: enabled
-      ? status.provider
-        ? cloudProviderLabel(status.provider)
-        : "Anthropic"
-      : null,
+    provider:
+      enabled && status.provider ? cloudProviderLabel(status.provider) : null,
+    model: enabled ? status.model : null,
   });
 }
 
@@ -137,9 +128,9 @@ export async function POST(request: Request) {
     );
   }
   const config = await getWorkspaceAiConfigForOwner(user.sub);
-  if (!cloudEnabled(config)) {
+  if (!config) {
     return Response.json(
-      { error: "The cloud assistant is not enabled." },
+      { error: "Connect an AI provider in Workspace Settings." },
       { status: 404 },
     );
   }
@@ -167,12 +158,11 @@ export async function POST(request: Request) {
     userId: userId ?? null,
     handle: workspace.handle,
   };
-  const provider = config ? cloudProviderLabel(config.provider) : "Anthropic";
-  const model = config
-    ? config.provider === "anthropic"
-      ? createAnthropic({ apiKey: config.apiKey })(ANTHROPIC_MODEL)
-      : createOpenAI({ apiKey: config.apiKey })(OPENAI_MODEL)
-    : GATEWAY_MODEL;
+  const provider = cloudProviderLabel(config.provider);
+  const model =
+    config.provider === "anthropic"
+      ? createAnthropic({ apiKey: config.apiKey })(config.model)
+      : createOpenAI({ apiKey: config.apiKey })(config.model);
 
   try {
     const result = await generateText({
@@ -182,7 +172,7 @@ export async function POST(request: Request) {
       tools: cloudAssistantTools(actor),
       stopWhen: stepCountIs(MAX_STEPS),
     });
-    return Response.json({ text: result.text, provider });
+    return Response.json({ text: result.text, provider, model: config.model });
   } catch {
     // Provider errors can carry request metadata. Do not log the error object,
     // because a user-supplied API key must never reach logs.

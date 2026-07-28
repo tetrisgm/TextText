@@ -154,6 +154,7 @@ export const workspaceAiConfigs = pgTable(
       .references(() => blogs.id, { onDelete: "cascade" }),
     /** "anthropic" | "openai" */
     provider: text("provider").notNull(),
+    model: text("model").notNull(),
     apiKeyCiphertext: text("api_key_ciphertext").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

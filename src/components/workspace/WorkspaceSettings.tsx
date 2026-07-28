@@ -13,7 +13,11 @@ import { ConnectPanel } from "@/components/ConnectPanel";
 import type { AssistantSkill } from "@/lib/ai/skills";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
-import type { CloudAiProvider } from "@/lib/ai/workspace-ai-config.server";
+import {
+  CLOUD_AI_CATALOG,
+  defaultCloudAiModel,
+  type CloudAiProvider,
+} from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
 import { ShareDialog } from "./ShareDialog";
 import styles from "./WorkspaceSettings.module.css";
@@ -50,6 +54,7 @@ export function WorkspaceSettings({
   const [aiProvider, setAiProvider] =
     useState<CloudAiProvider>("anthropic");
   const [aiKey, setAiKey] = useState("");
+  const [aiModel, setAiModel] = useState(defaultCloudAiModel("anthropic"));
   const [aiEditing, setAiEditing] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -74,6 +79,7 @@ export function WorkspaceSettings({
       if (cancelled) return;
       setAiSettings(next);
       if (next.provider) setAiProvider(next.provider);
+      if (next.model) setAiModel(next.model);
     });
     return () => {
       cancelled = true;
@@ -122,6 +128,7 @@ export function WorkspaceSettings({
       const next = await saveWorkspaceAiSettingsAction(
         blog.handle,
         aiProvider,
+        aiModel,
         aiKey,
       );
       setAiSettings(next);
@@ -214,10 +221,11 @@ export function WorkspaceSettings({
           <section className={styles.section} aria-labelledby="settings-ai">
             <div className={styles.sectionHeader}>
               <div>
-                <h2 id="settings-ai">AI</h2>
+                <h2 id="settings-ai">AI connections</h2>
                 <p>
-                  Keep Apple&apos;s private on-device model as the default. Add
-                  your own provider key only as an off-device fallback.
+                  Connect your own provider API account and choose the model
+                  Texttext uses. Keys are encrypted and scoped to this
+                  workspace.
                 </p>
               </div>
             </div>
@@ -229,7 +237,8 @@ export function WorkspaceSettings({
                     {aiSettings.provider === "anthropic"
                       ? "Anthropic"
                       : "OpenAI"}
-                    . The saved key is write-only and cannot be viewed here.
+                    {aiSettings.model ? ` · ${aiSettings.model}` : ""}. The
+                    saved key is write-only and cannot be viewed here.
                   </small>
                 </span>
                 <div className={styles.aiActions}>
@@ -262,16 +271,47 @@ export function WorkspaceSettings({
                   <span>Provider</span>
                   <select
                     value={aiProvider}
-                    onChange={(event) =>
-                      setAiProvider(event.currentTarget.value as CloudAiProvider)
-                    }
+                    onChange={(event) => {
+                      const provider = event.currentTarget
+                        .value as CloudAiProvider;
+                      setAiProvider(provider);
+                      setAiModel(defaultCloudAiModel(provider));
+                    }}
                   >
                     <option value="anthropic">Anthropic</option>
                     <option value="openai">OpenAI</option>
                   </select>
                 </label>
+                <label>
+                  <span>Model</span>
+                  <select
+                    value={aiModel}
+                    onChange={(event) =>
+                      setAiModel(event.currentTarget.value)
+                    }
+                  >
+                    {CLOUD_AI_CATALOG[aiProvider].models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className={styles.aiKeyField}>
-                  <span>API key</span>
+                  <span>
+                    API key ·{" "}
+                    <a
+                      href={
+                        aiProvider === "anthropic"
+                          ? "https://console.anthropic.com/settings/keys"
+                          : "https://platform.openai.com/api-keys"
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Create one
+                    </a>
+                  </span>
                   <input
                     type="password"
                     value={aiKey}
@@ -316,6 +356,15 @@ export function WorkspaceSettings({
                 {aiError}
               </p>
             )}
+            <p className={styles.aiNotConfigured}>
+              Provider API usage is billed separately from ChatGPT and
+              Claude.ai subscriptions. To use an existing subscription, connect
+              Texttext from that app through{" "}
+              <a href="/docs/ai" target="_blank" rel="noreferrer">
+                MCP
+              </a>
+              .
+            </p>
           </section>
         )}
 

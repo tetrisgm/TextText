@@ -6455,11 +6455,9 @@ function LocalWorkspaceShell({
         submitting={assistant.submitting}
         launcherBusy={assistant.runningJobs > 0}
         composerPlaceholder={
-          assistant.capabilities?.available
-            ? "Ask or act, on this Mac"
-            : assistant.cloudProvider
-              ? `Ask with ${assistant.cloudProvider} (off this Mac)`
-            : "Ask about this page"
+          assistant.cloudProvider
+            ? `Ask or act with ${assistant.cloudProvider}`
+            : "Connect an AI provider in Settings"
         }
         accept={assistant.attachmentAccept}
         attachmentDisabled={!assistant.attachmentsAvailable}
@@ -6467,7 +6465,6 @@ function LocalWorkspaceShell({
       >
         <AssistantConversation
           activeCloudProvider={assistant.activeCloudProvider}
-          capabilities={assistant.capabilities}
           cloudProvider={assistant.cloudProvider}
           jobs={assistant.jobs}
           messages={assistant.messages}
@@ -6485,7 +6482,6 @@ function LocalWorkspaceShell({
               navigatePath(job.contextKey.slice("place:".length));
             }
           }}
-          onRefreshCapabilities={assistant.refreshCapabilities}
           onUsePrompt={assistantComposer.setText}
           onQuickAction={assistant.runQuickAction}
           onUndoProposal={assistant.undoProposal}

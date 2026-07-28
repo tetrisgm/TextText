@@ -103,7 +103,7 @@ export async function GET(request: Request) {
       name,
       description,
       instructions: truncated
-        ? `${trimmedBody.slice(0, INSTRUCTION_LIMIT)}\n\n(Skill trimmed to fit the on-device model.)`
+        ? `${trimmedBody.slice(0, INSTRUCTION_LIMIT)}\n\n(Skill trimmed to fit the assistant context.)`
         : trimmedBody,
       source: `https://www.skills.sh/${ref.owner}/${ref.repo}/${ref.skill}`,
       truncated,
