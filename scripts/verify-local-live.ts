@@ -1,4 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import {
+  formatLocalLiveReadiness,
+  isLocalLiveServerReady,
+  localLiveReadinessPaths,
+  type LocalLiveReadinessProbe,
+} from "./local-live-readiness";
 
 const port = Number.parseInt(process.env.WRITE_EVAL_PORT ?? "3107", 10);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) {
@@ -68,35 +74,37 @@ async function stopServer() {
 
 async function waitForServer() {
   const deadline = Date.now() + 120_000;
-  const readinessPaths = ["/signin", "/api/sync/v1/files"];
+  let lastReadinessDiagnostic = "no response";
   while (Date.now() < deadline) {
     if (server?.exitCode !== null) {
       throw new Error(
         `Local Texttext server exited before readiness.\n${serverOutput}`,
       );
     }
-    try {
-      const responses = await Promise.all(
-        readinessPaths.map((path) =>
-          fetch(`${origin}${path}`, {
-            redirect: "manual",
-            signal: AbortSignal.timeout(5_000),
-          }),
-        ),
-      );
-      const ready = responses.every(
-        (response) => response.status !== 404 && response.status < 500,
-      );
-      await Promise.all(
-        responses.map((response) => response.body?.cancel()),
-      );
-      if (ready) return;
-    } catch {
-      // Startup connection failures are expected until Next is listening.
-    }
+    const probeResults = await Promise.all(
+      localLiveReadinessPaths.map(
+        async (path): Promise<LocalLiveReadinessProbe> => {
+          try {
+            const response = await fetch(`${origin}${path}`, {
+              redirect: "manual",
+              signal: AbortSignal.timeout(5_000),
+            });
+            const probe = { path, status: response.status } as const;
+            await response.body?.cancel();
+            return probe;
+          } catch {
+            return { path, status: "error" };
+          }
+        },
+      ),
+    );
+    lastReadinessDiagnostic = formatLocalLiveReadiness(probeResults);
+    if (isLocalLiveServerReady(probeResults)) return;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Local Texttext server did not become ready.\n${serverOutput}`);
+  throw new Error(
+    `Local Texttext server did not become ready. Last probes: ${lastReadinessDiagnostic}\n${serverOutput}`,
+  );
 }
 
 async function runBounded(
