@@ -323,9 +323,10 @@ for tool in listed_tools:
         fail("mcp-tool-open-world-contract", code, json.dumps(tool))
 print(f"6. MCP tools/list: {len(tool_names)} canonical tools")
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "resources/list", "id": 21, "params": {},
-}, headers=mcp_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("resources/list", 21),
+    headers=modern_headers("resources/list", mcp_headers),
+)
 if code != 200:
     fail("mcp-resources", code, body)
 try:
@@ -336,9 +337,10 @@ resource_uris = {resource.get("uri") for resource in resources}
 if resource_uris != EXPECTED_RESOURCES:
     fail("mcp-resources-contract", code, json.dumps(sorted(resource_uris)))
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "resources/templates/list", "id": 22, "params": {},
-}, headers=mcp_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("resources/templates/list", 22),
+    headers=modern_headers("resources/templates/list", mcp_headers),
+)
 if code != 200:
     fail("mcp-resource-templates", code, body)
 try:
@@ -359,9 +361,10 @@ print(
     f"{len(resource_uris)} resources, {len(resource_template_uris)} template"
 )
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "prompts/list", "id": 23, "params": {},
-}, headers=mcp_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("prompts/list", 23),
+    headers=modern_headers("prompts/list", mcp_headers),
+)
 if code != 200:
     fail("mcp-prompts", code, body)
 try:
@@ -373,10 +376,10 @@ if prompt_names != EXPECTED_PROMPTS:
     fail("mcp-prompts-contract", code, json.dumps(sorted(prompt_names)))
 print(f"6b. MCP prompts/list: {len(prompt_names)} reusable prompts")
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/call", "id": 3,
-    "params": {"name": "get_workspace", "arguments": {}},
-}, headers=mcp_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/call", 3, {"name": "get_workspace", "arguments": {}}),
+    headers=modern_headers("tools/call", mcp_headers, name="get_workspace"),
+)
 if code != 200:
     fail("mcp-get-workspace", code, body)
 try:
@@ -442,19 +445,19 @@ read_headers = {
     "Authorization": f"Bearer {read_token['access_token']}",
     "Accept": "application/json, text/event-stream",
 }
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/call", "id": 31,
-    "params": {"name": "get_workspace", "arguments": {}},
-}, headers=read_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/call", 31, {"name": "get_workspace", "arguments": {}}),
+    headers=modern_headers("tools/call", read_headers, name="get_workspace"),
+)
 if code != 200:
     fail("read-scope-read", code, body)
-code, headers, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/call", "id": 32,
-    "params": {
+code, headers, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/call", 32, {
         "name": "create_folder",
         "arguments": {"parent_path": "blog", "name": "Must Not Exist"},
-    },
-}, headers=read_headers)
+    }),
+    headers=modern_headers("tools/call", read_headers, name="create_folder"),
+)
 www = headers.get("WWW-Authenticate", headers.get("www-authenticate", ""))
 if code != 403 or "insufficient_scope" not in body or 'scope="sync"' not in www:
     fail("read-scope-mutation", code, f"{body}\nWWW-Authenticate: {www}")
@@ -484,9 +487,10 @@ rotated_headers = {
     "Authorization": f"Bearer {rotated_token}",
     "Accept": "application/json, text/event-stream",
 }
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 4, "params": {},
-}, headers=rotated_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/list", 4),
+    headers=modern_headers("tools/list", rotated_headers),
+)
 if code != 200:
     fail("mcp-tools-after-refresh", code, body)
 print("7. refresh rotation + MCP authentication: ok")
@@ -501,15 +505,17 @@ replay = json.loads(body)
 if code != 400 or replay.get("error") != "invalid_grant":
     fail("refresh-replay", code, body)
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 5, "params": {},
-}, headers=rotated_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/list", 5),
+    headers=modern_headers("tools/list", rotated_headers),
+)
 if code != 401:
     fail("refresh-replay-family-revocation", code, body)
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 6, "params": {},
-}, headers=mcp_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/list", 6),
+    headers=modern_headers("tools/list", mcp_headers),
+)
 if code != 401:
     fail("refresh-replay-original-access-revocation", code, body)
 print("8. replay rejected and token family revoked: ok")
