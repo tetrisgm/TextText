@@ -24,18 +24,28 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 WORKFLOW_CONTRACT_HASH="$(shasum -a 256 "$ROOT/src/lib/ai/tools.ts" | awk '{print $1}')"
 RELEASE_GATE_CONTRACT="$ROOT/scripts/release-gates.json"
+# Generated from mac/scripts/workflow-capability-eval.ts. Keeping a second copy
+# of these ids here is how the set drifts, so read the manifest instead.
+HEALTH_CHECK_MANIFEST="$ROOT/mac/health-checks.json"
+if [ ! -f "$HEALTH_CHECK_MANIFEST" ]; then
+  echo "Missing $HEALTH_CHECK_MANIFEST. Run: npx tsx scripts/sync-health-checks.ts" >&2
+  exit 1
+fi
 mkdir -p "$(dirname "$OUTPUT")"
 
 python3 - \
   "$OUTPUT" "$VERSION" "$BUILD" "$SOURCE_COMMIT" \
   "$WORKFLOW_CONTRACT_HASH" "$CAPABILITY_RECEIPT" \
-  "$RELEASE_GATE_RECEIPT" "$RELEASE_GATE_CONTRACT" <<'PY'
+  "$RELEASE_GATE_RECEIPT" "$RELEASE_GATE_CONTRACT" "$HEALTH_CHECK_MANIFEST" <<'PY'
 import datetime
 import json
 import os
 import sys
 
-output, version, build, commit, contract_hash, capability_path, gate_path, gate_contract_path = sys.argv[1:]
+(
+    output, version, build, commit, contract_hash, capability_path,
+    gate_path, gate_contract_path, health_manifest_path,
+) = sys.argv[1:]
 with open(gate_contract_path, encoding="utf-8") as handle:
     gate_contract = json.load(handle)
 required_gates = gate_contract.get("requiredChecks")
@@ -48,13 +58,16 @@ if any(not isinstance(check_id, str) for check_id in required_gates):
 if len(set(required_gates)) != len(required_gates):
     raise SystemExit("Release gate contract contains duplicate checks.")
 required_gates = set(required_gates)
-required_capabilities = {
-    "workflow.folder_trash_restore",
-    "workflow.sharing_access",
-    "workflow.comments",
-    "workflow.bookmark_recapture",
-    "workflow.cover_assets",
-}
+with open(health_manifest_path, encoding="utf-8") as handle:
+    health_manifest = json.load(handle)
+required_capabilities = health_manifest.get("capabilityWorkflows")
+if not isinstance(required_capabilities, list) or not required_capabilities:
+    raise SystemExit("Health check manifest lists no capability workflows.")
+if any(not isinstance(check_id, str) for check_id in required_capabilities):
+    raise SystemExit("Health check manifest has an invalid capability workflow.")
+if len(set(required_capabilities)) != len(required_capabilities):
+    raise SystemExit("Health check manifest has duplicate capability workflows.")
+required_capabilities = set(required_capabilities)
 with open(capability_path, encoding="utf-8") as handle:
     capability_receipt = json.load(handle)
 checks = capability_receipt.get("checks")

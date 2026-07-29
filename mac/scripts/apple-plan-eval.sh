@@ -147,7 +147,7 @@ check "health.finder-readiness" "Reliability: Finder health waits for transient 
 check "health.attestation" "Reliability: release bundle carries a verified build attestation" \
   "grep -q 'AppHealthBuildAttestation.json' '$MAC/scripts/build-app.sh' && grep -q 'write-build-attestation.sh' '$ROOT/release/ship.sh'"
 check "health.workflows" "Reliability: destructive web workflows use signed capability receipts" \
-  "test -x '$MAC/scripts/verify-workflow-capabilities.sh' && grep -q 'WRITE_WORKFLOW_CAPABILITY_RECEIPT' '$MAC/scripts/write-build-attestation.sh' && grep -q 'workflow.cover_assets' '$MAC/scripts/verify-app-health.sh'"
+  "test -x '$MAC/scripts/verify-workflow-capabilities.sh' && grep -q 'WRITE_WORKFLOW_CAPABILITY_RECEIPT' '$MAC/scripts/write-build-attestation.sh' && grep -q 'workflow.cover_assets' '$MAC/health-checks.json'"
 check "release.arm64" "Release: Write binaries and Sparkle feed require Apple silicon" \
   "test -x '$MAC/scripts/verify-apple-silicon-app.sh' && grep -q -- '--triple arm64-apple-macosx14.0' '$MAC/scripts/build-app.sh' && grep -q 'hardwareRequirements' '$MAC/scripts/release.sh' && grep -q 'PUBLIC_HARDWARE_REQUIREMENTS' '$ROOT/release/ship.sh'"
 
