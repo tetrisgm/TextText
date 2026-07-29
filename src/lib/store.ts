@@ -113,6 +113,8 @@ import {
   type DocumentSnapshot,
   type DocumentVisibility,
   type TemplateReference,
+  documentFieldValueSchema,
+  type DocumentFieldValue,
 } from "./documents/model";
 import { resolveDocumentVisibility } from "./documents/visibility";
 import {
@@ -4047,6 +4049,14 @@ type SavePostOptions = {
    */
   expectedRevision?: number;
   audit?: AuditEntry;
+  /**
+   * Custom field values to merge into the canonical document's content.fields,
+   * applied on top of whatever base canonicalDocumentForSave derives (the
+   * supplied document, the existing row, or the legacy projection). A null
+   * clears a key. This is how an agent's update_item writes field values
+   * without needing the full document loaded client-side.
+   */
+  fieldsPatch?: Record<string, DocumentFieldValue | null>;
 };
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -4057,6 +4067,7 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 function canonicalDocumentForSave(
   post: Post,
   existingRow?: PostRow,
+  fieldsPatch?: Record<string, DocumentFieldValue | null>,
 ): DocumentSnapshot {
   const current = existingRow ? mapPost(existingRow) : null;
   const suppliedDocument = post.document
@@ -4067,6 +4078,12 @@ function canonicalDocumentForSave(
     current?.document ??
     documentFromLegacyPost(post);
   const fields = { ...base.content.fields };
+  if (fieldsPatch) {
+    for (const [key, value] of Object.entries(fieldsPatch)) {
+      if (value === null) delete fields[key];
+      else fields[key] = documentFieldValueSchema.parse(value);
+    }
+  }
 
   const legacyChanged = <K extends keyof Post>(key: K): boolean => {
     if (!current) return !suppliedDocument;
@@ -4203,7 +4220,7 @@ export async function savePost(
           .limit(1)
       )[0]
     : undefined;
-  const document = canonicalDocumentForSave(post, existingRow);
+  const document = canonicalDocumentForSave(post, existingRow, options.fieldsPatch);
   const projection = legacyProjectionFromDocument(document);
   const visibility = visibilityForSave(post, existingRow);
   const compatibilityType = existingRow?.type ?? post.type;

@@ -231,6 +231,33 @@ const createItemInput = z
     }
   });
 
+/** Custom field values, keyed by the field ids the item's template declares.
+ * The same value shapes DocumentSnapshot stores: scalars, string lists, or
+ * row-record lists for rows fields. Server-side validation re-checks against
+ * documentFieldValueSchema; a null clears a value. */
+const fieldValues = z
+  .record(
+    z.string().regex(/^[a-z][A-Za-z0-9_.-]{0,119}$/),
+    z.union([
+      z.string().max(2_000_000),
+      z.number().finite(),
+      z.boolean(),
+      z.null(),
+      z.array(z.string().max(20_000)).max(500),
+      z
+        .array(
+          z.record(
+            z.string().regex(/^[a-z][A-Za-z0-9_.-]{0,119}$/),
+            z.union([z.string().max(20_000), z.number().finite(), z.boolean(), z.null()]),
+          ),
+        )
+        .max(500),
+    ]),
+  )
+  .describe(
+    "Custom field values keyed by the template's declared field ids. Merged into the item's existing fields; null clears one.",
+  );
+
 const updateItemInput = z
   .object({
     id,
@@ -251,6 +278,7 @@ const updateItemInput = z
       .optional()
       .describe("Publication date for an already-published item, as YYYY-MM-DD."),
     pinned: z.boolean().optional(),
+    fields: fieldValues.optional(),
     markdown: z
       .string()
       .min(1)
@@ -274,7 +302,8 @@ const updateItemInput = z
       value.cover_caption !== undefined ||
       value.cover_height !== undefined ||
       value.date !== undefined ||
-      value.pinned !== undefined;
+      value.pinned !== undefined ||
+      value.fields !== undefined;
     if (!value.markdown && !structured) {
       context.addIssue({ code: "custom", message: "Pass content or metadata to update." });
     }
@@ -408,7 +437,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   update_item: defineTool("update_item", {
     title: "Update item",
     description:
-      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, and publication date. Full markdown may update the same fields. Cannot publish, unpublish, or move an item.",
+      "Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. Full markdown may update the same fields. Cannot publish, unpublish, or move an item.",
     inputSchema: updateItemInput,
     mutability: "write",
     destructive: true,

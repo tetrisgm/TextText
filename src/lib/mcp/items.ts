@@ -50,6 +50,10 @@ export type McpItemEntry = {
   /** sha256 hex of the rendered markdown file; the if_match_hash currency */
   hash: string;
   tags: string[];
+  /** The pinned immutable template reference, when the item carries one. */
+  template?: { id: string; version: number };
+  /** Custom field values declared by the item's template; omitted when empty. */
+  fields?: Record<string, unknown>;
   wikilinks: WikiLink[];
   /** Populated only by read_item because it requires a full workspace scan. */
   backlinks?: BacklinkRef[];
@@ -210,6 +214,13 @@ export async function itemEntry(
     ...(post.id ? { file: syncFileUrl(post.id) } : {}),
     hash: options.hash ?? renderItemFile(blog, post).hash,
     tags: normalizeTags(post.tags),
+    // What an agent needs to work with typed documents: which template the
+    // item pins and the custom field values it carries. Without these, an
+    // agent could WRITE a field but never read one back.
+    ...(post.template ? { template: post.template } : {}),
+    ...(post.document && Object.keys(post.document.content.fields).length > 0
+      ? { fields: post.document.content.fields }
+      : {}),
     wikilinks: await resolvedWikiLinks(blog, post, options.visiblePosts ?? []),
     ...(options.backlinks ? { backlinks: options.backlinks } : {}),
   };

@@ -165,3 +165,35 @@ describe("workspace tool contract", () => {
     ).toEqual({ id: "post-1", pinned: true });
   });
 });
+
+describe("update_item custom fields", () => {
+  it("accepts a fields-only update, the agent field-write path", () => {
+    // The refinement used to reject this with "Pass content or metadata to
+    // update", which silently broke every agent field write: the error was
+    // returned before the handler ran, no audit row, no change.
+    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000000",
+      fields: { rating: 4.5, status: "read", author: "Peter Watts" },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts row-record values and null clears", () => {
+    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000000",
+      fields: {
+        tasks: [{ done: false, task: "Ship it", priority: "high" }],
+        stale: null,
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still rejects an update with nothing to change", () => {
+    const parsed = WORKSPACE_TOOL_DEFINITIONS.update_item.inputSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000000",
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+

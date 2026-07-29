@@ -1299,6 +1299,20 @@ export async function executeMcpTool(
       ) {
         return errorResult("Import or attach that asset before using it as the cover.");
       }
+      // Custom template fields travel as a PATCH applied inside savePost's
+      // canonicalDocumentForSave, which holds the authoritative row. Building
+      // the merged document here would need post.document loaded, and list
+      // reads legitimately omit it.
+      const requestedFields = input.fields ?? null;
+      const existingFields = post.document?.content.fields ?? null;
+      const fieldsChanged =
+        requestedFields !== null &&
+        (existingFields === null ||
+          Object.entries(requestedFields).some(
+            ([key, value]) =>
+              JSON.stringify(existingFields[key] ?? null) !==
+              JSON.stringify(value),
+          ));
       const next: Post = {
         ...post,
         ...content,
@@ -1310,6 +1324,7 @@ export async function executeMcpTool(
         content.excerpt !== post.excerpt ? "excerpt" : null,
         content.body !== post.body ? "body" : null,
         !sameValue(content.tags, normalizeTags(post.tags)) ? "tags" : null,
+        fieldsChanged ? "fields" : null,
       ].filter((field): field is string => field !== null);
       const metadataFields = [
         content.slug !== post.slug ? "slug" : null,
@@ -1342,6 +1357,11 @@ export async function executeMcpTool(
       const useLiveDocument =
         contentFields.length > 0 &&
         Boolean(post.id && (await hasActiveCoEditors(post.id)));
+      if (fieldsChanged && useLiveDocument) {
+        return errorResult(
+          "Someone is editing this document right now; field values cannot change mid-session. Retry when the session ends.",
+        );
+      }
 
       try {
         const saved = useLiveDocument
@@ -1379,7 +1399,13 @@ export async function executeMcpTool(
             ? await savePost(
                 blog.handle,
                 next,
-                { expectedRevision: revision, audit },
+                {
+                  expectedRevision: revision,
+                  audit,
+                  ...(fieldsChanged && requestedFields
+                    ? { fieldsPatch: requestedFields }
+                    : {}),
+                },
               )
             : await savePostContentPatch(
                 blog.handle,

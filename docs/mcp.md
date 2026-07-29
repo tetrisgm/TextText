@@ -174,7 +174,7 @@ or workspace selector that could cross that boundary.
 | `customize_document_template` | `sync` | Create the next immutable workspace template version by applying constrained operations to an existing valid template. Templates are data only and cannot contain HTML, CSS, or JavaScript. |
 | `set_item_template` | `sync` | Apply one immutable document template version to an item without changing its content or audience. |
 | `create_item` | `sync` | Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates. |
-| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, and publication date. Full markdown may update the same fields. Cannot publish, unpublish, or move an item. |
+| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. Full markdown may update the same fields. Cannot publish, unpublish, or move an item. |
 | `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Automated clients should pass an idempotency_key derived from the source event or commit. |
 | `set_item_status` | `sync` | Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `move_item` | `sync` | Move one item to another folder of the same mode. |

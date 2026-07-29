@@ -84,6 +84,14 @@ async function verifyRelease() {
       command: ["scripts/run-release-migrations.sh", "--check"],
     },
     {
+      // Every built-in template must render to real HTML with representative
+      // content, and every composed node must leave markup. Schema validation
+      // alone let 23 templates ship with one ever seen on a screen.
+      id: "workflow.template_render",
+      timeoutSeconds: 120,
+      command: ["npx", "tsx", "scripts/verify-template-render.ts"],
+    },
+    {
       // Dead references, unreachable scripts, and finished plans still sitting
       // in docs/ as if they were current work. Every one of those has cost a
       // real cycle here, so they fail the release now instead.
