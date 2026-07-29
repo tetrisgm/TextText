@@ -35,6 +35,39 @@ describe("local agent bridge", () => {
     expect(host.__TEXTTEXT_AGENT_BRIDGE__).toBe(previous);
   });
 
+  it("advertises the actor-carrying bridge version", () => {
+    // The native server checks this before forwarding an agent identity.
+    expect(LOCAL_AGENT_BRIDGE_VERSION).toBe(2);
+  });
+
+  it("forwards the calling agent identity to the executor", async () => {
+    const call = vi.fn(async () => ({ ok: true }));
+    const host: { __TEXTTEXT_AGENT_BRIDGE__?: LocalAgentBridge } = {};
+    installLocalAgentBridge(host, {
+      call,
+      manifest: vi.fn(),
+    } as unknown as LocalAgentBridge);
+
+    const actor = {
+      connectionName: "codex-cli",
+      clientName: "codex-cli",
+      clientVersion: "1.2.3",
+    };
+    await host.__TEXTTEXT_AGENT_BRIDGE__?.call(
+      "open_item",
+      { id: "post-1" },
+      "local-mcp",
+      actor,
+    );
+
+    expect(call).toHaveBeenCalledWith(
+      "open_item",
+      { id: "post-1" },
+      "local-mcp",
+      actor,
+    );
+  });
+
   it("does not remove a newer bridge during stale cleanup", () => {
     const first = {
       call: vi.fn(),

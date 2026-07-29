@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { WORKSPACE_TOOL_DEFINITIONS } from "../src/lib/ai/tools";
+import { LOCAL_AGENT_BRIDGE_VERSION } from "../src/lib/ai/local-agent-bridge";
 import { TEXTTEXT_HOSTED_MCP_URL } from "../src/lib/agent-integrations";
 import { registerAgentSurface } from "../src/lib/mcp/agent-surface";
 import { repositoryRoot } from "./work-unit";
@@ -100,6 +101,81 @@ assert(
   "Public agent docs must explain retry-safe mutations",
 );
 
+// ---- Agent identity transport ----
+//
+// A local Codex or Claude session must appear as a NAMED collaborator with its
+// provider avatar and cursor, which requires the caller identity to survive
+// every hop: MCP initialize -> Swift -> the page bridge -> the tool executor ->
+// the presence route. Each hop is asserted structurally here so a future build
+// that silently drops the actor fails the release gate instead of quietly
+// degrading every local agent back to an anonymous editor.
+
+const source = (path: string) =>
+  readFileSync(join(repositoryRoot, path), "utf8");
+
+assert(
+  LOCAL_AGENT_BRIDGE_VERSION >= 2,
+  "The local agent bridge must advertise the actor-carrying version",
+);
+
+const localAgentServer = source("mac/Sources/Write/LocalAgentServer.swift");
+assert(
+  localAgentServer.includes("clientInfo"),
+  "The native MCP server must retain initialize.params.clientInfo",
+);
+assert(
+  /__TEXTTEXT_AGENT_BRIDGE__\.call\(\s*\n?\s*name,\s*args,\s*"local-mcp",\s*actor/.test(
+    localAgentServer,
+  ),
+  "The native MCP server must forward the agent actor into the page bridge",
+);
+assert(
+  localAgentServer.includes("identityCacheLimit") &&
+    localAgentServer.includes("identityCacheTTL"),
+  "The native agent identity cache must stay bounded and expiring",
+);
+assert(
+  localAgentServer.includes('request.headers["user-agent"]'),
+  "The native MCP server must fall back to the user agent for identity",
+);
+
+const agentTools = source("src/lib/ai/agent-tools.ts");
+assert(
+  agentTools.includes("signalAgentActivity"),
+  "Workspace agent tools must accept a presence signal callback",
+);
+for (const [tool, marker] of [
+  ["open_item", '{ kind: "open", field: "body" }'],
+  ["update_item", 'kind: "edit", field: editedField(input)'],
+  ["append_to_item", '{ kind: "edit", field: "body" }'],
+] as const) {
+  assert(
+    agentTools.includes(marker),
+    `Local ${tool} must publish agent presence before it runs`,
+  );
+}
+
+const presenceRoute = source(
+  "src/app/api/collab/[postId]/agent-presence/route.ts",
+);
+assert(
+  presenceRoute.includes("getCollabRequestAccess") &&
+    presenceRoute.includes('access.role !== "editor"'),
+  "The agent presence route must require a signed-in editor",
+);
+assert(
+  presenceRoute.includes("buildAgentPresence"),
+  "The agent presence route must use the shared presence helper",
+);
+
+// One construction site: hosted MCP must not rebuild agent presence by hand.
+const mcpTools = source("src/lib/mcp/tools.ts");
+assert(
+  mcpTools.includes("buildAgentPresence") &&
+    !mcpTools.includes("createAgentAwareness("),
+  "Hosted MCP must build agent presence through the shared helper",
+);
+
 console.log(
   JSON.stringify({
     status: "pass",
@@ -107,5 +183,7 @@ console.log(
     resources: resources.size,
     prompts: prompts.size,
     endpoint: TEXTTEXT_HOSTED_MCP_URL,
+    agentIdentityTransport: "verified",
+    localAgentBridgeVersion: LOCAL_AGENT_BRIDGE_VERSION,
   }),
 );

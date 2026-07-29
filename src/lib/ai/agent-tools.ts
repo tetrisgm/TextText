@@ -8,7 +8,12 @@ import {
   parseWorkspaceToolInput,
 } from "@/lib/ai/tools";
 import type { WorkspaceToolInput, WorkspaceToolName } from "@/lib/ai/tools";
-import type { WorkspaceAgentToolExecutor } from "@/lib/ai/agent-protocol";
+import type {
+  WorkspaceAgentActivity,
+  WorkspaceAgentActivityField,
+  WorkspaceAgentActor,
+  WorkspaceAgentToolExecutor,
+} from "@/lib/ai/agent-protocol";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import type {
   WorkspaceItemTextPatch,
@@ -195,6 +200,17 @@ export type WorkspaceAgentToolsOptions = {
     args: WorkspaceToolInput<Name>,
   ) => Promise<Record<string, unknown>>;
   refreshPool?: () => Promise<void>;
+  /**
+   * Publish collaborator presence for an external agent before it opens or
+   * edits an item, so its avatar and cursor arrive with the change rather than
+   * after it. Presence is decoration: a rejection here must never block the
+   * mutation, so callers of the tool executor swallow its failures.
+   */
+  signalAgentActivity?: (
+    postId: string,
+    activity: WorkspaceAgentActivity,
+    actor: WorkspaceAgentActor,
+  ) => Promise<void> | void;
 };
 
 function normalizeFolderPath(
@@ -343,6 +359,7 @@ export function createWorkspaceAgentTools(
     confirmDestructive,
     executeTool,
     refreshPool,
+    signalAgentActivity,
   } = options;
   const executeWorkspaceTool =
     executeTool ??
@@ -525,10 +542,52 @@ export function createWorkspaceAgentTools(
     return await confirmDestructive(description);
   }
 
+  /**
+   * Which field an edit touches, so the agent's cursor lands where the change
+   * does. Deterministic and body-first: body, then title, then subtitle.
+   */
+  function editedField(input: {
+    body?: unknown;
+    markdown?: unknown;
+    markdown_fragment?: unknown;
+    title?: unknown;
+    excerpt?: unknown;
+  }): WorkspaceAgentActivityField {
+    if (
+      input.body !== undefined ||
+      input.markdown !== undefined ||
+      input.markdown_fragment !== undefined
+    ) {
+      return "body";
+    }
+    if (input.title !== undefined) return "title";
+    if (input.excerpt !== undefined) return "subtitle";
+    return "body";
+  }
+
+  /**
+   * Announce the agent before the operation. Presence is decoration for a
+   * mutation that carries its own authorization, so a failure here is
+   * swallowed: the edit must still land when presence is unavailable.
+   */
+  async function signalActivity(
+    postId: string,
+    activity: WorkspaceAgentActivity,
+    actor: WorkspaceAgentActor | undefined,
+  ): Promise<void> {
+    if (!signalAgentActivity || !actor) return;
+    try {
+      await signalAgentActivity(postId, activity, actor);
+    } catch {
+      // Never block a content mutation on presence reporting.
+    }
+  }
+
   const executor: WorkspaceAgentToolExecutor = async (
     rawName,
     rawArgs,
     requestTag,
+    actor,
   ) => {
     if (!isWorkspaceToolName(rawName))
       throw new Error(`Unknown tool: ${rawName}`);
@@ -728,6 +787,9 @@ export function createWorkspaceAgentTools(
         }
         const folderPath = folderPathForPoolPost(pool(), post);
         const mode = input.mode ?? "read";
+        // Announce the agent before navigating, so it is already present in the
+        // collaborator list as the item appears.
+        await signalActivity(post.id, { kind: "open", field: "body" }, actor);
         await openItem(post, mode);
         return {
           ok: true,
@@ -809,6 +871,13 @@ export function createWorkspaceAgentTools(
       case "update_item": {
         const input = args as WorkspaceToolInput<"update_item">;
         const post = requirePost(input.id);
+        // Place the agent's cursor on the field it is about to change, before
+        // the change lands.
+        await signalActivity(
+          post.id,
+          { kind: "edit", field: editedField(input) },
+          actor,
+        );
         const metadataRequested =
           input.markdown !== undefined ||
           input.slug !== undefined ||
@@ -892,6 +961,7 @@ export function createWorkspaceAgentTools(
       case "append_to_item": {
         const input = args as WorkspaceToolInput<"append_to_item">;
         const post = requirePost(input.id);
+        await signalActivity(post.id, { kind: "edit", field: "body" }, actor);
         const body = (await currentText(post)).body;
         const fragment = input.markdown_fragment.trim();
         const joined = body.trim()

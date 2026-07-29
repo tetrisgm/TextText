@@ -2,7 +2,9 @@ import type { AssistantViewSnapshot } from "@/components/workspace/assistant/con
 import type { WorkspaceAgentToolExecutor } from "@/lib/ai/agent-protocol";
 import type { WorkspaceAgentToolDefinition } from "@/lib/ai/agent-tools";
 
-export const LOCAL_AGENT_BRIDGE_VERSION = 1;
+// 2: bridge.call accepts a fourth argument, the WorkspaceAgentActor carrying
+// the local MCP client's identity, so agents appear as named collaborators.
+export const LOCAL_AGENT_BRIDGE_VERSION = 2;
 
 export type LocalAgentBridgeManifest = {
   version: typeof LOCAL_AGENT_BRIDGE_VERSION;

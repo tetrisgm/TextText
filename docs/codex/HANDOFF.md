@@ -1,6 +1,6 @@
 # Texttext continuation handoff
 
-Updated 2026-07-26. This is the only current continuation document.
+Updated 2026-07-28. This is the only current continuation document.
 
 ## Start here
 
@@ -17,6 +17,106 @@ Confirm the live state with `git status`, `git worktree list`, and
 `git branch --no-merged main`. `main` is the only durable branch and release
 source. Do not trust a version number copied from this handoff; inspect generated
 release metadata, the public marker, appcast, and installed bundle.
+
+## Live state at this handoff
+
+This is a baseline, not a substitute for inspecting live `main`.
+
+- Canonical source commit: `5a6ffca36d3938b8668b2a69174d95077b07d901`
+- `main` and `origin/main` were synchronized and the worktree was clean.
+- No secondary worktree or branch was left behind.
+- Source release metadata was `0.141` build `147`.
+- `/Applications/Texttext.app` was also `0.141` build `147`.
+- No product code for the remaining native agent identity gap described below
+  was changed after this baseline.
+
+## Current body of work: native agents as live collaborators
+
+The user requires a real agent workflow, not an assisted UI demonstration:
+
+1. Claude, Codex, ChatGPT, or another MCP client finds an exact document.
+2. The agent calls `open_item` and Texttext opens the exact workspace, folder,
+   and document directly, including after a cold app launch.
+3. The agent mutates that document through MCP without manual navigation.
+4. The open Texttext document updates live.
+5. The agent appears as a named collaborator with its provider icon, color,
+   cursor, and selection, like a human collaborator in Notion.
+6. Identity and presence remain correct when more than one agent or person is
+   connected.
+
+### Already shipped
+
+- Hosted MCP exposes `open_item`, exact item operations, OAuth approval, and
+  external-agent focus and presence.
+- Native deep-link parsing, exact item opening, and cold-launch URL queuing are
+  implemented.
+- The native Mac app serves a local MCP endpoint at
+  `http://127.0.0.1:47118/mcp`.
+- Claude and Codex plugin instructions direct agents to call `open_item`, open
+  the returned native URL, and then mutate the item.
+- The collaboration UI recognizes ChatGPT, Claude, Codex, Cursor, and generic
+  agents and has provider-specific names, icons, and colors.
+- Hosted MCP mutations can publish external-agent presence.
+
+### Implemented
+
+The native MCP path now transports caller identity end to end. All ten items of
+the former Required implementation section are done:
+
+1. `src/lib/collab/agent-presence.server.ts` is the single presence
+   construction site. It canonicalizes with `agentIdentity`, derives a stable
+   client ID from the signed-in user ID plus the raw connection name, uses
+   `agentProviderColor` with the deterministic `colorForSub` fallback, and
+   encodes awareness with `createAgentAwareness`.
+2. `src/lib/mcp/tools.ts` builds hosted-MCP presence through that helper; its
+   duplicate construction is gone.
+3. `src/app/api/collab/[postId]/agent-presence/route.ts` publishes presence for
+   the native path. It requires a signed-in editor through
+   `getCollabRequestAccess`, derives identity from the SESSION plus the declared
+   connection name (so a local client cannot impersonate anyone), places the
+   cursor with `agentSelectionAtEnd`, persists presence, signals the workspace,
+   and returns no-store. It never mutates content.
+4. `src/lib/ai/agent-protocol.ts` defines `WorkspaceAgentActor` and
+   `WorkspaceAgentActivity`, and the executor takes an optional actor.
+5. `LOCAL_AGENT_BRIDGE_VERSION` is `2` (the actor-carrying bridge).
+6. `WorkspaceAgentToolsOptions.signalAgentActivity` signals before `open_item`,
+   `update_item`, and `append_to_item`. The edited field is deterministic and
+   body-first (body, then title, then subtitle). Signal failures are swallowed.
+7. `useNativeAssistant.ts` forwards the actor into the executor and posts
+   activity to the agent-presence route; a presence failure never blocks an edit.
+8. `LocalAgentServer.swift` retains `initialize.params.clientInfo` name and
+   version, keyed by `mcp-session-id` when present and otherwise by a bounded
+   user-agent key, falls back to the user agent when a client omits
+   `clientInfo`, forwards `bridge.call(name, args, "local-mcp", actor)`, and
+   bounds plus expires the identity cache (`identityCacheLimit`,
+   `identityCacheTTL`).
+9. Focused coverage: `src/lib/__tests__/agent-presence-server.test.ts`,
+   `src/lib/__tests__/agent-presence-route.test.ts`, presence-signalling cases
+   in `src/lib/ai/__tests__/agent-tools.test.ts`, actor forwarding in
+   `src/lib/ai/__tests__/local-agent-bridge.test.ts`, and identity transport in
+   `mac/Tests/WriteTests/LocalAgentServerTests.swift`.
+10. `scripts/verify-agent-interoperability.ts` (a `verify:release` gate) asserts
+    the whole identity chain: bridge version, Swift `clientInfo` retention and
+    actor forwarding, the bounded cache, the user-agent fallback, the three
+    signal sites, route authorization, and that hosted MCP has not regrown its
+    own presence construction.
+
+### End-to-end acceptance test
+
+Do not manually click through Texttext to fake this proof.
+
+1. Start from the installed, signed-in Texttext app.
+2. Initialize the local MCP endpoint with `clientInfo.name` identifying Codex
+   or Claude.
+3. Find the exact `Texttext Changelog` note in the correct workspace and folder.
+4. Call `open_item`; the app must navigate directly to that exact note.
+5. Call `update_item` or `append_to_item`; the open note must update live.
+6. Capture a screenshot immediately showing the exact note, changed content,
+   and the correct agent avatar and cursor or selection.
+7. Verify the mutation persisted, the action audit was written, and a second
+   client receives the change without a refresh.
+8. Repeat with two distinct agent identities to prove they do not collapse into
+   one collaborator.
 
 ## Current architecture
 
@@ -145,23 +245,44 @@ Continue from the user's newest request.
 ```text
 cd /Users/shokunin/dev/write
 
-Continue Texttext from canonical main. Read AGENTS.md, CLAUDE.md, DESIGN.md,
+Continue Texttext from canonical main and own the work through a shipped,
+installed, verified result. First read AGENTS.md, CLAUDE.md, DESIGN.md,
 docs/codex/HANDOFF.md, docs/plan-document-types.md,
-docs/review-2026-07-22.md, and docs/ai-sidebar-architecture.md before editing.
+docs/review-2026-07-22.md, and docs/ai-sidebar-architecture.md. Then inspect
+live main, status, worktrees, unmerged branches, release metadata, public
+marker, appcast, and installed bundle. The handoff baseline was clean commit
+5a6ffca, source and installed release 0.141 build 147, but live state wins.
 
-Texttext now has one canonical DocumentSnapshot and a closed, data-only
-presentation engine. Article, note, bookmark, gallery, and talk are templates,
-not separate content models. The old bespoke readers and editor stack were
-deleted. Do not restore them. Preserve fail-closed visibility, store.ts as the
-only content boundary, audited mutations, notes/bookmarks private, exact
-immutable template versions, local-first Yjs editing, structured .textpack sync,
-and raw Markdown compatibility.
+The body of work is "native agents as live collaborators" in HANDOFF.md.
+Implement every item in its Required implementation section. The exact gap is
+that the native loopback MCP server currently discards initialize.clientInfo,
+the page bridge forwards no actor, and local open/edit/append operations publish
+no agent presence. Unify hosted and native presence construction, carry the
+provider identity end to end, signal activity before local open and mutation,
+preserve content mutations when presence is unavailable, and add focused
+TypeScript, route, bridge, Swift, health, and release-evaluation coverage.
 
-First inspect live main, worktrees, unmerged branches, release metadata, public
-marker, appcast, and installed bundle. Continue only from my newest request. For
-product work, start one work unit, work directly on main, verify once with the
-receipt-based release gate, commit and push one coherent unit, ship once with
-release/ship.sh, update the installed app and in-product changelog, and verify
-the complete release. Do not create a feature branch or ask me to integrate it.
-Use no em dashes.
+Completion requires the End-to-end acceptance test in HANDOFF.md. Do not prove
+it by manually navigating the UI. Use local MCP to find the exact Texttext
+Changelog note, call open_item so the installed app opens that exact workspace,
+folder, and note, mutate it through MCP, and capture the app showing the live
+content change plus the correct Codex or Claude avatar and cursor or selection.
+Repeat with two identities and verify persistence, action audit, and delivery to
+a second client without refresh.
+
+Preserve the canonical document engine and its invariants: store.ts is the only
+content boundary, every mutation is audited, notes and bookmarks stay private,
+visibility fails closed, templates are validated data, Yjs is the local edit
+hot path, File Provider is a projection, and the app never consumes its hosted
+MCP endpoint. Do not restore bespoke document types or readers. Use no em
+dashes.
+
+Start one instrumented work unit. Work directly on main unless another active
+integrator owns the checkout. Batch the implementation, run focused checks while
+developing, then run the exact-source release gate once. For MCP or OAuth handler
+changes, run the bounded OAuth MCP loop too. Commit and push one coherent unit,
+ship once with release/ship.sh, update the installed app and the in-product
+Texttext Changelog note, verify source, public artifacts, appcast, website,
+installed version/build, and running behavior agree, and leave main clean with
+no temporary refs. Do not stop at a plan, branch, local build, or handoff.
 ```

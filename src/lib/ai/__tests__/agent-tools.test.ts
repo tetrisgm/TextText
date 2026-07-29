@@ -4,6 +4,7 @@ import {
   WORKSPACE_AGENT_TOOL_DEFINITIONS,
   createWorkspaceAgentTools,
   workspaceAgentToolNamesForView,
+  type WorkspaceAgentToolsOptions,
 } from "@/lib/ai/agent-tools";
 import { WORKSPACE_TOOL_NAMES } from "@/lib/ai/tools";
 import type { WorkspacePoolPayload } from "@/lib/pool/types";
@@ -458,5 +459,177 @@ describe("native workspace tool adapter", () => {
       }),
     ).resolves.toEqual({ ok: false, cancelled: true });
     expect(executeTool).not.toHaveBeenCalled();
+  });
+});
+
+describe("external agent presence signalling", () => {
+  const actor = { connectionName: "codex-cli", clientName: "codex-cli" };
+
+  beforeEach(() => vi.clearAllMocks());
+
+  function toolsWithSignal(
+    signalAgentActivity: WorkspaceAgentToolsOptions["signalAgentActivity"],
+  ) {
+    return createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      openItem: vi.fn(),
+      readItemText: vi.fn(async () => ({
+        title: "Draft",
+        excerpt: "",
+        body: "Existing body",
+        tags: [],
+      })),
+      applyItemPatch: vi.fn(),
+      executeTool: vi.fn(async () => ({ item: { title: "Draft" } })),
+      signalAgentActivity,
+    });
+  }
+
+  it("announces the agent before opening an item", async () => {
+    const order: string[] = [];
+    const signalAgentActivity = vi.fn(async () => {
+      order.push("signal");
+    });
+    const openItem = vi.fn(async () => {
+      order.push("open");
+    });
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      openItem,
+      signalAgentActivity,
+    });
+
+    await tools.executor("open_item", { id: "post-1" }, "local-mcp", actor);
+
+    expect(signalAgentActivity).toHaveBeenCalledWith(
+      "post-1",
+      { kind: "open", field: "body" },
+      actor,
+    );
+    // Presence must land BEFORE navigation so the agent is already visible.
+    expect(order).toEqual(["signal", "open"]);
+  });
+
+  it("puts the cursor on the field an update changes", async () => {
+    const signalAgentActivity = vi.fn();
+    const tools = toolsWithSignal(signalAgentActivity);
+
+    await tools.executor(
+      "update_item",
+      { id: "post-1", body: "New body" },
+      "local-mcp",
+      actor,
+    );
+    expect(signalAgentActivity).toHaveBeenLastCalledWith(
+      "post-1",
+      { kind: "edit", field: "body" },
+      actor,
+    );
+
+    await tools.executor(
+      "update_item",
+      { id: "post-1", title: "New title" },
+      "local-mcp",
+      actor,
+    );
+    expect(signalAgentActivity).toHaveBeenLastCalledWith(
+      "post-1",
+      { kind: "edit", field: "title" },
+      actor,
+    );
+
+    await tools.executor(
+      "update_item",
+      { id: "post-1", excerpt: "New subtitle" },
+      "local-mcp",
+      actor,
+    );
+    expect(signalAgentActivity).toHaveBeenLastCalledWith(
+      "post-1",
+      { kind: "edit", field: "subtitle" },
+      actor,
+    );
+  });
+
+  it("prefers the body when an update changes several fields", async () => {
+    const signalAgentActivity = vi.fn();
+    const tools = toolsWithSignal(signalAgentActivity);
+
+    await tools.executor(
+      "update_item",
+      { id: "post-1", title: "New title", body: "New body" },
+      "local-mcp",
+      actor,
+    );
+
+    expect(signalAgentActivity).toHaveBeenLastCalledWith(
+      "post-1",
+      { kind: "edit", field: "body" },
+      actor,
+    );
+  });
+
+  it("announces the agent before appending", async () => {
+    const signalAgentActivity = vi.fn();
+    const tools = toolsWithSignal(signalAgentActivity);
+
+    await tools.executor(
+      "append_to_item",
+      { id: "post-1", markdown_fragment: "More" },
+      "local-mcp",
+      actor,
+    );
+
+    expect(signalAgentActivity).toHaveBeenCalledWith(
+      "post-1",
+      { kind: "edit", field: "body" },
+      actor,
+    );
+  });
+
+  it("still applies the edit when presence reporting fails", async () => {
+    const signalAgentActivity = vi.fn(async () => {
+      throw new Error("presence route unavailable");
+    });
+    const applyItemPatch = vi.fn();
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      readItemText: vi.fn(async () => ({
+        title: "Draft",
+        excerpt: "",
+        body: "Existing body",
+        tags: [],
+      })),
+      applyItemPatch,
+      executeTool: vi.fn(async () => ({ item: { title: "Draft" } })),
+      signalAgentActivity,
+    });
+
+    await expect(
+      tools.executor(
+        "append_to_item",
+        { id: "post-1", markdown_fragment: "More" },
+        "local-mcp",
+        actor,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(applyItemPatch).toHaveBeenCalled();
+  });
+
+  it("does not signal presence for the person at the keyboard", async () => {
+    const signalAgentActivity = vi.fn();
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      openItem: vi.fn(),
+      signalAgentActivity,
+    });
+
+    await tools.executor("open_item", { id: "post-1" });
+
+    expect(signalAgentActivity).not.toHaveBeenCalled();
   });
 });

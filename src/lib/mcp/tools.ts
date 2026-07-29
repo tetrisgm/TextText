@@ -1,14 +1,12 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { recordAction, type AuditActorType, type AuditEntry } from "@/lib/audit";
 import {
   applyLiveDocumentMutation,
   agentSelectionAtEnd,
-  colorForSub,
-  createAgentAwareness,
   hasActiveCoEditors,
   markCollabMaterialized,
   materializeCollabDocument,
@@ -17,10 +15,7 @@ import {
 } from "@/lib/collab";
 import type { AgentFocusEvent } from "@/lib/collab/agent-focus";
 import type { DocumentMutation } from "@/lib/collab/document";
-import {
-  agentIdentity,
-  agentProviderColor,
-} from "@/lib/collab/agent-identity";
+import { buildAgentPresence } from "@/lib/collab/agent-presence.server";
 import {
   WORKSPACE_FOLDER_MODES,
   WORKSPACE_SCOPE_CAPABILITIES,
@@ -230,30 +225,14 @@ function agentPresence(
 ) {
   if (mcpActorType(extra) !== "external_agent") return null;
   const userId = extra.authInfo?.extra?.userId;
-  const rawName = extra.authInfo?.extra?.connectionName;
   if (typeof userId !== "string" || !userId) return null;
-  const connectionName =
-    typeof rawName === "string" && rawName.trim() ? rawName.trim() : "AI agent";
-  const identity = agentIdentity(connectionName);
-  const clientId = `agent-${createHash("sha256")
-    .update(`${userId}:${connectionName}`, "utf8")
-    .digest("hex")
-    .slice(0, 16)}`;
-  const color = agentProviderColor(identity.provider) ?? colorForSub(clientId);
-  const userName = identity.displayName;
-  return {
-    clientId,
-    userName,
-    color,
-    awareness: createAgentAwareness({
-      clientId,
-      userName,
-      color,
-      provider: identity.provider,
-      selection: state.selection,
-      focus: state.focus,
-    }),
-  };
+  return buildAgentPresence(
+    {
+      userId,
+      connectionName: extra.authInfo?.extra?.connectionName as string,
+    },
+    state,
+  );
 }
 
 async function auditMcp(
