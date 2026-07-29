@@ -390,11 +390,21 @@ export function validateReleaseReceipt(
   identity: { sourceCommit: string; sourceFingerprint: string },
 ) {
   if (receipt.schemaVersion !== 1) throw new Error("Wrong release receipt schema.");
+  // The fingerprint hashes the commit id along with the working-tree diff, so
+  // committing always invalidates a receipt taken beforehand. That is why the
+  // gate runs on the already-committed source; say so here rather than leaving
+  // the next caller to rediscover it.
   if (receipt.sourceCommit !== identity.sourceCommit) {
-    throw new Error("Release receipt source commit is stale.");
+    throw new Error(
+      `Release receipt source commit is stale (receipt ${receipt.sourceCommit.slice(0, 7)}, HEAD ${identity.sourceCommit.slice(0, 7)}). ` +
+        "Run npm run verify:release on the committed source, then ship.",
+    );
   }
   if (receipt.sourceFingerprint !== identity.sourceFingerprint) {
-    throw new Error("Release receipt does not match the current source state.");
+    throw new Error(
+      "Release receipt does not match the current source state. " +
+        "Commit or revert the working-tree changes, then run npm run verify:release again.",
+    );
   }
   const ids = receipt.checks.map((check) => check.id);
   if (new Set(ids).size !== ids.length) {

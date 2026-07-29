@@ -29,6 +29,16 @@ This version has breaking changes. APIs, conventions, and file structure may all
   Run verification through `scripts/work-unit.ts run` or the package recipes so
   commands have closed stdin, a process-group timeout, an exact source
   fingerprint, and a durable timing receipt under `.write/`.
+- **Run the full gate on the already-committed source.** The source fingerprint
+  hashes the commit id along with the working-tree diff, so committing always
+  changes it. Gate first and commit second and the receipt is stale, which
+  `release/ship.sh` correctly refuses, costing a second full gate run. The order
+  that works is: develop with focused checks, commit the coherent unit, run
+  `npm run verify:release` on that commit, then push and ship. If the gate fails,
+  amend the unpushed commit rather than stacking a fixup.
+- Do not edit any tracked file while the gate is running. A mid-run edit changes
+  the fingerprint and the gate ends with "Source changed while release gates were
+  running."
 - Use `npm run work:summary` while working and `npm run work:finish` after the
   final verification to persist elapsed time, failures, cache sizes, the
   slowest gates, and receipt reuse. Use `npm run work:doctor` when local work feels slow; the

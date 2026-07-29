@@ -10,10 +10,11 @@ stays its own separate project.
 ## Continuation
 
 When taking over existing work, read `docs/codex/HANDOFF.md` after this file,
-`AGENTS.md`, and `DESIGN.md`. It is the only current handoff. Files named
-`mcp-brief.md` and `ui-batch-brief.md` under `docs/codex/` are historical design
-references unless the handoff or the user's latest request explicitly activates
-them.
+`AGENTS.md`, and `DESIGN.md`. It is the only current handoff and it wins over
+this file whenever the two disagree, because it is updated per body of work.
+Files named `mcp-brief.md` and `ui-batch-brief.md` under `docs/codex/` are
+historical design references unless the handoff or the user's latest request
+explicitly activates them.
 
 ## Hard rules
 
@@ -28,10 +29,24 @@ them.
   passes/duplicate agents. Each push and `vercel --prod` is a paid build. Ship
   verified work promptly, but batched. (Global rule, all projects.)
 
+## Local database (read before running anything)
+
+`.env.local` `DATABASE_URL` points at a LOCAL Postgres
+(`postgres://<you>@localhost:5432/texttext_dev`). Dev, tests, builds, and
+`verify:release` never touch production Neon. Run `bash scripts/setup-local-db.sh`
+once if local Postgres is not ready. `src/lib/db/client.ts` picks the driver by
+URL: a `neon.tech` URL uses the Neon HTTP driver, anything else uses
+node-postgres. Production Neon is touched ONLY by deployed code and by release
+migrations, which load `.env.release.local`. Never point `.env.local` at Neon and
+never run tests or dev migrations against production; that is what burned the
+free-tier transfer cap.
+
 ## Verify
 
-- `npx tsc --noEmit` for types, `npm run build` for the full check. This app
-  is small, so building is cheap.
+- `npx tsc --noEmit` for types and focused `npx vitest run <file>` while working.
+- `npm run verify:release` is the SOLE full gate, and shipping consumes its
+  exact receipt. Run it on the already-committed source (see AGENTS.md), or
+  `release/ship.sh` will reject the receipt as stale.
 - The app is plain DOM: browser preview works and screenshots are meaningful.
 - Demo content needs zero setup: `npm run dev`, then the demo lives at
   `/@demo` (`/t/demo` and `demo.localhost:3000` redirect there). If the demo
@@ -45,22 +60,33 @@ them.
   blogs live at `/@{username}` (served by `src/app/u/[username]`). `/start`
   is the single entry point into a workspace; signing in claims the browser's
   guest workspace.
-- Content model: a workspace (blogs row) holds three system folders (Blog,
-  Notes, Bookmarks); posts carry folder_id and a type (article/project/talk
-  are Blog's public kinds; note and bookmark are unlisted FOREVER, enforced
-  at the action, store, sync, and MCP layers). Every item round-trips as a
-  markdown file (src/lib/markdown-files.ts render + parse).
-- Machine surfaces: /api/sync/v1 (bearer wsk_ tokens, manifest hashes,
-  If-Match conflicts) and /api/mcp (same tokens, 7 tools). Tokens are minted
-  at /connect; agent docs live at /docs/ai and /llms.txt. Every mutation
-  writes an action_audit row.
+- Content model: ONE canonical document. Every live or trashed item carries a
+  validated schema-v1 `DocumentSnapshot` (`src/lib/documents/model.ts`).
+  Article, note, bookmark, gallery, and talk are validated presentation
+  templates and capability defaults, NOT separate content models. The
+  `post_type` column and `src/lib/markdown-files.ts` remain as legacy search
+  projections and Markdown import/export compatibility, not a second document.
+  Notes and bookmarks stay unlisted forever, and visibility fails closed
+  (`src/lib/documents/visibility.ts`): missing or unknown means private.
+- Rendering: `src/components/document/DocumentRenderer.tsx` is the one renderer
+  for the app, public links, previews, and HTML export. Render specs are
+  validated data (`src/lib/presentation/schema.ts`, `templates.ts`), never user
+  HTML, CSS, JavaScript, or component names. A document pins an exact immutable
+  template version. The bespoke Reader, ProjectReader, and TalkReader are gone;
+  do not reintroduce them.
+- Machine surfaces: `/api/sync/v1` (bearer `wsk_` tokens, manifest hashes,
+  If-Match conflicts) and `/api/mcp` (same tokens, 30 workspace tools). The Mac
+  app also serves local MCP at `http://127.0.0.1:47118/mcp`, which calls the page
+  bridge rather than the hosted endpoint. Tokens are minted at `/connect`; agent
+  docs live at `/docs/ai` and `/llms.txt`. Every mutation writes an
+  `action_audit` row.
 - `src/lib/store.ts`: the ONLY content access point (demo seed without
-  DATABASE_URL, Neon Postgres with it). Routes never import demo.ts directly.
-- `src/lib/modes.ts`: validated declarative view specs (AI generates specs,
-  never code).
-- `src/styles/`: tokens.css (neutral palette), broadsheet.css (reader),
+  DATABASE_URL, Postgres with it). Routes never import demo.ts directly.
+- Collaboration: full-document Yjs with awareness, cursors, and epoch fencing.
+  `src/lib/collab/agent-presence.server.ts` is the single construction site for
+  external-agent presence, shared by hosted MCP and the native path.
+- `src/styles/`: tokens.css (neutral palette), broadsheet.css (reader chrome),
   apple.css (editor chrome, scoped .applecms).
-- `src/components/Reader.tsx`: the reader.
 
 ## Deploy
 

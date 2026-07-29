@@ -251,10 +251,16 @@ migrations against production.
 1. Prove repository root, branch, status, and worktrees.
 2. Start one work unit with `npm run work:start -- "short label"`.
 3. Work directly on `main` unless another integrator owns the checkout.
-4. Preserve unrelated work and batch one coherent change.
-5. Use `npm run verify:release` once as the full exact-source gate.
-6. Run `npm run work:finish` after verification.
-7. Commit and push the coherent unit once.
+4. Preserve unrelated work and batch one coherent change, verifying with focused
+   type checks and tests while developing.
+5. Commit the coherent unit (do not push yet).
+6. Use `npm run verify:release` once, ON THAT COMMIT, as the full exact-source
+   gate. The fingerprint hashes the commit id, so gating before committing
+   guarantees a stale receipt and a refused ship. If the gate fails, amend the
+   unpushed commit. Never edit a tracked file while the gate runs.
+7. Run `npm run work:finish`, then push. `release/ship.sh` refuses to start while
+   a work unit owns the delivery lane, exiting 75 (a neutral deferral, not a
+   failure).
 8. Ship meaningful product work with `release/ship.sh`.
 9. Verify source, immutable archive, appcast, public marker, website, installed
    bundle version and build, signature, and running app all agree.
