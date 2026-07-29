@@ -239,6 +239,7 @@ const todo = {
     children: [
       { type: "text", bind: "content.title", role: "title", fallback: "Untitled list" },
       { type: "badge", bind: "content.fields.area", variant: "pill", showWhen: "content.fields.area" },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
       {
         type: "progress",
         variant: "bar",
@@ -255,7 +256,6 @@ const todo = {
         sortCheckedLast: true,
         rollup: true,
       },
-      { type: "prose", bind: "content.body", showWhen: "content.body" },
     ],
   },
   collection: {
@@ -633,9 +633,17 @@ const watchlist = {
                 ],
               },
               { type: "text", bind: "content.fields.rating", role: "meta", showWhen: "content.fields.rating" },
-              { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
-              { type: "badge", bind: "content.fields.liked", variant: "glyph", showWhen: "content.fields.liked" },
-              { type: "badge", bind: "content.fields.rewatch", variant: "glyph", showWhen: "content.fields.rewatch" },
+              {
+                type: "stack",
+                direction: "horizontal",
+                gap: "sm",
+                align: "center",
+                children: [
+                  { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
+                  { type: "badge", bind: "content.fields.liked", variant: "glyph", showWhen: "content.fields.liked" },
+                  { type: "badge", bind: "content.fields.rewatch", variant: "glyph", showWhen: "content.fields.rewatch" },
+                ],
+              },
             ],
           },
         ],
@@ -1323,6 +1331,7 @@ const project = {
           },
         ],
       },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
       {
         type: "progress",
         variant: "bar",
@@ -1359,7 +1368,6 @@ const project = {
         showWhen: "content.fields.risks",
         children: [{ type: "prose", bind: "content.fields.risks" }],
       },
-      { type: "prose", bind: "content.body", showWhen: "content.body" },
     ],
   },
   collection: {
@@ -1667,6 +1675,7 @@ const retro = {
           },
         ],
       },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
       {
         type: "callout",
         tone: "success",
@@ -1706,7 +1715,6 @@ const retro = {
         rollup: true,
         showWhen: "content.fields.actions",
       },
-      { type: "prose", bind: "content.body", showWhen: "content.body" },
     ],
   },
   collection: {
@@ -2034,8 +2042,16 @@ const prompts = {
         children: [
           { type: "text", bind: "content.title", role: "title", fallback: "Untitled prompt" },
           { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "badge", bind: "content.fields.useCase", variant: "pill", showWhen: "content.fields.useCase" },
-          { type: "badge", bind: "content.fields.proven", variant: "glyph", showWhen: "content.fields.proven" },
+          {
+            type: "stack",
+            direction: "horizontal",
+            gap: "sm",
+            align: "center",
+            children: [
+              { type: "badge", bind: "content.fields.useCase", variant: "pill", showWhen: "content.fields.useCase" },
+              { type: "badge", bind: "content.fields.proven", variant: "glyph", showWhen: "content.fields.proven" },
+            ],
+          },
           {
             type: "facts",
             variant: "strip",

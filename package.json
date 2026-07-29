@@ -25,6 +25,7 @@
     "verify:workflows": "node --env-file=.env.local --import tsx scripts/verify-workflow-live.ts",
     "eval:sync:live": "node --env-file=.env.local --import tsx scripts/verify-sync-live.ts",
     "eval:clients:live": "node --env-file=.env.local --import tsx scripts/verify-local-live.ts",
+    "showcase:templates": "tsx scripts/template-showcase.ts",
     "eval:collaboration:live": "node --env-file=.env.local --import tsx scripts/verify-collaboration-live.ts",
     "test": "vitest run",
     "db:cleanup-bookmark-html": "node scripts/cleanup-bookmark-html.mjs",

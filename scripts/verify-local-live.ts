@@ -32,6 +32,7 @@ const suiteNames = new Set([
   "sync",
   "collaboration",
   "oauth",
+  "generation",
 ]);
 const requestedSuites = new Set(
   (process.env.WRITE_EVAL_ONLY ?? "")
@@ -42,7 +43,7 @@ const requestedSuites = new Set(
 for (const suite of requestedSuites) {
   if (!suiteNames.has(suite)) {
     throw new Error(
-      `WRITE_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, or oauth.`,
+      `WRITE_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, oauth, or generation.`,
     );
   }
 }
@@ -200,6 +201,13 @@ async function main() {
         "sharing and access workflows",
         process.execPath,
         ["--import", "tsx", "scripts/verify-workflow-live.ts"],
+      );
+    }
+    if (shouldRun("generation")) {
+      durations.generationMilliseconds = await runBounded(
+        "agent-composed template generation",
+        process.execPath,
+        ["--import", "tsx", "scripts/verify-generation-live.ts"],
       );
     }
     if (shouldRun("sync")) {
