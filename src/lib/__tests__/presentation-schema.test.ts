@@ -12,13 +12,19 @@ import { BUILTIN_TEMPLATES, requireBuiltinTemplate } from "@/lib/presentation/te
 
 describe("closed presentation contract", () => {
   it("validates every built-in through the same schema", () => {
-    expect(BUILTIN_TEMPLATES.map((template) => validateTemplateDefinition(template).id)).toEqual([
+    const ids = BUILTIN_TEMPLATES.map(
+      (template) => validateTemplateDefinition(template).id,
+    );
+    // The original five stay first and byte-compatible; the expanded catalog
+    // (exact membership covered by builtin-templates.test.ts) follows them.
+    expect(ids.slice(0, 5)).toEqual([
       "texttext.article",
       "texttext.note",
       "texttext.bookmark",
       "texttext.gallery",
       "texttext.talk",
     ]);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("rejects free CSS and undeclared fields", () => {
