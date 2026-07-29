@@ -20,7 +20,9 @@ let package = Package(
         .library(name: "WriteQuickLookCore", targets: ["WriteQuickLookCore"]),
         .library(name: "WriteFileProviderKit", targets: ["WriteFileProviderKit"]),
         .library(name: "WriteFileProviderBridge", targets: ["WriteFileProviderBridge"]),
-        .library(name: "WriteFileProviderExtensionCore", targets: ["WriteFileProviderExtensionCore"])
+        .library(name: "WriteFileProviderExtensionCore", targets: ["WriteFileProviderExtensionCore"]),
+        .library(name: "TexttextCLICore", targets: ["TexttextCLICore"]),
+        .executable(name: "texttext", targets: ["TexttextCLI"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -75,6 +77,16 @@ let package = Package(
             path: "Sources/WriteFileProviderKit"
         ),
         .target(
+            name: "TexttextCLICore",
+            dependencies: ["WriteFileProviderKit"],
+            path: "Sources/TexttextCLICore"
+        ),
+        .executableTarget(
+            name: "TexttextCLI",
+            dependencies: ["TexttextCLICore"],
+            path: "Sources/TexttextCLI"
+        ),
+        .target(
             name: "WriteFileProviderBridge",
             dependencies: ["WriteFileProviderKit"],
             path: "Sources/WriteFileProviderBridge"
@@ -107,6 +119,11 @@ let package = Package(
             name: "capability-generator",
             dependencies: ["WriteCapabilitySpec"],
             path: "Tools/CapabilityGenerator"
+        ),
+        .testTarget(
+            name: "TexttextCLICoreTests",
+            dependencies: ["TexttextCLICore", "WriteFileProviderKit"],
+            path: "Tests/TexttextCLICoreTests"
         ),
         .testTarget(
             name: "WriteWorkspaceCoreTests",

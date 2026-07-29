@@ -183,6 +183,47 @@ assert(
   "The native MCP server must bound request duration and concurrent connections",
 );
 
+// ---- The texttext CLI ----
+//
+// The CLI is how local agents work with the workspace: they edit documents as
+// files instead of driving a protocol. It must ship inside the app bundle, own
+// the .textpack invariants rather than reimplementing them, and publish presence
+// automatically so an agent shows up in the document simply by working.
+const cliMain = source("mac/Sources/TexttextCLI/main.swift");
+const cliStore = source("mac/Sources/TexttextCLICore/DocumentStore.swift");
+const cliPresence = source("mac/Sources/TexttextCLICore/AgentPresence.swift");
+const packageManifest = source("mac/Package.swift");
+const buildApp = source("mac/scripts/build-app.sh");
+
+assert(
+  packageManifest.includes('.executable(name: "texttext"') &&
+    packageManifest.includes('.executableTarget(\n            name: "TexttextCLI"'),
+  "The texttext CLI must be a product of the Swift package",
+);
+assert(
+  buildApp.includes('cp "$BIN/texttext" "$APP/Contents/MacOS/texttext"') &&
+    buildApp.includes('codesign_one "$APP/Contents/MacOS/texttext"'),
+  "The texttext CLI must be copied into the app bundle and signed",
+);
+assert(
+  cliStore.includes("WriteTextBundlePackage") &&
+    !cliStore.includes("net.daringfireball.markdown"),
+  "The CLI must reuse WriteTextBundlePackage rather than reimplement the format",
+);
+assert(
+  cliStore.includes("replaceItemAt"),
+  "CLI writes must be atomic, so a crash cannot leave a partial document",
+);
+assert(
+  cliPresence.includes("func around") && cliPresence.includes("defer"),
+  "Presence must wrap the work and clear afterwards, not be a separate agent call",
+);
+assert(
+  cliMain.includes("withPresence") &&
+    /case "write", "append", "edit":/.test(cliMain),
+  "Every mutating CLI command must publish presence automatically",
+);
+
 const healthReporter = source("mac/Sources/Write/AppHealthReporter.swift");
 assert(
   healthReporter.includes("LocalAgentServer.rejection(for:") &&

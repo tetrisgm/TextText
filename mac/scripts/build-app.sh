@@ -64,6 +64,9 @@ echo ">> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN/Write" "$APP/Contents/MacOS/Write"
+# The agent CLI ships beside the app binary so it is present wherever Texttext
+# is installed, and so one implementation owns the .textpack format.
+cp "$BIN/texttext" "$APP/Contents/MacOS/texttext"
 cp "$MAC/Info.plist" "$APP/Contents/Info.plist"
 if [ -f "$MAC/AppIcon.icns" ]; then
   cp "$MAC/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
@@ -141,6 +144,7 @@ else
   exit 1
 fi
 chmod +x "$APP/Contents/MacOS/Write"
+chmod +x "$APP/Contents/MacOS/texttext"
 
 codesign_one() { # $1=path  $2=entitlements (optional)
   local path="$1" ent="${2:-}"
@@ -194,6 +198,7 @@ else
   done
   codesign_one "$SPK"
 fi
+codesign_one "$APP/Contents/MacOS/texttext"
 codesign_one "$APP/Contents/MacOS/Write" "$MAIN_ENT"
 # Extensions are assembled and signed here, inside-out, so the main app's
 # signature (next line) seals them. No-op unless mac/profiles/ holds the
