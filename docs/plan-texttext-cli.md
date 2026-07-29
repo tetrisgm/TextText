@@ -1,118 +1,157 @@
 # Plan: the `texttext` CLI
 
-Local AI agents edit documents through a CLI over the synced files. No MCP, no
-port, no token. Hosted MCP stays for browsers and phones, which have no shell.
+The CLI is not a file editor. It is **the agent's participation protocol for the
+workspace**, and editing is one of its verbs. Because we ship both ends we define
+the contract exactly: how an agent reads, how it writes, how it appears while it
+works, and what the record says afterward.
 
-Sync, conflict handling, and the `.textpack` format are already solved. This adds
-one interface over them.
+Sync, conflict handling, and the `.textpack` format are already solved. This is
+the interface over them.
+
+Hosted MCP stays for browsers and phones, which have no shell. The local MCP
+server retires.
 
 ---
 
-## 1. The CLI
+## 1. Why the CLI can do what MCP could not
 
-Ships as `texttext` inside the app bundle. Reads stdin, writes stdout, exits
-nonzero on failure. `--json` on any command for machine-readable output.
+The CLI ships inside the app bundle and runs as the user, and the app already
+keeps a device credential at `~/Library/Application Support/Write/credentials.json`
+(mode 0600, a `wsk_` token plus origin, `Credentials.swift:7-12`). So the CLI is
+authenticated by construction. There is no cookie problem, no port, no OAuth, no
+pairing.
+
+That single fact is what makes presence and attribution free rather than hard,
+and it is where the earlier plan was wrong.
+
+## 2. Commands
 
 ```
-texttext ls [folder]                 list documents, one path per line
-texttext read <doc>                  body markdown to stdout
-texttext write <doc> [--from FILE]   replace body (stdin if no --from)
-texttext append <doc> [--from FILE]  append to body
-texttext new <title> [--folder F]    create, prints the new doc path
-texttext open <doc>                  open it in the app
-texttext lint [PATH]                 validate one or all .textpacks
+texttext ls [folder]                       list documents
+texttext read <doc> [--section "## H"]     body, or one section, to stdout
+texttext write <doc> [--from F]            replace body (stdin default)
+texttext append <doc> [--from F]           append to body
+texttext edit <doc> --section "## H"       replace one section
+texttext new <title> [--folder F]          create, prints the path
+texttext open <doc> [--section "## H"]     open in the app, scrolled there
+texttext lint [PATH]                       validate
 ```
 
-That is the whole surface for v1. Everything else (publish, share, templates,
-comments, trash) stays in the app or hosted MCP, because the app owns
-presentation and access.
+Global: `--as <name>` (who is working, defaults to a generic agent),
+`--message "..."` (what this change is for), `--json`, stdin/stdout, nonzero exit
+on failure.
 
-`<doc>` is a path relative to the workspace root, tab-completable and the thing
-agents are best at. Accept a full path too. No uuids in the UX.
+`<doc>` is a workspace-relative path. Agents are good at paths and bad at uuids.
+
+## 3. Presence is automatic, not a separate call
+
+**Every mutating command publishes presence before it acts and clears it after.**
+The agent never has to remember to announce itself, because the CLI already knows
+what it is doing. This is the thing an agent could never get right through a tool
+surface that required an explicit signal.
+
+```
+texttext edit posts/launch.md --section "## Pricing" \
+  --as codex --message "tighten the pricing copy"
+```
+
+While that runs, the open document shows Codex with its provider color, anchored
+at the Pricing heading, and the change lands with a stated intent.
+
+**Section anchoring is better than what the local MCP server does today**, which
+pins a cursor to the end of a whole field (body or title). A human has a caret; an
+agent has a region of interest. Headings are the natural unit for that, they
+survive edits above them, and they are what an agent already reasons in.
+
+`--as` is self-declared, exactly as `clientInfo` was. That is acceptable under the
+trust model already settled in `docs/decision-local-mcp-trust.md`: same-user
+processes are trusted, and Tier 0 closed the case that mattered.
+
+## 4. Intent closes the audit gap
+
+`--message` rides through to `action_audit`, so a row records that Codex tightened
+the pricing copy rather than that something changed. That is task #119, solved as
+a side effect rather than as its own project, and it is only possible because the
+CLI sees the operation and the reason together.
+
+## 5. Correctness
 
 **The CLI owns the `.textpack` invariants completely.** Unzip, edit, repack,
 frontmatter preserved byte-for-byte, `info.json` intact, assets kept, outer
-filename matching the inner bundle. An agent never touches the zip, so the whole
-class of corruption stops existing.
+filename matching the inner bundle. An agent never touches the zip, so that class
+of corruption stops existing. Reuse `TextBundlePackage.swift` rather than writing
+a second implementation of the format.
 
 **Writes are atomic.** Unpack to a temp dir, modify, repack to a temp file in the
-same directory, `fsync`, then `rename(2)` over the target. Never edit in place.
-A crash mid-write leaves the old document intact, and the File Provider sees one
-complete replacement rather than a partial file.
+same directory, fsync, `rename(2)` over the target. A crash leaves the old
+document intact and the File Provider sees one complete replacement, never a
+partial file.
 
-Reuse `WriteFileProviderKit` (`TextBundlePackage.swift`) for pack/unpack and
-validation. That code already writes and validates this format; the CLI is a thin
-argument parser over it, not a second implementation.
+**Section edits are surgical.** Parse headings, replace only the addressed span,
+leave every other byte alone. This is what makes concurrent work safe in practice:
+two agents in different sections of one document do not collide, and a human
+typing elsewhere is untouched.
 
-## 2. Build and install
+## 6. Build and install
 
-- New `.executableTarget(name: "TexttextCLI")` in `mac/Package.swift`, depending
-  on `WriteFileProviderKit`.
-- `mac/scripts/build-app.sh` copies the binary to
-  `Contents/MacOS/texttext` and signs it with the same identity and hardened
-  runtime as the main binary. One extra `codesign` call; no entitlements needed.
-- On first run the app offers to symlink it into `~/.local/bin/texttext`. No
-  admin prompt, unlike `/usr/local/bin`. If the symlink is absent, the absolute
-  path inside the bundle always works, and the skills use that as the fallback.
-- `texttext open` shells out to the existing `write-app://` URL scheme
-  (`mac/Info.plist:66-69`), which already parses deep links and queues them
-  across cold launches.
+- `.executableTarget(name: "TexttextCLI")` in `mac/Package.swift`, depending on
+  `WriteFileProviderKit`.
+- `mac/scripts/build-app.sh` copies the binary to `Contents/MacOS/texttext` and
+  signs it with the app's identity and hardened runtime. One extra `codesign`
+  call, no entitlements.
+- The app offers to symlink it to `~/.local/bin/texttext` on first run. No admin
+  prompt, unlike `/usr/local/bin`. The absolute bundle path always works as a
+  fallback, and the skills name it.
+- `texttext open` uses the existing `write-app://` scheme (`mac/Info.plist:66-69`),
+  which already parses deep links and queues them across cold launches.
 
-## 3. Skills
+## 7. Skills
 
-`plugins/texttext/skills/*/SKILL.md` currently instruct MCP tool calls
-(`list_folders`, `append_to_item`, `idempotency_key`). Rewrite the local ones to
-use the CLI. Same plugin, same install, different body.
+`plugins/texttext/skills/*/SKILL.md` currently instruct MCP tool calls. Rewrite
+the local ones to the CLI, including `--as` and `--message` so attribution and
+presence come for free. Same plugin, same install, different body.
 
-One skill can serve both transports: if `texttext` is on PATH or in the bundle,
-use it; otherwise fall back to the MCP instructions for remote clients. State
-that rule once at the top of each skill rather than forking the files.
+One rule at the top of each skill serves both transports: if `texttext` is
+available use it, otherwise use the MCP instructions for remote clients.
 
-Add an `AGENTS.md` at the workspace root so agents that arrive without the plugin
-still learn the conventions: documents are `.textpack`, use `texttext` rather
-than editing the zip, the app owns rendering and layout.
+Add `AGENTS.md` at the workspace root for agents that arrive without the plugin.
 
-## 4. Linter and hooks
+## 8. Linter and hooks
 
-`texttext lint` validates: zip structure, `info.json` (version 2, type
-`net.daringfireball.markdown`), `text.md` present, frontmatter parses and keeps
-required keys, asset references resolve, outer filename matches inner bundle.
-Exit nonzero with a one-line reason per problem.
+`texttext lint` validates zip structure, `info.json`, `text.md`, frontmatter,
+asset references, and filename-to-bundle match. Exit nonzero, one line per
+problem.
 
-Install a `PostToolUse` hook on `Bash|Write|Edit` that runs `texttext lint` over
-the workspace and returns `decision: block` with the failure text when it fails,
-so the agent sees the error and fixes it rather than logging into the void.
+A `PostToolUse` hook on `Bash|Write|Edit` runs it and returns `decision: block`
+with the failure text, so an agent sees the error and fixes it.
 
-Note the honest scope: **once the CLI owns writes, the linter mostly catches
-agents that went around it.** That is worth having as a net, and it is why the
-linter is a small command rather than its own subsystem. Do not build it twice.
+Scope it honestly: **once the CLI owns writes, the linter catches agents that went
+around the CLI.** Worth having as a net. Not worth building twice.
 
-## 5. Local MCP server
+## 9. Retiring the local MCP server
 
-Retire it once the CLI covers its job. Two capabilities need handling first:
+`open_item` becomes `texttext open`. Presence becomes automatic (section 3), which
+is strictly better than what the server does now. Nothing else it exposes survives
+the CLI.
 
-- `open_item` becomes `texttext open`, via the URL scheme. Straightforward.
-- Agent presence (the collaborator avatar) needs a path from a CLI with no
-  session cookie into the app. Solvable through the URL scheme or a local signal
-  to the running app, but it is real work, so it gates removal.
+So it retires cleanly, and with it go the port, the transport guard, its health
+checks, and the entire trust problem, which is deleted rather than mitigated.
 
-Until presence ports, leave the server as shipped. It is hardened (0.143) and
-costs nothing to keep. When it goes, the entire trust problem goes with it rather
-than being mitigated, along with the port, the guard, and its health checks.
+## 10. Build order
 
-## 6. Build order
-
-1. **CLI core**: `read`, `write`, `append`, `ls`, atomic replace, packaged and
-   signed in the bundle. Verified by round-tripping a real document and diffing
-   the bytes.
-2. **`new`, `open`, `lint`.** Verified against the app: create, open, confirm it
-   appears.
-3. **Skills rewrite plus `AGENTS.md` plus the install symlink.** Verified by
-   asking Claude Code to append a changelog entry with no other instruction.
-4. **Hook config.** Verified by breaking a pack deliberately and confirming the
+1. **CLI core**: `ls`, `read`, `write`, `append`, atomic replace, format
+   ownership, packaged and signed. Verified by round-tripping a real document and
+   diffing bytes.
+2. **Sections and presence**: `--section` parsing, surgical replace, automatic
+   presence with `--as` and `--message`, audit intent. Verified by watching a
+   heading-anchored avatar appear in the open app while a command runs.
+3. **`new`, `open`, `lint`**, plus the install symlink.
+4. **Skills rewrite and `AGENTS.md`.** Verified by asking Claude Code to append a
+   changelog entry with no other instruction.
+5. **Hook config.** Verified by deliberately breaking a pack and confirming the
    agent is blocked with a usable message.
-5. **Presence port, then retire the local MCP server**, updating the health
-   check, the interop gate, and `ConnectPanel`.
+6. **Retire the local MCP server**, updating the health check, the interop gate,
+   `ConnectPanel`, and the docs.
 
-Units 1 and 2 are independently useful, since a working CLI is worth having even
-if nothing else lands.
+Units 1 and 2 are the product. A working CLI that edits correctly and shows the
+agent working is worth shipping even if nothing after it lands.
