@@ -1,7 +1,8 @@
 # Texttext unified document architecture
 
 Status: implemented on `main`. This document is the architecture contract for
-the unified document engine, not a future feature plan.
+the unified document engine, not a future feature plan. The dynamic
+document-types wave (2026-07-29) extended it: see "Wave-1 primitives" below.
 
 ## Product contract
 
@@ -391,3 +392,32 @@ Changes follow dependencies rather than marketing phases:
 
 No new primitive or field ships if privacy, offline projection, export, or
 collaboration cannot preserve it.
+
+
+## Wave-1 primitives (2026-07-29)
+
+Grounded in an 8-domain research sweep of text-based document types and the
+Notion and Coda galleries, synthesized into a primitives matrix and reviewed
+adversarially. What shipped:
+
+Field types: `rows` (an array of typed records; sub-fields are scalars, max 8,
+no nesting), enum options with `tone` (closed six-value engine tint) and `icon`
+(one emoji) plus field-level `multiple`, and number `format`
+(plain, currency, percent, minutes, rating).
+
+Render nodes: `badge`, `facts`, `checklist`, `rows` (table, steps, timeline,
+tiles), `progress`, `callout`, `quote`. Inside rows-bound nodes bindings use
+the `row.*` namespace, validated against the exact rows field the node binds.
+
+Collections: sort by `content.fields.<id>` and declarative `filters`
+(eq, neq, isSet, notSet, gt, gte, lt, lte, contains), applied identically by
+SQL (GIN jsonb_path_ops index) and in process
+(`src/lib/documents/collection-query.ts`).
+
+Catalog: 23 built-in templates in six categories (Write, Plan, Track, Collect,
+Work, Publish), every one validated at module load. `TEMPLATE_CATALOG` in
+`src/lib/presentation/templates.ts` is the grouping.
+
+Deliberately deferred: response records (polls, RSVPs need a server-side
+respond command), calendar and heatmap layouts, derived-value bindings, auto
+table-of-contents and backlink chrome, per-template seed content.

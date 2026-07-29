@@ -56,6 +56,8 @@ import { applyCollectionSpec } from "@/lib/documents/collection-query";
 import { parseItemInput } from "@/lib/item-creation";
 import {
   BUILTIN_TEMPLATES,
+  TEMPLATE_CATALOG,
+  TEMPLATE_CATEGORIES,
   getBuiltinTemplate,
 } from "@/lib/presentation/templates";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
@@ -769,14 +771,26 @@ export function UniversalItemComposer({
               setTemplate({ id, version: Number(rawVersion) || 1 });
             }}
           >
-            {BUILTIN_TEMPLATES.map((definition) => (
-              <option
-                key={`${definition.id}@${definition.version}`}
-                value={`${definition.id}@${definition.version}`}
-              >
-                {definition.name}
-              </option>
-            ))}
+            {TEMPLATE_CATEGORIES.map((category) => {
+              const members = BUILTIN_TEMPLATES.filter((definition) =>
+                TEMPLATE_CATALOG.some(
+                  (entry) => entry.id === definition.id && entry.category === category,
+                ),
+              );
+              if (members.length === 0) return null;
+              return (
+                <optgroup key={category} label={category}>
+                  {members.map((definition) => (
+                    <option
+                      key={`${definition.id}@${definition.version}`}
+                      value={`${definition.id}@${definition.version}`}
+                    >
+                      {definition.name}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
         <button
