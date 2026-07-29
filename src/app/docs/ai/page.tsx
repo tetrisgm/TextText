@@ -8,7 +8,6 @@ import {
   CLAUDE_PLUGIN_INSTALL_COMMAND,
   CODEX_PLUGIN_INSTALL_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
-  TEXTTEXT_LOCAL_MCP_URL,
 } from "@/lib/agent-integrations";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
@@ -237,13 +236,13 @@ export default function AiDocsPage() {
             Use these only for clients that cannot install the plugin or finish
             OAuth.
           </p>
-          <h3>Local Mac bridge</h3>
+          <h3>Agents on the same Mac</h3>
           <p className="connect-body">
-            While the Texttext Mac app is open, local agents can connect to{" "}
-            <code className="connect-inline-code">
-              {TEXTTEXT_LOCAL_MCP_URL}
-            </code>
-            .
+            No MCP connection is needed. The Mac app installs a{" "}
+            <code className="connect-inline-code">texttext</code> command, and
+            agents use it to read and edit documents as files. Presence is
+            automatic: an agent shows up in the document with its own name and
+            cursor while it works.
           </p>
           <h3>Hosted MCP</h3>
           <p className="connect-body">

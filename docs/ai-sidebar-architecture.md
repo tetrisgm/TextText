@@ -110,8 +110,8 @@ external interoperability adapter, not an internal transport.
 ### Local Mac agent bridge
 
 The Mac app exposes a loopback-only MCP endpoint at
-`http://127.0.0.1:47118/mcp` while Texttext is open. Claude Code and Codex can
-use it without a Texttext token. The bridge executes the same workspace
+  Local agents use the `texttext` CLI (shipped in the app bundle), not a port.
+use it through the texttext CLI, with no token and no port. The bridge executes the same workspace
 commands against the signed-in Mac app and is never exposed beyond localhost.
 It is a transport for external local agents, not an AI model inside Texttext.
 
@@ -146,7 +146,7 @@ leaking workspace data or provider credentials.
    exposes only tools that need no confirmation and cannot fetch a
    model-chosen URL.
 2. **Local agents over MCP: shipped.** Claude Code and Codex can connect to the
-   Mac app at `http://127.0.0.1:47118/mcp`. Their model and billing remain in the
+  Local agents use the `texttext` CLI (shipped in the app bundle), not a port.
    external client, and local file changes remain immediate.
 3. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
    ChatGPT, Cursor, and other MCP hosts can connect to `/api/mcp` using OAuth.

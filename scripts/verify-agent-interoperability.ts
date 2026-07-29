@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { WORKSPACE_TOOL_DEFINITIONS } from "../src/lib/ai/tools";
-import { LOCAL_AGENT_BRIDGE_VERSION } from "../src/lib/ai/local-agent-bridge";
 import { TEXTTEXT_HOSTED_MCP_URL } from "../src/lib/agent-integrations";
 import { registerAgentSurface } from "../src/lib/mcp/agent-surface";
 import { repositoryRoot } from "./work-unit";
@@ -101,103 +100,24 @@ assert(
   "Public agent docs must explain retry-safe mutations",
 );
 
-// ---- Agent identity transport ----
+// ---- The texttext CLI ----
 //
-// A local Codex or Claude session must appear as a NAMED collaborator with its
-// provider avatar and cursor, which requires the caller identity to survive
-// every hop: MCP initialize -> Swift -> the page bridge -> the tool executor ->
-// the presence route. Each hop is asserted structurally here so a future build
-// that silently drops the actor fails the release gate instead of quietly
-// degrading every local agent back to an anonymous editor.
+// Local agents work through the CLI: they edit documents as files rather than
+// driving a protocol. It must ship inside the app bundle, own the .textpack
+// format rather than reimplementing it, write atomically, and publish presence
+// automatically so an agent shows up in the document simply by working.
 
 const source = (path: string) =>
   readFileSync(join(repositoryRoot, path), "utf8");
 
-assert(
-  LOCAL_AGENT_BRIDGE_VERSION >= 2,
-  "The local agent bridge must advertise the actor-carrying version",
-);
-
-const localAgentServer = source("mac/Sources/Write/LocalAgentServer.swift");
-assert(
-  localAgentServer.includes("clientInfo"),
-  "The native MCP server must retain initialize.params.clientInfo",
-);
-assert(
-  /__TEXTTEXT_AGENT_BRIDGE__\.call\(\s*\n?\s*name,\s*args,\s*"local-mcp",\s*actor/.test(
-    localAgentServer,
-  ),
-  "The native MCP server must forward the agent actor into the page bridge",
-);
-assert(
-  localAgentServer.includes("identityCacheLimit") &&
-    localAgentServer.includes("identityCacheTTL"),
-  "The native agent identity cache must stay bounded and expiring",
-);
-assert(
-  localAgentServer.includes('request.headers["user-agent"]'),
-  "The native MCP server must fall back to the user agent for identity",
-);
-
-// ---- Tier 0 transport guard ----
-//
-// Loopback binding is a routing property, not a trust boundary: every browser
-// on the machine can reach the port. Before this guard, a page could POST with
-// a CORS-safelisted content type, skip the preflight, and reach the tool
-// dispatcher. These assertions keep that closed.
-assert(
-  /nonisolated static func rejection\(for request: LocalAgentHTTPRequest\)/.test(
-    localAgentServer,
-  ),
-  "The native MCP server must expose a pure transport guard the health check and tests can run",
-);
-assert(
-  localAgentServer.includes("var isBrowserOriginated: Bool") &&
-    localAgentServer.includes('headers["origin"]') &&
-    localAgentServer.includes('headers["sec-fetch-site"]'),
-  "The native MCP server must refuse browser-originated requests (Origin / Sec-Fetch-Site)",
-);
-assert(
-  localAgentServer.includes("var hasJSONContentType: Bool") &&
-    localAgentServer.includes('mediaType == "application/json"'),
-  "The native MCP server must require application/json, which is what forces a browser preflight",
-);
-assert(
-  localAgentServer.includes('request.method == "OPTIONS"') &&
-    localAgentServer.includes('"Allow": "GET, POST"'),
-  "The native MCP server must answer preflights with 405 and no CORS headers",
-);
-// A quoted header name would be an actual emitted header; prose in a comment
-// explaining why we never emit one is fine and should stay.
-assert(
-  !/"Access-Control-/i.test(localAgentServer),
-  "The native MCP server must never emit an Access-Control-* header",
-);
-assert(
-  !localAgentServer.includes(`|| host == "localhost:\\(LocalAgentServer.port)"`),
-  "The native MCP server must accept numeric loopback hosts only",
-);
-assert(
-  localAgentServer.includes("requestTimeout") &&
-    localAgentServer.includes("maxConcurrentConnections"),
-  "The native MCP server must bound request duration and concurrent connections",
-);
-
-// ---- The texttext CLI ----
-//
-// The CLI is how local agents work with the workspace: they edit documents as
-// files instead of driving a protocol. It must ship inside the app bundle, own
-// the .textpack invariants rather than reimplementing them, and publish presence
-// automatically so an agent shows up in the document simply by working.
+const packageManifest = source("mac/Package.swift");
+const buildApp = source("mac/scripts/build-app.sh");
 const cliMain = source("mac/Sources/TexttextCLI/main.swift");
 const cliStore = source("mac/Sources/TexttextCLICore/DocumentStore.swift");
 const cliPresence = source("mac/Sources/TexttextCLICore/AgentPresence.swift");
-const packageManifest = source("mac/Package.swift");
-const buildApp = source("mac/scripts/build-app.sh");
 
 assert(
-  packageManifest.includes('.executable(name: "texttext"') &&
-    packageManifest.includes('.executableTarget(\n            name: "TexttextCLI"'),
+  packageManifest.includes('.executable(name: "texttext"'),
   "The texttext CLI must be a product of the Swift package",
 );
 assert(
@@ -224,53 +144,39 @@ assert(
   "Every mutating CLI command must publish presence automatically",
 );
 
-const healthReporter = source("mac/Sources/Write/AppHealthReporter.swift");
+// The loopback MCP server was retired once the CLI covered its job. Keeping it
+// out is the point: no port means the browser-CSRF class and the whole local
+// trust problem are deleted rather than mitigated.
 assert(
-  healthReporter.includes("LocalAgentServer.rejection(for:") &&
-    healthReporter.includes("refuses_browser_origin") &&
-    healthReporter.includes("refuses_non_json"),
-  "App health must assert the real transport guard, not loopback binding as a proxy for safety",
-);
-assert(
-  !healthReporter.includes("loopback_only"),
-  "App health must stop reporting loopback_only as the local MCP security property",
+  !packageManifest.includes("LocalAgentServer") &&
+    !source("mac/Sources/Write/WebAppWindowController.swift").includes(
+      "localAgentServer",
+    ),
+  "The local MCP server must stay retired; agents use the texttext CLI",
 );
 
-const agentTools = source("src/lib/ai/agent-tools.ts");
+const cliPresenceRoute = source("src/app/api/agent/presence/route.ts");
 assert(
-  agentTools.includes("signalAgentActivity"),
-  "Workspace agent tools must accept a presence signal callback",
-);
-for (const [tool, marker] of [
-  ["open_item", '{ kind: "open", field: "body" }'],
-  ["update_item", 'kind: "edit", field: editedField(input)'],
-  ["append_to_item", '{ kind: "edit", field: "body" }'],
-] as const) {
-  assert(
-    agentTools.includes(marker),
-    `Local ${tool} must publish agent presence before it runs`,
-  );
-}
-
-const presenceRoute = source(
-  "src/app/api/collab/[postId]/agent-presence/route.ts",
+  cliPresenceRoute.includes("verifyWriteApiToken"),
+  "The CLI presence route must authenticate the device token",
 );
 assert(
-  presenceRoute.includes("getCollabRequestAccess") &&
-    presenceRoute.includes('access.role !== "editor"'),
-  "The agent presence route must require a signed-in editor",
+  cliPresenceRoute.includes("buildAgentPresence"),
+  "The CLI presence route must use the shared presence helper",
 );
 assert(
-  presenceRoute.includes("buildAgentPresence"),
-  "The agent presence route must use the shared presence helper",
+  cliPresenceRoute.includes("removePresence"),
+  "Finishing a command must retire the collaborator, not leave a blank row",
 );
 
 // One construction site: hosted MCP must not rebuild agent presence by hand.
-const mcpTools = source("src/lib/mcp/tools.ts");
-assert(
-  mcpTools.includes("buildAgentPresence") &&
-    !mcpTools.includes("createAgentAwareness("),
+const mcpTools = source("src/lib/mcp/tools.ts");assert(
+  mcpTools.includes("buildAgentPresence"),
   "Hosted MCP must build agent presence through the shared helper",
+);
+assert(
+  !mcpTools.includes("createAgentAwareness("),
+  "Hosted MCP must not construct awareness by hand; use buildAgentPresence",
 );
 
 console.log(
@@ -280,7 +186,6 @@ console.log(
     resources: resources.size,
     prompts: prompts.size,
     endpoint: TEXTTEXT_HOSTED_MCP_URL,
-    agentIdentityTransport: "verified",
-    localAgentBridgeVersion: LOCAL_AGENT_BRIDGE_VERSION,
+    localAgentTransport: "cli",
   }),
 );

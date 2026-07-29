@@ -10,7 +10,6 @@ import {
   AGENT_INTEGRATIONS,
   AGENT_WORKFLOWS,
   hostedMcpUrl,
-  TEXTTEXT_LOCAL_MCP_URL,
 } from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
@@ -59,9 +58,8 @@ export function ConnectPanel({
   const remoteMcpUrl = hostedMcpUrl(remoteOrigin);
 
   const commands = {
-    claudeLocal: `claude mcp add --transport http --scope user texttext ${TEXTTEXT_LOCAL_MCP_URL}`,
     claudeRemote: `claude mcp add --transport http --scope user texttext ${remoteMcpUrl}`,
-    codexLocal: `codex mcp add texttext --url ${TEXTTEXT_LOCAL_MCP_URL}`,
+    cliCheck: "texttext ls",
     codexRemote: `codex mcp add texttext --url ${remoteMcpUrl}\ncodex mcp login texttext`,
   };
   const tokenConfig = `{
@@ -351,12 +349,13 @@ export function ConnectPanel({
           install the Texttext plugin or complete OAuth.
         </p>
 
-        <h3 className="connect-minor-title">Direct local connection</h3>
+        <h3 className="connect-minor-title">Agents on this Mac</h3>
         <p className="connect-body">
-          The Texttext Mac app exposes a local MCP bridge while it is open.
+          Nothing to connect. The Mac app installs a <code>texttext</code>
+          {" "}command, and Codex, Claude, and other coding agents use it to work
+          in your documents directly. Check it is there with:
         </p>
-        <CodeRecipe copyKey="claude-local" value={commands.claudeLocal} />
-        <CodeRecipe copyKey="codex-local" value={commands.codexLocal} />
+        <CodeRecipe copyKey="cli-check" value={commands.cliCheck} />
 
         <h3 className="connect-minor-title">Direct hosted connection</h3>
         <CodeRecipe copyKey="claude-remote" value={commands.claudeRemote} />

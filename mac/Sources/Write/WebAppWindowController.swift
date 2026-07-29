@@ -47,7 +47,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private let onSystemSignInRequested: () -> Void
     private var startupNavigation: WebAppStartupNavigation
     private let ocrBridge = NativeOCRBridge()
-    private let localAgentServer = LocalAgentServer()
 
     static let cacheWebView = true
 
@@ -136,8 +135,6 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         ucc.add(WeakScriptHandler(self), name: "writeApp")
         ocrBridge.webView = webView
         ucc.add(WeakScriptHandler(ocrBridge), name: NativeOCRBridge.handlerName)
-        localAgentServer.webView = webView
-        localAgentServer.start()
         webView.navigationDelegate = self
         webView.uiDelegate = self
         // Tag every request as coming from the app BEFORE the first load, so

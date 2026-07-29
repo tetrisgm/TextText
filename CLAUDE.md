@@ -75,11 +75,12 @@ free-tier transfer cap.
   template version. The bespoke Reader, ProjectReader, and TalkReader are gone;
   do not reintroduce them.
 - Machine surfaces: `/api/sync/v1` (bearer `wsk_` tokens, manifest hashes,
-  If-Match conflicts) and `/api/mcp` (same tokens, 30 workspace tools). The Mac
-  app also serves local MCP at `http://127.0.0.1:47118/mcp`, which calls the page
-  bridge rather than the hosted endpoint. Tokens are minted at `/connect`; agent
-  docs live at `/docs/ai` and `/llms.txt`. Every mutation writes an
-  `action_audit` row.
+  If-Match conflicts) and `/api/mcp` (same tokens, 30 workspace tools) for
+  remote agents. Agents ON THIS MAC use the `texttext` CLI instead
+  (`mac/Sources/TexttextCLI`), which edits documents as files and publishes
+  presence automatically; the loopback MCP server was retired in 0.146. Tokens
+  are minted at `/connect`; agent docs live at `/docs/ai` and `/llms.txt`. Every
+  mutation writes an `action_audit` row.
 - `src/lib/store.ts`: the ONLY content access point (demo seed without
   DATABASE_URL, Postgres with it). Routes never import demo.ts directly.
 - Collaboration: full-document Yjs with awareness, cursors, and epoch fencing.

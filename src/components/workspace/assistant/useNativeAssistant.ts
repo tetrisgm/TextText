@@ -20,10 +20,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
-import type {
-  WorkspaceAgentActivity,
-  WorkspaceAgentActor,
-} from "@/lib/ai/agent-protocol";
 import {
   cloudAssistantTurn,
   cloudAssistantStatus,
@@ -35,10 +31,6 @@ import {
   type NativeQuickActionId,
   type NativeQuickActionScope,
 } from "@/lib/ai/quick-actions";
-import {
-  installLocalAgentBridge,
-  LOCAL_AGENT_BRIDGE_VERSION,
-} from "@/lib/ai/local-agent-bridge";
 import {
   createWorkspaceItemTextEdit,
   resolveWorkspaceItemTextEdit,
@@ -129,33 +121,6 @@ type UseNativeAssistantOptions = {
   confirmDestructive?: (description: string) => Promise<boolean> | boolean;
 };
 
-/**
- * Publish collaborator presence for a locally connected agent (Codex, Claude)
- * before it opens or edits an item, so it appears as a named collaborator with
- * its provider avatar and a cursor.
- *
- * The server derives the identity from this browser session plus the declared
- * connection name, so a local client cannot claim to be someone else. Presence
- * is decoration for a mutation that carries its own authorization, so every
- * failure here is swallowed: the edit must still land when the route is
- * unavailable (offline, older server, revoked access).
- */
-async function publishAgentActivity(
-  postId: string,
-  activity: WorkspaceAgentActivity,
-  actor: WorkspaceAgentActor,
-): Promise<void> {
-  try {
-    await fetch(`/api/collab/${encodeURIComponent(postId)}/agent-presence`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ actor, activity }),
-      cache: "no-store",
-    });
-  } catch {
-    // Never block the agent's edit on presence reporting.
-  }
-}
 
 function assistantAgentError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -335,7 +300,6 @@ export function useNativeAssistant({
         applyItemPatch,
         confirmDestructive: (description) =>
           confirmDestructive ? confirmDestructive(description) : false,
-        signalAgentActivity: publishAgentActivity,
       }),
     [
       applyItemPatch,
@@ -347,23 +311,6 @@ export function useNativeAssistant({
     ],
   );
 
-  useEffect(
-    () =>
-      installLocalAgentBridge(window, {
-        call: (name, args, requestTag, actor) =>
-          tools.executor(name, args, requestTag ?? "local-mcp", actor),
-        manifest: () => {
-          const view = getViewRef.current();
-          return {
-            version: LOCAL_AGENT_BRIDGE_VERSION,
-            context: tools.describeContext(view),
-            view,
-            tools: tools.toolDefinitions,
-          };
-        },
-      }),
-    [tools],
-  );
 
   useEffect(() => {
     let cancelled = false;

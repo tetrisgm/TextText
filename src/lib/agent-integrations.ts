@@ -1,5 +1,4 @@
 export const TEXTTEXT_HOSTED_MCP_URL = "https://texttext.app/api/mcp";
-export const TEXTTEXT_LOCAL_MCP_URL = "http://127.0.0.1:47118/mcp";
 export const TEXTTEXT_PLUGIN_REPOSITORY = "tetrisgm/write";
 
 export const CLAUDE_PLUGIN_INSTALL_COMMAND =
