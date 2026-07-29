@@ -90,9 +90,11 @@ tightened the pricing copy rather than that something changed.
 ## Remote agents: hosted MCP
 
 External clients connect to `https://texttext.app/api/mcp` with OAuth
-(click-to-approve) or a manual `wsk_` token from `/connect`. `docs/mcp.md` is the
-full protocol reference; `src/lib/ai/tools.ts` is the source of truth for tool
-names and schemas.
+(click-to-approve) or a manual `wsk_` token from `/connect`. The server
+implements **MCP `2026-07-28`**, the stateless revision: no `initialize`, no
+session header, no GET stream. Call `server/discover` to see what it supports.
+`docs/mcp.md` is the full protocol reference; `src/lib/ai/tools.ts` is the source
+of truth for tool names and schemas.
 
 ### Automation contract
 

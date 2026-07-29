@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { WORKSPACE_TOOL_DEFINITIONS } from "../src/lib/ai/tools";
 import { TEXTTEXT_HOSTED_MCP_URL } from "../src/lib/agent-integrations";
 import { registerAgentSurface } from "../src/lib/mcp/agent-surface";
+import {
+  MCP_PROTOCOL_VERSION,
+  MCP_SUPPORTED_VERSIONS,
+} from "../src/lib/mcp/protocol";
 import { repositoryRoot } from "./work-unit";
 
 const requiredTools = [
@@ -184,9 +188,84 @@ assert(
   "Hosted MCP must not construct awareness by hand; use buildAgentPresence",
 );
 
+// ---- MCP 2026-07-28 conformance ----
+//
+// The revision made MCP stateless: no initialize handshake, no session header,
+// no GET stream. Those are the things a partial migration leaves behind, so
+// assert their absence rather than trusting that the rewrite was complete.
+
+const transport = source("src/lib/mcp/streamable-http.ts");
+const protocol = source("src/lib/mcp/protocol.ts");
+
+assert(
+  MCP_PROTOCOL_VERSION === "2026-07-28" &&
+    (MCP_SUPPORTED_VERSIONS as readonly string[]).includes("2026-07-28"),
+  "The server must implement MCP revision 2026-07-28",
+);
+assert(
+  !packageManifest.includes("mcp-handler") &&
+    !source("package.json").includes('"mcp-handler"'),
+  "mcp-handler implements the stateful pre-2026-07-28 shape and must stay removed",
+);
+assert(
+  transport.includes('request.method !== "POST"') &&
+    transport.includes("405"),
+  "GET and DELETE must answer 405: the session and standalone-stream verbs are gone",
+);
+assert(
+  !transport.includes('"initialize"') &&
+    !transport.includes("notifications/initialized"),
+  "There must be no initialize handshake in the transport",
+);
+assert(
+  !/mcp-session-id/i.test(transport),
+  "Protocol-level sessions are removed; the server must not read or mint a session id",
+);
+assert(
+  transport.includes('case "server/discover"'),
+  "server/discover is a MUST for every server in this revision",
+);
+assert(
+  protocol.includes("-32020") ||
+    protocol.includes("MCP_HEADER_MISMATCH = -32020"),
+  "HeaderMismatch must use the renumbered -32020",
+);
+assert(
+  protocol.includes("MCP_UNSUPPORTED_PROTOCOL_VERSION = -32022") &&
+    protocol.includes("MCP_MISSING_REQUIRED_CLIENT_CAPABILITY = -32021"),
+  "The renumbered spec error codes must be -32021 and -32022",
+);
+assert(
+  protocol.includes("MCP_RESOURCE_NOT_FOUND = JSONRPC_INVALID_PARAMS"),
+  "Resource-not-found moved to -32602; -32002 is reserved and must not be emitted",
+);
+assert(
+  protocol.includes('resultType: "complete"'),
+  "Every result must carry resultType",
+);
+assert(
+  protocol.includes("cacheScope") && protocol.includes("ttlMs"),
+  "List and read results must carry the CacheableResult hints",
+);
+assert(
+  transport.includes("subscriptions/listen"),
+  "subscriptions/listen replaced the GET stream and resources/subscribe",
+);
+assert(
+  transport.includes('request.headers.get("mcp-method")') &&
+    transport.includes('request.headers.get("mcp-name")'),
+  "Standard request headers must be validated against the body",
+);
+assert(
+  source("scripts/test-oauth-mcp-loop.py").includes("server/discover") &&
+    !/"method": "initialize"/.test(source("scripts/test-oauth-mcp-loop.py")),
+  "The OAuth loop gate must exercise the stateless protocol, not initialize",
+);
+
 console.log(
   JSON.stringify({
     status: "pass",
+    protocolVersion: MCP_PROTOCOL_VERSION,
     tools: requiredTools.length,
     resources: resources.size,
     prompts: prompts.size,

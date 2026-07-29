@@ -1,5 +1,5 @@
 // Root-form RFC 9728 metadata: this exact path is what the MCP 401's
-// resource_metadata header advertises (mcp-handler's default).
+// resource_metadata header advertises.
 
 import {
   metadataOptionsResponse,

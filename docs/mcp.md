@@ -18,14 +18,79 @@ annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
 <!-- /generated:tool-source -->
 
+## Protocol revision
+
+Texttext implements **MCP `2026-07-28`** and only that revision. It is stateless:
+there is no `initialize` handshake, no `Mcp-Session-Id`, no GET stream, and no
+SSE resumability. Every request stands alone.
+
+`server/discover` returns the supported versions, capabilities, and server
+identity in one call. A request for a version this server does not implement is
+answered with `400` and `-32022`, listing what it does support.
+
 ## Endpoint and transport
 
-- Endpoint: `https://{host}/api/mcp` using MCP Streamable HTTP.
+- Endpoint: `https://{host}/api/mcp`, Streamable HTTP, POST only.
 - `/api/mcp/mcp` is also served for clients that append a transport segment.
-- There is no legacy SSE endpoint. Send one POST per JSON-RPC message.
+- `GET` and `DELETE` answer `405`. Those were the session and standalone-stream
+  verbs and this revision removed both.
 - `/.well-known/mcp.json` provides zero-configuration server discovery.
 - An unauthenticated request returns a `WWW-Authenticate` challenge pointing
   to `/.well-known/oauth-protected-resource`.
+
+### Every request carries its own context
+
+Required in `params._meta`:
+
+| Key | Required |
+|-----|----------|
+| `io.modelcontextprotocol/protocolVersion` | Yes |
+| `io.modelcontextprotocol/clientCapabilities` | Yes |
+| `io.modelcontextprotocol/clientInfo` | No, but send it |
+
+Required headers, which MUST match the body or the request is rejected with
+`400` and `-32020`:
+
+| Header | Mirrors | Required for |
+|--------|---------|--------------|
+| `MCP-Protocol-Version` | `_meta` protocol version | every request |
+| `Mcp-Method` | `method` | every request |
+| `Mcp-Name` | `params.name` or `params.uri` | `tools/call`, `prompts/get`, `resources/read` |
+
+A value that is not plain ASCII is carried as `=?base64?{value}?=` and decoded
+before comparison.
+
+### Results
+
+Every result carries `resultType: "complete"` and
+`_meta["io.modelcontextprotocol/serverInfo"]`. The five cacheable results
+(`tools/list`, `prompts/list`, `resources/list`, `resources/read`,
+`resources/templates/list`) also carry `ttlMs` and `cacheScope`, so a client can
+cache instead of poll. The catalogs are `public` and change only on deploy;
+workspace reads are `private` and short-lived.
+
+`tools/list` returns tools in a fixed order, so a client cache and an LLM prompt
+cache both stay warm.
+
+### Error codes
+
+| Code | Meaning |
+|------|---------|
+| `-32020` | `HeaderMismatch`, a header disagrees with the body or is missing |
+| `-32021` | `MissingRequiredClientCapability` |
+| `-32022` | `UnsupportedProtocolVersion`, with `data.supported` |
+| `-32601` | unknown method, returned with HTTP `404` |
+| `-32602` | invalid params, including resource-not-found |
+
+`-32002` is reserved and never emitted; resource-not-found moved to `-32602` in
+this revision.
+
+### Subscriptions
+
+`subscriptions/listen` replaced the GET stream and `resources/subscribe`.
+Texttext has no server-pushed changes to offer, so it acknowledges an empty
+filter and closes the stream gracefully with the empty result the spec defines,
+rather than holding a connection open that would never emit.
 
 ## Authentication and OAuth lifecycle
 

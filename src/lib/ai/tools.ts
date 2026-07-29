@@ -70,10 +70,12 @@ function defineTool<Name extends string, Schema extends z.ZodType>(
     title: options.title,
     description,
     inputSchema: options.inputSchema,
-    jsonSchema: z.toJSONSchema(options.inputSchema, { target: "draft-7" }) as Record<
-      string,
-      unknown
-    >,
+    // MCP 2026-07-28 defaults to JSON Schema 2020-12 when a schema carries no
+    // $schema, and recommends it. Emitting draft-7 shapes without saying so
+    // would leave a conforming client validating against the wrong dialect.
+    jsonSchema: z.toJSONSchema(options.inputSchema, {
+      target: "draft-2020-12",
+    }) as Record<string, unknown>,
     mutability,
     requiredScope,
     confirmation,

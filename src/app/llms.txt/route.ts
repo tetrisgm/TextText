@@ -7,6 +7,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
+import { MCP_PROTOCOL_VERSION } from "@/lib/mcp/protocol";
 import { rootDomainUrl } from "@/lib/site-url";
 
 export function GET() {
@@ -71,6 +72,22 @@ comments, templates, and Trash.
 ## Authenticated MCP surface
 
 MCP Streamable HTTP endpoint: ${origin}/api/mcp
+Protocol revision: ${MCP_PROTOCOL_VERSION} (stateless; no initialize handshake,
+no session header, no GET stream). Call server/discover for supported versions,
+capabilities, and server identity.
+
+Every request MUST carry, in params._meta:
+- io.modelcontextprotocol/protocolVersion: "${MCP_PROTOCOL_VERSION}"
+- io.modelcontextprotocol/clientCapabilities: {}
+and SHOULD carry io.modelcontextprotocol/clientInfo.
+
+Every request MUST carry matching headers, or it is rejected with -32020:
+- MCP-Protocol-Version, on every request
+- Mcp-Method, on every request
+- Mcp-Name, on tools/call, prompts/get, and resources/read
+
+Results carry resultType "complete"; list and read results also carry ttlMs and
+cacheScope so you can cache instead of poll.
 
 The endpoint advertises OAuth discovery from its unauthenticated 401 response.
 The click-to-approve flow uses authorization code with PKCE S256. Clients

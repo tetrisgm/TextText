@@ -1,11 +1,13 @@
-// mcp-handler's conventional [transport] route: serves /api/mcp/mcp for
-// clients that append the transport segment. The advertised endpoint is the
-// bare /api/mcp (route.ts one level up); both share the same tools and auth.
+// Serves /api/mcp/mcp for clients that append a transport segment to the URL.
+// The advertised endpoint is the bare /api/mcp one level up; both are the same
+// stateless handler, because MCP 2026-07-28 keeps no per-endpoint state.
 
-import { buildMcpRouteHandler } from "@/lib/mcp/handler";
+import { handleMcpRequest } from "@/lib/mcp/handler";
 
 export const dynamic = "force-dynamic";
 
-const handler = buildMcpRouteHandler("/api/mcp/mcp");
-
-export { handler as GET, handler as POST, handler as DELETE };
+export {
+  handleMcpRequest as GET,
+  handleMcpRequest as POST,
+  handleMcpRequest as DELETE,
+};

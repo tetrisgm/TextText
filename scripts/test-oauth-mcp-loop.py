@@ -3,7 +3,7 @@ r"""End-to-end test of the click-to-approve connector loop.
 
 Walks the exact path an MCP client (ChatGPT, Claude) takes:
     discovery -> dynamic client registration -> sign in -> consent approval ->
-    PKCE token exchange -> authenticated MCP initialize + tools/list +
+    PKCE token exchange -> authenticated MCP server/discover + tools/list +
     resources/list + prompts/list -> refresh rotation -> replay rejection and
     family revocation.
 
@@ -25,6 +25,7 @@ import base64
 import hashlib
 import http.cookiejar
 import json
+import pathlib
 import re
 import secrets
 import sys
@@ -37,39 +38,39 @@ BASE = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://localhost:3000"
 # listener. The test captures the redirect instead of opening this port.
 REDIRECT = "http://127.0.0.1:34567/callback"
 DEV_EMAIL = "connector-loop-test@example.com"
-EXPECTED_TOOLS = [
-    "get_workspace",
-    "list_folders",
-    "list_items",
-    "read_item",
-    "open_item",
-    "search",
-    "list_trash",
-    "list_comments",
-    "list_access",
-    "list_document_templates",
-    "customize_document_template",
-    "set_item_template",
-    "create_item",
-    "update_item",
-    "append_to_item",
-    "set_item_status",
-    "move_item",
-    "delete_item",
-    "restore_item",
-    "add_item_asset",
-    "remove_item_asset",
-    "recapture_bookmark",
-    "add_comment",
-    "set_comment_resolved",
-    "create_folder",
-    "rename_folder",
-    "delete_folder",
-    "restore_folder",
-    "set_access",
-    "revoke_access",
-]
-EXPECTED_OPEN_WORLD_TOOLS = {"recapture_bookmark", "add_item_asset"}
+# The tool contract is generated from src/lib/ai/tools.ts. It used to be a
+# hand-copied list of 30 names here, which is how the Markdown docs drifted into
+# naming tools that no longer existed.
+_CONTRACT = json.loads(
+    (pathlib.Path(__file__).parent / "generated" / "mcp-tool-contract.json").read_text()
+)
+PROTOCOL_VERSION = _CONTRACT["protocolVersion"]
+EXPECTED_TOOLS = _CONTRACT["tools"]
+EXPECTED_OPEN_WORLD_TOOLS = set(_CONTRACT["openWorld"])
+
+
+def modern(method, request_id, params=None):
+    """A conforming MCP 2026-07-28 request body. There is no initialize: every
+    request carries its own protocol version, capabilities, and identity."""
+    body = dict(params or {})
+    body["_meta"] = {
+        "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "loop-test", "version": "0"},
+    }
+    return {"jsonrpc": "2.0", "method": method, "id": request_id, "params": body}
+
+
+def modern_headers(method, extra=None, name=None):
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": PROTOCOL_VERSION,
+        "Mcp-Method": method,
+    }
+    if name is not None:
+        headers["Mcp-Name"] = name
+    headers.update(extra or {})
+    return headers
 EXPECTED_RESOURCES = {
     "texttext://agent-guide",
     "texttext://workspace",
@@ -135,11 +136,10 @@ def rpc_payload(body):
 
 
 # 0. Discovery chain: the 401 breadcrumb and both metadata documents.
-code, headers, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "initialize", "id": 0,
-    "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-               "clientInfo": {"name": "probe", "version": "0"}},
-}, headers={"Accept": "application/json, text/event-stream"})
+code, headers, body = call(
+    opener, f"{BASE}/api/mcp", modern("server/discover", 0),
+    headers=modern_headers("server/discover"),
+)
 www = headers.get("WWW-Authenticate", headers.get("www-authenticate", ""))
 if code != 401 or "resource_metadata=" not in www:
     fail("discovery-401", code, f"WWW-Authenticate: {www}")
@@ -278,22 +278,26 @@ if (
 print(f"4. token: {token[:8]}... type={tok['token_type']} scope={tok['scope']}")
 
 # 6. Authenticated MCP calls.
-mcp_headers = {
-    "Authorization": f"Bearer {token}",
-    "Accept": "application/json, text/event-stream",
-}
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "initialize", "id": 1,
-    "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-               "clientInfo": {"name": "loop-test", "version": "0"}},
-}, headers=mcp_headers)
-if code != 200 or "serverInfo" not in body:
-    fail("mcp-initialize", code, body)
-print("5. MCP initialize: ok")
+mcp_headers = {"Authorization": f"Bearer {token}"}
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("server/discover", 1),
+    headers=modern_headers("server/discover", mcp_headers),
+)
+if code != 200:
+    fail("mcp-discover", code, body)
+discover = rpc_payload(body)["result"]
+if discover.get("resultType") != "complete":
+    fail("mcp-discover-result-type", code, body)
+if PROTOCOL_VERSION not in discover.get("supportedVersions", []):
+    fail("mcp-discover-versions", code, body)
+if "io.modelcontextprotocol/serverInfo" not in discover.get("_meta", {}):
+    fail("mcp-discover-server-info", code, body)
+print(f"5. MCP server/discover: {PROTOCOL_VERSION}")
 
-code, _, body = call(opener, f"{BASE}/api/mcp", {
-    "jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {},
-}, headers=mcp_headers)
+code, _, body = call(
+    opener, f"{BASE}/api/mcp", modern("tools/list", 2),
+    headers=modern_headers("tools/list", mcp_headers),
+)
 if code != 200:
     fail("mcp-tools", code, body)
 try:

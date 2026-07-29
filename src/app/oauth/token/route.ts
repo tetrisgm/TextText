@@ -4,7 +4,7 @@ import {
   exchangeOAuthAuthorizationCode,
   refreshOAuthAccessToken,
 } from "@/lib/oauth";
-import { getPublicOrigin } from "mcp-handler";
+import { publicOrigin as getPublicOrigin } from "@/lib/mcp/origin";
 import { loadOAuthClients } from "../clients";
 
 export const dynamic = "force-dynamic";

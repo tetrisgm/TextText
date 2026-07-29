@@ -1,10 +1,9 @@
 // Bearer auth for the MCP server: the same wsk_ tokens as the sync API,
-// verified through resolveApiToken and handed to mcp-handler's withMcpAuth.
+// verified through resolveApiToken and applied by the Streamable HTTP handler.
 // The token owner's OWNED blog is the workspace, so no tool below can ever
 // cross tenants.
 
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { getPublicOrigin } from "mcp-handler";
 import {
   WORKSPACE_SCOPE_CAPABILITIES,
   WORKSPACE_TOOL_DEFINITIONS,
@@ -13,10 +12,11 @@ import {
 import { resolveApiToken } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
 import { getOwnedBlog } from "@/lib/store";
+import { publicOrigin } from "./origin";
 
 /**
- * verifyToken for withMcpAuth. Returning undefined makes the wrapper answer
- * with the MCP-proper 401 (WWW-Authenticate: Bearer + OAuth error body) for a
+ * Resolve the bearer token. Returning undefined makes the transport answer with
+ * the MCP-proper 401 (WWW-Authenticate: Bearer plus an OAuth error body) for a
  * missing, malformed, unknown, or revoked token.
  */
 export async function verifyWriteApiToken(
@@ -63,7 +63,7 @@ function requestedToolNames(value: unknown): string[] {
 }
 
 function insufficientScopeResponse(request: Request): Response {
-  const metadata = `${getPublicOrigin(request)}/.well-known/oauth-protected-resource`;
+  const metadata = `${publicOrigin(request)}/.well-known/oauth-protected-resource`;
   return Response.json(
     {
       error: "insufficient_scope",

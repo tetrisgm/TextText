@@ -111,7 +111,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CLIENT_SAVE_ERRORS = new Set(["That URL is already used"]);
 
-type ToolContext = { authInfo?: AuthInfo };
+export type ToolContext = { authInfo?: AuthInfo };
 type ToolTargetType = "workspace" | "folder" | "item" | "mode";
 type RegisteredCallback = (
   args: Record<string, unknown>,
@@ -649,7 +649,7 @@ function scopeError(name: WorkspaceToolName, extra: ToolContext): CallToolResult
   return null;
 }
 
-async function executeMcpTool(
+export async function executeMcpTool(
   name: WorkspaceToolName,
   rawArgs: Record<string, unknown>,
   extra: ToolContext,
