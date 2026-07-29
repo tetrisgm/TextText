@@ -213,6 +213,29 @@ function LandingSections() {
         <FolderCards />
       </section>
 
+      <section className="write-landing-split" aria-label="Templates">
+        <article>
+          <p className="write-landing-kicker">Twenty-five built-in looks</p>
+          <h2>Every document has a shape</h2>
+          <p>
+            To-do lists, recipes, reading logs, changelogs, specs, postmortems,
+            polls, and invites. Each is typed fields plus a layout, and the
+            gallery shows every one as a real example you can open and read.
+          </p>
+          <TextLink href="/templates">Browse the templates</TextLink>
+        </article>
+        <article>
+          <p className="write-landing-kicker">Made to order</p>
+          <h2>Describe a new kind of document</h2>
+          <p>
+            Ask a connected AI for a wine log or a match diary and it composes
+            the look itself: fields, layout, and folder sorting. The result
+            publishes like any other page.
+          </p>
+          <TextLink href="/docs/ai">See how agents build looks</TextLink>
+        </article>
+      </section>
+
       <section className="write-landing-portability" aria-label="Portability">
         <div className="write-landing-band-inner">
           <div>
