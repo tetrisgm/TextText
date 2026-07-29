@@ -718,22 +718,55 @@ final class AppHealthReporter {
         ])
     }
 
+    /// Exercise the real transport guard, not a proxy for it. Loopback binding
+    /// is a routing property and authenticates nothing: every browser on this
+    /// Mac can reach the port. What must hold is that the guard refuses
+    /// browser-originated traffic and non-JSON bodies, which is what stops a
+    /// web page driving the workspace.
     private func checkLocalAgentBridge() -> (WriteHealthStatus, [String: Double]) {
-        let request = LocalAgentHTTPRequest.parse(Data(
-            "GET /health HTTP/1.1\r\nHost: 127.0.0.1:\(LocalAgentServer.port)\r\n\r\n".utf8))
-        let response = LocalAgentHTTPResponse.json([
+        func parse(_ raw: String) -> LocalAgentHTTPRequest? {
+            LocalAgentHTTPRequest.parse(Data(raw.utf8))
+        }
+        let host = "127.0.0.1:\(LocalAgentServer.port)"
+        let admissible = parse(
+            "POST /mcp HTTP/1.1\r\nHost: \(host)\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
+        // A page fetch: the browser attaches Origin and script cannot remove it.
+        let browserOrigin = parse(
+            "POST /mcp HTTP/1.1\r\nHost: \(host)\r\nOrigin: https://evil.example\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
+        // The CORS-safelisted content type that skipped preflight before this.
+        let simpleRequest = parse(
+            "POST /mcp HTTP/1.1\r\nHost: \(host)\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\n{}")
+        let preflight = parse(
+            "OPTIONS /mcp HTTP/1.1\r\nHost: \(host)\r\n\r\n")
+
+        let admits = admissible.flatMap { LocalAgentServer.rejection(for: $0) } == nil
+        let refusesBrowser =
+            browserOrigin.flatMap { LocalAgentServer.rejection(for: $0)?.status } == 403
+        let refusesSimple =
+            simpleRequest.flatMap { LocalAgentServer.rejection(for: $0)?.status } == 415
+        let refusesPreflight =
+            preflight.flatMap { LocalAgentServer.rejection(for: $0)?.status } == 405
+
+        let responseText = String(decoding: LocalAgentHTTPResponse.json([
             "ok": true,
             "service": "texttext-local-mcp",
-        ]).encoded()
-        let responseText = String(decoding: response, as: UTF8.self)
-        let loopbackOnly = request?.isLoopbackHost == true
+        ]).encoded(), as: UTF8.self)
         let framingValid = responseText.contains("\r\n\r\n")
             && responseText.hasPrefix("HTTP/1.1 200 OK\r\n")
+        // No Access-Control-* header may ever be emitted, or a browser could
+        // read an answer.
+        let noCORS = !responseText.lowercased().contains("access-control-")
         let endpointValid =
             LocalAgentServer.endpoint == "http://127.0.0.1:47118/mcp"
-        let valid = loopbackOnly && framingValid && endpointValid
+
+        let valid = admits && refusesBrowser && refusesSimple && refusesPreflight
+            && framingValid && noCORS && endpointValid
         return (valid ? .pass : .fail, [
-            "loopback_only": loopbackOnly ? 1 : 0,
+            "admits_agent": admits ? 1 : 0,
+            "refuses_browser_origin": refusesBrowser ? 1 : 0,
+            "refuses_non_json": refusesSimple ? 1 : 0,
+            "refuses_preflight": refusesPreflight ? 1 : 0,
+            "no_cors_headers": noCORS ? 1 : 0,
             "http_framing": framingValid ? 1 : 0,
             "endpoint": endpointValid ? 1 : 0,
         ])

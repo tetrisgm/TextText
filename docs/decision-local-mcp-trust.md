@@ -1,9 +1,20 @@
 # Decision: local MCP trust model
 
-Status: recommendation, awaiting the owner's decision. Researched 2026-07-28 by a
+**DECIDED 2026-07-29: Tier 0 only. Tier 1 is deferred, not rejected.** Tier 0
+shipped; see the record at the end of this document. Researched 2026-07-28 by a
 seven-agent sweep over the MCP specification, the top MCP-capable desktop apps,
 a decade of non-MCP loopback prior art, the 2024 to 2026 CVEs in this exact
 surface, and a code-level threat model of our own server.
+
+The reasoning behind the split, in one paragraph, because it is easy to
+misremember: **Tier 0 is the security fix and Tier 1 is a product feature.**
+Tier 0 stops a malicious web page, which was a live and demonstrated hole. Tier 1
+adds authorization on top of Tier 0, which additionally stops other user accounts
+and sandboxed apps, but does **not** stop a program running as you, since that
+program can read the token too. On a single-user Mac the marginal security gain
+is therefore small. Tier 1's real value is three product properties: a truthful
+agent badge, a revoke button, and a read-only mode. Revisit it when one of those
+three actually matters, not on security grounds alone.
 
 The subject is `LocalAgentServer` (`mac/Sources/Write/LocalAgentServer.swift`),
 the loopback MCP endpoint at `http://127.0.0.1:47118/mcp` that lets a local
@@ -446,3 +457,61 @@ Discord RPC origin allowlist; Jupyter token model; Chrome DevTools
 XPC plus Keychain; 1Password app integration security; Obsidian Local REST API;
 Xcode 26 MCP pairing dialog; Figma, Paper, Blender, Ableton, Unity, Ollama, and
 LM Studio local server postures.
+
+---
+
+## Record: Tier 0 shipped 2026-07-29
+
+The hole was demonstrated live against the shipped 0.142 build before the fix.
+This request returned the full tool list:
+
+```
+curl -X POST http://127.0.0.1:47118/mcp \
+  -H 'Content-Type: text/plain' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+`text/plain` is CORS-safelisted, so a browser sends it with no preflight, and the
+server never inspected the content type. That is the whole exploit.
+
+What shipped, all in `mac/Sources/Write/LocalAgentServer.swift`:
+
+- `rejection(for:)`, a `nonisolated static` pure guard, so the health reporter
+  and the tests run the exact code the server runs rather than a proxy for it.
+- Refuse any request carrying `Origin`, or a `Sec-Fetch-Site` other than `none`.
+  Both are forbidden header names, so script can neither forge nor remove them.
+  `none` stays allowed so a human can still open `/health` in a browser.
+- Require strict `application/json`. This is the load-bearing line: that media
+  type is not CORS-safelisted, so a browser POST must preflight.
+- Explicit `OPTIONS` returning 405 with `Allow` and no CORS headers, so the
+  preflight fails.
+- Numeric loopback hosts only, with a 403 that names the fix for the one
+  legitimate case (a hand-typed `localhost:47118`).
+- `X-Content-Type-Options: nosniff` on every response.
+- A 120 s request deadline and a 16-connection cap, via a settle-once
+  `LocalAgentChannel` so the deadline and the response cannot both write to one
+  socket, plus a lock-guarded `LocalAgentConnectionLimiter`.
+- Listener state is recorded (`isListening`) and a bind failure is logged
+  prominently, because a process squatting the port previously failed silently.
+
+**`allowLocalEndpointReuse` was deliberately kept**, against the initial
+recommendation. `release/ship.sh` quits and relaunches the app well inside the
+30 s TIME_WAIT window, so removing it would make the relaunched app fail to
+bind. On BSD this flag permits rebinding a port in TIME_WAIT, not co-binding a
+live listener, so it is not the squatting risk. The real defect was that a bind
+failure was invisible, which is what `isListening` and the log now address.
+
+Coverage: 29 tests in `mac/Tests/WriteTests/LocalAgentServerTests.swift`, a
+rewritten `checkLocalAgentBridge` in `AppHealthReporter.swift` that exercises the
+guard instead of asserting `loopback_only` as though it were a security
+property, and eight assertions in `scripts/verify-agent-interoperability.ts`
+(a release gate), each verified to fail against a simulated regression.
+
+### What Tier 0 does NOT do
+
+It authenticates nothing. Any program running as you can still drive the
+endpoint, and that is by design, since it is the attacker class the decision
+explicitly scopes out. It also leaves the three product gaps that Tier 1 would
+close: the collaborator badge is still self-declared and forgeable, there is no
+list of connected local agents and no revoke, and every local agent still gets
+all 30 tools with no read-only option.

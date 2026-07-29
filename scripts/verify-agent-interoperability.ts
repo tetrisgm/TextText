@@ -139,6 +139,62 @@ assert(
   "The native MCP server must fall back to the user agent for identity",
 );
 
+// ---- Tier 0 transport guard ----
+//
+// Loopback binding is a routing property, not a trust boundary: every browser
+// on the machine can reach the port. Before this guard, a page could POST with
+// a CORS-safelisted content type, skip the preflight, and reach the tool
+// dispatcher. These assertions keep that closed.
+assert(
+  /nonisolated static func rejection\(for request: LocalAgentHTTPRequest\)/.test(
+    localAgentServer,
+  ),
+  "The native MCP server must expose a pure transport guard the health check and tests can run",
+);
+assert(
+  localAgentServer.includes("var isBrowserOriginated: Bool") &&
+    localAgentServer.includes('headers["origin"]') &&
+    localAgentServer.includes('headers["sec-fetch-site"]'),
+  "The native MCP server must refuse browser-originated requests (Origin / Sec-Fetch-Site)",
+);
+assert(
+  localAgentServer.includes("var hasJSONContentType: Bool") &&
+    localAgentServer.includes('mediaType == "application/json"'),
+  "The native MCP server must require application/json, which is what forces a browser preflight",
+);
+assert(
+  localAgentServer.includes('request.method == "OPTIONS"') &&
+    localAgentServer.includes('"Allow": "GET, POST"'),
+  "The native MCP server must answer preflights with 405 and no CORS headers",
+);
+// A quoted header name would be an actual emitted header; prose in a comment
+// explaining why we never emit one is fine and should stay.
+assert(
+  !/"Access-Control-/i.test(localAgentServer),
+  "The native MCP server must never emit an Access-Control-* header",
+);
+assert(
+  !localAgentServer.includes(`|| host == "localhost:\\(LocalAgentServer.port)"`),
+  "The native MCP server must accept numeric loopback hosts only",
+);
+assert(
+  localAgentServer.includes("requestTimeout") &&
+    localAgentServer.includes("maxConcurrentConnections"),
+  "The native MCP server must bound request duration and concurrent connections",
+);
+
+const healthReporter = source("mac/Sources/Write/AppHealthReporter.swift");
+assert(
+  healthReporter.includes("LocalAgentServer.rejection(for:") &&
+    healthReporter.includes("refuses_browser_origin") &&
+    healthReporter.includes("refuses_non_json"),
+  "App health must assert the real transport guard, not loopback binding as a proxy for safety",
+);
+assert(
+  !healthReporter.includes("loopback_only"),
+  "App health must stop reporting loopback_only as the local MCP security property",
+);
+
 const agentTools = source("src/lib/ai/agent-tools.ts");
 assert(
   agentTools.includes("signalAgentActivity"),

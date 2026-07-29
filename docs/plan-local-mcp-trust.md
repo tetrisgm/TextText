@@ -57,7 +57,15 @@ at the start of Unit C. It costs nothing and needs no Codex credit.
 
 ---
 
-## Unit A: Tier 0 hardening
+## Unit A: Tier 0 hardening (SHIPPED 2026-07-29)
+
+Done. See the record at the end of `docs/decision-local-mcp-trust.md` for what
+landed, including the one deviation: `allowLocalEndpointReuse` was kept, because
+`release/ship.sh` relaunches the app inside the 30 s TIME_WAIT window and the
+flag permits rebinding a TIME_WAIT port rather than co-binding a live listener.
+The real defect there was the silent bind failure, now recorded and logged.
+
+Units B and C below remain open. The original plan follows.
 
 Closes the live blind-write CSRF path. No UX change. Ships independently of
 every other decision here.

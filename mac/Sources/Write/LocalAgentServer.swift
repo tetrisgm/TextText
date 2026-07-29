@@ -36,11 +36,46 @@ struct LocalAgentHTTPRequest {
             body: Data(body.prefix(expected)))
     }
 
+    /// Numeric loopback only. Every surface that hands out this URL uses the
+    /// numeric form (`src/lib/agent-integrations.ts`), so a name never appears
+    /// in a generated command, and a name is the only thing a DNS rebinding
+    /// attempt can carry.
     var isLoopbackHost: Bool {
         guard let host = headers["host"]?.lowercased() else { return false }
         return host == "127.0.0.1:\(LocalAgentServer.port)"
-            || host == "localhost:\(LocalAgentServer.port)"
             || host == "[::1]:\(LocalAgentServer.port)"
+    }
+
+    /// A hand-typed `localhost:47118` config is the one legitimate way to hit
+    /// the host rejection, so it gets an answer that names the fix.
+    var usesLoopbackName: Bool {
+        headers["host"]?.lowercased() == "localhost:\(LocalAgentServer.port)"
+    }
+
+    /// True when the request carries a header only a browser sets. No MCP
+    /// client sends `Origin` or `Sec-Fetch-*`; a browser sets them on every
+    /// page-initiated request and script can neither forge nor remove them
+    /// (both are forbidden header names). `Sec-Fetch-Site: none` is a
+    /// user-typed navigation, which no page can produce, so it stays allowed
+    /// and a human can still open /health in a browser.
+    var isBrowserOriginated: Bool {
+        if headers["origin"] != nil { return true }
+        if let site = headers["sec-fetch-site"]?.lowercased(), site != "none" {
+            return true
+        }
+        return false
+    }
+
+    /// Strict `application/json`, parameters allowed. The media type is the
+    /// load-bearing part: `application/json` is not a CORS-safelisted value, so
+    /// requiring it forces a preflight for any browser POST, and the preflight
+    /// has no answer here. `text/plain` IS safelisted, which is exactly how a
+    /// page could reach the tool dispatcher with no preflight before this.
+    var hasJSONContentType: Bool {
+        guard let raw = headers["content-type"]?.lowercased() else { return false }
+        let mediaType = raw.prefix { $0 != ";" }
+            .trimmingCharacters(in: .whitespaces)
+        return mediaType == "application/json"
     }
 }
 
@@ -49,31 +84,43 @@ struct LocalAgentHTTPResponse {
     let reason: String
     let contentType: String
     let body: Data
+    /// Extra response headers. Empty on every success path: this server never
+    /// emits an Access-Control-* header, so a browser can never read an answer
+    /// even if one somehow reached it.
+    var headers: [String: String] = [:]
 
     func encoded() -> Data {
-        let head = [
+        var head = [
             "HTTP/1.1 \(status) \(reason)",
             "Content-Type: \(contentType)",
             "Content-Length: \(body.count)",
             "Cache-Control: no-store",
+            "X-Content-Type-Options: nosniff",
             "Connection: close",
-            "",
-            "",
-        ].joined(separator: "\r\n")
-        var data = Data(head.utf8)
+        ]
+        for key in headers.keys.sorted() {
+            head.append("\(key): \(headers[key]!)")
+        }
+        head.append("")
+        head.append("")
+        var data = Data(head.joined(separator: "\r\n").utf8)
         data.append(body)
         return data
     }
 
-    static func json(status: Int = 200, reason: String = "OK", _ value: Any)
-        -> LocalAgentHTTPResponse
-    {
+    static func json(
+        status: Int = 200,
+        reason: String = "OK",
+        _ value: Any,
+        headers: [String: String] = [:]
+    ) -> LocalAgentHTTPResponse {
         let body = (try? JSONSerialization.data(withJSONObject: value)) ?? Data()
         return LocalAgentHTTPResponse(
             status: status,
             reason: reason,
             contentType: "application/json",
-            body: body)
+            body: body,
+            headers: headers)
     }
 }
 
@@ -98,6 +145,83 @@ struct LocalAgentIdentity: Equatable, Sendable {
     }
 }
 
+/// A bounded counter for live connections. Nonisolated and lock-guarded so the
+/// receive callbacks, which run on the listener queue, can release a slot
+/// without hopping to the main actor.
+final class LocalAgentConnectionLimiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = 0
+    private let limit: Int
+
+    init(limit: Int) { self.limit = limit }
+
+    func acquire() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard active < limit else { return false }
+        active += 1
+        return true
+    }
+
+    func release() {
+        lock.lock()
+        defer { lock.unlock() }
+        if active > 0 { active -= 1 }
+    }
+
+    var activeCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return active
+    }
+}
+
+/// One connection, settled exactly once. Both the response path and the
+/// deadline race to finish a connection; without this the socket could be
+/// written twice (framing two HTTP responses onto one stream) or the limiter
+/// slot could be released twice.
+final class LocalAgentChannel: @unchecked Sendable {
+    private let lock = NSLock()
+    private var settled = false
+    private let connection: NWConnection
+
+    init(connection: NWConnection) {
+        self.connection = connection
+    }
+
+    private func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !settled else { return false }
+        settled = true
+        return true
+    }
+
+    /// Send the response, or just close when there is nothing to say.
+    func settle(with response: LocalAgentHTTPResponse?) {
+        guard claim() else { return }
+        guard let response else {
+            connection.cancel()
+            LocalAgentServer.connections.release()
+            return
+        }
+        connection.send(
+            content: response.encoded(),
+            completion: .contentProcessed { [connection] _ in
+                connection.cancel()
+                LocalAgentServer.connections.release()
+            })
+    }
+
+    /// The deadline fired first. Drop the connection without a response.
+    func expire() {
+        guard claim() else { return }
+        NSLog("Texttext local MCP closed a request that exceeded its deadline")
+        connection.cancel()
+        LocalAgentServer.connections.release()
+    }
+}
+
 @MainActor
 final class LocalAgentServer {
     nonisolated static let port: UInt16 = 47_118
@@ -109,16 +233,37 @@ final class LocalAgentServer {
     nonisolated static let identityCacheLimit = 32
     nonisolated static let identityCacheTTL: TimeInterval = 12 * 60 * 60
 
+    /// A request may not hold a socket open forever. The page can stall
+    /// indefinitely: a confirmation dialog resolves only on a click, and the
+    /// window is often closed while agents work. Without this, a handful of
+    /// stalled calls wedge the endpoint.
+    nonisolated static let requestTimeout: TimeInterval = 120
+    /// Bound concurrent connections so a stuck or hostile client cannot exhaust
+    /// the listener. Real clients use one connection per request.
+    nonisolated static let maxConcurrentConnections = 16
+    nonisolated static let connections = LocalAgentConnectionLimiter(
+        limit: maxConcurrentConnections)
+
     weak var webView: WKWebView?
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "app.texttext.local-agent")
     /// Keyed by `mcp-session-id` when the client sends one, otherwise by a
     /// bounded user-agent key so a session-less client still keeps its name.
     private var identities: [String: LocalAgentIdentity] = [:]
+    /// Whether the listener actually reached `.ready`. A bind failure means
+    /// something else holds the port, which must not be silent.
+    private(set) var isListening = false
 
     func start() {
         guard listener == nil else { return }
         let parameters = NWParameters.tcp
+        // Kept deliberately. `release/ship.sh` quits and relaunches the app
+        // within seconds, well inside the 30s TIME_WAIT window, so without
+        // endpoint reuse the relaunched app would fail to bind. On BSD this
+        // permits rebinding a port in TIME_WAIT, not co-binding a live
+        // listener, so it is not the port-squatting risk. The squatting risk is
+        // a process binding 47118 BEFORE us, which is why a bind failure below
+        // is now recorded rather than only logged.
         parameters.allowLocalEndpointReuse = true
         parameters.requiredLocalEndpoint = .hostPort(
             host: "127.0.0.1",
@@ -130,14 +275,27 @@ final class LocalAgentServer {
                     self?.accept(connection)
                 }
             }
-            listener.stateUpdateHandler = { state in
-                if case .failed(let error) = state {
-                    NSLog("Texttext local MCP failed: \(error)")
+            listener.stateUpdateHandler = { [weak self] state in
+                Task { @MainActor in
+                    switch state {
+                    case .ready:
+                        self?.isListening = true
+                    case .failed(let error), .waiting(let error):
+                        self?.isListening = false
+                        NSLog(
+                            "Texttext local MCP could not hold %@: %@. Another process may be using the port.",
+                            Self.endpoint, String(describing: error))
+                    case .cancelled:
+                        self?.isListening = false
+                    default:
+                        break
+                    }
                 }
             }
             listener.start(queue: queue)
             self.listener = listener
         } catch {
+            isListening = false
             NSLog("Texttext could not start local MCP: \(error)")
         }
     }
@@ -153,6 +311,24 @@ final class LocalAgentServer {
 
     private func accept(_ connection: NWConnection) {
         let queue = queue
+        // Refuse rather than queue when saturated, so a stuck client cannot
+        // starve a working one.
+        guard Self.connections.acquire() else {
+            connection.start(queue: queue)
+            connection.send(
+                content: LocalAgentHTTPResponse.json(
+                    status: 503, reason: "Service Unavailable",
+                    ["error": "Too many concurrent local MCP connections"]
+                ).encoded(),
+                completion: .contentProcessed { _ in connection.cancel() })
+            return
+        }
+        let channel = LocalAgentChannel(connection: connection)
+        // Nothing may hold a socket past the deadline, including a page that
+        // never resolves a confirmation.
+        queue.asyncAfter(deadline: .now() + Self.requestTimeout) {
+            channel.expire()
+        }
         connection.start(queue: queue)
         Self.receive(connection, data: Data(), queue: queue) { [weak self] request in
             guard let self else {
@@ -161,6 +337,8 @@ final class LocalAgentServer {
                     ["error": "Texttext is closing"])
             }
             return await self.respond(to: request)
+        } finish: { response in
+            channel.settle(with: response)
         }
     }
 
@@ -168,7 +346,8 @@ final class LocalAgentServer {
         _ connection: NWConnection,
         data: Data,
         queue: DispatchQueue,
-        respond: @escaping @Sendable (LocalAgentHTTPRequest) async -> LocalAgentHTTPResponse
+        respond: @escaping @Sendable (LocalAgentHTTPRequest) async -> LocalAgentHTTPResponse,
+        finish: @escaping @Sendable (LocalAgentHTTPResponse?) -> Void
     ) {
         connection.receive(
             minimumIncompleteLength: 1,
@@ -178,31 +357,74 @@ final class LocalAgentServer {
             if let chunk { accumulated.append(chunk) }
             if let request = LocalAgentHTTPRequest.parse(accumulated) {
                 Task {
-                    let response = await respond(request)
-                    connection.send(
-                        content: response.encoded(),
-                        completion: .contentProcessed { _ in connection.cancel() })
+                    finish(await respond(request))
                 }
                 return
             }
             if error != nil || isComplete || accumulated.count >= 1_048_576 {
-                connection.cancel()
+                finish(nil)
                 return
             }
             receive(
                 connection,
                 data: accumulated,
                 queue: queue,
-                respond: respond)
+                respond: respond,
+                finish: finish)
         }
     }
 
-    func respond(to request: LocalAgentHTTPRequest) async -> LocalAgentHTTPResponse {
-        guard request.isLoopbackHost else {
+    /// The transport guard: everything that decides whether a caller may reach
+    /// the workspace at all. Pure, synchronous, and nonisolated so the health
+    /// reporter and the tests exercise the exact code the server runs.
+    /// Returns nil when the request is admissible.
+    ///
+    /// Loopback is a routing property, not a trust boundary: every browser on
+    /// this Mac can reach this port. These checks exist so a web page cannot
+    /// drive the workspace. They authenticate nothing, and a same-user process
+    /// is deliberately out of scope (docs/decision-local-mcp-trust.md).
+    /// Internal for tests.
+    nonisolated static func rejection(for request: LocalAgentHTTPRequest)
+        -> LocalAgentHTTPResponse?
+    {
+        // First, so a browser learns nothing about the rest of the policy.
+        if request.isBrowserOriginated {
+            NSLog(
+                "Texttext local MCP refused browser traffic: origin=%@ site=%@",
+                request.headers["origin"] ?? "-",
+                request.headers["sec-fetch-site"] ?? "-")
             return .json(
                 status: 403, reason: "Forbidden",
-                ["error": "Local access only"])
+                ["error": "Texttext local MCP does not accept browser requests"])
         }
+        guard request.isLoopbackHost else {
+            return .json(status: 403, reason: "Forbidden", [
+                "error": request.usesLoopbackName
+                    ? "Use \(endpoint) rather than a host name"
+                    : "Local access only",
+            ])
+        }
+        if request.method == "OPTIONS" {
+            return .json(
+                status: 405, reason: "Method Not Allowed",
+                ["error": "Method not allowed"],
+                headers: ["Allow": "GET, POST"])
+        }
+        // The load-bearing line: application/json is not CORS-safelisted, so a
+        // browser POST must preflight, and the OPTIONS above answers 405 with
+        // no Access-Control-* header, which fails the preflight.
+        if request.method == "POST", request.path == "/mcp",
+           !request.hasJSONContentType
+        {
+            return .json(
+                status: 415, reason: "Unsupported Media Type",
+                ["error": "Content-Type must be application/json"])
+        }
+        return nil
+    }
+
+    func respond(to request: LocalAgentHTTPRequest) async -> LocalAgentHTTPResponse {
+        if let rejection = Self.rejection(for: request) { return rejection }
         if request.method == "GET", request.path == "/health" {
             return .json(["ok": true, "service": "texttext-local-mcp"])
         }

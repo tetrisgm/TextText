@@ -24,6 +24,147 @@ final class LocalAgentServerTests: XCTestCase {
         XCTAssertFalse(request.isLoopbackHost)
     }
 
+    // MARK: - Transport guard (Tier 0)
+    //
+    // These exercise LocalAgentServer.rejection(for:) directly, which is the
+    // real code the server runs. Loopback binding authenticates nothing: every
+    // browser on this Mac can reach the port, so what must hold is that
+    // browser-shaped requests never reach the tool dispatcher.
+
+    private func parse(_ raw: String) throws -> LocalAgentHTTPRequest {
+        try XCTUnwrap(LocalAgentHTTPRequest.parse(Data(raw.utf8)))
+    }
+
+    private var host: String { "127.0.0.1:\(LocalAgentServer.port)" }
+
+    private func agentPost(
+        extraHeaders: String = "",
+        contentType: String = "application/json"
+    ) throws -> LocalAgentHTTPRequest {
+        try parse(
+            "POST /mcp HTTP/1.1\r\nHost: \(host)\r\n\(extraHeaders)Content-Type: \(contentType)\r\nContent-Length: 2\r\n\r\n{}")
+    }
+
+    func testAdmitsANormalAgentRequest() throws {
+        XCTAssertNil(LocalAgentServer.rejection(for: try agentPost()))
+    }
+
+    func testAdmitsJSONContentTypeWithParameters() throws {
+        let request = try agentPost(contentType: "application/json; charset=utf-8")
+        XCTAssertNil(LocalAgentServer.rejection(for: request))
+    }
+
+    func testRefusesAnyRequestCarryingOrigin() throws {
+        // A page cannot remove Origin: it is a forbidden header name.
+        let request = try agentPost(
+            extraHeaders: "Origin: https://evil.example\r\n")
+        XCTAssertEqual(LocalAgentServer.rejection(for: request)?.status, 403)
+    }
+
+    func testRefusesCrossSiteFetchMetadata() throws {
+        for site in ["cross-site", "same-origin", "same-site"] {
+            let request = try agentPost(
+                extraHeaders: "Sec-Fetch-Site: \(site)\r\n")
+            XCTAssertEqual(
+                LocalAgentServer.rejection(for: request)?.status, 403,
+                "Sec-Fetch-Site: \(site) must be refused")
+        }
+    }
+
+    func testAllowsUserTypedNavigation() throws {
+        // Sec-Fetch-Site: none is a typed URL, which no page can produce, so a
+        // human can still open /health in a browser.
+        let request = try parse(
+            "GET /health HTTP/1.1\r\nHost: \(host)\r\nSec-Fetch-Site: none\r\n\r\n")
+        XCTAssertNil(LocalAgentServer.rejection(for: request))
+    }
+
+    func testRefusesCORSSafelistedContentTypes() throws {
+        // These skip the preflight, which is exactly how a page reached the
+        // tool dispatcher before this guard existed.
+        for type in ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data"] {
+            let request = try agentPost(contentType: type)
+            XCTAssertEqual(
+                LocalAgentServer.rejection(for: request)?.status, 415,
+                "\(type) must be refused")
+        }
+    }
+
+    func testRefusesMissingContentType() throws {
+        let request = try parse(
+            "POST /mcp HTTP/1.1\r\nHost: \(host)\r\nContent-Length: 2\r\n\r\n{}")
+        XCTAssertEqual(LocalAgentServer.rejection(for: request)?.status, 415)
+    }
+
+    func testAnswersPreflightWith405AndNoCORSHeaders() throws {
+        let request = try parse("OPTIONS /mcp HTTP/1.1\r\nHost: \(host)\r\n\r\n")
+        let rejection = try XCTUnwrap(LocalAgentServer.rejection(for: request))
+
+        XCTAssertEqual(rejection.status, 405)
+        XCTAssertEqual(rejection.headers["Allow"], "GET, POST")
+        let text = String(decoding: rejection.encoded(), as: UTF8.self)
+        XCTAssertFalse(text.lowercased().contains("access-control-"))
+    }
+
+    func testNoResponseEverCarriesCORSHeaders() throws {
+        let ok = LocalAgentHTTPResponse.json(["ok": true]).encoded()
+        XCTAssertFalse(
+            String(decoding: ok, as: UTF8.self).lowercased()
+                .contains("access-control-"))
+    }
+
+    func testRefusesLoopbackHostName() throws {
+        // Numeric only, and the 403 names the fix for a hand-typed config.
+        let request = try parse(
+            "POST /mcp HTTP/1.1\r\nHost: localhost:\(LocalAgentServer.port)\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
+        let rejection = try XCTUnwrap(LocalAgentServer.rejection(for: request))
+
+        XCTAssertEqual(rejection.status, 403)
+        XCTAssertTrue(request.usesLoopbackName)
+        // JSONSerialization escapes forward slashes, so match the actionable
+        // part of the endpoint rather than the whole URL.
+        let body = String(decoding: rejection.encoded(), as: UTF8.self)
+        XCTAssertTrue(body.contains("127.0.0.1:\(LocalAgentServer.port)"))
+        XCTAssertTrue(body.contains("rather than a host name"))
+    }
+
+    func testBrowserCheckPrecedesHostCheck() throws {
+        // A browser must learn nothing about the host policy.
+        let request = try parse(
+            "POST /mcp HTTP/1.1\r\nHost: localhost:\(LocalAgentServer.port)\r\nOrigin: https://evil.example\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
+        let text = String(
+            decoding: try XCTUnwrap(LocalAgentServer.rejection(for: request)).encoded(),
+            as: UTF8.self)
+        XCTAssertTrue(text.contains("does not accept browser requests"))
+    }
+
+    // MARK: - Connection limiting and deadlines
+
+    func testConnectionLimiterBoundsConcurrency() {
+        let limiter = LocalAgentConnectionLimiter(limit: 2)
+
+        XCTAssertTrue(limiter.acquire())
+        XCTAssertTrue(limiter.acquire())
+        XCTAssertFalse(limiter.acquire())
+        limiter.release()
+        XCTAssertTrue(limiter.acquire())
+        XCTAssertEqual(limiter.activeCount, 2)
+    }
+
+    func testConnectionLimiterNeverGoesNegative() {
+        let limiter = LocalAgentConnectionLimiter(limit: 1)
+        limiter.release()
+        limiter.release()
+        XCTAssertEqual(limiter.activeCount, 0)
+        XCTAssertTrue(limiter.acquire())
+        XCTAssertFalse(limiter.acquire())
+    }
+
+    func testServerDeclaresADeadlineAndAConnectionCap() {
+        XCTAssertGreaterThan(LocalAgentServer.requestTimeout, 0)
+        XCTAssertGreaterThan(LocalAgentServer.maxConcurrentConnections, 0)
+    }
+
     func testWaitsForCompleteBody() {
         let data = Data(
             "POST /mcp HTTP/1.1\r\nHost: localhost:47118\r\nContent-Length: 4\r\n\r\n{}".utf8)
