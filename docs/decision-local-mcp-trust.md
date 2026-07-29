@@ -245,29 +245,37 @@ Also in this tier, because they are integrity bugs rather than auth design:
 distinct actor type plus connection identity in `action_audit`; name the caller
 in the confirmation dialog and queue rather than replace pending requests.
 
-### Tier 1, the product feature
+### Tier 1, the product feature: OAuth on the loopback endpoint
 
-Per-client pairing that mints a credential. This is where Texttext gets ahead of
-Figma and Paper rather than matching them.
+Require authorization on `:47118` and satisfy it with the flow this product
+already ships for hosted MCP, rather than inventing a second scheme. See the UX
+section below for why this is the expected design and not merely the safe one.
 
-- First connection from an unknown client triggers a **native** prompt (NSAlert,
-  which `AppDelegate.swift:2036-2041` already sets a precedent for), not the
-  in-page dialog, because the window may be closed. It activates the app and
-  names the client.
-- Approving mints a token stored in the **Keychain with an app-scoped ACL**, so
-  another process reading it triggers a visible system prompt. That is the one
-  mitigation that converts the npm-package class from silent to noisy.
-- The client presents it as `Authorization: Bearer`, compared in constant time.
-  Both documented clients support this today.
-- The grant carries a **read or write scope**, giving the local transport the
-  scope concept hosted MCP already has.
-- Paired agents appear in `/connect` beside the OAuth connections, with revoke.
-- Presence for a paired client can then be labeled verified; unpaired stays
-  self-declared.
+- An unauthenticated call gets 401 plus `WWW-Authenticate` pointing at the
+  existing protected-resource metadata. The client runs the flow itself: Codex
+  defaults to `auth = "oauth"` for HTTP MCP servers, and Claude Code performs
+  OAuth for HTTP servers through `/mcp`.
+- The user sees the authorize page they already know
+  (`src/app/oauth/authorize/page.tsx:91-130`), naming the client and offering
+  read-only versus read-write. That page is the consent moment and the scope
+  choice; no new native dialog is needed for connection consent.
+- The grant is per client, so the collaborator identity derives from the token
+  rather than from spoofable `clientInfo`, which makes the 0.142 avatar verified.
+- Paired agents appear in the existing connected-apps list with per-client
+  revoke (`ConnectPanel.tsx:272-334`). Revocation and inventory come free.
+- **The documented connect command does not change**, so setup friction is
+  identical to today.
 
-Cost: the two connect commands in `ConnectPanel.tsx:62-65` grow a header, and
-Claude Desktop plus claude.ai connector users need the hosted OAuth path instead
-(which already exists).
+Reuses `createApiToken`, the approve route, and the RFC 8707 resource-indicator
+support from `04c0423`. Spike the loopback token-validation path and audience
+binding first; the fallback if that fails is a per-client bearer inlined into the
+generated command, which is still better than today. Claude Desktop and
+claude.ai connector users stay on hosted MCP either way, since neither can reach
+a local HTTP server at all.
+
+A native prompt is still the right surface for **consequential actions**
+(publish, share, delete), per section 5: named, queued, and native so it is
+visible when the window is closed. That is separate from connection consent.
 
 ### Tier 2, the structural end state, not now
 
@@ -288,20 +296,64 @@ bridge binary.
 
 ### The UX, which is the part that decides whether Tier 1 is worth doing
 
-The usual objection to a local token is friction, and it is the reason Figma,
-Paper, and Blender all chose no auth. **That objection does not apply here,
-because Texttext generates the connect command itself.** `ConnectPanel.tsx:62-65`
-already renders a one-click copy. Adding a credential turns it into:
+**The expected UX is the one this product already implements for hosted MCP:
+OAuth. The local path is the only surface that does something else.**
+
+Texttext already has a complete "connect an agent" flow: `/connect`, an
+authorize page that names the client and offers read-only versus read-write
+(`src/app/oauth/authorize/page.tsx:91-130`), a connected-apps list with per-client
+revoke (`ConnectPanel.tsx:272-334`), and token minting through `createApiToken`.
+Users do not expect a second, different mechanism because the server happens to
+be on loopback. They expect what every integration does: point the client at it,
+get asked to authorize, approve, see it in a list you can revoke from.
+
+The decisive detail: **the connect command does not change.**
 
 ```
-claude mcp add --transport http --scope user texttext http://127.0.0.1:47118/mcp \
-  --header "Authorization: Bearer wsk_..."
+claude mcp add --transport http --scope user texttext http://127.0.0.1:47118/mcp
 ```
 
-Still one command, still one click. Setup friction is unchanged. Every other app
-that requires a local key makes the user go find it (Obsidian: open settings,
-copy, hand-edit a config; Jupyter: scrape terminal output). We own both ends, so
-the token can be invisible.
+That is the command today and the command after. The server answers an
+unauthenticated call with 401 plus `WWW-Authenticate` discovery metadata and the
+client runs the flow itself. This works because `auth = "oauth"` is Codex's
+**default** for HTTP MCP servers, and Claude Code performs OAuth for HTTP servers
+via `/mcp`. Neither needs a flag, a header, or a visible secret.
+
+What this gets that a bearer-in-the-command does not:
+
+- **No credential in shell history or in a plaintext client config.** A token
+  pasted into `claude mcp add --header` lands in both. That is the documented
+  failure of the Jupyter model (tokens leaking into history, logs, referrers),
+  so copying it would be adopting a known flaw.
+- **A real consent moment**, in-product, naming the client, with the scope choice
+  on the approve page where it belongs rather than split across two different
+  shell commands to copy.
+- **One auth model instead of two.** Today: hosted OAuth plus local nothing. A
+  bearer scheme would make it hosted OAuth plus local bearer. OAuth for both
+  means one consent surface, one revocation list, one mental model.
+- **Verified client identity for free.** The grant is per client, so the
+  collaborator identity comes from the token rather than from spoofable
+  `clientInfo`, which is exactly the fix section 5 calls for.
+- **Reuses shipped code**: the authorize page, the approve route,
+  `createApiToken`, the connected-apps list, and the RFC 8707 resource-indicator
+  support added in `04c0423`.
+
+Feasibility questions to spike before committing:
+
+1. How the loopback server validates a token minted by texttext.app. The
+   natural path is forwarding the `Authorization` header through the page bridge,
+   which already holds an authenticated session, but that is a round trip and
+   needs designing.
+2. Audience binding for a loopback resource (`http://127.0.0.1:47118/mcp`)
+   against the existing resource-indicator implementation.
+3. Network is required for the initial authorize. Not a new constraint, since
+   the bridge already calls `/api/ai/tools`, but it should be stated.
+
+**Fallback if the spike fails.** A per-client bearer token inlined into the
+generated connect command. Friction is still unchanged, because
+`ConnectPanel.tsx:62-65` writes the command for the user, and both documented
+clients accept headers. It is strictly better than today, and strictly worse
+than OAuth on the three counts above. Treat it as the fallback, not the plan.
 
 **Do not copy Xcode's pairing dialog.** It is the best-designed consent surface
 in the field and it is failing in practice: it re-prompts per launch and per
@@ -366,12 +418,16 @@ web page today, the fix is about ten lines, it costs no UX, and Origin validatio
 is the specification's only MUST for this transport. It should ship whether or
 not anything else does.
 
-Tier 1 is the real decision, and it is a product decision more than a security
-one: it is the difference between matching Paper and Figma (open port, app-is-
-open equals trusted) and matching Xcode and 1Password (a human approves a named
-client, with a revocable scoped grant). For a craft-first product where an agent
-can rewrite everything the owner has written, the pairing prompt is the honest
-design, and no competitor in this category has one.
+Tier 1 is the real decision, and it turns out to be less of a tradeoff than it
+first appears. The question is whether connecting a local agent is the one
+surface in this product that skips authorization, or whether it works the way
+every other connection already does. Extending the existing OAuth flow to the
+loopback endpoint leaves the documented connect command untouched, so the choice
+is not friction versus safety: it is one auth model versus two, a real consent
+moment versus none, and a verified agent identity versus a self-declared one.
+For a product where an agent can rewrite everything the owner has written, and
+where the avatar shipped in 0.142 currently vouches for a claim the server cannot
+check, that is the honest design. No competitor in this category has it.
 
 Tier 2 is the direction of travel. Worth committing to on paper so Tier 1 is
 built in a way that survives the transport change, but not worth doing now.
