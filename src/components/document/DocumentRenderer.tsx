@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -7,7 +7,12 @@ import type {
   DocumentSnapshot,
 } from "@/lib/documents/model";
 import { isSafeLinkHref, isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
-import type { RenderNode, TemplateDefinition } from "@/lib/presentation/schema";
+import type {
+  DocumentFieldDefinition,
+  RenderNode,
+  RowSubFieldDefinition,
+  TemplateDefinition,
+} from "@/lib/presentation/schema";
 import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
 
 export type DocumentRenderMetadata = {
@@ -39,6 +44,8 @@ type RendererProps = {
 type CollectionRendererProps = Omit<RendererProps, "className"> & {
   className?: string;
 };
+
+type FieldDefinitionMap = ReadonlyMap<string, DocumentFieldDefinition>;
 
 function safeMediaSource(value: string): string {
   const src = value.trim();
@@ -82,6 +89,137 @@ function hasValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim() !== "";
   if (Array.isArray(value)) return value.length > 0;
   return true;
+}
+
+function resolveFieldDefinition(
+  binding: string,
+  fields: FieldDefinitionMap,
+): DocumentFieldDefinition | undefined {
+  if (!binding.startsWith("content.fields.")) return undefined;
+  return fields.get(binding.slice("content.fields.".length));
+}
+
+const ROW_PREFIX = "row.";
+
+function rowBindingId(binding: string): string {
+  return binding.startsWith(ROW_PREFIX) ? binding.slice(ROW_PREFIX.length) : binding;
+}
+
+function isRowRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rowRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRowRecord) : [];
+}
+
+// ---------------------------------------------------------------------------
+// Field-aware value formatting. One helper shared by badge, facts, rows, and
+// text so a number field formats the same everywhere it appears.
+// ---------------------------------------------------------------------------
+
+type AnyFieldDefinition = DocumentFieldDefinition | RowSubFieldDefinition;
+type EnumFieldDefinition = Extract<DocumentFieldDefinition, { type: "enum" }>;
+
+const DAY_MS = 86_400_000;
+const GROUPED_NUMBER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const PERCENT_NUMBER = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+const LOCALIZED_DATE = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+function parseDateValue(value: unknown): Date | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function pluralDays(count: number): string {
+  return count === 1 ? "1 day" : `${count} days`;
+}
+
+function formatDatedValue(value: unknown, format: "date" | "relative" | "countdown"): string {
+  const date = parseDateValue(value);
+  if (!date) return scalarText(value);
+  if (format === "date") return LOCALIZED_DATE.format(date);
+  const diff = Math.round((date.getTime() - Date.now()) / DAY_MS);
+  const days = Math.abs(diff);
+  if (format === "relative") {
+    if (diff === 0) return "today";
+    return diff > 0 ? `in ${pluralDays(days)}` : `${pluralDays(days)} ago`;
+  }
+  if (diff === 0) return "today";
+  return diff > 0 ? `${pluralDays(days)} left` : `${pluralDays(days)} ago`;
+}
+
+function formatMinutes(value: number): string {
+  const total = Math.max(0, Math.round(value));
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  if (hours > 0 && minutes > 0) return `${hours} h ${minutes} m`;
+  if (hours > 0) return `${hours} h`;
+  return `${minutes} m`;
+}
+
+function formatRating(value: number, max: number | undefined): string {
+  const scale = Math.max(1, Math.round(max ?? 5));
+  const clamped = Math.min(scale, Math.max(0, value));
+  const halves = Math.round(clamped * 2);
+  const full = Math.floor(halves / 2);
+  const half = halves % 2 === 1;
+  const empty = Math.max(0, scale - full - (half ? 1 : 0));
+  return `${"★".repeat(full)}${half ? "½" : ""}${"☆".repeat(empty)}`;
+}
+
+function formatNumberValue(
+  value: number,
+  definition: Extract<AnyFieldDefinition, { type: "number" }>,
+): string {
+  switch (definition.format ?? "plain") {
+    case "currency":
+      return GROUPED_NUMBER.format(value);
+    case "percent":
+      return PERCENT_NUMBER.format(value);
+    case "minutes":
+      return formatMinutes(value);
+    case "rating":
+      return formatRating(value, definition.max);
+    default:
+      return String(value);
+  }
+}
+
+function enumOption(definition: EnumFieldDefinition, value: string) {
+  return definition.options.find((option) => option.value === value);
+}
+
+/** Format a resolved field value for display. Falls back to plain scalar text
+ * whenever no definition is known, so core bindings keep their behavior. */
+export function formatFieldValue(value: unknown, definition?: AnyFieldDefinition): string {
+  if (value == null) return "";
+  if (Array.isArray(value)) {
+    const parts = value.filter((part): part is string => typeof part === "string");
+    if (definition?.type === "enum") {
+      return parts.map((part) => enumOption(definition, part)?.label ?? part).join(", ");
+    }
+    return parts.join(", ");
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number" && definition?.type === "number") {
+    return formatNumberValue(value, definition);
+  }
+  if (definition?.type === "date") return formatDatedValue(value, "date");
+  if (definition?.type === "enum" && typeof value === "string") {
+    return enumOption(definition, value)?.label ?? value;
+  }
+  return scalarText(value);
 }
 
 function textElement(role: Extract<RenderNode, { type: "text" }>["role"], props: { className: string; children: ReactNode }) {
@@ -192,18 +330,549 @@ function Gallery({ assets, columns }: { assets: DocumentAsset[]; columns: number
   );
 }
 
+// ---------------------------------------------------------------------------
+// Wave-1 nodes: badge, facts, checklist, rows, progress, callout, quote.
+// Tones are engine-owned CSS classes; no user color ever reaches these.
+// ---------------------------------------------------------------------------
+
+type NodeAttrs = { "data-tt-node"?: string };
+
+function toneClass(tone: string | undefined): string {
+  return `tt-tone-${tone ?? "neutral"}`;
+}
+
+function EnumPills({
+  definition,
+  values,
+  showIcon,
+}: {
+  definition: EnumFieldDefinition;
+  values: string[];
+  showIcon: boolean;
+}) {
+  return (
+    <>
+      {values.map((value, index) => {
+        const option = enumOption(definition, value);
+        return (
+          <span key={`${value}.${index}`} className={`tt-pill ${toneClass(option?.tone)}`}>
+            {showIcon && option?.icon ? (
+              <span className="tt-pill-icon" aria-hidden="true">{option.icon}</span>
+            ) : null}
+            {option?.label ?? value}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/** A single cell/meta value: enum values become tinted pills, booleans a
+ * check, everything else field-formatted text. */
+function CellValue({
+  value,
+  definition,
+}: {
+  value: unknown;
+  definition?: AnyFieldDefinition;
+}): ReactNode {
+  if (!hasValue(value)) return null;
+  if (definition?.type === "enum") {
+    const values = Array.isArray(value)
+      ? value.filter((part): part is string => typeof part === "string")
+      : [scalarText(value)];
+    return (
+      <span className="tt-badge">
+        <EnumPills definition={definition} values={values} showIcon />
+      </span>
+    );
+  }
+  if (definition?.type === "boolean") {
+    return value === true ? <span className="tt-cell-check" aria-hidden="true">✓</span> : null;
+  }
+  return formatFieldValue(value, definition);
+}
+
+function BadgeNode({
+  node,
+  document,
+  fields,
+  attrs,
+}: {
+  node: Extract<RenderNode, { type: "badge" }>;
+  document: DocumentSnapshot;
+  fields: FieldDefinitionMap;
+  attrs: NodeAttrs;
+}) {
+  // Row-scoped badge bindings only make sense inside a rows context, where
+  // cell values render directly; standalone they resolve to nothing.
+  if (node.bind.startsWith(ROW_PREFIX)) return null;
+  const definition = resolveFieldDefinition(node.bind, fields);
+  const raw = resolveDocumentBinding(document, node.bind);
+  if (!hasValue(raw)) return null;
+  const variant = node.variant ?? "pill";
+  const showIcon = node.showIcon !== false;
+  if (typeof raw === "boolean") {
+    return (
+      <span
+        {...attrs}
+        className={`tt-badge tt-badge-glyph ${toneClass("accent")}`}
+        data-variant={variant}
+        aria-hidden="true"
+      >
+        {variant === "glyph" ? "★" : "●"}
+      </span>
+    );
+  }
+  if (definition?.type === "reference") {
+    const ids = Array.isArray(raw)
+      ? raw.filter((part): part is string => typeof part === "string")
+      : [scalarText(raw)];
+    return (
+      <span {...attrs} className="tt-badge" data-variant={variant}>
+        {ids.map((id, index) => (
+          <span key={`${id}.${index}`} className={`tt-pill ${toneClass("neutral")} tt-badge-ref`}>
+            <span className="tt-pill-icon" aria-hidden="true">📄</span>
+            {id}
+          </span>
+        ))}
+      </span>
+    );
+  }
+  const values = Array.isArray(raw)
+    ? raw.filter((part): part is string => typeof part === "string")
+    : [scalarText(raw)];
+  if (values.length === 0) return null;
+  if (definition?.type === "enum") {
+    return (
+      <span {...attrs} className="tt-badge" data-variant={variant}>
+        <EnumPills definition={definition} values={values} showIcon={showIcon} />
+      </span>
+    );
+  }
+  return (
+    <span {...attrs} className="tt-badge" data-variant={variant}>
+      {values.map((value, index) => (
+        <span key={`${value}.${index}`} className={`tt-pill ${toneClass("neutral")}`}>
+          {value}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function FactsNode({
+  node,
+  document,
+  fields,
+  attrs,
+}: {
+  node: Extract<RenderNode, { type: "facts" }>;
+  document: DocumentSnapshot;
+  fields: FieldDefinitionMap;
+  attrs: NodeAttrs;
+}) {
+  const variant = node.variant ?? "strip";
+  const items: { label: string; value: string }[] = [];
+  for (const entry of node.entries) {
+    const definition = resolveFieldDefinition(entry.bind, fields);
+    const raw = resolveDocumentBinding(document, entry.bind);
+    if (!hasValue(raw)) continue;
+    const value = entry.format
+      ? formatDatedValue(raw, entry.format)
+      : formatFieldValue(raw, definition);
+    if (!value.trim()) continue;
+    const label = entry.label ?? definition?.label ?? entry.bind.split(".").pop() ?? "";
+    items.push({ label, value });
+  }
+  if (items.length === 0) return null;
+  if (variant === "table") {
+    return (
+      <dl {...attrs} className="tt-facts tt-facts-table">
+        {items.map((item, index) => (
+          <Fragment key={index}>
+            <dt>{item.label}</dt>
+            <dd>{item.value}</dd>
+          </Fragment>
+        ))}
+      </dl>
+    );
+  }
+  if (variant === "pills") {
+    return (
+      <div {...attrs} className="tt-facts tt-facts-pills">
+        {items.map((item, index) => (
+          <span key={index} className={`tt-pill ${toneClass("neutral")}`}>
+            <span className="tt-fact-label">{item.label}:</span> {item.value}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div {...attrs} className="tt-facts tt-facts-strip">
+      {items.map((item, index) => (
+        <Fragment key={index}>
+          {index > 0 && <span className="tt-facts-sep" aria-hidden="true">·</span>}
+          <span className="tt-fact">
+            <span className="tt-fact-label">{item.label}</span>
+            {item.value}
+          </span>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+function subFieldMap(
+  definition: DocumentFieldDefinition | undefined,
+): ReadonlyMap<string, RowSubFieldDefinition> {
+  if (!definition || definition.type !== "rows") return new Map();
+  return new Map(definition.fields.map((sub) => [sub.id, sub]));
+}
+
+function ChecklistNode({
+  node,
+  document,
+  fields,
+  attrs,
+}: {
+  node: Extract<RenderNode, { type: "checklist" }>;
+  document: DocumentSnapshot;
+  fields: FieldDefinitionMap;
+  attrs: NodeAttrs;
+}) {
+  const records = rowRecords(resolveDocumentBinding(document, node.bind));
+  if (records.length === 0) return null;
+  const subFields = subFieldMap(resolveFieldDefinition(node.bind, fields));
+  const doneId = rowBindingId(node.doneBind);
+  const labelId = rowBindingId(node.labelBind);
+  const doneCount = records.filter((record) => record[doneId] === true).length;
+  const ordered =
+    node.sortCheckedLast === false
+      ? records
+      : [...records].sort(
+          (a, b) => Number(a[doneId] === true) - Number(b[doneId] === true),
+        );
+  return (
+    <div {...attrs} className="tt-checklist" data-mode={node.mode ?? "document"}>
+      {node.rollup ? (
+        <div className="tt-checklist-rollup">{doneCount} of {records.length}</div>
+      ) : null}
+      <ul className="tt-checklist-items">
+        {ordered.map((record, index) => {
+          const done = record[doneId] === true;
+          return (
+            <li key={index} className="tt-checklist-item" data-done={done ? "true" : undefined}>
+              <span
+                className={done ? "tt-checkbox tt-checkbox-done" : "tt-checkbox"}
+                aria-hidden="true"
+              >
+                {done ? "✓" : ""}
+              </span>
+              <span className="tt-checklist-label">{scalarText(record[labelId])}</span>
+              {(node.meta ?? []).map((metaBind) => {
+                const metaId = rowBindingId(metaBind);
+                const metaDefinition = subFields.get(metaId);
+                const metaValue = record[metaId];
+                if (!hasValue(metaValue)) return null;
+                if (metaDefinition?.type === "enum") {
+                  const values = Array.isArray(metaValue)
+                    ? metaValue.filter((part): part is string => typeof part === "string")
+                    : [scalarText(metaValue)];
+                  return (
+                    <EnumPills key={metaId} definition={metaDefinition} values={values} showIcon />
+                  );
+                }
+                return (
+                  <span key={metaId} className={`tt-pill ${toneClass("neutral")}`}>
+                    {formatFieldValue(metaValue, metaDefinition)}
+                  </span>
+                );
+              })}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function compareCellValues(a: unknown, b: unknown): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
+  return String(a).localeCompare(String(b));
+}
+
+function sortRecords(
+  records: Record<string, unknown>[],
+  sort: { bind: string; direction: "asc" | "desc" } | undefined,
+): Record<string, unknown>[] {
+  if (!sort) return records;
+  const id = rowBindingId(sort.bind);
+  const ordered = [...records].sort((a, b) => compareCellValues(a[id], b[id]));
+  return sort.direction === "desc" ? ordered.reverse() : ordered;
+}
+
+function RowsNode({
+  node,
+  document,
+  fields,
+  attrs,
+}: {
+  node: Extract<RenderNode, { type: "rows" }>;
+  document: DocumentSnapshot;
+  fields: FieldDefinitionMap;
+  attrs: NodeAttrs;
+}) {
+  const definition = resolveFieldDefinition(node.bind, fields);
+  const rowsField = definition?.type === "rows" ? definition : undefined;
+  const records = rowRecords(resolveDocumentBinding(document, node.bind));
+  if (records.length === 0) return null;
+  const subFields = subFieldMap(definition);
+  const declared = node.columns ?? [];
+  const columnSpecs: { bind: string; label?: string }[] =
+    declared.length > 0
+      ? declared
+      : rowsField
+        ? rowsField.fields
+            .filter((sub) => sub.visibility === undefined || sub.visibility === "public")
+            .map((sub) => ({ bind: `${ROW_PREFIX}${sub.id}` }))
+        : [];
+  if (columnSpecs.length === 0) return null;
+  const columns = columnSpecs.map((column) => {
+    const id = rowBindingId(column.bind);
+    const sub = subFields.get(id);
+    return { id, definition: sub, label: column.label ?? sub?.label ?? id };
+  });
+  const ordered = sortRecords(records, node.sort);
+  const variant = node.variant ?? "table";
+
+  if (variant === "steps") {
+    return (
+      <ol {...attrs} className="tt-rows tt-rows-steps">
+        {ordered.map((record, index) => (
+          <li key={index} className="tt-rows-step">
+            <div className="tt-rows-step-body">
+              {columns.map((column, position) => {
+                const value = record[column.id];
+                if (!hasValue(value)) return null;
+                return (
+                  <div
+                    key={column.id}
+                    className={position === 0 ? "tt-rows-step-lead" : "tt-rows-step-detail"}
+                  >
+                    <CellValue value={value} definition={column.definition} />
+                  </div>
+                );
+              })}
+            </div>
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  if (variant === "timeline") {
+    const dateColumn = columns.find((column) => column.definition?.type === "date");
+    const bodyColumns = columns.filter((column) => column !== dateColumn);
+    return (
+      <ol {...attrs} className="tt-rows tt-rows-timeline">
+        {ordered.map((record, index) => (
+          <li key={index}>
+            {dateColumn && hasValue(record[dateColumn.id]) ? (
+              <div className="tt-rows-timeline-date">
+                {formatDatedValue(record[dateColumn.id], "date")}
+              </div>
+            ) : null}
+            <div className="tt-rows-timeline-body">
+              {bodyColumns.map((column, position) => {
+                const value = record[column.id];
+                if (!hasValue(value)) return null;
+                return (
+                  <div
+                    key={column.id}
+                    className={position === 0 ? "tt-rows-step-lead" : "tt-rows-step-detail"}
+                  >
+                    <CellValue value={value} definition={column.definition} />
+                  </div>
+                );
+              })}
+            </div>
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  if (variant === "tiles") {
+    return (
+      <div {...attrs} className="tt-rows tt-rows-tiles">
+        {ordered.map((record, index) => (
+          <div key={index} className="tt-rows-tile">
+            {columns.map((column, position) => {
+              const value = record[column.id];
+              if (!hasValue(value)) return null;
+              return (
+                <div
+                  key={column.id}
+                  className={position === 0 ? "tt-rows-tile-value" : "tt-rows-tile-label"}
+                >
+                  <CellValue value={value} definition={column.definition} />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div {...attrs} className="tt-rows tt-rows-table-wrap">
+      <table className="tt-rows-table">
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.id} scope="col" data-kind={column.definition?.type}>
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((record, index) => (
+            <tr key={index}>
+              {columns.map((column) => (
+                <td key={column.id} data-kind={column.definition?.type}>
+                  <CellValue value={record[column.id]} definition={column.definition} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProgressNode({
+  node,
+  document,
+  attrs,
+}: {
+  node: Extract<RenderNode, { type: "progress" }>;
+  document: DocumentSnapshot;
+  attrs: NodeAttrs;
+}) {
+  const source = node.source;
+  let ratio: number | null = null;
+  let current: number | null = null;
+  let target: number | null = null;
+  if ("bind" in source) {
+    const value = resolveDocumentBinding(document, source.bind);
+    if (typeof value === "number" && Number.isFinite(value)) ratio = value;
+  } else if ("currentBind" in source) {
+    const rawCurrent = resolveDocumentBinding(document, source.currentBind);
+    const rawTarget = resolveDocumentBinding(document, source.targetBind);
+    if (
+      typeof rawCurrent === "number" &&
+      Number.isFinite(rawCurrent) &&
+      typeof rawTarget === "number" &&
+      Number.isFinite(rawTarget)
+    ) {
+      current = rawCurrent;
+      target = rawTarget;
+      ratio = rawTarget > 0 ? rawCurrent / rawTarget : 0;
+    }
+  } else {
+    const records = rowRecords(resolveDocumentBinding(document, source.checklistBind));
+    const doneId = rowBindingId(source.doneBind);
+    current = records.filter((record) => record[doneId] === true).length;
+    target = records.length;
+    ratio = target > 0 ? current / target : 0;
+  }
+  if (ratio == null) return null;
+  const clamped = Math.min(1, Math.max(0, ratio));
+  const percent = Math.round(clamped * 100);
+  const aria = {
+    role: "progressbar" as const,
+    "aria-valuemin": 0,
+    "aria-valuemax": 100,
+    "aria-valuenow": percent,
+  };
+  const variant = node.variant ?? "bar";
+  if (variant === "fraction") {
+    return (
+      <div {...attrs} {...aria} className="tt-progress tt-progress-fraction">
+        {current != null && target != null ? `${current} of ${target}` : `${percent}%`}
+      </div>
+    );
+  }
+  if (variant === "ring") {
+    const radius = 15.5;
+    const circumference = 2 * Math.PI * radius;
+    return (
+      <div {...attrs} {...aria} className="tt-progress tt-progress-ring">
+        <svg viewBox="0 0 36 36" aria-hidden="true">
+          <circle
+            className="tt-progress-ring-track"
+            cx="18"
+            cy="18"
+            r={radius}
+            fill="none"
+            strokeWidth="3.5"
+          />
+          <circle
+            className="tt-progress-ring-fill"
+            cx="18"
+            cy="18"
+            r={radius}
+            fill="none"
+            strokeWidth="3.5"
+            strokeDasharray={`${(clamped * circumference).toFixed(2)} ${circumference.toFixed(2)}`}
+          />
+        </svg>
+        <span className="tt-progress-label">{percent}%</span>
+      </div>
+    );
+  }
+  return (
+    <div {...attrs} {...aria} className="tt-progress tt-progress-bar">
+      <div className="tt-progress-track">
+        <div className="tt-progress-fill" style={{ width: `${percent}%` }} />
+      </div>
+      <span className="tt-progress-label">{percent}%</span>
+    </div>
+  );
+}
+
+const CALLOUT_GLYPHS: Record<string, string> = {
+  note: "✎",
+  tip: "✦",
+  success: "✓",
+  warning: "!",
+  danger: "✕",
+  decision: "◆",
+};
+
 function NodeRenderer({
   node,
   path,
   document,
   metadata,
   slots,
+  fields,
 }: {
   node: RenderNode;
   path: string;
   document: DocumentSnapshot;
   metadata: DocumentRenderMetadata;
   slots?: DocumentRenderSlots;
+  fields: FieldDefinitionMap;
 }): ReactNode {
   const nodeSlot = node.id ? slots?.nodes?.[node.id] : undefined;
   if (nodeSlot !== undefined) return nodeSlot;
@@ -215,14 +884,14 @@ function NodeRenderer({
   ) {
     return null;
   }
-  const attrs = node.id ? { "data-tt-node": node.id } : {};
+  const attrs: NodeAttrs = node.id ? { "data-tt-node": node.id } : {};
 
   switch (node.type) {
     case "stack":
       return (
         <div {...attrs} className={`tt-stack tt-gap-${node.gap} tt-align-${node.align}`} data-direction={node.direction}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} />
           ))}
         </div>
       );
@@ -231,7 +900,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-${node.type} tt-gap-${node.gap}`}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} />
           ))}
         </div>
       );
@@ -239,7 +908,12 @@ function NodeRenderer({
       const slot = slots?.bindings?.[node.bind];
       const value =
         slot ??
-        (scalarText(resolveDocumentBinding(document, node.bind)) || node.fallback || "");
+        (formatFieldValue(
+          resolveDocumentBinding(document, node.bind),
+          resolveFieldDefinition(node.bind, fields),
+        ) ||
+          node.fallback ||
+          "");
       if (!hasValue(value)) return null;
       const href = node.href
         ? scalarText(resolveDocumentBinding(document, node.href))
@@ -289,7 +963,65 @@ function NodeRenderer({
       return <hr {...attrs} className="tt-divider" />;
     case "spacer":
       return <div {...attrs} className={`tt-spacer tt-gap-${node.size}`} aria-hidden="true" />;
+    case "badge": {
+      const slot = slots?.bindings?.[node.bind];
+      if (slot !== undefined) return slot;
+      return <BadgeNode node={node} document={document} fields={fields} attrs={attrs} />;
+    }
+    case "facts":
+      return <FactsNode node={node} document={document} fields={fields} attrs={attrs} />;
+    case "checklist": {
+      const slot = slots?.bindings?.[node.bind];
+      if (slot !== undefined) return slot;
+      return <ChecklistNode node={node} document={document} fields={fields} attrs={attrs} />;
+    }
+    case "rows": {
+      const slot = slots?.bindings?.[node.bind];
+      if (slot !== undefined) return slot;
+      return <RowsNode node={node} document={document} fields={fields} attrs={attrs} />;
+    }
+    case "progress":
+      return <ProgressNode node={node} document={document} attrs={attrs} />;
+    case "callout": {
+      const tone = node.tone ?? "note";
+      const icon = node.icon ?? CALLOUT_GLYPHS[tone] ?? CALLOUT_GLYPHS.note;
+      return (
+        <aside {...attrs} className={`tt-callout tt-callout-${tone}`}>
+          {node.title ? (
+            <div className="tt-callout-title">
+              <span className="tt-callout-icon" aria-hidden="true">{icon}</span>
+              {node.title}
+            </div>
+          ) : null}
+          <div className="tt-callout-body">
+            {node.children.map((child, index) => (
+              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} />
+            ))}
+          </div>
+        </aside>
+      );
+    }
+    case "quote": {
+      const slot = slots?.bindings?.[node.bind];
+      const value = slot ?? scalarText(resolveDocumentBinding(document, node.bind));
+      if (!hasValue(value)) return null;
+      const variant = node.variant ?? "block";
+      const attribution =
+        variant === "attributed" && node.attributionBind
+          ? scalarText(resolveDocumentBinding(document, node.attributionBind))
+          : "";
+      return (
+        <blockquote {...attrs} className="tt-quote" data-variant={variant}>
+          <p>{value}</p>
+          {attribution ? <footer className="tt-quote-attribution">{attribution}</footer> : null}
+        </blockquote>
+      );
+    }
   }
+}
+
+function templateFieldMap(template: TemplateDefinition): FieldDefinitionMap {
+  return new Map(template.fields.map((field) => [field.id, field]));
 }
 
 export function DocumentRenderer({
@@ -320,7 +1052,7 @@ export function DocumentRenderer({
       style={style}
     >
       <DocumentEngineStyles />
-      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} />
+      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} />
     </article>
   );
 }
@@ -362,6 +1094,7 @@ export function DocumentCollectionRenderer({
         document={document}
         metadata={metadata}
         slots={slots}
+        fields={templateFieldMap(template)}
       />
     </article>
   );
