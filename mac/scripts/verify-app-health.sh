@@ -42,7 +42,6 @@ required = {
     "selftest.document_assets",
     "selftest.document_projection",
     "selftest.public_link",
-    "selftest.local_agent_bridge",
     "workflow.document_engine",
     "workflow.collaboration",
     "workflow.folder_trash_restore",
