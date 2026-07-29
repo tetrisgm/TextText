@@ -33,6 +33,7 @@ import {
 } from "@/lib/db/schema";
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
+import { MCP_PROTOCOL_VERSION } from "../src/lib/mcp/protocol";
 
 const ORIGIN = process.env.WRITE_ORIGIN ?? "http://127.0.0.1:3000";
 const ASSET_FIXTURE_URL =
@@ -66,6 +67,18 @@ async function main() {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
   };
+  // MCP 2026-07-28 carries the protocol version, client capabilities, and
+  // identity on every request instead of in an initialize handshake, and
+  // mirrors the method and name into headers that the server checks against
+  // the body.
+  const requestMeta = {
+    "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+    "io.modelcontextprotocol/clientCapabilities": {},
+    "io.modelcontextprotocol/clientInfo": {
+      name: "verify-workflow-live",
+      version: "1.0.0",
+    },
+  };
   let rpcId = 100;
 
   /** One MCP tools/call. Returns the parsed tool output (content[0].text as
@@ -76,12 +89,17 @@ async function main() {
   ): Promise<{ ok: boolean; data: Record<string, unknown> | null; error: string }> {
     const res = await fetch(`${ORIGIN}/api/mcp`, {
       method: "POST",
-      headers: mcpHeaders,
+      headers: {
+        ...mcpHeaders,
+        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        "Mcp-Method": "tools/call",
+        "Mcp-Name": name,
+      },
       body: JSON.stringify({
         jsonrpc: "2.0",
         method: "tools/call",
         id: (rpcId += 1),
-        params: { name, arguments: args },
+        params: { name, arguments: args, _meta: requestMeta },
       }),
     });
     const raw = await res.text();
