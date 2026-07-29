@@ -18,13 +18,30 @@ export const documentAssetSchema = z
 
 export type DocumentAsset = z.infer<typeof documentAssetSchema>;
 
+const rowScalarSchema = z.union([
+  z.string().max(20_000),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
+
+/** One row of a `rows` field: sub-field id to scalar. Rows nest exactly one
+ * level, by design: a row is a record, not a document. */
+export const documentFieldRowSchema = z.record(
+  z.string().regex(/^[a-z][A-Za-z0-9_.-]{0,119}$/),
+  rowScalarSchema,
+);
+
 export const documentFieldValueSchema = z.union([
   z.string().max(2_000_000),
   z.number().finite(),
   z.boolean(),
   z.null(),
   z.array(z.string().max(20_000)).max(500),
+  z.array(documentFieldRowSchema).max(500),
 ]);
+
+export type DocumentFieldRow = z.infer<typeof documentFieldRowSchema>;
 
 export type DocumentFieldValue = z.infer<typeof documentFieldValueSchema>;
 

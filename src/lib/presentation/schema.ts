@@ -32,6 +32,7 @@ export const FIELD_TYPES = [
   "number",
   "boolean",
   "reference",
+  "rows",
 ] as const;
 
 const fieldIdSchema = z.string().regex(/^[a-z][A-Za-z0-9_.-]{0,119}$/);
@@ -44,50 +45,110 @@ const fieldBase = {
   help: z.string().trim().max(500).optional(),
 };
 
+// The scalar field shapes. Rows reuse these for sub-fields, so they are named
+// members rather than inline union literals.
+
+const textFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("text"),
+  maxLength: z.number().int().positive().max(2_000_000).optional(),
+}).strict();
+
+const richtextFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("richtext"),
+  maxLength: z.number().int().positive().max(10_000_000).optional(),
+}).strict();
+
+const imageFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("image"),
+  allowedContentTypes: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+}).strict();
+
+const dateFieldSchema = z.object({ ...fieldBase, type: z.literal("date") }).strict();
+
+const urlFieldSchema = z.object({ ...fieldBase, type: z.literal("url") }).strict();
+
+const enumFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("enum"),
+  options: z
+    .array(
+      z.object({
+        value: z.string().trim().min(1).max(120),
+        label: z.string().trim().min(1).max(160),
+        /** Engine-owned tint, validated in light AND dark; never user CSS.
+         * This is how a status pill gets its color without any color input. */
+        tone: z
+          .enum(["neutral", "info", "success", "warning", "danger", "accent"])
+          .optional(),
+        /** A single emoji, rendered before the label in badges. */
+        icon: z.string().trim().min(1).max(8).optional(),
+      }).strict(),
+    )
+    .min(1)
+    .max(100),
+  /** Labels, genres, moods: multiple selected values stored as string[]. */
+  multiple: z.boolean().default(false),
+}).strict();
+
+const numberFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("number"),
+  min: z.number().finite().optional(),
+  max: z.number().finite().optional(),
+  step: z.number().finite().positive().optional(),
+  /** How the value displays: rating renders stars against `max`, minutes
+   * renders "1 h 20 m", currency and percent localize. Storage stays a plain
+   * number in every case. */
+  format: z
+    .enum(["plain", "currency", "percent", "minutes", "rating"])
+    .default("plain"),
+}).strict();
+
+const booleanFieldSchema = z.object({ ...fieldBase, type: z.literal("boolean") }).strict();
+
+const referenceFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("reference"),
+  target: z.enum(["document", "folder"]).default("document"),
+  multiple: z.boolean().default(false),
+}).strict();
+
+/** Sub-fields a row may declare: every scalar type, no rows-in-rows and no
+ * richtext, so a row stays a record rather than a document. */
+export const rowSubFieldSchema = z.discriminatedUnion("type", [
+  textFieldSchema,
+  imageFieldSchema,
+  dateFieldSchema,
+  urlFieldSchema,
+  enumFieldSchema,
+  numberFieldSchema,
+  booleanFieldSchema,
+  referenceFieldSchema,
+]);
+
+export type RowSubFieldDefinition = z.infer<typeof rowSubFieldSchema>;
+
 export const documentFieldDefinitionSchema = z.discriminatedUnion("type", [
+  textFieldSchema,
+  richtextFieldSchema,
+  imageFieldSchema,
+  dateFieldSchema,
+  urlFieldSchema,
+  enumFieldSchema,
+  numberFieldSchema,
+  booleanFieldSchema,
+  referenceFieldSchema,
+  // The rows field: an array of typed records. Subtasks, ingredients, action
+  // items, changelog entries, itinerary stops, metrics: every "repeating
+  // group" is this one type.
   z.object({
     ...fieldBase,
-    type: z.literal("text"),
-    maxLength: z.number().int().positive().max(2_000_000).optional(),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("richtext"),
-    maxLength: z.number().int().positive().max(10_000_000).optional(),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("image"),
-    allowedContentTypes: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
-  }).strict(),
-  z.object({ ...fieldBase, type: z.literal("date") }).strict(),
-  z.object({ ...fieldBase, type: z.literal("url") }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("enum"),
-    options: z
-      .array(
-        z.object({
-          value: z.string().trim().min(1).max(120),
-          label: z.string().trim().min(1).max(160),
-        }).strict(),
-      )
-      .min(1)
-      .max(100),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("number"),
-    min: z.number().finite().optional(),
-    max: z.number().finite().optional(),
-    step: z.number().finite().positive().optional(),
-  }).strict(),
-  z.object({ ...fieldBase, type: z.literal("boolean") }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("reference"),
-    target: z.enum(["document", "folder"]).default("document"),
-    multiple: z.boolean().default(false),
+    type: z.literal("rows"),
+    fields: z.array(rowSubFieldSchema).min(1).max(8),
+    maxRows: z.number().int().positive().max(500).default(200),
   }).strict(),
 ]);
 
