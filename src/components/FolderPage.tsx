@@ -52,6 +52,7 @@ import type { Blog, Folder, Post } from "@/lib/content";
 import { resolveCoverSource } from "@/lib/cover";
 import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
+import { applyCollectionSpec } from "@/lib/documents/collection-query";
 import { parseItemInput } from "@/lib/item-creation";
 import {
   BUILTIN_TEMPLATES,
@@ -829,11 +830,40 @@ function UniversalFolderContents({
   selectedPostIds?: ReadonlySet<string>;
   viewMode: FolderViewMode;
 }) {
-  const sorted = useMemo(
-    () =>
-      sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? ""),
-    [items],
-  );
+  // The folder's default template can declare filters and sort over custom
+  // fields. When it does, that spec drives the folder view; when it does not,
+  // the historical most-recent-first order stands. Pinned stays the outermost
+  // order either way: pin is a personal "keep on top" that outranks any
+  // template opinion.
+  const collectionSpec = useMemo(() => {
+    const reference = defaultTemplateForFolder(folder);
+    const definition = getBuiltinTemplate(reference.id, reference.version);
+    if (!definition) return null;
+    const { sort, filters } = definition.collection;
+    return sort.length > 0 || filters.length > 0 ? { sort, filters } : null;
+  }, [folder]);
+  const sorted = useMemo(() => {
+    if (!collectionSpec) {
+      return sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? "");
+    }
+    const shaped = applyCollectionSpec(
+      items.map((post) => ({
+        post,
+        createdAt: post.date ?? null,
+        updatedAt: post.updatedAt ?? post.date ?? null,
+        publishedAt: post.status === "published" ? (post.date ?? null) : null,
+        title: post.title,
+        fields: post.document?.content.fields ?? {},
+      })),
+      collectionSpec,
+    ).map((entry) => entry.post);
+    return [...shaped].sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+        return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+      }
+      return 0; // stable within pin groups; applyCollectionSpec already ordered
+    });
+  }, [collectionSpec, items]);
 
   return (
     <>

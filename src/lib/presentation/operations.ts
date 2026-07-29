@@ -41,6 +41,18 @@ export const templateOperationSchema = z.discriminatedUnion("op", [
     layout: collectionRenderSchema.shape.layout,
     columns: collectionRenderSchema.shape.columns.optional(),
   }).strict(),
+  // Sort and filters are what turn declared fields into an organized
+  // collection: "Books by rating, unread first" is exactly one of each.
+  // Referenced fields are validated against the declared field list by
+  // validateTemplateDefinition when the operation result is rebuilt.
+  z.object({
+    op: z.literal("set-collection-sort"),
+    sort: collectionRenderSchema.shape.sort,
+  }).strict(),
+  z.object({
+    op: z.literal("set-collection-filters"),
+    filters: collectionRenderSchema.shape.filters,
+  }).strict(),
 ]);
 
 export const templateOperationsSchema = z
@@ -88,6 +100,18 @@ export function applyTemplateOperations(
         next = {
           ...next,
           collection: { ...next.collection, item: structuredClone(operation.item) },
+        };
+        break;
+      case "set-collection-sort":
+        next = {
+          ...next,
+          collection: { ...next.collection, sort: structuredClone(operation.sort) },
+        };
+        break;
+      case "set-collection-filters":
+        next = {
+          ...next,
+          collection: { ...next.collection, filters: structuredClone(operation.filters) },
         };
         break;
       case "set-collection-layout":
