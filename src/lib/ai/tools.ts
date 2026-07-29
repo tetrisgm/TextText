@@ -381,6 +381,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       .object({ id, state: z.enum(["open", "resolved", "all"]).optional() })
       .strict(),
   }),
+  list_responses: defineTool("list_responses", {
+    title: "List responses",
+    description:
+      "List reader responses to one item's poll nodes: per-option tallies plus individual responses. Responder identity is a name only when the reader was signed in.",
+    inputSchema: z.object({ id }).strict(),
+  }),
   list_access: defineTool("list_access", {
     title: "List access",
     description:

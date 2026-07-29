@@ -20,6 +20,7 @@ export const CAPABILITIES = [
   "comments",
   "import",
   "publish",
+  "responses",
   "search",
 ] as const;
 export const FIELD_TYPES = [
@@ -276,6 +277,15 @@ type RenderNodeInput =
       sort?: { bind: string; direction: "asc" | "desc" };
     }
   | {
+      type: "poll";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      labelBind: string;
+      multiple?: boolean;
+      closesBind?: string;
+    }
+  | {
       type: "progress";
       id?: string;
       showWhen?: string;
@@ -350,6 +360,11 @@ export type RenderNode =
   | (Omit<Extract<RenderNodeInput, { type: "rows" }>, "bind" | "showWhen"> & {
       bind: ContentBinding;
       showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "poll" }>, "bind" | "showWhen"> & {
+      bind: ContentBinding;
+      showWhen?: ContentBinding;
+      closesBind?: ContentBinding;
     })
   | (Omit<Extract<RenderNodeInput, { type: "progress" }>, "showWhen"> & {
       showWhen?: ContentBinding;
@@ -474,6 +489,17 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
         })
         .strict()
         .optional(),
+    }).strict(),
+    // poll: a rows field supplies the options (so each document writes its
+    // own); reader responses live in their own table, never in the document.
+    // The widget collects votes on public published pages and shows tallies.
+    z.object({
+      ...sharedNode,
+      type: z.literal("poll"),
+      bind: bindingSchema,
+      labelBind: rowBindingSchema,
+      multiple: z.boolean().default(false),
+      closesBind: bindingSchema.optional(),
     }).strict(),
     // progress: computed display only. A 0..1 number, a current/target pair,
     // or a checklist rollup.
@@ -694,6 +720,13 @@ function validateTreeBindings(
         }
         if (node.sort) requireRowBinding(node.sort.bind, sub, null, "rows sort");
       });
+    } else if (node.type === "poll") {
+      requireRowsField(node.bind, fields, "poll", (sub) => {
+        requireRowBinding(node.labelBind, sub, ["text"], "poll labelBind");
+      });
+      if (node.closesBind) {
+        checkBinding(node.closesBind, fields, ["date"], "poll closesBind");
+      }
     } else if (node.type === "progress") {
       const source = node.source;
       if ("bind" in source) {

@@ -340,4 +340,33 @@ export const EXEMPLARS: Exemplar[] = [
       ],
     },
   },
+  {
+    template: "texttext.poll",
+    title: "What should the next deep dive cover?",
+    body: `One vote each. The winner becomes September's long essay; the runner-up gets a shorter follow-up.`,
+    fields: {
+      options: [
+        { option: "How the sync engine survives bad networks" },
+        { option: "Designing the 25 built-in document looks" },
+        { option: "What shipping daily for a year taught us" },
+        { option: "The economics of a two-person software company" },
+      ],
+      closesAt: "2026-08-15",
+    },
+  },
+  {
+    template: "texttext.rsvp",
+    title: "Launch dinner at Piccino",
+    body: `We shipped the document engine, which is the closest thing this team has to a birthday. Dinner is on the company; bring an appetite and one strong opinion about typography.\n\nCorner table under the awning. We start at seven, food arrives family style at half past.`,
+    fields: {
+      when: "2026-08-08",
+      where: "Piccino, 1001 Minnesota St, San Francisco",
+      host: "Ramine",
+      options: [
+        { option: "Going" },
+        { option: "Can't make it" },
+        { option: "Maybe, will confirm by Friday" },
+      ],
+    },
+  },
 ];

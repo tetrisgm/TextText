@@ -29,9 +29,9 @@ agents. The web product does not call its own MCP server.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 30-tool contract
+## Shared 31-tool contract
 
-The 9 read-scope tools are:
+The 10 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -41,7 +41,8 @@ The 9 read-scope tools are:
 6. `search`
 7. `list_trash`
 8. `list_comments`
-9. `list_document_templates`
+9. `list_responses`
+10. `list_document_templates`
 
 The 21 sync-scope tools are:
 

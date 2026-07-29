@@ -12,6 +12,7 @@ import {
   upsertPresence,
   type AgentSelectionState,
 } from "@/lib/collab";
+import { listDocumentResponses } from "@/lib/documents/responses.server";
 import type { AgentFocusEvent } from "@/lib/collab/agent-focus";
 import type { DocumentMutation } from "@/lib/collab/document";
 import { buildAgentPresence } from "@/lib/collab/agent-presence.server";
@@ -1764,6 +1765,21 @@ export async function executeMcpTool(
       } catch (error) {
         return errorResult(error instanceof Error ? error.message : "Access could not be revoked.");
       }
+    }
+
+    case "list_responses": {
+      const input = args as WorkspaceToolInput<"list_responses">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      const responses = await listDocumentResponses(input.id);
+      const tallies: Record<string, Record<string, number>> = {};
+      for (const response of responses) {
+        const byOption = (tallies[response.fieldId] ??= {});
+        for (const value of response.values) {
+          byOption[value] = (byOption[value] ?? 0) + 1;
+        }
+      }
+      return jsonResult({ itemId: input.id, tallies, responses });
     }
 
     case "list_comments": {

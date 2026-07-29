@@ -96,6 +96,7 @@ const NODE_MARKERS: Record<string, string> = {
   checklist: "tt-checklist",
   rows: "tt-rows",
   progress: "tt-progress",
+  poll: "tt-poll",
   callout: "tt-callout",
   quote: "tt-quote",
 };

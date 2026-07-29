@@ -12,7 +12,7 @@ instead, and does not need a token, a port, or OAuth. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 30 tool
+`src/lib/ai/tools.ts` is the source of truth for the 31 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -126,8 +126,8 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 <!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the 9 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_document_templates`. |
-| `sync` | Call all 30 tools, including the 21 that mutate content or read administration data. It also grants every `read` operation. |
+| `read` | Call the 10 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
+| `sync` | Call all 31 tools, including the 21 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -157,7 +157,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (30)
+## Tools (31)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -169,6 +169,7 @@ or workspace selector that could cross that boundary.
 | `search` | `read` or `sync` | Search item titles, excerpts, and bodies you can access, and return matches with snippets. |
 | `list_trash` | `read` or `sync` | List soft-deleted items and folder restore-units. Nothing here is permanently deleted. |
 | `list_comments` | `read` or `sync` | List comment threads on one item, with anchored quotes and resolution state. |
+| `list_responses` | `read` or `sync` | List reader responses to one item's poll nodes: per-option tallies plus individual responses. Responder identity is a name only when the reader was signed in. |
 | `list_access` | `sync` | List who can access the workspace, one folder, or one item, and their role. |
 | `list_document_templates` | `read` or `sync` | List the immutable built-in and workspace templates available for shaping documents. |
 | `customize_document_template` | `sync` | Create the next immutable workspace template version by applying constrained operations to an existing valid template. Templates are data only and cannot contain HTML, CSS, or JavaScript. |

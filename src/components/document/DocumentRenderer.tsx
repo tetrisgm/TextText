@@ -7,6 +7,8 @@ import type {
   DocumentSnapshot,
 } from "@/lib/documents/model";
 import { isSafeLinkHref, isVideoFile, isYouTube, youtubeEmbedUrl } from "@/lib/content";
+import { pollClosed, pollOptionLabels } from "@/lib/documents/responses";
+import { PollWidget } from "./PollWidget";
 import type {
   DocumentFieldDefinition,
   RenderNode,
@@ -866,6 +868,7 @@ function NodeRenderer({
   metadata,
   slots,
   fields,
+  documentId,
 }: {
   node: RenderNode;
   path: string;
@@ -873,6 +876,7 @@ function NodeRenderer({
   metadata: DocumentRenderMetadata;
   slots?: DocumentRenderSlots;
   fields: FieldDefinitionMap;
+  documentId?: string;
 }): ReactNode {
   const nodeSlot = node.id ? slots?.nodes?.[node.id] : undefined;
   if (nodeSlot !== undefined) return nodeSlot;
@@ -891,7 +895,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-stack tt-gap-${node.gap} tt-align-${node.align}`} data-direction={node.direction}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} />
           ))}
         </div>
       );
@@ -900,7 +904,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-${node.type} tt-gap-${node.gap}`}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} />
           ))}
         </div>
       );
@@ -980,6 +984,21 @@ function NodeRenderer({
       if (slot !== undefined) return slot;
       return <RowsNode node={node} document={document} fields={fields} attrs={attrs} />;
     }
+    case "poll": {
+      const slot = slots?.bindings?.[node.bind];
+      if (slot !== undefined) return slot;
+      const labels = pollOptionLabels(document, node);
+      if (labels.length === 0) return null;
+      return (
+        <PollWidget
+          postId={documentId ?? ""}
+          fieldId={node.bind.slice("content.fields.".length)}
+          labels={labels}
+          multiple={node.multiple === true}
+          closed={pollClosed(document, node, new Date())}
+        />
+      );
+    }
     case "progress":
       return <ProgressNode node={node} document={document} attrs={attrs} />;
     case "callout": {
@@ -995,7 +1014,7 @@ function NodeRenderer({
           ) : null}
           <div className="tt-callout-body">
             {node.children.map((child, index) => (
-              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} />
+              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} />
             ))}
           </div>
         </aside>
@@ -1052,7 +1071,7 @@ export function DocumentRenderer({
       style={style}
     >
       <DocumentEngineStyles />
-      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} />
+      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} documentId={documentId} />
     </article>
   );
 }
@@ -1095,6 +1114,7 @@ export function DocumentCollectionRenderer({
         metadata={metadata}
         slots={slots}
         fields={templateFieldMap(template)}
+        documentId={documentId}
       />
     </article>
   );

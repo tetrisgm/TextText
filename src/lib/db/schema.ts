@@ -644,6 +644,42 @@ export const itemComments = pgTable(
   ],
 );
 
+// Reader responses to poll nodes. One row per (post, poll field, responder);
+// re-voting updates the row. The responder key is the signed-in user id or an
+// anonymous cookie value, so results stay one-per-reader without requiring an
+// account. Values are the selected option labels from the document's own
+// options rows. Responses are reader data, deliberately outside the document
+// snapshot: editing the poll never rewrites history, and deleting the post
+// cascades the votes away.
+export const documentResponses = pgTable(
+  "document_responses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    fieldId: text("field_id").notNull(),
+    responderKey: text("responder_key").notNull(),
+    /** display-name snapshot for signed-in responders; null for anonymous */
+    responderName: text("responder_name"),
+    values: jsonb("values").$type<string[]>().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("document_responses_one_per_responder_idx").on(
+      t.postId,
+      t.fieldId,
+      t.responderKey,
+    ),
+    index("document_responses_post_field_idx").on(t.postId, t.fieldId),
+    check(
+      "document_responses_responder_not_blank",
+      sql`length(btrim(${t.responderKey})) > 0`,
+    ),
+  ],
+);
+
 // Idempotency for sync creates: a create carries a client-generated
 // Idempotency-Key so an ambiguous response (the POST committed but the reply was
 // lost) can be retried without duplicating the post or folder. The row is

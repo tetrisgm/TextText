@@ -32,6 +32,7 @@ migrations=(
   scripts/migrate-flip-representation-to-textpack.mjs
   scripts/migrate-drop-rename-revert-guard.mjs
   scripts/migrate-add-document-fields-index.mjs
+  scripts/migrate-add-document-responses.mjs
 )
 
 missing=()

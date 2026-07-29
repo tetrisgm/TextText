@@ -2092,6 +2092,150 @@ const prompts = {
   },
 } as const;
 
+const poll = {
+  schemaVersion: 1,
+  engineVersion: 1,
+  id: "texttext.poll",
+  version: 1,
+  name: "Poll",
+  description: "One question, reader voting, live results.",
+  fields: [
+    {
+      id: "options",
+      label: "Options",
+      type: "rows",
+      fields: [{ id: "option", label: "Option", type: "text", required: true }],
+    },
+    { id: "closesAt", label: "Closes", type: "date" },
+  ],
+  capabilities: ["publish", "responses", "search"],
+  theme: { typography: "system", measure: "narrow", alignment: "center" },
+  item: {
+    type: "stack",
+    gap: "lg",
+    children: [
+      {
+        type: "masthead",
+        gap: "sm",
+        children: [
+          { type: "text", bind: "content.title", role: "title", fallback: "Untitled poll" },
+          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "facts",
+            variant: "strip",
+            entries: [{ bind: "content.fields.closesAt", label: "Closes", format: "countdown" }],
+          },
+        ],
+      },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
+      {
+        type: "poll",
+        bind: "content.fields.options",
+        labelBind: "row.option",
+        multiple: false,
+        closesBind: "content.fields.closesAt",
+      },
+    ],
+  },
+  collection: {
+    layout: "list",
+    columns: 1,
+    gap: "sm",
+    sort: [{ field: "updatedAt", direction: "desc" }],
+    item: {
+      type: "stack",
+      gap: "xs",
+      children: [
+        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled poll" },
+        {
+          type: "facts",
+          variant: "strip",
+          entries: [{ bind: "content.fields.closesAt", label: "Closes", format: "countdown" }],
+        },
+      ],
+    },
+  },
+} as const;
+
+const rsvp = {
+  schemaVersion: 1,
+  engineVersion: 1,
+  id: "texttext.rsvp",
+  version: 1,
+  name: "Event invite",
+  description: "When, where, and a one-tap RSVP that closes at showtime.",
+  fields: [
+    { id: "when", label: "When", type: "date", required: true },
+    { id: "where", label: "Where", type: "text" },
+    { id: "host", label: "Host", type: "text" },
+    {
+      id: "options",
+      label: "RSVP choices",
+      type: "rows",
+      fields: [{ id: "option", label: "Choice", type: "text", required: true }],
+    },
+  ],
+  capabilities: ["assets", "publish", "responses", "search"],
+  theme: { typography: "editorial", measure: "narrow", alignment: "center" },
+  item: {
+    type: "stack",
+    gap: "lg",
+    children: [
+      {
+        type: "masthead",
+        gap: "sm",
+        children: [
+          { type: "text", bind: "content.title", role: "title", fallback: "You are invited" },
+          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "facts",
+            variant: "strip",
+            entries: [
+              { bind: "content.fields.when", label: "When", format: "date" },
+              { bind: "content.fields.where", label: "Where" },
+              { bind: "content.fields.host", label: "Host" },
+            ],
+          },
+          {
+            type: "facts",
+            variant: "strip",
+            entries: [{ bind: "content.fields.when", label: "RSVP closes", format: "countdown" }],
+          },
+        ],
+      },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
+      {
+        type: "poll",
+        bind: "content.fields.options",
+        labelBind: "row.option",
+        multiple: false,
+        closesBind: "content.fields.when",
+      },
+    ],
+  },
+  collection: {
+    layout: "list",
+    columns: 1,
+    gap: "sm",
+    sort: [{ field: "content.fields.when", direction: "asc" }],
+    item: {
+      type: "stack",
+      gap: "xs",
+      children: [
+        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled event" },
+        {
+          type: "facts",
+          variant: "strip",
+          entries: [
+            { bind: "content.fields.when", label: "When", format: "date" },
+            { bind: "content.fields.where", label: "Where" },
+          ],
+        },
+      ],
+    },
+  },
+} as const;
+
 const definitions = [
   article,
   note,
@@ -2116,6 +2260,8 @@ const definitions = [
   newsletter,
   now,
   prompts,
+  poll,
+  rsvp,
 ].map((entry) => validateTemplateDefinition(entry));
 
 export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] = Object.freeze(definitions);
@@ -2175,4 +2321,6 @@ export const TEMPLATE_CATALOG: readonly { id: string; category: TemplateCategory
     { id: "texttext.calendar", category: "Publish" },
     { id: "texttext.newsletter", category: "Publish" },
     { id: "texttext.now", category: "Publish" },
+    { id: "texttext.poll", category: "Publish" },
+    { id: "texttext.rsvp", category: "Publish" },
   ]);
