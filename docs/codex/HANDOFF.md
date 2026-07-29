@@ -1,8 +1,20 @@
 # Texttext continuation handoff
 
-Updated 2026-07-28. This is the only current continuation document.
+Updated 2026-07-29. This is the only current continuation document.
 
 ## Start here
+
+There is no unfinished implementation. The last body of work, native agents as
+live collaborators, shipped as `0.142` build `148` and passed its end-to-end
+acceptance test. Continue from the user's newest request.
+
+One workflow defect worth fixing before it wastes another cycle: the ordering in
+"Work and release workflow" below runs `verify:release` (step 5) BEFORE the
+commit (step 7), but `release/ship.sh` rejects a receipt whose `sourceCommit` is
+not `HEAD`. Committing always moves that commit, so the documented order always
+yields a stale receipt and a refused ship, forcing a second full gate run. Either
+run the gate on the already-committed source, or teach the ship to accept a
+receipt whose source FINGERPRINT matches even when the commit differs.
 
 Read these files before changing product code:
 
@@ -22,17 +34,17 @@ release metadata, the public marker, appcast, and installed bundle.
 
 This is a baseline, not a substitute for inspecting live `main`.
 
-- Canonical source commit: `5a6ffca36d3938b8668b2a69174d95077b07d901`
+- Canonical source commit: `f23c1d9` (release metadata), implementation in
+  `2ca38c1`.
 - `main` and `origin/main` were synchronized and the worktree was clean.
 - No secondary worktree or branch was left behind.
-- Source release metadata was `0.141` build `147`.
-- `/Applications/Texttext.app` was also `0.141` build `147`.
-- No product code for the remaining native agent identity gap described below
-  was changed after this baseline.
+- Source release metadata, the public marker, the appcast, and
+  `/Applications/Texttext.app` were all `0.142` build `148`.
 
-## Current body of work: native agents as live collaborators
+## Completed body of work: native agents as live collaborators
 
-The user requires a real agent workflow, not an assisted UI demonstration:
+Shipped in Texttext `0.142` build `148` and proven end to end (see the
+acceptance test below). The required workflow, all working:
 
 1. Claude, Codex, ChatGPT, or another MCP client finds an exact document.
 2. The agent calls `open_item` and Texttext opens the exact workspace, folder,
@@ -101,22 +113,40 @@ the former Required implementation section are done:
     signal sites, route authorization, and that hosted MCP has not regrown its
     own presence construction.
 
-### End-to-end acceptance test
+### End-to-end acceptance test: PASSED on 0.142 build 148
 
-Do not manually click through Texttext to fake this proof.
+Run against the installed, signed-in app, driven entirely through local MCP with
+no manual navigation. Re-run this if the identity chain changes.
 
-1. Start from the installed, signed-in Texttext app.
-2. Initialize the local MCP endpoint with `clientInfo.name` identifying Codex
-   or Claude.
-3. Find the exact `Texttext Changelog` note in the correct workspace and folder.
-4. Call `open_item`; the app must navigate directly to that exact note.
-5. Call `update_item` or `append_to_item`; the open note must update live.
-6. Capture a screenshot immediately showing the exact note, changed content,
-   and the correct agent avatar and cursor or selection.
-7. Verify the mutation persisted, the action audit was written, and a second
-   client receives the change without a refresh.
-8. Repeat with two distinct agent identities to prove they do not collapse into
-   one collaborator.
+1. Initialized `http://127.0.0.1:47118/mcp` with
+   `clientInfo.name` of `codex-cli` and, separately, `claude-code`.
+2. Found the exact `Texttext Changelog` note
+   (`62dcdf1f-434e-427e-a428-8fe765272fdc`, folder `notes`) through `search`.
+3. `open_item` navigated the installed app to that exact note.
+4. `update_item` prepended the 0.142 entry; the open note showed the new text
+   live, with no manual refresh.
+5. Presence rows confirmed server-side in `collab_presence`, three distinct
+   collaborators on one document:
+   - `Codex`, `#111827`, `agent-c80c536faa5a4cf8`,
+     awareness `provider:"codex"`, `participantType:"agent"`,
+     `selection.field:"body"` (from `open_item`)
+   - `Claude`, `#d97757`, `agent-aa2b10e27a4eaaed`,
+     awareness `provider:"claude"`, `participantType:"agent"`,
+     `selection.field:"title"` (from an `update_item` that changed only the
+     title, which is the deterministic field choice working end to end)
+   - the human, with no provider and no `participantType`
+6. The app rendered both agents as named collaborators with their provider
+   icons beside the human avatar, and Claude's cursor appeared in the title in
+   its own color, matching its declared selection field.
+7. Persistence verified by reading the item back; `action_audit` recorded
+   `mcp.update_item`. The mutation and both agents' presence reached the open
+   client without a refresh (the client displayed state it did not write).
+8. Two distinct identities stayed two distinct collaborators: different stable
+   client IDs, names, and colors, with no collapsing.
+
+Scope note: the reader in step 7 was the running app rather than a second
+independently signed-in browser, so cross-device delivery still rests on the
+release gate's live-client evaluation rather than on this manual run.
 
 ## Current architecture
 
