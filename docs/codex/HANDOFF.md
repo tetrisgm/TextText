@@ -5,7 +5,8 @@ Updated 2026-07-29. This is the only current continuation document.
 ## Start here
 
 There is no unfinished implementation. The last body of work, the `texttext` CLI
-and the retirement of the loopback MCP server, shipped as `0.146` build `152`.
+and the retirement of the loopback MCP server, shipped as `0.146` build `152`,
+and the documentation and changelog were made current in `0.147` build `153`.
 Continue from the user's newest request.
 
 Read these files before changing product code:
@@ -27,12 +28,16 @@ release metadata, the public marker, appcast, and installed bundle.
 
 This is a baseline, not a substitute for inspecting live `main`.
 
-- Source commit `a321489` (release metadata); the CLI landed in `38ff316` and
-  `513404e`.
+- Source commit `9564408` (release metadata); the CLI landed in `38ff316` and
+  `513404e`, the documentation sweep in `8a28f0e` and `858a520`.
 - `main` and `origin/main` were synchronized and the worktree was clean.
 - No secondary worktree or branch was left behind.
 - Source release metadata, the public marker, the appcast, and
-  `/Applications/Texttext.app` were all `0.146` build `152`.
+  `/Applications/Texttext.app` were all `0.147` build `153`.
+- `net.writeapp.write.autobuild` had been left launchctl-DISABLED since
+  2026-07-20, so pushes silently never shipped. It is enabled and running again.
+  `launchctl bootstrap` on a disabled job fails with a useless
+  `Input/output error`; run `launchctl enable gui/$(id -u)/<label>` first.
 
 ## Completed body of work: agents on this Mac use a CLI, not a port
 
@@ -210,9 +215,10 @@ migrations against production.
 8. Ship meaningful product work with `release/ship.sh`.
 9. Verify source, immutable archive, appcast, public marker, website, installed
    bundle version and build, signature, and running app all agree.
-10. Add user-facing changes to the in-product Texttext Changelog note. The
-    `texttext` CLI can do this itself:
-    `texttext edit "Texttext Changelog" --section "..." --as claude --message "..."`.
+10. Add user-facing changes to the in-product changelog, which is exactly
+    `Shoku's Space/My Notes/Write Changelog.textpack`. Address it by that path,
+    never by title (see AGENTS.md; naming it by title once split the history
+    across two notes). The `texttext` CLI writes it.
 
 For OAuth, discovery, or MCP handler changes, also run the bounded OAuth MCP loop
 described in `AGENTS.md`.
@@ -252,7 +258,7 @@ integrator owns the checkout. Batch the implementation, run focused checks while
 developing, then commit the coherent unit and run the exact-source release gate
 once ON that commit. For MCP or OAuth handler changes, run the bounded OAuth MCP
 loop too. Push, ship once with release/ship.sh, update the installed app and the
-in-product Texttext Changelog note, verify source, public artifacts, appcast,
+in-product changelog note named in AGENTS.md, verify source, public artifacts,
 website, installed version/build, and running behavior agree, and leave main
 clean with no temporary refs. Do not stop at a plan, branch, local build, or
 handoff.

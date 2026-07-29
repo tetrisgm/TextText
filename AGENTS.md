@@ -97,24 +97,44 @@ agent working here follows:
 
 # Changelog (binding)
 
-The owner reads a running changelog INSIDE Texttext. It is NOT a repo file: the
-changelog is the "Texttext Changelog" note in their workspace (Shoku's Space / My
-Notes), and that note IS the single source of truth. It is content, so it lives
-in the product, in the product's own format (a `.textpack`, whose inner
-`text.md` is markdown). Do not add a parallel `.md` copy in the repo; that
-drifts and violates the "content is a note" rule.
+The owner reads a running changelog INSIDE Texttext. It is NOT a repo file. It is
+content, so it lives in the product, in the product's own format. Do not add a
+parallel `.md` copy in the repo; that drifts and violates the "content is a
+note" rule.
 
-Every unit of meaningful, user-facing work prepends a newest-on-top entry to
-that note. Group by shipped version; plain language you can act on ("type # in
-the tag field to..."), sentence case, no em dashes, no engineering detail.
-Internal-only churn (refactors, test/infra fixes, release-pipeline tweaks) does
-not need an entry.
+**The one and only changelog is this exact document:**
 
-Only a process on the owner's Mac can write the File Provider mount, so the
-owner or the integrator updates the note (Codex in a sandbox cannot reach it and
-should instead put its user-facing entry in its final report for the integrator
-to prepend). To edit by hand: unzip
-`~/Library/CloudStorage/Texttext-Texttext/Shoku's Space/My Notes/Texttext Changelog.textpack`,
-edit the inner `text.md` body (preserve the frontmatter block byte-for-byte),
-rezip preserving the `.textbundle` structure, and copy it back over the same
-filename (a content edit, not a rename, so it syncs cleanly).
+```text
+Shoku's Space/My Notes/Write Changelog.textpack
+```
+
+Address it by that full workspace-relative path, never by title. The note is
+still called "Write Changelog" from before the rebrand, and a DIFFERENT note
+called "Texttext Changelog" exists in another workspace. An earlier instruction
+here named the title rather than the path, and the history split across both:
+0.141 and 0.142 landed in one, 0.145 in the other, and 0.143 and 0.146 in
+neither. That was repaired in 0.147. Do not reintroduce a second changelog, and
+do not resolve this note by name.
+
+Every unit of meaningful, user-facing work prepends a newest-on-top entry, under
+the `# Write Changelog` heading and its one-line intro, not above them. Group by
+the version that ACTUALLY SHIPPED; confirm it with `git log --oneline | grep
+Release` rather than guessing the next number, because a build retry can consume
+one (there was never a 0.144). Plain language you can act on ("type # in the tag
+field to..."), sentence case, no em dashes, no engineering detail. Internal-only
+churn (refactors, test/infra fixes, release-pipeline tweaks) does not need an
+entry.
+
+Only a process on the owner's Mac can write the File Provider mount. Use the CLI,
+which owns the format and preserves the frontmatter:
+
+```sh
+texttext read "Shoku's Space/My Notes/Write Changelog.textpack" > /tmp/log.md
+# prepend the entry under the heading and intro, then:
+texttext write "Shoku's Space/My Notes/Write Changelog.textpack" --from /tmp/log.md \
+  --as claude --message "add the <version> entry"
+texttext lint "Shoku's Space/My Notes/Write Changelog.textpack"
+```
+
+Codex in a sandbox cannot reach the mount and should instead put its user-facing
+entry in its final report for the integrator to prepend.
