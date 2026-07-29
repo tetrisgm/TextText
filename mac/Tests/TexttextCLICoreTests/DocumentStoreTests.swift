@@ -194,4 +194,30 @@ final class DocumentStoreTests: XCTestCase {
         ) { ran = true }
         XCTAssertTrue(ran)
     }
+
+    /// `lint` used to rebuild the path as `root + relativePath(url)`. For a
+    /// document OUTSIDE the workspace, relativePath returns the absolute path
+    /// unchanged, so re-appending it produced "<root>//tmp/..." and the lint
+    /// failed with "no such file". A PostToolUse hook lints whatever file was
+    /// just written, so that turned every out-of-workspace .textpack into a
+    /// spurious "malformed document" block.
+    func testRelativePathLeavesAnOutOfWorkspacePathAlone() throws {
+        let outside = URL(fileURLWithPath: "/tmp/elsewhere/note.textpack")
+        XCTAssertEqual(store.relativePath(of: outside), outside.path)
+        // Re-appending that to the root is the bug, and it must not round-trip.
+        XCTAssertNotEqual(
+            root.appendingPathComponent(store.relativePath(of: outside)).path,
+            outside.path)
+    }
+
+    func testResolveReturnsAnAbsolutePathUntouched() throws {
+        let outside = root.deletingLastPathComponent()
+            .appendingPathComponent("outside-\(UUID().uuidString).textpack")
+        try Data("zip".utf8).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        XCTAssertEqual(
+            try store.resolve(outside.path).standardizedFileURL.path,
+            outside.standardizedFileURL.path)
+    }
 }

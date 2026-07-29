@@ -759,14 +759,23 @@ export function authorizationErrorRedirect(
   return target.toString();
 }
 
+/**
+ * MCP 2026-07-28 asks authorization servers to return `iss` on the
+ * authorization response (RFC 9207) and requires clients to check it against
+ * the issuer they recorded before redeeming the code. Without it a client that
+ * talks to several authorization servers cannot tell which one answered, which
+ * is the mix-up attack RFC 9207 exists to close.
+ */
 export function authorizationSuccessRedirect(
   redirectUri: string,
   code: string,
   state?: string,
+  issuer?: string,
 ): string {
   const target = new URL(redirectUri);
   target.searchParams.set("code", code);
   if (state !== undefined) target.searchParams.set("state", state);
+  if (issuer) target.searchParams.set("iss", issuer);
   return target.toString();
 }
 

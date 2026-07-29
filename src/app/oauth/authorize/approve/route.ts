@@ -161,6 +161,9 @@ export async function POST(request: Request) {
         validation.request.redirectUri,
         issued.code,
         validation.request.state,
+        // RFC 9207: name the issuer so a client with several authorization
+        // servers can tell which one answered.
+        new URL(request.url).origin,
       ),
       request,
     );

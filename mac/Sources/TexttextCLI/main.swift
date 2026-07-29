@@ -230,16 +230,23 @@ do {
         emit(options.json ? "{\"ok\":true,\"document\":\"\(relative)\"}" : relative)
 
     case "lint":
-        let targets: [String]
+        // Keep the URL `resolve` returned. Round-tripping it through
+        // relativePath and back onto the root broke every absolute path
+        // outside the workspace: relativePath passes such a path through
+        // unchanged, so re-appending it produced "<root>//tmp/...". A hook
+        // lints whatever file was just written, which is exactly that case.
+        let targets: [(url: URL, name: String)]
         if let name = options.positional.first {
-            targets = [store.relativePath(of: try store.resolve(name))]
+            let url = try store.resolve(name)
+            targets = [(url, store.relativePath(of: url))]
         } else {
-            targets = try store.list()
+            targets = try store.list().map {
+                (store.root.appendingPathComponent($0), $0)
+            }
         }
         var findings: [LintFinding] = []
-        for relative in targets {
-            findings += DocumentLinter.check(
-                store.root.appendingPathComponent(relative), named: relative)
+        for target in targets {
+            findings += DocumentLinter.check(target.url, named: target.name)
         }
         if options.json {
             let payload = findings.map { ["document": $0.document, "problem": $0.problem] }
