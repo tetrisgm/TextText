@@ -16,6 +16,9 @@ USAGE
   texttext edit <doc> --section "## H"     replace one section (stdin by default)
   texttext open <doc> [--section "## H"]   open it in Texttext
   texttext sections <doc>                  list the headings
+  texttext new <title> [--folder F]        create a document
+  texttext lint [<doc>]                    check documents are well formed
+  texttext install                         put texttext on your PATH
 
 OPTIONS
   --as NAME        who is working (shown in the document while it runs)
@@ -35,6 +38,7 @@ struct Options {
     var from: String?
     var actor: String?
     var message: String?
+    var folder: String?
     var json = false
 }
 
@@ -57,6 +61,7 @@ func parse(_ arguments: [String]) -> Options {
         case "--from", "-f": options.from = value()
         case "--as": options.actor = value()
         case "--message", "-m": options.message = value()
+        case "--folder": options.folder = value()
         case "--json": options.json = true
         case "--help", "-h": options.command = "help"
         default:
@@ -206,6 +211,66 @@ do {
             try? process.run()
             process.waitUntilExit()
         }
+
+    case "new":
+        guard let title = options.positional.first else {
+            fail("usage: texttext new <title> [--folder FOLDER]")
+        }
+        // A body on stdin is optional: `texttext new "Notes" < draft.md` works,
+        // and so does creating an empty document to fill in later.
+        let body: String = {
+            if options.from != nil { return readInput(options) }
+            return isatty(FileHandle.standardInput.fileDescriptor) == 1
+                ? "" : readInput(options)
+        }()
+        let created = try store.create(
+            title: title, body: body,
+            folder: options.positional.dropFirst().first ?? options.folder)
+        let relative = store.relativePath(of: created)
+        emit(options.json ? "{\"ok\":true,\"document\":\"\(relative)\"}" : relative)
+
+    case "lint":
+        let targets: [String]
+        if let name = options.positional.first {
+            targets = [store.relativePath(of: try store.resolve(name))]
+        } else {
+            targets = try store.list()
+        }
+        var findings: [LintFinding] = []
+        for relative in targets {
+            findings += DocumentLinter.check(
+                store.root.appendingPathComponent(relative), named: relative)
+        }
+        if options.json {
+            let payload = findings.map { ["document": $0.document, "problem": $0.problem] }
+            let data = try JSONSerialization.data(
+                withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+            emit(String(decoding: data, as: UTF8.self))
+        } else if findings.isEmpty {
+            emit("\(targets.count) document(s) OK")
+        } else {
+            findings.forEach { emit($0.description) }
+        }
+        // A nonzero exit is what lets a hook block an agent on a broken document.
+        if !findings.isEmpty { exit(1) }
+
+    case "install":
+        let source = URL(fileURLWithPath: CommandLine.arguments[0])
+            .resolvingSymlinksInPath()
+        let binDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin", isDirectory: true)
+        let link = binDirectory.appendingPathComponent("texttext")
+        do {
+            try FileManager.default.createDirectory(
+                at: binDirectory, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: link)
+            try FileManager.default.createSymbolicLink(
+                at: link, withDestinationURL: source)
+        } catch {
+            fail("could not link into ~/.local/bin: \(error)")
+        }
+        emit("Linked \(link.path)")
+        emit("Add ~/.local/bin to your PATH if it is not there already.")
 
     default:
         fail("unknown command \(options.command)\n\n" + usage)

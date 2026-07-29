@@ -75,6 +75,13 @@ public struct DocumentStore: Sendable {
     /// matches exactly one document.
     public func resolve(_ name: String) throws -> URL {
         let fileManager = FileManager.default
+        // An absolute path is what a hook or a script will have in hand, and it
+        // is unambiguous, so take it as given.
+        if name.hasPrefix("/") {
+            let absolute = URL(fileURLWithPath: name)
+            if fileManager.fileExists(atPath: absolute.path) { return absolute }
+            throw TexttextCLIError.documentNotFound(name)
+        }
         let direct = root.appendingPathComponent(name)
         if fileManager.fileExists(atPath: direct.path) { return direct }
         for suffix in [".textpack", ".md"] where !name.hasSuffix(suffix) {
@@ -202,6 +209,42 @@ public struct DocumentStore: Sendable {
         let packed = try WriteTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
         try atomicallyReplace(url, with: try Data(contentsOf: packed))
+    }
+
+    /// Create a document. Writes only the frontmatter the sync layer needs and
+    /// lets the server own identity, slug, and canonical URL, which it assigns
+    /// when it ingests the file.
+    @discardableResult
+    public func create(
+        title: String, body: String = "", folder: String? = nil, kind: String = "note"
+    ) throws -> URL {
+        let fileManager = FileManager.default
+        var destination = root
+        if let folder, !folder.isEmpty {
+            destination = destination.appendingPathComponent(folder, isDirectory: true)
+            guard fileManager.fileExists(atPath: destination.path) else {
+                throw TexttextCLIError.documentNotFound(folder)
+            }
+        }
+        let name = DocumentCreation.filename(for: title)
+        let url = destination.appendingPathComponent("\(name).textpack")
+        guard !fileManager.fileExists(atPath: url.path) else {
+            throw TexttextCLIError.invalidDocument(
+                "\(name) already exists. Edit it, or choose another title.")
+        }
+
+        let markdown = DocumentCreation.frontmatter(title: title, kind: kind)
+            + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n")
+
+        let temporary = try makeTemporaryDirectory()
+        defer { try? fileManager.removeItem(at: temporary) }
+        let package = try WriteTextBundlePackage.materialize(
+            canonicalMarkdown: markdown, documentJSON: nil,
+            assets: [], sourceURL: nil, in: temporary)
+        let packed = try WriteTextBundlePackage.zipToTextPack(
+            packageURL: package.url, in: temporary)
+        try atomicallyReplace(url, with: try Data(contentsOf: packed))
+        return url
     }
 
     /// Build the replacement beside the target, then swap it in with one

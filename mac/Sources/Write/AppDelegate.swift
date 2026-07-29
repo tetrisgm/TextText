@@ -95,6 +95,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Lifecycle
 
+    /// Put `texttext` on the user's PATH so an agent can just run it.
+    ///
+    /// The whole point of the CLI is that nobody configures anything: an agent
+    /// is told to use Texttext and it works. That only holds if the command is
+    /// findable, so the app links it on launch. Silent and best effort, because
+    /// a missing symlink is a smaller problem than a launch that fails, and the
+    /// absolute path inside the bundle always works as a fallback.
+    ///
+    /// ~/.local/bin rather than /usr/local/bin: no admin prompt, and it is
+    /// already on PATH for most shells.
+    private func linkAgentCLIIfNeeded() {
+        let fileManager = FileManager.default
+        let source = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/MacOS/texttext")
+        guard fileManager.isExecutableFile(atPath: source.path) else { return }
+
+        let binDirectory = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin", isDirectory: true)
+        let link = binDirectory.appendingPathComponent("texttext")
+
+        // Already pointing at this build: nothing to do.
+        if let existing = try? fileManager.destinationOfSymbolicLink(atPath: link.path),
+           existing == source.path
+        {
+            return
+        }
+        // Never clobber a real file someone put there deliberately.
+        var isDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: link.path, isDirectory: &isDirectory) {
+            let isSymlink = (try? fileManager.destinationOfSymbolicLink(atPath: link.path)) != nil
+            guard isSymlink else { return }
+            try? fileManager.removeItem(at: link)
+        }
+        try? fileManager.createDirectory(at: binDirectory, withIntermediateDirectories: true)
+        try? fileManager.createSymbolicLink(at: link, withDestinationURL: source)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Before ANYTHING: offer to relocate to /Applications. Running from
         // ~/Downloads breaks Sparkle updates and triggers Gatekeeper
@@ -102,6 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if moveToApplicationsIfNeeded() { return } // relaunching from the new home
 
         if terminateIfAnotherInstanceIsAlreadyRunning() { return }
+
+        linkAgentCLIIfNeeded()
 
         WebAppWindowController.configureURLCacheForStartup()
 
