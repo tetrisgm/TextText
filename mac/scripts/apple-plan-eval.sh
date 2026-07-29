@@ -2,7 +2,7 @@
 # Apple platform plan acceptance eval.
 #
 # Runs the Swift eval + regression suite, then checks one concrete condition
-# per plan exit criterion (docs/apple-platform-plan.md section 17), per
+# per plan exit criterion (docs/archive/2026-07-15-apple-platform-plan.md section 17), per
 # privacy invariant (AGENTS.md), and per explicit non-goal (section 18), and
 # prints a green/red matrix. Exits non-zero if any row fails.
 #
@@ -117,7 +117,7 @@ check "inv.bookmark-links" "Invariant: bookmarks store the URL in the links list
 check "inv.local-authority" "Invariant: local edits win races with server downloads" \
   "grep -q 'changed while it was downloading' '$MAC/Sources/Write/SyncEngine.swift'"
 
-# --- File Provider (Write as a Finder sidebar location; see docs/file-provider-plan.md) ---
+# --- File Provider (Write as a Finder sidebar location; see docs/file-provider.md) ---
 check "fp.kit" "File Provider: pure-Swift kit (enumerator + item model + sync client) present" \
   "test -f '$MAC/Sources/WriteFileProviderKit/WorkspaceEnumerator.swift' && test -f '$MAC/Sources/WriteFileProviderKit/LiveWriteSyncAPI.swift'"
 check "fp.bridge" "File Provider: NSFileProviderItem bridge present" \
@@ -157,7 +157,7 @@ check "nongoal.cloudkit" "Non-goal: no CloudKit document storage" \
 
 # --- House rule: no em dashes in the Apple / File Provider docs ---
 check "style.no-em-dash" "Style: no em dashes in Apple platform + File Provider docs" \
-  "! grep -lq $'\\u2014' '$ROOT/docs/apple-platform-plan.md' '$ROOT/docs/apple-workspace.md' '$ROOT/docs/apple-platform-evals.md' '$ROOT/docs/file-provider-plan.md' '$ROOT/docs/file-provider-portal-step.md' 2>/dev/null"
+  "! grep -lq $'\\u2014' '$ROOT/docs/archive/2026-07-15-apple-platform-plan.md' '$ROOT/docs/apple-workspace.md' '$ROOT/docs/apple-platform-evals.md' '$ROOT/docs/file-provider.md' '$ROOT/docs/file-provider-portal-step.md' 2>/dev/null"
 
 echo
 echo "=== Apple platform plan acceptance matrix ==="

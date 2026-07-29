@@ -71,7 +71,7 @@ agent has a region of interest. Headings are the natural unit for that, they
 survive edits above them, and they are what an agent already reasons in.
 
 `--as` is self-declared, exactly as `clientInfo` was. That is acceptable under the
-trust model already settled in `docs/decision-local-mcp-trust.md`: same-user
+trust model already settled in `docs/archive/2026-07-28-decision-local-mcp-trust.md`: same-user
 processes are trusted, and Tier 0 closed the case that mattered.
 
 ## 4. Intent closes the audit gap

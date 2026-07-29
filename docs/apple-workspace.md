@@ -2,7 +2,7 @@
 
 > Historical note: the iCloud Drive workspace described in the first part of
 > this file is retired. The shipped Finder surface is the Texttext File Provider
-> documented in [file-provider-plan.md](file-provider-plan.md) and
+> documented in [file-provider.md](file-provider.md) and
 > [design/native-folder-sync.md](design/native-folder-sync.md). Do not provision
 > the current app from the legacy iCloud instructions below.
 

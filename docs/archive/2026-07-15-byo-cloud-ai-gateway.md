@@ -1,5 +1,13 @@
 # BYO-cloud AI rung via Vercel AI Gateway (implementation plan)
 
+> **ARCHIVED / SUPERSEDED (historical record).** This plan routed the in-app
+> assistant through the Vercel AI Gateway. That is NOT what shipped: the
+> assistant uses a workspace-owned Anthropic or OpenAI API key directly
+> (`src/lib/ai/provider-catalog.ts`, `cloud-client.ts`), and no gateway exists in
+> the codebase. Kept for the reasoning about server-side tool execution and
+> off-by-default. For the current AI contract see `AGENTS.md` and
+> `docs/ai-sidebar-architecture.md`. Nothing below is current project status.
+
 Status: FOUNDATION IN (the `ai` SDK is installed), route not yet built. Owner
 decisions locked: use the Vercel AI Gateway; server-side tool execution;
 off by default. This is the ready-to-execute plan; kept precise so the build is

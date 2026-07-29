@@ -1,9 +1,15 @@
 # Texttext for macOS: Apple platform plan
 
+> **ARCHIVED / SHIPPED AND SUPERSEDED (historical record).** Phases 1 to 5
+> shipped in v0.21 to v0.25. The workspace substrate has since moved from the
+> iCloud-Drive-canonical design below to the macOS File Provider. For the
+> current state see `docs/file-provider.md` and `docs/apple-workspace.md`.
+> Nothing below is current project status.
+
 > STATUS (updated 2026-07-15): SHIPPED and SUPERSEDED. Phases 1 to 5 shipped in
 > v0.21 to v0.25, and the workspace substrate has since moved from the
 > iCloud-Drive-canonical design below to the macOS File Provider (see
-> docs/file-provider-plan.md). This document is kept as the historical plan of
+> docs/file-provider.md). This document is kept as the historical plan of
 > record; the "First execution task (Phase 1)" section is complete, not pending.
 > The only open Apple-platform work is File Provider Phase 5 (retire the native
 > ~/Texttext mirror at a proven cutover).
@@ -112,7 +118,7 @@ Adopted as its own effort (this section previously deferred it). The workspace
 now surfaces through a File Provider that makes Texttext a first-class Finder
 sidebar location, under Locations, backed directly by the server. It replaces
 the iCloud Drive/Texttext folder as the canonical local surface. See
-`docs/file-provider-plan.md` for the plan and current status.
+`docs/file-provider.md` for the plan and current status.
 
 ## 7. macOS-only scope
 
@@ -255,7 +261,7 @@ Live Activities, PencilKit, Vision, real-time collaboration, complex merge
 infrastructure.
 
 File Provider is no longer a non-goal: it has been adopted as its own effort
-(see `docs/file-provider-plan.md`). CloudKit as the content backend stays a
+(see `docs/file-provider.md`). CloudKit as the content backend stays a
 genuine non-goal (the server is the backend). The File Provider replaces the
 polling folder mirror rather than adding a second sync system; the native
 mirror is retired at the cutover, not run alongside permanently.
@@ -290,5 +296,5 @@ proposal.
 ## Verification
 
 Evals for every phase and invariant of this plan live in
-[apple-platform-evals.md](apple-platform-evals.md). Run
+[apple-platform-evals.md](../apple-platform-evals.md). Run
 `mac/scripts/apple-plan-eval.sh` for the acceptance matrix.

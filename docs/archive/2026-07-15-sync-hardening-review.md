@@ -1,8 +1,14 @@
 # Adversarial sync review
 
+> **ARCHIVED / RESOLVED (historical record).** Every finding in this adversarial
+> review was fixed and released in v0.55 and v0.57 (revision CAS, durable
+> cursor, idempotency). For the current sync contract see
+> `src/lib/documents/sync.ts` and `docs/agent-interoperability.md`. Nothing below
+> is current project status.
+
 > STATUS (updated 2026-07-15): RESOLVED and SHIPPED. Every finding below was
 > fixed and released in v0.55 and v0.57 (revision CAS, durable cursor,
-> idempotency; see docs/plans/2026-07-13-sync-races-and-slug-404.md and the
+> idempotency; see docs/archive/2026-07-13-sync-races-and-slug-404.md and the
 > "Fixes applied" section further down). This document is retained as the review
 > record: the findings read as open only because they are the original writeup,
 > not a current backlog.

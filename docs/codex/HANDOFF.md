@@ -15,7 +15,7 @@ Read these files before changing product code:
 2. `CLAUDE.md`
 3. `DESIGN.md`
 4. `docs/agent-interoperability.md` for anything an agent touches
-5. `docs/plan-document-types.md`
+5. `docs/document-types.md`
 6. `docs/review-2026-07-22.md`
 7. `docs/ai-sidebar-architecture.md` for assistant or MCP work
 
@@ -38,6 +38,10 @@ This is a baseline, not a substitute for inspecting live `main`.
   2026-07-20, so pushes silently never shipped. It is enabled and running again.
   `launchctl bootstrap` on a disabled job fails with a useless
   `Input/output error`; run `launchctl enable gui/$(id -u)/<label>` first.
+  `release/install-autobuild.sh` installs or reinstalls the agent from scratch
+  and is idempotent. If a push does not ship, check the daemon before anything
+  else: `launchctl print gui/$(id -u)/net.writeapp.write.autobuild | grep state`
+  and the mtime of `release/.autobuild.log`.
 
 ## Completed body of work: agents on this Mac use a CLI, not a port
 
@@ -237,7 +241,7 @@ cd /Users/shokunin/dev/write
 Continue Texttext from canonical main and own the work through a shipped,
 installed, verified result. First read AGENTS.md, CLAUDE.md, DESIGN.md,
 docs/codex/HANDOFF.md, docs/agent-interoperability.md,
-docs/plan-document-types.md, and docs/ai-sidebar-architecture.md. Then inspect
+docs/document-types.md, and docs/ai-sidebar-architecture.md. Then inspect
 live main, status, worktrees, unmerged branches, release metadata, public
 marker, appcast, and installed bundle. The handoff baseline was clean commit
 a321489 at 0.146 build 152, but live state wins.

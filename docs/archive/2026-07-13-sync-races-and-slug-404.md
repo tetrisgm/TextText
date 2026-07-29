@@ -1,5 +1,9 @@
 # Sync races, slug recovery, and portable Finder names
 
+> **ARCHIVED / DELIVERED (historical record).** Shipped and verified in v0.57
+> (build 60). For the current sync contract see `docs/agent-interoperability.md`
+> and `src/lib/documents/sync.ts`. Nothing below is current project status.
+
 Status: SHIPPED AND VERIFIED. Reviewed 2026-07-13 against the v0.55
 implementation and released in v0.57 (build 60).
 

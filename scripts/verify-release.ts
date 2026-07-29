@@ -76,6 +76,22 @@ async function verifyRelease() {
       command: ["npx", "tsx", "scripts/sync-tool-docs.ts", "--check"],
     },
     {
+      // Every migration on disk must be in the release order. Two were not,
+      // so a freshly provisioned database would have been missing columns the
+      // schema declares. This fails long before a new environment does.
+      id: "db.migration_coverage",
+      timeoutSeconds: 60,
+      command: ["scripts/run-release-migrations.sh", "--check"],
+    },
+    {
+      // Dead references, unreachable scripts, and finished plans still sitting
+      // in docs/ as if they were current work. Every one of those has cost a
+      // real cycle here, so they fail the release now instead.
+      id: "docs.no_rot",
+      timeoutSeconds: 120,
+      command: ["npx", "tsx", "scripts/verify-docs.ts"],
+    },
+    {
       id: "workflow.agent_integrations",
       timeoutSeconds: 60,
       command: ["npm", "run", "verify:agent-integrations"],
