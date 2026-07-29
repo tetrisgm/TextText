@@ -16,6 +16,7 @@ const EXPECTED_NAMES = [
   "search",
   "list_trash",
   "list_comments",
+  "list_responses",
   "list_access",
   "list_document_templates",
   "customize_document_template",
