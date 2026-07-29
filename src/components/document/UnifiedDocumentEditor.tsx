@@ -77,6 +77,43 @@ export type UnifiedDocumentEditorProps = {
   leadingControls?: ReactNode;
 };
 
+/**
+ * Overlay pre-ready local edits onto the authoritative remote baseline.
+ *
+ * Pure and exported so the regression for the clobber sequence is testable
+ * without React: a remote update arriving while the provider started used to
+ * overwrite the only copy of a just-typed edit, and this merge then compared
+ * the clobbered state against `initial` and concluded there was nothing to
+ * keep. The caller now hands this function the pre-ready LEDGER, which remote
+ * updates never touch. Returns null when local made no changes worth keeping.
+ */
+export function overlayPreReadyEdits(
+  localBeforeReady: DocumentSnapshot,
+  initial: DocumentSnapshot,
+  remote: DocumentSnapshot,
+): DocumentSnapshot | null {
+  const changed =
+    JSON.stringify(localBeforeReady.content.fields) !==
+      JSON.stringify(initial.content.fields) ||
+    JSON.stringify(localBeforeReady.content.assets) !==
+      JSON.stringify(initial.content.assets) ||
+    JSON.stringify(localBeforeReady.content.tags) !==
+      JSON.stringify(initial.content.tags) ||
+    JSON.stringify(localBeforeReady.presentation) !==
+      JSON.stringify(initial.presentation);
+  if (!changed) return null;
+  return {
+    ...remote,
+    content: {
+      ...remote.content,
+      fields: localBeforeReady.content.fields,
+      assets: localBeforeReady.content.assets,
+      tags: localBeforeReady.content.tags,
+    },
+    presentation: localBeforeReady.presentation,
+  };
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 1) {
@@ -354,6 +391,22 @@ export function UnifiedDocumentEditor({
   const initialDocumentRef = useRef(initialDocument);
   const [document, setDocument] = useState(initialDocument);
   const documentRef = useRef(document);
+  /**
+   * Local edits made BEFORE the provider is ready, kept where an incoming
+   * remote update cannot clobber them. documentRef mirrors whatever was
+   * published last, INCLUDING remote snapshots pulled while the provider is
+   * still starting; a user who types during that window would have their edit
+   * exist only in documentRef until the doc accepts writes, so one remote
+   * baseline arriving first silently erased it. The ready-merge reads this
+   * ledger, applies it over the authoritative baseline, then clears it.
+   */
+  const preReadyLocalRef = useRef<DocumentSnapshot | null>(null);
+  /** The newest LOCAL state: the pre-ready ledger when it exists, else the
+   * last published snapshot. Every local edit builds on this. */
+  const currentLocalDocument = useCallback(
+    () => preReadyLocalRef.current ?? documentRef.current,
+    [],
+  );
   const [doc] = useState(() => new Y.Doc());
   const [awareness] = useState(() => new Awareness(doc));
   const [peers, setPeers] = useState<PresencePeer[]>([]);
@@ -389,6 +442,11 @@ export function UnifiedDocumentEditor({
         applyDocumentSnapshot(doc, next, localOrigin.current);
       } else if (hasDocumentSnapshot(doc)) {
         applyDocumentSnapshot(doc, next, localOrigin.current);
+        if (ready) preReadyLocalRef.current = null;
+      } else {
+        // The doc did not accept this edit yet; ledger it so a remote update
+        // arriving before ready cannot erase it.
+        preReadyLocalRef.current = next;
       }
       if (!ready || !networkEnabled) setSaveState("local");
     },
@@ -397,7 +455,7 @@ export function UnifiedDocumentEditor({
 
   const updateField = useCallback(
     (fieldId: string, value: DocumentFieldValue) => {
-      const current = documentRef.current;
+      const current = currentLocalDocument();
       updateDocumentSnapshot({
         ...current,
         content: {
@@ -406,7 +464,7 @@ export function UnifiedDocumentEditor({
         },
       });
     },
-    [updateDocumentSnapshot],
+    [currentLocalDocument, updateDocumentSnapshot],
   );
 
   const activeTemplate = useMemo(() => {
@@ -534,7 +592,10 @@ export function UnifiedDocumentEditor({
 
     void provider.start().then((result) => {
       if (cancelled) return;
-      const localBeforeReady = documentRef.current;
+      // The ledger, never documentRef: a remote update that arrived while the
+      // provider was starting has already overwritten documentRef.
+      const localBeforeReady = preReadyLocalRef.current ?? documentRef.current;
+      preReadyLocalRef.current = null;
       if (!hasDocumentSnapshot(doc)) {
         applyDocumentBaseline(
           doc,
@@ -553,26 +614,9 @@ export function UnifiedDocumentEditor({
           replaceYText(documentText(doc, field), localValue, localOrigin.current);
         }
       }
-      if (
-        JSON.stringify(localBeforeReady.content.fields) !==
-          JSON.stringify(initial.content.fields) ||
-        JSON.stringify(localBeforeReady.content.assets) !==
-          JSON.stringify(initial.content.assets) ||
-        JSON.stringify(localBeforeReady.content.tags) !==
-          JSON.stringify(initial.content.tags) ||
-        JSON.stringify(localBeforeReady.presentation) !==
-          JSON.stringify(initial.presentation)
-      ) {
-        remote = {
-          ...remote,
-          content: {
-            ...remote.content,
-            fields: localBeforeReady.content.fields,
-            assets: localBeforeReady.content.assets,
-            tags: localBeforeReady.content.tags,
-          },
-          presentation: localBeforeReady.presentation,
-        };
+      const overlaid = overlayPreReadyEdits(localBeforeReady, initial, remote);
+      if (overlaid) {
+        remote = overlaid;
         applyDocumentSnapshot(doc, remote, localOrigin.current);
       }
       publishDocument(documentSnapshotFromYDoc(doc));
@@ -615,25 +659,27 @@ export function UnifiedDocumentEditor({
   const updateText = useCallback(
     (field: EditableField, value: string) => {
       const normalized = field === "title" ? value.replace(/[\r\n]+/g, " ") : value;
+      const base = currentLocalDocument();
       const next: DocumentSnapshot = {
-        ...documentRef.current,
+        ...base,
         content: {
-          ...documentRef.current.content,
+          ...base.content,
           [field]: normalized || (field === "subtitle" ? undefined : ""),
         },
       };
       publishDocument(next);
       if (!hasDocumentSnapshot(doc) && (!networkEnabled || ready)) {
-        applyDocumentSnapshot(doc, documentRef.current, localOrigin.current);
+        applyDocumentSnapshot(doc, next, localOrigin.current);
       }
       if (!hasDocumentSnapshot(doc)) {
+        preReadyLocalRef.current = next;
         setSaveState("local");
         return;
       }
       replaceYText(documentText(doc, field), normalized, localOrigin.current);
       if (!ready || !networkEnabled) setSaveState("local");
     },
-    [doc, networkEnabled, publishDocument, ready],
+    [currentLocalDocument, doc, networkEnabled, publishDocument, ready],
   );
 
   const updateSelection = useCallback(
@@ -770,9 +816,9 @@ export function UnifiedDocumentEditor({
           onClose={() => setChoosingTemplate(false)}
           onApply={(selected) => {
             updateDocumentSnapshot({
-              ...documentRef.current,
+              ...currentLocalDocument(),
               presentation: {
-                ...documentRef.current.presentation,
+                ...currentLocalDocument().presentation,
                 template: { id: selected.id, version: selected.version },
               },
             });
