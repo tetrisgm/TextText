@@ -15,7 +15,7 @@
 // collab_state row; the runtime treats "no collab_state / NULL
 // materialized_revision" as "reseed once from posts.body on next open", which is
 // the accepted reset of any pre-existing co-editing log (owner-approved). See
-// docs/plans/2026-07-15-collab-hole2-reset-generation.md.
+// docs/archive/2026-07-15-collab-hole2-reset-generation.md.
 
 import { readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";

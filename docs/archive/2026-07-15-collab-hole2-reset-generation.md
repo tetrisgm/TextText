@@ -1,5 +1,14 @@
 # Collab hole 2: safe between-sessions reseed (reset-generation design)
 
+> **ARCHIVED / DELIVERED (historical record).** This design shipped in `v0.81`,
+> despite the status line below still saying DESIGN ONLY. The epoch machinery is
+> live: `collab_state.epoch`, `collab_updates.epoch`, epoch-fenced appends, and
+> the stale-and-idle retirement in `src/lib/collab.ts` that bumps the epoch and
+> reseeds the baseline from the authoritative body when no co-editors are
+> present. Verified by `scripts/verify-collab-epoch-live.ts` and the provider
+> unit tests. Only the minor holes 4 and 5 remain (see the
+> `collab-durability-holes` memory). Nothing below is current project status.
+
 Status: DESIGN ONLY (not built). Written 2026-07-15 so the cost of closing the
 last co-editing durability hole is legible before committing to it. Holes 1 and
 3 shipped in v0.77/v0.78; this covers hole 2. See the memory note
