@@ -256,6 +256,43 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
   ]),
 );
 
+/** A sortable key: a system column, or a declared custom field addressed the
+ * same way render bindings address one. Custom-field references are validated
+ * against the template's declared field list in validateTemplateDefinition. */
+export const collectionSortFieldSchema = z.union([
+  z.enum(["createdAt", "updatedAt", "publishedAt", "title"]),
+  z.string().regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/),
+]);
+
+/** A declarative row filter. This is data, not an expression language: one
+ * field, one operator, at most one scalar. `eq` on enum/boolean fields and
+ * `isSet`/`notSet` cover most real templates; the comparisons cover dates,
+ * numbers, and ratings. Filters compose with AND. */
+export const collectionFilterSchema = z
+  .object({
+    field: z.string().regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/),
+    op: z.enum(["eq", "neq", "isSet", "notSet", "gt", "gte", "lt", "lte", "contains"]),
+    value: z.union([z.string().max(20_000), z.number().finite(), z.boolean()]).optional(),
+  })
+  .strict()
+  .superRefine((filter, ctx) => {
+    const needsValue = !["isSet", "notSet"].includes(filter.op);
+    if (needsValue && filter.value === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `filter op ${filter.op} requires a value`,
+      });
+    }
+    if (!needsValue && filter.value !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `filter op ${filter.op} does not take a value`,
+      });
+    }
+  });
+
+export type CollectionFilter = z.infer<typeof collectionFilterSchema>;
+
 export const collectionRenderSchema = z
   .object({
     layout: z.enum(["list", "cards", "timeline", "index", "single"]),
@@ -264,12 +301,13 @@ export const collectionRenderSchema = z
     sort: z
       .array(
         z.object({
-          field: z.enum(["createdAt", "updatedAt", "publishedAt", "title"]),
+          field: collectionSortFieldSchema,
           direction: z.enum(["asc", "desc"]),
         }).strict(),
       )
       .max(4)
       .default([]),
+    filters: z.array(collectionFilterSchema).max(8).default([]),
     item: renderNodeSchema,
   })
   .strict();
@@ -398,6 +436,31 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
   }
   validateTreeBindings(template.item, fields, new Set<string>());
   validateTreeBindings(template.collection.item, fields, new Set<string>());
+  // Sort keys and filters may only reference fields this template declares.
+  // A reference to an undeclared field is not "empty for every document", it
+  // is a template bug, and it fails here rather than rendering surprisingly.
+  const FIELD_PREFIX = "content.fields.";
+  for (const entry of template.collection.sort) {
+    if (!entry.field.startsWith(FIELD_PREFIX)) continue;
+    const id = entry.field.slice(FIELD_PREFIX.length);
+    if (!fields.has(id)) {
+      throw new Error(`collection sort references undeclared field ${id}`);
+    }
+  }
+  for (const filter of template.collection.filters) {
+    const id = filter.field.slice(FIELD_PREFIX.length);
+    const declared = fields.get(id);
+    if (!declared) {
+      throw new Error(`collection filter references undeclared field ${id}`);
+    }
+    if (filter.op === "contains" && declared.type !== "text" && declared.type !== "richtext") {
+      throw new Error(`filter op contains requires a text field, not ${declared.type} (${id})`);
+    }
+    if (["gt", "gte", "lt", "lte"].includes(filter.op) &&
+        !["number", "date"].includes(declared.type)) {
+      throw new Error(`filter op ${filter.op} requires a number or date field, not ${declared.type} (${id})`);
+    }
+  }
   if (new Set(template.capabilities).size !== template.capabilities.length) {
     throw new Error("template capabilities must be unique");
   }

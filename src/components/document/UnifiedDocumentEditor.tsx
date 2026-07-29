@@ -34,6 +34,8 @@ import {
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { TemplateGallery } from "./TemplateGallery";
+import { FieldInput, collectBoundFields } from "./FieldInput";
+import type { DocumentFieldValue } from "@/lib/documents/model";
 
 export type UnifiedEditorCollab = {
   postId: string;
@@ -393,6 +395,20 @@ export function UnifiedDocumentEditor({
     [doc, networkEnabled, publishDocument, ready],
   );
 
+  const updateField = useCallback(
+    (fieldId: string, value: DocumentFieldValue) => {
+      const current = documentRef.current;
+      updateDocumentSnapshot({
+        ...current,
+        content: {
+          ...current.content,
+          fields: { ...current.content.fields, [fieldId]: value },
+        },
+      });
+    },
+    [updateDocumentSnapshot],
+  );
+
   const activeTemplate = useMemo(() => {
     const reference = document.presentation.template;
     return (
@@ -721,10 +737,28 @@ export function UnifiedDocumentEditor({
             rows={18}
           />
         ),
+        ...Object.fromEntries(
+          activeTemplate.fields.map((field) => [
+            `content.fields.${field.id}`,
+            <FieldInput
+              key={field.id}
+              field={field}
+              value={document.content.fields[field.id]}
+              onChange={(value) => updateField(field.id, value)}
+            />,
+          ]),
+        ),
       },
     }),
-    [document.content.body, document.content.subtitle, document.content.title, remoteSelections, updateSelection, updateText],
+    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, remoteSelections, updateField, updateSelection, updateText],
   );
+
+  /** Declared fields the template does not bind anywhere in its item spec.
+   * They still need an input, or a declared field is writable only by agents. */
+  const unboundFields = useMemo(() => {
+    const bound = collectBoundFields(activeTemplate.item);
+    return activeTemplate.fields.filter((field) => !bound.has(field.id));
+  }, [activeTemplate]);
 
   if (!active) return null;
   return (
@@ -784,6 +818,19 @@ export function UnifiedDocumentEditor({
         slots={slots}
         className="tt-document-editor"
       />
+      {unboundFields.length > 0 && (
+        <aside className="tt-field-details" aria-label="Document details">
+          <h2 className="tt-field-details-title">Details</h2>
+          {unboundFields.map((field) => (
+            <FieldInput
+              key={field.id}
+              field={field}
+              value={document.content.fields[field.id]}
+              onChange={(value) => updateField(field.id, value)}
+            />
+          ))}
+        </aside>
+      )}
       <div className={`tt-save-state is-${saveState}`} role="status" aria-live="polite">
         {saveState === "local" && !networkEnabled
           ? "Saved on this device"
@@ -817,7 +864,17 @@ export function UnifiedDocumentEditor({
         .tt-agent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .tt-save-state{position:fixed;right:12px;bottom:12px;z-index:220;min-height:1rem;padding:5px 8px;border-radius:6px;background:color-mix(in srgb,var(--paper,#fff) 90%,transparent);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}
-        @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}}
+        .tt-field-row{display:flex;align-items:center;gap:10px;margin:2px 0;font-size:14px;color:var(--ink,#1d1d1f)}
+        .tt-field-row.is-richtext{align-items:flex-start}
+        .tt-field-label{flex:0 0 8.5rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:600;letter-spacing:.01em}
+        .tt-field-input{flex:1 1 auto;min-width:0;box-sizing:border-box;padding:5px 8px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:14px}
+        .tt-field-input:focus{outline:2px solid var(--tt-accent,#0071e3);outline-offset:1px;border-color:transparent}
+        .tt-field-input.is-checkbox{flex:0 0 auto;width:16px;height:16px;accent-color:var(--tt-accent,#0071e3)}
+        .tt-field-input.is-number{max-width:9rem}
+        .tt-field-input.is-select{appearance:auto}
+        .tt-field-details{max-width:44rem;margin:0 auto;padding:0 1.5rem 4rem}
+        .tt-field-details-title{margin:0 0 .6rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+        @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tt-field-input{border-color:rgba(255,255,255,.18)}}
         @media(prefers-reduced-motion:reduce){.tt-unified-editor *{transition:none!important;animation:none!important}}
       `}</style>
     </section>
