@@ -874,7 +874,17 @@ export function UnifiedDocumentEditor({
         .tt-field-input.is-select{appearance:auto}
         .tt-field-details{max-width:44rem;margin:0 auto;padding:0 1.5rem 4rem}
         .tt-field-details-title{margin:0 0 .6rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-        @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tt-field-input{border-color:rgba(255,255,255,.18)}}
+        .tt-field-multienum{display:flex;flex-wrap:wrap;gap:6px}
+        .tt-field-choice{padding:3px 10px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+        .tt-field-choice.is-active{background:var(--tt-accent,#0071e3);border-color:var(--tt-accent,#0071e3);color:#fff}
+        .tt-rows-editor{display:flex;flex:1 1 auto;flex-direction:column;gap:6px;min-width:0}
+        .tt-rows-editor-row{display:flex;align-items:center;gap:6px;min-width:0}
+        .tt-rows-editor-row .tt-field-input{flex:1 1 0;min-width:3rem}
+        .tt-rows-editor-row .tt-field-input.is-checkbox{flex:0 0 auto}
+        .tt-rows-editor-remove{flex:0 0 auto;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font-size:15px;line-height:1;cursor:pointer}
+        .tt-rows-editor-remove:hover{background:color-mix(in srgb,var(--ink,#1d1d1f) 8%,transparent)}
+        .tt-rows-editor-add{align-self:flex-start;padding:4px 12px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--tt-accent,#0071e3);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+        @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tt-field-input,.tt-field-choice,.tt-rows-editor-add{border-color:rgba(255,255,255,.18)}}
         @media(prefers-reduced-motion:reduce){.tt-unified-editor *{transition:none!important;animation:none!important}}
       `}</style>
     </section>

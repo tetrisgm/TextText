@@ -13,8 +13,11 @@
 // case added here and nowhere else.
 
 import { useId } from "react";
-import type { DocumentFieldValue } from "@/lib/documents/model";
-import type { DocumentFieldDefinition } from "@/lib/presentation/schema";
+import type { DocumentFieldRow, DocumentFieldValue } from "@/lib/documents/model";
+import type {
+  DocumentFieldDefinition,
+  RowSubFieldDefinition,
+} from "@/lib/presentation/schema";
 
 export type FieldInputProps = {
   field: DocumentFieldDefinition;
@@ -69,7 +72,38 @@ export function FieldInput({ field, value, onChange, disabled }: FieldInputProps
             inputMode="url"
           />
         );
-      case "enum":
+      case "enum": {
+        if (field.multiple) {
+          const selected = Array.isArray(value)
+            ? value.filter((entry): entry is string => typeof entry === "string")
+            : [];
+          return (
+            <span className="tt-field-multienum" role="group" aria-label={label}>
+              {field.options.map((option) => {
+                const active = selected.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`tt-field-choice${active ? " is-active" : ""}`}
+                    aria-pressed={active}
+                    disabled={disabled}
+                    onClick={() =>
+                      onChange(
+                        active
+                          ? selected.filter((entry) => entry !== option.value)
+                          : [...selected, option.value],
+                      )
+                    }
+                  >
+                    {option.icon ? `${option.icon} ` : ""}
+                    {option.label}
+                  </button>
+                );
+              })}
+            </span>
+          );
+        }
         return (
           <select
             id={id}
@@ -78,14 +112,15 @@ export function FieldInput({ field, value, onChange, disabled }: FieldInputProps
             disabled={disabled}
             onChange={(event) => onChange(event.target.value || null)}
           >
-            <option value="">{"—"}</option>
+            <option value="">{"None"}</option>
             {field.options.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {option.icon ? `${option.icon} ${option.label}` : option.label}
               </option>
             ))}
           </select>
         );
+      }
       case "number":
         return (
           <input
@@ -123,7 +158,9 @@ export function FieldInput({ field, value, onChange, disabled }: FieldInputProps
             type="text"
             className="tt-field-input"
             value={
-              Array.isArray(value) ? value.join(", ") : text(value)
+              Array.isArray(value)
+                ? value.filter((entry) => typeof entry === "string").join(", ")
+                : text(value)
             }
             placeholder={field.multiple ? "ids, comma separated" : "id"}
             disabled={disabled}
@@ -137,6 +174,15 @@ export function FieldInput({ field, value, onChange, disabled }: FieldInputProps
                   : event.target.value,
               )
             }
+          />
+        );
+      case "rows":
+        return (
+          <RowsEditor
+            field={field}
+            rows={Array.isArray(value) ? (value as DocumentFieldRow[]) : []}
+            disabled={disabled}
+            onChange={onChange}
           />
         );
       case "text":
@@ -182,4 +228,155 @@ export function collectBoundFields(node: unknown, into = new Set<string>()): Set
     for (const child of record.children) collectBoundFields(child, into);
   }
   return into;
+}
+
+// ---------------------------------------------------------------------------
+// Rows
+// ---------------------------------------------------------------------------
+
+type RowsField = Extract<DocumentFieldDefinition, { type: "rows" }>;
+
+function emptyRow(field: RowsField): DocumentFieldRow {
+  const row: DocumentFieldRow = {};
+  for (const sub of field.fields) {
+    row[sub.id] = sub.type === "boolean" ? false : null;
+  }
+  return row;
+}
+
+function RowScalarInput({
+  sub,
+  value,
+  disabled,
+  onChange,
+}: {
+  sub: RowSubFieldDefinition;
+  value: DocumentFieldRow[string];
+  disabled?: boolean;
+  onChange: (value: DocumentFieldRow[string]) => void;
+}) {
+  switch (sub.type) {
+    case "boolean":
+      return (
+        <input
+          type="checkbox"
+          className="tt-field-input is-checkbox"
+          checked={value === true}
+          disabled={disabled}
+          aria-label={sub.label}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+      );
+    case "date":
+      return (
+        <input
+          type="date"
+          className="tt-field-input"
+          value={typeof value === "string" ? value.slice(0, 10) : ""}
+          disabled={disabled}
+          aria-label={sub.label}
+          onChange={(event) => onChange(event.target.value || null)}
+        />
+      );
+    case "number":
+      return (
+        <input
+          type="number"
+          className="tt-field-input is-number"
+          value={typeof value === "number" ? value : ""}
+          min={sub.min}
+          max={sub.max}
+          step={sub.step}
+          disabled={disabled}
+          aria-label={sub.label}
+          onChange={(event) => {
+            const parsed = event.target.valueAsNumber;
+            onChange(Number.isFinite(parsed) ? parsed : null);
+          }}
+        />
+      );
+    case "enum":
+      return (
+        <select
+          className="tt-field-input is-select"
+          value={typeof value === "string" ? value : ""}
+          disabled={disabled}
+          aria-label={sub.label}
+          onChange={(event) => onChange(event.target.value || null)}
+        >
+          <option value="">{"None"}</option>
+          {sub.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.icon ? `${option.icon} ${option.label}` : option.label}
+            </option>
+          ))}
+        </select>
+      );
+    default:
+      return (
+        <input
+          type={sub.type === "url" || sub.type === "image" ? "url" : "text"}
+          className="tt-field-input"
+          value={typeof value === "string" ? value : ""}
+          placeholder={sub.label}
+          disabled={disabled}
+          aria-label={sub.label}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      );
+  }
+}
+
+/** The editor for a rows field: one line per record, one control per declared
+ * sub-field, add and remove. This is also where checklists get edited, since a
+ * checklist is a rows field with a boolean column. */
+function RowsEditor({
+  field,
+  rows,
+  disabled,
+  onChange,
+}: {
+  field: RowsField;
+  rows: DocumentFieldRow[];
+  disabled?: boolean;
+  onChange: (value: DocumentFieldValue) => void;
+}) {
+  const setRow = (index: number, subId: string, value: DocumentFieldRow[string]) => {
+    const next = rows.map((row, i) => (i === index ? { ...row, [subId]: value } : row));
+    onChange(next);
+  };
+  return (
+    <div className="tt-rows-editor">
+      {rows.map((row, index) => (
+        <div className="tt-rows-editor-row" key={index}>
+          {field.fields.map((sub) => (
+            <RowScalarInput
+              key={sub.id}
+              sub={sub}
+              value={row[sub.id] ?? null}
+              disabled={disabled}
+              onChange={(value) => setRow(index, sub.id, value)}
+            />
+          ))}
+          <button
+            type="button"
+            className="tt-rows-editor-remove"
+            aria-label={`Remove row ${index + 1}`}
+            disabled={disabled}
+            onClick={() => onChange(rows.filter((_, i) => i !== index))}
+          >
+            {"×"}
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="tt-rows-editor-add"
+        disabled={disabled || rows.length >= field.maxRows}
+        onClick={() => onChange([...rows, emptyRow(field)])}
+      >
+        Add row
+      </button>
+    </div>
+  );
 }
