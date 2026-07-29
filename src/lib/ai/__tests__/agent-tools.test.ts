@@ -204,6 +204,32 @@ describe("native workspace tool adapter", () => {
     });
   });
 
+  it("opens the exact local item without waiting for a server round trip", async () => {
+    const openItem = vi.fn();
+    const executeTool = vi.fn();
+    const tools = createWorkspaceAgentTools({
+      handle: "local",
+      getPool: workspacePool,
+      openItem,
+      executeTool,
+    });
+
+    await expect(
+      tools.executor("open_item", { id: "note-1", mode: "edit" }),
+    ).resolves.toMatchObject({
+      ok: true,
+      id: "note-1",
+      title: "Private note",
+      folder_path: "notes",
+      mode: "edit",
+    });
+    expect(openItem).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "note-1", folderId: "notes" }),
+      "edit",
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it("defaults root requests to Blog and creates every requested post", async () => {
     const executeTool = vi
       .fn()

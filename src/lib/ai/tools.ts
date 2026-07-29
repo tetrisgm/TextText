@@ -314,6 +314,17 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       "Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id.",
     inputSchema: z.object({ id }).strict(),
   }),
+  open_item: defineTool("open_item", {
+    title: "Open item",
+    description:
+      "Open one exact item in Texttext for the user and join its live collaboration session.",
+    inputSchema: z
+      .object({
+        id,
+        mode: z.enum(["read", "edit"]).optional().describe("Defaults to read."),
+      })
+      .strict(),
+  }),
   search: defineTool("search", {
     title: "Search items",
     description:

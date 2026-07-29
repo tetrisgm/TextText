@@ -1,18 +1,21 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { recordAction, type AuditActorType, type AuditEntry } from "@/lib/audit";
 import {
   applyLiveDocumentMutation,
+  agentSelectionAtEnd,
   colorForSub,
   createAgentAwareness,
   hasActiveCoEditors,
   markCollabMaterialized,
   materializeCollabDocument,
   upsertPresence,
+  type AgentSelectionState,
 } from "@/lib/collab";
+import type { AgentFocusEvent } from "@/lib/collab/agent-focus";
 import type { DocumentMutation } from "@/lib/collab/document";
 import {
   agentIdentity,
@@ -50,6 +53,7 @@ import {
   resolveWorkspaceAccess,
 } from "@/lib/permissions";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
+import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { normalizeTags } from "@/lib/tags";
 import { applyTemplateOperations } from "@/lib/presentation/operations";
 import {
@@ -89,6 +93,7 @@ import {
   savePost,
   savePostContentPatch,
   setItemCommentResolved,
+  signalWorkspaceChange,
   trashFolder,
 } from "@/lib/store";
 import { workspaceBlog } from "./auth";
@@ -216,7 +221,13 @@ function mcpActorType(extra: ToolContext): AuditActorType {
   return value === "ai" || value === "human" ? value : "external_agent";
 }
 
-function agentPresence(extra: ToolContext) {
+function agentPresence(
+  extra: ToolContext,
+  state: {
+    selection?: AgentSelectionState | null;
+    focus?: AgentFocusEvent | null;
+  } = {},
+) {
   if (mcpActorType(extra) !== "external_agent") return null;
   const userId = extra.authInfo?.extra?.userId;
   const rawName = extra.authInfo?.extra?.connectionName;
@@ -239,6 +250,8 @@ function agentPresence(extra: ToolContext) {
       userName,
       color,
       provider: identity.provider,
+      selection: state.selection,
+      focus: state.focus,
     }),
   };
 }
@@ -299,10 +312,26 @@ async function saveLiveContentMutation({
   extra: ToolContext;
 }): Promise<Post> {
   if (!post.id) throw new Error("The item has no stable id");
-  const presence = agentPresence(extra);
+  const selectionField: AgentSelectionState["field"] =
+    mutation.body !== undefined || mutation.appendBody !== undefined
+      ? "body"
+      : mutation.title !== undefined
+        ? "title"
+        : "subtitle";
+  const presence = agentPresence(extra, {
+    selection: await agentSelectionAtEnd(post.id, selectionField),
+  });
   if (presence) await upsertPresence(post.id, presence);
   const applied = await applyLiveDocumentMutation(post.id, mutation);
   if (!applied) throw new Error("The live document could not be updated");
+  if (presence) {
+    await upsertPresence(
+      post.id,
+      agentPresence(extra, {
+        selection: await agentSelectionAtEnd(post.id, selectionField),
+      }) ?? presence,
+    );
+  }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const context = await getPostStoreContext(post.id);
@@ -1012,6 +1041,71 @@ async function executeMcpTool(
         }),
         markdown: rendered.text,
         assets: listItemAssetReferences(resolved.post),
+      });
+    }
+
+    case "open_item": {
+      const input = args as WorkspaceToolInput<"open_item">;
+      const resolved = await requirePost(extra, input.id);
+      if (isToolResult(resolved)) return resolved;
+      const folders = await getAccessibleFolders(
+        resolved.blog.handle,
+        accessUser(extra),
+      );
+      const folderPath =
+        folders.find((folder) => folder.id === resolved.post.folderId)?.path ??
+        "blog";
+      const mode = input.mode ?? "read";
+      if (!resolved.post.id) throw new Error("The item has no stable id");
+      const postId = resolved.post.id;
+      const path =
+        mode === "edit"
+          ? blogPostEditPath(resolved.blog, resolved.post)
+          : blogPostPath(resolved.blog, resolved.post);
+      const nativeUrl =
+        `write-app://item/${encodeURIComponent(postId)}` +
+        `?workspace=${encodeURIComponent(resolved.blog.handle)}` +
+        `&mode=${mode}`;
+      const userId = extra.authInfo?.extra?.userId;
+      const focus =
+        typeof userId === "string" && userId
+          ? {
+              eventId: randomUUID(),
+              targetUserId: userId,
+              workspaceHandle: resolved.blog.handle,
+              folderPath,
+              postId,
+              path,
+              mode,
+              requestedAt: new Date().toISOString(),
+            } satisfies AgentFocusEvent
+          : null;
+      const presence = agentPresence(extra, {
+        selection: await agentSelectionAtEnd(postId, "body"),
+        focus,
+      });
+      if (presence) {
+        await upsertPresence(postId, presence);
+        await signalWorkspaceChange(resolved.blog.handle);
+      }
+      await auditMcp(
+        extra,
+        "mcp.open_item",
+        "item",
+        postId,
+        `${mode}:${folderPath}`,
+      );
+      return jsonResult({
+        ok: true,
+        workspace: resolved.blog.handle,
+        folder_path: folderPath,
+        item: {
+          id: postId,
+          title: resolved.post.title,
+          path,
+        },
+        mode,
+        native_url: nativeUrl,
       });
     }
 

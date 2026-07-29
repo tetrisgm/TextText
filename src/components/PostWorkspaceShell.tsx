@@ -216,6 +216,7 @@ import {
 import type { DraftState } from "@/lib/post-edit-draft";
 import type { SpatialDirection } from "@/lib/commands/types";
 import { shortcutLabelForCommand } from "@/lib/commands/workspace";
+import type { AgentFocusEvent } from "@/lib/collab/agent-focus";
 import type { AdjacentPublishedPosts } from "@/lib/store";
 import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 import {
@@ -4067,10 +4068,8 @@ function LocalWorkspaceShell({
   initialView: LocalWorkspaceView;
   showGuestSignIn: boolean;
 }) {
+  const router = useRouter();
   const { pool } = useWorkspacePool();
-  // Keep the list live with the server: the native sync engine, a shared item,
-  // another device, or an MCP edit can change content underneath this view.
-  useWorkspaceLiveSync(blog.handle, initialPool.blogId);
   const itemIdentity = useLocalWorkspaceItemIdentity();
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
   const sourcePool = pool?.blogId === initialPool.blogId ? pool : initialPool;
@@ -4608,6 +4607,41 @@ function LocalWorkspaceShell({
       );
     },
     [openPoolPost],
+  );
+
+  const openAssistantItem = useCallback(
+    (post: WorkspacePoolPost, mode: "read" | "edit") => {
+      openPoolPost(
+        post,
+        folderPathForPoolPost(displayPoolRef.current, post),
+        mode,
+      );
+    },
+    [openPoolPost],
+  );
+
+  const handleAgentFocus = useCallback(
+    (focus: AgentFocusEvent) => {
+      if (focus.workspaceHandle !== displayPoolRef.current.blog.handle) {
+        router.push(focus.path);
+        return;
+      }
+      const post = findPoolPostById(displayPoolRef.current, focus.postId);
+      if (post) {
+        openPoolPost(post, focus.folderPath, focus.mode);
+        return;
+      }
+      router.push(focus.path);
+    },
+    [openPoolPost, router],
+  );
+
+  // Keep the list live with the server and respond when an authorized external
+  // agent asks this signed-in client to join an exact document.
+  useWorkspaceLiveSync(
+    blog.handle,
+    initialPool.blogId,
+    handleAgentFocus,
   );
 
   const reconcileCreatedPost = useCallback(
@@ -5347,6 +5381,7 @@ function LocalWorkspaceShell({
     contextKey: assistantTarget.contextKey,
     getPool: getAssistantPool,
     getView: getAssistantView,
+    openItem: openAssistantItem,
     readItemText: readAssistantItemText,
     applyItemPatch: applyAssistantItemPatch,
     confirmDestructive: assistantConfirmationController.request,

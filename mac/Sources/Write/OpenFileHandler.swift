@@ -11,9 +11,13 @@ struct WriteItemOpenTarget: Equatable {
     let kind: String
 
     var appPath: String {
+        appPath(mode: nil)
+    }
+
+    func appPath(mode: TexttextItemOpenMode?) -> String {
         var components = URLComponents()
         components.path = "/t/\(handle)/\(slug)"
-        if kind == "note" {
+        if mode == .edit || (mode == nil && kind == "note") {
             components.queryItems = [URLQueryItem(name: "edit", value: "1")]
             if let itemId, !itemId.isEmpty {
                 components.queryItems?.append(URLQueryItem(name: "id", value: itemId))

@@ -4663,6 +4663,16 @@ function isBlogsOwnerConflict(error: unknown): boolean {
   return code === "23505" && (message + detail).includes("blogs_owner_idx");
 }
 
+export async function signalWorkspaceChange(handle: string): Promise<void> {
+  if (!db) throw new Error("signalWorkspaceChange requires DATABASE_URL");
+  const [updated] = await db
+    .update(blogs)
+    .set({ changeSeq: sql`nextval('write_change_seq')` })
+    .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
+    .returning({ id: blogs.id });
+  if (!updated) throw new Error("Workspace not found");
+}
+
 export async function updateBlogByHandle(
   handle: string,
   patch: BlogPatch,

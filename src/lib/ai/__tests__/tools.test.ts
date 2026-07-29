@@ -12,6 +12,7 @@ const EXPECTED_NAMES = [
   "list_folders",
   "list_items",
   "read_item",
+  "open_item",
   "search",
   "list_trash",
   "list_comments",

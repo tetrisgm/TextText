@@ -5,7 +5,7 @@
 // and needs the same signal so it refreshes when content changes underneath
 // it: a file the native engine pushed, a shared item, a change from another
 // device, or an MCP edit. This mirrors that route's long-poll over the same
-// workspaceChangeCursor, but authorizes by session + workspace ownership.
+// workspaceChangeCursor, but authorizes by session + workspace access.
 //
 //   GET /api/workspace/changes?handle=H                 -> immediate {cursor}
 //   GET /api/workspace/changes?handle=H&cursor=X&wait=20 -> holds up to `wait`
@@ -13,6 +13,7 @@
 import { getCurrentUser } from "@/lib/session";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
 import { workspaceChangeCursor } from "@/lib/sync-cursor";
+import { activeAgentFocus } from "@/lib/collab";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
 
   const user = await getCurrentUser();
   const access = await resolveWorkspaceAccess({ handle, user });
-  if (!access.isOwner) return jsonError("Workspace not found", 404);
+  if (!access.canView) return jsonError("Workspace not found", 404);
 
   const since = url.searchParams.get("cursor");
   const wait = Math.min(
@@ -53,8 +54,14 @@ export async function GET(request: Request) {
 
   let cursor = await workspaceChangeCursor(handle);
   if (!since || wait === 0) {
+    const focus = user?.userId ? await activeAgentFocus(user.userId) : null;
     return Response.json(
-      { cursor, changed: since ? cursor !== since : false, build: BUILD },
+      {
+        cursor,
+        changed: since ? cursor !== since : false,
+        build: BUILD,
+        focus,
+      },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   }
@@ -65,8 +72,9 @@ export async function GET(request: Request) {
     await sleep(Math.min(POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
     cursor = await workspaceChangeCursor(handle);
   }
+  const focus = user?.userId ? await activeAgentFocus(user.userId) : null;
   return Response.json(
-    { cursor, changed: cursor !== since, build: BUILD },
+    { cursor, changed: cursor !== since, build: BUILD, focus },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }

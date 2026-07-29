@@ -24,12 +24,23 @@ async function loadLiveSync(refreshWorkspacePool: ReturnType<typeof vi.fn>) {
     useEffect: (effect: () => Cleanup) => {
       cleanup = effect();
     },
+    useRef: <T>(value: T) => ({ current: value }),
   }));
   vi.doMock("@/lib/pool/store", () => ({ refreshWorkspacePool }));
   const loadedModule = await import("@/lib/pool/useWorkspaceLiveSync");
   return {
     useWorkspaceLiveSync: loadedModule.useWorkspaceLiveSync,
     cleanup: () => cleanup?.(),
+  };
+}
+
+function sessionStorageMock() {
+  const values = new Map<string, string>();
+  return {
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      values.set(key, value);
+    }),
   };
 }
 
@@ -162,5 +173,104 @@ describe("workspace live sync", () => {
 
     liveSync.cleanup();
     resolvePending?.(jsonResponse({ cursor: "2", changed: false }));
+  });
+
+  it("delivers a fresh focus request for an item in another workspace once", async () => {
+    const refreshWorkspacePool = vi.fn();
+    const onAgentFocus = vi.fn();
+    const sessionStorage = sessionStorageMock();
+    const focus = {
+      eventId: "focus-1",
+      targetUserId: "user-1",
+      workspaceHandle: "other-workspace",
+      folderPath: "notes",
+      postId: "post-2",
+      path: "/t/other-workspace/private-note?edit=1&id=post-2",
+      mode: "edit",
+      requestedAt: new Date(Date.now()).toISOString(),
+    };
+    let resolvePending: ((response: Response) => void) | undefined;
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ cursor: "1", changed: false, focus }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ cursor: "1", changed: false, focus }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePending = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("window", { sessionStorage });
+    vi.stubGlobal("document", { hidden: false });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("writer", "blog-1", onAgentFocus);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+
+    expect(onAgentFocus).toHaveBeenCalledTimes(1);
+    expect(onAgentFocus).toHaveBeenCalledWith(focus);
+    expect(sessionStorage.setItem).toHaveBeenCalledWith(
+      "texttext:agent-focus:last-event",
+      "focus-1",
+    );
+
+    liveSync.cleanup();
+    resolvePending?.(jsonResponse({ cursor: "1", changed: false, focus }));
+  });
+
+  it("ignores focus requests that are stale or already delivered in this tab", async () => {
+    const refreshWorkspacePool = vi.fn();
+    const onAgentFocus = vi.fn();
+    const sessionStorage = sessionStorageMock();
+    sessionStorage.setItem("texttext:agent-focus:last-event", "focus-seen");
+    const staleFocus = {
+      eventId: "focus-stale",
+      targetUserId: "user-1",
+      workspaceHandle: "writer",
+      folderPath: "blog",
+      postId: "post-1",
+      path: "/t/writer/post-1",
+      mode: "read",
+      requestedAt: new Date(Date.now() - 31_000).toISOString(),
+    };
+    const deliveredFocus = {
+      ...staleFocus,
+      eventId: "focus-seen",
+      requestedAt: new Date(Date.now()).toISOString(),
+    };
+    let resolvePending: ((response: Response) => void) | undefined;
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ cursor: "1", changed: false, focus: staleFocus }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ cursor: "1", changed: false, focus: deliveredFocus }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePending = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("window", { sessionStorage });
+    vi.stubGlobal("document", { hidden: false });
+
+    const liveSync = await loadLiveSync(refreshWorkspacePool);
+    liveSync.useWorkspaceLiveSync("writer", "blog-1", onAgentFocus);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+
+    expect(onAgentFocus).not.toHaveBeenCalled();
+
+    liveSync.cleanup();
+    resolvePending?.(
+      jsonResponse({ cursor: "1", changed: false, focus: deliveredFocus }),
+    );
   });
 });

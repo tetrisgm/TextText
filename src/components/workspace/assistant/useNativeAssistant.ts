@@ -57,7 +57,10 @@ import {
   skillStates,
 } from "@/lib/ai/skills";
 import { findPoolPostById } from "@/lib/pool/selectors";
-import type { WorkspacePoolPayload } from "@/lib/pool/types";
+import type {
+  WorkspacePoolPayload,
+  WorkspacePoolPost,
+} from "@/lib/pool/types";
 import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import { formatAssistantSubmission } from "./attachments";
@@ -109,6 +112,10 @@ type UseNativeAssistantOptions = {
   contextKey: string;
   getPool: () => WorkspacePoolPayload | null;
   getView: () => AssistantViewSnapshot;
+  openItem: (
+    post: WorkspacePoolPost,
+    mode: "read" | "edit",
+  ) => Promise<void> | void;
   readItemText: (postId: string) => Promise<WorkspaceItemTextSnapshot>;
   applyItemPatch: (
     postId: string,
@@ -250,6 +257,7 @@ export function useNativeAssistant({
   contextKey,
   getPool,
   getView,
+  openItem,
   readItemText,
   applyItemPatch,
   confirmDestructive,
@@ -290,12 +298,20 @@ export function useNativeAssistant({
       createWorkspaceAgentTools({
         handle,
         getPool,
+        openItem,
         readItemText,
         applyItemPatch,
         confirmDestructive: (description) =>
           confirmDestructive ? confirmDestructive(description) : false,
       }),
-    [applyItemPatch, confirmDestructive, getPool, handle, readItemText],
+    [
+      applyItemPatch,
+      confirmDestructive,
+      getPool,
+      handle,
+      openItem,
+      readItemText,
+    ],
   );
 
   useEffect(

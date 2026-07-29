@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wasBusy = false
     // The one File Provider domain registered for the signed-in workspace, if any.
     private var registeredFileProviderDomain: NSFileProviderDomain?
+    private var pendingItemLinks = PendingTexttextItemLinks()
     private let fileProviderStatusMonitor = FileProviderStatusMonitor()
     // Main-thread generations for remote workspace metadata refreshes. A slower
     // older response may fill the cache after a newer request fails, but may not
@@ -249,7 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func resolveAndOpenManagedFile(
         _ url: URL,
-        fileProviderIdentifier: String? = nil
+        fileProviderIdentifier: String? = nil,
+        openMode: TexttextItemOpenMode? = nil
     ) {
         let fallbackHandle = store.cachedWorkspace()?.blog.handle
         openFileQueue.async { [weak self] in
@@ -268,7 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.showMainWindow()
                     return
                 }
-                self.openInMainWindow(target)
+                self.openInMainWindow(target, mode: openMode)
             }
         }
     }
@@ -378,8 +380,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func openInMainWindow(_ target: WriteItemOpenTarget) {
-        showMainWindow(path: target.appPath)
+    private func openInMainWindow(
+        _ target: WriteItemOpenTarget,
+        mode: TexttextItemOpenMode? = nil
+    ) {
+        showMainWindow(path: target.appPath(mode: mode))
     }
 
     func application(
@@ -1198,14 +1203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// indexes: the scheme is invokable by any app on the system, so an
     /// unknown id must cost a dictionary miss, never a workspace scan.
     private func openWriteItemURL(_ url: URL) {
-        guard url.host == "item",
-              url.pathComponents.count == 2,
-              let id = url.pathComponents.last else {
+        guard let link = TexttextItemLink(url: url) else {
             appendActivity("Ignored malformed Texttext link \(url.absoluteString)")
-            return
-        }
-        guard isValidWriteItemId(id) else {
-            appendActivity("Ignored Texttext link with an invalid item id")
             return
         }
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -1226,7 +1225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             return
         }
-        openWriteItem(id: id)
+        openWriteItem(link)
     }
 
     private func validatedWriteWebURL(_ value: String) -> URL? {
@@ -1270,12 +1269,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// item's stable identifier maps to a user-visible URL the managed opener
     /// then interprets. A cold, freshly-created item may not be enumerated yet,
     /// so a nil URL nudges the enumerator and retries briefly before giving up.
-    private func openWriteItem(id: String) {
-        guard isValidWriteItemId(id) else {
+    private func openWriteItem(_ link: TexttextItemLink) {
+        guard registeredFileProviderDomain != nil else {
+            pendingItemLinks.enqueue(link)
+            appendActivity("Queued a Texttext item while files finish loading")
+            showMainWindow()
+            syncFileProviderDomain()
+            return
+        }
+        openWriteItem(
+            id: link.itemId,
+            handle: link.workspaceHandle,
+            mode: link.mode
+        )
+    }
+
+    private func drainPendingItemLinks() {
+        for link in pendingItemLinks.drain() {
+            openWriteItem(
+                id: link.itemId,
+                handle: link.workspaceHandle,
+                mode: link.mode
+            )
+        }
+    }
+
+    private func openWriteItem(
+        id: String,
+        handle explicitHandle: String? = nil,
+        mode: TexttextItemOpenMode? = nil
+    ) {
+        guard TexttextItemLink.isValidItemId(id) else {
             appendActivity("Ignored Texttext link with an invalid item id")
             return
         }
-        guard let handle = store.cachedWorkspace()?.blog.handle, !handle.isEmpty,
+        guard let handle = explicitHandle ?? store.cachedWorkspace()?.blog.handle,
+              TexttextItemLink.isValidWorkspaceHandle(handle),
               let domain = registeredFileProviderDomain,
               let manager = NSFileProviderManager(for: domain) else {
             appendActivity("No item found for Texttext link")
@@ -1289,7 +1318,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.appendActivity("No item found for Texttext link")
                 return
             }
-            self.resolveAndOpenManagedFile(url, fileProviderIdentifier: identifier.rawValue)
+            self.resolveAndOpenManagedFile(
+                url,
+                fileProviderIdentifier: identifier.rawValue,
+                openMode: mode
+            )
         }
     }
 
@@ -1318,14 +1351,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     identifier, manager: manager,
                     attempt: attempt + 1, completion: completion)
             }
-        }
-    }
-
-    private func isValidWriteItemId(_ id: String) -> Bool {
-        guard !id.isEmpty, id.count <= 64 else { return false }
-        return id.allSatisfy { character in
-            (character.isASCII && (character.isLetter || character.isNumber))
-                || character == "-"
         }
     }
 
@@ -1589,6 +1614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.fileProviderSchemaVersion, forKey: Self.fileProviderSchemaVersionKey)
         signalFileProviderChange()
         scheduleFileProviderMaterialization(epoch: epoch, identity: identity)
+        drainPendingItemLinks()
     }
 
     static func needsFileProviderSchemaRepair(storedVersion: Int) -> Bool {

@@ -8,7 +8,7 @@
 // (follow along) but not push. Everyone else is refused. Guests (cookie-only
 // edit of an unclaimed blog) are solo and never enter collab.
 
-import { and, asc, eq, gt, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt, lte, sql } from "drizzle-orm";
 import {
   Awareness,
   applyAwarenessUpdate,
@@ -25,10 +25,15 @@ import {
 } from "@/lib/db/schema";
 import {
   applyDocumentMutation,
+  documentText,
   documentSnapshotFromYDoc,
   encodeDocumentBaseline,
   type DocumentMutation,
 } from "@/lib/collab/document";
+import {
+  isAgentFocusEvent,
+  type AgentFocusEvent,
+} from "@/lib/collab/agent-focus";
 import {
   requireDocumentSnapshot,
   type DocumentSnapshot,
@@ -479,15 +484,19 @@ export type PresenceEntry = {
   provider?: string;
 };
 
+export type AgentSelectionState = {
+  field: "title" | "subtitle" | "body";
+  anchor: string;
+  head: string;
+};
+
 type PresenceAwarenessUser = {
   participantType?: "person" | "agent";
   provider?: string;
 };
 
-function awarenessIdentity(
-  encoded: string | null,
-): PresenceAwarenessUser {
-  if (!encoded) return {};
+function awarenessStates(encoded: string | null): Array<Record<string, unknown>> {
+  if (!encoded) return [];
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
   try {
@@ -496,15 +505,24 @@ function awarenessIdentity(
       Uint8Array.from(Buffer.from(encoded, "base64")),
       "presence",
     );
-    for (const state of awareness.getStates().values()) {
-      const user = state?.user as PresenceAwarenessUser | undefined;
-      if (user?.participantType || user?.provider) return user;
-    }
+    return Array.from(awareness.getStates().values()).filter(
+      (state): state is Record<string, unknown> =>
+        Boolean(state && typeof state === "object"),
+    );
   } catch {
-    return {};
+    return [];
   } finally {
     awareness.destroy();
     doc.destroy();
+  }
+}
+
+function awarenessIdentity(
+  encoded: string | null,
+): PresenceAwarenessUser {
+  for (const state of awarenessStates(encoded)) {
+    const user = state.user as PresenceAwarenessUser | undefined;
+    if (user?.participantType || user?.provider) return user;
   }
   return {};
 }
@@ -514,6 +532,8 @@ export function createAgentAwareness(input: {
   userName: string;
   color: string;
   provider: string;
+  selection?: AgentSelectionState | null;
+  focus?: AgentFocusEvent | null;
 }): string {
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
@@ -526,6 +546,8 @@ export function createAgentAwareness(input: {
         participantType: "agent",
         provider: input.provider,
       },
+      ...(input.selection ? { selection: input.selection } : {}),
+      ...(input.focus ? { focus: input.focus } : {}),
     });
     return Buffer.from(
       encodeAwarenessUpdate(awareness, [awareness.clientID]),
@@ -534,6 +556,66 @@ export function createAgentAwareness(input: {
     awareness.destroy();
     doc.destroy();
   }
+}
+
+export async function agentSelectionAtEnd(
+  postId: string,
+  field: AgentSelectionState["field"],
+): Promise<AgentSelectionState | null> {
+  if (!db) return null;
+  const loaded = await loadCurrentCollabDocument(postId);
+  if (!loaded) return null;
+  try {
+    const target = documentText(loaded.document, field);
+    const relative = Buffer.from(
+      Y.encodeRelativePosition(
+        Y.createRelativePositionFromTypeIndex(target, target.length),
+      ),
+    ).toString("base64");
+    return { field, anchor: relative, head: relative };
+  } finally {
+    loaded.document.destroy();
+  }
+}
+
+export async function activeAgentFocus(
+  targetUserId: string,
+  workspaceHandle?: string,
+): Promise<AgentFocusEvent | null> {
+  if (!db || !targetUserId) return null;
+  const cutoff = new Date(Date.now() - PRESENCE_STALE_MS);
+  const rows = await db
+    .select({
+      awareness: collabPresence.awareness,
+      updatedAt: collabPresence.updatedAt,
+    })
+    .from(collabPresence)
+    .innerJoin(posts, eq(collabPresence.postId, posts.id))
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .where(
+      and(
+        gt(collabPresence.updatedAt, cutoff),
+        workspaceHandle ? eq(blogs.handle, workspaceHandle) : undefined,
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .orderBy(desc(collabPresence.updatedAt))
+    .limit(100);
+  for (const row of rows) {
+    for (const state of awarenessStates(row.awareness)) {
+      const focus = state.focus;
+      if (
+        isAgentFocusEvent(focus) &&
+        focus.targetUserId === targetUserId &&
+        (!workspaceHandle || focus.workspaceHandle === workspaceHandle) &&
+        Date.parse(focus.requestedAt) >= cutoff.getTime()
+      ) {
+        return focus;
+      }
+    }
+  }
+  return null;
 }
 
 function dedupePresenceRows(

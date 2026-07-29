@@ -4,6 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  agentSelectionAtEnd: vi.fn(),
   applyLiveDocumentMutation: vi.fn(),
   attachItemAsset: vi.fn(),
   claimIdempotencyKey: vi.fn(),
@@ -43,6 +44,7 @@ const mocks = vi.hoisted(() => ({
   savePost: vi.fn(),
   savePostContentPatch: vi.fn(),
   setItemCommentResolved: vi.fn(),
+  signalWorkspaceChange: vi.fn(),
   trashFolder: vi.fn(),
   updateScopeShareRole: vi.fn(),
   upsertPresence: vi.fn(),
@@ -50,6 +52,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/collab", () => ({
+  agentSelectionAtEnd: mocks.agentSelectionAtEnd,
   applyLiveDocumentMutation: mocks.applyLiveDocumentMutation,
   colorForSub: mocks.colorForSub,
   createAgentAwareness: mocks.createAgentAwareness,
@@ -106,6 +109,7 @@ vi.mock("@/lib/store", () => ({
   savePost: mocks.savePost,
   savePostContentPatch: mocks.savePostContentPatch,
   setItemCommentResolved: mocks.setItemCommentResolved,
+  signalWorkspaceChange: mocks.signalWorkspaceChange,
   trashFolder: mocks.trashFolder,
 }));
 
@@ -143,13 +147,20 @@ function registrations(): Registration[] {
   return entries;
 }
 
-function auth(scopes: string[]): { authInfo: AuthInfo } {
+function auth(
+  scopes: string[],
+  connectionName?: string,
+): { authInfo: AuthInfo } {
   return {
     authInfo: {
       token: "token",
       clientId: "user-1",
       scopes,
-      extra: { userId: "user-1", sub: "sub-1" },
+      extra: {
+        userId: "user-1",
+        sub: "sub-1",
+        ...(connectionName ? { connectionName } : {}),
+      },
     },
   };
 }
@@ -168,6 +179,7 @@ describe("MCP workspace tool adapter", () => {
     // no dangling Once leaks into a later test's default.
     mocks.hasActiveCoEditors.mockReset();
     mocks.hasActiveCoEditors.mockResolvedValue(false);
+    mocks.agentSelectionAtEnd.mockResolvedValue(null);
     mocks.applyLiveDocumentMutation.mockReset();
     mocks.colorForSub.mockReturnValue("#0a84ff");
     mocks.createAgentAwareness.mockReturnValue("encoded-awareness");
@@ -184,6 +196,7 @@ describe("MCP workspace tool adapter", () => {
     mocks.listItemComments.mockResolvedValue([]);
     mocks.listScopeShares.mockResolvedValue([]);
     mocks.recordAction.mockResolvedValue(undefined);
+    mocks.signalWorkspaceChange.mockResolvedValue(undefined);
     mocks.upsertPresence.mockResolvedValue(undefined);
     mocks.markCollabMaterialized.mockResolvedValue(undefined);
     mocks.getOwnedBlog.mockResolvedValue({
@@ -289,6 +302,91 @@ describe("MCP workspace tool adapter", () => {
     expect(result.isError).not.toBe(true);
     expect(mocks.createSubfolder).toHaveBeenCalledWith("local", "blog", "Ideas");
     expect(mocks.recordAction).toHaveBeenCalledOnce();
+  });
+
+  it("opens the exact item and publishes a one-shot agent focus event", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.getPostById.mockResolvedValue({
+      id,
+      folderId: "notes",
+      type: "note",
+      slug: "working-note",
+      title: "Working note",
+      excerpt: "",
+      body: "Live content",
+      status: "draft",
+      pinned: false,
+      revision: 3,
+    });
+    mocks.getAccessibleFolders.mockResolvedValue([
+      {
+        id: "notes",
+        name: "My Notes",
+        path: "notes",
+        mode: "notes",
+        position: 1,
+        parentId: null,
+      },
+    ]);
+    mocks.agentSelectionAtEnd.mockResolvedValue({
+      field: "body",
+      anchor: "relative-anchor",
+      head: "relative-head",
+    });
+    const openItem = registrations().find(
+      (entry) => entry.name === "open_item",
+    );
+    const result = await openItem!.callback(
+      { id, mode: "edit" },
+      auth(["sync"], "Codex"),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(toolText(result))).toEqual({
+      ok: true,
+      workspace: "local",
+      folder_path: "notes",
+      item: {
+        id,
+        title: "Working note",
+        path: `/t/local/working-note?edit=1&id=${id}`,
+      },
+      mode: "edit",
+      native_url:
+        `write-app://item/${id}?workspace=local&mode=edit`,
+    });
+    expect(mocks.createAgentAwareness).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "codex",
+        userName: "Codex",
+        selection: {
+          field: "body",
+          anchor: "relative-anchor",
+          head: "relative-head",
+        },
+        focus: expect.objectContaining({
+          targetUserId: "user-1",
+          workspaceHandle: "local",
+          folderPath: "notes",
+          postId: id,
+          path: `/t/local/working-note?edit=1&id=${id}`,
+          mode: "edit",
+        }),
+      }),
+    );
+    expect(mocks.upsertPresence).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ awareness: "encoded-awareness" }),
+    );
+    expect(mocks.signalWorkspaceChange).toHaveBeenCalledWith("local");
+    expect(mocks.recordAction).toHaveBeenCalledWith({
+      actorUserId: "user-1",
+      actorType: "external_agent",
+      actionName: "mcp.open_item",
+      targetType: "item",
+      targetId: id,
+      inputSummary: "edit:notes",
+    });
   });
 
   it("runs a tool for an in-app session actor with full workspace capability", async () => {

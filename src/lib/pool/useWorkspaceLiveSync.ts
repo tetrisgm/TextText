@@ -1,7 +1,44 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import {
+  isAgentFocusEvent,
+  type AgentFocusEvent,
+} from "@/lib/collab/agent-focus";
 import { refreshWorkspacePool } from "@/lib/pool/store";
+
+const AGENT_FOCUS_SESSION_KEY = "texttext:agent-focus:last-event";
+const AGENT_FOCUS_MAX_AGE_MS = 30_000;
+const AGENT_FOCUS_FUTURE_SKEW_MS = 5_000;
+
+function storedFocusEventId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(AGENT_FOCUS_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeFocusEventId(eventId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(AGENT_FOCUS_SESSION_KEY, eventId);
+  } catch {
+    // A private or restricted web view can deny session storage. The mounted
+    // hook still deduplicates the event in memory.
+  }
+}
+
+function isFreshFocusEvent(focus: AgentFocusEvent): boolean {
+  const requestedAt = Date.parse(focus.requestedAt);
+  if (!Number.isFinite(requestedAt)) return false;
+  const age = Date.now() - requestedAt;
+  return (
+    age <= AGENT_FOCUS_MAX_AGE_MS &&
+    age >= -AGENT_FOCUS_FUTURE_SKEW_MS
+  );
+}
 
 /**
  * Keeps the in-app workspace list live with the server. The app runs a native
@@ -13,7 +50,14 @@ import { refreshWorkspacePool } from "@/lib/pool/store";
  * next cursor-aware request catches up after visibility returns without a
  * speculative refresh or document reload.
  */
-export function useWorkspaceLiveSync(handle: string, blogId: string): void {
+export function useWorkspaceLiveSync(
+  handle: string,
+  blogId: string,
+  onAgentFocus?: (focus: AgentFocusEvent) => void,
+): void {
+  const focusCallbackRef = useRef(onAgentFocus);
+  focusCallbackRef.current = onAgentFocus;
+
   useEffect(() => {
     if (!handle || !blogId) return;
     let cancelled = false;
@@ -29,6 +73,7 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
           cursor?: string;
           changed?: boolean;
           build?: string;
+          focus?: unknown;
         }
       | { kind: "retry"; retryAfterMs?: number }
       | { kind: "stop" };
@@ -80,11 +125,26 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
           cursor?: string;
           changed?: boolean;
           build?: string;
+          focus?: unknown;
         };
         return { kind: "changes", ...body };
       } catch {
         return { kind: "retry" }; // aborted or network blip
       }
+    }
+
+    let lastFocusEventId = storedFocusEventId();
+    function deliverFocus(value: unknown) {
+      if (
+        !isAgentFocusEvent(value) ||
+        value.eventId === lastFocusEventId ||
+        !isFreshFocusEvent(value)
+      ) {
+        return;
+      }
+      lastFocusEventId = value.eventId;
+      storeFocusEventId(value.eventId);
+      focusCallbackRef.current?.(value);
     }
 
     async function run() {
@@ -94,6 +154,7 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
       if (initial.kind === "changes" && initial.cursor) {
         cursor = initial.cursor;
       }
+      if (initial.kind === "changes") deliverFocus(initial.focus);
       let failureDelayMs = 3000;
       if (initial.kind === "retry") {
         await sleep(Math.max(failureDelayMs, initial.retryAfterMs ?? 0));
@@ -114,6 +175,7 @@ export function useWorkspaceLiveSync(handle: string, blogId: string): void {
           continue;
         }
         failureDelayMs = 3000;
+        deliverFocus(result.focus);
         if (result.changed) {
           void refreshWorkspacePool(handle, blogId);
         }

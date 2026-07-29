@@ -5,6 +5,103 @@ import WriteFileProviderKit
 @testable import Write
 
 final class OpenFileHandlerTests: XCTestCase {
+    func testLegacyItemLinkPreservesExistingOpenBehavior() {
+        let link = TexttextItemLink(
+            url: URL(string: "write-app://item/item-123")!
+        )
+
+        XCTAssertEqual(link?.itemId, "item-123")
+        XCTAssertNil(link?.workspaceHandle)
+        XCTAssertNil(link?.mode)
+    }
+
+    func testAgentItemLinkTargetsExactWorkspaceAndEditMode() {
+        let link = TexttextItemLink(
+            url: URL(
+                string: "write-app://item/item-123?workspace=shoku-space&mode=edit"
+            )!
+        )
+
+        XCTAssertEqual(link?.itemId, "item-123")
+        XCTAssertEqual(link?.workspaceHandle, "shoku-space")
+        XCTAssertEqual(link?.mode, .edit)
+    }
+
+    func testItemLinkRejectsUnsafeOrAmbiguousTargets() {
+        XCTAssertNil(TexttextItemLink(
+            url: URL(string: "write-app://item/item%2Fother?workspace=shoku-space")!
+        ))
+        XCTAssertNil(TexttextItemLink(
+            url: URL(string: "write-app://item/item-123?workspace=shoku%2Fspace")!
+        ))
+        XCTAssertNil(TexttextItemLink(
+            url: URL(
+                string: "write-app://item/item-123?workspace=one&workspace=two"
+            )!
+        ))
+        XCTAssertNil(TexttextItemLink(
+            url: URL(string: "write-app://item/item-123?mode=compose")!
+        ))
+    }
+
+    func testExplicitModeOverridesTheDefaultKindBehavior() {
+        let note = WriteItemOpenTarget(
+            handle: "workspace",
+            itemId: "note-id",
+            slug: "note",
+            kind: "note"
+        )
+        let article = WriteItemOpenTarget(
+            handle: "workspace",
+            itemId: "article-id",
+            slug: "article",
+            kind: "article"
+        )
+
+        XCTAssertEqual(note.appPath(mode: .read), "/t/workspace/note")
+        XCTAssertEqual(
+            article.appPath(mode: .edit),
+            "/t/workspace/article?edit=1&id=article-id"
+        )
+    }
+
+    func testPendingItemLinksKeepTheLatestModeForOneExactTarget() {
+        var pending = PendingTexttextItemLinks()
+        pending.enqueue(TexttextItemLink(
+            url: URL(
+                string: "write-app://item/item-123?workspace=shoku-space&mode=read"
+            )!
+        )!)
+        pending.enqueue(TexttextItemLink(
+            url: URL(
+                string: "write-app://item/item-123?workspace=shoku-space&mode=edit"
+            )!
+        )!)
+
+        let links = pending.drain()
+
+        XCTAssertEqual(links.count, 1)
+        XCTAssertEqual(links.first?.mode, .edit)
+        XCTAssertEqual(pending.count, 0)
+    }
+
+    func testPendingItemLinksStayBoundedDuringColdLaunch() {
+        var pending = PendingTexttextItemLinks()
+        for index in 0..<12 {
+            pending.enqueue(TexttextItemLink(
+                url: URL(
+                    string: "write-app://item/item-\(index)?workspace=shoku-space"
+                )!
+            )!)
+        }
+
+        let links = pending.drain()
+
+        XCTAssertEqual(links.count, 8)
+        XCTAssertEqual(links.first?.itemId, "item-4")
+        XCTAssertEqual(links.last?.itemId, "item-11")
+    }
+
     func testOnlyWriteFileProviderFileIdentifiersAreManaged() {
         XCTAssertTrue(OpenFileHandler.isWriteFileProviderItem("file:workspace:item-id"))
         XCTAssertFalse(OpenFileHandler.isWriteFileProviderItem("folder:workspace:folder-id"))

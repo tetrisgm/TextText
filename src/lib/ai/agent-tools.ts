@@ -72,6 +72,7 @@ type WorkspaceAgentView = {
 const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
   "get_workspace",
   "read_item",
+  "open_item",
   "search",
   "list_comments",
   "list_access",
@@ -178,6 +179,10 @@ type ToolArgs = Record<string, unknown>;
 export type WorkspaceAgentToolsOptions = {
   handle: string;
   getPool: () => WorkspacePoolPayload | null;
+  openItem?: (
+    post: WorkspacePoolPost,
+    mode: "read" | "edit",
+  ) => Promise<void> | void;
   readItemText?: (postId: string) => Promise<WorkspaceItemTextSnapshot>;
   applyItemPatch?: (
     postId: string,
@@ -332,6 +337,7 @@ export function createWorkspaceAgentTools(
   const {
     handle,
     getPool,
+    openItem,
     readItemText,
     applyItemPatch,
     confirmDestructive,
@@ -710,6 +716,25 @@ export function createWorkspaceAgentTools(
           updatedAt: post.updatedAt ?? null,
           body: capped(text.body, 12_000),
           assets: Array.isArray(persisted.assets) ? persisted.assets : [],
+        };
+      }
+
+      case "open_item": {
+        const input = args as WorkspaceToolInput<"open_item">;
+        const post = requirePost(input.id);
+        if (!openItem) {
+          const result = await runRemote("open_item", input);
+          return { ok: true, ...result };
+        }
+        const folderPath = folderPathForPoolPost(pool(), post);
+        const mode = input.mode ?? "read";
+        await openItem(post, mode);
+        return {
+          ok: true,
+          id: post.id,
+          title: post.title,
+          folder_path: folderPath,
+          mode,
         };
       }
 
