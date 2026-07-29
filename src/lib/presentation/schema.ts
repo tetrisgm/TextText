@@ -32,6 +32,7 @@ export const FIELD_TYPES = [
   "number",
   "boolean",
   "reference",
+  "rows",
 ] as const;
 
 const fieldIdSchema = z.string().regex(/^[a-z][A-Za-z0-9_.-]{0,119}$/);
@@ -44,50 +45,110 @@ const fieldBase = {
   help: z.string().trim().max(500).optional(),
 };
 
+// The scalar field shapes. Rows reuse these for sub-fields, so they are named
+// members rather than inline union literals.
+
+const textFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("text"),
+  maxLength: z.number().int().positive().max(2_000_000).optional(),
+}).strict();
+
+const richtextFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("richtext"),
+  maxLength: z.number().int().positive().max(10_000_000).optional(),
+}).strict();
+
+const imageFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("image"),
+  allowedContentTypes: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+}).strict();
+
+const dateFieldSchema = z.object({ ...fieldBase, type: z.literal("date") }).strict();
+
+const urlFieldSchema = z.object({ ...fieldBase, type: z.literal("url") }).strict();
+
+const enumFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("enum"),
+  options: z
+    .array(
+      z.object({
+        value: z.string().trim().min(1).max(120),
+        label: z.string().trim().min(1).max(160),
+        /** Engine-owned tint, validated in light AND dark; never user CSS.
+         * This is how a status pill gets its color without any color input. */
+        tone: z
+          .enum(["neutral", "info", "success", "warning", "danger", "accent"])
+          .optional(),
+        /** A single emoji, rendered before the label in badges. */
+        icon: z.string().trim().min(1).max(8).optional(),
+      }).strict(),
+    )
+    .min(1)
+    .max(100),
+  /** Labels, genres, moods: multiple selected values stored as string[]. */
+  multiple: z.boolean().default(false),
+}).strict();
+
+const numberFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("number"),
+  min: z.number().finite().optional(),
+  max: z.number().finite().optional(),
+  step: z.number().finite().positive().optional(),
+  /** How the value displays: rating renders stars against `max`, minutes
+   * renders "1 h 20 m", currency and percent localize. Storage stays a plain
+   * number in every case. */
+  format: z
+    .enum(["plain", "currency", "percent", "minutes", "rating"])
+    .default("plain"),
+}).strict();
+
+const booleanFieldSchema = z.object({ ...fieldBase, type: z.literal("boolean") }).strict();
+
+const referenceFieldSchema = z.object({
+  ...fieldBase,
+  type: z.literal("reference"),
+  target: z.enum(["document", "folder"]).default("document"),
+  multiple: z.boolean().default(false),
+}).strict();
+
+/** Sub-fields a row may declare: every scalar type, no rows-in-rows and no
+ * richtext, so a row stays a record rather than a document. */
+export const rowSubFieldSchema = z.discriminatedUnion("type", [
+  textFieldSchema,
+  imageFieldSchema,
+  dateFieldSchema,
+  urlFieldSchema,
+  enumFieldSchema,
+  numberFieldSchema,
+  booleanFieldSchema,
+  referenceFieldSchema,
+]);
+
+export type RowSubFieldDefinition = z.infer<typeof rowSubFieldSchema>;
+
 export const documentFieldDefinitionSchema = z.discriminatedUnion("type", [
+  textFieldSchema,
+  richtextFieldSchema,
+  imageFieldSchema,
+  dateFieldSchema,
+  urlFieldSchema,
+  enumFieldSchema,
+  numberFieldSchema,
+  booleanFieldSchema,
+  referenceFieldSchema,
+  // The rows field: an array of typed records. Subtasks, ingredients, action
+  // items, changelog entries, itinerary stops, metrics: every "repeating
+  // group" is this one type.
   z.object({
     ...fieldBase,
-    type: z.literal("text"),
-    maxLength: z.number().int().positive().max(2_000_000).optional(),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("richtext"),
-    maxLength: z.number().int().positive().max(10_000_000).optional(),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("image"),
-    allowedContentTypes: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
-  }).strict(),
-  z.object({ ...fieldBase, type: z.literal("date") }).strict(),
-  z.object({ ...fieldBase, type: z.literal("url") }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("enum"),
-    options: z
-      .array(
-        z.object({
-          value: z.string().trim().min(1).max(120),
-          label: z.string().trim().min(1).max(160),
-        }).strict(),
-      )
-      .min(1)
-      .max(100),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("number"),
-    min: z.number().finite().optional(),
-    max: z.number().finite().optional(),
-    step: z.number().finite().positive().optional(),
-  }).strict(),
-  z.object({ ...fieldBase, type: z.literal("boolean") }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("reference"),
-    target: z.enum(["document", "folder"]).default("document"),
-    multiple: z.boolean().default(false),
+    type: z.literal("rows"),
+    fields: z.array(rowSubFieldSchema).min(1).max(8),
+    maxRows: z.number().int().positive().max(500).default(200),
   }).strict(),
 ]);
 
@@ -117,6 +178,11 @@ const bindingSchema = z
   );
 
 export type ContentBinding = z.infer<typeof bindingSchema>;
+
+/** Bindings inside a rows-bound node address the row's sub-fields. */
+const rowBindingSchema = z
+  .string()
+  .regex(/^row\.[a-z][A-Za-z0-9_.-]{0,119}$/);
 
 const sharedNode = {
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,79}$/).optional(),
@@ -172,6 +238,69 @@ type RenderNodeInput =
       id?: string;
       showWhen?: string;
       size?: (typeof SPACING_TOKENS)[number];
+    }
+  | {
+      type: "badge";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      variant?: "pill" | "chips" | "glyph";
+      showIcon?: boolean;
+    }
+  | {
+      type: "facts";
+      id?: string;
+      showWhen?: string;
+      variant?: "table" | "strip" | "pills";
+      entries: { bind: string; label?: string; format?: "date" | "relative" | "countdown" }[];
+    }
+  | {
+      type: "checklist";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      doneBind: string;
+      labelBind: string;
+      meta?: string[];
+      mode?: "document" | "reader";
+      sortCheckedLast?: boolean;
+      rollup?: boolean;
+    }
+  | {
+      type: "rows";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      variant?: "table" | "steps" | "timeline" | "tiles";
+      columns?: { bind: string; label?: string }[];
+      sort?: { bind: string; direction: "asc" | "desc" };
+    }
+  | {
+      type: "progress";
+      id?: string;
+      showWhen?: string;
+      variant?: "bar" | "ring" | "fraction";
+      source:
+        | { bind: string }
+        | { currentBind: string; targetBind: string }
+        | { checklistBind: string; doneBind: string };
+    }
+  | {
+      type: "callout";
+      id?: string;
+      showWhen?: string;
+      tone?: "note" | "tip" | "success" | "warning" | "danger" | "decision";
+      title?: string;
+      icon?: string;
+      children: RenderNodeInput[];
+    }
+  | {
+      type: "quote";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      variant?: "block" | "pull" | "attributed";
+      attributionBind?: string;
     };
 
 export type RenderNode =
@@ -205,6 +334,32 @@ export type RenderNode =
       showWhen?: ContentBinding;
     })
   | (Omit<Extract<RenderNodeInput, { type: "divider" | "spacer" }>, "showWhen"> & {
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "badge" }>, "bind" | "showWhen"> & {
+      bind: ContentBinding | string;
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "facts" }>, "showWhen"> & {
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "checklist" }>, "bind" | "showWhen"> & {
+      bind: ContentBinding;
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "rows" }>, "bind" | "showWhen"> & {
+      bind: ContentBinding;
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "progress" }>, "showWhen"> & {
+      showWhen?: ContentBinding;
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "callout" }>, "children" | "showWhen"> & {
+      showWhen?: ContentBinding;
+      children: RenderNode[];
+    })
+  | (Omit<Extract<RenderNodeInput, { type: "quote" }>, "bind" | "showWhen"> & {
+      bind: ContentBinding;
       showWhen?: ContentBinding;
     });
 
@@ -253,8 +408,141 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       type: z.enum(["divider", "spacer"]),
       size: z.enum(SPACING_TOKENS).default("md"),
     }).strict(),
+    // --- Wave-1 nodes from the document-types research. Each earns its place
+    // by serving several templates; none accepts user markup or color. ---
+    // badge: enum -> tinted pill; tags/multi-enum -> pill row; boolean ->
+    // glyph; reference -> chip. The one node behind every status/priority/
+    // label treatment.
+    z.object({
+      ...sharedNode,
+      type: z.literal("badge"),
+      bind: z.union([bindingSchema, rowBindingSchema]),
+      variant: z.enum(["pill", "chips", "glyph"]).default("pill"),
+      showIcon: z.boolean().default(true),
+    }).strict(),
+    // facts: the labeled metadata header. table | strip | pills; empty
+    // entries are skipped so heavy optional schemas stay light.
+    z.object({
+      ...sharedNode,
+      type: z.literal("facts"),
+      variant: z.enum(["table", "strip", "pills"]).default("strip"),
+      entries: z
+        .array(
+          z.object({
+            bind: bindingSchema,
+            label: z.string().trim().min(1).max(80).optional(),
+            format: z.enum(["date", "relative", "countdown"]).optional(),
+          }).strict(),
+        )
+        .min(1)
+        .max(12),
+    }).strict(),
+    // checklist: rows field + boolean sub-field. mode document persists checks
+    // as a document mutation; mode reader keeps them per-viewer and ephemeral
+    // (recipe ingredients, packing lists on a shared page).
+    z.object({
+      ...sharedNode,
+      type: z.literal("checklist"),
+      bind: bindingSchema,
+      doneBind: rowBindingSchema,
+      labelBind: rowBindingSchema,
+      meta: z.array(rowBindingSchema).max(4).default([]),
+      mode: z.enum(["document", "reader"]).default("document"),
+      sortCheckedLast: z.boolean().default(true),
+      rollup: z.boolean().default(false),
+    }).strict(),
+    // rows: table | steps | timeline | tiles over a rows field. Registers,
+    // procedures, dated logs, and stat rows are four variants of one node.
+    z.object({
+      ...sharedNode,
+      type: z.literal("rows"),
+      bind: bindingSchema,
+      variant: z.enum(["table", "steps", "timeline", "tiles"]).default("table"),
+      columns: z
+        .array(
+          z.object({
+            bind: rowBindingSchema,
+            label: z.string().trim().min(1).max(80).optional(),
+          }).strict(),
+        )
+        .max(8)
+        .default([]),
+      sort: z
+        .object({
+          bind: rowBindingSchema,
+          direction: z.enum(["asc", "desc"]),
+        })
+        .strict()
+        .optional(),
+    }).strict(),
+    // progress: computed display only. A 0..1 number, a current/target pair,
+    // or a checklist rollup.
+    z.object({
+      ...sharedNode,
+      type: z.literal("progress"),
+      variant: z.enum(["bar", "ring", "fraction"]).default("bar"),
+      source: z.union([
+        z.object({ bind: bindingSchema }).strict(),
+        z.object({ currentBind: bindingSchema, targetBind: bindingSchema }).strict(),
+        z.object({ checklistBind: bindingSchema, doneBind: rowBindingSchema }).strict(),
+      ]),
+    }).strict(),
+    // callout: closed tones, engine-owned tint in both themes.
+    z.object({
+      ...sharedNode,
+      type: z.literal("callout"),
+      tone: z.enum(["note", "tip", "success", "warning", "danger", "decision"]).default("note"),
+      title: z.string().trim().min(1).max(160).optional(),
+      icon: z.string().trim().min(1).max(8).optional(),
+      children: z.array(renderNodeSchema).min(1).max(20),
+    }).strict(),
+    // quote: block | pull | attributed.
+    z.object({
+      ...sharedNode,
+      type: z.literal("quote"),
+      bind: bindingSchema,
+      variant: z.enum(["block", "pull", "attributed"]).default("block"),
+      attributionBind: bindingSchema.optional(),
+    }).strict(),
   ]),
 );
+
+/** A sortable key: a system column, or a declared custom field addressed the
+ * same way render bindings address one. Custom-field references are validated
+ * against the template's declared field list in validateTemplateDefinition. */
+export const collectionSortFieldSchema = z.union([
+  z.enum(["createdAt", "updatedAt", "publishedAt", "title"]),
+  z.string().regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/),
+]);
+
+/** A declarative row filter. This is data, not an expression language: one
+ * field, one operator, at most one scalar. `eq` on enum/boolean fields and
+ * `isSet`/`notSet` cover most real templates; the comparisons cover dates,
+ * numbers, and ratings. Filters compose with AND. */
+export const collectionFilterSchema = z
+  .object({
+    field: z.string().regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/),
+    op: z.enum(["eq", "neq", "isSet", "notSet", "gt", "gte", "lt", "lte", "contains"]),
+    value: z.union([z.string().max(20_000), z.number().finite(), z.boolean()]).optional(),
+  })
+  .strict()
+  .superRefine((filter, ctx) => {
+    const needsValue = !["isSet", "notSet"].includes(filter.op);
+    if (needsValue && filter.value === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `filter op ${filter.op} requires a value`,
+      });
+    }
+    if (!needsValue && filter.value !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `filter op ${filter.op} does not take a value`,
+      });
+    }
+  });
+
+export type CollectionFilter = z.infer<typeof collectionFilterSchema>;
 
 export const collectionRenderSchema = z
   .object({
@@ -264,12 +552,13 @@ export const collectionRenderSchema = z
     sort: z
       .array(
         z.object({
-          field: z.enum(["createdAt", "updatedAt", "publishedAt", "title"]),
+          field: collectionSortFieldSchema,
           direction: z.enum(["asc", "desc"]),
         }).strict(),
       )
       .max(4)
       .default([]),
+    filters: z.array(collectionFilterSchema).max(8).default([]),
     item: renderNodeSchema,
   })
   .strict();
@@ -370,8 +659,97 @@ function validateTreeBindings(
       if (node.alt) checkBinding(node.alt, fields, ["text", "enum", "url"], `${node.type} alt`);
     } else if (node.type === "gallery") {
       checkBinding(node.bind, fields, ["assets"], "gallery");
+    } else if (node.type === "badge") {
+      // Row-scoped badges are validated by their enclosing rows/checklist
+      // node, which knows the sub-field list; a top-level badge validates here.
+      if (!node.bind.startsWith("row.")) {
+        checkBinding(
+          node.bind,
+          fields,
+          ["enum", "boolean", "reference", "tags", "text"],
+          "badge",
+        );
+      }
+    } else if (node.type === "facts") {
+      for (const entry of node.entries) {
+        checkBinding(
+          entry.bind,
+          fields,
+          ["text", "date", "url", "enum", "number", "boolean", "reference", "tags"],
+          "facts entry",
+        );
+      }
+    } else if (node.type === "checklist") {
+      requireRowsField(node.bind, fields, "checklist", (sub) => {
+        requireRowBinding(node.doneBind, sub, ["boolean"], "checklist doneBind");
+        requireRowBinding(node.labelBind, sub, ["text", "url"], "checklist labelBind");
+        for (const meta of node.meta ?? []) {
+          requireRowBinding(meta, sub, ["text", "date", "url", "enum", "number", "boolean"], "checklist meta");
+        }
+      });
+    } else if (node.type === "rows") {
+      requireRowsField(node.bind, fields, "rows", (sub) => {
+        for (const column of node.columns ?? []) {
+          requireRowBinding(column.bind, sub, null, "rows column");
+        }
+        if (node.sort) requireRowBinding(node.sort.bind, sub, null, "rows sort");
+      });
+    } else if (node.type === "progress") {
+      const source = node.source;
+      if ("bind" in source) {
+        checkBinding(source.bind, fields, ["number"], "progress");
+      } else if ("currentBind" in source) {
+        checkBinding(source.currentBind, fields, ["number"], "progress current");
+        checkBinding(source.targetBind, fields, ["number"], "progress target");
+      } else {
+        requireRowsField(source.checklistBind, fields, "progress checklist", (sub) => {
+          requireRowBinding(source.doneBind, sub, ["boolean"], "progress doneBind");
+        });
+      }
+    } else if (node.type === "quote") {
+      checkBinding(node.bind, fields, ["text", "richtext"], "quote");
+      if (node.attributionBind) {
+        checkBinding(node.attributionBind, fields, ["text", "url", "reference"], "quote attribution");
+      }
     }
   });
+}
+
+/** Resolve a binding to a declared rows field and hand its sub-field map to
+ * the caller, so row.* bindings are checked against the RIGHT row shape. */
+function requireRowsField(
+  binding: string,
+  fields: ReadonlyMap<string, DocumentFieldDefinition>,
+  context: string,
+  check: (subFields: ReadonlyMap<string, RowSubFieldDefinition>) => void,
+): void {
+  const id = binding.startsWith("content.fields.")
+    ? binding.slice("content.fields.".length)
+    : null;
+  const field = id ? fields.get(id) : undefined;
+  if (!field || field.type !== "rows") {
+    throw new Error(`${context} must bind a declared rows field, got ${binding}`);
+  }
+  const subFields = new Map(field.fields.map((sub) => [sub.id, sub]));
+  check(subFields);
+}
+
+function requireRowBinding(
+  binding: string,
+  subFields: ReadonlyMap<string, RowSubFieldDefinition>,
+  allowed: readonly RowSubFieldDefinition["type"][] | null,
+  context: string,
+): void {
+  if (!binding.startsWith("row.")) {
+    throw new Error(`${context} must be a row.* binding, got ${binding}`);
+  }
+  const sub = subFields.get(binding.slice("row.".length));
+  if (!sub) {
+    throw new Error(`${context} references undeclared row sub-field ${binding}`);
+  }
+  if (allowed && !allowed.includes(sub.type)) {
+    throw new Error(`${context} requires ${allowed.join("|")}, got ${sub.type} (${binding})`);
+  }
 }
 
 export function validateRenderSpec(value: unknown): RenderNode {
@@ -398,6 +776,31 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
   }
   validateTreeBindings(template.item, fields, new Set<string>());
   validateTreeBindings(template.collection.item, fields, new Set<string>());
+  // Sort keys and filters may only reference fields this template declares.
+  // A reference to an undeclared field is not "empty for every document", it
+  // is a template bug, and it fails here rather than rendering surprisingly.
+  const FIELD_PREFIX = "content.fields.";
+  for (const entry of template.collection.sort) {
+    if (!entry.field.startsWith(FIELD_PREFIX)) continue;
+    const id = entry.field.slice(FIELD_PREFIX.length);
+    if (!fields.has(id)) {
+      throw new Error(`collection sort references undeclared field ${id}`);
+    }
+  }
+  for (const filter of template.collection.filters) {
+    const id = filter.field.slice(FIELD_PREFIX.length);
+    const declared = fields.get(id);
+    if (!declared) {
+      throw new Error(`collection filter references undeclared field ${id}`);
+    }
+    if (filter.op === "contains" && declared.type !== "text" && declared.type !== "richtext") {
+      throw new Error(`filter op contains requires a text field, not ${declared.type} (${id})`);
+    }
+    if (["gt", "gte", "lt", "lte"].includes(filter.op) &&
+        !["number", "date"].includes(declared.type)) {
+      throw new Error(`filter op ${filter.op} requires a number or date field, not ${declared.type} (${id})`);
+    }
+  }
   if (new Set(template.capabilities).size !== template.capabilities.length) {
     throw new Error("template capabilities must be unique");
   }
