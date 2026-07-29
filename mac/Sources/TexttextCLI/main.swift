@@ -103,12 +103,14 @@ do {
 /// Presence wraps every mutation, so an agent shows up in the document simply by
 /// doing its work.
 func withPresence<T>(
-    _ documentPath: String, _ activity: AgentActor.Activity, _ work: () throws -> T
+    _ documentPath: String, _ url: URL, _ activity: AgentActor.Activity,
+    _ work: () throws -> T
 ) rethrows -> T {
     guard let name = options.actor else { return try work() }
     let actor = AgentActor(
         name: name, activity: activity,
-        section: options.section, message: options.message)
+        section: options.section, message: options.message,
+        itemId: store.itemId(at: url))
     return try PresencePublisher().around(document: documentPath, actor: actor, work: work)
 }
 
@@ -159,7 +161,7 @@ do {
         let relative = store.relativePath(of: url)
         let input = readInput(options)
 
-        try withPresence(relative, .edit) {
+        try withPresence(relative, url, .edit) {
             let current = try store.readMarkdown(at: url)
             let updated: String
             switch options.command {
@@ -197,7 +199,7 @@ do {
         {
             link += "&section=" + encoded
         }
-        withPresence(relative, .open) {
+        withPresence(relative, url, .open) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             process.arguments = [link]

@@ -147,6 +147,28 @@ public struct DocumentStore: Sendable {
         return contents.markdown
     }
 
+    /// The document's own id, carried in frontmatter as `writeId` (injected
+    /// locally by the sync client, stripped before upload). Presence uses it so
+    /// the server addresses the exact item without resolving a file path.
+    public func itemId(at url: URL) -> String? {
+        guard let markdown = try? readMarkdown(at: url) else { return nil }
+        guard markdown.hasPrefix("---") else { return nil }
+        let lines = markdown.components(separatedBy: "\n")
+        for line in lines.dropFirst() {
+            if line.trimmingCharacters(in: .whitespaces) == "---" { break }
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+            guard key == "writeId" else { continue }
+            var value = line[line.index(after: colon)...]
+                .trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+                value = String(value.dropFirst().dropLast())
+            }
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
     // MARK: - Write
 
     /// Replace a document's markdown, preserving everything else in the package

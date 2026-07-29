@@ -11,17 +11,23 @@ public struct AgentActor: Equatable, Sendable {
     public let activity: Activity
     public let section: String?
     public let message: String?
+    /// The document's own id, read from its frontmatter.
+    public let itemId: String?
 
     public enum Activity: String, Sendable {
         case open
         case edit
     }
 
-    public init(name: String, activity: Activity, section: String? = nil, message: String? = nil) {
+    public init(
+        name: String, activity: Activity, section: String? = nil,
+        message: String? = nil, itemId: String? = nil
+    ) {
         self.name = name
         self.activity = activity
         self.section = section
         self.message = message
+        self.itemId = itemId
     }
 }
 
@@ -89,11 +95,12 @@ public struct PresencePublisher: Sendable {
 
     private func publish(document: String, actor: AgentActor, active: Bool) {
         guard let credentials else { return }
-        guard var components = URLComponents(
-            string: credentials.serverOrigin + "/api/agent/presence")
+        // The document carries its own id in frontmatter (`writeId`, injected
+        // locally and stripped before upload), so presence addresses the exact
+        // item without the server having to resolve a file path.
+        guard let itemId = actor.itemId else { return }
+        guard let url = URL(string: credentials.serverOrigin + "/api/agent/presence")
         else { return }
-        components.queryItems = nil
-        guard let url = components.url else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -101,6 +108,7 @@ public struct PresencePublisher: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(credentials.token)", forHTTPHeaderField: "Authorization")
         var payload: [String: Any] = [
+            "itemId": itemId,
             "document": document,
             "agent": actor.name,
             "activity": actor.activity.rawValue,
