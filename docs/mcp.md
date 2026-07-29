@@ -5,9 +5,18 @@ the product UI, the workspace-configured assistant, and external agents over
 MCP. The application calls the commands directly. It does not call its own MCP
 endpoint.
 
-`src/lib/ai/tools.ts` is the source of truth for the 31 tool names, schemas,
-mutability, confirmation requirements, and MCP annotations. The MCP adapter
-registers those definitions in `src/lib/mcp/tools.ts`.
+This document covers the hosted endpoint, which is for agents that are not on
+the user's Mac. An agent running on the same Mac uses the `texttext` CLI
+instead, and does not need a token, a port, or OAuth. See
+`docs/agent-interoperability.md`. There is no local MCP server; the loopback
+endpoint was retired in `0.146`.
+
+<!-- generated:tool-source -->
+`src/lib/ai/tools.ts` is the source of truth for the 30 tool
+names, schemas, mutability, confirmation requirements, and MCP
+annotations. The MCP adapter registers those definitions in
+`src/lib/mcp/tools.ts`.
+<!-- /generated:tool-source -->
 
 ## Endpoint and transport
 
@@ -50,10 +59,12 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 
 ## Scopes
 
+<!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the eight content-read tools: `get_workspace`, `list_folders`, `list_items`, `list_trash`, `read_item`, `search`, `list_comments`, and `list_item_assets`. |
-| `sync` | Call all 31 tools, including the 22 mutations and access listings. It also grants every `read` operation. |
+| `read` | Call the 9 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_document_templates`. |
+| `sync` | Call all 30 tools, including the 21 that mutate content or read administration data. It also grants every `read` operation. |
+<!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
 advertises `sync` as the required scope. The separate sync HTTP API requires

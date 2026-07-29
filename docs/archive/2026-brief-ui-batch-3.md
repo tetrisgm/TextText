@@ -1,5 +1,9 @@
 # Texttext: Superhuman UI refinement batch (workspace nav, focus, sidebar, home, action bar, Mac menu bar)
 
+> **ARCHIVED / DELIVERED (historical record).** This workspace UI refinement batch
+> was delivered. For current design contracts see `DESIGN.md`. Nothing below is
+> current project status.
+
 Work in `~/dev/write`, branch `main`. Web = Next.js App Router (`src/`). Native mac app = `mac/` (SwiftPM). This is a design-refinement batch on the SIGNED-IN OWNER WORKSPACE (the blog view at `/u/[username]` and `/t/[handle]`: home/root landing + folder pages + editor), plus a few Mac menu-bar actions. Do NOT touch the public reader craft, collab, MCP, or the sync API.
 
 ## Design vibe (apply to everything)

@@ -1,5 +1,12 @@
 # Plan: the `texttext` CLI
 
+> **ARCHIVED / DELIVERED (historical record).** Every unit of this plan shipped in
+> Texttext `0.146`: the CLI, sections, automatic presence, audit intent, `new`,
+> `open`, `lint`, `install`, the skills rewrite, the `PostToolUse` hook, and the
+> retirement of the loopback MCP server. Kept for the reasoning behind the design.
+> For the CURRENT reference see `docs/agent-interoperability.md`, which documents
+> the surface as it actually shipped. Nothing below is current project status.
+
 The CLI is not a file editor. It is **the agent's participation protocol for the
 workspace**, and editing is one of its verbs. Because we ship both ends we define
 the contract exactly: how an agent reads, how it writes, how it appears while it

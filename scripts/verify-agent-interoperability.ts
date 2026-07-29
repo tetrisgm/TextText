@@ -99,6 +99,11 @@ assert(
   publicDocs.includes("idempotency"),
   "Public agent docs must explain retry-safe mutations",
 );
+assert(
+  publicDocs.includes("command -v texttext") &&
+    publicDocs.includes("/Applications/Texttext.app/Contents/MacOS/texttext"),
+  "Public agent docs must tell an agent on this Mac to use the CLI, and how to find it",
+);
 
 // ---- The texttext CLI ----
 //

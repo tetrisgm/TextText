@@ -501,7 +501,7 @@ describe("external agent presence signalling", () => {
       signalAgentActivity,
     });
 
-    await tools.executor("open_item", { id: "post-1" }, "local-mcp", actor);
+    await tools.executor("open_item", { id: "post-1" }, "agent-request", actor);
 
     expect(signalAgentActivity).toHaveBeenCalledWith(
       "post-1",
@@ -519,7 +519,7 @@ describe("external agent presence signalling", () => {
     await tools.executor(
       "update_item",
       { id: "post-1", body: "New body" },
-      "local-mcp",
+      "agent-request",
       actor,
     );
     expect(signalAgentActivity).toHaveBeenLastCalledWith(
@@ -531,7 +531,7 @@ describe("external agent presence signalling", () => {
     await tools.executor(
       "update_item",
       { id: "post-1", title: "New title" },
-      "local-mcp",
+      "agent-request",
       actor,
     );
     expect(signalAgentActivity).toHaveBeenLastCalledWith(
@@ -543,7 +543,7 @@ describe("external agent presence signalling", () => {
     await tools.executor(
       "update_item",
       { id: "post-1", excerpt: "New subtitle" },
-      "local-mcp",
+      "agent-request",
       actor,
     );
     expect(signalAgentActivity).toHaveBeenLastCalledWith(
@@ -560,7 +560,7 @@ describe("external agent presence signalling", () => {
     await tools.executor(
       "update_item",
       { id: "post-1", title: "New title", body: "New body" },
-      "local-mcp",
+      "agent-request",
       actor,
     );
 
@@ -578,7 +578,7 @@ describe("external agent presence signalling", () => {
     await tools.executor(
       "append_to_item",
       { id: "post-1", markdown_fragment: "More" },
-      "local-mcp",
+      "agent-request",
       actor,
     );
 
@@ -612,7 +612,7 @@ describe("external agent presence signalling", () => {
       tools.executor(
         "append_to_item",
         { id: "post-1", markdown_fragment: "More" },
-        "local-mcp",
+        "agent-request",
         actor,
       ),
     ).resolves.toMatchObject({ ok: true });

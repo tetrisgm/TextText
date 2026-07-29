@@ -32,27 +32,10 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertEqual(
             report.status, .pass,
             "Failed checks: \(report.checks.filter { $0.status != .pass })")
-        XCTAssertEqual(report.checks.map(\.id), [
-            "bundle.release",
-            "build.attestation",
-            "bundle.extensions",
-            "selftest.markdown_identity",
-            "selftest.filename_codec",
-            "selftest.document_assets",
-            "selftest.document_projection",
-            "selftest.public_link",
-            "workflow.document_engine",
-            "workflow.collaboration",
-            "workflow.folder_trash_restore",
-            "workflow.sharing_access",
-            "workflow.comments",
-            "workflow.bookmark_recapture",
-            "workflow.cover_assets",
-            "state.persistence",
-            "sync.index",
-            "workspace.storage",
-            "finder.provider",
-        ])
+        // The canonical list lives in WriteHealthChecks.required, so retiring a
+        // check is one edit there rather than three hardcoded lists that fail
+        // one release at a time.
+        XCTAssertEqual(report.checks.map(\.id), WriteHealthChecks.required)
         XCTAssertFalse(report.checks.contains { check in
             check.metrics.keys.contains { $0.contains(" ") || $0.contains("/") }
         })

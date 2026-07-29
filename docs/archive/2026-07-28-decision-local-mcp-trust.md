@@ -1,5 +1,13 @@
 # Decision: local MCP trust model
 
+> **ARCHIVED / SUPERSEDED (historical record).** This decision reasoned about how
+> to secure the loopback MCP server at `http://127.0.0.1:47118/mcp`. Tier 0
+> shipped in `0.145`, and then the server itself was retired in `0.146`: agents on
+> this Mac use the `texttext` CLI, which needs no port, so the trust problem was
+> deleted rather than mitigated. Kept for the survey of how other MCP apps handle
+> local trust, which is still accurate as research. For the CURRENT architecture
+> see `docs/agent-interoperability.md`. Nothing below is current project status.
+
 **DECIDED 2026-07-29: Tier 0 only. Tier 1 is deferred, not rejected.** Tier 0
 shipped; see the record at the end of this document. Researched 2026-07-28 by a
 seven-agent sweep over the MCP specification, the top MCP-capable desktop apps,

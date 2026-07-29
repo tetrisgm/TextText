@@ -60,6 +60,22 @@ async function verifyRelease() {
       command: ["npx", "tsx", "scripts/verify-agent-interoperability.ts"],
     },
     {
+      // Catch a stale health-check manifest here rather than during a ship.
+      // The release gate and the Swift test both read it, so drift used to
+      // surface one failed release at a time.
+      id: "native.health_manifest",
+      timeoutSeconds: 60,
+      command: ["npx", "tsx", "scripts/sync-health-checks.ts", "--check"],
+    },
+    {
+      // The tool lists in the Markdown docs are generated from the registry.
+      // Hand-maintained copies drifted far enough to name tools that no longer
+      // existed, so an agent following the docs would have called nothing.
+      id: "docs.tool_lists",
+      timeoutSeconds: 60,
+      command: ["npx", "tsx", "scripts/sync-tool-docs.ts", "--check"],
+    },
+    {
       id: "workflow.agent_integrations",
       timeoutSeconds: 60,
       command: ["npm", "run", "verify:agent-integrations"],

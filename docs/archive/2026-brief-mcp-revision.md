@@ -1,5 +1,10 @@
 # Texttext MCP, Paper-grade: implementation and documentation brief
 
+> **ARCHIVED / DELIVERED (historical record).** This Paper-grade MCP revision brief
+> was delivered. For the CURRENT surface see `docs/mcp.md` and
+> `docs/agent-interoperability.md`; `src/lib/ai/tools.ts` is the source of truth
+> for tool names. Nothing below is current project status.
+
 ## Task
 
 Revise Texttext's MCP integration to the level of craft in `paper.design/docs/mcp`, in both the running implementation and the documentation. Consolidate the tool surface (31 tools becomes 26: 8 read, 18 write), normalize result envelopes, surface the just-landed `tags` and `[[wikilinks]]`, and rewrite the connect docs into Paper's six-part shape. Do this as one coherent change across the shared command surface, the MCP layer, the Swift native contract, the docs, and the OAuth release gate.

@@ -3,7 +3,7 @@ import Foundation
 /// Who is working, and on what.
 ///
 /// Self-declared, exactly as MCP's `clientInfo` was. That is acceptable under
-/// the trust model settled in docs/decision-local-mcp-trust.md: a same-user
+/// the trust model settled in docs/agent-interoperability.md: a same-user
 /// process is trusted, and the case that mattered (a web page reaching the
 /// local endpoint) was closed in 0.143.
 public struct AgentActor: Equatable, Sendable {

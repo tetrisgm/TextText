@@ -244,9 +244,20 @@ are stored.
    use a signed capability receipt when a safe runtime probe would mutate
    production state.
 3. Keep the check fast and independent of the web view.
-4. Add a focused unit test and include the ID in staged-app verification when
-   it is release-critical.
-5. Add the equivalent reusable primitive or contract to `~/dev/stack/mac-kit`.
+4. Add the ID to `WriteHealthChecks.required` in
+   `mac/Sources/Write/AppHealthReporter.swift`, then run
+   `npx tsx scripts/sync-health-checks.ts`.
+5. Add a focused unit test.
+6. Add the equivalent reusable primitive or contract to `~/dev/stack/mac-kit`.
+
+`WriteHealthChecks.required` is the single source of truth for which checks a
+release must report. `mac/health-checks.json` is generated from it, and both
+`mac/scripts/verify-app-health.sh` and `AppHealthReporterTests` read the
+generated file. The list used to be written out three times in three languages,
+so retiring one check cost three failed releases, each revealing the next stale
+copy. `npm run verify:release` runs
+`npx tsx scripts/sync-health-checks.ts --check`, so drift now fails locally
+instead of during a ship.
 
 Do not put full XCTest or Vitest runners inside the production app. Full suites
 remain ship gates and are represented by the signed build attestation. Runtime

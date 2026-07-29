@@ -3,7 +3,7 @@ import TexttextCLICore
 
 // The agent's interface to a Texttext workspace. Editing is one verb; the
 // others let an agent say who it is and where it is working, so it shows up in
-// the document like a person. See docs/plan-texttext-cli.md.
+// the document like a person. See docs/agent-interoperability.md.
 
 let usage = """
 texttext - work with a Texttext workspace

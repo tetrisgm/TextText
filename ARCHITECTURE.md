@@ -1,59 +1,95 @@
 # Texttext: architecture
 
-A multi-tenant blogging platform. Next.js App Router on Vercel.
+A multi-tenant publishing platform: Next.js App Router on Vercel, plus a native
+macOS app that mounts the workspace as a Finder location.
 
-## Tenancy
+This is the map. `docs/codex/HANDOFF.md` is the current continuation state and
+wins over this file when they disagree.
 
-- Every blog is `{handle}.{ROOT_DOMAIN}`; custom domains later map onto the
-  same handles via a lookup table.
-- `src/proxy.ts` (Next 16's middleware) resolves the Host header with
-  `tenantFromHost()` and rewrites tenant hosts to `/t/{handle}/...`, so the
-  app router stays plain. Reserved subdomains live in `src/lib/tenants.ts`.
-- Local dev: `demo.localhost:3000` resolves in modern browsers with no
-  /etc/hosts changes; `/t/demo` also works path-based.
+## Tenancy and URLs
+
+- `src/proxy.ts` (Next 16 proxy, not middleware) rewrites `/@{username}` to
+  `/u/{username}`, then resolves the Host header to `/t/{handle}`. Reserved
+  subdomains live in `src/lib/tenants.ts`.
+- Unclaimed guest blogs live at `/t/{three-word-handle}`. Claimed blogs live at
+  `/@{username}`, served by `src/app/u/[username]`.
+- `/start` is the single entry into a workspace. Signing in claims the browser's
+  guest workspace.
+- Local dev: `npm run dev`, then `/@demo`. `demo.localhost:3000` and `/t/demo`
+  both redirect there.
+
+## Content model
+
+One canonical document. Every live or trashed item carries a validated
+schema-v1 `DocumentSnapshot` (`src/lib/documents/model.ts`).
+
+Article, note, bookmark, gallery, and talk are validated presentation templates
+and capability defaults, not separate content models. The `post_type` column and
+`src/lib/markdown-files.ts` survive as legacy search projections and Markdown
+import/export compatibility, not as a second document.
+
+Notes and bookmarks stay unlisted forever. Visibility fails closed
+(`src/lib/documents/visibility.ts`): missing or unknown means private.
 
 ## Data
 
-- Neon Postgres via Drizzle (`src/lib/db/schema.ts`): `users` (Apple `sub` as
-  primary identity), `blogs` (handle, name, accent, bio line, owner),
-  `posts` (slug, title, kicker, accent override, cover, markdown body,
-  draft/published).
-- `src/lib/store.ts` is the only content access point. With `DATABASE_URL`
-  unset it serves the demo seed (`src/lib/demo.ts`) so the app runs with zero
-  setup; the Postgres implementation fills in behind the same functions.
-- Content is markdown with structured columns (title, kicker, accent, cover),
-  not frontmatter blobs: the editor edits fields, the reader renders markdown.
+- Postgres. `src/lib/db/client.ts` picks the driver by URL: a `neon.tech` URL
+  uses the Neon HTTP driver, anything else uses node-postgres. Schema in
+  `src/lib/db/schema.ts`.
+- `src/lib/store.ts` is the ONLY content access point. Without `DATABASE_URL` it
+  serves the demo seed (`src/lib/demo.ts`) so the app runs with zero setup.
+  Routes never import `demo.ts` directly.
+- Every mutation writes an `action_audit` row.
+- Media goes to Vercel Blob.
 
 ## Rendering
 
-- Blog home + post pages are server components; markdown renders on the
-  server via react-markdown + remark-gfm.
-- The reader is `src/components/Reader.tsx` + `src/styles/broadsheet.css`.
-  The post accent rides in as the `--post-accent` CSS variable (may be unset;
-  see DESIGN.md for the degradation and contrast rules).
+`src/components/document/DocumentRenderer.tsx` is the one renderer, used by the
+app, public links, previews, and HTML export. Render specs are validated data
+(`src/lib/presentation/schema.ts`, `templates.ts`), never user HTML, CSS,
+JavaScript, or component names. A document pins an exact immutable template
+version.
 
-## Auth (next step)
+The bespoke Reader, ProjectReader, and TalkReader are gone. Do not reintroduce
+them.
 
-- Sign in with Apple via Auth.js; Apple `sub` is the canonical user key.
-  Credentials come from the Apple Developer portal (owner-created, in env).
-- The editor (`/editor`) is auth-gated; today it is a static shell of the
-  `.applecms` design system.
+Styles: `src/styles/tokens.css` (neutral palette), `broadsheet.css` (reader
+chrome), `apple.css` (editor chrome, scoped `.applecms`). Read `DESIGN.md`
+before touching either; the accent rule, the 60% ink contrast floor, and the
+motion rule are contracts.
 
-## Roadmap (in order)
+## Collaboration
 
-1. Editor v1: field editing + markdown body + live Broadsheet preview
-   (the earlier CMS proved the postMessage draft-streaming pattern).
-2. Auth: Sign in with Apple; blogs owned by users; drafts.
-3. Postgres wiring behind `store.ts`; Vercel Blob for covers and figures.
-4. Feeds (RSS/Atom/JSON) per blog; sitemaps; OG images.
-5. Custom domains (Vercel for Platforms domain API).
-6. Billing (Stripe): one paid tier, custom domain + media storage as the
-   upgrade.
-7. Agent surface: clean markdown-first read API per blog. Posts are as
-   legible to agents as to people.
+Full-document Yjs with awareness, cursors, and epoch fencing. The client renders
+local edits immediately and reconciles the network in the background.
+`src/lib/collab/agent-presence.server.ts` is the single construction site for
+external-agent presence, shared by hosted MCP and the CLI.
+
+## Machine surfaces
+
+- `/api/sync/v1`: bearer `wsk_` tokens, manifest hashes, If-Match conflicts.
+- `/api/mcp`: hosted MCP for agents that are not on the user's Mac.
+- The `texttext` CLI (`mac/Sources/TexttextCLI`): for agents that ARE on the
+  user's Mac. It edits documents as files and publishes presence automatically.
+  There is no local MCP server.
+- Tokens are minted at `/connect`. Agent docs are at `/docs/ai` and `/llms.txt`.
+
+`docs/agent-interoperability.md` is the reference for all of the above.
+
+## Native macOS app
+
+`mac/` (SwiftPM). It hosts the web experience, serves the workspace through a
+File Provider extension so it appears as a Finder sidebar location, ships the
+`texttext` CLI, and updates through Sparkle. The File Provider is a durable
+projection, not the local edit hot path.
+
+## Auth
+
+Sign in with Apple, Google, or email through Auth.js. `/connect` mints machine
+tokens and manages OAuth client approvals. See `docs/production-auth.md`.
 
 ## Positioning (decided, do not relitigate)
 
 A craft-first small commercial product. There is no defensible moat in
-publishing tools; the bet is taste, not lock-in. Content is exportable
-markdown, always.
+publishing tools; the bet is taste, not lock-in. Content is exportable Markdown,
+always.

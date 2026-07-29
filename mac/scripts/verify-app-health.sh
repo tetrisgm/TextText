@@ -13,6 +13,7 @@ if [ ! -x "$APP/Contents/MacOS/Write" ] || [ -z "$EXPECTED_VERSION" ] || [ -z "$
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 "$SCRIPT_DIR/verify-apple-silicon-app.sh" "$APP" --require-extensions
 
 ROOT="$(mktemp -d -t write-app-health)"
@@ -25,35 +26,19 @@ WRITE_SYNC_ROOT="$ROOT/workspace" \
 WRITE_HEALTH_CHECK=1 \
   "$APP/Contents/MacOS/Write" > "$REPORT"
 
-python3 - "$REPORT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" <<'PY'
+python3 - "$REPORT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$REPO_ROOT/mac/health-checks.json" <<'PY'
 import json
 import sys
 
-path, version, build = sys.argv[1:]
+path, version, build, manifest_path = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     report = json.load(handle)
 
-required = {
-    "bundle.release",
-    "build.attestation",
-    "bundle.extensions",
-    "selftest.markdown_identity",
-    "selftest.filename_codec",
-    "selftest.document_assets",
-    "selftest.document_projection",
-    "selftest.public_link",
-    "workflow.document_engine",
-    "workflow.collaboration",
-    "workflow.folder_trash_restore",
-    "workflow.sharing_access",
-    "workflow.comments",
-    "workflow.bookmark_recapture",
-    "workflow.cover_assets",
-    "state.persistence",
-    "sync.index",
-    "workspace.storage",
-    "finder.provider",
-}
+# The canonical list lives in Swift (WriteHealthChecks.required) and is
+# generated into this manifest, so retiring a check is one edit rather than
+# three hardcoded lists in three languages discovered over three failed ships.
+with open(manifest_path, encoding="utf-8") as handle:
+    required = set(json.load(handle)["required"])
 ids = {check["id"] for check in report.get("checks", [])}
 assert report.get("schemaVersion") == 1, "unexpected health schema"
 assert report.get("appVersion") == version, "health report version mismatch"

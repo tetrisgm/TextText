@@ -1,5 +1,12 @@
 # Execution plan: local MCP trust
 
+> **ARCHIVED / SUPERSEDED (historical record).** The buildable plan for the
+> decision now at `docs/archive/2026-07-28-decision-local-mcp-trust.md`. Tier 0
+> (section A) shipped in `0.145`; Tier 1 was never built because the loopback MCP
+> server was retired in `0.146` in favor of the `texttext` CLI. For the CURRENT
+> architecture see `docs/agent-interoperability.md`. Nothing below is current
+> project status.
+
 The buildable plan for `docs/decision-local-mcp-trust.md`. Written 2026-07-28
 after a de-risking spike. Read the decision doc first for why; this is what and
 in what order.

@@ -1,18 +1,21 @@
 # Assistant and workspace command architecture
 
-This document describes the implemented AI architecture as of 2026-07-28.
-Texttext has one shared workspace tool contract, an in-app provider adapter, a
-local Mac agent bridge, and a hosted MCP adapter for external agents. The web
-product does not call its own MCP server.
+This document describes the implemented AI architecture as of 2026-07-29.
+Texttext has one shared workspace tool contract, an in-app provider adapter, the
+`texttext` CLI for agents on this Mac, and a hosted MCP adapter for remote
+agents. The web product does not call its own MCP server.
 
 ## Architectural invariants
 
-- `src/lib/ai/tools.ts` is the source of truth for the 31 public workspace
-  tool names, Zod input schemas, JSON schemas, mutability, confirmation class,
-  and MCP annotations.
-- The in-app assistant, local Mac bridge, and hosted MCP server consume that
-  same contract. Their execution adapters differ because they run in different
-  trust and transport boundaries.
+- `src/lib/ai/tools.ts` is the source of truth for the public workspace tool
+  names, Zod input schemas, JSON schemas, mutability, confirmation class, and
+  MCP annotations. The lists in this document are generated from it by
+  `scripts/sync-tool-docs.ts`; edit the registry, not the list.
+- The in-app assistant and the hosted MCP server consume that same contract.
+  Their execution adapters differ because they run in different trust and
+  transport boundaries. The `texttext` CLI sits below the tool layer entirely:
+  it edits the workspace as files, so it inherits the same store, sync, and
+  audit path without a second command surface.
 - Product UI and assistant mutations use the same pool mutations and server
   actions. MCP mutations enter through server-side handlers and the same
   content store.
@@ -25,44 +28,45 @@ product does not call its own MCP server.
 - A delete command means Move to Trash. The shared surface exposes restore,
   but no permanent delete.
 
-## Shared 31-tool contract
+<!-- generated:tool-contract -->
+## Shared 30-tool contract
 
-The eight read-scope tools are:
+The 9 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
 3. `list_items`
-4. `list_trash`
-5. `read_item`
+4. `read_item`
+5. `open_item`
 6. `search`
-7. `list_comments`
-8. `list_item_assets`
+7. `list_trash`
+8. `list_comments`
+9. `list_document_templates`
 
-The 23 sync-scope tools are:
+The 21 sync-scope tools are:
 
-1. `create_folder`
-2. `rename_folder`
-3. `delete_folder`
-4. `restore_folder`
-5. `create_item`
-6. `update_item`
-7. `append_to_item`
+1. `list_access`
+2. `customize_document_template`
+3. `set_item_template`
+4. `create_item`
+5. `update_item`
+6. `append_to_item`
+7. `set_item_status`
 8. `move_item`
 9. `delete_item`
 10. `restore_item`
-11. `set_item_status`
-12. `set_item_metadata`
-13. `set_item_pinned`
-14. `list_access`
-15. `grant_access`
-16. `set_access_role`
-17. `revoke_access`
-18. `add_comment`
-19. `set_comment_resolved`
-20. `recapture_bookmark`
-21. `add_item_asset`
-22. `remove_item_asset`
-23. `set_item_cover`
+11. `add_item_asset`
+12. `remove_item_asset`
+13. `recapture_bookmark`
+14. `add_comment`
+15. `set_comment_resolved`
+16. `create_folder`
+17. `rename_folder`
+18. `delete_folder`
+19. `restore_folder`
+20. `set_access`
+21. `revoke_access`
+<!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
 workspace administration data. The contract has no permanent-delete tool.
@@ -107,13 +111,20 @@ browser.
 Texttext does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
 
-### Local Mac agent bridge
+### Agents on this Mac
 
-The Mac app exposes a loopback-only MCP endpoint at
-  Local agents use the `texttext` CLI (shipped in the app bundle), not a port.
-use it through the texttext CLI, with no token and no port. The bridge executes the same workspace
-commands against the signed-in Mac app and is never exposed beyond localhost.
-It is a transport for external local agents, not an AI model inside Texttext.
+An agent running on the same Mac does not speak a protocol. It uses the
+`texttext` CLI (`mac/Sources/TexttextCLI`), which ships inside the app bundle and
+edits documents as files in the File Provider workspace. There is no port, no
+token to paste, and no pairing step: the CLI runs as the user and reads the
+device credential the app already stores.
+
+Every mutating command publishes agent presence before it acts and clears it
+afterwards, so an agent appears as a named collaborator in the open document
+simply by doing its work. `docs/agent-interoperability.md` is the reference.
+
+The loopback MCP server this section used to describe was retired in `0.146`.
+Deleting the port deleted the whole local trust problem with it.
 
 ## Assistant status
 
@@ -145,9 +156,10 @@ leaking workspace data or provider credentials.
    key stays server-side and is never returned to the browser. The assistant
    exposes only tools that need no confirmation and cannot fetch a
    model-chosen URL.
-2. **Local agents over MCP: shipped.** Claude Code and Codex can connect to the
-  Local agents use the `texttext` CLI (shipped in the app bundle), not a port.
-   external client, and local file changes remain immediate.
+2. **Agents on this Mac: shipped.** Claude Code, Codex, and any other local
+   agent use the `texttext` CLI rather than a network endpoint. The model and
+   billing stay with that client, presence and audit intent are automatic, and
+   local file changes remain immediate.
 3. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
    ChatGPT, Cursor, and other MCP hosts can connect to `/api/mcp` using OAuth.
    Claude, Codex, and ChatGPT are the primary documented clients. Cursor and
@@ -237,5 +249,5 @@ to fail.
   both execution adapters and their tests.
 - Keep privacy and auditing below the tool layer.
 - Reusable versions live in `~/dev/stack` under `mcp-kit` and the Mac kit
-  templates. Port command-contract, local-bridge, or OAuth hardening back to
+  templates. Port command-contract, local-CLI, or OAuth hardening back to
   the relevant kit and note it in the kit README.

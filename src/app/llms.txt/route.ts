@@ -39,6 +39,35 @@ Base URL: ${origin}/@{username}
 - {base}/feed.xml, {base}/atom.xml, {base}/feed.json: feeds
 - {base}/sitemap.xml: sitemap
 
+## If you are running on the user's Mac, use the CLI instead
+
+Texttext for macOS ships a "texttext" command inside the app bundle. It edits
+documents as files, owns the document format so an edit cannot corrupt a
+package, writes atomically, and shows you in the open document as a named
+collaborator while you work. It needs no token, no port, and no OAuth, because
+it runs as the user.
+
+Check for it with "command -v texttext", falling back to
+/Applications/Texttext.app/Contents/MacOS/texttext.
+
+  texttext ls                                    list documents
+  texttext sections <doc>                        list the headings
+  texttext read <doc> [--section "## Heading"]   read all of it, or one section
+  texttext edit <doc> --section "## Heading"     replace one section (stdin)
+  texttext write <doc>                           replace the body (stdin)
+  texttext append <doc>                          add to the end (stdin)
+  texttext new <title> [--folder F]              create a document
+  texttext open <doc>                            open it in the app
+
+Always pass --as <your name> and --message "<what this change is for>". They are
+how the person sees who is working and why, live and in the history afterwards.
+Prefer --section over rewriting a whole document, so a person typing elsewhere
+is not disturbed.
+
+Use the MCP endpoint below when the CLI is absent (a browser, a phone, another
+machine) or for work with no file equivalent: publishing, sharing and access,
+comments, templates, and Trash.
+
 ## Authenticated MCP surface
 
 MCP Streamable HTTP endpoint: ${origin}/api/mcp

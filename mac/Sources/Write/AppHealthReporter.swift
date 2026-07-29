@@ -59,6 +59,39 @@ private struct WriteBuildAttestation: Decodable {
     let suites: [Suite]
 }
 
+/// The canonical list of health checks a release must report.
+///
+/// This is the ONE place the set is written down. The Swift test and
+/// `mac/scripts/verify-app-health.sh` both read it from
+/// `mac/health-checks.json`, which `scripts/sync-health-checks.ts` regenerates
+/// from this file. Retiring a check used to mean editing three hardcoded lists
+/// in three languages and discovering each omission through a separate failed
+/// release; now it is one edit here plus a regenerate.
+enum WriteHealthChecks {
+    /// Everything a passing release report must contain, in report order.
+    static let required = [
+        "bundle.release",
+        "build.attestation",
+        "bundle.extensions",
+        "selftest.markdown_identity",
+        "selftest.filename_codec",
+        "selftest.document_assets",
+        "selftest.document_projection",
+        "selftest.public_link",
+        WriteWorkflowHealth.documentEngine,
+        WriteWorkflowHealth.collaboration,
+        WriteWorkflowHealth.folderTrashRestore,
+        WriteWorkflowHealth.sharingAccess,
+        WriteWorkflowHealth.comments,
+        WriteWorkflowHealth.bookmarkRecapture,
+        WriteWorkflowHealth.coverAssets,
+        "state.persistence",
+        "sync.index",
+        "workspace.storage",
+        "finder.provider",
+    ]
+}
+
 enum WriteWorkflowHealth {
     static let documentEngine = "workflow.document_engine"
     static let collaboration = "workflow.collaboration"

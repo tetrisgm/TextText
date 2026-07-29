@@ -12,9 +12,11 @@ stays its own separate project.
 When taking over existing work, read `docs/codex/HANDOFF.md` after this file,
 `AGENTS.md`, and `DESIGN.md`. It is the only current handoff and it wins over
 this file whenever the two disagree, because it is updated per body of work.
-Files named `mcp-brief.md` and `ui-batch-brief.md` under `docs/codex/` are
-historical design references unless the handoff or the user's latest request
-explicitly activates them.
+
+Everything under `docs/archive/` is a delivered or superseded historical record.
+Each one opens with a banner naming what replaced it. Never treat one as current
+status, and when a plan finishes, move it there rather than leaving it beside the
+live docs.
 
 ## Hard rules
 

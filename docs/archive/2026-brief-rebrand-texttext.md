@@ -1,5 +1,8 @@
 # Rebrand to Texttext and texttext.app
 
+> **ARCHIVED / DELIVERED (historical record).** The rebrand to Texttext at
+> texttext.app is complete. Nothing below is current project status.
+
 Owner decision (2026): the product is now **Texttext**, hosted at **texttext.app**.
 Use the user-visible name "Texttext", use texttext.app as the canonical domain,
 and remove every trace of the former personal branding. Work on `main` in
