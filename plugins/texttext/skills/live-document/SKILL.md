@@ -5,6 +5,26 @@ description: Use one Texttext item as a live shared canvas while the user and an
 
 # Use a live Texttext document
 
+## With the `texttext` CLI
+
+This skill is what the CLI is built for: the person watches the document change
+while you work in it.
+
+```sh
+texttext open "<doc>" --as codex           # put it on their screen
+texttext edit "<doc>" --section "## Plan" --as codex --message "draft the plan"
+```
+
+Passing `--as` is what makes you appear in the document with your own name and
+colour, anchored at the section you are editing. Keep working section by section
+so the person can watch progress arrive in place, rather than the whole document
+being replaced under them.
+
+Re-read before each write. The person is editing the same document at the same
+time, and their changes must survive yours.
+
+## With MCP, when the CLI is not available
+
 1. Call `get_workspace`, then `list_folders`.
 2. Search for the document by project identity and title before creating it.
 3. Create the item only when no correct match exists. Use a stable

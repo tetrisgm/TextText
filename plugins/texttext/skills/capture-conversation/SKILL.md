@@ -5,6 +5,22 @@ description: Save a useful AI answer, prompt-response pair, or full conversation
 
 # Capture a conversation
 
+## With the `texttext` CLI
+
+Distil the conversation as described below, then append it to an existing note or
+write a new one:
+
+```sh
+texttext ls Notes                              # find a home for it
+texttext append "<doc>" --from /tmp/capture.md \
+  --as codex --message "capture the pricing discussion"
+```
+
+The CLI has no `new` command yet, so to start a fresh note use MCP's
+`create_item`, then keep working on it with the CLI.
+
+## With MCP
+
 1. Call `list_folders` and choose the user's requested folder. Prefer a notes
    folder when the user does not specify one.
 2. Search for an existing capture of the same topic before creating a duplicate.

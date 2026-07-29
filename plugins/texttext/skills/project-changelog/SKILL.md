@@ -5,6 +5,34 @@ description: Create or update a durable Texttext project record and append user-
 
 # Maintain a project changelog
 
+## With the `texttext` CLI, which is the fast path
+
+```sh
+texttext ls | grep -i changelog          # find it once
+texttext sections "<the changelog>"      # entries are grouped by version
+texttext read "<the changelog>" --section "## 0.143"
+```
+
+To add an entry, read the document, put the new version section on top, and
+write it back in one go:
+
+```sh
+texttext read "<the changelog>" > /tmp/log.md
+# prepend the new "## <version>" section to /tmp/log.md
+texttext write "<the changelog>" --from /tmp/log.md \
+  --as codex --message "0.144 changelog entry"
+```
+
+Newest on top is the rule, so a whole-body write is correct here. Use
+`--section` when you are correcting an entry that already exists, since it
+leaves every other entry untouched.
+
+Read the document again before writing if any time has passed. Never write an
+entry you have not just derived from the current content, or you will drop
+someone else's.
+
+## With MCP, when the CLI is not available
+
 1. Call `list_folders`, then search for the project's existing changelog or
    project note.
 2. If several matches exist, read them and use the one whose project identity
