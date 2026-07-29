@@ -58,6 +58,24 @@ const blocks: Array<{ file: string; marker: string; body: string }> = [
   },
   {
     file: "docs/mcp.md",
+    marker: "tool-table",
+    body: [
+      `## Tools (${names.length})`,
+      "",
+      "| Tool | Scope | Effect |",
+      "|------|-------|--------|",
+      ...names.map((name) => {
+        const tool = WORKSPACE_TOOL_DEFINITIONS[name];
+        const scope =
+          tool.requiredScope === "read" ? "`read` or `sync`" : "`sync`";
+        // Collapse to one line; the registry description is the source text.
+        const effect = tool.description.replace(/\s+/g, " ").trim();
+        return `| \`${name}\` | ${scope} | ${effect} |`;
+      }),
+    ].join("\n"),
+  },
+  {
+    file: "docs/mcp.md",
     marker: "scope-table",
     body: [
       "| Scope | Access |",

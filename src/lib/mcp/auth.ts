@@ -3,7 +3,7 @@
 // The token owner's OWNED blog is the workspace, so no tool below can ever
 // cross tenants.
 
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import type { AuthInfo } from "./types";
 import {
   WORKSPACE_SCOPE_CAPABILITIES,
   WORKSPACE_TOOL_DEFINITIONS,

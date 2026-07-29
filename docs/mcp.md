@@ -31,7 +31,6 @@ answered with `400` and `-32022`, listing what it does support.
 ## Endpoint and transport
 
 - Endpoint: `https://{host}/api/mcp`, Streamable HTTP, POST only.
-- `/api/mcp/mcp` is also served for clients that append a transport segment.
 - `GET` and `DELETE` answer `405`. Those were the session and standalone-stream
   verbs and this revision removed both.
 - `/.well-known/mcp.json` provides zero-configuration server discovery.
@@ -157,47 +156,42 @@ or workspace selector that could cross that boundary.
 - Direct access grants, collaboration comments, bookmark recapture, and item
   cover and asset references use the same audited command surface.
 
-## Tools (31)
+<!-- generated:tool-table -->
+## Tools (30)
 
-| Tool | Scope | Main input | Effect |
-|------|-------|------------|--------|
-| `get_workspace` | `read` or `sync` | none | Return workspace identity, supported modes, scope capabilities, and effective access. |
-| `list_folders` | `read` or `sync` | none | List accessible folders with ids, paths, modes, parents, and counts. |
-| `list_items` | `read` or `sync` | `folder_path?`, `limit?` | List live items in one folder with metadata, revision, and hash. |
-| `list_trash` | `read` or `sync` | none | List soft-deleted item and folder restoration units. |
-| `read_item` | `read` or `sync` | `id` | Return one live item as Markdown with metadata. |
-| `search` | `read` or `sync` | `query`, `limit?` | Search accessible live titles, excerpts, and bodies. |
-| `create_folder` | `sync` | `parent_path`, `name` | Create a subfolder that inherits its parent's mode and privacy rules. |
-| `rename_folder` | `sync` | `folder_id`, `name` | Change a folder's display name while preserving its stable id and path. |
-| `delete_folder` | `sync` | `folder_id` | Move a folder subtree and its live items to Trash. |
-| `restore_folder` | `sync` | `folder_id` | Restore a folder subtree and the items deleted with it. |
-| `create_item` | `sync` | `folder_path` plus `markdown`, or structured fields | Create one unpinned draft in the target folder. |
-| `update_item` | `sync` | `id`, content, `if_match_hash?` | Update title, excerpt, and/or body without changing status, kind, folder, or pin state. |
-| `append_to_item` | `sync` | `id`, `markdown_fragment`, `if_match_hash?` | Append Markdown to the body without changing metadata. |
-| `move_item` | `sync` | `id`, `folder_path`, `if_match_hash?` | Move an item between folders of the same mode. |
-| `delete_item` | `sync` | `id`, `if_match_hash?` | Soft-delete an item by moving it to Trash. |
-| `restore_item` | `sync` | `id` | Restore one item from Trash with its previous status. |
-| `set_item_status` | `sync` | `id`, `status`, `if_match_hash?` | Publish or unpublish a blog item. Notes and bookmarks reject publication. |
-| `set_item_metadata` | `sync` | `id`, metadata, `if_match_hash?` | Update supported presentation metadata without changing content or status. |
-| `set_item_pinned` | `sync` | `id`, `pinned`, `if_match_hash?` | Pin or unpin an item in workspace and public listings. |
-| `list_access` | `sync` | `scope_type`, `scope_id?` | List direct workspace, folder, or item access grants. |
-| `grant_access` | `sync` | target, `email`, `role` | Invite an email address with an explicit role. |
-| `set_access_role` | `sync` | target, `access_id`, `role` | Change an existing direct access role. |
-| `revoke_access` | `sync` | target, `access_id` | Revoke a direct access grant. |
-| `list_comments` | `read` or `sync` | `id`, `state?` | List item comments, replies, anchors, and resolution state. |
-| `add_comment` | `sync` | `id`, `body`, reply or anchor fields | Add a collaboration comment or reply. |
-| `set_comment_resolved` | `sync` | `id`, `comment_id`, `resolved` | Resolve or reopen a comment thread. |
-| `recapture_bookmark` | `sync` | `id`, `if_match_hash?` | Queue a fresh full bookmark capture without hiding the completed capture. |
-| `list_item_assets` | `read` or `sync` | `id` | List referenced cover, body, gallery, video, capture, and screenshot assets. |
-| `add_item_asset` | `sync` | `id`, `source_url`, `placement`, `if_match_hash?` | Import a public image or video into Texttext storage and attach it. |
-| `remove_item_asset` | `sync` | `id`, `asset_url`, `if_match_hash?` | Remove item references to an asset without deleting shared storage. |
-| `set_item_cover` | `sync` | `id`, `source`, cover fields, `if_match_hash?` | Set a URL cover, automatic cover selection, or no cover. |
-
-The shared contract marks folder and item Trash/restore, publication changes,
-access changes, and asset removal as requiring explicit human confirmation
-immediately before the call. External clients are responsible for presenting
-that confirmation. The in-app assistant gates those calls through its own
-confirmation callback.
+| Tool | Scope | Effect |
+|------|-------|--------|
+| `get_workspace` | `read` or `sync` | Return this workspace's handle, name, your effective access, and server capabilities. |
+| `list_folders` | `read` or `sync` | List every folder you can see with its id, path, mode, and item count. |
+| `list_items` | `read` or `sync` | List the live items in one folder with their ids, titles, tags, status, and content hash. |
+| `read_item` | `read` or `sync` | Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id. |
+| `open_item` | `read` or `sync` | Open one exact item in Texttext for the user and join its live collaboration session. |
+| `search` | `read` or `sync` | Search item titles, excerpts, and bodies you can access, and return matches with snippets. |
+| `list_trash` | `read` or `sync` | List soft-deleted items and folder restore-units. Nothing here is permanently deleted. |
+| `list_comments` | `read` or `sync` | List comment threads on one item, with anchored quotes and resolution state. |
+| `list_access` | `sync` | List who can access the workspace, one folder, or one item, and their role. |
+| `list_document_templates` | `read` or `sync` | List the immutable built-in and workspace templates available for shaping documents. |
+| `customize_document_template` | `sync` | Create the next immutable workspace template version by applying constrained operations to an existing valid template. Templates are data only and cannot contain HTML, CSS, or JavaScript. |
+| `set_item_template` | `sync` | Apply one immutable document template version to an item without changing its content or audience. |
+| `create_item` | `sync` | Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates. |
+| `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, and publication date. Full markdown may update the same fields. Cannot publish, unpublish, or move an item. |
+| `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Automated clients should pass an idempotency_key derived from the source event or commit. |
+| `set_item_status` | `sync` | Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `move_item` | `sync` | Move one item to another folder of the same mode. |
+| `delete_item` | `sync` | Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
+| `restore_item` | `sync` | Restore one item from Trash with its previous status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `add_item_asset` | `sync` | Import one public image or video URL into Texttext and attach it as cover, body, or gallery. |
+| `remove_item_asset` | `sync` | Remove references to one asset URL from an item's cover, body, and gallery. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
+| `recapture_bookmark` | `sync` | Re-fetch one bookmark from its saved URL. The current capture stays visible until the new one lands. |
+| `add_comment` | `sync` | Add a comment or reply on one item, optionally anchored to an exact quote. |
+| `set_comment_resolved` | `sync` | Resolve or reopen one comment thread. |
+| `create_folder` | `sync` | Create a subfolder under an existing folder path; it inherits the parent's mode and privacy. |
+| `rename_folder` | `sync` | Rename one folder. Its id and path do not change. |
+| `delete_folder` | `sync` | Move one folder subtree to Trash. Restorable; never permanently deleted. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
+| `restore_folder` | `sync` | Restore one folder subtree from Trash. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `set_access` | `sync` | Grant or change one person's role on the workspace, a folder, or an item, by email. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `revoke_access` | `sync` | Revoke one person's access to the workspace, a folder, or an item. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+<!-- /generated:tool-table -->
 
 ## Safety rules for agents
 

@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CapabilityCollector } from "@/lib/mcp/types";
 import { describe, expect, it } from "vitest";
 import { registerAgentSurface } from "@/lib/mcp/agent-surface";
 
@@ -32,7 +32,7 @@ function registrations() {
     ) {
       prompts.push({ name, callback });
     },
-  } as unknown as McpServer;
+  } as unknown as CapabilityCollector;
   registerAgentSurface(server);
   return { resources, prompts };
 }

@@ -1,6 +1,5 @@
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import type { AuthInfo } from "./types";
+import type { CallToolResult, ToolAnnotations } from "./types";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { recordAction, type AuditActorType, type AuditEntry } from "@/lib/audit";
@@ -117,17 +116,6 @@ type RegisteredCallback = (
   args: Record<string, unknown>,
   extra: ToolContext,
 ) => Promise<CallToolResult>;
-type RegisterTool = (
-  name: string,
-  config: {
-    title: string;
-    description: string;
-    inputSchema: z.ZodType;
-    annotations: ToolAnnotations;
-  },
-  callback: RegisteredCallback,
-) => unknown;
-
 export type McpScopeAccess = "full" | "read-only" | "none";
 
 function isReadOnlyScope(scope: string): boolean {
@@ -1958,23 +1946,6 @@ export async function executeMcpTool(
       }
     }
 
-  }
-}
-
-export function registerWriteTools(server: McpServer): void {
-  const register = server.registerTool.bind(server) as unknown as RegisterTool;
-  for (const name of WORKSPACE_TOOL_NAMES) {
-    const definition = WORKSPACE_TOOL_DEFINITIONS[name];
-    register(
-      name,
-      {
-        title: definition.title,
-        description: definition.description,
-        inputSchema: definition.inputSchema,
-        annotations: definition.annotations,
-      },
-      (args, extra) => executeMcpTool(name, args, extra),
-    );
   }
 }
 

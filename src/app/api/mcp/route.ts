@@ -1,11 +1,12 @@
-// The canonical MCP endpoint: {origin}/api/mcp, Streamable HTTP, protocol
-// revision 2026-07-28. /api/mcp/mcp (the [transport] sibling) serves clients
-// that still append a transport segment to the URL.
+// The MCP endpoint: {origin}/api/mcp, Streamable HTTP, protocol revision
+// 2026-07-28. This revision specifies a single endpoint path, so there is no
+// /api/mcp/mcp sibling any more; that existed only for the old library's
+// [transport] path convention.
 //
-// GET and DELETE answer 405: this revision removed the standalone SSE stream
-// and protocol-level sessions, so those verbs have no meaning here.
+// GET and DELETE answer 405: the standalone SSE stream and protocol-level
+// sessions are both gone.
 
-import { handleMcpRequest } from "@/lib/mcp/handler";
+import { handleMcpRequest } from "@/lib/mcp/streamable-http";
 
 export const dynamic = "force-dynamic";
 

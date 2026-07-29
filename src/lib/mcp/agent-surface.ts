@@ -1,10 +1,8 @@
-import {
-  ResourceTemplate,
-  type McpServer,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ResourceTemplate } from "./types";
+import type { CapabilityCollector } from "./types";
+import type { CallToolResult } from "./types";
 import { z } from "zod";
-import { runWorkspaceToolForAuth } from "./tools";
+import { runWorkspaceToolForAuth, type ToolContext } from "./tools";
 
 const AGENT_GUIDE = `# Texttext agent guide
 
@@ -60,7 +58,10 @@ function valueFromToolResult(result: CallToolResult): unknown {
   }
 }
 
-export function registerAgentSurface(server: McpServer): void {
+/** Declares this server's resources and prompts into a collector. There is no
+ * long-lived server object in MCP 2026-07-28, so these are data: registry.ts
+ * collects them once and the transport looks them up per request. */
+export function registerAgentSurface(server: CapabilityCollector): void {
   server.registerResource(
     "texttext-agent-guide",
     "texttext://agent-guide",
@@ -90,9 +91,10 @@ export function registerAgentSurface(server: McpServer): void {
       mimeType: "application/json",
     },
     async (_uri, extra) => {
+      const context = extra as ToolContext;
       const [workspace, folders] = await Promise.all([
-        runWorkspaceToolForAuth("get_workspace", {}, extra),
-        runWorkspaceToolForAuth("list_folders", {}, extra),
+        runWorkspaceToolForAuth("get_workspace", {}, context),
+        runWorkspaceToolForAuth("list_folders", {}, context),
       ]);
       return {
         contents: [
@@ -115,18 +117,18 @@ export function registerAgentSurface(server: McpServer): void {
 
   server.registerResource(
     "texttext-item",
-    new ResourceTemplate("texttext://items/{id}", { list: undefined }),
+    new ResourceTemplate("texttext://items/{id}"),
     {
       title: "Texttext item",
       description: "One item, including its Markdown, metadata, and assets.",
       mimeType: "application/json",
     },
     async (uri, variables, extra) => {
-      const id = variables.id;
+      const id = (variables as Record<string, string | string[]>).id;
       const result = await runWorkspaceToolForAuth(
         "read_item",
         { id: Array.isArray(id) ? id[0] : id },
-        extra,
+        extra as ToolContext,
       );
       return {
         contents: [

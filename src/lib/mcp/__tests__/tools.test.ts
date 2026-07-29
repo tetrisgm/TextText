@@ -1,6 +1,4 @@
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { AuthInfo, CallToolResult } from "@/lib/mcp/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -118,10 +116,11 @@ import {
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
 import {
-  registerWriteTools,
+  executeMcpTool,
   resolveMcpScopeAccess,
   runWorkspaceToolForSession,
 } from "@/lib/mcp/tools";
+import { listTools } from "@/lib/mcp/registry";
 
 type Registration = {
   name: string;
@@ -132,19 +131,21 @@ type Registration = {
   ) => Promise<CallToolResult>;
 };
 
+/** The tool catalog the transport serves, in the same shape these tests were
+ * written against. There is no server object to register onto any more, so this
+ * reads the registry directly. */
 function registrations(): Registration[] {
-  const entries: Registration[] = [];
-  const server = {
-    registerTool(
-      name: string,
-      config: Record<string, unknown>,
-      callback: Registration["callback"],
-    ) {
-      entries.push({ name, config, callback });
-    },
-  } as unknown as McpServer;
-  registerWriteTools(server);
-  return entries;
+  return listTools().map((tool) => ({
+    name: tool.name,
+    config: {
+      title: tool.title,
+      description: tool.description,
+      inputSchema: WORKSPACE_TOOL_DEFINITIONS[tool.name].inputSchema,
+      annotations: tool.annotations,
+    } as Record<string, unknown>,
+    callback: (args, extra) =>
+      executeMcpTool(tool.name, args, extra) as Promise<CallToolResult>,
+  }));
 }
 
 function auth(

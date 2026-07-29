@@ -9,8 +9,8 @@
 // transport was replaced. Tools come straight from the shared workspace
 // registry, which was always the source of truth.
 
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ResourceTemplate } from "./types";
+import type { CallToolResult } from "./types";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
