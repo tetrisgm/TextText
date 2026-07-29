@@ -286,6 +286,68 @@ made with `--remote-debugging-pipe` after concluding a port could not be
 secured. The cost is that MCP clients cannot speak AF_UNIX directly, hence the
 bridge binary.
 
+### The UX, which is the part that decides whether Tier 1 is worth doing
+
+The usual objection to a local token is friction, and it is the reason Figma,
+Paper, and Blender all chose no auth. **That objection does not apply here,
+because Texttext generates the connect command itself.** `ConnectPanel.tsx:62-65`
+already renders a one-click copy. Adding a credential turns it into:
+
+```
+claude mcp add --transport http --scope user texttext http://127.0.0.1:47118/mcp \
+  --header "Authorization: Bearer wsk_..."
+```
+
+Still one command, still one click. Setup friction is unchanged. Every other app
+that requires a local key makes the user go find it (Obsidian: open settings,
+copy, hand-edit a config; Jupyter: scrape terminal output). We own both ends, so
+the token can be invisible.
+
+**Do not copy Xcode's pairing dialog.** It is the best-designed consent surface
+in the field and it is failing in practice: it re-prompts per launch and per
+`/clear`, CLI clients without a bundle identifier hang on it, and users ship
+AppleScript auto-clickers to defeat it. A prompt that users automate away is
+worse than no prompt, because it launders consent: the appearance of a human
+decision with none of the substance. A prompt must be rare and consequential or
+it becomes a click-through.
+
+The consent act is the paste. A user who copies a credential out of their own
+workspace and hands it to a named agent has consented more deliberately, and
+with better information, than one who clicks Allow on a dialog that appeared
+while they were in Terminal. A dialog on top of that is double consent.
+
+**Never prompt on a failed or unknown connection.** That is a phishing
+primitive: an attacker connects, the prompt appears, the user clicks yes to
+dismiss it. An unpaired client gets a 401 whose body says how to pair, and
+nothing more.
+
+Friction is justified in exactly one place: audience-changing and destructive
+actions (publish, share, delete). Keep that confirmation, fix it per section 5
+(name the caller, queue rather than replace, native so it is visible when the
+window is closed). Note that MCP clients already run their own per-tool approval
+layer; ours governs which app may connect, theirs governs which tool may run, so
+the two should not duplicate each other.
+
+**Make the token per client and named**, and derive the collaborator identity
+from the token rather than from `clientInfo`. That single change closes the
+spoofing hole in section 5 and makes the 0.142 avatar verified rather than
+self-declared, while giving per-agent revocation instead of all-or-nothing.
+
+Resulting comparison:
+
+| | Figma / Paper (the expectation) | Xcode 26 | Recommended |
+|---|---|---|---|
+| Setup | one command | one command | one command, unchanged |
+| First connect | nothing | OS dialog, recurring | nothing |
+| While working | invisible | dialog fatigue | avatar plus cursor (shipped in 0.142) |
+| Consequential action | client's own prompt | client's own prompt | named native confirm |
+| Revoke | impossible | unclear | one click in Connect |
+| Attribution | none | none | per-agent audit rows |
+
+Scope choice belongs in the same surface: offer a read-only and a read-write
+command side by side, the way the hosted OAuth consent already distinguishes
+`read` from `sync`, rather than hiding the distinction.
+
 ### Explicitly not recommended
 
 - **Port randomization.** A local process reads the discovery file or runs
