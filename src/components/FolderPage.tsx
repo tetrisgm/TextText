@@ -881,6 +881,38 @@ function UniversalFolderContents({
     });
   }, [collectionSpec, items]);
 
+  // A calendar folder places items on a month grid by the template's dateBy
+  // date field. The offset is which month is showing, relative to now.
+  const [calendarOffset, setCalendarOffset] = useState(0);
+  const calendar = useMemo(() => {
+    const collection = collectionDefinition?.collection;
+    if (!collection || collection.layout !== "calendar" || !collection.dateBy) {
+      return null;
+    }
+    const fieldId = collection.dateBy.slice("content.fields.".length);
+    const field = collectionDefinition?.fields.find(
+      (entry) => entry.id === fieldId,
+    );
+    if (!field || field.type !== "date") return null;
+    const byDay = new Map<string, typeof sorted>();
+    const undated: typeof sorted = [];
+    for (const post of sorted) {
+      const value = post.document?.content.fields[fieldId];
+      const key =
+        typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)
+          ? value.slice(0, 10)
+          : null;
+      if (!key) {
+        undated.push(post);
+        continue;
+      }
+      const list = byDay.get(key) ?? [];
+      list.push(post);
+      byDay.set(key, list);
+    }
+    return { byDay, undated };
+  }, [collectionDefinition, sorted]);
+
   // A board folder groups its items into one column per option of the
   // template's groupBy enum, in declared option order, with an Unsorted
   // column for items that have no value yet.
@@ -1213,6 +1245,128 @@ function UniversalFolderContents({
               </div>
             );
           };
+          if (calendar) {
+            const now = new Date();
+            const anchor = new Date(
+              now.getFullYear(),
+              now.getMonth() + calendarOffset,
+              1,
+            );
+            const monthLabel = anchor.toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            });
+            const pad = (value: number) => String(value).padStart(2, "0");
+            const dayKey = (year: number, month: number, day: number) =>
+              `${year}-${pad(month + 1)}-${pad(day)}`;
+            const todayKey = dayKey(
+              now.getFullYear(),
+              now.getMonth(),
+              now.getDate(),
+            );
+            const daysInMonth = new Date(
+              anchor.getFullYear(),
+              anchor.getMonth() + 1,
+              0,
+            ).getDate();
+            const cells: { key: string | null; day: number | null }[] = [];
+            for (let blank = 0; blank < anchor.getDay(); blank += 1) {
+              cells.push({ key: null, day: null });
+            }
+            for (let day = 1; day <= daysInMonth; day += 1) {
+              cells.push({
+                key: dayKey(anchor.getFullYear(), anchor.getMonth(), day),
+                day,
+              });
+            }
+            return (
+              <div className="universal-item-calendar" aria-label="Folder calendar">
+                <header className="universal-item-calendar-bar">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarOffset((offset) => offset - 1)}
+                    aria-label="Previous month"
+                  >
+                    &lsaquo;
+                  </button>
+                  <h2>{monthLabel}</h2>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarOffset((offset) => offset + 1)}
+                    aria-label="Next month"
+                  >
+                    &rsaquo;
+                  </button>
+                </header>
+                <div className="universal-item-calendar-grid">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                    (weekday) => (
+                      <div
+                        key={weekday}
+                        className="universal-item-calendar-dow"
+                        aria-hidden="true"
+                      >
+                        {weekday}
+                      </div>
+                    ),
+                  )}
+                  {cells.map((cell, index) => (
+                    <div
+                      key={cell.key ?? `blank-${index}`}
+                      className={`universal-item-calendar-cell${
+                        cell.key === todayKey ? " is-today" : ""
+                      }${cell.day === null ? " is-blank" : ""}`}
+                    >
+                      {cell.day !== null ? (
+                        <span className="universal-item-calendar-daynum">
+                          {cell.day}
+                        </span>
+                      ) : null}
+                      {cell.key
+                        ? (calendar.byDay.get(cell.key) ?? []).map((post) => (
+                            <Link
+                              key={itemKey(post)}
+                              className="universal-item-calendar-chip"
+                              href={blogPostPath(blog, post)}
+                              onClick={(event) => {
+                                if (!onOpenPost || !shouldOpenLocally(event)) {
+                                  return;
+                                }
+                                event.preventDefault();
+                                onOpenPost(post);
+                              }}
+                            >
+                              {post.title || "Untitled"}
+                            </Link>
+                          ))
+                        : null}
+                    </div>
+                  ))}
+                </div>
+                {calendar.undated.length > 0 ? (
+                  <div className="universal-item-calendar-undated">
+                    <h3>Undated</h3>
+                    <div>
+                      {calendar.undated.map((post) => (
+                        <Link
+                          key={itemKey(post)}
+                          className="universal-item-calendar-chip"
+                          href={blogPostPath(blog, post)}
+                          onClick={(event) => {
+                            if (!onOpenPost || !shouldOpenLocally(event)) return;
+                            event.preventDefault();
+                            onOpenPost(post);
+                          }}
+                        >
+                          {post.title || "Untitled"}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          }
           if (board) {
             const boardColumns = [
               ...board.columns,

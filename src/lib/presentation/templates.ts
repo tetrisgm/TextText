@@ -1807,11 +1807,12 @@ const calendar = {
     ],
   },
   collection: {
-    layout: "timeline",
+    layout: "calendar",
     columns: 1,
     gap: "sm",
+    dateBy: "content.fields.publishDate",
     sort: [{ field: "content.fields.publishDate", direction: "asc" }],
-    filters: [{ field: "content.fields.pieceStatus", op: "neq", value: "published" }],
+    filters: [],
     item: {
       type: "stack",
       gap: "xs",

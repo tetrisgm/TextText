@@ -572,13 +572,19 @@ export type CollectionFilter = z.infer<typeof collectionFilterSchema>;
 
 export const collectionRenderSchema = z
   .object({
-    layout: z.enum(["list", "cards", "timeline", "index", "single", "board"]),
+    layout: z.enum(["list", "cards", "timeline", "index", "single", "board", "calendar"]),
     columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(3),
     gap: z.enum(SPACING_TOKENS).default("md"),
     /** Board grouping: one column per option of a single-select enum field,
      * plus an unsorted column for items without a value. Only meaningful for
      * the board layout; validated against the declared fields. */
     groupBy: z
+      .string()
+      .regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/)
+      .optional(),
+    /** Calendar placement: the declared date field whose value puts an item
+     * on a day. Only meaningful for the calendar layout. */
+    dateBy: z
       .string()
       .regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/)
       .optional(),
@@ -850,6 +856,18 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
     if (declared.type !== "enum" || declared.multiple) {
       throw new Error(
         `collection groupBy requires a single-select enum field, not ${declared.type} (${id})`,
+      );
+    }
+  }
+  if (template.collection.dateBy) {
+    const id = template.collection.dateBy.slice(FIELD_PREFIX.length);
+    const declared = fields.get(id);
+    if (!declared) {
+      throw new Error(`collection dateBy references undeclared field ${id}`);
+    }
+    if (declared.type !== "date") {
+      throw new Error(
+        `collection dateBy requires a date field, not ${declared.type} (${id})`,
       );
     }
   }

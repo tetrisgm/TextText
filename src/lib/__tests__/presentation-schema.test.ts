@@ -81,6 +81,17 @@ describe("closed presentation contract", () => {
     expect(() => validateTemplateDefinition(broken)).toThrow(/undeclared/);
   });
 
+  it("accepts calendar placement on a date field and rejects anything else", () => {
+    const calendar = requireBuiltinTemplate("texttext.calendar");
+    expect(calendar.collection.layout).toBe("calendar");
+    expect(calendar.collection.dateBy).toBe("content.fields.publishDate");
+    const broken = structuredClone(calendar) as { collection: { dateBy?: string } };
+    broken.collection.dateBy = "content.fields.author";
+    expect(() => validateTemplateDefinition(broken)).toThrow(/date field/);
+    broken.collection.dateBy = "content.fields.nonexistent";
+    expect(() => validateTemplateDefinition(broken)).toThrow(/undeclared/);
+  });
+
   it("keeps presentation data portable in the document snapshot", () => {
     const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
     expect(document).toEqual({
