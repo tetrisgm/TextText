@@ -92,6 +92,21 @@ describe("closed presentation contract", () => {
     expect(() => validateTemplateDefinition(broken)).toThrow(/undeclared/);
   });
 
+  it("derived facts validate their rows field and sub-field types", () => {
+    const recipe = requireBuiltinTemplate("texttext.recipe");
+    const broken = structuredClone(recipe) as {
+      item: { children: { children?: unknown[] }[] };
+    };
+    // Reroute the derived entry to a text sub-field; validation must refuse.
+    const masthead = broken.item.children.find(
+      (child) => (child as { type?: string }).type === "masthead",
+    ) as { children: { type?: string; entries?: { derive?: { of?: string } }[] }[] };
+    const facts = masthead.children.find((child) => child.type === "facts")!;
+    const derived = facts.entries!.find((entry) => entry.derive)!;
+    derived.derive!.of = "row.instruction";
+    expect(() => validateTemplateDefinition(broken)).toThrow(/facts sum of/);
+  });
+
   it("keeps presentation data portable in the document snapshot", () => {
     const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
     expect(document).toEqual({

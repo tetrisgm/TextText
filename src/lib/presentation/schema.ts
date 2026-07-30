@@ -253,7 +253,15 @@ type RenderNodeInput =
       id?: string;
       showWhen?: string;
       variant?: "table" | "strip" | "pills";
-      entries: { bind: string; label?: string; format?: "date" | "relative" | "countdown" }[];
+      entries: {
+        bind: string;
+        label?: string;
+        format?: "date" | "relative" | "countdown";
+        derive?:
+          | { op: "count" }
+          | { op: "sum"; of: string }
+          | { op: "doneOf"; of: string };
+      }[];
     }
   | {
       type: "checklist";
@@ -436,7 +444,9 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       showIcon: z.boolean().default(true),
     }).strict(),
     // facts: the labeled metadata header. table | strip | pills; empty
-    // entries are skipped so heavy optional schemas stay light.
+    // entries are skipped so heavy optional schemas stay light. An entry may
+    // DERIVE its value from a rows field instead of reading a scalar: count
+    // of rows, sum of a numeric sub-field, or a done-of-total fraction.
     z.object({
       ...sharedNode,
       type: z.literal("facts"),
@@ -447,6 +457,13 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
             bind: bindingSchema,
             label: z.string().trim().min(1).max(80).optional(),
             format: z.enum(["date", "relative", "countdown"]).optional(),
+            derive: z
+              .discriminatedUnion("op", [
+                z.object({ op: z.literal("count") }).strict(),
+                z.object({ op: z.literal("sum"), of: rowBindingSchema }).strict(),
+                z.object({ op: z.literal("doneOf"), of: rowBindingSchema }).strict(),
+              ])
+              .optional(),
           }).strict(),
         )
         .min(1)
@@ -711,6 +728,17 @@ function validateTreeBindings(
       }
     } else if (node.type === "facts") {
       for (const entry of node.entries) {
+        if (entry.derive) {
+          const derive = entry.derive;
+          requireRowsField(entry.bind, fields, "facts derive", (sub) => {
+            if (derive.op === "sum") {
+              requireRowBinding(derive.of, sub, ["number"], "facts sum of");
+            } else if (derive.op === "doneOf") {
+              requireRowBinding(derive.of, sub, ["boolean"], "facts doneOf of");
+            }
+          });
+          continue;
+        }
         checkBinding(
           entry.bind,
           fields,

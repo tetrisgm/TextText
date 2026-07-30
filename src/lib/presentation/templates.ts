@@ -744,6 +744,11 @@ const recipe = {
             entries: [
               { bind: "content.fields.prepMinutes", label: "Prep" },
               { bind: "content.fields.cookMinutes", label: "Cook" },
+              {
+                bind: "content.fields.steps",
+                label: "Steps",
+                derive: { op: "sum", of: "row.minutes" },
+              },
               { bind: "content.fields.servings", label: "Serves" },
               { bind: "content.fields.rating", label: "Rating" },
             ],

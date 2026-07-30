@@ -480,9 +480,30 @@ function FactsNode({
     const definition = resolveFieldDefinition(entry.bind, fields);
     const raw = resolveDocumentBinding(document, entry.bind);
     if (!hasValue(raw)) continue;
-    const value = entry.format
-      ? formatDatedValue(raw, entry.format)
-      : formatFieldValue(raw, definition);
+    let value: string;
+    if (entry.derive) {
+      const records = rowRecords(raw);
+      if (records.length === 0) continue;
+      if (entry.derive.op === "count") {
+        value = String(records.length);
+      } else if (entry.derive.op === "sum") {
+        const subId = rowBindingId(entry.derive.of);
+        const sub = subFieldMap(definition).get(subId);
+        const total = records.reduce((sum, record) => {
+          const cell = record[subId];
+          return typeof cell === "number" && Number.isFinite(cell) ? sum + cell : sum;
+        }, 0);
+        value = formatFieldValue(total, sub);
+      } else {
+        const subId = rowBindingId(entry.derive.of);
+        const done = records.filter((record) => record[subId] === true).length;
+        value = `${done} of ${records.length}`;
+      }
+    } else {
+      value = entry.format
+        ? formatDatedValue(raw, entry.format)
+        : formatFieldValue(raw, definition);
+    }
     if (!value.trim()) continue;
     const label = entry.label ?? definition?.label ?? entry.bind.split(".").pop() ?? "";
     items.push({ label, value });
