@@ -4,10 +4,11 @@ Updated 2026-07-29. This is the only current continuation document.
 
 ## Start here
 
-There is no unfinished implementation. The last body of work, the `texttext` CLI
-and the retirement of the loopback MCP server, shipped as `0.146` build `152`,
-and the documentation and changelog were made current in `0.147` build `153`.
-Continue from the user's newest request.
+The document-types program (#117) is mid-flight. Wave 1 (typed fields, 25
+built-in templates, render/collection engine) and the first wave-2 slices
+(reader responses, the /templates gallery, board folders) are SHIPPED through
+0.160. Continue with the remaining wave-2 units below, or the user's newest
+request.
 
 Read these files before changing product code:
 
@@ -16,13 +17,64 @@ Read these files before changing product code:
 3. `DESIGN.md`
 4. `docs/agent-interoperability.md` for anything an agent touches
 5. `docs/document-types.md`
-6. `docs/review-2026-07-22.md`
-7. `docs/ai-sidebar-architecture.md` for assistant or MCP work
+6. `docs/ai-sidebar-architecture.md` for assistant or MCP work
 
 Confirm the live state with `git status`, `git worktree list`, and
 `git branch --no-merged main`. `main` is the only durable branch and release
 source. Do not trust a version number copied from this handoff; inspect generated
 release metadata, the public marker, appcast, and installed bundle.
+
+## Shipped through 0.160 (2026-07-29)
+
+- 0.156 agents write/read custom fields (`fieldsPatch` in `savePost`);
+  `verify-template-render.ts` gates all templates rendering real content.
+- 0.157 template visual-quality pass (engine-wide reading-measure layout,
+  margin-shorthand fixes, genre composition fixes) plus the live generation
+  proof: `verify-generation-live.ts` composes a Wine log over real MCP and
+  asserts the public page; it runs as the `generation` suite of
+  `eval:clients:live`. The showcase harness (`npm run showcase:templates`)
+  publishes every exemplar and screenshots light+dark into `.write/showcase/`.
+- 0.158 reader responses: poll node, `document_responses` table,
+  `/api/respond`, Poll and Event invite templates, `list_responses` tool.
+  Options are content rows; votes are one row per reader, upserted.
+- 0.159 the /templates area: every look as a live example, exemplars moved to
+  `src/lib/presentation/exemplars.ts` (single source for gallery, showcase,
+  future creation seeding), landing page Templates section.
+- 0.160 board folders: `collection.layout "board"` + `groupBy` (validated
+  single-select enum), FolderPage columns with toned headers; the project
+  template defaults to a status board.
+
+## Remaining wave-2 units (in suggested order)
+
+1. Seed creation from examples: the create flow offers "start with example
+   content" using `exemplarFor()`; per-template seeds are already authored.
+2. Calendar collection layout (month grid keyed by a date field), then
+   heatmap.
+3. Derived values (rollups like "3 of 7 done" on collection cards without
+   opening documents; some exist via progress checklistBind already).
+4. ToC and backlinks surfaced in the reader.
+5. The home-page feature articulation: the owner asked for an inventory of
+   invisible features (delivered in-session 2026-07-29) and a four-band home
+   redesign is PROPOSED but not approved; do not rebuild the home without
+   the owner's direction.
+
+Known small debts: the board view has not been screenshotted in a live folder
+(no folder yet uses the project default; the card path is shared and the
+grouping is unit-tested). The `scripts/template-exemplars.ts` shim only
+re-exports from src and can be deleted once nothing references it.
+
+## Process reminders proven this session
+
+- Run `npm run verify:release` BARE, never piped through tail or grep: piping
+  masks the exit code, and one masked failure let an ungated commit reach
+  origin (the daemon's receipt check correctly refused to ship it).
+- Adding an MCP tool requires: registry (`src/lib/ai/tools.ts`), handler
+  (`src/lib/mcp/tools.ts`), the pinned list in
+  `src/lib/ai/__tests__/tools.test.ts`, and `npx tsx scripts/sync-tool-docs.ts`.
+- New scripts must be referenced (package.json or another script) or
+  `docs.no_rot` fails the gate.
+- Changelog entries: confirm the shipped version with
+  `git log --oneline | grep Release` AFTER the daemon commits metadata.
 
 ## Live state at this handoff
 
