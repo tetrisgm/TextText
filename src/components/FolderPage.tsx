@@ -849,13 +849,15 @@ function UniversalFolderContents({
   // the historical most-recent-first order stands. Pinned stays the outermost
   // order either way: pin is a personal "keep on top" that outranks any
   // template opinion.
-  const collectionSpec = useMemo(() => {
+  const collectionDefinition = useMemo(() => {
     const reference = defaultTemplateForFolder(folder);
-    const definition = getBuiltinTemplate(reference.id, reference.version);
-    if (!definition) return null;
-    const { sort, filters } = definition.collection;
-    return sort.length > 0 || filters.length > 0 ? { sort, filters } : null;
+    return getBuiltinTemplate(reference.id, reference.version);
   }, [folder]);
+  const collectionSpec = useMemo(() => {
+    if (!collectionDefinition) return null;
+    const { sort, filters } = collectionDefinition.collection;
+    return sort.length > 0 || filters.length > 0 ? { sort, filters } : null;
+  }, [collectionDefinition]);
   const sorted = useMemo(() => {
     if (!collectionSpec) {
       return sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? "");
@@ -878,6 +880,38 @@ function UniversalFolderContents({
       return 0; // stable within pin groups; applyCollectionSpec already ordered
     });
   }, [collectionSpec, items]);
+
+  // A board folder groups its items into one column per option of the
+  // template's groupBy enum, in declared option order, with an Unsorted
+  // column for items that have no value yet.
+  const board = useMemo(() => {
+    const collection = collectionDefinition?.collection;
+    if (!collection || collection.layout !== "board" || !collection.groupBy) {
+      return null;
+    }
+    const fieldId = collection.groupBy.slice("content.fields.".length);
+    const field = collectionDefinition?.fields.find(
+      (entry) => entry.id === fieldId,
+    );
+    if (!field || field.type !== "enum") return null;
+    const valueOf = (post: (typeof sorted)[number]) => {
+      const value = post.document?.content.fields[fieldId];
+      return typeof value === "string" ? value : null;
+    };
+    const known = new Set(field.options.map((option) => option.value));
+    const columns = field.options.map((option) => ({
+      value: option.value,
+      label: option.label,
+      tone: option.tone ?? "neutral",
+      icon: option.icon,
+      posts: sorted.filter((post) => valueOf(post) === option.value),
+    }));
+    const unsorted = sorted.filter((post) => {
+      const value = valueOf(post);
+      return value === null || !known.has(value);
+    });
+    return { columns, unsorted };
+  }, [collectionDefinition, sorted]);
 
   return (
     <>
@@ -1099,95 +1133,146 @@ function UniversalFolderContents({
               );
             })}
           </div>
-        ) : (
-          <div
-            className={`universal-item-collection is-${viewMode}`}
-            role="listbox"
-            aria-label="Folder items"
-            aria-activedescendant={postOptionId(selectedPostId)}
-          >
-            <DocumentEngineStyles />
-            {sorted.map((post) => {
-              const selected = Boolean(
-                post.id &&
-                  (selectedPostIds?.has(post.id) ??
-                    post.id === selectedPostId),
-              );
-              const document = post.document ?? documentFromLegacyPost(post);
-              const reference =
-                post.template ?? document.presentation.template;
-              const definition =
-                getBuiltinTemplate(reference.id, reference.version) ??
-                getBuiltinTemplate("texttext.article", 1)!;
-              return (
-                <div
-                  key={itemKey(post)}
-                  id={postOptionId(post.id)}
-                  className={`universal-item-card${
-                    selected ? " is-command-selected" : ""
-                  }`}
-                  role="option"
-                  aria-selected={selected}
-                  tabIndex={post.id === selectedPostId ? 0 : -1}
-                  data-workspace-post-id={post.id}
-                  onFocus={() => post.id && onSelectPost?.(post.id)}
-                  onPointerMove={updateSpatialCardTilt}
-                  onPointerLeave={resetSpatialCardTilt}
-                >
-                  <WorkspaceItemStar
-                    handle={handle}
-                    owner={canEditItems}
-                    post={post}
-                  />
-                  <Link
-                    className="universal-item-card-link"
-                    href={blogPostPath(blog, post)}
-                    prefetch={onOpenPost ? false : undefined}
-                    onMouseDown={(event) => {
-                      if (shouldSuppressNativeItemSelection(event)) {
-                        event.preventDefault();
-                      }
-                    }}
-                    onClick={(event) => {
-                      if (
-                        post.id &&
-                        onItemClick &&
-                        !onItemClick(post.id, event)
-                      ) {
-                        event.preventDefault();
-                        return;
-                      }
-                      if (!onOpenPost || !shouldOpenLocally(event)) return;
+        ) : (() => {
+          const renderUniversalCard = (post: (typeof sorted)[number]) => {
+            const selected = Boolean(
+              post.id &&
+                (selectedPostIds?.has(post.id) ??
+                  post.id === selectedPostId),
+            );
+            const document = post.document ?? documentFromLegacyPost(post);
+            const reference =
+              post.template ?? document.presentation.template;
+            const definition =
+              getBuiltinTemplate(reference.id, reference.version) ??
+              getBuiltinTemplate("texttext.article", 1)!;
+            return (
+              <div
+                key={itemKey(post)}
+                id={postOptionId(post.id)}
+                className={`universal-item-card${
+                  selected ? " is-command-selected" : ""
+                }`}
+                role="option"
+                aria-selected={selected}
+                tabIndex={post.id === selectedPostId ? 0 : -1}
+                data-workspace-post-id={post.id}
+                onFocus={() => post.id && onSelectPost?.(post.id)}
+                onPointerMove={updateSpatialCardTilt}
+                onPointerLeave={resetSpatialCardTilt}
+              >
+                <WorkspaceItemStar
+                  handle={handle}
+                  owner={canEditItems}
+                  post={post}
+                />
+                <Link
+                  className="universal-item-card-link"
+                  href={blogPostPath(blog, post)}
+                  prefetch={onOpenPost ? false : undefined}
+                  onMouseDown={(event) => {
+                    if (shouldSuppressNativeItemSelection(event)) {
                       event.preventDefault();
-                      onOpenPost(post);
+                    }
+                  }}
+                  onClick={(event) => {
+                    if (
+                      post.id &&
+                      onItemClick &&
+                      !onItemClick(post.id, event)
+                    ) {
+                      event.preventDefault();
+                      return;
+                    }
+                    if (!onOpenPost || !shouldOpenLocally(event)) return;
+                    event.preventDefault();
+                    onOpenPost(post);
+                  }}
+                >
+                  <DocumentCollectionRenderer
+                    document={document}
+                    template={definition}
+                    documentId={`collection-${post.id ?? post.slug}`}
+                    metadata={{
+                      date: formatArticleDate(post.updatedAt ?? post.date, {
+                        style: "short",
+                      }),
                     }}
+                  />
+                </Link>
+                {canEditItems && (
+                  <WorkspaceItemActions
+                    blog={blog}
+                    handle={handle}
+                    href={blogPostPath(blog, post)}
+                    owner
+                    post={post}
+                    onDeletePost={onDeleteItem}
+                  />
+                )}
+              </div>
+            );
+          };
+          if (board) {
+            const boardColumns = [
+              ...board.columns,
+              ...(board.unsorted.length > 0
+                ? [
+                    {
+                      value: "__unsorted",
+                      label: "Unsorted",
+                      tone: "neutral",
+                      icon: undefined as string | undefined,
+                      posts: board.unsorted,
+                    },
+                  ]
+                : []),
+            ];
+            return (
+              <div
+                className="universal-item-board"
+                role="listbox"
+                aria-label="Folder board"
+                aria-activedescendant={postOptionId(selectedPostId)}
+              >
+                <DocumentEngineStyles />
+                {boardColumns.map((column) => (
+                  <section
+                    key={column.value}
+                    className="universal-item-board-column"
+                    aria-label={column.label}
                   >
-                    <DocumentCollectionRenderer
-                      document={document}
-                      template={definition}
-                      documentId={`collection-${post.id ?? post.slug}`}
-                      metadata={{
-                        date: formatArticleDate(post.updatedAt ?? post.date, {
-                          style: "short",
-                        }),
-                      }}
-                    />
-                  </Link>
-                  {canEditItems && (
-                    <WorkspaceItemActions
-                      blog={blog}
-                      handle={handle}
-                      href={blogPostPath(blog, post)}
-                      owner
-                      post={post}
-                      onDeletePost={onDeleteItem}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    <header
+                      className={`universal-item-board-header is-tone-${column.tone}`}
+                    >
+                      <span
+                        className="universal-item-board-dot"
+                        aria-hidden="true"
+                      />
+                      {column.icon ? (
+                        <span aria-hidden="true">{column.icon}</span>
+                      ) : null}
+                      <span>{column.label}</span>
+                      <small>{column.posts.length}</small>
+                    </header>
+                    {column.posts.map(renderUniversalCard)}
+                  </section>
+                ))}
+              </div>
+            );
+          }
+          return (
+            <div
+              className={`universal-item-collection is-${viewMode}`}
+              role="listbox"
+              aria-label="Folder items"
+              aria-activedescendant={postOptionId(selectedPostId)}
+            >
+              <DocumentEngineStyles />
+              {sorted.map(renderUniversalCard)}
+            </div>
+          );
+        })()}
       </section>
     </>
   );

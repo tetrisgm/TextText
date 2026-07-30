@@ -3733,6 +3733,61 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(100%, 1120px);
   margin-inline: auto;
 }
+/* Board layout: one column per option of the template's groupBy enum. The
+   columns scroll horizontally as a set instead of squeezing the cards. */
+.universal-item-board {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  width: min(100%, 1240px);
+  margin-inline: auto;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+.universal-item-board-column {
+  flex: 0 0 292px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.universal-item-board-header {
+  --board-tone: #6e6e73;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--board-tone) 62%, var(--ink, #1d1d1f));
+  background: color-mix(in srgb, var(--board-tone) 11%, transparent);
+}
+.universal-item-board-header small {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.universal-item-board-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--board-tone);
+  flex: none;
+}
+.universal-item-board-header.is-tone-info { --board-tone: #0071e3; }
+.universal-item-board-header.is-tone-success { --board-tone: #1f8a3b; }
+.universal-item-board-header.is-tone-warning { --board-tone: #9a6b00; }
+.universal-item-board-header.is-tone-danger { --board-tone: #d70015; }
+.universal-item-board-header.is-tone-accent { --board-tone: var(--accent, #0071e3); }
+@media (prefers-color-scheme: dark) {
+  .universal-item-board-header.is-tone-info { --board-tone: #409cff; }
+  .universal-item-board-header.is-tone-success { --board-tone: #30d158; }
+  .universal-item-board-header.is-tone-warning { --board-tone: #ffd60a; }
+  .universal-item-board-header.is-tone-danger { --board-tone: #ff453a; }
+  .universal-item-board-header { --board-tone: #98989d; }
+}
 .universal-item-collection.is-grid,
 .workspace-recent.is-view-grid .workspace-recent-list {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

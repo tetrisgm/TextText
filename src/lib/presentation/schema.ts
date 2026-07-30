@@ -572,9 +572,16 @@ export type CollectionFilter = z.infer<typeof collectionFilterSchema>;
 
 export const collectionRenderSchema = z
   .object({
-    layout: z.enum(["list", "cards", "timeline", "index", "single"]),
+    layout: z.enum(["list", "cards", "timeline", "index", "single", "board"]),
     columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(3),
     gap: z.enum(SPACING_TOKENS).default("md"),
+    /** Board grouping: one column per option of a single-select enum field,
+     * plus an unsorted column for items without a value. Only meaningful for
+     * the board layout; validated against the declared fields. */
+    groupBy: z
+      .string()
+      .regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/)
+      .optional(),
     sort: z
       .array(
         z.object({
@@ -832,6 +839,18 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
     if (["gt", "gte", "lt", "lte"].includes(filter.op) &&
         !["number", "date"].includes(declared.type)) {
       throw new Error(`filter op ${filter.op} requires a number or date field, not ${declared.type} (${id})`);
+    }
+  }
+  if (template.collection.groupBy) {
+    const id = template.collection.groupBy.slice(FIELD_PREFIX.length);
+    const declared = fields.get(id);
+    if (!declared) {
+      throw new Error(`collection groupBy references undeclared field ${id}`);
+    }
+    if (declared.type !== "enum" || declared.multiple) {
+      throw new Error(
+        `collection groupBy requires a single-select enum field, not ${declared.type} (${id})`,
+      );
     }
   }
   if (new Set(template.capabilities).size !== template.capabilities.length) {

@@ -64,6 +64,23 @@ describe("closed presentation contract", () => {
     ])).not.toThrow();
   });
 
+  it("accepts board grouping on a single-select enum and rejects anything else", () => {
+    const project = requireBuiltinTemplate("texttext.project");
+    expect(project.collection.layout).toBe("board");
+    expect(project.collection.groupBy).toBe("content.fields.status");
+    const grouped = applyTemplateOperations(project, [
+      { op: "set-collection-sort", sort: [{ field: "updatedAt", direction: "desc" }] },
+    ]);
+    expect(grouped.collection.groupBy).toBe("content.fields.status");
+    // groupBy must survive validation only when it names a declared
+    // single-select enum; a text field is rejected loudly.
+    const broken = structuredClone(project) as { collection: { groupBy?: string } };
+    broken.collection.groupBy = "content.fields.lead";
+    expect(() => validateTemplateDefinition(broken)).toThrow(/single-select enum/);
+    broken.collection.groupBy = "content.fields.nonexistent";
+    expect(() => validateTemplateDefinition(broken)).toThrow(/undeclared/);
+  });
+
   it("keeps presentation data portable in the document snapshot", () => {
     const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
     expect(document).toEqual({

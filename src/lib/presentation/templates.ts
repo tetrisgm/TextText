@@ -1371,11 +1371,12 @@ const project = {
     ],
   },
   collection: {
-    layout: "list",
+    layout: "board",
     columns: 1,
     gap: "sm",
+    groupBy: "content.fields.status",
     sort: [{ field: "content.fields.due", direction: "asc" }],
-    filters: [{ field: "content.fields.status", op: "neq", value: "done" }],
+    filters: [],
     item: {
       type: "stack",
       gap: "xs",
