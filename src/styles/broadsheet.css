@@ -1693,6 +1693,136 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color: var(--ink);
   text-decoration-color: var(--accent);
 }
+/* Apple-grammar chapters: an explore strip, then one story per section with
+   a kicker, a two-beat headline, a real document as the visual, and a row of
+   claim sentences. The visuals are live DocumentRenderer output. */
+.write-landing-explore {
+  width: min(100%, 1180px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px 22px;
+  margin: 96px auto 0;
+  padding-top: 26px;
+  border-top: 1px solid var(--hairline);
+}
+.write-landing-explore p {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display), var(--font-newsroom-display);
+  font-size: 28px;
+  font-weight: 600;
+}
+.write-landing-explore div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.write-landing-explore a {
+  padding: 7px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.write-landing-explore a:hover,
+.write-landing-explore a:focus-visible {
+  border-color: var(--ink);
+}
+.write-chapter {
+  width: min(100%, 1180px);
+  margin: 110px auto 0;
+  display: grid;
+  gap: 34px;
+  scroll-margin-top: 80px;
+}
+.write-chapter-head {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+}
+.write-chapter-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display), var(--font-newsroom-display);
+  font-size: clamp(34px, 5vw, 52px);
+  font-weight: 600;
+  line-height: 1.02;
+}
+.write-chapter-head p:not(.write-landing-kicker) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.35;
+  max-width: 560px;
+}
+.write-doc-demo {
+  position: relative;
+  height: 430px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: 0 34px 80px -58px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  container-type: inline-size;
+}
+.write-doc-demo-inner {
+  width: calc(100cqw / 0.62);
+  transform: scale(0.62);
+  transform-origin: top left;
+  padding-top: 34px;
+}
+.write-doc-demo::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 72px;
+  background: linear-gradient(transparent, var(--bg));
+}
+.write-chapter-claims {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 36px;
+}
+.write-chapter-claims article {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+.write-chapter-claims h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.write-chapter-claims p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+@media (max-width: 860px) {
+  .write-chapter-claims {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .write-doc-demo {
+    height: 340px;
+  }
+  .write-doc-demo-inner {
+    width: calc(100cqw / 0.5);
+    transform: scale(0.5);
+  }
+}
 .write-landing-split {
   width: min(100%, 1180px);
   display: grid;
