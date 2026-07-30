@@ -31,6 +31,7 @@ import {
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
+import { WorkspaceTemplateStrip } from "@/components/WorkspaceTemplateStrip";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
@@ -945,6 +946,17 @@ function SharedIcon() {
   );
 }
 
+function TemplatesIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
+      <rect x="11" y="3" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
+      <rect x="3" y="11" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
+      <rect x="11" y="11" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
+    </svg>
+  );
+}
+
 function StarredIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1797,6 +1809,18 @@ export function PostFolderSidebar({
                 {sharedCount}
               </span>
             )}
+          </div>
+          <div className="post-editor-folder-row post-editor-special-row">
+            <a
+              className="post-editor-folder-main post-editor-special-main"
+              href="/templates"
+              title={collapsed ? "Templates" : undefined}
+            >
+              <span className="post-editor-folder-icon" aria-hidden="true">
+                <TemplatesIcon />
+              </span>
+              <span className="post-editor-folder-name">Templates</span>
+            </a>
           </div>
           <div
             className={`post-editor-folder-row post-editor-special-row${
@@ -2892,6 +2916,7 @@ function WorkspaceRootLanding({
                 />
               </section>
             ) : null}
+            <WorkspaceTemplateStrip />
             <AgentIntegrationHome />
             <section
               className={`workspace-recent is-view-${recentViewMode}`}
