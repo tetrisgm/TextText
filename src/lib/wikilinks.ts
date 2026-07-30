@@ -124,6 +124,37 @@ export function renderTargetForResolution(
   return { slug: resolution.post.slug, href };
 }
 
+/**
+ * Render targets for the public reader, built from an already-public post
+ * list (the published feed). Fails closed: only published, public,
+ * non-private-type posts become links, and aliases resolve only when their
+ * current slug is itself public.
+ */
+export function publicWikiLinkRenderTargets({
+  blog,
+  posts,
+  slugAliases = {},
+}: {
+  blog: Pick<Blog, "handle" | "username">;
+  posts: Post[];
+  slugAliases?: Record<string, string>;
+}): WikiLinkRenderTargets {
+  const targets: WikiLinkRenderTargets = {};
+  for (const post of posts) {
+    if (post.status !== "published") continue;
+    if (post.visibility !== "public") continue;
+    if (isPrivatePostType(post.type)) continue;
+    const href = blogPostPath(blog, post);
+    if (!isSafeLinkHref(href)) continue;
+    targets[post.slug] = { slug: post.slug, href };
+  }
+  for (const [alias, currentSlug] of Object.entries(slugAliases)) {
+    const target = targets[currentSlug];
+    if (target && !targets[alias]) targets[alias] = target;
+  }
+  return targets;
+}
+
 export async function resolveWikiLinkRenderTargets({
   blog,
   handle,

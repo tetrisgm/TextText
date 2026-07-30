@@ -22,6 +22,7 @@ import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
 import type { Blog, Post } from "@/lib/content";
 import {
   extractWikiLinks,
+  publicWikiLinkRenderTargets,
   renderTargetForResolution,
 } from "@/lib/wikilinks";
 
@@ -204,5 +205,43 @@ describe("public wikilink privacy", () => {
     );
     expect(html).toContain('href="/t/garden/public-post"');
     expect(html).toContain("Read it");
+  });
+
+  it("builds public render targets only from published public posts", () => {
+    const targets = publicWikiLinkRenderTargets({
+      blog,
+      posts: [
+        post({
+          id: "pub",
+          slug: "public-post",
+          status: "published",
+          visibility: "public",
+        }),
+        post({ id: "draft", slug: "draft-post", visibility: "public" }),
+        post({
+          id: "unlisted",
+          slug: "unlisted-post",
+          status: "published",
+          visibility: "link",
+        }),
+        post({
+          id: "note",
+          type: "note",
+          slug: "note-post",
+          status: "published",
+          visibility: "public",
+        }),
+      ],
+      slugAliases: {
+        "old-public": "public-post",
+        "old-unlisted": "unlisted-post",
+      },
+    });
+    expect(Object.keys(targets).sort()).toEqual(["old-public", "public-post"]);
+    expect(targets["public-post"]).toEqual({
+      slug: "public-post",
+      href: "/t/garden/public-post",
+    });
+    expect(targets["old-public"]).toEqual(targets["public-post"]);
   });
 });

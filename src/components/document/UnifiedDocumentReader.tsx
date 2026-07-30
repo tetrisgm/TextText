@@ -1,6 +1,7 @@
 import type { Blog, Post } from "@/lib/content";
 import { requireDocumentSnapshot } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 import { DocumentRenderer } from "./DocumentRenderer";
 
 function publishedDate(post: Post): string | undefined {
@@ -19,10 +20,12 @@ export function UnifiedDocumentReader({
   blog,
   post,
   template,
+  wikiLinkTargets,
 }: {
   blog: Blog;
   post: Post;
   template: TemplateDefinition;
+  wikiLinkTargets?: WikiLinkRenderTargets;
 }) {
   const document = requireDocumentSnapshot(
     post.document,
@@ -33,6 +36,7 @@ export function UnifiedDocumentReader({
       document={document}
       documentId={post.id ?? post.slug}
       template={template}
+      wikiLinkTargets={wikiLinkTargets}
       metadata={{
         author: blog.author,
         date: publishedDate(post),

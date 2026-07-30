@@ -16,6 +16,8 @@ import type {
   TemplateDefinition,
 } from "@/lib/presentation/schema";
 import { DOCUMENT_ENGINE_CSS } from "@/lib/presentation/styles";
+import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
+import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
 
 export type DocumentRenderMetadata = {
   author?: string;
@@ -41,6 +43,7 @@ type RendererProps = {
   metadata?: DocumentRenderMetadata;
   slots?: DocumentRenderSlots;
   className?: string;
+  wikiLinkTargets?: WikiLinkRenderTargets;
 };
 
 type CollectionRendererProps = Omit<RendererProps, "className"> & {
@@ -254,10 +257,20 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
   return <div className="tt-metadata">{values.join(" · ")}</div>;
 }
 
-function Markdown({ value }: { value: string }) {
+function Markdown({
+  value,
+  wikiLinkTargets,
+}: {
+  value: string;
+  wikiLinkTargets?: WikiLinkRenderTargets;
+}) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={
+        wikiLinkTargets
+          ? [remarkGfm, remarkWikiLinks(wikiLinkTargets)]
+          : [remarkGfm]
+      }
       urlTransform={(url) => safeMediaSource(url)}
       components={{
         h1: "h2",
@@ -268,9 +281,15 @@ function Markdown({ value }: { value: string }) {
           // eslint-disable-next-line @next/next/no-img-element
           return <img src={safe} alt={alt ?? ""} loading="lazy" decoding="async" />;
         },
-        a: ({ href, children }) => {
+        a: ({ href, children, className }) => {
           const safe = typeof href === "string" && isSafeLinkHref(href) ? href : "";
-          return safe ? <a href={safe}>{children}</a> : <span>{children}</span>;
+          return safe ? (
+            <a href={safe} className={className}>
+              {children}
+            </a>
+          ) : (
+            <span>{children}</span>
+          );
         },
       }}
     >
@@ -890,6 +909,7 @@ function NodeRenderer({
   slots,
   fields,
   documentId,
+  wikiLinkTargets,
 }: {
   node: RenderNode;
   path: string;
@@ -898,6 +918,7 @@ function NodeRenderer({
   slots?: DocumentRenderSlots;
   fields: FieldDefinitionMap;
   documentId?: string;
+  wikiLinkTargets?: WikiLinkRenderTargets;
 }): ReactNode {
   const nodeSlot = node.id ? slots?.nodes?.[node.id] : undefined;
   if (nodeSlot !== undefined) return nodeSlot;
@@ -916,7 +937,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-stack tt-gap-${node.gap} tt-align-${node.align}`} data-direction={node.direction}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
           ))}
         </div>
       );
@@ -925,7 +946,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-${node.type} tt-gap-${node.gap}`}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
           ))}
         </div>
       );
@@ -954,7 +975,7 @@ function NodeRenderer({
       const slot = slots?.bindings?.[node.bind];
       if (slot !== undefined) return <div className="tt-prose">{slot}</div>;
       const value = scalarText(resolveDocumentBinding(document, node.bind));
-      return value ? <div className="tt-prose"><Markdown value={value} /></div> : null;
+      return value ? <div className="tt-prose"><Markdown value={value} wikiLinkTargets={wikiLinkTargets} /></div> : null;
     }
     case "cover":
     case "image":
@@ -1035,7 +1056,7 @@ function NodeRenderer({
           ) : null}
           <div className="tt-callout-body">
             {node.children.map((child, index) => (
-              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} />
+              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
             ))}
           </div>
         </aside>
@@ -1071,6 +1092,7 @@ export function DocumentRenderer({
   metadata = {},
   slots,
   className,
+  wikiLinkTargets,
 }: RendererProps) {
   const scopeId = `tt-${documentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "document"}`;
   const theme = { ...template.theme, ...document.presentation.theme };
@@ -1092,7 +1114,7 @@ export function DocumentRenderer({
       style={style}
     >
       <DocumentEngineStyles />
-      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} documentId={documentId} />
+      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
     </article>
   );
 }

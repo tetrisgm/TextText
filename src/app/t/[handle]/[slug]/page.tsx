@@ -46,7 +46,10 @@ import {
   workspacePoolFromParts,
 } from "@/lib/pool/selectors";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
-import { extractWikiLinks } from "@/lib/wikilinks";
+import {
+  extractWikiLinks,
+  publicWikiLinkRenderTargets,
+} from "@/lib/wikilinks";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
@@ -371,11 +374,23 @@ export async function PostPageForHandle({
     );
   }
 
+  // Public wiki links: targets come only from the same published-public feed
+  // the blog lists, plus aliases that resolve to a post in that feed. Anything
+  // else fails closed and renders as plain text.
+  const wikiLinkTargets = !canEdit
+    ? publicWikiLinkRenderTargets({
+        blog,
+        posts: await getPosts(handle),
+        slugAliases,
+      })
+    : undefined;
+
   const reader = (
     <UnifiedDocumentReader
       blog={blog}
       post={post}
       template={template}
+      wikiLinkTargets={wikiLinkTargets}
     />
   );
 
