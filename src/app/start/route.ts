@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
 import {
   createStarterDraftPath,
+  createTemplateDraftPath,
   resolveWorkspaceHomePath,
 } from "@/app/editor/actions";
 import { deleteAllGuestEditCookies } from "@/lib/blog-edit-auth";
@@ -22,12 +23,23 @@ export async function GET(request: NextRequest) {
 
   const user = await getCurrentUser();
   if (!user) {
-    const to = request.nextUrl.searchParams.get("to") === "home" ? "?to=home" : "";
-    redirect(`/signin?callbackUrl=${encodeURIComponent(`/start${to}`)}`);
+    // Preserve the whole intent (to=home, template, seed) across sign-in.
+    const query = request.nextUrl.searchParams.toString();
+    const target = `/start${query ? `?${query}` : ""}`;
+    redirect(`/signin?callbackUrl=${encodeURIComponent(target)}`);
   }
 
   if (request.nextUrl.searchParams.get("to") === "home") {
     redirect(await resolveWorkspaceHomePath());
+  }
+  const templateSlug = request.nextUrl.searchParams.get("template");
+  if (templateSlug && /^[a-z][a-z0-9-]{0,80}$/.test(templateSlug)) {
+    redirect(
+      await createTemplateDraftPath(
+        templateSlug,
+        request.nextUrl.searchParams.get("seed") === "1",
+      ),
+    );
   }
   redirect(await createStarterDraftPath());
 }

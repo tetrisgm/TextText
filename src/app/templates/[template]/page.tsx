@@ -54,7 +54,10 @@ export default async function TemplateDetailPage({
           <strong>{example.template.name}</strong>
           <span>{example.category}</span>
         </span>
-        <Link href="/start" className="tpl-detail-use">
+        <Link
+          href={`/start?template=${example.slug}&seed=1`}
+          className="tpl-detail-use"
+        >
           Use this template
         </Link>
       </div>

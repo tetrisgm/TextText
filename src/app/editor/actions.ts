@@ -20,6 +20,8 @@ import {
   createItemComment,
   createAnonymousBlogRecord,
   createDraft,
+  createDraftInFolder,
+  getFolderByPath,
   createSubfolder,
   deletePost,
   getAllPosts,
@@ -99,6 +101,7 @@ import { normalizeTags } from "@/lib/tags";
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import { exemplarFor } from "@/lib/presentation/exemplars";
 import type { TemplateReference } from "@/lib/documents/model";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
@@ -573,6 +576,53 @@ export async function createStarterDraftPath(layoutInput?: unknown): Promise<str
   }
 
   return ensureFirstArticleDraftPath(handle, access);
+}
+
+// "Use this template" from the /templates gallery: create a real draft
+// shaped by that template, optionally pre-filled with its example content,
+// and land in the editor. The route in front guarantees a signed-in user.
+export async function createTemplateDraftPath(
+  templateSlug: string,
+  seed: boolean,
+): Promise<string> {
+  const template = getBuiltinTemplate(`texttext.${templateSlug}`, 1);
+  const user = await getCurrentUser();
+  if (!template || !user) return createStarterDraftPath();
+
+  const handle = (await resolveOwnedWorkspace(user)).handle;
+  const folder = await getFolderByPath(handle, "blog");
+  if (!folder) return createStarterDraftPath();
+
+  let post = await createDraftInFolder(handle, folder.id, {
+    template: { id: template.id, version: template.version },
+  });
+  if (seed) {
+    const exemplar = exemplarFor(template.id);
+    if (exemplar) {
+      post = await savePost(
+        handle,
+        { ...post, title: exemplar.title, body: exemplar.body },
+        {
+          fieldsPatch: exemplar.fields as Parameters<
+            typeof savePost
+          >[2] extends { fieldsPatch?: infer P }
+            ? P
+            : never,
+        },
+      );
+    }
+  }
+  await auditEdit(
+    await getBlogEditAccess(handle),
+    "create_post",
+    "item",
+    post.id,
+    seed ? `template ${template.id} with example` : `template ${template.id}`,
+  );
+  await revalidateBlog(handle, [post.slug]);
+  const blog = await getBlog(handle);
+  if (blog) return blogPostEditPath(blog, post);
+  return tenantPostEditPath(handle, post);
 }
 
 // Where "keep this workspace" lands: the signed-in user's workspace home,
