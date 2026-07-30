@@ -44,24 +44,15 @@ release metadata, the public marker, appcast, and installed bundle.
   single-select enum), FolderPage columns with toned headers; the project
   template defaults to a status board.
 
-## Remaining wave-2 units (in suggested order)
+## Document-types program: COMPLETE (0.167, 2026-07-29)
 
-1. Seed creation from examples: the create flow offers "start with example
-   content" using `exemplarFor()`; per-template seeds are already authored.
-2. Calendar collection layout (month grid keyed by a date field), then
-   heatmap.
-3. Derived values (rollups like "3 of 7 done" on collection cards without
-   opening documents; some exist via progress checklistBind already).
-4. ToC and backlinks surfaced in the reader.
-5. The home-page feature articulation: the owner asked for an inventory of
-   invisible features (delivered in-session 2026-07-29) and a four-band home
-   redesign is PROPOSED but not approved; do not rebuild the home without
-   the owner's direction.
-
-Known small debts: the board view has not been screenshotted in a live folder
-(no folder yet uses the project default; the card path is shared and the
-grouping is unit-tested). The `scripts/template-exemplars.ts` shim only
-re-exports from src and can be deleted once nothing references it.
+Everything in waves 1 and 2 shipped: typed fields, 25 templates, live
+generation proof (gated), polls and RSVPs, the /templates gallery, the
+in-app Start-with-a-look chooser and sidebar Templates entry, seed-filled
+Use this template, board, calendar, and heatmap folder layouts, derived
+facts, public backlinks, resolved public wiki links, and the Apple-grammar
+dogfooded home. Owner-gated remainders: a possible sixth Publishing home
+chapter and the demo-frame composition taste-check.
 
 ## Process reminders proven this session
 
