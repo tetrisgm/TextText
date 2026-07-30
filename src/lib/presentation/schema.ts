@@ -589,7 +589,16 @@ export type CollectionFilter = z.infer<typeof collectionFilterSchema>;
 
 export const collectionRenderSchema = z
   .object({
-    layout: z.enum(["list", "cards", "timeline", "index", "single", "board", "calendar"]),
+    layout: z.enum([
+      "list",
+      "cards",
+      "timeline",
+      "index",
+      "single",
+      "board",
+      "calendar",
+      "heatmap",
+    ]),
     columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(3),
     gap: z.enum(SPACING_TOKENS).default("md"),
     /** Board grouping: one column per option of a single-select enum field,

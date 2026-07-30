@@ -913,6 +913,29 @@ function UniversalFolderContents({
     return { byDay, undated };
   }, [collectionDefinition, sorted]);
 
+  // A heatmap folder shows a trailing year of activity as one cell per day,
+  // shaded by how many items carry that date, with the normal list below.
+  const heatmap = useMemo(() => {
+    const collection = collectionDefinition?.collection;
+    if (!collection || collection.layout !== "heatmap" || !collection.dateBy) {
+      return null;
+    }
+    const fieldId = collection.dateBy.slice("content.fields.".length);
+    const field = collectionDefinition?.fields.find(
+      (entry) => entry.id === fieldId,
+    );
+    if (!field || field.type !== "date") return null;
+    const counts = new Map<string, number>();
+    for (const post of sorted) {
+      const value = post.document?.content.fields[fieldId];
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+        const key = value.slice(0, 10);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return { counts };
+  }, [collectionDefinition, sorted]);
+
   // A board folder groups its items into one column per option of the
   // template's groupBy enum, in declared option order, with an Unsorted
   // column for items that have no value yet.
@@ -1245,6 +1268,51 @@ function UniversalFolderContents({
               </div>
             );
           };
+          if (heatmap) {
+            const today = new Date();
+            const pad = (value: number) => String(value).padStart(2, "0");
+            const start = new Date(today);
+            start.setDate(start.getDate() - 364);
+            start.setDate(start.getDate() - start.getDay());
+            const days: { key: string; count: number }[] = [];
+            const cursor = new Date(start);
+            while (cursor <= today) {
+              const key = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`;
+              days.push({ key, count: heatmap.counts.get(key) ?? 0 });
+              cursor.setDate(cursor.getDate() + 1);
+            }
+            const level = (count: number) =>
+              count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3;
+            return (
+              <>
+                <div
+                  className="universal-item-heatmap"
+                  aria-label="A year of writing activity"
+                >
+                  {days.map((day) => (
+                    <span
+                      key={day.key}
+                      className={`universal-item-heatmap-cell is-l${level(day.count)}`}
+                      title={
+                        day.count > 0
+                          ? `${day.key} · ${day.count} ${day.count === 1 ? "entry" : "entries"}`
+                          : day.key
+                      }
+                    />
+                  ))}
+                </div>
+                <div
+                  className={`universal-item-collection is-${viewMode}`}
+                  role="listbox"
+                  aria-label="Folder items"
+                  aria-activedescendant={postOptionId(selectedPostId)}
+                >
+                  <DocumentEngineStyles />
+                  {sorted.map(renderUniversalCard)}
+                </div>
+              </>
+            );
+          }
           if (calendar) {
             const now = new Date();
             const anchor = new Date(

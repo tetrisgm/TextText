@@ -424,9 +424,10 @@ const journal = {
     ],
   },
   collection: {
-    layout: "timeline",
+    layout: "heatmap",
     columns: 1,
     gap: "sm",
+    dateBy: "content.fields.date",
     sort: [{ field: "content.fields.date", direction: "desc" }],
     item: {
       type: "stack",
