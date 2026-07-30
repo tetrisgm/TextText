@@ -19,6 +19,7 @@ import {
   getTrashedFolders,
   getTrashedPosts,
   getPost,
+  getPosts,
   getPostById,
   getPostStoreContext,
   getPostSlugAliases,
@@ -45,6 +46,7 @@ import {
   workspacePoolFromParts,
 } from "@/lib/pool/selectors";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
+import { extractWikiLinks } from "@/lib/wikilinks";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
@@ -243,12 +245,15 @@ export async function PostPageForHandle({
       getPostSlugAliases(handle),
     ]);
   } else {
-    const [accessiblePosts, accessibleFolders] = await Promise.all([
-      getAccessibleAllPosts(handle, viewer),
-      getAccessibleFolders(handle, viewer),
-    ]);
+    const [accessiblePosts, accessibleFolders, accessibleAliases] =
+      await Promise.all([
+        getAccessibleAllPosts(handle, viewer),
+        getAccessibleFolders(handle, viewer),
+        getPostSlugAliases(handle),
+      ]);
     allPosts = accessiblePosts;
     folders = accessibleFolders;
+    slugAliases = accessibleAliases;
     counts =
       accessibleFolders.length > 0
         ? await getAccessibleFolderCounts(handle, viewer)
@@ -374,6 +379,22 @@ export async function PostPageForHandle({
     />
   );
 
+  // Public "Linked from": sourced from the same published-public feed the
+  // blog itself lists, so nothing private can ever appear here. The
+  // workspace shell computes its own richer panel from the pool.
+  const publicBacklinks = !canEdit
+    ? (await getPosts(handle))
+        .filter((source) => {
+          if (source.slug === post.slug) return false;
+          return extractWikiLinks(source.body ?? "").some(
+            (link) =>
+              link.target === post.slug ||
+              slugAliases[link.target] === post.slug,
+          );
+        })
+        .slice(0, 12)
+    : [];
+
   return (
     <>
       {canEdit ? (
@@ -414,6 +435,19 @@ export async function PostPageForHandle({
             canCommentPost={canCommentPost}
           />
           {reader}
+          {publicBacklinks.length > 0 ? (
+            <aside className="backlinks-panel is-public" aria-label="Linked from">
+              <h2>Linked from</h2>
+              <nav aria-label="Backlinks">
+                {publicBacklinks.map((source) => (
+                  <a key={source.id ?? source.slug} href={blogPostPath(blog, source)}>
+                    <span>{source.title.trim() || "Untitled"}</span>
+                    <small>{source.slug}</small>
+                  </a>
+                ))}
+              </nav>
+            </aside>
+          ) : null}
         </>
       )}
       {!initialPool && (
