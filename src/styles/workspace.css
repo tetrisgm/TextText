@@ -199,16 +199,35 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+.workspace-library-filters,
+.workspace-library-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .workspace-library-filters button {
   min-height: 30px;
+  padding-inline: 10px;
+  border: 0;
   border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
   font-size: 13px;
+  font-weight: 500;
+}
+
+.workspace-library-filters button small {
+  margin-left: 5px;
+  color: inherit;
+  font-size: 11px;
   font-weight: 500;
 }
 
 .workspace-library-filters button[aria-pressed="true"] {
   border-color: transparent;
   background: var(--control-bg-hover);
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -221,7 +240,7 @@
 }
 
 .workspace-recent-empty {
-  min-height: 180px;
+  min-height: 144px;
   display: grid;
   place-content: center;
   text-align: center;
@@ -229,9 +248,9 @@
 
 .workspace-recent-empty p {
   margin: 0;
-  color: var(--ink-2);
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .workspace-recent-empty span {
@@ -706,5 +725,153 @@
 @media (prefers-reduced-motion: reduce) {
   .post-editor-sidebar-activity > summary::after {
     transition: none;
+  }
+}
+
+/* Product-wide window hierarchy
+   Navigation, toolbar, document, and optional inspector are the only primary
+   regions. Operational pages use system typography and quiet separators. */
+
+.post-editor-shell {
+  --workspace-sidebar-width: 252px;
+}
+
+.post-editor-content {
+  min-width: 0;
+  background: var(--bg);
+}
+
+.workspace-assistant-shell[data-state="hidden"] {
+  width: 44px !important;
+}
+
+.post-editor-shell.has-assistant-pinned .post-editor-content {
+  margin-right: 0;
+}
+
+.post-editor-shell.has-sidebar.has-assistant-pinned
+  :where(
+    .post-top-action-bar,
+    .post-top-action-bar.is-edit,
+    .folder-top-action-bar,
+    .workspace-root-action-bar
+  ) {
+  right: 8px;
+}
+
+:where(.workspace-root-page, .workspace-collection-page, .post-folder-page) {
+  max-width: 1180px;
+  padding: 56px 28px 80px;
+}
+
+.workspace-root-inner {
+  width: 100%;
+}
+
+:where(
+  .workspace-library-header,
+  .workspace-collection-header,
+  .post-folder-page-header
+) {
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+}
+
+:where(
+  .workspace-library-header h1,
+  .workspace-collection-header h1,
+  .post-folder-page-header h1
+) {
+  font-family: var(--font-body);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.post-folder-page.is-mode-blog .post-folder-page-header h1 {
+  max-width: 22ch;
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5vw, 54px);
+  font-weight: 750;
+  line-height: 1;
+}
+
+.workspace-root-create {
+  margin-bottom: 22px;
+}
+
+.workspace-library-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-library-controls select {
+  max-width: 156px;
+}
+
+.universal-item-composer {
+  min-height: 44px;
+  border-radius: var(--radius-control);
+}
+
+:where(.post-action-toolbar, .folder-action-toolbar) {
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--toolbar-bg) 94%, transparent);
+  box-shadow: none;
+}
+
+.workspace-root-action-toolbar {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.workspace-trash-row {
+  min-height: 52px;
+}
+
+@media (min-width: 1500px) {
+  .post-editor-shell.has-assistant-pinned .post-editor-content {
+    margin-right: var(--workspace-assistant-width, 360px);
+  }
+
+  .post-editor-shell.has-sidebar.has-assistant-pinned
+    :where(
+      .post-top-action-bar,
+      .post-top-action-bar.is-edit,
+      .folder-top-action-bar,
+      .workspace-root-action-bar
+    ) {
+    right: calc(var(--workspace-assistant-width, 360px) + 8px);
+  }
+}
+
+@media (max-width: 760px) {
+  :where(.workspace-root-page, .workspace-collection-page, .post-folder-page) {
+    padding: 54px 16px 64px;
+  }
+
+  :where(
+    .workspace-library-header h1,
+    .workspace-collection-header h1,
+    .post-folder-page-header h1
+  ) {
+    font-size: 26px;
+  }
+
+  .post-folder-page.is-mode-blog .post-folder-page-header h1 {
+    font-size: 38px;
+  }
+
+  .workspace-library-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-library-filters {
+    width: 100%;
+    overflow-x: auto;
   }
 }

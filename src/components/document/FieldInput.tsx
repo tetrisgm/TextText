@@ -42,6 +42,8 @@ export function FieldInput({
   const currentText = text(value);
 
   if (field.type === "image") {
+    if (embedded && !currentText) return null;
+
     return (
       <div
         className={`tt-field-row is-image${embedded ? " is-embedded" : ""}`}
@@ -51,7 +53,7 @@ export function FieldInput({
           {label}
           {field.required ? <span aria-hidden="true"> *</span> : null}
         </span>
-        <div className="tt-image-field-control">
+        <div className={`tt-image-field-control${embedded ? " is-canvas" : ""}`}>
           {currentText ? (
             <img className="tt-image-field-preview" src={currentText} alt="" />
           ) : (

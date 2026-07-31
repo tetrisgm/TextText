@@ -952,14 +952,20 @@ function NodeRenderer({
       );
     case "text": {
       const slot = slots?.bindings?.[node.bind];
+      if (slot !== undefined) {
+        return (
+          <div {...attrs} className={`tt-text tt-text-${node.role}`}>
+            {slot}
+          </div>
+        );
+      }
       const value =
-        slot ??
-        (formatFieldValue(
+        formatFieldValue(
           resolveDocumentBinding(document, node.bind),
           resolveFieldDefinition(node.bind, fields),
         ) ||
           node.fallback ||
-          "");
+          "";
       if (!hasValue(value)) return null;
       const href = node.href
         ? scalarText(resolveDocumentBinding(document, node.href))
@@ -967,6 +973,7 @@ function NodeRenderer({
       const children =
         href && isSafeLinkHref(href) ? <a href={href}>{value}</a> : value;
       return textElement(node.role, {
+        ...attrs,
         className: `tt-text tt-text-${node.role}`,
         children,
       });

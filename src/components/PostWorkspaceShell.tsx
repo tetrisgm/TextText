@@ -66,7 +66,6 @@ import { WorkspaceActionSearch } from "@/components/workspace/WorkspaceActionSea
 import { WorkspaceMenuMount } from "@/components/workspace/WorkspaceMenuMount";
 import { WorkspaceSettings } from "@/components/workspace/WorkspaceSettings";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
-import { AgentIntegrationHome } from "@/components/workspace/AgentIntegrationHome";
 import { WorkspaceSearchButton } from "@/components/workspace/WorkspaceSearchButton";
 import {
   WorkspaceItemActions,
@@ -342,7 +341,7 @@ let sidebarWidthMemory: number | null = null;
 const sidebarWidthListeners = new Set<() => void>();
 
 const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = "write:workspace-sidebar-width";
-const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 280;
+const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 252;
 const WORKSPACE_SIDEBAR_MIN_WIDTH = 220;
 const WORKSPACE_SIDEBAR_MAX_WIDTH = 420;
 const WORKSPACE_COMPACT_MEDIA_QUERY = "(max-width: 1024px)";
@@ -352,7 +351,7 @@ const localWorkspaceDraftRevisions = new Map<string, number>();
 const localWorkspaceServerRevisions = new Map<string, string>();
 const WORKSPACE_ASSISTANT_STATE_KEY = "write:workspace-assistant-state";
 const WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY =
-  "write:workspace-assistant-state:v2";
+  "write:workspace-assistant-state:v3";
 const WORKSPACE_ASSISTANT_WIDTH_KEY = "write:workspace-assistant-width";
 let assistantStateMemory: AssistantSidebarState | null = null;
 let assistantWidthMemory: number | null = null;
@@ -737,22 +736,22 @@ function useWorkspaceSidebarWidth() {
 
 function readAssistantState(): AssistantSidebarState {
   if (assistantStateMemory) return assistantStateMemory;
-  if (typeof window === "undefined") return "pinned";
+  if (typeof window === "undefined") return "hidden";
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
-      window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_KEY, "pinned");
+      window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_KEY, "hidden");
       window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY, "1");
     }
   } catch {
-    assistantStateMemory = "pinned";
+    assistantStateMemory = "hidden";
     return assistantStateMemory;
   }
   const saved = window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_KEY);
-  // The v2 migration re-pins once. Choices made afterward remain persistent.
+  // The v3 migration closes the inspector once. Choices made afterward persist.
   assistantStateMemory =
     saved === "open" || saved === "pinned" || saved === "hidden"
       ? (saved as AssistantSidebarState)
-      : "pinned";
+      : "hidden";
   return assistantStateMemory;
 }
 
@@ -820,7 +819,7 @@ function useWorkspaceAssistantPreferences() {
   const state = useSyncExternalStore(
     subscribeAssistantPreferences,
     readAssistantState,
-    () => "pinned" as AssistantSidebarState,
+    () => "hidden" as AssistantSidebarState,
   );
   const width = useSyncExternalStore(
     subscribeAssistantPreferences,
@@ -2880,7 +2879,7 @@ function WorkspaceRootLanding({
           <>
             <header className="workspace-library-header">
               <div>
-                <h1 id="workspace-root-title">Home</h1>
+                <h1 id="workspace-root-title">Library</h1>
                 <p>
                   {pool.posts.length}{" "}
                   {pool.posts.length === 1 ? "item" : "items"}
@@ -2967,10 +2966,7 @@ function WorkspaceRootLanding({
               </header>
               {recent.length === 0 ? (
                 <div className="workspace-recent-empty">
-                  <p>Your recently touched items will appear here.</p>
-                  <span>
-                    Press <kbd>C</kbd> to create an item.
-                  </span>
+                  <p>Create your first item above.</p>
                 </div>
               ) : (
                 <div className="workspace-recent-list" role="listbox">
@@ -2994,7 +2990,6 @@ function WorkspaceRootLanding({
                 </div>
               )}
             </section>
-            <AgentIntegrationHome compact />
           </>
         )}
       </div>
@@ -4097,7 +4092,9 @@ function LocalWorkspaceShell({
   const { pool } = useWorkspacePool();
   const itemIdentity = useLocalWorkspaceItemIdentity();
   const [view, setView] = useState<LocalWorkspaceView>(initialView);
-  const sourcePool = pool?.blogId === initialPool.blogId ? pool : initialPool;
+  const [poolHydrated, setPoolHydrated] = useState(false);
+  const sourcePool =
+    poolHydrated && pool?.blogId === initialPool.blogId ? pool : initialPool;
   const displayPool = useMemo(
     () =>
       localWorkspaceDraftSessions.size === 0
@@ -4174,6 +4171,10 @@ function LocalWorkspaceShell({
   );
   const [assistantConfirmation, setAssistantConfirmation] =
     useState<AssistantConfirmationRequest | null>(null);
+
+  useEffect(() => {
+    setPoolHydrated(true);
+  }, []);
   const assistantConfirmationController = useMemo(
     () => createAssistantConfirmationController(setAssistantConfirmation),
     [],

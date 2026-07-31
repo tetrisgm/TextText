@@ -113,7 +113,7 @@ describe("batch 4 workspace UI contract", () => {
 
   it("keeps the library collection-first and embeds the destination in the capture row", () => {
     expect(shellSource).toContain('className="workspace-library-header"');
-    expect(shellSource).toContain('id="workspace-root-title">Home</h1>');
+    expect(shellSource).toContain('id="workspace-root-title">Library</h1>');
     expect(shellSource).toContain('"library-v2"');
     expect(shellSource).toContain('"grid"');
     expect(shellSource).toContain(">Collections</p>");

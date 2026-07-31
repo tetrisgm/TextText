@@ -928,9 +928,13 @@ export function UnifiedDocumentEditor({
         .tt-field-row.is-embedded{position:relative;width:100%;margin:0}
         .tt-field-row.is-embedded>.tt-field-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
         .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor{width:100%}
-        .tt-field-row.is-image.is-embedded{justify-content:center;padding:.6rem 0}
-        .tt-field-row.is-image.is-embedded .tt-image-field-control{flex:0 1 auto;justify-content:center;padding:5px 7px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 88%,transparent);box-shadow:0 4px 16px rgba(0,0,0,.08);backdrop-filter:blur(18px) saturate(140%)}
-        .tt-field-row.is-image.is-embedded .tt-image-field-preview,.tt-field-row.is-image.is-embedded .tt-image-field-placeholder{width:72px;height:44px;flex-basis:72px}
+        .tt-field-row.is-image.is-embedded{justify-content:center;margin:1.2rem 0}
+        .tt-field-row.is-image.is-embedded .tt-image-field-control.is-canvas{position:relative;display:block;width:100%;overflow:visible}
+        .tt-field-row.is-image.is-embedded .tt-image-field-preview{display:block;width:100%;height:auto;max-height:min(62vh,680px);border:0;border-radius:0;background:transparent;object-fit:cover}
+        .tt-field-row.is-image.is-embedded .tt-image-field-actions{position:absolute;right:12px;bottom:12px;padding:4px;border:1px solid color-mix(in srgb,#fff 26%,transparent);border-radius:8px;background:rgba(29,29,31,.72);box-shadow:0 4px 14px rgba(0,0,0,.16);opacity:0;backdrop-filter:blur(18px) saturate(140%);transition:opacity 140ms ease}
+        .tt-field-row.is-image.is-embedded .tt-image-field-control:hover .tt-image-field-actions,.tt-field-row.is-image.is-embedded .tt-image-field-control:focus-within .tt-image-field-actions{opacity:1}
+        .tt-field-row.is-image.is-embedded .tt-image-field-actions button,.tt-field-row.is-image.is-embedded .tt-image-field-picker>summary{background:transparent;color:#fff}
+        .tt-field-row.is-image.is-embedded .tt-image-field-actions button{color:#ff6961}
         .tt-field-input{flex:1 1 auto;min-width:0;box-sizing:border-box;padding:5px 8px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:14px}
         .tt-field-input:focus{outline:2px solid var(--tt-accent,#0071e3);outline-offset:1px;border-color:transparent}
         .tt-field-input.is-checkbox{flex:0 0 auto;width:16px;height:16px;accent-color:var(--tt-accent,#0071e3)}

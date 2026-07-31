@@ -236,140 +236,47 @@ function LandingSections() {
         <FolderCards />
       </section>
 
-      <nav className="write-landing-explore" aria-label="Explore Texttext">
-        <p>Explore Texttext.</p>
-        <div>
-          <a href="#shapes">Shapes</a>
-          <a href="#polls">Polls and invites</a>
-          <a href="#together">Writing together</a>
-          <a href="#agents">For agents</a>
-          <a href="#mac">On your Mac</a>
-        </div>
-      </nav>
-
-      <section id="shapes" className="write-chapter" aria-label="Templates">
+      <section className="write-chapter" aria-label="Familiar document looks">
         <header className="write-chapter-head">
-          <p className="write-landing-kicker">Templates</p>
-          <h2>
-            Every document has a shape.
-            <br />
-            Yours to pick or invent.
-          </h2>
+          <p className="write-landing-kicker">Familiar looks</p>
+          <h2>Make it feel like the right place to write.</h2>
           <p>
-            Twenty-five built-in looks, from to-do lists and recipes to specs
-            and postmortems. This one is a real to-do list, rendered by the
-            same engine that publishes your pages.
+            Start with a proven reading experience, then change it without
+            moving your content into another tool.
           </p>
         </header>
-        <DocumentDemo slug="todo" />
+        <DocumentDemo slug="article" />
         <div className="write-chapter-claims">
           <article>
-            <h3>Pick a look.</h3>
+            <h3>Medium article</h3>
             <p>
-              The content stays one document. The shape is a choice you can
-              change any time.
+              A focused reading column, clear type hierarchy, and an author
+              line that stays out of the way.
             </p>
           </article>
           <article>
-            <h3>Fill in real fields.</h3>
+            <h3>Apple Notes</h3>
             <p>
-              Dates, ratings, statuses, checklists, and repeating rows, edited
-              right in the document.
+              Immediate editing, quiet controls, and a compact place for ideas
+              that do not need ceremony.
             </p>
           </article>
           <article>
-            <h3>Folders organize themselves.</h3>
+            <h3>Instapaper reader</h3>
             <p>
-              A bookshelf sorts by rating. A project folder becomes a status
-              board, column by column.
+              Saved articles with local images and a calm, durable reading
+              view.
             </p>
           </article>
         </div>
-        <TextLink href="/templates">Browse all the templates</TextLink>
-      </section>
-
-      <section id="polls" className="write-chapter" aria-label="Polls and invites">
-        <header className="write-chapter-head">
-          <p className="write-landing-kicker">Polls and invites</p>
-          <h2>
-            Documents that talk back.
-          </h2>
-          <p>
-            Publish a question and the page collects answers. This is the poll
-            template, ballot and all.
-          </p>
-        </header>
-        <DocumentDemo slug="poll" />
-        <div className="write-chapter-claims">
-          <article>
-            <h3>Ask the room.</h3>
-            <p>
-              Readers vote right on the published page and watch the results
-              fill in live.
-            </p>
-          </article>
-          <article>
-            <h3>One tap to RSVP.</h3>
-            <p>
-              An invite carries when, where, and host, with a ballot that
-              closes itself at showtime.
-            </p>
-          </article>
-          <article>
-            <h3>One response per reader.</h3>
-            <p>
-              Signed in or not, changing your vote updates it. Nothing counts
-              twice.
-            </p>
-          </article>
-        </div>
-        <TextLink href="/templates/poll">See the poll template</TextLink>
-      </section>
-
-      <section id="together" className="write-chapter" aria-label="Writing together">
-        <header className="write-chapter-head">
-          <p className="write-landing-kicker">Collaboration</p>
-          <h2>
-            Write together.
-            <br />
-            Stay on the record.
-          </h2>
-          <p>
-            Meetings are where shared writing earns its keep. This is the
-            meeting template: discussion, decisions, and owned action items.
-          </p>
-        </header>
-        <DocumentDemo slug="meeting" />
-        <div className="write-chapter-claims">
-          <article>
-            <h3>Everyone edits at once.</h3>
-            <p>
-              Live cursors and presence on the whole document, with edits that
-              survive bad networks.
-            </p>
-          </article>
-          <article>
-            <h3>Comments that point.</h3>
-            <p>
-              Anchored to the exact words, resolvable, and still attached
-              after the text moves.
-            </p>
-          </article>
-          <article>
-            <h3>AI on the record.</h3>
-            <p>
-              Every change an assistant or agent makes is attributed and kept
-              in the audit log.
-            </p>
-          </article>
-        </div>
+        <TextLink href="/templates">Browse familiar looks</TextLink>
       </section>
 
       <section className="write-landing-portability" aria-label="Portability">
         <div className="write-landing-band-inner">
           <div>
-            <p className="write-landing-kicker">Local and collaborative</p>
-            <h2>Your files stay yours</h2>
+            <p className="write-landing-kicker">Local, shared, durable</p>
+            <h2>Your writing stays yours</h2>
           </div>
           <div className="write-landing-band-copy">
             <p>
@@ -383,44 +290,26 @@ function LandingSections() {
         </div>
       </section>
 
-      <section id="agents" className="write-chapter" aria-label="For agents">
-        <header className="write-chapter-head">
-          <p className="write-landing-kicker">For agents</p>
-          <h2>
-            Your AI already knows
-            <br />
-            how to use it.
-          </h2>
+      <section className="write-landing-split" aria-label="Sharing and agents">
+        <article>
+          <p className="write-landing-kicker">Work together</p>
+          <h2>Share a document, not a new workflow</h2>
           <p>
-            This decision record was written about Texttext, in Texttext, and
-            agents read and write documents like it every day.
+            Invite people to edit or comment, publish openly, or keep a page
+            reachable only by its link. Live cursors show who is working and
+            where.
           </p>
-        </header>
-        <DocumentDemo slug="decision" />
-        <div className="write-chapter-claims">
-          <article>
-            <h3>Connect in a click.</h3>
-            <p>
-              ChatGPT, Claude, Codex, and any MCP client, approved once with
-              OAuth and scoped to your workspace.
-            </p>
-          </article>
-          <article>
-            <h3>A CLI for local agents.</h3>
-            <p>
-              Agents on your Mac edit documents as files, with presence and
-              attribution built in.
-            </p>
-          </article>
-          <article>
-            <h3>Describe a brand-new look.</h3>
-            <p>
-              A wine log, a match diary: an agent composes the fields and
-              layout, and it publishes like any page.
-            </p>
-          </article>
-        </div>
-        <TextLink href="/docs/ai">Read the AI docs</TextLink>
+        </article>
+        <article>
+          <p className="write-landing-kicker">Use your AI</p>
+          <h2>Keep the document at the center</h2>
+          <p>
+            Claude, ChatGPT, Codex, and other MCP clients can create, find, and
+            update the same documents you work on. Their changes stay visible
+            and attributed.
+          </p>
+          <TextLink href="/docs/ai">Connect an AI</TextLink>
+        </article>
       </section>
 
       <LandingDownload />
