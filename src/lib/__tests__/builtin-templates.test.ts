@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { exemplarFor } from "@/lib/presentation/exemplars";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import {
   BUILTIN_TEMPLATES,
@@ -20,7 +21,10 @@ const ORIGINAL_FIVE = [
 describe("built-in templates", () => {
   it("every built-in passes validateTemplateDefinition", () => {
     for (const template of BUILTIN_TEMPLATES) {
-      expect(() => validateTemplateDefinition(template), template.id).not.toThrow();
+      expect(
+        () => validateTemplateDefinition(template),
+        template.id,
+      ).not.toThrow();
     }
   });
 
@@ -41,12 +45,43 @@ describe("built-in templates", () => {
     }
   });
 
-  it("ships the expanded catalog as new ids at version 1", () => {
-    expect(BUILTIN_TEMPLATES.length).toBeGreaterThanOrEqual(22);
+  it("offers only the focused catalog at version 1", () => {
+    expect(BUILTIN_TEMPLATES).toHaveLength(8);
+    expect(BUILTIN_TEMPLATES.map((template) => template.name)).toEqual([
+      "Medium article",
+      "Apple Notes",
+      "Instapaper reader",
+      "Pinterest board",
+      "YouTube video",
+      "Apple Reminders",
+      "Notion project",
+      "Substack newsletter",
+    ]);
     for (const template of BUILTIN_TEMPLATES) {
       expect(template.version).toBe(1);
       expect(template.id.startsWith("texttext.")).toBe(true);
     }
+  });
+
+  it("keeps retired templates resolvable without offering them in the gallery", () => {
+    expect(requireBuiltinTemplate("texttext.meeting", 1).name).toBe(
+      "Meeting notes",
+    );
+    expect(
+      BUILTIN_TEMPLATES.some((template) => template.id === "texttext.meeting"),
+    ).toBe(false);
+    expect(
+      TEMPLATE_CATALOG.some((entry) => entry.id === "texttext.meeting"),
+    ).toBe(false);
+  });
+
+  it("keeps media in the Pinterest exemplar", () => {
+    const exemplar = exemplarFor("texttext.gallery");
+
+    expect(exemplar?.assets).toHaveLength(6);
+    expect(exemplar?.assets?.every((asset) => asset.kind === "image")).toBe(
+      true,
+    );
   });
 
   it("catalogs every template exactly once with a known category", () => {

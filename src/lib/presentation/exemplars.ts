@@ -11,11 +11,14 @@
 // Field ids MUST match src/lib/presentation/templates.ts exactly; the
 // showcase fails loudly if the server rejects a value.
 
+import type { DocumentAsset } from "@/lib/documents/model";
+
 export type Exemplar = {
   template: string;
   title: string;
   body: string;
   fields: Record<string, unknown>;
+  assets?: DocumentAsset[];
 };
 
 export const EXEMPLARS: Exemplar[] = [
@@ -35,13 +38,66 @@ export const EXEMPLARS: Exemplar[] = [
     template: "texttext.bookmark",
     title: "How Figma's multiplayer technology works",
     body: `Figma's engineering deep-dive on their multiplayer sync: client-side prediction, server-authoritative conflict resolution, and why they chose properties-last-writer-wins over OT. The section on undo in a multiplayer world is the best writing on the topic anywhere.`,
-    fields: { sourceUrl: "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/" },
+    fields: {
+      sourceUrl:
+        "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/",
+    },
   },
   {
     template: "texttext.gallery",
     title: "Fog season, Ocean Beach",
     body: `Six mornings in July, same dune, same hour. The fog does the composing.`,
     fields: {},
+    assets: [
+      {
+        id: "fog-dune",
+        kind: "image",
+        src: "/covers/cover-002.jpg",
+        alt: "Morning light crossing a coastal dune",
+        width: 1600,
+        height: 900,
+      },
+      {
+        id: "fog-terminal",
+        kind: "image",
+        src: "/covers/cover-003.jpg",
+        alt: "A dark shoreline silhouette in the fog",
+        width: 1600,
+        height: 900,
+      },
+      {
+        id: "fog-path",
+        kind: "image",
+        src: "/covers/cover-005.jpg",
+        alt: "A path disappearing into a misty forest",
+        width: 1600,
+        height: 900,
+      },
+      {
+        id: "fog-bicycles",
+        kind: "image",
+        src: "/covers/cover-006.jpg",
+        alt: "Bicycles locked together near the beach",
+        width: 1600,
+        height: 900,
+      },
+      {
+        id: "fog-field",
+        kind: "image",
+        src: "/covers/cover-007.jpg",
+        alt: "A muted field under a pale morning sky",
+        width: 1600,
+        height: 900,
+      },
+      {
+        id: "fog-moss",
+        kind: "image",
+        src: "/covers/cover-010.jpg",
+        alt: "Close texture of wet green moss",
+        width: 1600,
+        height: 900,
+      },
+    ],
   },
   {
     template: "texttext.talk",
@@ -56,12 +112,42 @@ export const EXEMPLARS: Exemplar[] = [
     fields: {
       area: "work",
       items: [
-        { task: "Freeze the release branch", done: true, when: "2026-07-27", priority: "high" },
-        { task: "Final pass on the landing page copy", done: true, when: "2026-07-27", priority: "high" },
-        { task: "Record the 90-second demo", done: false, when: "2026-07-28", priority: "high" },
-        { task: "Draft the announcement post", done: false, when: "2026-07-28", priority: "medium" },
-        { task: "Brief the beta list", done: false, when: "2026-07-29", priority: "medium" },
-        { task: "Order pastries for launch morning", done: false, when: "2026-07-30", priority: "low" },
+        {
+          task: "Freeze the release branch",
+          done: true,
+          when: "2026-07-27",
+          priority: "high",
+        },
+        {
+          task: "Final pass on the landing page copy",
+          done: true,
+          when: "2026-07-27",
+          priority: "high",
+        },
+        {
+          task: "Record the 90-second demo",
+          done: false,
+          when: "2026-07-28",
+          priority: "high",
+        },
+        {
+          task: "Draft the announcement post",
+          done: false,
+          when: "2026-07-28",
+          priority: "medium",
+        },
+        {
+          task: "Brief the beta list",
+          done: false,
+          when: "2026-07-29",
+          priority: "medium",
+        },
+        {
+          task: "Order pastries for launch morning",
+          done: false,
+          when: "2026-07-30",
+          priority: "low",
+        },
       ],
     },
   },
@@ -73,11 +159,27 @@ export const EXEMPLARS: Exemplar[] = [
       date: "2026-07-28",
       meetingType: "planning",
       attendees: "Ramine, Mina, Jordan",
-      decisions: "Launch at a flat $8/month with a 30-day trial. Revisit seat pricing when team workspaces ship. Price goes on the landing page above the fold.",
+      decisions:
+        "Launch at a flat $8/month with a 30-day trial. Revisit seat pricing when team workspaces ship. Price goes on the landing page above the fold.",
       actions: [
-        { item: "Update the pricing page", done: false, owner: "Mina", due: "2026-07-31" },
-        { item: "Wire the trial expiry email", done: false, owner: "Jordan", due: "2026-08-04" },
-        { item: "Grandfather the beta cohort", done: true, owner: "Ramine", due: "2026-07-29" },
+        {
+          item: "Update the pricing page",
+          done: false,
+          owner: "Mina",
+          due: "2026-07-31",
+        },
+        {
+          item: "Wire the trial expiry email",
+          done: false,
+          owner: "Jordan",
+          due: "2026-08-04",
+        },
+        {
+          item: "Grandfather the beta cohort",
+          done: true,
+          owner: "Ramine",
+          due: "2026-07-29",
+        },
       ],
     },
   },
@@ -99,7 +201,8 @@ export const EXEMPLARS: Exemplar[] = [
       startedAt: "2026-07-10",
       finishedAt: "2026-07-24",
       moods: ["strange", "moving"],
-      favoriteQuote: "The Beauty of the House is immeasurable; its Kindness infinite.",
+      favoriteQuote:
+        "The Beauty of the House is immeasurable; its Kindness infinite.",
     },
   },
   {
@@ -127,15 +230,35 @@ export const EXEMPLARS: Exemplar[] = [
       rating: 5,
       ingredients: [
         { item: "200g spaghetti", have: true, section: "Pasta" },
-        { item: "80g Pecorino Romano, finely grated", have: true, section: "Sauce" },
+        {
+          item: "80g Pecorino Romano, finely grated",
+          have: true,
+          section: "Sauce",
+        },
         { item: "2 tsp black peppercorns", have: true, section: "Sauce" },
         { item: "Flaky salt", have: true, section: "Sauce" },
       ],
       steps: [
-        { instruction: "Toast the peppercorns in a dry pan until fragrant, then crush coarsely.", minutes: 3 },
-        { instruction: "Cook the spaghetti in well-salted water to one minute shy of the package time. Reserve a full cup of pasta water.", minutes: 10 },
-        { instruction: "Off heat, whisk the Pecorino with a splash of warm (not boiling) pasta water into a thick cream.", minutes: 2 },
-        { instruction: "Toss the drained pasta with the pepper, then the cheese cream, loosening with pasta water until glossy. Serve immediately in warm bowls.", minutes: 2 },
+        {
+          instruction:
+            "Toast the peppercorns in a dry pan until fragrant, then crush coarsely.",
+          minutes: 3,
+        },
+        {
+          instruction:
+            "Cook the spaghetti in well-salted water to one minute shy of the package time. Reserve a full cup of pasta water.",
+          minutes: 10,
+        },
+        {
+          instruction:
+            "Off heat, whisk the Pecorino with a splash of warm (not boiling) pasta water into a thick cream.",
+          minutes: 2,
+        },
+        {
+          instruction:
+            "Toss the drained pasta with the pepper, then the cheese cream, loosening with pasta water until glossy. Serve immediately in warm bowls.",
+          minutes: 2,
+        },
       ],
     },
   },
@@ -149,11 +272,26 @@ export const EXEMPLARS: Exemplar[] = [
       releaseStatus: "released",
       breaking: false,
       changes: [
-        { kind: "added", note: "Twenty-three built-in looks in six groups, from to-do lists to postmortems" },
-        { kind: "added", note: "Typed fields you fill in right in the document: dates, ratings, statuses, checklists, repeating rows" },
-        { kind: "added", note: "Folders sort and filter by your fields, so a bookshelf orders itself by rating" },
-        { kind: "changed", note: "The create menu groups looks by what you are doing" },
-        { kind: "fixed", note: "Edits typed in the first moment after creating a document are never lost" },
+        {
+          kind: "added",
+          note: "Twenty-three built-in looks in six groups, from to-do lists to postmortems",
+        },
+        {
+          kind: "added",
+          note: "Typed fields you fill in right in the document: dates, ratings, statuses, checklists, repeating rows",
+        },
+        {
+          kind: "added",
+          note: "Folders sort and filter by your fields, so a bookshelf orders itself by rating",
+        },
+        {
+          kind: "changed",
+          note: "The create menu groups looks by what you are doing",
+        },
+        {
+          kind: "fixed",
+          note: "Edits typed in the first moment after creating a document are never lost",
+        },
       ],
     },
   },
@@ -167,10 +305,21 @@ export const EXEMPLARS: Exemplar[] = [
       decidedAt: "2026-07-29",
       deciders: "Ramine",
       options: [
-        { option: "Harden the loopback server (auth, origin checks)", verdict: "rejected", because: "Mitigates the class instead of deleting it; every future change re-litigates the threat model" },
-        { option: "Ship a CLI inside the app bundle", verdict: "chosen", because: "No port means no browser can reach it; the device credential makes it authenticated by construction" },
+        {
+          option: "Harden the loopback server (auth, origin checks)",
+          verdict: "rejected",
+          because:
+            "Mitigates the class instead of deleting it; every future change re-litigates the threat model",
+        },
+        {
+          option: "Ship a CLI inside the app bundle",
+          verdict: "chosen",
+          because:
+            "No port means no browser can reach it; the device credential makes it authenticated by construction",
+        },
       ],
-      outcome: "The texttext CLI shipped in 0.146 and the local server was deleted. Presence and audit attribution came free because the CLI knows who is working and why.",
+      outcome:
+        "The texttext CLI shipped in 0.146 and the local server was deleted. Presence and audit attribution came free because the CLI knows who is working and why.",
     },
   },
   {
@@ -191,16 +340,43 @@ export const EXEMPLARS: Exemplar[] = [
       specStatus: "in-review",
       owner: "Ramine",
       targetDate: "2026-08-20",
-      summary: "Let a workspace save customized templates as immutable versions and set one as a folder default.",
+      summary:
+        "Let a workspace save customized templates as immutable versions and set one as a folder default.",
       requirements: [
-        { requirement: "Customized template saves as a new immutable workspace version", priority: "must", done: true },
-        { requirement: "A folder can pin any workspace template as its default", priority: "must", done: false },
-        { requirement: "Template gallery shows workspace templates beside built-ins", priority: "should", done: false },
-        { requirement: "Export a workspace template as a shareable file", priority: "could", done: false },
+        {
+          requirement:
+            "Customized template saves as a new immutable workspace version",
+          priority: "must",
+          done: true,
+        },
+        {
+          requirement: "A folder can pin any workspace template as its default",
+          priority: "must",
+          done: false,
+        },
+        {
+          requirement:
+            "Template gallery shows workspace templates beside built-ins",
+          priority: "should",
+          done: false,
+        },
+        {
+          requirement: "Export a workspace template as a shareable file",
+          priority: "could",
+          done: false,
+        },
       ],
       openQuestions: [
-        { question: "Do workspace templates sync to the Mac app gallery?", resolved: true, answer: "Yes, they ride the same pool payload." },
-        { question: "Can a viewer-role member see workspace templates?", resolved: false, answer: "" },
+        {
+          question: "Do workspace templates sync to the Mac app gallery?",
+          resolved: true,
+          answer: "Yes, they ride the same pool payload.",
+        },
+        {
+          question: "Can a viewer-role member see workspace templates?",
+          resolved: false,
+          answer: "",
+        },
       ],
     },
   },
@@ -218,11 +394,27 @@ export const EXEMPLARS: Exemplar[] = [
         { milestone: "DNS cutover", due: "2026-08-15", reached: false },
       ],
       tasks: [
-        { task: "Audit current pages and traffic", done: true, owner: "Ramine", due: "2026-07-30" },
-        { task: "Rebuild landing in the engine", done: false, owner: "Mina", due: "2026-08-05" },
-        { task: "Redirect map for old URLs", done: false, owner: "Jordan", due: "2026-08-12" },
+        {
+          task: "Audit current pages and traffic",
+          done: true,
+          owner: "Ramine",
+          due: "2026-07-30",
+        },
+        {
+          task: "Rebuild landing in the engine",
+          done: false,
+          owner: "Mina",
+          due: "2026-08-05",
+        },
+        {
+          task: "Redirect map for old URLs",
+          done: false,
+          owner: "Jordan",
+          due: "2026-08-12",
+        },
       ],
-      risks: "The pricing page A/B test ends Aug 10; cutover before then means migrating the losing variant.",
+      risks:
+        "The pricing page A/B test ends Aug 10; cutover before then means migrating the losing variant.",
     },
   },
   {
@@ -235,9 +427,24 @@ export const EXEMPLARS: Exemplar[] = [
       owner: "Ramine",
       score: 0.45,
       keyResults: [
-        { result: "Weekly active writers", current: 340, target: 1000, unit: "writers" },
-        { result: "Documents created per week", current: 2100, target: 5000, unit: "docs" },
-        { result: "Median editor load time", current: 380, target: 250, unit: "ms" },
+        {
+          result: "Weekly active writers",
+          current: 340,
+          target: 1000,
+          unit: "writers",
+        },
+        {
+          result: "Documents created per week",
+          current: 2100,
+          target: 5000,
+          unit: "docs",
+        },
+        {
+          result: "Median editor load time",
+          current: 380,
+          target: 250,
+          unit: "ms",
+        },
       ],
     },
   },
@@ -249,19 +456,49 @@ export const EXEMPLARS: Exemplar[] = [
       incidentDate: "2026-07-12",
       severity: "sev2",
       durationMinutes: 47,
-      impact: "Mac app saves failed for all users; web unaffected; zero data loss after outbox replay",
+      impact:
+        "Mac app saves failed for all users; web unaffected; zero data loss after outbox replay",
       timeline: [
-        { time: "14:02", event: "Deploy 0.91 goes out with a migration that renames a column" },
-        { time: "14:06", event: "Error rate on /api/sync/v1/files crosses 50%; alert fires" },
-        { time: "14:15", event: "Rollback initiated; old code still references the renamed column" },
-        { time: "14:31", event: "Forward-fix deployed restoring a compatibility view" },
-        { time: "14:49", event: "Error rate back to baseline; outbox replays confirmed" },
+        {
+          time: "14:02",
+          event: "Deploy 0.91 goes out with a migration that renames a column",
+        },
+        {
+          time: "14:06",
+          event: "Error rate on /api/sync/v1/files crosses 50%; alert fires",
+        },
+        {
+          time: "14:15",
+          event:
+            "Rollback initiated; old code still references the renamed column",
+        },
+        {
+          time: "14:31",
+          event: "Forward-fix deployed restoring a compatibility view",
+        },
+        {
+          time: "14:49",
+          event: "Error rate back to baseline; outbox replays confirmed",
+        },
       ],
-      rootCause: "The migration renamed a column in the same deploy as the code that stopped using it. Rollback restored old code but not the old column, extending the outage. Expand-and-contract was documented but not enforced.",
+      rootCause:
+        "The migration renamed a column in the same deploy as the code that stopped using it. Rollback restored old code but not the old column, extending the outage. Expand-and-contract was documented but not enforced.",
       actionItems: [
-        { item: "Gate: migrations may only add in the same deploy; removals wait one release", done: true, owner: "Ramine" },
-        { item: "Alert on sync error rate at 10%, not 50%", done: true, owner: "Jordan" },
-        { item: "Runbook for column-rename rollbacks", done: false, owner: "Mina" },
+        {
+          item: "Gate: migrations may only add in the same deploy; removals wait one release",
+          done: true,
+          owner: "Ramine",
+        },
+        {
+          item: "Alert on sync error rate at 10%, not 50%",
+          done: true,
+          owner: "Jordan",
+        },
+        {
+          item: "Runbook for column-rename rollbacks",
+          done: false,
+          owner: "Mina",
+        },
       ],
     },
   },
@@ -273,17 +510,31 @@ export const EXEMPLARS: Exemplar[] = [
       date: "2026-07-31",
       team: "Product",
       wentWell: [
-        { item: "The demo video carried the launch; half of signups watched it" },
+        {
+          item: "The demo video carried the launch; half of signups watched it",
+        },
         { item: "Zero release-day incidents; the ship gate earned its keep" },
         { item: "Beta cohort emails were personal and it showed in replies" },
       ],
       couldImprove: [
-        { item: "Pricing questions swamped support; the FAQ went up two days late" },
-        { item: "We froze the branch but not the copy; three tweaks risked the freeze" },
+        {
+          item: "Pricing questions swamped support; the FAQ went up two days late",
+        },
+        {
+          item: "We froze the branch but not the copy; three tweaks risked the freeze",
+        },
       ],
       actions: [
-        { item: "FAQ ships WITH the landing page next launch", done: false, owner: "Mina" },
-        { item: "Copy freeze rides the branch freeze", done: true, owner: "Ramine" },
+        {
+          item: "FAQ ships WITH the landing page next launch",
+          done: false,
+          owner: "Mina",
+        },
+        {
+          item: "Copy freeze rides the branch freeze",
+          done: true,
+          owner: "Ramine",
+        },
       ],
     },
   },
@@ -306,9 +557,23 @@ export const EXEMPLARS: Exemplar[] = [
       issueNumber: 12,
       sentAt: "2026-08-01",
       links: [
-        { title: "Documents now have shapes", url: "https://texttext.app/changelog", blurb: "The 0.154 release: 23 looks, typed fields, folders that organize themselves." },
-        { title: "The case for slow publishing", url: "https://texttext.app/@demo/slow-publishing", blurb: "The writing worth reading in five years is the writing someone sat on for five weeks." },
-        { title: "How Figma's multiplayer works", url: "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/", blurb: "Still the best public writeup of real-world sync." },
+        {
+          title: "Documents now have shapes",
+          url: "https://texttext.app/changelog",
+          blurb:
+            "The 0.154 release: 23 looks, typed fields, folders that organize themselves.",
+        },
+        {
+          title: "The case for slow publishing",
+          url: "https://texttext.app/@demo/slow-publishing",
+          blurb:
+            "The writing worth reading in five years is the writing someone sat on for five weeks.",
+        },
+        {
+          title: "How Figma's multiplayer works",
+          url: "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/",
+          blurb: "Still the best public writeup of real-world sync.",
+        },
       ],
     },
   },
@@ -320,10 +585,19 @@ export const EXEMPLARS: Exemplar[] = [
       location: "San Francisco",
       lastUpdated: "2026-07-29",
       currently: [
-        { area: "Building", detail: "Texttext, a document workspace where every page has a shape" },
+        {
+          area: "Building",
+          detail: "Texttext, a document workspace where every page has a shape",
+        },
         { area: "Reading", detail: "Piranesi, slowly, on purpose" },
-        { area: "Listening", detail: "The Caretaker while writing, nothing while editing" },
-        { area: "Learning", detail: "Enough Postgres query planning to be dangerous" },
+        {
+          area: "Listening",
+          detail: "The Caretaker while writing, nothing while editing",
+        },
+        {
+          area: "Learning",
+          detail: "Enough Postgres query planning to be dangerous",
+        },
       ],
     },
   },
@@ -336,7 +610,10 @@ export const EXEMPLARS: Exemplar[] = [
       useCase: "writing",
       proven: true,
       variables: [
-        { name: "commits", purpose: "The git log --oneline output for the release" },
+        {
+          name: "commits",
+          purpose: "The git log --oneline output for the release",
+        },
       ],
     },
   },

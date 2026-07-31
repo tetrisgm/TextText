@@ -6,25 +6,44 @@ const article = {
   engineVersion: 1,
   id: "texttext.article",
   version: 1,
-  name: "Article",
-  description: "A cover-led editorial page for long-form writing.",
+  name: "Medium article",
+  description: "A focused long-form story with Medium-inspired typography.",
   fields: [{ id: "cover", label: "Cover", type: "image" }],
   capabilities: ["assets", "collaboration", "comments", "publish", "search"],
-  theme: { typography: "editorial", measure: "reading", alignment: "center" },
+  theme: {
+    typography: "editorial",
+    measure: "reading",
+    alignment: "start",
+    media: "contained",
+  },
   item: {
     type: "stack",
     gap: "lg",
     children: [
-      { type: "cover", bind: "content.fields.cover", alt: "content.title", height: "large" },
       {
         type: "masthead",
         gap: "sm",
         children: [
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           { type: "byline" },
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "metadata" },
         ],
+      },
+      {
+        type: "cover",
+        bind: "content.fields.cover",
+        alt: "content.title",
+        height: "large",
       },
       { type: "prose", bind: "content.body" },
     ],
@@ -38,9 +57,24 @@ const article = {
       type: "stack",
       gap: "sm",
       children: [
-        { type: "cover", bind: "content.fields.cover", alt: "content.title", height: "compact" },
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled" },
-        { type: "text", bind: "content.subtitle", role: "caption", showWhen: "content.subtitle" },
+        {
+          type: "cover",
+          bind: "content.fields.cover",
+          alt: "content.title",
+          height: "compact",
+        },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled",
+        },
+        {
+          type: "text",
+          bind: "content.subtitle",
+          role: "caption",
+          showWhen: "content.subtitle",
+        },
       ],
     },
   },
@@ -51,8 +85,8 @@ const note = {
   engineVersion: 1,
   id: "texttext.note",
   version: 1,
-  name: "Note",
-  description: "A quiet, immediate writing surface.",
+  name: "Apple Notes",
+  description: "A clean, familiar note inspired by Apple Notes.",
   fields: [],
   capabilities: ["assets", "collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
@@ -60,8 +94,19 @@ const note = {
     type: "stack",
     gap: "md",
     children: [
-      { type: "text", bind: "content.title", role: "title", fallback: "Untitled" },
-      { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+      {
+        type: "text",
+        bind: "content.title",
+        role: "title",
+        fallback: "Untitled",
+      },
+      { type: "metadata" },
+      {
+        type: "text",
+        bind: "content.subtitle",
+        role: "subtitle",
+        showWhen: "content.subtitle",
+      },
       { type: "prose", bind: "content.body" },
     ],
   },
@@ -74,7 +119,12 @@ const note = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled",
+        },
         { type: "prose", bind: "content.body" },
       ],
     },
@@ -86,26 +136,46 @@ const bookmark = {
   engineVersion: 1,
   id: "texttext.bookmark",
   version: 1,
-  name: "Bookmark",
-  description: "A locally captured, image-rich reader page.",
+  name: "Instapaper reader",
+  description: "A calm saved-article view inspired by Instapaper.",
   fields: [
     { id: "cover", label: "Cover", type: "image" },
     { id: "sourceUrl", label: "Original link", type: "url", required: true },
   ],
-  capabilities: ["assets", "capture", "collaboration", "comments", "import", "search"],
-  theme: { typography: "editorial", measure: "reading", alignment: "center" },
+  capabilities: [
+    "assets",
+    "capture",
+    "collaboration",
+    "comments",
+    "import",
+    "search",
+  ],
+  theme: {
+    typography: "editorial",
+    measure: "reading",
+    alignment: "start",
+    media: "contained",
+  },
   item: {
     type: "stack",
     gap: "lg",
     children: [
-      { type: "cover", bind: "content.fields.cover", alt: "content.title", height: "large" },
       {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "metadata" },
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           {
             type: "text",
             bind: "content.fields.sourceUrl",
@@ -113,7 +183,15 @@ const bookmark = {
             role: "caption",
             showWhen: "content.fields.sourceUrl",
           },
+          { type: "metadata" },
         ],
+      },
+      {
+        type: "cover",
+        bind: "content.fields.cover",
+        alt: "content.title",
+        height: "medium",
+        showWhen: "content.fields.cover",
       },
       { type: "prose", bind: "content.body" },
     ],
@@ -126,28 +204,46 @@ const gallery = {
   engineVersion: 1,
   id: "texttext.gallery",
   version: 1,
-  name: "Gallery",
-  description: "Writing and a media collection side by side.",
+  name: "Pinterest board",
+  description: "An image-first board inspired by Pinterest.",
   fields: [{ id: "cover", label: "Cover", type: "image" }],
   capabilities: ["assets", "collaboration", "comments", "publish", "search"],
-  theme: { typography: "system", measure: "full", alignment: "start", media: "full" },
+  theme: {
+    typography: "system",
+    measure: "full",
+    alignment: "start",
+    media: "full",
+  },
   item: {
     type: "stack",
-    direction: "horizontal",
-    gap: "none",
+    gap: "lg",
     children: [
       {
-        type: "group",
+        type: "masthead",
         id: "gallery-copy",
-        gap: "md",
+        gap: "sm",
         children: [
-          { type: "byline" },
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "prose", bind: "content.body" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
         ],
       },
-      { type: "gallery", id: "gallery-media", bind: "content.assets", columns: 1 },
+      {
+        type: "gallery",
+        id: "gallery-media",
+        bind: "content.assets",
+        columns: 4,
+      },
+      { type: "prose", bind: "content.body", showWhen: "content.body" },
     ],
   },
   collection: article.collection,
@@ -158,27 +254,46 @@ const talk = {
   engineVersion: 1,
   id: "texttext.talk",
   version: 1,
-  name: "Video",
-  description: "A video stage with an editorial transcript.",
+  name: "YouTube video",
+  description: "A focused video page inspired by YouTube.",
   fields: [
     { id: "cover", label: "Cover", type: "image" },
     { id: "videoUrl", label: "Video", type: "url", required: true },
   ],
   capabilities: ["assets", "collaboration", "comments", "publish", "search"],
-  theme: { typography: "system", measure: "reading", alignment: "center" },
+  theme: {
+    typography: "system",
+    measure: "wide",
+    alignment: "start",
+    media: "contained",
+  },
   item: {
     type: "stack",
     gap: "lg",
     children: [
-      { type: "video", bind: "content.fields.videoUrl", alt: "content.title", height: "large" },
+      {
+        type: "video",
+        bind: "content.fields.videoUrl",
+        alt: "content.title",
+        height: "large",
+      },
       {
         type: "masthead",
         gap: "sm",
         children: [
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled",
+          },
           { type: "byline" },
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "metadata" },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
         ],
       },
       { type: "prose", bind: "content.body" },
@@ -187,17 +302,13 @@ const talk = {
   collection: article.collection,
 } as const;
 
-// --- The expanded catalog. Every template below is a new id at version 1;
-// the five originals above stay byte-compatible. Tones and icons are
-// engine-owned: no user color or markup enters a definition. ---
-
 const todo = {
   schemaVersion: 1,
   engineVersion: 1,
   id: "texttext.todo",
   version: 1,
-  name: "To-do list",
-  description: "A checklist with dates and priorities where finished items get out of the way.",
+  name: "Apple Reminders",
+  description: "A focused checklist inspired by Apple Reminders.",
   fields: [
     {
       id: "area",
@@ -232,13 +343,34 @@ const todo = {
     },
   ],
   capabilities: ["collaboration", "comments", "search"],
-  theme: { typography: "system", measure: "reading", alignment: "start", density: "compact" },
+  theme: {
+    typography: "system",
+    measure: "reading",
+    alignment: "start",
+    density: "compact",
+  },
   item: {
     type: "stack",
     gap: "md",
     children: [
-      { type: "text", bind: "content.title", role: "title", fallback: "Untitled list" },
-      { type: "badge", bind: "content.fields.area", variant: "pill", showWhen: "content.fields.area" },
+      {
+        type: "text",
+        bind: "content.title",
+        role: "title",
+        fallback: "Untitled list",
+      },
+      {
+        type: "text",
+        bind: "content.subtitle",
+        role: "subtitle",
+        showWhen: "content.subtitle",
+      },
+      {
+        type: "badge",
+        bind: "content.fields.area",
+        variant: "pill",
+        showWhen: "content.fields.area",
+      },
       { type: "prose", bind: "content.body", showWhen: "content.body" },
       {
         type: "progress",
@@ -267,12 +399,25 @@ const todo = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled list" },
-        { type: "badge", bind: "content.fields.area", variant: "pill", showWhen: "content.fields.area" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled list",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.area",
+          variant: "pill",
+          showWhen: "content.fields.area",
+        },
         {
           type: "progress",
           variant: "fraction",
-          source: { checklistBind: "content.fields.items", doneBind: "row.done" },
+          source: {
+            checklistBind: "content.fields.items",
+            doneBind: "row.done",
+          },
           showWhen: "content.fields.items",
         },
       ],
@@ -280,13 +425,17 @@ const todo = {
   },
 } as const;
 
+// Retired definitions below remain resolvable so existing documents keep
+// rendering, but only the active catalog is offered for new documents.
+
 const meeting = {
   schemaVersion: 1,
   engineVersion: 1,
   id: "texttext.meeting",
   version: 1,
   name: "Meeting notes",
-  description: "Who met, what was discussed, what was decided, and who owes what by when.",
+  description:
+    "Who met, what was discussed, what was decided, and who owes what by when.",
   fields: [
     { id: "date", label: "Date", type: "date", required: true },
     {
@@ -295,12 +444,22 @@ const meeting = {
       type: "enum",
       options: [
         { value: "standup", label: "Standup", tone: "info", icon: "☀️" },
-        { value: "one-on-one", label: "One on one", tone: "accent", icon: "👥" },
+        {
+          value: "one-on-one",
+          label: "One on one",
+          tone: "accent",
+          icon: "👥",
+        },
         { value: "planning", label: "Planning", tone: "warning", icon: "🗺️" },
         { value: "general", label: "General", tone: "neutral", icon: "📋" },
       ],
     },
-    { id: "attendees", label: "Attendees", type: "text", help: "Names, separated by commas." },
+    {
+      id: "attendees",
+      label: "Attendees",
+      type: "text",
+      help: "Names, separated by commas.",
+    },
     { id: "project", label: "Project", type: "reference", target: "document" },
     { id: "decisions", label: "Decisions", type: "richtext" },
     {
@@ -321,8 +480,18 @@ const meeting = {
     type: "stack",
     gap: "md",
     children: [
-      { type: "text", bind: "content.title", role: "title", fallback: "Untitled meeting" },
-      { type: "badge", bind: "content.fields.meetingType", variant: "pill", showWhen: "content.fields.meetingType" },
+      {
+        type: "text",
+        bind: "content.title",
+        role: "title",
+        fallback: "Untitled meeting",
+      },
+      {
+        type: "badge",
+        bind: "content.fields.meetingType",
+        variant: "pill",
+        showWhen: "content.fields.meetingType",
+      },
       {
         type: "facts",
         variant: "strip",
@@ -362,17 +531,30 @@ const meeting = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled meeting" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled meeting",
+        },
         {
           type: "facts",
           variant: "strip",
           entries: [{ bind: "content.fields.date", format: "date" }],
         },
-        { type: "badge", bind: "content.fields.meetingType", variant: "pill", showWhen: "content.fields.meetingType" },
+        {
+          type: "badge",
+          bind: "content.fields.meetingType",
+          variant: "pill",
+          showWhen: "content.fields.meetingType",
+        },
         {
           type: "progress",
           variant: "fraction",
-          source: { checklistBind: "content.fields.actions", doneBind: "row.done" },
+          source: {
+            checklistBind: "content.fields.actions",
+            doneBind: "row.done",
+          },
           showWhen: "content.fields.actions",
         },
       ],
@@ -409,7 +591,12 @@ const journal = {
     type: "stack",
     gap: "md",
     children: [
-      { type: "text", bind: "content.title", role: "title", fallback: "Journal entry" },
+      {
+        type: "text",
+        bind: "content.title",
+        role: "title",
+        fallback: "Journal entry",
+      },
       {
         type: "facts",
         variant: "strip",
@@ -418,9 +605,19 @@ const journal = {
           { bind: "content.fields.location" },
         ],
       },
-      { type: "badge", bind: "content.fields.mood", variant: "pill", showWhen: "content.fields.mood" },
+      {
+        type: "badge",
+        bind: "content.fields.mood",
+        variant: "pill",
+        showWhen: "content.fields.mood",
+      },
       { type: "prose", bind: "content.body" },
-      { type: "gallery", bind: "content.assets", columns: 2, showWhen: "content.assets" },
+      {
+        type: "gallery",
+        bind: "content.assets",
+        columns: 2,
+        showWhen: "content.assets",
+      },
     ],
   },
   collection: {
@@ -438,8 +635,18 @@ const journal = {
           variant: "strip",
           entries: [{ bind: "content.fields.date", format: "date" }],
         },
-        { type: "text", bind: "content.title", role: "heading", fallback: "Journal entry" },
-        { type: "badge", bind: "content.fields.mood", variant: "pill", showWhen: "content.fields.mood" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Journal entry",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.mood",
+          variant: "pill",
+          showWhen: "content.fields.mood",
+        },
       ],
     },
   },
@@ -451,7 +658,8 @@ const bookshelf = {
   id: "texttext.bookshelf",
   version: 1,
   name: "Bookshelf",
-  description: "A reading log with shelves, ratings, progress, and a favorite quote per book.",
+  description:
+    "A reading log with shelves, ratings, progress, and a favorite quote per book.",
   fields: [
     { id: "author", label: "Author", type: "text" },
     { id: "cover", label: "Cover", type: "image" },
@@ -466,9 +674,23 @@ const bookshelf = {
         { value: "abandoned", label: "Abandoned", tone: "danger", icon: "🚫" },
       ],
     },
-    { id: "rating", label: "Rating", type: "number", min: 0, max: 5, step: 0.5, format: "rating" },
+    {
+      id: "rating",
+      label: "Rating",
+      type: "number",
+      min: 0,
+      max: 5,
+      step: 0.5,
+      format: "rating",
+    },
     { id: "pages", label: "Pages", type: "number", min: 1, step: 1 },
-    { id: "currentPage", label: "Current page", type: "number", min: 0, step: 1 },
+    {
+      id: "currentPage",
+      label: "Current page",
+      type: "number",
+      min: 0,
+      step: 1,
+    },
     { id: "startedAt", label: "Started", type: "date" },
     { id: "finishedAt", label: "Finished", type: "date" },
     {
@@ -510,17 +732,45 @@ const bookshelf = {
             type: "group",
             gap: "sm",
             children: [
-              { type: "text", bind: "content.title", role: "title", fallback: "Untitled book" },
-              { type: "text", bind: "content.fields.author", role: "subtitle", showWhen: "content.fields.author" },
-              { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
-              { type: "text", bind: "content.fields.rating", role: "meta", showWhen: "content.fields.rating" },
+              {
+                type: "text",
+                bind: "content.title",
+                role: "title",
+                fallback: "Untitled book",
+              },
+              {
+                type: "text",
+                bind: "content.fields.author",
+                role: "subtitle",
+                showWhen: "content.fields.author",
+              },
+              {
+                type: "badge",
+                bind: "content.fields.status",
+                variant: "pill",
+                showWhen: "content.fields.status",
+              },
+              {
+                type: "text",
+                bind: "content.fields.rating",
+                role: "meta",
+                showWhen: "content.fields.rating",
+              },
               {
                 type: "facts",
                 variant: "table",
                 entries: [
                   { bind: "content.fields.pages", label: "Pages" },
-                  { bind: "content.fields.startedAt", label: "Started", format: "date" },
-                  { bind: "content.fields.finishedAt", label: "Finished", format: "date" },
+                  {
+                    bind: "content.fields.startedAt",
+                    label: "Started",
+                    format: "date",
+                  },
+                  {
+                    bind: "content.fields.finishedAt",
+                    label: "Finished",
+                    format: "date",
+                  },
                 ],
               },
               {
@@ -532,7 +782,12 @@ const bookshelf = {
                 },
                 showWhen: "content.fields.currentPage",
               },
-              { type: "badge", bind: "content.fields.moods", variant: "chips", showWhen: "content.fields.moods" },
+              {
+                type: "badge",
+                bind: "content.fields.moods",
+                variant: "chips",
+                showWhen: "content.fields.moods",
+              },
             ],
           },
         ],
@@ -567,10 +822,30 @@ const bookshelf = {
           height: "medium",
           showWhen: "content.fields.cover",
         },
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled book" },
-        { type: "text", bind: "content.fields.author", role: "caption", showWhen: "content.fields.author" },
-        { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
-        { type: "text", bind: "content.fields.rating", role: "meta", showWhen: "content.fields.rating" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled book",
+        },
+        {
+          type: "text",
+          bind: "content.fields.author",
+          role: "caption",
+          showWhen: "content.fields.author",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.status",
+          variant: "pill",
+          showWhen: "content.fields.status",
+        },
+        {
+          type: "text",
+          bind: "content.fields.rating",
+          role: "meta",
+          showWhen: "content.fields.rating",
+        },
       ],
     },
   },
@@ -582,9 +857,17 @@ const watchlist = {
   id: "texttext.watchlist",
   version: 1,
   name: "Watchlist",
-  description: "A film diary with posters, stars, and a heart for the ones you loved.",
+  description:
+    "A film diary with posters, stars, and a heart for the ones you loved.",
   fields: [
-    { id: "year", label: "Year", type: "number", min: 1888, max: 2100, step: 1 },
+    {
+      id: "year",
+      label: "Year",
+      type: "number",
+      min: 1888,
+      max: 2100,
+      step: 1,
+    },
     { id: "poster", label: "Poster", type: "image" },
     {
       id: "status",
@@ -596,7 +879,15 @@ const watchlist = {
       ],
     },
     { id: "watchedAt", label: "Watched", type: "date" },
-    { id: "rating", label: "Rating", type: "number", min: 0, max: 5, step: 0.5, format: "rating" },
+    {
+      id: "rating",
+      label: "Rating",
+      type: "number",
+      min: 0,
+      max: 5,
+      step: 0.5,
+      format: "rating",
+    },
     { id: "liked", label: "Loved it", type: "boolean" },
     { id: "rewatch", label: "Rewatch", type: "boolean" },
   ],
@@ -624,25 +915,54 @@ const watchlist = {
             type: "group",
             gap: "sm",
             children: [
-              { type: "text", bind: "content.title", role: "title", fallback: "Untitled film" },
+              {
+                type: "text",
+                bind: "content.title",
+                role: "title",
+                fallback: "Untitled film",
+              },
               {
                 type: "facts",
                 variant: "strip",
                 entries: [
                   { bind: "content.fields.year" },
-                  { bind: "content.fields.watchedAt", label: "Watched", format: "date" },
+                  {
+                    bind: "content.fields.watchedAt",
+                    label: "Watched",
+                    format: "date",
+                  },
                 ],
               },
-              { type: "text", bind: "content.fields.rating", role: "meta", showWhen: "content.fields.rating" },
+              {
+                type: "text",
+                bind: "content.fields.rating",
+                role: "meta",
+                showWhen: "content.fields.rating",
+              },
               {
                 type: "stack",
                 direction: "horizontal",
                 gap: "sm",
                 align: "center",
                 children: [
-                  { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
-                  { type: "badge", bind: "content.fields.liked", variant: "glyph", showWhen: "content.fields.liked" },
-                  { type: "badge", bind: "content.fields.rewatch", variant: "glyph", showWhen: "content.fields.rewatch" },
+                  {
+                    type: "badge",
+                    bind: "content.fields.status",
+                    variant: "pill",
+                    showWhen: "content.fields.status",
+                  },
+                  {
+                    type: "badge",
+                    bind: "content.fields.liked",
+                    variant: "glyph",
+                    showWhen: "content.fields.liked",
+                  },
+                  {
+                    type: "badge",
+                    bind: "content.fields.rewatch",
+                    variant: "glyph",
+                    showWhen: "content.fields.rewatch",
+                  },
                 ],
               },
             ],
@@ -669,8 +989,18 @@ const watchlist = {
           height: "medium",
           showWhen: "content.fields.poster",
         },
-        { type: "text", bind: "content.title", role: "caption", fallback: "Untitled film" },
-        { type: "text", bind: "content.fields.rating", role: "meta", showWhen: "content.fields.rating" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "caption",
+          fallback: "Untitled film",
+        },
+        {
+          type: "text",
+          bind: "content.fields.rating",
+          role: "meta",
+          showWhen: "content.fields.rating",
+        },
       ],
     },
   },
@@ -682,13 +1012,26 @@ const recipe = {
   id: "texttext.recipe",
   version: 1,
   name: "Recipe",
-  description: "A cookable card with check-off ingredients beside numbered steps.",
+  description:
+    "A cookable card with check-off ingredients beside numbered steps.",
   fields: [
     { id: "photo", label: "Photo", type: "image" },
     { id: "source", label: "Source", type: "url" },
     { id: "servings", label: "Servings", type: "number", min: 1, step: 1 },
-    { id: "prepMinutes", label: "Prep time", type: "number", min: 0, format: "minutes" },
-    { id: "cookMinutes", label: "Cook time", type: "number", min: 0, format: "minutes" },
+    {
+      id: "prepMinutes",
+      label: "Prep time",
+      type: "number",
+      min: 0,
+      format: "minutes",
+    },
+    {
+      id: "cookMinutes",
+      label: "Cook time",
+      type: "number",
+      min: 0,
+      format: "minutes",
+    },
     {
       id: "difficulty",
       label: "Difficulty",
@@ -699,7 +1042,15 @@ const recipe = {
         { value: "hard", label: "Hard", tone: "danger" },
       ],
     },
-    { id: "rating", label: "Rating", type: "number", min: 0, max: 5, step: 0.5, format: "rating" },
+    {
+      id: "rating",
+      label: "Rating",
+      type: "number",
+      min: 0,
+      max: 5,
+      step: 0.5,
+      format: "rating",
+    },
     {
       id: "ingredients",
       label: "Ingredients",
@@ -715,8 +1066,19 @@ const recipe = {
       label: "Steps",
       type: "rows",
       fields: [
-        { id: "instruction", label: "Instruction", type: "text", required: true },
-        { id: "minutes", label: "Time", type: "number", min: 0, format: "minutes" },
+        {
+          id: "instruction",
+          label: "Instruction",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "minutes",
+          label: "Time",
+          type: "number",
+          min: 0,
+          format: "minutes",
+        },
       ],
     },
   ],
@@ -737,8 +1099,18 @@ const recipe = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled recipe" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled recipe",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -754,7 +1126,12 @@ const recipe = {
               { bind: "content.fields.rating", label: "Rating" },
             ],
           },
-          { type: "badge", bind: "content.fields.difficulty", variant: "pill", showWhen: "content.fields.difficulty" },
+          {
+            type: "badge",
+            bind: "content.fields.difficulty",
+            variant: "pill",
+            showWhen: "content.fields.difficulty",
+          },
         ],
       },
       {
@@ -806,7 +1183,12 @@ const recipe = {
           height: "compact",
           showWhen: "content.fields.photo",
         },
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled recipe" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled recipe",
+        },
         {
           type: "facts",
           variant: "strip",
@@ -815,7 +1197,12 @@ const recipe = {
             { bind: "content.fields.rating" },
           ],
         },
-        { type: "badge", bind: "content.fields.difficulty", variant: "pill", showWhen: "content.fields.difficulty" },
+        {
+          type: "badge",
+          bind: "content.fields.difficulty",
+          variant: "pill",
+          showWhen: "content.fields.difficulty",
+        },
       ],
     },
   },
@@ -827,7 +1214,8 @@ const changelog = {
   id: "texttext.changelog",
   version: 1,
   name: "Changelog",
-  description: "A release entry with categorized changes and the story behind them.",
+  description:
+    "A release entry with categorized changes and the story behind them.",
   fields: [
     { id: "version", label: "Version", type: "text", required: true },
     { id: "date", label: "Date", type: "date" },
@@ -836,7 +1224,12 @@ const changelog = {
       label: "Status",
       type: "enum",
       options: [
-        { value: "unreleased", label: "Unreleased", tone: "warning", icon: "🚧" },
+        {
+          value: "unreleased",
+          label: "Unreleased",
+          tone: "warning",
+          icon: "🚧",
+        },
         { value: "released", label: "Released", tone: "success", icon: "🚀" },
         { value: "yanked", label: "Yanked", tone: "danger", icon: "⛔" },
       ],
@@ -858,7 +1251,12 @@ const changelog = {
             { value: "changed", label: "Changed", tone: "info", icon: "✏️" },
             { value: "fixed", label: "Fixed", tone: "accent", icon: "🔧" },
             { value: "removed", label: "Removed", tone: "neutral", icon: "🗑️" },
-            { value: "security", label: "Security", tone: "danger", icon: "🛡️" },
+            {
+              value: "security",
+              label: "Security",
+              tone: "danger",
+              icon: "🛡️",
+            },
           ],
         },
         { id: "note", label: "Change", type: "text", required: true },
@@ -875,7 +1273,12 @@ const changelog = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Release" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Release",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -890,7 +1293,12 @@ const changelog = {
             variant: "pill",
             showWhen: "content.fields.releaseStatus",
           },
-          { type: "badge", bind: "content.fields.breaking", variant: "glyph", showWhen: "content.fields.breaking" },
+          {
+            type: "badge",
+            bind: "content.fields.breaking",
+            variant: "glyph",
+            showWhen: "content.fields.breaking",
+          },
         ],
       },
       {
@@ -929,7 +1337,12 @@ const changelog = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Release" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Release",
+        },
         {
           type: "facts",
           variant: "strip",
@@ -955,7 +1368,8 @@ const decision = {
   id: "texttext.decision",
   version: 1,
   name: "Decision log",
-  description: "A decision record with the options weighed and the outcome that governs.",
+  description:
+    "A decision record with the options weighed and the outcome that governs.",
   fields: [
     { id: "seq", label: "Number", type: "number", min: 1, step: 1 },
     {
@@ -966,12 +1380,27 @@ const decision = {
         { value: "proposed", label: "Proposed", tone: "info", icon: "💭" },
         { value: "accepted", label: "Accepted", tone: "success", icon: "✅" },
         { value: "rejected", label: "Rejected", tone: "danger", icon: "❌" },
-        { value: "superseded", label: "Superseded", tone: "neutral", icon: "🔁" },
+        {
+          value: "superseded",
+          label: "Superseded",
+          tone: "neutral",
+          icon: "🔁",
+        },
       ],
     },
     { id: "decidedAt", label: "Decided", type: "date" },
-    { id: "deciders", label: "Deciders", type: "text", help: "Names, separated by commas." },
-    { id: "supersededBy", label: "Superseded by", type: "reference", target: "document" },
+    {
+      id: "deciders",
+      label: "Deciders",
+      type: "text",
+      help: "Names, separated by commas.",
+    },
+    {
+      id: "supersededBy",
+      label: "Superseded by",
+      type: "reference",
+      target: "document",
+    },
     {
       id: "options",
       label: "Options considered",
@@ -993,19 +1422,38 @@ const decision = {
     { id: "outcome", label: "Outcome", type: "richtext" },
   ],
   capabilities: ["collaboration", "comments", "search"],
-  theme: { typography: "system", measure: "reading", alignment: "start", density: "compact" },
+  theme: {
+    typography: "system",
+    measure: "reading",
+    alignment: "start",
+    density: "compact",
+  },
   item: {
     type: "stack",
     gap: "md",
     children: [
-      { type: "text", bind: "content.title", role: "title", fallback: "Untitled decision" },
-      { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
+      {
+        type: "text",
+        bind: "content.title",
+        role: "title",
+        fallback: "Untitled decision",
+      },
+      {
+        type: "badge",
+        bind: "content.fields.status",
+        variant: "pill",
+        showWhen: "content.fields.status",
+      },
       {
         type: "facts",
         variant: "table",
         entries: [
           { bind: "content.fields.seq", label: "Number" },
-          { bind: "content.fields.decidedAt", label: "Decided", format: "date" },
+          {
+            bind: "content.fields.decidedAt",
+            label: "Decided",
+            format: "date",
+          },
           { bind: "content.fields.deciders", label: "Deciders" },
           { bind: "content.fields.supersededBy", label: "Superseded by" },
         ],
@@ -1036,13 +1484,25 @@ const decision = {
     columns: 1,
     gap: "sm",
     sort: [{ field: "content.fields.seq", direction: "asc" }],
-    filters: [{ field: "content.fields.status", op: "neq", value: "superseded" }],
+    filters: [
+      { field: "content.fields.status", op: "neq", value: "superseded" },
+    ],
     item: {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled decision" },
-        { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled decision",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.status",
+          variant: "pill",
+          showWhen: "content.fields.status",
+        },
         {
           type: "facts",
           variant: "strip",
@@ -1062,7 +1522,8 @@ const wiki = {
   id: "texttext.wiki",
   version: 1,
   name: "Wiki page",
-  description: "A living reference page with an owner and a visible last-reviewed date.",
+  description:
+    "A living reference page with an owner and a visible last-reviewed date.",
   fields: [
     { id: "owner", label: "Owner", type: "text" },
     {
@@ -1072,12 +1533,23 @@ const wiki = {
       options: [
         { value: "draft", label: "Draft", tone: "neutral", icon: "✏️" },
         { value: "current", label: "Current", tone: "success", icon: "✅" },
-        { value: "needs-review", label: "Needs review", tone: "warning", icon: "🔍" },
+        {
+          value: "needs-review",
+          label: "Needs review",
+          tone: "warning",
+          icon: "🔍",
+        },
         { value: "archived", label: "Archived", tone: "neutral", icon: "📦" },
       ],
     },
     { id: "lastReviewed", label: "Last reviewed", type: "date" },
-    { id: "related", label: "Related pages", type: "reference", target: "document", multiple: true },
+    {
+      id: "related",
+      label: "Related pages",
+      type: "reference",
+      target: "document",
+      multiple: true,
+    },
   ],
   capabilities: ["assets", "collaboration", "comments", "search"],
   theme: { typography: "system", measure: "wide", alignment: "start" },
@@ -1089,22 +1561,46 @@ const wiki = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled page" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "badge", bind: "content.fields.pageStatus", variant: "pill", showWhen: "content.fields.pageStatus" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled page",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
+          {
+            type: "badge",
+            bind: "content.fields.pageStatus",
+            variant: "pill",
+            showWhen: "content.fields.pageStatus",
+          },
           {
             type: "facts",
             variant: "strip",
             entries: [
               { bind: "content.fields.owner", label: "Owner" },
-              { bind: "content.fields.lastReviewed", label: "Last reviewed", format: "relative" },
+              {
+                bind: "content.fields.lastReviewed",
+                label: "Last reviewed",
+                format: "relative",
+              },
             ],
           },
         ],
       },
       { type: "prose", bind: "content.body" },
       { type: "divider", showWhen: "content.fields.related" },
-      { type: "badge", bind: "content.fields.related", variant: "chips", showWhen: "content.fields.related" },
+      {
+        type: "badge",
+        bind: "content.fields.related",
+        variant: "chips",
+        showWhen: "content.fields.related",
+      },
     ],
   },
   collection: {
@@ -1112,17 +1608,35 @@ const wiki = {
     columns: 1,
     gap: "sm",
     sort: [{ field: "title", direction: "asc" }],
-    filters: [{ field: "content.fields.pageStatus", op: "neq", value: "archived" }],
+    filters: [
+      { field: "content.fields.pageStatus", op: "neq", value: "archived" },
+    ],
     item: {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled page" },
-        { type: "badge", bind: "content.fields.pageStatus", variant: "pill", showWhen: "content.fields.pageStatus" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled page",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.pageStatus",
+          variant: "pill",
+          showWhen: "content.fields.pageStatus",
+        },
         {
           type: "facts",
           variant: "strip",
-          entries: [{ bind: "content.fields.lastReviewed", label: "Reviewed", format: "relative" }],
+          entries: [
+            {
+              bind: "content.fields.lastReviewed",
+              label: "Reviewed",
+              format: "relative",
+            },
+          ],
         },
       ],
     },
@@ -1135,7 +1649,8 @@ const spec = {
   id: "texttext.spec",
   version: 1,
   name: "Spec",
-  description: "A one-page spec with scope, requirements, and open questions in one place.",
+  description:
+    "A one-page spec with scope, requirements, and open questions in one place.",
   fields: [
     {
       id: "specStatus",
@@ -1161,7 +1676,12 @@ const spec = {
       label: "Requirements",
       type: "rows",
       fields: [
-        { id: "requirement", label: "Requirement", type: "text", required: true },
+        {
+          id: "requirement",
+          label: "Requirement",
+          type: "text",
+          required: true,
+        },
         {
           id: "priority",
           label: "Priority",
@@ -1196,15 +1716,34 @@ const spec = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled spec" },
-          { type: "text", bind: "content.fields.summary", role: "subtitle", showWhen: "content.fields.summary" },
-          { type: "badge", bind: "content.fields.specStatus", variant: "pill", showWhen: "content.fields.specStatus" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled spec",
+          },
+          {
+            type: "text",
+            bind: "content.fields.summary",
+            role: "subtitle",
+            showWhen: "content.fields.summary",
+          },
+          {
+            type: "badge",
+            bind: "content.fields.specStatus",
+            variant: "pill",
+            showWhen: "content.fields.specStatus",
+          },
           {
             type: "facts",
             variant: "strip",
             entries: [
               { bind: "content.fields.owner", label: "Owner" },
-              { bind: "content.fields.targetDate", label: "Target", format: "date" },
+              {
+                bind: "content.fields.targetDate",
+                label: "Target",
+                format: "date",
+              },
             ],
           },
         ],
@@ -1213,7 +1752,10 @@ const spec = {
       {
         type: "progress",
         variant: "bar",
-        source: { checklistBind: "content.fields.requirements", doneBind: "row.done" },
+        source: {
+          checklistBind: "content.fields.requirements",
+          doneBind: "row.done",
+        },
         showWhen: "content.fields.requirements",
       },
       {
@@ -1255,14 +1797,28 @@ const spec = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled spec" },
-        { type: "badge", bind: "content.fields.specStatus", variant: "pill", showWhen: "content.fields.specStatus" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled spec",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.specStatus",
+          variant: "pill",
+          showWhen: "content.fields.specStatus",
+        },
         {
           type: "facts",
           variant: "strip",
           entries: [
             { bind: "content.fields.owner" },
-            { bind: "content.fields.targetDate", label: "Target", format: "date" },
+            {
+              bind: "content.fields.targetDate",
+              label: "Target",
+              format: "date",
+            },
           ],
         },
       ],
@@ -1275,8 +1831,8 @@ const project = {
   engineVersion: 1,
   id: "texttext.project",
   version: 1,
-  name: "Project tracker",
-  description: "A project page with milestones, tasks, and risks that shows real progress.",
+  name: "Notion project",
+  description: "A flexible project page inspired by Notion.",
   fields: [
     {
       id: "status",
@@ -1315,7 +1871,12 @@ const project = {
     { id: "risks", label: "Risks", type: "richtext" },
   ],
   capabilities: ["collaboration", "comments", "search"],
-  theme: { typography: "system", measure: "wide", alignment: "start", density: "compact" },
+  theme: {
+    typography: "system",
+    measure: "wide",
+    alignment: "start",
+    density: "compact",
+  },
   item: {
     type: "stack",
     gap: "md",
@@ -1324,9 +1885,24 @@ const project = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled project" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled project",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
+          {
+            type: "badge",
+            bind: "content.fields.status",
+            variant: "pill",
+            showWhen: "content.fields.status",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -1387,17 +1963,32 @@ const project = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled project" },
-        { type: "badge", bind: "content.fields.status", variant: "pill", showWhen: "content.fields.status" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled project",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.status",
+          variant: "pill",
+          showWhen: "content.fields.status",
+        },
         {
           type: "facts",
           variant: "strip",
-          entries: [{ bind: "content.fields.due", label: "Due", format: "countdown" }],
+          entries: [
+            { bind: "content.fields.due", label: "Due", format: "countdown" },
+          ],
         },
         {
           type: "progress",
           variant: "fraction",
-          source: { checklistBind: "content.fields.tasks", doneBind: "row.done" },
+          source: {
+            checklistBind: "content.fields.tasks",
+            doneBind: "row.done",
+          },
           showWhen: "content.fields.tasks",
         },
       ],
@@ -1413,7 +2004,12 @@ const goals = {
   name: "Goals",
   description: "An objective with measurable key results and an honest score.",
   fields: [
-    { id: "period", label: "Period", type: "text", help: "For example 2026 Q3." },
+    {
+      id: "period",
+      label: "Period",
+      type: "text",
+      help: "For example 2026 Q3.",
+    },
     {
       id: "goalStatus",
       label: "Status",
@@ -1426,7 +2022,15 @@ const goals = {
       ],
     },
     { id: "owner", label: "Owner", type: "text" },
-    { id: "score", label: "Score", type: "number", min: 0, max: 1, step: 0.05, format: "percent" },
+    {
+      id: "score",
+      label: "Score",
+      type: "number",
+      min: 0,
+      max: 1,
+      step: 0.05,
+      format: "percent",
+    },
     {
       id: "keyResults",
       label: "Key results",
@@ -1449,9 +2053,24 @@ const goals = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled objective" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "badge", bind: "content.fields.goalStatus", variant: "pill", showWhen: "content.fields.goalStatus" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled objective",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
+          {
+            type: "badge",
+            bind: "content.fields.goalStatus",
+            variant: "pill",
+            showWhen: "content.fields.goalStatus",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -1492,8 +2111,18 @@ const goals = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled objective" },
-        { type: "badge", bind: "content.fields.goalStatus", variant: "pill", showWhen: "content.fields.goalStatus" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled objective",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.goalStatus",
+          variant: "pill",
+          showWhen: "content.fields.goalStatus",
+        },
         {
           type: "progress",
           variant: "bar",
@@ -1511,9 +2140,15 @@ const postmortem = {
   id: "texttext.postmortem",
   version: 1,
   name: "Postmortem",
-  description: "An incident record with severity, timeline, root cause, and follow-ups.",
+  description:
+    "An incident record with severity, timeline, root cause, and follow-ups.",
   fields: [
-    { id: "incidentDate", label: "Incident date", type: "date", required: true },
+    {
+      id: "incidentDate",
+      label: "Incident date",
+      type: "date",
+      required: true,
+    },
     {
       id: "severity",
       label: "Severity",
@@ -1524,8 +2159,19 @@ const postmortem = {
         { value: "sev3", label: "Sev 3", tone: "info", icon: "🟡" },
       ],
     },
-    { id: "durationMinutes", label: "Duration", type: "number", min: 0, format: "minutes" },
-    { id: "impact", label: "Impact", type: "text", help: "Who felt this and how badly, in one line." },
+    {
+      id: "durationMinutes",
+      label: "Duration",
+      type: "number",
+      min: 0,
+      format: "minutes",
+    },
+    {
+      id: "impact",
+      label: "Impact",
+      type: "text",
+      help: "Who felt this and how badly, in one line.",
+    },
     {
       id: "timeline",
       label: "Timeline",
@@ -1557,8 +2203,18 @@ const postmortem = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled incident" },
-          { type: "badge", bind: "content.fields.severity", variant: "pill", showWhen: "content.fields.severity" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled incident",
+          },
+          {
+            type: "badge",
+            bind: "content.fields.severity",
+            variant: "pill",
+            showWhen: "content.fields.severity",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -1610,8 +2266,18 @@ const postmortem = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled incident" },
-        { type: "badge", bind: "content.fields.severity", variant: "pill", showWhen: "content.fields.severity" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled incident",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.severity",
+          variant: "pill",
+          showWhen: "content.fields.severity",
+        },
         {
           type: "facts",
           variant: "strip",
@@ -1620,7 +2286,10 @@ const postmortem = {
         {
           type: "progress",
           variant: "fraction",
-          source: { checklistBind: "content.fields.actionItems", doneBind: "row.done" },
+          source: {
+            checklistBind: "content.fields.actionItems",
+            doneBind: "row.done",
+          },
           showWhen: "content.fields.actionItems",
         },
       ],
@@ -1634,7 +2303,8 @@ const retro = {
   id: "texttext.retro",
   version: 1,
   name: "Retrospective",
-  description: "A team look back at what went well, what could improve, and what happens next.",
+  description:
+    "A team look back at what went well, what could improve, and what happens next.",
   fields: [
     { id: "date", label: "Date", type: "date", required: true },
     { id: "team", label: "Team", type: "text" },
@@ -1671,7 +2341,12 @@ const retro = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled retro" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled retro",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -1738,11 +2413,19 @@ const retro = {
           variant: "strip",
           entries: [{ bind: "content.fields.date", format: "date" }],
         },
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled retro" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled retro",
+        },
         {
           type: "progress",
           variant: "fraction",
-          source: { checklistBind: "content.fields.actions", doneBind: "row.done" },
+          source: {
+            checklistBind: "content.fields.actions",
+            doneBind: "row.done",
+          },
           showWhen: "content.fields.actions",
         },
       ],
@@ -1756,7 +2439,8 @@ const calendar = {
   id: "texttext.calendar",
   version: 1,
   name: "Editorial calendar",
-  description: "A planned piece of writing with its status, channel, and publish date.",
+  description:
+    "A planned piece of writing with its status, channel, and publish date.",
   fields: [
     { id: "publishDate", label: "Publish date", type: "date" },
     {
@@ -1777,15 +2461,30 @@ const calendar = {
       type: "enum",
       options: [
         { value: "blog", label: "Blog", tone: "info", icon: "📰" },
-        { value: "newsletter", label: "Newsletter", tone: "accent", icon: "✉️" },
+        {
+          value: "newsletter",
+          label: "Newsletter",
+          tone: "accent",
+          icon: "✉️",
+        },
         { value: "social", label: "Social", tone: "neutral", icon: "📣" },
       ],
     },
     { id: "author", label: "Author", type: "text" },
-    { id: "piece", label: "Finished piece", type: "reference", target: "document" },
+    {
+      id: "piece",
+      label: "Finished piece",
+      type: "reference",
+      target: "document",
+    },
   ],
   capabilities: ["collaboration", "comments", "search"],
-  theme: { typography: "system", measure: "reading", alignment: "start", density: "compact" },
+  theme: {
+    typography: "system",
+    measure: "reading",
+    alignment: "start",
+    density: "compact",
+  },
   item: {
     type: "stack",
     gap: "md",
@@ -1794,19 +2493,43 @@ const calendar = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled piece" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
-          { type: "badge", bind: "content.fields.pieceStatus", variant: "pill", showWhen: "content.fields.pieceStatus" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled piece",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
+          {
+            type: "badge",
+            bind: "content.fields.pieceStatus",
+            variant: "pill",
+            showWhen: "content.fields.pieceStatus",
+          },
           {
             type: "facts",
             variant: "strip",
             entries: [
-              { bind: "content.fields.publishDate", label: "Publish", format: "countdown" },
+              {
+                bind: "content.fields.publishDate",
+                label: "Publish",
+                format: "countdown",
+              },
               { bind: "content.fields.author", label: "Author" },
               { bind: "content.fields.piece", label: "Piece" },
             ],
           },
-          { type: "badge", bind: "content.fields.channel", variant: "pill", showWhen: "content.fields.channel" },
+          {
+            type: "badge",
+            bind: "content.fields.channel",
+            variant: "pill",
+            showWhen: "content.fields.channel",
+          },
         ],
       },
       { type: "prose", bind: "content.body" },
@@ -1828,9 +2551,24 @@ const calendar = {
           variant: "strip",
           entries: [{ bind: "content.fields.publishDate", format: "date" }],
         },
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled piece" },
-        { type: "badge", bind: "content.fields.pieceStatus", variant: "pill", showWhen: "content.fields.pieceStatus" },
-        { type: "badge", bind: "content.fields.channel", variant: "pill", showWhen: "content.fields.channel" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled piece",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.pieceStatus",
+          variant: "pill",
+          showWhen: "content.fields.pieceStatus",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.channel",
+          variant: "pill",
+          showWhen: "content.fields.channel",
+        },
       ],
     },
   },
@@ -1841,8 +2579,8 @@ const newsletter = {
   engineVersion: 1,
   id: "texttext.newsletter",
   version: 1,
-  name: "Newsletter issue",
-  description: "A numbered issue with an intro essay and a curated list of links.",
+  name: "Substack newsletter",
+  description: "A publication issue inspired by Substack.",
   fields: [
     { id: "issueNumber", label: "Issue", type: "number", min: 1, step: 1 },
     { id: "sentAt", label: "Sent", type: "date" },
@@ -1876,8 +2614,18 @@ const newsletter = {
               { bind: "content.fields.sentAt", format: "date" },
             ],
           },
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled issue" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled issue",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
         ],
       },
       {
@@ -1911,7 +2659,12 @@ const newsletter = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled issue" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled issue",
+        },
         {
           type: "facts",
           variant: "strip",
@@ -1961,14 +2714,28 @@ const now = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Now" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Now",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           {
             type: "facts",
             variant: "strip",
             entries: [
               { bind: "content.fields.location" },
-              { bind: "content.fields.lastUpdated", label: "Updated", format: "relative" },
+              {
+                bind: "content.fields.lastUpdated",
+                label: "Updated",
+                format: "relative",
+              },
             ],
           },
         ],
@@ -1978,10 +2745,7 @@ const now = {
         type: "rows",
         bind: "content.fields.currently",
         variant: "table",
-        columns: [
-          { bind: "row.area" },
-          { bind: "row.detail" },
-        ],
+        columns: [{ bind: "row.area" }, { bind: "row.detail" }],
         showWhen: "content.fields.currently",
       },
     ],
@@ -1995,11 +2759,22 @@ const now = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Now" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Now",
+        },
         {
           type: "facts",
           variant: "strip",
-          entries: [{ bind: "content.fields.lastUpdated", label: "Updated", format: "relative" }],
+          entries: [
+            {
+              bind: "content.fields.lastUpdated",
+              label: "Updated",
+              format: "relative",
+            },
+          ],
         },
       ],
     },
@@ -2012,9 +2787,15 @@ const prompts = {
   id: "texttext.prompts",
   version: 1,
   name: "Prompt library",
-  description: "A reusable prompt with its variables, model notes, and provenance.",
+  description:
+    "A reusable prompt with its variables, model notes, and provenance.",
   fields: [
-    { id: "model", label: "Model", type: "text", help: "The model or client this works best with." },
+    {
+      id: "model",
+      label: "Model",
+      type: "text",
+      help: "The model or client this works best with.",
+    },
     {
       id: "useCase",
       label: "Use case",
@@ -2048,16 +2829,36 @@ const prompts = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled prompt" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled prompt",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           {
             type: "stack",
             direction: "horizontal",
             gap: "sm",
             align: "center",
             children: [
-              { type: "badge", bind: "content.fields.useCase", variant: "pill", showWhen: "content.fields.useCase" },
-              { type: "badge", bind: "content.fields.proven", variant: "glyph", showWhen: "content.fields.proven" },
+              {
+                type: "badge",
+                bind: "content.fields.useCase",
+                variant: "pill",
+                showWhen: "content.fields.useCase",
+              },
+              {
+                type: "badge",
+                bind: "content.fields.proven",
+                variant: "glyph",
+                showWhen: "content.fields.proven",
+              },
             ],
           },
           {
@@ -2092,9 +2893,24 @@ const prompts = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled prompt" },
-        { type: "badge", bind: "content.fields.useCase", variant: "pill", showWhen: "content.fields.useCase" },
-        { type: "text", bind: "content.fields.model", role: "meta", showWhen: "content.fields.model" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled prompt",
+        },
+        {
+          type: "badge",
+          bind: "content.fields.useCase",
+          variant: "pill",
+          showWhen: "content.fields.useCase",
+        },
+        {
+          type: "text",
+          bind: "content.fields.model",
+          role: "meta",
+          showWhen: "content.fields.model",
+        },
       ],
     },
   },
@@ -2126,12 +2942,28 @@ const poll = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "Untitled poll" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled poll",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           {
             type: "facts",
             variant: "strip",
-            entries: [{ bind: "content.fields.closesAt", label: "Closes", format: "countdown" }],
+            entries: [
+              {
+                bind: "content.fields.closesAt",
+                label: "Closes",
+                format: "countdown",
+              },
+            ],
           },
         ],
       },
@@ -2154,11 +2986,22 @@ const poll = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled poll" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled poll",
+        },
         {
           type: "facts",
           variant: "strip",
-          entries: [{ bind: "content.fields.closesAt", label: "Closes", format: "countdown" }],
+          entries: [
+            {
+              bind: "content.fields.closesAt",
+              label: "Closes",
+              format: "countdown",
+            },
+          ],
         },
       ],
     },
@@ -2193,8 +3036,18 @@ const rsvp = {
         type: "masthead",
         gap: "sm",
         children: [
-          { type: "text", bind: "content.title", role: "title", fallback: "You are invited" },
-          { type: "text", bind: "content.subtitle", role: "subtitle", showWhen: "content.subtitle" },
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "You are invited",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
           {
             type: "facts",
             variant: "strip",
@@ -2207,7 +3060,13 @@ const rsvp = {
           {
             type: "facts",
             variant: "strip",
-            entries: [{ bind: "content.fields.when", label: "RSVP closes", format: "countdown" }],
+            entries: [
+              {
+                bind: "content.fields.when",
+                label: "RSVP closes",
+                format: "countdown",
+              },
+            ],
           },
         ],
       },
@@ -2230,7 +3089,12 @@ const rsvp = {
       type: "stack",
       gap: "xs",
       children: [
-        { type: "text", bind: "content.title", role: "heading", fallback: "Untitled event" },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled event",
+        },
         {
           type: "facts",
           variant: "strip",
@@ -2244,13 +3108,18 @@ const rsvp = {
   },
 } as const;
 
-const definitions = [
+const activeDefinitions = [
   article,
   note,
   bookmark,
   gallery,
   talk,
   todo,
+  project,
+  newsletter,
+].map((entry) => validateTemplateDefinition(entry));
+
+const legacyDefinitions = [
   meeting,
   journal,
   bookshelf,
@@ -2260,33 +3129,41 @@ const definitions = [
   decision,
   wiki,
   spec,
-  project,
   goals,
   postmortem,
   retro,
   calendar,
-  newsletter,
   now,
   prompts,
   poll,
   rsvp,
 ].map((entry) => validateTemplateDefinition(entry));
 
-export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] = Object.freeze(definitions);
+export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] =
+  Object.freeze(activeDefinitions);
 
 const templatesByKey = new Map(
-  BUILTIN_TEMPLATES.map((template) => [`${template.id}@${template.version}`, template]),
+  [...activeDefinitions, ...legacyDefinitions].map((template) => [
+    `${template.id}@${template.version}`,
+    template,
+  ]),
 );
 
 export function templateKey(id: string, version: number): string {
   return `${id}@${version}`;
 }
 
-export function getBuiltinTemplate(id: string, version = 1): TemplateDefinition | null {
+export function getBuiltinTemplate(
+  id: string,
+  version = 1,
+): TemplateDefinition | null {
   return templatesByKey.get(templateKey(id, version)) ?? null;
 }
 
-export function requireBuiltinTemplate(id: string, version = 1): TemplateDefinition {
+export function requireBuiltinTemplate(
+  id: string,
+  version = 1,
+): TemplateDefinition {
   const template = getBuiltinTemplate(id, version);
   if (!template) throw new Error(`Unknown built-in template ${id}@${version}`);
   return template;
@@ -2295,40 +3172,23 @@ export function requireBuiltinTemplate(id: string, version = 1): TemplateDefinit
 export const TEMPLATE_CATEGORIES = [
   "Write",
   "Plan",
-  "Track",
   "Collect",
-  "Work",
   "Publish",
 ] as const;
 
 export type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 
-/** Gallery grouping: every built-in template appears exactly once. */
-export const TEMPLATE_CATALOG: readonly { id: string; category: TemplateCategory }[] =
-  Object.freeze([
-    { id: "texttext.article", category: "Write" },
-    { id: "texttext.note", category: "Write" },
-    { id: "texttext.journal", category: "Write" },
-    { id: "texttext.todo", category: "Plan" },
-    { id: "texttext.project", category: "Plan" },
-    { id: "texttext.goals", category: "Plan" },
-    { id: "texttext.bookshelf", category: "Track" },
-    { id: "texttext.watchlist", category: "Track" },
-    { id: "texttext.bookmark", category: "Collect" },
-    { id: "texttext.gallery", category: "Collect" },
-    { id: "texttext.recipe", category: "Collect" },
-    { id: "texttext.prompts", category: "Collect" },
-    { id: "texttext.meeting", category: "Work" },
-    { id: "texttext.wiki", category: "Work" },
-    { id: "texttext.spec", category: "Work" },
-    { id: "texttext.decision", category: "Work" },
-    { id: "texttext.postmortem", category: "Work" },
-    { id: "texttext.retro", category: "Work" },
-    { id: "texttext.talk", category: "Publish" },
-    { id: "texttext.changelog", category: "Publish" },
-    { id: "texttext.calendar", category: "Publish" },
-    { id: "texttext.newsletter", category: "Publish" },
-    { id: "texttext.now", category: "Publish" },
-    { id: "texttext.poll", category: "Publish" },
-    { id: "texttext.rsvp", category: "Publish" },
-  ]);
+/** Gallery grouping: every active built-in template appears exactly once. */
+export const TEMPLATE_CATALOG: readonly {
+  id: string;
+  category: TemplateCategory;
+}[] = Object.freeze([
+  { id: "texttext.article", category: "Write" },
+  { id: "texttext.note", category: "Write" },
+  { id: "texttext.todo", category: "Plan" },
+  { id: "texttext.project", category: "Plan" },
+  { id: "texttext.bookmark", category: "Collect" },
+  { id: "texttext.gallery", category: "Collect" },
+  { id: "texttext.talk", category: "Publish" },
+  { id: "texttext.newsletter", category: "Publish" },
+]);

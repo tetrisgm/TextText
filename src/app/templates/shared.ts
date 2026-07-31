@@ -2,7 +2,10 @@
 // One place builds the validated snapshot so the index miniatures and the
 // full-page examples can never drift apart.
 
-import { validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
+import {
+  validateDocumentSnapshot,
+  type DocumentSnapshot,
+} from "@/lib/documents/model";
 import { exemplarFor } from "@/lib/presentation/exemplars";
 import {
   BUILTIN_TEMPLATES,
@@ -31,7 +34,7 @@ function exampleDocument(template: TemplateDefinition): DocumentSnapshot {
       body: exemplar?.body ?? "",
       fields: exemplar?.fields ?? {},
       tags: [],
-      assets: [],
+      assets: exemplar?.assets ?? [],
     },
     presentation: {
       template: { id: template.id, version: template.version },
@@ -41,10 +44,13 @@ function exampleDocument(template: TemplateDefinition): DocumentSnapshot {
 }
 
 export function templateExamples(): TemplateExample[] {
-  const byId = new Map(BUILTIN_TEMPLATES.map((template) => [template.id, template]));
+  const byId = new Map(
+    BUILTIN_TEMPLATES.map((template) => [template.id, template]),
+  );
   return TEMPLATE_CATALOG.map((entry) => {
     const template = byId.get(entry.id);
-    if (!template) throw new Error(`catalog names unknown template ${entry.id}`);
+    if (!template)
+      throw new Error(`catalog names unknown template ${entry.id}`);
     return {
       template,
       category: entry.category,
