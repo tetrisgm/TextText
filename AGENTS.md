@@ -7,27 +7,6 @@ This version has breaking changes. Read the relevant guide under
 
 # Texttext agent contract
 
-Load the shared `workshop-delivery` skill. Use:
-
-```sh
-workshop rules audit texttext
-workshop delivery audit texttext
-```
-
-`.workshop.json` owns portable PC preflights. The registered controller is the
-only automatic delivery path.
-
-## Verify
-
-- Use `npx tsc --noEmit` and focused `npx vitest run <file>` while iterating.
-- `npm run verify:release` is the only full product gate.
-- Start a coherent work unit with `npm run work:start -- "short label"` and use
-  `npm run work:summary`, `npm run work:doctor`, and `npm run work:finish` for
-  its deterministic receipts.
-- OAuth, well-known-document, or MCP handler changes must pass
-  `python3 scripts/test-oauth-mcp-loop.py`.
-- The zero-setup demo is `/@demo`; `/t/demo` redirects there.
-
 ## Product
 
 - Read `DESIGN.md` before reader or editor visual work. Check every color in
@@ -46,14 +25,14 @@ only automatic delivery path.
   the app never calls its own MCP endpoint.
 - External agents use hosted `/api/mcp`. Agents on this Mac use the `texttext`
   CLI and do not restore a loopback server.
+- The zero-setup demo is `/@demo`; `/t/demo` redirects there.
 - Full AI architecture is in `docs/ai-sidebar-architecture.md`.
 
 ## Database
 
 `.env.local` must point to local Postgres. Development, tests, builds, and the
 full gate never use production Neon. Production migrations load
-`.env.release.local`. Run `scripts/setup-local-db.sh` when local Postgres is not
-ready.
+`.env.release.local`.
 
 ## Changelog
 
