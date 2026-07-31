@@ -8,21 +8,15 @@ import {
   saveWorkspaceAiSettingsAction,
   type WorkspaceAiSettingsState,
 } from "@/app/editor/ai-config-actions";
-import {
-  listApiTokensAction,
-  listOAuthConnectionsAction,
-} from "@/app/editor/token-actions";
-import { ConnectPanel } from "@/components/ConnectPanel";
 import type { AssistantSkill } from "@/lib/ai/skills";
-import type { ApiTokenSummary } from "@/lib/api-tokens";
 import type { Blog } from "@/lib/content";
-import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 import {
   CLOUD_AI_CATALOG,
   defaultCloudAiModel,
   type CloudAiProvider,
 } from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
+import { AgentIntegrationHome } from "./AgentIntegrationHome";
 import { ShareDialog } from "./ShareDialog";
 import styles from "./WorkspaceSettings.module.css";
 
@@ -49,9 +43,6 @@ export function WorkspaceSettings({
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [tokens, setTokens] = useState<ApiTokenSummary[] | null>(null);
-  const [connections, setConnections] =
-    useState<OAuthConnectionSummary[] | null>(null);
   const [installValue, setInstallValue] = useState("");
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -64,27 +55,6 @@ export function WorkspaceSettings({
   const [aiEditing, setAiEditing] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.allSettled([
-      listApiTokensAction(),
-      listOAuthConnectionsAction(),
-    ]).then(([tokenResult, connectionResult]) => {
-      if (cancelled) return;
-      setTokens(
-        tokenResult.status === "fulfilled" ? tokenResult.value : [],
-      );
-      setConnections(
-        connectionResult.status === "fulfilled"
-          ? connectionResult.value
-          : [],
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -449,30 +419,8 @@ export function WorkspaceSettings({
           )}
         </section>
 
-        <section
-          className={`${styles.section} ${styles.connect}`}
-          aria-labelledby="settings-connect"
-        >
-          <div className={styles.sectionHeader}>
-            <div>
-              <h2 id="settings-connect">Claude, Codex, and ChatGPT</h2>
-              <p>
-                Let the AI clients you already use work directly with this
-                workspace.
-              </p>
-            </div>
-          </div>
-          {tokens && connections ? (
-            <ConnectPanel
-              initialConnections={connections}
-              initialTokens={tokens}
-              origin="https://texttext.app"
-            />
-          ) : (
-            <p className={styles.loading} role="status">
-              Loading connections
-            </p>
-          )}
+        <section className={styles.section} aria-label="AI connections">
+          <AgentIntegrationHome compact />
         </section>
       </div>
       {canManageSharing && (

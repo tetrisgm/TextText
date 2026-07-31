@@ -10,13 +10,14 @@
 .chooser,
 .preview {
   min-height: 100%;
-  padding: 28px clamp(20px, 4vw, 64px) 56px;
+  padding: 22px clamp(18px, 3vw, 44px) 48px;
 }
 
 .chooser h2 {
-  margin: 18px 0 28px;
+  margin: 24px 0 22px;
   text-align: center;
-  font-size: clamp(28px, 4vw, 46px);
+  font-size: clamp(28px, 3vw, 36px);
+  font-weight: 700;
   letter-spacing: 0;
 }
 
@@ -42,8 +43,8 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  width: min(1500px, 100%);
+  gap: 16px;
+  width: min(1380px, 100%);
   margin: 0 auto;
 }
 
@@ -54,7 +55,7 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-  border-radius: 0;
+  border-radius: 8px;
   background: var(--paper, #fff);
   color: inherit;
   box-shadow: none;
@@ -65,8 +66,8 @@
 .card:hover,
 .card:focus-visible {
   border-color: var(--tt-accent, #0071e3);
-  outline: 3px solid color-mix(in srgb, var(--tt-accent, #0071e3) 28%, transparent);
-  outline-offset: 2px;
+  outline: 2px solid color-mix(in srgb, var(--tt-accent, #0071e3) 24%, transparent);
+  outline-offset: 1px;
 }
 
 .cardPreview {
@@ -87,11 +88,13 @@
   position: absolute;
   right: 10px;
   bottom: 10px;
-  padding: 5px 8px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--paper, #fff) 92%, transparent);
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paper, #fff) 90%, transparent);
   color: var(--ink, #1d1d1f);
   font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  backdrop-filter: blur(16px) saturate(1.4);
 }
 
 .preview {

@@ -31,7 +31,6 @@ import {
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
-import { WorkspaceTemplateStrip } from "@/components/WorkspaceTemplateStrip";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
@@ -1076,7 +1075,11 @@ function SidebarActivity({
   const todayKey = localDateKey(new Date());
 
   return (
-    <div className="post-editor-sidebar-activity">
+    <details className="post-editor-sidebar-activity">
+      <summary>
+        <span>Activity</span>
+        <small>{monthLabel}</small>
+      </summary>
       <section className="post-editor-calendar" aria-label={monthLabel}>
         <header>
           <strong>{monthLabel}</strong>
@@ -1138,7 +1141,7 @@ function SidebarActivity({
           })}
         </div>
       </section>
-    </div>
+    </details>
   );
 }
 
@@ -1736,7 +1739,6 @@ export function PostFolderSidebar({
         tabIndex={-1}
         onKeyDown={(event) => onSidebarNavKeyDown(event, onReturnToBody)}
       >
-        <p className="post-editor-nav-heading">Library</p>
         <div
           className={`post-editor-folder-row post-editor-home-row${
             homeActive ? " is-active" : ""
@@ -2878,7 +2880,7 @@ function WorkspaceRootLanding({
           <>
             <header className="workspace-library-header">
               <div>
-                <h1 id="workspace-root-title">Library</h1>
+                <h1 id="workspace-root-title">Home</h1>
                 <p>
                   {pool.posts.length}{" "}
                   {pool.posts.length === 1 ? "item" : "items"}
@@ -2916,8 +2918,6 @@ function WorkspaceRootLanding({
                 />
               </section>
             ) : null}
-            <WorkspaceTemplateStrip />
-            <AgentIntegrationHome />
             <section
               className={`workspace-recent is-view-${recentViewMode}`}
             >
@@ -2994,6 +2994,7 @@ function WorkspaceRootLanding({
                 </div>
               )}
             </section>
+            <AgentIntegrationHome compact />
           </>
         )}
       </div>
@@ -3279,7 +3280,6 @@ function StarredPage({
     <main className="workspace-collection-page workspace-starred-page">
       <header className="workspace-collection-header">
         <h1>Starred</h1>
-        <p>Personal favorites from every folder.</p>
       </header>
       {posts.length === 0 ? (
         <p className="workspace-collection-empty">Star an item to keep it here.</p>

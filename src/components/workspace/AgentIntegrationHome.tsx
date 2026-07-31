@@ -7,7 +7,11 @@ import {
   AGENT_WORKFLOWS,
 } from "@/lib/agent-integrations";
 
-export function AgentIntegrationHome() {
+export function AgentIntegrationHome({
+  compact = false,
+}: {
+  compact?: boolean;
+}) {
   const [copied, setCopied] = useState<string | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -16,6 +20,33 @@ export function AgentIntegrationHome() {
     setCopied(key);
     if (resetTimer.current) clearTimeout(resetTimer.current);
     resetTimer.current = setTimeout(() => setCopied(null), 2000);
+  }
+
+  if (compact) {
+    return (
+      <section
+        className="workspace-agent-entry is-compact"
+        aria-labelledby="workspace-agent-entry-title"
+      >
+        <div className="workspace-agent-compact-marks" aria-hidden="true">
+          {AGENT_INTEGRATIONS.slice(0, 3).map((integration) => (
+            <CollaboratorMark
+              key={integration.id}
+              provider={integration.id}
+              name={integration.name}
+            />
+          ))}
+        </div>
+        <div>
+          <h2 id="workspace-agent-entry-title">Work with your AI tools</h2>
+          <p>
+            Connect Claude, Codex, ChatGPT, or another MCP client to this
+            workspace.
+          </p>
+        </div>
+        <a href="/connect">Connections</a>
+      </section>
+    );
   }
 
   return (

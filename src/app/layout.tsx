@@ -7,17 +7,7 @@ import "../styles/cards.css";
 import "../styles/talk.css";
 import "../styles/project.css";
 import "../styles/apple.css";
-
-// Body: Inter (an SF-alike, OFL) so every platform reads the same. Fraunces is
-// kept as a legacy display fallback for older content styles.
-const inter = localFont({
-  src: [
-    { path: "../../public/fonts/Inter-Regular.ttf", weight: "400" },
-    { path: "../../public/fonts/Inter-SemiBold.ttf", weight: "600" },
-  ],
-  variable: "--font-body",
-  display: "swap",
-});
+import "../styles/workspace.css";
 
 const fraunces = localFont({
   src: "../../public/fonts/Fraunces-SemiBold.ttf",
@@ -66,7 +56,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${fraunces.variable}`}>
+    <html lang="en" className={fraunces.variable}>
       <body>{children}</body>
     </html>
   );

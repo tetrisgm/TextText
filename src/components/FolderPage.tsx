@@ -24,6 +24,7 @@ import {
   createWorkspacePostAction,
   renameFolderAction,
 } from "@/app/editor/actions";
+import { BookmarkCard } from "@/components/bookmarks/BookmarkCard";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import {
   DocumentCollectionRenderer,
@@ -183,6 +184,21 @@ function previewLine(body: string): string {
   const sliced = line.slice(0, 147).trimEnd();
   const wordBreak = sliced.lastIndexOf(" ");
   return `${wordBreak > 60 ? sliced.slice(0, wordBreak) : sliced}...`;
+}
+
+function expandedPreview(body: string): string {
+  const text = body
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/^[\s#*>`-]+/gm, "")
+    .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= 900) return text;
+  const sliced = text.slice(0, 897).trimEnd();
+  const wordBreak = sliced.lastIndexOf(" ");
+  return `${wordBreak > 600 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
 
 function defaultTemplateForFolder(folder: Folder): TemplateReference {
@@ -819,6 +835,7 @@ function UniversalFolderContents({
   canCreateItems,
   canEditItems,
   onCreateItem,
+  onCaptureResolved,
   onDeleteItem,
   onItemClick,
   onOpenPost,
@@ -835,6 +852,7 @@ function UniversalFolderContents({
   canCreateItems: boolean;
   canEditItems: boolean;
   onCreateItem?: FolderCreateItem;
+  onCaptureResolved?: FolderCaptureResolved;
   onDeleteItem?: FolderDeleteItem;
   onItemClick?: (postId: string, event: MouseEvent<HTMLElement>) => boolean;
   onOpenPost?: (post: Post) => void;
@@ -983,6 +1001,44 @@ function UniversalFolderContents({
           <FolderEmptyCard>
             Type a title or paste a link to create the first item.
           </FolderEmptyCard>
+        ) : folder.mode === "bookmarks" ? (
+          <div
+            className={`bookmark-folder-collection is-${viewMode}`}
+            role="listbox"
+            aria-label="Bookmarks"
+            aria-activedescendant={postOptionId(selectedPostId)}
+          >
+            {sorted.map((post) => {
+              const selected = Boolean(
+                post.id &&
+                  (selectedPostIds?.has(post.id) ??
+                    post.id === selectedPostId),
+              );
+              return (
+                <BookmarkCard
+                  key={itemKey(post)}
+                  post={post}
+                  editPath={blogPostPath(blog, post)}
+                  handle={handle}
+                  owner={canEditItems}
+                  selected={selected}
+                  viewMode={viewMode}
+                  optionId={postOptionId(post.id)}
+                  optionTabIndex={post.id === selectedPostId ? 0 : -1}
+                  onCaptureResolved={onCaptureResolved}
+                  onDeletePost={onDeleteItem}
+                  onOpenPost={onOpenPost}
+                  onOpenTag={onOpenTag}
+                  onSelect={() => post.id && onSelectPost?.(post.id)}
+                  onItemClick={(event) =>
+                    post.id
+                      ? (onItemClick?.(post.id, event) ?? true)
+                      : true
+                  }
+                />
+              );
+            })}
+          </div>
         ) : folder.mode === "blog" ? (
           <div
             className="blog-folder-feed"
@@ -1195,17 +1251,20 @@ function UniversalFolderContents({
                 (selectedPostIds?.has(post.id) ??
                   post.id === selectedPostId),
             );
+            const isNote = folder.mode === "notes";
             const document = post.document ?? documentFromLegacyPost(post);
-            const reference =
-              post.template ?? document.presentation.template;
+            const reference = post.template ?? document.presentation.template;
             const definition =
               getBuiltinTemplate(reference.id, reference.version) ??
               getBuiltinTemplate("texttext.article", 1)!;
+            const notePreview = expandedPreview(
+              postBodyPreview(post) || post.excerpt || "",
+            );
             return (
               <div
                 key={itemKey(post)}
                 id={postOptionId(post.id)}
-                className={`universal-item-card${
+                className={`universal-item-card${isNote ? " is-note-card" : ""}${
                   selected ? " is-command-selected" : ""
                 }`}
                 role="option"
@@ -1244,16 +1303,34 @@ function UniversalFolderContents({
                     onOpenPost(post);
                   }}
                 >
-                  <DocumentCollectionRenderer
-                    document={document}
-                    template={definition}
-                    documentId={`collection-${post.id ?? post.slug}`}
-                    metadata={{
-                      date: formatArticleDate(post.updatedAt ?? post.date, {
-                        style: "short",
-                      }),
-                    }}
-                  />
+                  {isNote ? (
+                    <span className="note-folder-card-content">
+                      <span className="note-folder-card-title">
+                        {itemTitle(post)}
+                      </span>
+                      {notePreview && (
+                        <span className="note-folder-card-preview">
+                          {notePreview}
+                        </span>
+                      )}
+                      <span className="note-folder-card-date">
+                        {formatArticleDate(post.updatedAt ?? post.date, {
+                          style: "short",
+                        })}
+                      </span>
+                    </span>
+                  ) : (
+                    <DocumentCollectionRenderer
+                      document={document}
+                      template={definition}
+                      documentId={`collection-${post.id ?? post.slug}`}
+                      metadata={{
+                        date: formatArticleDate(post.updatedAt ?? post.date, {
+                          style: "short",
+                        }),
+                      }}
+                    />
+                  )}
                 </Link>
                 {canEditItems && (
                   <WorkspaceItemActions
@@ -1543,9 +1620,10 @@ export function FolderPage({
   onDeleteFolder?: FolderDeleteFolder;
   canShareFolders?: boolean;
 }) {
-  const defaultViewMode: FolderViewMode = "grid";
+  const defaultViewMode: FolderViewMode =
+    folder.mode === "notes" || folder.mode === "bookmarks" ? "list" : "grid";
   const [viewMode, changeView] = useWorkspaceViewMode(
-    `folder:v2:${folder.id}`,
+    `folder:v3:${folder.id}`,
     defaultViewMode,
   );
   const [filterQuery, setFilterQuery] = useState("");
@@ -1656,6 +1734,7 @@ export function FolderPage({
         canCreateItems={canCreateItems}
         canEditItems={canEditItems}
         onCreateItem={onCreateItem}
+        onCaptureResolved={onCaptureResolved}
         onDeleteItem={onDeleteItem}
         onItemClick={onItemClick}
         onOpenPost={onOpenPost}

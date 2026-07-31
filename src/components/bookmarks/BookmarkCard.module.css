@@ -1,11 +1,11 @@
 .card {
   position: relative;
   display: grid;
-  grid-template-columns: 138px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-  min-height: 76px;
-  padding: 16px 0;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 72px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--hairline);
   color: var(--ink);
 }
@@ -94,8 +94,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink);
-  font-size: 19px;
-  font-weight: 750;
+  font-size: 16px;
+  font-weight: 650;
   line-height: 1.25;
   letter-spacing: 0;
 }
@@ -141,8 +141,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 14px;
-  font-weight: 650;
+  font-size: 12.5px;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -154,15 +154,15 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--muted);
-  font-size: 15px;
-  font-weight: 550;
-  line-height: 1.42;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.38;
   letter-spacing: 0;
 }
 
 .menuWrap {
   position: absolute;
-  top: 14px;
+  top: 12px;
   right: 0;
   z-index: 4;
   width: max-content;
@@ -277,8 +277,8 @@
 .thumbnailLink {
   grid-column: 1;
   grid-row: 1;
-  width: 138px;
-  height: 90px;
+  width: 112px;
+  height: 72px;
   display: block;
   overflow: hidden;
   border: 1px solid var(--hairline);
@@ -386,7 +386,7 @@
 :global(.post-folder-page.is-view-column) .body {
   grid-column: 1;
   grid-row: 2;
-  padding: 18px 20px 20px;
+  padding: 15px 16px 17px;
 }
 
 :global(.post-folder-page.is-view-grid) .thumbnailLink,
@@ -398,18 +398,18 @@
   border: 0;
   border-bottom: 1px solid var(--hairline);
   border-radius: 8px 8px 0 0;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
 }
 
 :global(.post-folder-page.is-view-column) .thumbnailLink {
   max-height: 240px;
-  aspect-ratio: 16 / 6;
+  aspect-ratio: 16 / 7;
 }
 
 :global(.post-folder-page.is-view-grid) .noThumbnail .body {
   grid-row: 1;
-  min-height: 230px;
-  padding-top: 54px;
+  min-height: 180px;
+  padding-top: 44px;
 }
 
 :global(.post-folder-page.is-view-grid) .main,
@@ -429,7 +429,7 @@
 }
 
 :global(.post-folder-page.is-view-grid) .description {
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
 }
 
 :global(.post-folder-page.is-view-column) .description {
@@ -474,9 +474,9 @@
   }
 
   .thumbnailLink {
-    width: 132px;
+    width: 112px;
     max-width: 100%;
-    height: 78px;
+    height: 72px;
     margin-left: 38px;
   }
 }

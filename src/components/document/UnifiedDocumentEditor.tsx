@@ -791,6 +791,7 @@ export function UnifiedDocumentEditor({
               field={field}
               value={document.content.fields[field.id]}
               onChange={(value) => updateField(field.id, value)}
+              embedded
             />,
           ]),
         ),
@@ -833,19 +834,27 @@ export function UnifiedDocumentEditor({
           {(onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
               type="button"
-              className="ac-btn ac-btn-gray"
+              className="ac-btn ac-btn-gray tt-look-button"
               onClick={() => {
                 if (availableTemplates?.length) setChoosingTemplate(true);
                 else onChooseTemplate?.();
               }}
             >
-              {activeTemplate.name}
+              <span>Look</span>
+              <span className="tt-look-name">{activeTemplate.name}</span>
             </button>
           )}
           {onDelete && (
-            <button type="button" className="ac-btn ac-btn-gray" onClick={() => void onDelete()}>
-              Delete
-            </button>
+            <details className="tt-editor-more">
+              <summary aria-label="More actions" title="More actions">
+                <span aria-hidden="true">•••</span>
+              </summary>
+              <div className="tt-editor-more-menu">
+                <button type="button" onClick={() => void onDelete()}>
+                  Move to Trash
+                </button>
+              </div>
+            </details>
           )}
           <button type="button" className="ac-btn ac-btn-blue" onClick={() => void stopEditing()}>
             Stop editing
@@ -890,7 +899,7 @@ export function UnifiedDocumentEditor({
       </div>
       <style>{`
         .tt-unified-editor{min-height:100%;background:var(--paper,#fff)}
-        .tt-document-editor{min-height:100vh;padding-bottom:5rem}
+        .tt-document-editor{min-height:100vh;padding-bottom:3rem}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
         .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:auto}
@@ -898,7 +907,7 @@ export function UnifiedDocumentEditor({
         .tt-document-editor .tt-collaborative-mirror mark{background:color-mix(in srgb,var(--tt-peer) 28%,transparent);color:transparent;border-radius:2px}
         .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-1px;color:transparent}
         .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
-        .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:48vh;text-align:start}
+        .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:36vh;text-align:start}
         .tt-document-editor .tt-field-body textarea{resize:vertical}
         .tt-unified-presence{display:flex;align-items:center;gap:4px;padding-inline:3px}
         .tt-person-presence,.tt-agent-avatar{display:grid;place-items:center;width:25px;height:25px;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:10px;font-weight:700}
@@ -910,9 +919,18 @@ export function UnifiedDocumentEditor({
         .tt-agent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .tt-save-state{position:fixed;right:12px;bottom:12px;z-index:220;min-height:1rem;padding:5px 8px;border-radius:6px;background:color-mix(in srgb,var(--paper,#fff) 90%,transparent);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}
+        .tt-look-button{display:inline-flex;align-items:center;gap:5px}.tt-look-name{max-width:9rem;overflow:hidden;color:var(--muted,#6e6e73);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
+        .tt-editor-more{position:relative}.tt-editor-more>summary{display:grid;place-items:center;box-sizing:border-box;min-width:30px;height:30px;padding:0 8px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.12));color:var(--ink,#1d1d1f);font:700 11px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:1px;cursor:pointer;list-style:none}.tt-editor-more>summary::-webkit-details-marker{display:none}.tt-editor-more[open]>summary{background:var(--ac-fill-3,rgba(118,118,128,.2))}
+        .tt-editor-more-menu{position:absolute;z-index:420;top:calc(100% + 6px);right:0;min-width:160px;padding:5px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-editor-more-menu button{width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--tt-destructive,#d70015);font:500 13px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}.tt-editor-more-menu button:hover{background:color-mix(in srgb,var(--tt-destructive,#d70015) 10%,transparent)}
         .tt-field-row{display:flex;align-items:center;gap:10px;margin:2px 0;font-size:14px;color:var(--ink,#1d1d1f)}
         .tt-field-row.is-richtext{align-items:flex-start}
         .tt-field-label{flex:0 0 8.5rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:600;letter-spacing:.01em}
+        .tt-field-row.is-embedded{position:relative;width:100%;margin:0}
+        .tt-field-row.is-embedded>.tt-field-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+        .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor{width:100%}
+        .tt-field-row.is-image.is-embedded{justify-content:center;padding:.6rem 0}
+        .tt-field-row.is-image.is-embedded .tt-image-field-control{flex:0 1 auto;justify-content:center;padding:5px 7px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 88%,transparent);box-shadow:0 4px 16px rgba(0,0,0,.08);backdrop-filter:blur(18px) saturate(140%)}
+        .tt-field-row.is-image.is-embedded .tt-image-field-preview,.tt-field-row.is-image.is-embedded .tt-image-field-placeholder{width:72px;height:44px;flex-basis:72px}
         .tt-field-input{flex:1 1 auto;min-width:0;box-sizing:border-box;padding:5px 8px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:14px}
         .tt-field-input:focus{outline:2px solid var(--tt-accent,#0071e3);outline-offset:1px;border-color:transparent}
         .tt-field-input.is-checkbox{flex:0 0 auto;width:16px;height:16px;accent-color:var(--tt-accent,#0071e3)}
@@ -923,6 +941,7 @@ export function UnifiedDocumentEditor({
         .tt-field-multienum{display:flex;flex-wrap:wrap;gap:6px}
         .tt-field-choice{padding:3px 10px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
         .tt-field-choice.is-active{background:var(--tt-accent,#0071e3);border-color:var(--tt-accent,#0071e3);color:#fff}
+        .tt-image-field-control{display:flex;flex:1 1 auto;align-items:center;min-width:0;gap:10px}.tt-image-field-preview,.tt-image-field-placeholder{display:grid;place-items:center;box-sizing:border-box;width:88px;height:56px;flex:0 0 88px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.08));object-fit:cover;color:var(--muted,#6e6e73);font-size:11px}.tt-image-field-actions{display:flex;align-items:center;gap:6px}.tt-image-field-actions button,.tt-image-field-picker>summary{padding:5px 9px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.1));color:var(--ink,#1d1d1f);font:500 12px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer;list-style:none}.tt-image-field-actions button{color:var(--tt-destructive,#d70015)}.tt-image-field-picker{position:relative}.tt-image-field-picker>summary::-webkit-details-marker{display:none}.tt-image-field-popover{position:absolute;z-index:360;top:calc(100% + 6px);left:0;box-sizing:border-box;width:min(320px,70vw);padding:12px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-image-field-popover label{display:block;margin-bottom:6px;color:var(--muted,#6e6e73);font-size:11px;font-weight:600}
         .tt-rows-editor{display:flex;flex:1 1 auto;flex-direction:column;gap:6px;min-width:0}
         .tt-rows-editor-row{display:flex;align-items:center;gap:6px;min-width:0}
         .tt-rows-editor-row .tt-field-input{flex:1 1 0;min-width:3rem}

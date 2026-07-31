@@ -1,0 +1,710 @@
+/* Texttext workspace chrome
+   One restrained operational system for navigation, toolbars, collections,
+   dialogs, settings, and the assistant. Document templates remain independent. */
+
+:where(
+  .post-editor-shell,
+  .post-folder-page,
+  .workspace-root-page,
+  .workspace-settings,
+  .workspace-assistant
+) {
+  font-family: var(--font-body);
+  letter-spacing: 0;
+}
+
+:where(
+  button,
+  input,
+  select,
+  textarea
+) {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.post-editor-sidebar {
+  width: var(--sidebar-width);
+  border-right: 1px solid var(--hairline);
+  background: var(--sidebar-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+}
+
+.post-editor-sidebar-top {
+  min-height: 52px;
+  gap: 6px;
+  padding: 8px 10px 6px;
+}
+
+.post-editor-folder-nav {
+  padding: 4px 8px;
+}
+
+.post-editor-folder-row {
+  min-height: 34px;
+  margin: 1px 0;
+  border-radius: var(--radius-control);
+}
+
+.post-editor-folder-main {
+  min-height: 34px;
+  gap: 9px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.post-editor-folder-row:hover {
+  background: var(--control-bg);
+}
+
+.post-editor-folder-row.is-active {
+  background: var(--control-bg-hover);
+}
+
+.post-editor-folder-row.is-active .post-editor-folder-main {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.post-editor-folder-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.post-editor-folder-count {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.post-editor-nav-heading.is-collections {
+  margin: 16px 8px 5px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.post-editor-sidebar-activity {
+  margin: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.post-editor-sidebar-activity > summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+  color: var(--muted);
+  cursor: default;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.post-editor-sidebar-activity > summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-editor-sidebar-activity > summary::after {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 140ms var(--ease);
+}
+
+.post-editor-sidebar-activity[open] > summary::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.post-editor-sidebar-activity > summary small {
+  max-width: 110px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-editor-calendar {
+  padding: 2px 8px 12px;
+}
+
+.workspace-root-page {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 72px 34px 88px;
+}
+
+.workspace-library-header {
+  min-height: auto;
+  margin: 0 0 26px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.workspace-library-header h1 {
+  margin: 0;
+  font: 700 32px/1.08 var(--font-display);
+}
+
+.workspace-library-header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workspace-root-create {
+  margin: 0 0 28px;
+}
+
+.universal-item-composer {
+  min-height: 46px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.universal-item-composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 64%, var(--hairline));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.workspace-library-toolbar {
+  min-height: 42px;
+  margin: 0 0 14px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.workspace-library-filters button {
+  min-height: 30px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.workspace-library-filters button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--control-bg-hover);
+  font-weight: 600;
+}
+
+.workspace-library-controls select,
+.workspace-view-segmented {
+  min-height: var(--control-height);
+  border-color: var(--hairline);
+  border-radius: var(--radius-control);
+  background-color: var(--bg);
+}
+
+.workspace-recent-empty {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.workspace-recent-empty p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.workspace-recent-empty span {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workspace-agent-entry.is-compact {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 42px 0 0;
+  padding: 16px 0;
+  border-block: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace-agent-entry.is-compact > div {
+  min-width: 0;
+}
+
+.workspace-agent-entry.is-compact h2 {
+  margin: 0;
+  color: var(--ink);
+  font: 600 14px/1.25 var(--font-body);
+}
+
+.workspace-agent-entry.is-compact p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font: 400 12px/1.35 var(--font-body);
+}
+
+.workspace-agent-entry.is-compact > a {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-agent-entry.is-compact > a:hover {
+  background: var(--control-bg-hover);
+}
+
+.workspace-agent-compact-marks {
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+}
+
+.workspace-agent-compact-marks > * {
+  width: 28px;
+  height: 28px;
+  margin-left: -5px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+}
+
+.workspace-agent-compact-marks > :first-child {
+  margin-left: 0;
+}
+
+/* Utility collections
+   Trash, Starred, and Shared are operational views. They use the same compact
+   hierarchy as the library instead of presenting themselves as documents. */
+
+.workspace-collection-page {
+  width: 100%;
+  max-width: var(--content-max);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 72px 34px 88px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.workspace-collection-header,
+.workspace-trash-list,
+.workspace-collection-empty {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+.workspace-collection-header {
+  min-height: 44px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 18px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.workspace-collection-header h1 {
+  margin: 0;
+  color: var(--ink);
+  font: 700 32px/1.08 var(--font-body);
+  letter-spacing: 0;
+}
+
+.workspace-collection-header > p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font: 400 13px/1.35 var(--font-body);
+}
+
+.workspace-starred-page .workspace-collection-header {
+  display: block;
+}
+
+.workspace-collection-empty {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  color: var(--muted);
+  font: 500 14px/1.45 var(--font-body);
+  text-align: center;
+}
+
+.workspace-trash-list {
+  display: grid;
+  gap: 0;
+}
+
+.workspace-trash-row {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace-trash-row:hover,
+.workspace-trash-row.is-command-selected {
+  background: var(--control-bg);
+}
+
+.workspace-trash-row.is-command-selected {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: -2px;
+}
+
+.workspace-trash-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.workspace-trash-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  font: 600 14px/1.25 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-trash-row span {
+  color: var(--muted);
+  font: 400 12px/1.2 var(--font-body);
+  text-transform: capitalize;
+}
+
+.workspace-trash-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+.workspace-trash-actions .is-danger {
+  color: var(--danger);
+}
+
+/* Collection identity
+   Each collection keeps one workspace interaction model, but its content
+   presentation follows the object people expect to find there. */
+
+.post-folder-page {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 72px 34px 88px;
+}
+
+.post-folder-page-header {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  justify-items: start;
+  gap: 5px;
+  margin: 0 auto 22px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.post-folder-page-header h1 {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.post-folder-page-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.post-folder-page.is-mode-blog {
+  max-width: 1100px;
+}
+
+.post-folder-page.is-mode-blog .post-folder-page-header {
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: 5px;
+  text-align: left;
+}
+
+.post-folder-page.is-mode-blog .post-folder-title-row,
+.post-folder-page.is-mode-blog .post-folder-page-count {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.post-folder-page.is-mode-blog .post-folder-page-header h1 {
+  max-width: 16ch;
+  font-family: var(--font-display);
+  font-size: clamp(42px, 7vw, 68px);
+  font-weight: 750;
+  line-height: 0.98;
+}
+
+.post-folder-page.is-mode-blog .universal-item-composer,
+.post-folder-page.is-mode-blog .blog-folder-feed {
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+}
+
+.post-folder-page.is-mode-blog .blog-folder-feed {
+  margin-top: 26px;
+}
+
+.bookmark-folder-collection {
+  width: 100%;
+  display: grid;
+}
+
+.bookmark-folder-collection.is-list {
+  gap: 0;
+}
+
+.bookmark-folder-collection.is-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  align-items: stretch;
+  gap: 18px;
+}
+
+.bookmark-folder-collection.is-column {
+  max-width: 780px;
+  margin-inline: auto;
+  gap: 12px;
+}
+
+.universal-item-card.is-note-card {
+  min-height: 224px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-soft-2) 72%, var(--bg));
+}
+
+.universal-item-card.is-note-card .universal-item-card-link {
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.note-folder-card-content {
+  min-height: 222px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 18px;
+}
+
+.note-folder-card-title {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.note-folder-card-preview {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.note-folder-card-date {
+  margin-top: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.universal-item-collection.is-column .universal-item-card.is-note-card {
+  min-height: 180px;
+}
+
+.universal-item-collection.is-column
+  .universal-item-card.is-note-card
+  .note-folder-card-content {
+  min-height: 178px;
+}
+
+.universal-item-collection.is-column .note-folder-card-preview {
+  -webkit-line-clamp: 12;
+  font-size: 15px;
+}
+
+.universal-item-collection.is-list .universal-item-card.is-note-card {
+  min-height: 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none !important;
+}
+
+.universal-item-collection.is-list
+  .universal-item-card.is-note-card
+  .note-folder-card-content {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+}
+
+.universal-item-collection.is-list .note-folder-card-title,
+.universal-item-collection.is-list .note-folder-card-preview {
+  overflow: hidden;
+  display: block;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.universal-item-collection.is-list .note-folder-card-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.universal-item-collection.is-list .note-folder-card-preview {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.universal-item-collection.is-list .note-folder-card-date {
+  margin: 0;
+  white-space: nowrap;
+}
+
+:where(.post-action-toolbar, .folder-action-toolbar) {
+  border: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
+  border-radius: 9px;
+  background: var(--toolbar-bg);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.08);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+:where(.post-action-toolbar, .folder-action-toolbar) button,
+:where(.post-action-toolbar, .folder-action-toolbar) a {
+  min-height: var(--control-height);
+  border-radius: var(--radius-control);
+}
+
+@media (max-width: 760px) {
+  .workspace-root-page {
+    padding: 64px 18px 70px;
+  }
+
+  .workspace-collection-page {
+    padding: 64px 18px 70px;
+  }
+
+  .workspace-collection-header {
+    align-items: center;
+  }
+
+  .workspace-collection-header h1 {
+    font-size: 28px;
+  }
+
+  .workspace-trash-row {
+    align-items: flex-start;
+  }
+
+  .workspace-trash-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .post-folder-page {
+    padding: 64px 18px 70px;
+  }
+
+  .post-folder-page.is-mode-blog .post-folder-page-header h1 {
+    font-size: 42px;
+  }
+
+  .bookmark-folder-collection.is-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .universal-item-collection.is-list
+    .universal-item-card.is-note-card
+    .note-folder-card-content {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .universal-item-collection.is-list .note-folder-card-preview {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .workspace-agent-entry.is-compact {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .workspace-agent-entry.is-compact > a {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .post-editor-sidebar-activity > summary::after {
+    transition: none;
+  }
+}

@@ -24,14 +24,68 @@ export type FieldInputProps = {
   value: DocumentFieldValue | undefined;
   onChange: (value: DocumentFieldValue) => void;
   disabled?: boolean;
+  embedded?: boolean;
 };
 
 const text = (value: DocumentFieldValue | undefined): string =>
   typeof value === "string" ? value : value == null ? "" : String(value);
 
-export function FieldInput({ field, value, onChange, disabled }: FieldInputProps) {
+export function FieldInput({
+  field,
+  value,
+  onChange,
+  disabled,
+  embedded = false,
+}: FieldInputProps) {
   const id = useId();
   const label = field.label || field.id;
+  const currentText = text(value);
+
+  if (field.type === "image") {
+    return (
+      <div
+        className={`tt-field-row is-image${embedded ? " is-embedded" : ""}`}
+        data-field-id={field.id}
+      >
+        <span className="tt-field-label">
+          {label}
+          {field.required ? <span aria-hidden="true"> *</span> : null}
+        </span>
+        <div className="tt-image-field-control">
+          {currentText ? (
+            <img className="tt-image-field-preview" src={currentText} alt="" />
+          ) : (
+            <span className="tt-image-field-placeholder" aria-hidden="true">
+              No image
+            </span>
+          )}
+          <div className="tt-image-field-actions">
+            <details className="tt-image-field-picker">
+              <summary>{currentText ? "Change image" : "Add image"}</summary>
+              <div className="tt-image-field-popover">
+                <label htmlFor={id}>Image link</label>
+                <input
+                  id={id}
+                  type="url"
+                  className="tt-field-input"
+                  value={currentText}
+                  placeholder="Paste an image link"
+                  disabled={disabled}
+                  onChange={(event) => onChange(event.target.value)}
+                  inputMode="url"
+                />
+              </div>
+            </details>
+            {currentText ? (
+              <button type="button" disabled={disabled} onClick={() => onChange(null)}>
+                Remove
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const control = (() => {
     switch (field.type) {
@@ -59,14 +113,13 @@ export function FieldInput({ field, value, onChange, disabled }: FieldInputProps
           />
         );
       case "url":
-      case "image":
         return (
           <input
             id={id}
             type="url"
             className="tt-field-input"
-            value={text(value)}
-            placeholder={field.type === "image" ? "Image address" : "https://"}
+            value={currentText}
+            placeholder="https://"
             disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
             inputMode="url"
@@ -203,7 +256,7 @@ export function FieldInput({ field, value, onChange, disabled }: FieldInputProps
 
   return (
     <label
-      className={`tt-field-row is-${field.type}`}
+      className={`tt-field-row is-${field.type}${embedded ? " is-embedded" : ""}`}
       htmlFor={id}
       data-field-id={field.id}
     >

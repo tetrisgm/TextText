@@ -132,9 +132,6 @@ export function ConfirmationDialog({
           <p id={messageId} className="confirmation-dialog-message">
             {message}
           </p>
-          <p className="confirmation-dialog-shortcuts">
-            Enter confirms. Esc cancels.
-          </p>
         </div>
         <div className="confirmation-dialog-actions">
           <button
