@@ -28,10 +28,7 @@ No database or credentials are needed for the demo. For real data, run
 - `DESIGN.md`: the design contract (the accent rule, the contrast floor, the
   motion rule). This is the product.
 - `ARCHITECTURE.md`: the map of the system.
-- `AGENTS.md` and `CLAUDE.md`: how work is done here, including the main-only
-  workflow and the release gate.
-- `docs/codex/HANDOFF.md`: the current continuation state. It wins over the
-  others when they disagree.
+- `AGENTS.md`: product invariants and verification. `CLAUDE.md` includes it.
 
 ## For AI agents
 

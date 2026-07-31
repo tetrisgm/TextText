@@ -3,8 +3,8 @@
 A multi-tenant publishing platform: Next.js App Router on Vercel, plus a native
 macOS app that mounts the workspace as a Finder location.
 
-This is the map. `docs/codex/HANDOFF.md` is the current continuation state and
-wins over this file when they disagree.
+This is the current architecture map. Verify live behavior and generated
+release metadata rather than relying on historical handoffs.
 
 ## Tenancy and URLs
 

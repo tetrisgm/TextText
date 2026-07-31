@@ -1,152 +1,68 @@
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 
-This version has breaking changes. APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+This version has breaking changes. Read the relevant guide under
+`node_modules/next/dist/docs/` before changing Next.js APIs or conventions.
 <!-- END:nextjs-agent-rules -->
 
-# Main-only workflow (binding)
+# Texttext agent contract
 
-## Workshop
+Load the shared `workshop-delivery` skill. Use:
 
-Read `WORKSHOP.md` and `.workshop.json` before offloading work. `workshop quick`
-runs the portable typecheck and unit preflight on the shared PC worker.
-Workshop receipts support iteration and recovery; they do not replace
-`verify:release`, production migrations, deployment, or Mac app delivery.
+```sh
+workshop rules audit texttext
+workshop delivery audit texttext
+```
 
-Use the shared `workshop-delivery` skill and run
-`workshop delivery audit texttext` before changing build, CI, release, or
-deployment automation. `net.writeapp.write.autobuild` is the sole model-free
-delivery controller.
+`.workshop.json` owns portable PC preflights. The registered controller is the
+only automatic delivery path.
 
-- `main` is the only durable development branch and the only release source for
-  this repository. Ordinary work happens directly in the main worktree.
-- Temporary branches or worktrees may be used only for isolated subagents. The
-  parent agent must review and integrate their useful changes into `main`, run
-  final verification on `main`, and remove those temporary refs before calling
-  the task complete.
-- Never leave completed work only in a subagent branch. If work cannot be
-  integrated safely, provide an explicit handoff with its branch, worktree,
-  commit, files, tests, and blocker.
-- Before a final response, verify `git status`, `git worktree list`, and branches
-  not merged into `main`. Report the main commit, cleanliness, remaining
-  temporary refs, and release state.
-- Releases happen only from clean, verified, settled `main`. The controller
-  installs local native builds and coalesces public releases to the newest
-  eligible tip. Use the one-command ship workflow and leave
-  the remote source, public artifacts, update feed, and installed app on the
-  same source version.
+## Verify
 
-## Work-unit instrumentation (binding)
+- Use `npx tsc --noEmit` and focused `npx vitest run <file>` while iterating.
+- `npm run verify:release` is the only full product gate.
+- Start a coherent work unit with `npm run work:start -- "short label"` and use
+  `npm run work:summary`, `npm run work:doctor`, and `npm run work:finish` for
+  its deterministic receipts.
+- OAuth, well-known-document, or MCP handler changes must pass
+  `python3 scripts/test-oauth-mcp-loop.py`.
+- The zero-setup demo is `/@demo`; `/t/demo` redirects there.
 
-- Start each coherent body of work with `npm run work:start -- "short label"`.
-  Run verification through `scripts/work-unit.ts run` or the package recipes so
-  commands have closed stdin, a process-group timeout, an exact source
-  fingerprint, and a durable timing receipt under `.write/`.
-- **Run the full gate on the already-committed source.** The source fingerprint
-  hashes the commit id along with the working-tree diff, so committing always
-  changes it. Gate first and commit second and the receipt is stale, which
-  `release/ship.sh` correctly refuses, costing a second full gate run. The order
-  that works is: develop with focused checks, commit the coherent unit, run
-  `npm run verify:release` on that commit, then push and ship. If the gate fails,
-  amend the unpushed commit rather than stacking a fixup.
-- Do not edit any tracked file while the gate is running. A mid-run edit changes
-  the fingerprint and the gate ends with "Source changed while release gates were
-  running."
-- Use `npm run work:summary` while working and `npm run work:finish` after the
-  final verification to persist elapsed time, failures, cache sizes, the
-  slowest gates, and receipt reuse. Use `npm run work:doctor` when local work feels slow; the
-  dev command prunes only an oversized Next development cache and never removes
-  the Swift incremental cache.
-- A passing command may be reused only when its command and exact source state
-  match. `npm run verify:release` is the sole full release gate. Shipping must
-  consume that exact receipt instead of repeating tests or trusting an
-  environment flag.
+## Product
 
-## Release reliability
+- Read `DESIGN.md` before reader or editor visual work. Check every color in
+  light and dark mode. Do not use em dashes in product copy.
+- One validated schema-v1 `DocumentSnapshot` is the content model. Article,
+  note, bookmark, gallery, and talk are presentation templates, not separate
+  models.
+- `src/components/document/DocumentRenderer.tsx` is the shared renderer.
+  Render specs are validated data, never user HTML, CSS, JavaScript, or
+  component names.
+- `src/lib/store.ts` is the only content access point.
+- Notes and bookmarks remain unlisted. Visibility fails closed. Every mutation
+  writes `action_audit`.
+- Collaboration uses full-document Yjs with awareness and epoch fencing.
+- The UI, in-app assistant, and MCP server call one workspace-command surface;
+  the app never calls its own MCP endpoint.
+- External agents use hosted `/api/mcp`. Agents on this Mac use the `texttext`
+  CLI and do not restore a loopback server.
+- Full AI architecture is in `docs/ai-sidebar-architecture.md`.
 
-- Close stdin and impose a process-group wall-clock cap on every long agent,
-  build, test, and publish child. Stash abandoned worker WIP before waiting for
-  a clean tree.
-- Scope process guards to this repository's absolute path or explicit working
-  directory. Never use a bare shared script or program name.
-- Ship only fast deterministic gates. Keep race and heavy suites required out
-  of band; use deterministic assertions plus generous hang guards.
-- In launchd, load `GH_TOKEN` from a mode-600 env file, disable prompts, and
-  pin absolute tool paths. Do not rely on Keychain UI or a login shell.
-- Key retries to the stable source commit. Probe and bump to the next free
-  immutable version; never reuse published identifiers.
-- Keep ship and agent lanes mutually exclusive. The release driver is a
-  periodic, one-shot, model-free launchd job.
+## Database
 
-# AI approach (binding)
+`.env.local` must point to local Postgres. Development, tests, builds, and the
+full gate never use production Neon. Production migrations load
+`.env.release.local`. Run `scripts/setup-local-db.sh` when local Postgres is not
+ready.
 
-Full architecture: docs/ai-sidebar-architecture.md. The short contract every
-agent working here follows:
+## Changelog
 
-- **Two explicit ways to connect AI.** (1) The in-app assistant uses a
-  workspace-owned Anthropic or OpenAI API key and the model selected in
-  Workspace Settings. Texttext never silently spends an owner-funded shared
-  key. Provider API billing is separate from ChatGPT and Claude.ai
-  subscriptions. (2) Existing ChatGPT, Claude, Cursor, and other agent
-  subscriptions connect externally through MCP (`/api/mcp`,
-  click-to-approve OAuth) and keep their model and billing in that client.
-  The legacy Apple Foundation Models bridge is not an active product provider
-  and must not be restored as an automatic fallback.
-- **One command surface, three consumers.** The UI, the in-app assistant,
-  and the MCP server call the same workspace commands. The app never
-  consumes its own MCP server over the network.
-- **Release gates.** `python3 scripts/test-oauth-mcp-loop.py` must pass for
-  any change touching OAuth, the well-known documents, or the MCP handler.
-  Never use `Response.redirect()` in the OAuth approve route (immutable
-  headers 500 the approval).
-- **Privacy invariants live below the tool layer**: notes and bookmarks stay
-  unlisted forever, every mutation writes `action_audit`, and
-  `src/lib/store.ts` remains the only content access point, no matter which
-  AI is calling.
-- **Reusable versions** of this surface live in `~/dev/stack` (`mcp-kit`,
-  `mac-kit/templates/native-ai`). Improvements flow product to kit; port
-  hardening back and note it in the kit README.
-
-# Changelog (binding)
-
-The owner reads a running changelog INSIDE Texttext. It is NOT a repo file. It is
-content, so it lives in the product, in the product's own format. Do not add a
-parallel `.md` copy in the repo; that drifts and violates the "content is a
-note" rule.
-
-**The one and only changelog is this exact document:**
+Use the installed `texttext:project-changelog` skill. The sole changelog item is:
 
 ```text
 Shoku's Space/My Notes/Write Changelog.textpack
 ```
 
-Address it by that full workspace-relative path, never by title. The note is
-still called "Write Changelog" from before the rebrand, and a DIFFERENT note
-called "Texttext Changelog" exists in another workspace. An earlier instruction
-here named the title rather than the path, and the history split across both:
-0.141 and 0.142 landed in one, 0.145 in the other, and 0.143 and 0.146 in
-neither. That was repaired in 0.147. Do not reintroduce a second changelog, and
-do not resolve this note by name.
-
-Every unit of meaningful, user-facing work prepends a newest-on-top entry, under
-the `# Write Changelog` heading and its one-line intro, not above them. Group by
-the version that ACTUALLY SHIPPED; confirm it with `git log --oneline | grep
-Release` rather than guessing the next number, because a build retry can consume
-one (there was never a 0.144). Plain language you can act on ("type # in the tag
-field to..."), sentence case, no em dashes, no engineering detail. Internal-only
-churn (refactors, test/infra fixes, release-pipeline tweaks) does not need an
+Resolve it by this full path, confirm the version that actually shipped, and do
+not create a repository copy. Internal infrastructure-only changes need no
 entry.
-
-Only a process on the owner's Mac can write the File Provider mount. Use the CLI,
-which owns the format and preserves the frontmatter:
-
-```sh
-texttext read "Shoku's Space/My Notes/Write Changelog.textpack" > /tmp/log.md
-# prepend the entry under the heading and intro, then:
-texttext write "Shoku's Space/My Notes/Write Changelog.textpack" --from /tmp/log.md \
-  --as claude --message "add the <version> entry"
-texttext lint "Shoku's Space/My Notes/Write Changelog.textpack"
-```
-
-Codex in a sandbox cannot reach the mount and should instead put its user-facing
-entry in its final report for the integrator to prepend.

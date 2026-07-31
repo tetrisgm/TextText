@@ -48,3 +48,4 @@ release/.autobuild*.log
 # per-work-unit timings, receipts, and local cache history
 /.write/
 .env.release.local
+.claude/
