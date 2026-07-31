@@ -6,6 +6,13 @@ This version has breaking changes. APIs, conventions, and file structure may all
 
 # Main-only workflow (binding)
 
+## Workshop
+
+Read `WORKSHOP.md` and `.workshop.json` before offloading work. `workshop quick`
+runs the portable typecheck and unit preflight on the shared PC worker.
+Workshop receipts support iteration and recovery; they do not replace
+`verify:release`, production migrations, deployment, or Mac app delivery.
+
 - `main` is the only durable development branch and the only release source for
   this repository. Ordinary work happens directly in the main worktree.
 - Temporary branches or worktrees may be used only for isolated subagents. The
