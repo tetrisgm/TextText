@@ -1,6 +1,6 @@
 #!/bin/bash
-# Install the Texttext autobuild daemon as a per-user launchd agent so it runs at
-# login and keeps itself alive. Idempotent: safe to re-run (reloads).
+# Install the bounded Texttext delivery controller. launchd invokes one pass
+# every five minutes; the script never contains its own polling loop.
 set -euo pipefail
 
 LABEL="net.writeapp.write.autobuild"
@@ -23,7 +23,7 @@ cat > "$PLIST" <<PLISTEOF
     <string>$SCRIPT</string>
   </array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  <key>StartInterval</key><integer>300</integer>
   <key>ProcessType</key><string>Background</string>
   <key>StandardOutPath</key><string>$REPO/release/.autobuild.out.log</string>
   <key>StandardErrorPath</key><string>$REPO/release/.autobuild.err.log</string>
@@ -38,7 +38,7 @@ PLISTEOF
 
 UID_NUM=$(id -u)
 launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$UID_NUM" "$PLIST"
 launchctl enable "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+launchctl bootstrap "gui/$UID_NUM" "$PLIST"
 echo "Installed + loaded $LABEL"
 launchctl print "gui/$UID_NUM/$LABEL" 2>/dev/null | grep -E "state =|program =" | head -3 || true

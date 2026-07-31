@@ -10,6 +10,9 @@ Workshop must not use production Neon, run release migrations, deploy Vercel,
 publish the Mac app, or replace `npm run verify:release`. Production and release
 credentials are intentionally absent from the worker.
 
+Use `workshop delivery status texttext` and
+`workshop delivery audit texttext` for delivery state and policy.
+
 Build receipts are written to
 `agents/artifacts/builds/<timestamp>-texttext/`. Durable non-Git project data
 belongs under `agents/artifacts/texttext/`.

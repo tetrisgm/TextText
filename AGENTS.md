@@ -13,6 +13,11 @@ runs the portable typecheck and unit preflight on the shared PC worker.
 Workshop receipts support iteration and recovery; they do not replace
 `verify:release`, production migrations, deployment, or Mac app delivery.
 
+Use the shared `workshop-delivery` skill and run
+`workshop delivery audit texttext` before changing build, CI, release, or
+deployment automation. `net.writeapp.write.autobuild` is the sole model-free
+delivery controller.
+
 - `main` is the only durable development branch and the only release source for
   this repository. Ordinary work happens directly in the main worktree.
 - Temporary branches or worktrees may be used only for isolated subagents. The
@@ -25,8 +30,9 @@ Workshop receipts support iteration and recovery; they do not replace
 - Before a final response, verify `git status`, `git worktree list`, and branches
   not merged into `main`. Report the main commit, cleanliness, remaining
   temporary refs, and release state.
-- Releases happen only from clean, verified `main`, after the owner says the
-  version is ready or asks to ship. Use the one-command ship workflow and leave
+- Releases happen only from clean, verified, settled `main`. The controller
+  installs local native builds and coalesces public releases to the newest
+  eligible tip. Use the one-command ship workflow and leave
   the remote source, public artifacts, update feed, and installed app on the
   same source version.
 
@@ -69,9 +75,8 @@ Workshop receipts support iteration and recovery; they do not replace
   pin absolute tool paths. Do not rely on Keychain UI or a login shell.
 - Key retries to the stable source commit. Probe and bump to the next free
   immutable version; never reuse published identifiers.
-- Keep ship and agent lanes mutually exclusive. The release driver is launchd
-  `KeepAlive` and agent-free, with deterministic continuation rather than a
-  model turn.
+- Keep ship and agent lanes mutually exclusive. The release driver is a
+  periodic, one-shot, model-free launchd job.
 
 # AI approach (binding)
 

@@ -1,5 +1,8 @@
 @AGENTS.md
 
+Shared build and delivery behavior is owned by the `workshop-delivery` skill
+and `workshop delivery`; do not duplicate it in this file.
+
 # Texttext: working notes
 
 Apple-grade multi-tenant blogging platform (Next.js App Router). A craft-first
@@ -94,8 +97,6 @@ free-tier transfer cap.
 ## Deploy
 
 Vercel (Neon Postgres + Blob wired via env). Work directly on `main`; do not
-leave product work on feature branches. The owner decides when a version is ready
-to release. At that point, ship the exact clean and verified `main` commit with
-the owner-facing command, update production and the installed Mac app, and
-verify that source, public artifacts, website, appcast, and installed build all
-match. Never release from a temporary subagent branch or worktree.
+leave product work on feature branches. The model-free delivery controller owns
+settled local installs and coalesced public releases. Store delivery remains
+explicit. Never release from a temporary subagent branch or worktree.

@@ -10,6 +10,7 @@
 #   release/ship.sh 0.13 --allow-dirty
 #   release/ship.sh 0.13 --dry-run  # verify/build locally; publish nothing
 #   release/ship.sh 0.13 --no-publish
+#   release/ship.sh 0.13 --local-install
 #   release/ship.sh 0.13 --skip-tests
 #   release/ship.sh 0.13 --skip-web-deploy
 set -euo pipefail
@@ -64,6 +65,7 @@ ALLOW_DIRTY=0
 SKIP_TESTS=0
 SKIP_WEB_DEPLOY=0
 NO_PUBLISH=0
+LOCAL_INSTALL=0
 
 usage() {
   sed -n '1,15p' "$0" >&2
@@ -73,6 +75,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --allow-dirty) ALLOW_DIRTY=1 ;;
     --dry-run|--no-publish) NO_PUBLISH=1 ;;
+    --local-install) NO_PUBLISH=1; LOCAL_INSTALL=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
     --skip-web-deploy) SKIP_WEB_DEPLOY=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -172,13 +175,17 @@ if [ "$NO_PUBLISH" = "1" ]; then
   [ "$("$PB" -c 'Print :SUFeedURL' "$DRY_PLIST")" = "${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" ]
   "$ROOT/mac/scripts/verify-app-health.sh" \
     "$ROOT/mac/build/Texttext.app" "$VERSION" "$DRY_BUILD"
-  echo
-  echo "Verified Texttext $VERSION (not published)"
-  echo "  web build: .next (one production build)"
-  echo "  app build: mac/build/Texttext.app ($VERSION build $DRY_BUILD)"
-  exit 0
+  EXPECTED_BUILD="$DRY_BUILD"
+  if [ "$LOCAL_INSTALL" != "1" ]; then
+    echo
+    echo "Verified Texttext $VERSION (not published)"
+    echo "  web build: .next (one production build)"
+    echo "  app build: mac/build/Texttext.app ($VERSION build $DRY_BUILD)"
+    exit 0
+  fi
 fi
 
+if [ "$LOCAL_INSTALL" != "1" ]; then
 echo ">> migrate database (production only)"
 # The dev DB (.env.local) is a LOCAL Postgres, so migrations must load the
 # production Neon creds from the release-only file. Guard hard: never migrate
@@ -315,6 +322,7 @@ if [ -n "$ORIGIN" ]; then
   else
     echo "   (skipping live workflow probe: DATABASE_URL not set)"
   fi
+fi
 fi
 
 echo ">> install verified Mac app"
@@ -491,21 +499,27 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
       ;;
   esac
 
-  echo ">> verify uploaded app health"
-  npm run health:review -- \
-    --app-identifier "$WRITE_BUNDLE_ID" \
-    --version "$VERSION" \
-    --build "$EXPECTED_BUILD" \
-    --wait-seconds 30 \
-    --require-reports \
-    --fail-on-failure
+  if [ "$LOCAL_INSTALL" != "1" ]; then
+    echo ">> verify uploaded app health"
+    npm run health:review -- \
+      --app-identifier "$WRITE_BUNDLE_ID" \
+      --version "$VERSION" \
+      --build "$EXPECTED_BUILD" \
+      --wait-seconds 30 \
+      --require-reports \
+      --fail-on-failure
+  fi
 else
   echo "   Texttext was not running before installation; leaving it closed and deferring runtime health until next launch."
 fi
 
 echo
-echo "Shipped Texttext $VERSION"
-if [ -n "$ORIGIN" ]; then
-  echo "  download: $ORIGIN/download"
-  echo "  appcast:  $ORIGIN/appcast.xml"
+if [ "$LOCAL_INSTALL" = "1" ]; then
+  echo "Installed local Texttext $VERSION build $EXPECTED_BUILD"
+else
+  echo "Shipped Texttext $VERSION"
+  if [ -n "$ORIGIN" ]; then
+    echo "  download: $ORIGIN/download"
+    echo "  appcast:  $ORIGIN/appcast.xml"
+  fi
 fi

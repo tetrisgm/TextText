@@ -1,142 +1,177 @@
-#!/bin/bash
-# Ship one clean, verified main commit once. launchd owns liveness; this loop
-# only detects a ready source and hands it to the deterministic ship command.
+#!/usr/bin/env bash
+# One bounded delivery-controller pass. launchd owns the five-minute cadence.
 set -euo pipefail
 exec </dev/null
 
 readonly REPO="$HOME/dev/write"
 readonly GIT="/usr/bin/git"
 readonly NPX="/opt/homebrew/bin/npx"
-readonly POLL_SECONDS=30
-readonly DEBOUNCE_SECONDS=45
+readonly RUN_CAPPED="$HOME/dev/stack/bin/run-capped"
+readonly QUIET_SECONDS="${TEXTTEXT_DELIVERY_QUIET_SECONDS:-900}"
+readonly PUBLIC_INTERVAL_SECONDS="${TEXTTEXT_DELIVERY_PUBLIC_INTERVAL_SECONDS:-86400}"
 readonly LOG="$REPO/release/.autobuild.log"
 readonly STATE="$REPO/.write/autobuild"
-readonly FAILED_SOURCE="$STATE/failed-source"
 readonly RELEASE_ENV="$HOME/.config/write/release.env"
 
-cd "$REPO" || exit 1
 mkdir -p "$STATE"
 touch "$LOG"
+cd "$REPO"
 
-log() {
-  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"
+log() { printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >>"$LOG"; }
+read_state() { cat "$STATE/$1" 2>/dev/null || true; }
+write_state() {
+  local temporary="$STATE/$1.new.$$"
+  printf '%s\n' "$2" >"$temporary"
+  mv "$temporary" "$STATE/$1"
 }
+clean_tree() {
+  "$GIT" diff --quiet &&
+    "$GIT" diff --cached --quiet &&
+    [ -z "$("$GIT" ls-files --others --exclude-standard)" ]
+}
+product_changed_since() {
+  local baseline="$1"
+  [ -z "$baseline" ] && return 0
+  "$GIT" merge-base --is-ancestor "$baseline" "$TARGET" 2>/dev/null || return 0
+  "$GIT" diff --name-only "$baseline" "$TARGET" |
+    /usr/bin/grep -Ev \
+      '^(AGENTS\.md|CLAUDE\.md|WORKSHOP\.md|docs/|release/|\.github/|mac/Info\.plist$|src/generated/app-release\.ts$)' |
+    /usr/bin/grep -q .
+}
+receipt_matches_source() {
+  "$NPX" tsx scripts/verify-release.ts --check >/dev/null 2>&1
+}
+held_for_source() {
+  [ "$(read_state "failed-$1-source")" = "$TARGET" ]
+}
+hold_source() {
+  write_state "failed-$1-source" "$TARGET"
+  log "HOLD: $1 delivery failed for $TARGET; waiting for new source"
+}
+clear_hold() { rm -f "$STATE/failed-$1-source"; }
 
-notify() {
-  /usr/bin/osascript -e "display notification \"$1\" with title \"Texttext delivery\"" \
-    >/dev/null 2>&1 || true
-}
+[ -x "$RUN_CAPPED" ] || { log "missing run-capped: $RUN_CAPPED"; exit 66; }
 
 if [ -f "$RELEASE_ENV" ]; then
   permissions="$(/usr/bin/stat -f '%Lp' "$RELEASE_ENV")"
-  if [ "$permissions" != "600" ]; then
+  [ "$permissions" = "600" ] || {
     log "refusing release env with mode $permissions; expected 600"
     exit 78
-  fi
+  }
   set -a
   # shellcheck disable=SC1090
   source "$RELEASE_ENV"
   set +a
 fi
 
-clean_tree() {
-  "$GIT" diff --quiet && "$GIT" diff --cached --quiet \
-    && [ -z "$("$GIT" ls-files --others --exclude-standard)" ]
+# A completed release whose final source push failed is retried without a build.
+case "$("$GIT" log -1 --format=%s)" in
+  "Release Texttext"*|"Release Write"*)
+    if clean_tree && [ "$("$GIT" rev-list --count origin/main..HEAD)" -gt 0 ]; then
+      "$RUN_CAPPED" --seconds 300 --label texttext-release-push -- \
+        "$GIT" push origin main >>"$LOG" 2>&1 || {
+          log "release source push remains deferred"
+          exit 0
+        }
+    fi
+    ;;
+esac
+
+[ "$("$GIT" branch --show-current)" = "main" ] || exit 0
+clean_tree || exit 0
+
+TARGET="$("$GIT" rev-parse HEAD)"
+INSTALLED="$(read_state installed-source)"
+PUBLISHED="$(read_state published-source)"
+LAST_PUBLIC_AT="$(read_state last-public-at)"
+LAST_PUBLIC_AT="${LAST_PUBLIC_AT:-0}"
+
+if [ -z "$INSTALLED" ] || [ -z "$PUBLISHED" ]; then
+  write_state installed-source "$TARGET"
+  write_state published-source "$TARGET"
+  write_state last-public-at "$(date +%s)"
+  log "initialized delivery state at $TARGET"
+  exit 0
+fi
+
+if [ "$TARGET" != "$INSTALLED" ] && ! product_changed_since "$INSTALLED"; then
+  write_state installed-source "$TARGET"
+  INSTALLED="$TARGET"
+  log "advanced local marker across tooling-only source $TARGET"
+fi
+if [ "$TARGET" != "$PUBLISHED" ] && ! product_changed_since "$PUBLISHED"; then
+  write_state published-source "$TARGET"
+  PUBLISHED="$TARGET"
+  log "advanced public marker across tooling-only source $TARGET"
+fi
+[ "$TARGET" = "$INSTALLED" ] && [ "$TARGET" = "$PUBLISHED" ] && exit 0
+
+TARGET_EPOCH="$("$GIT" show -s --format=%ct "$TARGET")"
+TARGET_AGE=$(( $(date +%s) - TARGET_EPOCH ))
+[ "$TARGET_AGE" -ge "$QUIET_SECONDS" ] || exit 0
+
+receipt_matches_source || {
+  log "waiting for exact release-gate receipt for $TARGET"
+  exit 0
 }
 
-needs_ship() {
-  case "$("$GIT" log -1 --format=%s)" in
-    "Release Texttext"*|"Release Write"*) return 1 ;;
-    *) return 0 ;;
-  esac
-}
+NOW="$(date +%s)"
+PUBLIC_DUE=0
+if [ "$TARGET" != "$PUBLISHED" ] &&
+  [ $((NOW - LAST_PUBLIC_AT)) -ge "$PUBLIC_INTERVAL_SECONDS" ]; then
+  PUBLIC_DUE=1
+fi
 
-receipt_matches_source() {
-  "$NPX" tsx scripts/verify-release.ts --check >/dev/null 2>&1
-}
-
-push_release_commit() {
-  if ! clean_tree; then return 0; fi
-  case "$("$GIT" log -1 --format=%s)" in
-    "Release Texttext"*|"Release Write"*) ;;
-    *) return 0 ;;
-  esac
-  if [ "$("$GIT" rev-list --count origin/main..HEAD)" -eq 0 ]; then return 0; fi
-  log "retrying push for release commit $("$GIT" rev-parse HEAD)"
-  if "$NPX" tsx scripts/work-unit.ts run \
-    --name autobuild.git_push --timeout 300 --no-reuse -- \
-    "$GIT" push origin main >> "$LOG" 2>&1; then
-    log "release commit pushed"
-  else
-    log "release commit push failed; launchd will retry without rebuilding"
-  fi
-}
-
-log "autobuild started; HEAD $("$GIT" rev-parse --short HEAD)"
-
-while true; do
-  sleep "$POLL_SECONDS"
-  push_release_commit
-  needs_ship || continue
-  clean_tree || continue
-  receipt_matches_source || continue
-
-  source_commit="$("$GIT" rev-parse HEAD)"
-  if [ -f "$FAILED_SOURCE" ] \
-    && [ "$(cat "$FAILED_SOURCE")" = "$source_commit" ]; then
-    continue
-  fi
-
-  sleep "$DEBOUNCE_SECONDS"
-  [ "$("$GIT" rev-parse HEAD)" = "$source_commit" ] || continue
-  clean_tree || continue
-  receipt_matches_source || continue
-
-  version="$($NPX tsx scripts/release-version.mjs next)"
-  log "shipping $version from $source_commit"
+version="$("$NPX" tsx scripts/release-version.mjs next)"
+if [ "$PUBLIC_DUE" = "1" ]; then
+  held_for_source public && exit 0
+  log "public ship $version from $TARGET"
   set +e
-  "$NPX" tsx scripts/work-unit.ts run \
-    --name "autobuild.ship.$source_commit" --timeout 10800 --no-reuse -- \
-    "$REPO/release/ship.sh" "$version" --skip-tests >> "$LOG" 2>&1
-  ship_status=$?
+  "$RUN_CAPPED" --seconds 10800 --grace 30 --label texttext-public -- \
+    "$REPO/release/ship.sh" "$version" --skip-tests >>"$LOG" 2>&1
+  result=$?
   set -e
-
-  if [ "$ship_status" -eq 75 ]; then
-    log "delivery lane busy; deferring $source_commit"
-    continue
-  fi
-  if [ "$ship_status" -ne 0 ]; then
-    printf '%s\n' "$source_commit" > "$FAILED_SOURCE"
-    log "ship failed once with exit $ship_status; holding $source_commit"
-    notify "Ship $version failed once and is held until the source changes."
-    continue
-  fi
-
-  if [ "$("$GIT" rev-parse HEAD)" != "$source_commit" ]; then
-    printf '%s\n' "$source_commit" > "$FAILED_SOURCE"
-    log "source changed during ship; preserving the result for review"
-    notify "Source changed during ship. Review the release before continuing."
-    continue
-  fi
-
-  unexpected="$($GIT status --porcelain --untracked-files=no \
-    | /usr/bin/grep -Ev '^( M|M |MM) (mac/Info.plist|src/generated/app-release.ts)$' || true)"
-  if [ -n "$unexpected" ]; then
-    printf '%s\n' "$source_commit" > "$FAILED_SOURCE"
-    log "ship left unexpected tracked changes; preserving them for review"
-    notify "Ship $version left unexpected source changes and was not committed."
-    continue
-  fi
-
+  [ "$result" -eq 75 ] && exit 0
+  [ "$result" -eq 0 ] || { hold_source public; exit 0; }
+  [ "$("$GIT" rev-parse HEAD)" = "$TARGET" ] || {
+    hold_source public
+    log "source changed during public ship"
+    exit 0
+  }
+  unexpected="$("$GIT" status --porcelain --untracked-files=no |
+    /usr/bin/grep -Ev '^( M|M |MM) (mac/Info\.plist|src/generated/app-release\.ts)$' || true)"
+  [ -z "$unexpected" ] || {
+    hold_source public
+    log "public ship left unexpected tracked changes"
+    exit 0
+  }
   "$GIT" add mac/Info.plist src/generated/app-release.ts
   "$GIT" commit -q -m "Release Texttext $version"
-  rm -f "$FAILED_SOURCE"
-  if "$NPX" tsx scripts/work-unit.ts run \
-    --name autobuild.git_push --timeout 300 --no-reuse -- \
-    "$GIT" push origin main >> "$LOG" 2>&1; then
-    log "shipped $version and pushed"
-  else
-    log "shipped $version; push deferred without rebuilding"
-    notify "Texttext $version shipped, but its source push will retry."
-  fi
-done
+  write_state installed-source "$TARGET"
+  write_state published-source "$TARGET"
+  write_state last-public-at "$(date +%s)"
+  clear_hold public
+  clear_hold local
+  "$RUN_CAPPED" --seconds 300 --label texttext-release-push -- \
+    "$GIT" push origin main >>"$LOG" 2>&1 ||
+    log "release source push deferred without rebuilding"
+  log "published and installed $version from $TARGET"
+elif [ "$TARGET" != "$INSTALLED" ]; then
+  held_for_source local && exit 0
+  log "local install $version from $TARGET"
+  set +e
+  "$RUN_CAPPED" --seconds 7200 --grace 30 --label texttext-local -- \
+    "$REPO/release/ship.sh" "$version" --skip-tests --local-install >>"$LOG" 2>&1
+  result=$?
+  set -e
+  [ "$result" -eq 75 ] && exit 0
+  [ "$result" -eq 0 ] || { hold_source local; exit 0; }
+  [ "$("$GIT" rev-parse HEAD)" = "$TARGET" ] && clean_tree || {
+    hold_source local
+    log "source changed during local install"
+    exit 0
+  }
+  write_state installed-source "$TARGET"
+  clear_hold local
+  log "installed $version locally from $TARGET"
+fi
