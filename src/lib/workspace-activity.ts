@@ -8,11 +8,11 @@ export type WorkspaceDocumentOpenHistory = Record<string, number>;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 
-const HISTORY_STORAGE_PREFIX = "write:workspace-document-opens:";
+const HISTORY_STORAGE_PREFIX = "texttext:workspace-document-opens:";
 const MAX_HISTORY_ENTRIES = 200;
 
 export const WORKSPACE_DOCUMENT_OPENED_EVENT =
-  "write:workspace-document-opened";
+  "texttext:workspace-document-opened";
 
 export function sidebarDocumentTitle(post: WorkspacePoolPost): string {
   return post.title.trim() || "Untitled";

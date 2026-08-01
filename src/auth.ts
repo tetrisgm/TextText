@@ -6,7 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { eq } from "drizzle-orm";
-import { createAuthAdapter, sendWriteVerificationRequest } from "@/lib/auth-email";
+import { createAuthAdapter, sendTextTextVerificationRequest } from "@/lib/auth-email";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 
@@ -23,7 +23,7 @@ const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
 // like smtps://user:pass@host:465 or smtp://user:pass@host:587 (STARTTLS).
 const emailServer = process.env.AUTH_EMAIL_SERVER;
 const emailFrom =
-  process.env.AUTH_EMAIL_FROM ?? "Texttext <noreply@texttext.app>";
+  process.env.AUTH_EMAIL_FROM ?? "TextText <noreply@TextText.app>";
 const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
 export const LAST_USED_PROVIDER_COOKIE = "wr_last_signin_provider";
 export const SIGNIN_EMAIL_COOKIE = "wr_signin_email";
@@ -87,7 +87,7 @@ const providers = [
         Nodemailer({
           server: emailServer,
           from: emailFrom,
-          sendVerificationRequest: sendWriteVerificationRequest,
+          sendVerificationRequest: sendTextTextVerificationRequest,
         }),
       ]
     : []),

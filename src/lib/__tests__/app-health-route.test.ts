@@ -20,7 +20,7 @@ import { POST } from "@/app/api/app/health/route";
 const report = {
   schemaVersion: 1,
   id: "d5bf9dbc-5fdf-4a39-8982-f8d5a1f6c471",
-  appIdentifier: "net.writeapp.write.mac",
+  appIdentifier: "app.texttext.mac",
   appVersion: "0.70",
   buildNumber: "75",
   installationId: "6a3ca65f-1645-4e54-b199-574cf09c99cb",
@@ -55,7 +55,7 @@ beforeEach(() => {
 describe("app health route", () => {
   it("stores the internal user UUID instead of the external auth subject", async () => {
     const response = await POST(
-      new Request("https://write.example/api/app/health", {
+      new Request("https://texttext.example/api/app/health", {
         method: "POST",
         headers: {
           Authorization: "Bearer wsk_test",
@@ -93,7 +93,7 @@ describe("app health route", () => {
       new Error("postgres://private.example/path"),
     );
     const response = await POST(
-      new Request("https://write.example/api/app/health", {
+      new Request("https://texttext.example/api/app/health", {
         method: "POST",
         headers: {
           Authorization: "Bearer wsk_test",
@@ -115,7 +115,7 @@ describe("app health route", () => {
       new Error("postgres://private.example/token"),
     );
     const response = await POST(
-      new Request("https://write.example/api/app/health", {
+      new Request("https://texttext.example/api/app/health", {
         method: "POST",
         headers: { Authorization: "Bearer wsk_test" },
         body: JSON.stringify(report),

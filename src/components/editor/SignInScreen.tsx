@@ -14,13 +14,13 @@ export function SignInScreen() {
       <div className="ac-toolbar ac-chrome">
         <Link href="/" className="ac-btn ac-btn-plain ac-back">
           <span aria-hidden="true">&#8249;</span>
-          Texttext
+          TextText
         </Link>
         <div className="ac-toolbar-title ac-toolbar-title-grow">Editor</div>
       </div>
       <div className="ac-signin">
         <div className="ac-signin-card">
-          <h1 className="ac-signin-title">Sign in to write</h1>
+          <h1 className="ac-signin-title">Sign in to TextText</h1>
           <p className="ac-signin-sub">
             Your posts live on your own blog. Sign in to continue.
           </p>

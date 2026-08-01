@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
-const hostedMcpUrl = "https://texttext.app/api/mcp";
+const hostedMcpUrl = "https://TextText.app/api/mcp";
 const pluginName = "texttext";
 const pluginVersion = "0.1.0";
 const skillNames = [
@@ -46,7 +46,7 @@ const claudeEntry = claudeMarketplace.plugins?.find(
 );
 
 assert(codexMarketplace.name === pluginName, "Codex marketplace name drifted");
-assert(codexEntry, "Codex marketplace is missing the Texttext plugin");
+assert(codexEntry, "Codex marketplace is missing the TextText plugin");
 assert(
   codexEntry.source?.path === "./plugins/texttext",
   "Codex marketplace points at the wrong plugin package",
@@ -56,7 +56,7 @@ assert(
   "Codex plugin must request authentication during installation",
 );
 assert(claudeMarketplace.name === pluginName, "Claude marketplace name drifted");
-assert(claudeEntry, "Claude marketplace is missing the Texttext plugin");
+assert(claudeEntry, "Claude marketplace is missing the TextText plugin");
 assert(
   claudeEntry.source === "./plugins/texttext",
   "Claude marketplace points at the wrong plugin package",
@@ -74,7 +74,7 @@ for (const [client, manifest] of [
   assert(
     Array.isArray(manifest.skills) &&
       manifest.skills.length === skillNames.length,
-    `${client} manifest must expose every Texttext skill`,
+    `${client} manifest must expose every TextText skill`,
   );
 }
 
@@ -110,9 +110,9 @@ for (const commandName of commandNames) {
 
 for (const required of [
   hostedMcpUrl,
-  "claude plugin marketplace add tetrisgm/write",
+  "claude plugin marketplace add tetrisgm/TextText",
   "claude plugin install texttext@texttext",
-  "codex plugin marketplace add tetrisgm/write",
+  "codex plugin marketplace add tetrisgm/TextText",
   "codex plugin add texttext@texttext",
   "https://chatgpt.com/#settings/Connectors",
 ]) {
@@ -123,9 +123,9 @@ for (const required of [
 }
 
 for (const required of [
-  "claude plugin marketplace add tetrisgm/write",
+  "claude plugin marketplace add tetrisgm/TextText",
   "claude plugin install texttext@texttext",
-  "codex plugin marketplace add tetrisgm/write",
+  "codex plugin marketplace add tetrisgm/TextText",
   "codex plugin add texttext@texttext",
   hostedMcpUrl,
   "/texttext:canvas",

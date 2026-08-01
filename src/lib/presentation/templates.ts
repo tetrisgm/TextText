@@ -3170,7 +3170,7 @@ export function requireBuiltinTemplate(
 }
 
 export const TEMPLATE_CATEGORIES = [
-  "Write",
+  "Text",
   "Plan",
   "Collect",
   "Publish",
@@ -3183,8 +3183,8 @@ export const TEMPLATE_CATALOG: readonly {
   id: string;
   category: TemplateCategory;
 }[] = Object.freeze([
-  { id: "texttext.article", category: "Write" },
-  { id: "texttext.note", category: "Write" },
+  { id: "texttext.article", category: "Text" },
+  { id: "texttext.note", category: "Text" },
   { id: "texttext.todo", category: "Plan" },
   { id: "texttext.project", category: "Plan" },
   { id: "texttext.bookmark", category: "Collect" },

@@ -27,10 +27,10 @@ describe("agent integrations", () => {
 
   it("publishes native plugin installation before manual MCP setup", () => {
     expect(CLAUDE_PLUGIN_INSTALL_COMMAND).toBe(
-      "claude plugin marketplace add tetrisgm/write && claude plugin install texttext@texttext",
+      "claude plugin marketplace add tetrisgm/TextText && claude plugin install texttext@texttext",
     );
     expect(CODEX_PLUGIN_INSTALL_COMMAND).toBe(
-      "codex plugin marketplace add tetrisgm/write && codex plugin add texttext@texttext",
+      "codex plugin marketplace add tetrisgm/TextText && codex plugin add texttext@texttext",
     );
     expect(CHATGPT_CONNECTOR_URL).toBe(
       "https://chatgpt.com/#settings/Connectors",
@@ -39,8 +39,8 @@ describe("agent integrations", () => {
 
   it("normalizes hosted MCP addresses", () => {
     expect(hostedMcpUrl()).toBe(TEXTTEXT_HOSTED_MCP_URL);
-    expect(hostedMcpUrl("https://preview.texttext.app/")).toBe(
-      "https://preview.texttext.app/api/mcp",
+    expect(hostedMcpUrl("https://preview.TextText.app/")).toBe(
+      "https://preview.TextText.app/api/mcp",
     );
   });
 

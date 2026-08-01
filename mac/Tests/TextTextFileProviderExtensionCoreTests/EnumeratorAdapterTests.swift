@@ -1,0 +1,331 @@
+import XCTest
+import FileProvider
+import UniformTypeIdentifiers
+@testable import TextTextFileProviderExtensionCore
+@testable import TextTextFileProviderKit
+@testable import TextTextFileProviderBridge
+
+// MARK: In-memory fake API (self-contained; the kit's test fixtures are not visible here)
+
+private final class FakeAPI: TextTextSyncAPI, @unchecked Sendable {
+    var workspaceValue: TextTextWorkspace
+    var manifests: [String: [TextTextManifestItem]]
+    var cursor: String
+    var failManifest: TextTextSyncError?
+    var artifactManifests: [String: TextTextArtifactManifest] = [:]
+
+    init(workspace: TextTextWorkspace, manifests: [String: [TextTextManifestItem]], cursor: String = "c0") {
+        self.workspaceValue = workspace
+        self.manifests = manifests
+        self.cursor = cursor
+    }
+    func workspace() async -> Result<TextTextWorkspace, TextTextSyncError> { .success(workspaceValue) }
+    func manifest(folderId: String) async -> Result<[TextTextManifestItem], TextTextSyncError> {
+        if let failManifest { return .failure(failManifest) }
+        return .success(manifests[folderId] ?? [])
+    }
+    func fileText(postId: String) async -> Result<TextTextFileContent, TextTextSyncError> { .failure(.notFound) }
+    func documentArtifacts(
+        postId: String
+    ) async -> Result<TextTextArtifactManifest, TextTextSyncError> {
+        artifactManifests[postId].map(Result.success) ?? .failure(.notFound)
+    }
+    func changes(since cursor: String?, wait: Int) async -> Result<TextTextChangeReply, TextTextSyncError> {
+        .success(TextTextChangeReply(cursor: self.cursor, changed: cursor != nil && cursor != self.cursor))
+    }
+    func createFile(body: String, folderId: String?, idempotencyKey: String?) async -> Result<TextTextManifestItem, TextTextSyncError> { .failure(.conflict) }
+    func putFile(postId: String, body: String, ifMatch hash: String) async -> Result<TextTextManifestItem, TextTextSyncError> { .failure(.conflict) }
+    func patchFile(postId: String, folderId: String?, slug: String?, title: String?, ifMatch hash: String?) async -> Result<TextTextManifestItem, TextTextSyncError> { .failure(.conflict) }
+    func deleteFile(postId: String, ifMatch hash: String?) async -> Result<Void, TextTextSyncError> { .success(()) }
+    func createFolder(parentPath: String, name: String, idempotencyKey: String?) async -> Result<TextTextWorkspaceFolder, TextTextSyncError> { .failure(.conflict) }
+    func renameFolder(folderId: String, name: String) async -> Result<TextTextWorkspaceFolder, TextTextSyncError> { .failure(.conflict) }
+    func renameWorkspace(name: String) async -> Result<TextTextWorkspaceBlog, TextTextSyncError> { .failure(.conflict) }
+}
+
+private func standardAPI() -> FakeAPI {
+    let ws = TextTextWorkspace(
+        blog: TextTextWorkspaceBlog(handle: "demo", name: "Demo", username: "demo"),
+        folders: [
+            TextTextWorkspaceFolder(id: "blog", name: "Blog", path: "Blog", mode: "blog", parentId: nil),
+            TextTextWorkspaceFolder(id: "notes", name: "Notes", path: "Notes", mode: "notes", parentId: nil),
+            TextTextWorkspaceFolder(id: "drafts", name: "Drafts", path: "Blog/Drafts", mode: "blog", parentId: "blog"),
+        ])
+    let entry = { (id: String, file: String, kind: String) in
+        TextTextManifestItem(file: file, kind: kind, slug: file, title: file, status: "draft",
+                          hash: "h", id: id, date: nil, createdAt: nil, updatedAt: nil, url: nil)
+    }
+    return FakeAPI(workspace: ws, manifests: [
+        "blog": [entry("p1", "hello.md", "article"), entry("p2", "talk.md", "talk")],
+        "drafts": [entry("p3", "wip.md", "article")],
+        "notes": [entry("n1", "idea.md", "note")],
+    ])
+}
+
+// MARK: Fake observers
+
+private final class EnumObserver: NSObject, NSFileProviderEnumerationObserver {
+    var items: [NSFileProviderItem] = []
+    var finished = false
+    var error: Error?
+    let done: XCTestExpectation
+    init(_ done: XCTestExpectation) { self.done = done }
+    func didEnumerate(_ updatedItems: [any NSFileProviderItem]) { items.append(contentsOf: updatedItems) }
+    func finishEnumerating(upTo nextPage: NSFileProviderPage?) { finished = true; done.fulfill() }
+    func finishEnumeratingWithError(_ error: any Error) { self.error = error; done.fulfill() }
+}
+
+private final class ChangeObserver: NSObject, NSFileProviderChangeObserver {
+    var updated: [NSFileProviderItem] = []
+    var deleted: [NSFileProviderItemIdentifier] = []
+    var anchor: NSFileProviderSyncAnchor?
+    var error: Error?
+    let done: XCTestExpectation
+    init(_ done: XCTestExpectation) { self.done = done }
+    func didUpdate(_ updatedItems: [any NSFileProviderItem]) { updated.append(contentsOf: updatedItems) }
+    func didDeleteItems(withIdentifiers deletedItemIdentifiers: [NSFileProviderItemIdentifier]) {
+        deleted.append(contentsOf: deletedItemIdentifiers)
+    }
+    func finishEnumeratingChanges(upTo anchor: NSFileProviderSyncAnchor, moreComing: Bool) {
+        self.anchor = anchor; done.fulfill()
+    }
+    func finishEnumeratingWithError(_ error: any Error) { self.error = error; done.fulfill() }
+}
+
+final class EnumeratorAdapterTests: XCTestCase {
+
+    private func adapter(_ container: TextTextItemIdentifier, _ api: TextTextSyncAPI) -> TextTextEnumeratorAdapter {
+        TextTextEnumeratorAdapter(
+            container: container,
+            core: WorkspaceEnumerator(api: api, handle: "demo", workspaceName: "Demo", readOnly: true))
+    }
+
+    func testRootEnumeratesTheWorkspace() {
+        let exp = expectation(description: "enumerate")
+        let obs = EnumObserver(exp)
+        adapter(.rootContainer, standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        XCTAssertTrue(obs.finished)
+        let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
+        XCTAssertEqual(ids, ["workspace:demo"])
+    }
+
+    func testWorkspaceEnumeratesTopLevelFolders() {
+        let exp = expectation(description: "enumerate")
+        let obs = EnumObserver(exp)
+        adapter(.workspace("demo"), standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
+        XCTAssertEqual(ids, ["folder:demo:blog", "folder:demo:notes"])
+    }
+
+    func testFolderEnumeratesSubfoldersAndFiles() {
+        let exp = expectation(description: "enumerate")
+        let obs = EnumObserver(exp)
+        adapter(.folder(handle: "demo", id: "blog"), standardAPI()).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        let ids = Set(obs.items.map { $0.itemIdentifier.rawValue })
+        XCTAssertEqual(ids, ["folder:demo:drafts", "file:demo:p1", "file:demo:p2"])
+    }
+
+    // MARK: Root list anchor (workspace rename must expire it)
+
+    func testWorkspaceRenameExpiresRootAnchor() {
+        let handle = "demo"
+        let old = WorkspaceListEnumerator(descriptors: [
+            FileProviderWorkspace(name: "Old Name", handle: handle, origin: "o", token: "t")])
+        let renamed = WorkspaceListEnumerator(descriptors: [
+            FileProviderWorkspace(name: "New Name", handle: handle, origin: "o", token: "t")])
+
+        // The anchor must change when only the NAME changes (handle is stable), or
+        // enumerateChanges would report "no changes" and Finder would keep the old
+        // folder name after a rename.
+        let anchorExp = expectation(description: "anchor")
+        var oldAnchor: NSFileProviderSyncAnchor?
+        old.currentSyncAnchor { oldAnchor = $0; anchorExp.fulfill() }
+        wait(for: [anchorExp], timeout: 5)
+        let anchor = try! XCTUnwrap(oldAnchor)
+
+        // Same descriptors -> same anchor -> "no changes" (no error).
+        let sameExp = expectation(description: "same")
+        let sameObs = ChangeObserver(sameExp)
+        old.enumerateChanges(for: sameObs, from: anchor)
+        wait(for: [sameExp], timeout: 5)
+        XCTAssertNil(sameObs.error)
+
+        // Renamed descriptors -> anchor differs -> expired, forcing a full re-list.
+        let expiredExp = expectation(description: "expired")
+        let expiredObs = ChangeObserver(expiredExp)
+        renamed.enumerateChanges(for: expiredObs, from: anchor)
+        wait(for: [expiredExp], timeout: 5)
+        XCTAssertEqual((expiredObs.error as NSError?)?.code,
+                       NSFileProviderError.syncAnchorExpired.rawValue)
+
+        // And the re-list carries the new name.
+        let listExp = expectation(description: "list")
+        let listObs = EnumObserver(listExp)
+        renamed.enumerateItems(for: listObs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [listExp], timeout: 5)
+        XCTAssertEqual(
+            listObs.items.first { $0.itemIdentifier.rawValue == "workspace:demo" }?.filename,
+            "New Name")
+        XCTAssertEqual(
+            listObs.items.first { $0.itemIdentifier.rawValue == "texttext-data" }?.filename,
+            "Data")
+    }
+
+    func testDirectWorkspaceLookupUsesTheEnumeratedCollisionName() {
+        let descriptors = [
+            FileProviderWorkspace(name: "Shared", handle: "one", origin: "o", token: "t"),
+            FileProviderWorkspace(name: "Shared", handle: "two", origin: "o", token: "t"),
+        ]
+        let enumerated = WorkspaceListEnumerator.items(descriptors)
+        let direct = WorkspaceListEnumerator.item(for: "two", in: descriptors)
+
+        XCTAssertEqual(
+            direct?.filename,
+            enumerated.first { $0.identifier == .workspace("two") }?.filename
+        )
+        XCTAssertEqual(direct?.filename, "Shared [two]")
+    }
+
+    func testCentralAttachmentsListsOnlyPlainDocumentsWithValidatedAssets() async throws {
+        let api = standardAPI()
+        let assetURL =
+            "https://texttext.public.blob.vercel-storage.com/documents/demo/n1/assets/photo.png"
+        api.artifactManifests["n1"] = TextTextArtifactManifest(
+            postId: "n1", slug: "idea", fileHash: "h",
+            artifacts: [TextTextArtifact(
+                filename: "photo.png", role: "asset", url: assetURL,
+                contentType: "image/png")])
+        let descriptors = [FileProviderWorkspace(
+            name: "Demo", handle: "demo", origin: "o", token: "t")]
+        let workspace = CentralAttachmentsEnumerator(
+            container: .attachmentWorkspace("demo"), descriptors: descriptors,
+            apiFactory: { _ in api })
+
+        let documents = try await workspace.items().get()
+        let document = try XCTUnwrap(documents.first)
+        XCTAssertEqual(document.identifier, .attachmentItem(handle: "demo", id: "n1"))
+        XCTAssertEqual(document.parentIdentifier, .attachmentWorkspace("demo"))
+
+        let files = CentralAttachmentsEnumerator(
+            container: document.identifier, descriptors: descriptors,
+            apiFactory: { _ in api })
+        let assets = try await files.items().get()
+        XCTAssertEqual(assets.map(\.filename), ["photo.png"])
+        XCTAssertEqual(assets.first?.manifestURL, assetURL)
+    }
+
+    func testEnumerationErrorFinishesWithError() {
+        let api = standardAPI()
+        api.failManifest = .network("offline")
+        let exp = expectation(description: "enumerate")
+        let obs = EnumObserver(exp)
+        adapter(.folder(handle: "demo", id: "blog"), api).enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        XCTAssertFalse(obs.finished)
+        XCTAssertEqual((obs.error as NSError?)?.domain, NSFileProviderErrorDomain)
+        XCTAssertEqual((obs.error as NSError?)?.code, NSFileProviderError.serverUnreachable.rawValue)
+    }
+
+    func testSyncAnchorFingerprintsMappedChildren() {
+        let api = standardAPI()
+        let exp = expectation(description: "anchor")
+        var anchor: NSFileProviderSyncAnchor?
+        adapter(.rootContainer, api).currentSyncAnchor { anchor = $0; exp.fulfill() }
+        wait(for: [exp], timeout: 5)
+        XCTAssertEqual(anchor?.rawValue.count, 32)
+    }
+
+    func testEnumerateChangesExpiresAnchorWhenCursorMoved() {
+        // When the supplied anchor differs from the current cursor the workspace
+        // HAS moved, but the /changes cursor cannot produce a precise per-anchor
+        // delta, so re-listing survivors would never report deletions (a
+        // web-deleted post would linger as a ghost). Expiring the anchor makes
+        // the system throw its state away and call enumerateItems for a clean
+        // full reconcile.
+        let api = standardAPI(); api.cursor = "c7"
+        let exp = expectation(description: "changes")
+        let obs = ChangeObserver(exp)
+        adapter(.folder(handle: "demo", id: "blog"), api).enumerateChanges(for: obs, from: NSFileProviderSyncAnchor(Data("old".utf8)))
+        wait(for: [exp], timeout: 5)
+        XCTAssertTrue(obs.updated.isEmpty, "must not emit stale survivor updates")
+        XCTAssertNil(obs.anchor, "must not finish at a fresh anchor")
+        XCTAssertEqual((obs.error as NSError?)?.domain, NSFileProviderErrorDomain)
+        XCTAssertEqual((obs.error as NSError?)?.code, NSFileProviderError.syncAnchorExpired.rawValue)
+    }
+
+    func testEnumerateChangesFinishesQuietlyWhenChildSetMatches() {
+        // The system probes for changes on every idle tick. When the supplied
+        // anchor already equals the current cursor, nothing moved, so the
+        // enumerator must finish with no changes and no error rather than expire
+        // the anchor and trigger a needless full re-enumeration.
+        let api = standardAPI()
+        let subject = adapter(.folder(handle: "demo", id: "blog"), api)
+        let anchorExp = expectation(description: "anchor")
+        var anchor: NSFileProviderSyncAnchor?
+        subject.currentSyncAnchor { anchor = $0; anchorExp.fulfill() }
+        wait(for: [anchorExp], timeout: 5)
+
+        let changesExp = expectation(description: "changes")
+        let obs = ChangeObserver(changesExp)
+        subject.enumerateChanges(for: obs, from: try! XCTUnwrap(anchor))
+        wait(for: [changesExp], timeout: 5)
+        XCTAssertNil(obs.error, "a matching anchor must not error")
+        XCTAssertTrue(obs.updated.isEmpty)
+        XCTAssertTrue(obs.deleted.isEmpty)
+        XCTAssertEqual(obs.anchor, anchor, "must finish at the same anchor")
+    }
+
+    func testUnrelatedFolderEditDoesNotExpireContainerAnchor() {
+        let api = standardAPI()
+        let subject = adapter(.folder(handle: "demo", id: "blog"), api)
+        let anchorExp = expectation(description: "anchor")
+        var anchor: NSFileProviderSyncAnchor?
+        subject.currentSyncAnchor { anchor = $0; anchorExp.fulfill() }
+        wait(for: [anchorExp], timeout: 5)
+
+        api.manifests["notes"] = [
+            TextTextManifestItem(file: "idea.md", kind: "note", slug: "idea", title: "Idea",
+                              status: "draft", hash: "changed", id: "n1", date: nil,
+                              createdAt: nil, updatedAt: nil, url: nil)
+        ]
+        api.cursor = "global-cursor-moved"
+
+        let changesExp = expectation(description: "changes")
+        let obs = ChangeObserver(changesExp)
+        subject.enumerateChanges(for: obs, from: try! XCTUnwrap(anchor))
+        wait(for: [changesExp], timeout: 5)
+        XCTAssertNil(obs.error)
+        XCTAssertEqual(obs.anchor, anchor)
+    }
+
+    func testAggregateWorkingSetIncludesFilesAndTheirParentFolders() {
+        let api = standardAPI()
+        let subject = AggregateWorkingSetEnumerator(
+            descriptors: [FileProviderWorkspace(name: "Demo", handle: "demo", origin: "o", token: "t")],
+            apiFactory: { _ in api })
+        let exp = expectation(description: "working set")
+        let obs = EnumObserver(exp)
+        subject.enumerateItems(for: obs, startingAt: NSFileProviderPage(Data()))
+        wait(for: [exp], timeout: 5)
+        XCTAssertFalse(obs.items.isEmpty)
+        let identifiers = Set(obs.items.map(\.itemIdentifier))
+        let files = obs.items.filter { $0.contentType != .folder }
+        let folders = obs.items.filter { $0.contentType == .folder }
+        XCTAssertFalse(files.isEmpty)
+        XCTAssertFalse(folders.isEmpty)
+        XCTAssertTrue(files.allSatisfy { identifiers.contains($0.parentItemIdentifier) },
+                      "a cold File Provider reimport needs every file's parent in the working set")
+    }
+
+    // MARK: error bridging
+
+    func testBridgeMapsErrors() {
+        XCTAssertEqual(TextTextEnumeratorAdapter.bridge(.notFound).code, NSFileProviderError.noSuchItem.rawValue)
+        XCTAssertEqual(TextTextEnumeratorAdapter.bridge(.http(401, "x")).code, NSFileProviderError.notAuthenticated.rawValue)
+        XCTAssertEqual(TextTextEnumeratorAdapter.bridge(.http(403, "x")).code, NSFileProviderError.notAuthenticated.rawValue)
+        XCTAssertEqual(TextTextEnumeratorAdapter.bridge(.network("x")).code, NSFileProviderError.serverUnreachable.rawValue)
+        XCTAssertEqual(TextTextEnumeratorAdapter.bridge(.http(500, "x")).code, NSFileProviderError.serverUnreachable.rawValue)
+    }
+}

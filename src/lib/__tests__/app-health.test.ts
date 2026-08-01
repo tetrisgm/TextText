@@ -5,7 +5,7 @@ import { parseAppHealthReport } from "@/lib/app-health";
 const valid = {
   schemaVersion: 1,
   id: "d5bf9dbc-5fdf-4a39-8982-f8d5a1f6c471",
-  appIdentifier: "net.writeapp.write.mac",
+  appIdentifier: "app.texttext.mac",
   appVersion: "0.70",
   buildNumber: "75",
   installationId: "6a3ca65f-1645-4e54-b199-574cf09c99cb",

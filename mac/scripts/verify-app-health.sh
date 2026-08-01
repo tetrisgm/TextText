@@ -7,8 +7,8 @@ set -euo pipefail
 APP="${1:-}"
 EXPECTED_VERSION="${2:-}"
 EXPECTED_BUILD="${3:-}"
-if [ ! -x "$APP/Contents/MacOS/Write" ] || [ -z "$EXPECTED_VERSION" ] || [ -z "$EXPECTED_BUILD" ]; then
-  echo "Usage: verify-app-health.sh <Texttext.app> <version> <build>" >&2
+if [ ! -x "$APP/Contents/MacOS/TextText" ] || [ -z "$EXPECTED_VERSION" ] || [ -z "$EXPECTED_BUILD" ]; then
+  echo "Usage: verify-app-health.sh <TextText.app> <version> <build>" >&2
   exit 1
 fi
 
@@ -16,15 +16,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 "$SCRIPT_DIR/verify-apple-silicon-app.sh" "$APP" --require-extensions
 
-ROOT="$(mktemp -d -t write-app-health)"
+ROOT="$(mktemp -d -t texttext-app-health)"
 trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/state" "$ROOT/workspace"
 REPORT="$ROOT/report.json"
 
-WRITE_STATE_DIR="$ROOT/state" \
-WRITE_SYNC_ROOT="$ROOT/workspace" \
-WRITE_HEALTH_CHECK=1 \
-  "$APP/Contents/MacOS/Write" > "$REPORT"
+TEXTTEXT_STATE_DIR="$ROOT/state" \
+TEXTTEXT_SYNC_ROOT="$ROOT/workspace" \
+TEXTTEXT_HEALTH_CHECK=1 \
+  "$APP/Contents/MacOS/TextText" > "$REPORT"
 
 python3 - "$REPORT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$REPO_ROOT/mac/health-checks.json" <<'PY'
 import json
@@ -34,7 +34,7 @@ path, version, build, manifest_path = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     report = json.load(handle)
 
-# The canonical list lives in Swift (WriteHealthChecks.required) and is
+# The canonical list lives in Swift (TextTextHealthChecks.required) and is
 # generated into this manifest, so retiring a check is one edit rather than
 # three hardcoded lists in three languages discovered over three failed ships.
 with open(manifest_path, encoding="utf-8") as handle:

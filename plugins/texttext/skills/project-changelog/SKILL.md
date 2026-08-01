@@ -1,6 +1,6 @@
 ---
 name: project-changelog
-description: Create or update a durable Texttext project record and append user-facing changelog entries exactly once. Trigger after shipping project work, preparing releases, or when the user asks to maintain project notes.
+description: Create or update a durable TextText project record and append user-facing changelog entries exactly once. Trigger after shipping project work, preparing releases, or when the user asks to maintain project notes.
 ---
 
 # Maintain a project changelog
@@ -43,7 +43,7 @@ someone else's.
 5. If no matching document exists, create one with a stable project title and
    the same idempotency key discipline.
 6. Keep using the same item id for the life of the project.
-7. If the document is open in Texttext, the entry appears live and merges with
+7. If the document is open in TextText, the entry appears live and merges with
    the user's edits. Read it again only when confirmation or conflict recovery
    requires it.
 

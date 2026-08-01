@@ -4,4 +4,4 @@
 //
 // This module stays dependency-free on purpose: the proxy imports it, and
 // the proxy bundle must not pull in the store or other app modules.
-export const AT_ALIAS_HEADER = "x-write-at-alias";
+export const AT_ALIAS_HEADER = "x-texttext-at-alias";

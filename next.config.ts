@@ -2,12 +2,12 @@ import type { NextConfig } from "next";
 
 // Cross-origin dev access (a tunnel or LAN hostname) is opt-in via env so no
 // personal domain lands in the repo. The wildcard covers tenant subdomains.
-const devOrigin = process.env.WRITE_DEV_ORIGIN;
+const devOrigin = process.env.TEXTTEXT_DEV_ORIGIN;
 
 const nextConfig: NextConfig = {
   // Live client evaluations use an isolated build directory so a stopped
   // evaluator cannot leave stale development route manifests for normal work.
-  distDir: process.env.WRITE_NEXT_DIST_DIR ?? ".next",
+  distDir: process.env.TEXTTEXT_NEXT_DIST_DIR ?? ".next",
   // Server Actions are deployment-specific. Give every build a stable identity
   // so Next can reject version-skewed requests with a hard navigation instead
   // of submitting an action id to the wrong deployment. The in-app assistant

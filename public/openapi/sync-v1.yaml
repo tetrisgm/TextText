@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: Texttext sync API
+  title: TextText sync API
   version: 1.0.0
-  summary: File-level markdown sync for a Texttext workspace.
+  summary: File-level markdown sync for a TextText workspace.
   description: |
-    The Texttext sync API exposes one authenticated workspace as folders of
+    The TextText sync API exposes one authenticated workspace as folders of
     markdown files. It is intended for sync clients and third-party agents,
     including ChatGPT Actions, that need to create, read, update, and delete
     markdown files without MCP.
@@ -19,8 +19,8 @@ servers:
   - url: https://{host}/api/sync/v1
     variables:
       host:
-        default: texttext.app
-        description: The Texttext host for the workspace owner.
+        default: TextText.app
+        description: The TextText host for the workspace owner.
 security:
   - bearerAuth: []
 tags:
@@ -200,11 +200,11 @@ paths:
         entry. Agents should create public writing as drafts by sending
         status: draft in the markdown frontmatter unless the owner explicitly
         asks to publish. Notes and bookmarks are always kept unlisted by the
-        server. Write-File-Representation selects the immutable local file
+        server. TextText-File-Representation selects the immutable local file
         representation. For compatibility with clients that predate the
         header, an omitted header creates a markdown representation.
       parameters:
-        - $ref: "#/components/parameters/WriteFileRepresentation"
+        - $ref: "#/components/parameters/TextTextFileRepresentation"
       requestBody:
         required: true
         content:
@@ -341,7 +341,7 @@ paths:
       operationId: listFileArtifacts
       summary: List inline document assets
       description: |
-        Returns the Texttext-hosted image URLs referenced by this item's Markdown,
+        Returns the TextText-hosted image URLs referenced by this item's Markdown,
         plus saved inline bookmark capture assets. The manifest is available for
         every item kind. Screenshot and screenshot-tile capture artifacts are
         excluded. fileHash is the hash of the unchanged canonical Markdown file.
@@ -563,8 +563,8 @@ components:
       schema:
         type: string
       example: '"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
-    WriteFileRepresentation:
-      name: Write-File-Representation
+    TextTextFileRepresentation:
+      name: TextText-File-Representation
       in: header
       required: false
       description: |
@@ -698,7 +698,7 @@ components:
         schema:
           type: string
           enum:
-            - write.workspace.v1
+            - texttext.workspace.v1
         blog:
           $ref: "#/components/schemas/Blog"
         folders:
@@ -815,7 +815,7 @@ components:
         schema:
           type: string
           enum:
-            - write.folder.v1
+            - texttext.folder.v1
         folder:
           $ref: "#/components/schemas/ManifestFolder"
         items:
@@ -1133,18 +1133,18 @@ components:
       summary: Draft article markdown
       value: |
         ---
-        schema: write.markdown-file.v1
+        schema: texttext.markdown-file.v1
         kind: article
         title: Draft from ChatGPT
         status: draft
         ---
 
-        Write the body here.
+        Draft the body here.
     RenderedMarkdownFile:
       summary: Rendered markdown file
       value: |
         ---
-        schema: write.markdown-file.v1
+        schema: texttext.markdown-file.v1
         folder: alice
         folderName: Alice Writes
         mode: blog

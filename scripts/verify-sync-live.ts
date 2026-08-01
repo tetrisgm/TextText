@@ -1,4 +1,4 @@
-// Live end-to-end proof of the sync layer against a running Texttext server.
+// Live end-to-end proof of the sync layer against a running TextText server.
 //
 // Stands up a fully isolated scratch workspace (a throwaway user + blog + token
 // + post), exercises the real /api/sync/v1 HTTP endpoints to demonstrate
@@ -10,7 +10,7 @@
 //   npm run eval:sync:live
 //
 // The default is a local development server. Production verification must opt
-// in explicitly with WRITE_ORIGIN=https://texttext.app and production database
+// in explicitly with TEXTTEXT_ORIGIN=https://TextText.app and production database
 // credentials.
 
 import { eq } from "drizzle-orm";
@@ -27,7 +27,7 @@ import {
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 
-const ORIGIN = process.env.WRITE_ORIGIN ?? "http://127.0.0.1:3000";
+const ORIGIN = process.env.TEXTTEXT_ORIGIN ?? "http://127.0.0.1:3000";
 const STAMP = Date.now().toString(36);
 const SUB = `scratch-sync-verify-${STAMP}`;
 const HANDLE = `scratch-sync-verify-${STAMP}`;
@@ -193,7 +193,7 @@ async function main() {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "X-Write-If-Match": metadataBaseHash,
+        "X-TextText-If-Match": metadataBaseHash,
       },
       body: JSON.stringify({
         folder: targetFolderId,
@@ -229,7 +229,7 @@ async function main() {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "X-Write-If-Match": metadataBaseHash,
+        "X-TextText-If-Match": metadataBaseHash,
       },
       body: JSON.stringify({ title: "Stale rename" }),
     });
@@ -242,7 +242,7 @@ async function main() {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "X-Write-If-Match": "*",
+        "X-TextText-If-Match": "*",
       },
       body: JSON.stringify({ title: "Wildcard rename" }),
     });

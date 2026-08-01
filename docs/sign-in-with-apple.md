@@ -31,42 +31,42 @@ domain.
 All portal work is at https://developer.apple.com/account/resources (you need
 the Account Holder or Admin role).
 
-## Current Texttext registration
+## Current TextText registration
 
 The production registration is:
 
 - Team ID: `52WM463HR2`
-- Primary Sign in with Apple App ID: `52WM463HR2.net.writeapp.write`
-- macOS App ID: `net.writeapp.write.mac`
-- Services ID: `net.writeapp.write.web`
-- Domain: `texttext.app`
-- Return URL: `https://texttext.app/api/auth/callback/apple`
+- Primary Sign in with Apple App ID: `52WM463HR2.app.texttext`
+- macOS App ID: `app.texttext.mac`
+- Services ID: `app.texttext.web`
+- Domain: `TextText.app`
+- Return URL: `https://TextText.app/api/auth/callback/apple`
 - Sign in key ID: `J6958HV8HB`
 
 Keep the existing primary App ID association. The production key is associated
 with that identifier even though the signed macOS bundle uses
-`net.writeapp.write.mac`.
+`app.texttext.mac`.
 
 ## 1. Primary App ID
 
 Identifiers -> (+) -> **App IDs** -> App -> Continue.
-- Description: e.g. `Texttext`.
-- **Explicit** App ID, Bundle ID in reverse-DNS, e.g. `com.example.write`.
+- Description: e.g. `TextText`.
+- **Explicit** App ID, Bundle ID in reverse-DNS, e.g. `com.example.texttext`.
 - Tick the **Sign in with Apple** capability. Continue -> Register.
 
 ## 2. Services ID  (this value becomes `AUTH_APPLE_ID`)
 
 Identifiers -> (+) -> **Services IDs** -> Continue.
-- Description: e.g. `Texttext Web Sign In`.
-- Identifier in reverse-DNS, distinct from the App ID, e.g. `com.example.write.web`.
+- Description: e.g. `TextText Web Sign In`.
+- Identifier in reverse-DNS, distinct from the App ID, e.g. `com.example.texttext.web`.
 - Continue -> Register.
 
 Then select that Services ID, tick **Sign in with Apple**, click **Configure**:
 - **Primary App ID**: the App ID from step 1 (only Sign-in-enabled App IDs show).
 - **Domains and Subdomains**: the bare host, no scheme, no trailing slash:
-  `texttext.app`.
+  `TextText.app`.
 - **Return URLs**: the full HTTPS callback, exactly:
-  `https://texttext.app/api/auth/callback/apple`
+  `https://TextText.app/api/auth/callback/apple`
   (path is Auth.js's `/api/auth` basePath + `/callback/apple`; no trailing slash,
   it must match byte-for-byte what Auth.js sends).
 - Save.
@@ -75,13 +75,13 @@ You do **not** need to host `apple-developer-domain-association.txt`. Apple only
 requires that file for the separate private email-relay service, not for OAuth
 sign in.
 
-`AUTH_APPLE_ID` = this Services ID string (e.g. `com.example.write.web`). It is
+`AUTH_APPLE_ID` = this Services ID string (e.g. `com.example.texttext.web`). It is
 NOT the App ID / bundle ID.
 
 ## 3. Sign in with Apple Key (.p8)
 
 Keys -> (+).
-- Key Name: e.g. `Texttext Sign In Key`.
+- Key Name: e.g. `TextText Sign In Key`.
 - Tick **Sign in with Apple** -> Configure -> pick the primary App ID from step 1
   -> Continue -> Confirm.
 - **Download** the key. It saves as `AuthKey_XXXXXXXXXX.p8`. You can download it
@@ -103,7 +103,7 @@ a fallback. To create one, run:
 node scripts/apple-client-secret.mjs \
   --team-id ABCDE12345 \
   --key-id KEY1234567 \
-  --services-id com.example.write.web \
+  --services-id com.example.texttext.web \
   --p8 ~/Downloads/AuthKey_KEY1234567.p8
 ```
 

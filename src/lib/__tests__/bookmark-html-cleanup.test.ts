@@ -119,7 +119,7 @@ describe("legacy bookmark HTML metadata", () => {
 describe("legacy bookmark HTML blob deletion", () => {
   it("deletes the artifact when the bookmark is recaptured", async () => {
     const response = await POST(
-      new Request("https://write.example/api/sync/v1/captures/bookmark-1", {
+      new Request("https://texttext.example/api/sync/v1/captures/bookmark-1", {
         method: "POST",
       }),
       { params: Promise.resolve({ postId: "bookmark-1" }) },
@@ -138,7 +138,7 @@ describe("legacy bookmark HTML blob deletion", () => {
     mocks.deleteBlob.mockRejectedValue(failure);
 
     const response = await POST(
-      new Request("https://write.example/api/sync/v1/captures/bookmark-1", {
+      new Request("https://texttext.example/api/sync/v1/captures/bookmark-1", {
         method: "POST",
       }),
       { params: Promise.resolve({ postId: "bookmark-1" }) },

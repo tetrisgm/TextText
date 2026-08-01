@@ -112,8 +112,8 @@ export function AssistantConversation({
         </p>
         <p className={styles.emptyBody}>
           {cloudProvider
-            ? `Texttext sends requests to the ${cloudProvider} connection saved for this workspace.`
-            : "Add an Anthropic or OpenAI API key in Workspace Settings. To use an existing ChatGPT or Claude subscription, connect Texttext from that app through MCP."}
+            ? `TextText sends requests to the ${cloudProvider} connection saved for this workspace.`
+            : "Add an Anthropic or OpenAI API key in Workspace Settings. To use an existing ChatGPT or Claude subscription, connect TextText from that app through MCP."}
         </p>
         {onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">

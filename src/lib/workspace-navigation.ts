@@ -60,7 +60,7 @@ export function workspaceHrefWithSearchReturn(
   location: WorkspaceSearchLocation | undefined,
 ): string {
   if (!location?.query.trim()) return href;
-  const url = new URL(href, "https://write.local");
+  const url = new URL(href, "https://texttext.local");
   url.searchParams.set(SEARCH_RETURN_QUERY_PARAM, location.query);
   url.searchParams.set(SEARCH_RETURN_SOURCE_PARAM, location.source);
   return `${url.pathname}${url.search}${url.hash}`;

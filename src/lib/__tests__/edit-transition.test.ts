@@ -16,9 +16,9 @@ describe("edit transition performance gate", () => {
       budgetMs: EDIT_TRANSITION_BUDGET_MS,
       withinBudget: true,
     });
-    expect(dataset.writeEditReadyMs).toBe("149.0");
-    expect(dataset.writeEditReadyWithinBudget).toBe("true");
-    expect(dataset.writeEditStart).toBeUndefined();
+    expect(dataset.textTextEditReadyMs).toBe("149.0");
+    expect(dataset.textTextEditReadyWithinBudget).toBe("true");
+    expect(dataset.textTextEditStart).toBeUndefined();
   });
 
   it("flags a transition that exceeds the budget", () => {
@@ -28,7 +28,7 @@ describe("edit transition performance gate", () => {
     const result = finishMeasuredEditTransition(dataset, "post-1", 301);
 
     expect(result?.withinBudget).toBe(false);
-    expect(dataset.writeEditReadyWithinBudget).toBe("false");
+    expect(dataset.textTextEditReadyWithinBudget).toBe("false");
   });
 
   it("ignores a stale completion from another item", () => {
@@ -36,6 +36,6 @@ describe("edit transition performance gate", () => {
     beginMeasuredEditTransition(dataset, "post-2", 100);
 
     expect(finishMeasuredEditTransition(dataset, "post-1", 150)).toBeNull();
-    expect(dataset.writeEditStartId).toBe("post-2");
+    expect(dataset.textTextEditStartId).toBe("post-2");
   });
 });

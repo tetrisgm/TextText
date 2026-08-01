@@ -2,7 +2,7 @@
   "mcpServers": {
     "texttext": {
       "type": "http",
-      "url": "https://texttext.app/api/mcp"
+      "url": "https://TextText.app/api/mcp"
     }
   }
 }

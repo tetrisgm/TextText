@@ -6,12 +6,12 @@ import type {
 } from "@/lib/pool/types";
 import type { DraftState } from "@/lib/post-edit-draft";
 
-const DB_NAME = "write-workspace-pool";
+const DB_NAME = "texttext-workspace-pool";
 const DB_VERSION = 2;
 const POOL_STORE = "pools";
 const BODY_STORE = "bodies";
 const DRAFT_STORE = "drafts";
-const DRAFT_LOCAL_PREFIX = "write:workspace-draft:v1:";
+const DRAFT_LOCAL_PREFIX = "texttext:workspace-draft:v1:";
 
 type StoreName = typeof POOL_STORE | typeof BODY_STORE | typeof DRAFT_STORE;
 

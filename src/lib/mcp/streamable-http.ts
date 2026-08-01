@@ -9,7 +9,7 @@
 // Spec: /specification/2026-07-28/basic/transports/streamable-http
 
 import type { AuthInfo } from "./types";
-import { enforceMcpToolScope, verifyWriteApiToken } from "./auth";
+import { enforceMcpToolScope, verifyTextTextApiToken } from "./auth";
 import { publicOrigin } from "./origin";
 import {
   CACHE_CATALOG,
@@ -180,7 +180,7 @@ async function dispatch(
           supportedVersions: [...MCP_SUPPORTED_VERSIONS],
           capabilities: { tools: {}, resources: {}, prompts: {} },
           instructions:
-            "Texttext is a publishing workspace of folders and Markdown items. " +
+            "TextText is a publishing workspace of folders and Markdown items. " +
             "Read before mutating, pass if_match_hash when changing an existing " +
             "item, and pass a stable idempotency_key to create_item and " +
             "append_to_item so retries are safe. Notes and bookmarks are always " +
@@ -242,7 +242,7 @@ async function dispatch(
 
 /**
  * `subscriptions/listen` replaced the GET stream and `resources/subscribe`.
- * Texttext has no server-pushed changes to offer an MCP client today: the
+ * TextText has no server-pushed changes to offer an MCP client today: the
  * catalog changes only on deploy, and workspace content changes reach clients
  * through their own polling. So the stream is opened, the acknowledgement
  * honours an empty subset, and it is closed gracefully with the empty result
@@ -308,7 +308,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
     return errorResponse(null, JSONRPC_INTERNAL_ERROR, "Forbidden origin", 403);
   }
 
-  const auth = await verifyWriteApiToken(request);
+  const auth = await verifyTextTextApiToken(request);
   if (!auth) return unauthorized(request);
   (request as Request & { auth?: AuthInfo }).auth = auth;
 

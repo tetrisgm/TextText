@@ -1,5 +1,5 @@
 {
-  "name": "write",
+  "name": "texttext",
   "version": "0.1.0",
   "private": true,
   "browserslist": [
@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "dev": "tsx scripts/work-unit.ts doctor --prune && next dev",
-    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "build": "node scripts/next-build.mjs",
     "start": "next start",
     "lint": "eslint",
     "ship": "release/ship.sh",

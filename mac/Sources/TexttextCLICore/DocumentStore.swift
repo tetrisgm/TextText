@@ -1,7 +1,7 @@
 import Foundation
-import WriteFileProviderKit
+import TextTextFileProviderKit
 
-public enum TexttextCLIError: Error, CustomStringConvertible, Equatable {
+public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
     case workspaceNotFound
     case documentNotFound(String)
     case ambiguous(String, [String])
@@ -12,7 +12,7 @@ public enum TexttextCLIError: Error, CustomStringConvertible, Equatable {
         switch self {
         case .workspaceNotFound:
             return """
-                No Texttext workspace found. Open Texttext and sign in, then try \
+                No TextText workspace found. Open TextText and sign in, then try \
                 again.
                 """
         case .documentNotFound(let name):
@@ -45,27 +45,27 @@ public struct DocumentStore: Sendable {
         self.root = root
     }
 
-    /// The File Provider mount. `WRITE_WORKSPACE_ROOT` overrides it, which is
+    /// The File Provider mount. `TEXTTEXT_WORKSPACE_ROOT` overrides it, which is
     /// what the tests use.
     public static func locate(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
     ) throws -> DocumentStore {
-        if let override = environment["WRITE_WORKSPACE_ROOT"], !override.isEmpty {
+        if let override = environment["TEXTTEXT_WORKSPACE_ROOT"], !override.isEmpty {
             return DocumentStore(root: URL(fileURLWithPath: override))
         }
         let cloud = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/CloudStorage", isDirectory: true)
         let candidates = (try? fileManager.contentsOfDirectory(
             at: cloud, includingPropertiesForKeys: nil)) ?? []
-        // The domain is named for the app, historically "Write-Write".
+        // The domain is named for the app, historically "TextText-TextText".
         for candidate in candidates.sorted(by: { $0.path < $1.path })
-        where candidate.lastPathComponent.hasPrefix("Write-")
-            || candidate.lastPathComponent.hasPrefix("Texttext-")
+        where candidate.lastPathComponent.hasPrefix("TextText-")
+            || candidate.lastPathComponent.hasPrefix("TextText-")
         {
             return DocumentStore(root: candidate)
         }
-        throw TexttextCLIError.workspaceNotFound
+        throw TextTextCLIError.workspaceNotFound
     }
 
     // MARK: - Addressing
@@ -80,7 +80,7 @@ public struct DocumentStore: Sendable {
         if name.hasPrefix("/") {
             let absolute = URL(fileURLWithPath: name)
             if fileManager.fileExists(atPath: absolute.path) { return absolute }
-            throw TexttextCLIError.documentNotFound(name)
+            throw TextTextCLIError.documentNotFound(name)
         }
         let direct = root.appendingPathComponent(name)
         if fileManager.fileExists(atPath: direct.path) { return direct }
@@ -97,9 +97,9 @@ public struct DocumentStore: Sendable {
             return base == needle
         }
         switch matches.count {
-        case 0: throw TexttextCLIError.documentNotFound(name)
+        case 0: throw TextTextCLIError.documentNotFound(name)
         case 1: return root.appendingPathComponent(matches[0])
-        default: throw TexttextCLIError.ambiguous(name, matches)
+        default: throw TextTextCLIError.ambiguous(name, matches)
         }
     }
 
@@ -144,17 +144,17 @@ public struct DocumentStore: Sendable {
         if url.pathExtension.lowercased() == "md" {
             let data = try Data(contentsOf: url)
             guard let text = String(data: data, encoding: .utf8) else {
-                throw TexttextCLIError.invalidDocument("\(url.lastPathComponent) is not UTF-8")
+                throw TextTextCLIError.invalidDocument("\(url.lastPathComponent) is not UTF-8")
             }
             return text
         }
         let temporary = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporary) }
-        let contents = try WriteTextBundlePackage.read(from: url, in: temporary)
+        let contents = try TextTextTextBundlePackage.read(from: url, in: temporary)
         return contents.markdown
     }
 
-    /// The document's own id, carried in frontmatter as `writeId` (injected
+    /// The document's own id, carried in frontmatter as `textTextId` (injected
     /// locally by the sync client, stripped before upload). Presence uses it so
     /// the server addresses the exact item without resolving a file path.
     public func itemId(at url: URL) -> String? {
@@ -165,7 +165,7 @@ public struct DocumentStore: Sendable {
             if line.trimmingCharacters(in: .whitespaces) == "---" { break }
             guard let colon = line.firstIndex(of: ":") else { continue }
             let key = line[..<colon].trimmingCharacters(in: .whitespaces)
-            guard key == "writeId" else { continue }
+            guard key == "textTextId" else { continue }
             var value = line[line.index(after: colon)...]
                 .trimmingCharacters(in: .whitespaces)
             if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
@@ -176,7 +176,7 @@ public struct DocumentStore: Sendable {
         return nil
     }
 
-    // MARK: - Write
+    // MARK: - TextText
 
     /// Replace a document's markdown, preserving everything else in the package
     /// (assets, document.json, info.json metadata) and swapping the result in
@@ -190,23 +190,23 @@ public struct DocumentStore: Sendable {
         let temporary = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporary) }
 
-        let existing = try WriteTextBundlePackage.read(from: url, in: temporary)
+        let existing = try TextTextTextBundlePackage.read(from: url, in: temporary)
         // Carry every asset through untouched. `materialize` rewrites remote
         // URLs to local references, so feed back the remote URL it recorded.
         let assets = existing.assets.map { asset in
-            WriteTextBundlePackage.MaterializedAsset(
+            TextTextTextBundlePackage.MaterializedAsset(
                 filename: asset.filename,
                 data: asset.data,
                 remoteURL: asset.remoteURL ?? "assets/\(asset.filename)",
                 contentType: asset.contentType)
         }
-        let package = try WriteTextBundlePackage.materialize(
+        let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: markdown,
             documentJSON: existing.documentJSON,
             assets: assets,
             sourceURL: nil,
             in: temporary)
-        let packed = try WriteTextBundlePackage.zipToTextPack(
+        let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
         try atomicallyReplace(url, with: try Data(contentsOf: packed))
     }
@@ -223,13 +223,13 @@ public struct DocumentStore: Sendable {
         if let folder, !folder.isEmpty {
             destination = destination.appendingPathComponent(folder, isDirectory: true)
             guard fileManager.fileExists(atPath: destination.path) else {
-                throw TexttextCLIError.documentNotFound(folder)
+                throw TextTextCLIError.documentNotFound(folder)
             }
         }
         let name = DocumentCreation.filename(for: title)
         let url = destination.appendingPathComponent("\(name).textpack")
         guard !fileManager.fileExists(atPath: url.path) else {
-            throw TexttextCLIError.invalidDocument(
+            throw TextTextCLIError.invalidDocument(
                 "\(name) already exists. Edit it, or choose another title.")
         }
 
@@ -238,10 +238,10 @@ public struct DocumentStore: Sendable {
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }
-        let package = try WriteTextBundlePackage.materialize(
+        let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: markdown, documentJSON: nil,
             assets: [], sourceURL: nil, in: temporary)
-        let packed = try WriteTextBundlePackage.zipToTextPack(
+        let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
         try atomicallyReplace(url, with: try Data(contentsOf: packed))
         return url

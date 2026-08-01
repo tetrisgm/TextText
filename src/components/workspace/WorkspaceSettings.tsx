@@ -207,7 +207,7 @@ export function WorkspaceSettings({
                 <h2 id="settings-ai">In-app assistant</h2>
                 <p>
                   Connect your own provider API account and choose the model
-                  Texttext uses. Keys are encrypted and scoped to this
+                  TextText uses. Keys are encrypted and scoped to this
                   workspace.
                 </p>
               </div>
@@ -342,7 +342,7 @@ export function WorkspaceSettings({
             <p className={styles.aiNotConfigured}>
               Provider API usage is billed separately from ChatGPT and
               Claude.ai subscriptions. To use an existing subscription, connect
-              Texttext from that app through{" "}
+              TextText from that app through{" "}
               <a href="/docs/ai" target="_blank" rel="noreferrer">
                 MCP
               </a>

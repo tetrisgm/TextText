@@ -90,7 +90,7 @@ const publicDocs = [
   readFileSync(join(repositoryRoot, "src/app/llms.txt/route.ts"), "utf8"),
 ].join("\n");
 assert(
-  TEXTTEXT_HOSTED_MCP_URL === "https://texttext.app/api/mcp" &&
+  TEXTTEXT_HOSTED_MCP_URL === "https://TextText.app/api/mcp" &&
     publicDocs.includes("TEXTTEXT_HOSTED_MCP_URL"),
   "Public agent docs must advertise the production MCP endpoint",
 );
@@ -105,7 +105,7 @@ assert(
 );
 assert(
   publicDocs.includes("command -v texttext") &&
-    publicDocs.includes("/Applications/Texttext.app/Contents/MacOS/texttext"),
+    publicDocs.includes("/Applications/TextText.app/Contents/MacOS/texttext"),
   "Public agent docs must tell an agent on this Mac to use the CLI, and how to find it",
 );
 
@@ -121,9 +121,9 @@ const source = (path: string) =>
 
 const packageManifest = source("mac/Package.swift");
 const buildApp = source("mac/scripts/build-app.sh");
-const cliMain = source("mac/Sources/TexttextCLI/main.swift");
-const cliStore = source("mac/Sources/TexttextCLICore/DocumentStore.swift");
-const cliPresence = source("mac/Sources/TexttextCLICore/AgentPresence.swift");
+const cliMain = source("mac/Sources/TextTextCLI/main.swift");
+const cliStore = source("mac/Sources/TextTextCLICore/DocumentStore.swift");
+const cliPresence = source("mac/Sources/TextTextCLICore/AgentPresence.swift");
 
 assert(
   packageManifest.includes('.executable(name: "texttext"'),
@@ -135,9 +135,9 @@ assert(
   "The texttext CLI must be copied into the app bundle and signed",
 );
 assert(
-  cliStore.includes("WriteTextBundlePackage") &&
+  cliStore.includes("TextTextTextBundlePackage") &&
     !cliStore.includes("net.daringfireball.markdown"),
-  "The CLI must reuse WriteTextBundlePackage rather than reimplement the format",
+  "The CLI must reuse TextTextTextBundlePackage rather than reimplement the format",
 );
 assert(
   cliStore.includes("replaceItemAt"),
@@ -158,7 +158,7 @@ assert(
 // trust problem are deleted rather than mitigated.
 assert(
   !packageManifest.includes("LocalAgentServer") &&
-    !source("mac/Sources/Write/WebAppWindowController.swift").includes(
+    !source("mac/Sources/TextText/WebAppWindowController.swift").includes(
       "localAgentServer",
     ),
   "The local MCP server must stay retired; agents use the texttext CLI",
@@ -166,7 +166,7 @@ assert(
 
 const cliPresenceRoute = source("src/app/api/agent/presence/route.ts");
 assert(
-  cliPresenceRoute.includes("verifyWriteApiToken"),
+  cliPresenceRoute.includes("verifyTextTextApiToken"),
   "The CLI presence route must authenticate the device token",
 );
 assert(

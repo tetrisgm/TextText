@@ -65,7 +65,7 @@ describe("stripRemoteMarkdownImages", () => {
     expect(stripRemoteMarkdownImages(markdown)).toBe(markdown);
   });
 
-  it("can preserve Texttext-hosted remote images after localization", () => {
+  it("can preserve TextText-hosted remote images after localization", () => {
     const localUrl =
       "https://blob.vercel-storage.com/captures/page/assets/picture.webp";
     const replacements = new Map([

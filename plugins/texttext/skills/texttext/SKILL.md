@@ -1,11 +1,11 @@
 ---
 name: texttext
-description: Use Texttext as the durable document home for notes, articles, bookmarks, project records, publishing, and collaboration. Trigger when the user asks to save, create, find, reshape, publish, share, comment on, or maintain Texttext content.
+description: Use TextText as the durable document home for notes, articles, bookmarks, project records, publishing, and collaboration. Trigger when the user asks to save, create, find, reshape, publish, share, comment on, or maintain TextText content.
 ---
 
-# Texttext
+# TextText
 
-Texttext is the source of truth for the documents it manages.
+TextText is the source of truth for the documents it manages.
 
 ## Pick the transport first
 
@@ -24,7 +24,7 @@ texttext open <doc>                            # open it in the app
 ```
 
 Check with `command -v texttext`, and fall back to
-`/Applications/Texttext.app/Contents/MacOS/texttext` before giving up.
+`/Applications/TextText.app/Contents/MacOS/texttext` before giving up.
 
 Always pass `--as <your name>` and `--message "<what this change is for>"`. They
 are how the person sees who is working and why, both live in the document and in

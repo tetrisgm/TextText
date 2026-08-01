@@ -43,12 +43,12 @@ public struct DeviceCredentials: Decodable, Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> DeviceCredentials? {
         let path: URL
-        if let override = environment["WRITE_CREDENTIALS_PATH"], !override.isEmpty {
+        if let override = environment["TEXTTEXT_CREDENTIALS_PATH"], !override.isEmpty {
             path = URL(fileURLWithPath: override)
         } else {
             path = fileManager.homeDirectoryForCurrentUser
                 .appendingPathComponent(
-                    "Library/Application Support/Write/credentials.json")
+                    "Library/Application Support/TextText/credentials.json")
         }
         guard let data = try? Data(contentsOf: path) else { return nil }
         return try? JSONDecoder().decode(DeviceCredentials.self, from: data)
@@ -95,7 +95,7 @@ public struct PresencePublisher: Sendable {
 
     private func publish(document: String, actor: AgentActor, active: Bool) {
         guard let credentials else { return }
-        // The document carries its own id in frontmatter (`writeId`, injected
+        // The document carries its own id in frontmatter (`textTextId`, injected
         // locally and stripped before upload), so presence addresses the exact
         // item without the server having to resolve a file path.
         guard let itemId = actor.itemId else { return }

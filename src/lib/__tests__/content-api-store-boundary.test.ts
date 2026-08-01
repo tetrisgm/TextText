@@ -47,7 +47,7 @@ beforeEach(() => {
 describe("content API store boundary", () => {
   it("loads an owner body through the content store", async () => {
     const response = await getBody(
-      new Request(`https://write.example/api/post/${postId}/body`),
+      new Request(`https://texttext.example/api/post/${postId}/body`),
       context,
     );
 
@@ -63,7 +63,7 @@ describe("content API store boundary", () => {
 
   it("loads visible bookmark capture state through the content store", async () => {
     const response = await getCaptureStatus(
-      new Request(`https://write.example/api/items/${postId}/capture-status`),
+      new Request(`https://texttext.example/api/items/${postId}/capture-status`),
       context,
     );
 

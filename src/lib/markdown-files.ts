@@ -19,8 +19,8 @@ import {
   postBodyWithSubtitle,
 } from "@/lib/markdown-subtitle";
 
-export const WRITE_FOLDER_SCHEMA = "write.folder.v1";
-export const WRITE_MARKDOWN_FILE_SCHEMA = "write.markdown-file.v1";
+export const TEXTTEXT_FOLDER_SCHEMA = "texttext.folder.v1";
+export const TEXTTEXT_MARKDOWN_FILE_SCHEMA = "texttext.markdown-file.v1";
 export const DEFAULT_FOLDER_MODE = "blog";
 export const BLOG_FOLDER_VIEWS = ["timeline", "index", "grid", "single"] as const;
 // The Blog folder's public vocabulary; Notes and Bookmarks folders each carry
@@ -57,7 +57,7 @@ export type MarkdownFolderItem = {
 };
 
 export type MarkdownFolderManifest = {
-  schema: typeof WRITE_FOLDER_SCHEMA;
+  schema: typeof TEXTTEXT_FOLDER_SCHEMA;
   folder: {
     handle: string;
     name: string;
@@ -126,7 +126,7 @@ export function renderFolderManifest(
 ): MarkdownFolderManifest {
   const folder = options?.folder;
   return {
-    schema: WRITE_FOLDER_SCHEMA,
+    schema: TEXTTEXT_FOLDER_SCHEMA,
     folder: {
       handle: blog.handle,
       name: blog.name,
@@ -182,7 +182,7 @@ export function renderPostMarkdownFile({
   syncRevision?: number;
 }): string {
   const frontmatter: Record<string, unknown> = {
-    schema: WRITE_MARKDOWN_FILE_SCHEMA,
+    schema: TEXTTEXT_MARKDOWN_FILE_SCHEMA,
     ...(typeof syncRevision === "number" ? { syncRevision } : {}),
     // The workspace's display name. (Was `folder: blog.handle` - the internal
     // three-word handle, which read as a wrong/meaningless "folder" in the file.

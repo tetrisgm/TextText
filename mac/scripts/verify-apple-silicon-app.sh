@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify Write-owned executables are arm64-only. Sparkle stays universal so
+# Verify TextText-owned executables are arm64-only. Sparkle stays universal so
 # its updater framework and helper executables are not thinned unnecessarily.
 set -euo pipefail
 
@@ -8,11 +8,11 @@ REQUIRE_EXTENSIONS=0
 if [ "${2:-}" = "--require-extensions" ]; then
   REQUIRE_EXTENSIONS=1
 elif [ -n "${2:-}" ]; then
-  echo "Usage: verify-apple-silicon-app.sh <Texttext.app> [--require-extensions]" >&2
+  echo "Usage: verify-apple-silicon-app.sh <TextText.app> [--require-extensions]" >&2
   exit 64
 fi
 if [ -z "$APP" ] || [ ! -f "$APP/Contents/Info.plist" ]; then
-  echo "Usage: verify-apple-silicon-app.sh <Texttext.app> [--require-extensions]" >&2
+  echo "Usage: verify-apple-silicon-app.sh <TextText.app> [--require-extensions]" >&2
   exit 64
 fi
 
@@ -37,13 +37,13 @@ require_arm64() {
 }
 
 MAIN_NAME="$("$PB" -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
-require_arm64 "Write" "$APP/Contents/MacOS/$MAIN_NAME"
+require_arm64 "TextText" "$APP/Contents/MacOS/$MAIN_NAME"
 
 EXTENSION_COUNT=0
 for extension_name in \
-  WriteShareExtension \
-  WriteQuickLookPreview \
-  WriteFileProviderExtension; do
+  TextTextShareExtension \
+  TextTextQuickLookPreview \
+  TextTextFileProviderExtension; do
   extension="$APP/Contents/PlugIns/$extension_name.appex"
   plist="$extension/Contents/Info.plist"
   if [ ! -f "$plist" ]; then
@@ -58,4 +58,4 @@ for extension_name in \
   EXTENSION_COUNT=$((EXTENSION_COUNT + 1))
 done
 
-echo "   architecture: arm64 (Write + $EXTENSION_COUNT extensions)"
+echo "   architecture: arm64 (TextText + $EXTENSION_COUNT extensions)"

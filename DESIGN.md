@@ -1,4 +1,4 @@
-# Texttext: the design contract
+# TextText: the design contract
 
 Two design systems, one product. Both were built and shipped on an earlier site
 first; this file is the portable contract so they survive the move.

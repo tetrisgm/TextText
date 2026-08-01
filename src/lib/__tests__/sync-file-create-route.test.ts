@@ -79,10 +79,10 @@ function createRequest(
 ): Request {
   const headers = new Headers({ "Content-Type": "text/markdown" });
   if (representation !== undefined) {
-    headers.set("Write-File-Representation", representation);
+    headers.set("TextText-File-Representation", representation);
   }
   const suffix = folderId ? `?folder=${folderId}` : "";
-  return new Request(`https://write.example/api/sync/v1/files${suffix}`, {
+  return new Request(`https://texttext.example/api/sync/v1/files${suffix}`, {
     method: "POST",
     headers,
     body: "---\ntitle: Imported\n---\n\nBody\n",
@@ -105,12 +105,12 @@ function createStructuredRequest(folderId = "notes-folder"): Request {
     },
   };
   return new Request(
-    `https://write.example/api/sync/v1/files?folder=${folderId}`,
+    `https://texttext.example/api/sync/v1/files?folder=${folderId}`,
     {
       method: "POST",
       headers: {
         "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
-        "Write-File-Representation": "textpack",
+        "TextText-File-Representation": "textpack",
       },
       body: serializeSyncDocumentEnvelope({
         schema: SYNC_DOCUMENT_SCHEMA,
@@ -213,7 +213,7 @@ describe("sync file POST representation", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Write-File-Representation must be textbundle, textpack, markdown, or text",
+        "TextText-File-Representation must be textbundle, textpack, markdown, or text",
     });
     expect(mocks.createDraft).not.toHaveBeenCalled();
     expect(mocks.createDraftInFolder).not.toHaveBeenCalled();

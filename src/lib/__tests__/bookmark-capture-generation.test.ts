@@ -15,12 +15,12 @@ const oldCapture = {
   assets: [
     {
       originalUrl: "https://images.example/old.jpg",
-      url: "https://write.example/captures/old.jpg",
+      url: "https://texttext.example/captures/old.jpg",
     },
   ],
   screenshotTiles: [
-    { index: 0, url: "https://write.example/captures/old-tile-0.jpg" },
-    { index: 1, url: "https://write.example/captures/old-tile-1.jpg" },
+    { index: 0, url: "https://texttext.example/captures/old-tile-0.jpg" },
+    { index: 1, url: "https://texttext.example/captures/old-tile-1.jpg" },
   ],
 };
 
@@ -69,11 +69,11 @@ describe("bookmark capture generations", () => {
         assets: [
           {
             originalUrl: "https://images.example/one.jpg",
-            url: "https://write.example/generation-2/one.jpg",
+            url: "https://texttext.example/generation-2/one.jpg",
           },
           {
             originalUrl: "https://images.example/two.jpg",
-            url: "https://write.example/generation-2/two.jpg",
+            url: "https://texttext.example/generation-2/two.jpg",
           },
         ],
       },
@@ -90,7 +90,7 @@ describe("bookmark capture generations", () => {
         {
           url: "https://example.com/new",
           screenshotTiles: [
-            { index, url: `https://write.example/generation-2/tile-${index}.jpg` },
+            { index, url: `https://texttext.example/generation-2/tile-${index}.jpg` },
           ],
         },
         { startedAt: "2026-07-14T00:00:00.000Z", screenshotCount: 3 },
@@ -142,7 +142,7 @@ describe("bookmark capture generations", () => {
       "generation-2",
       {
         url: "https://example.com/new",
-        screenshotTiles: [{ index: 0, url: "https://write.example/new-0.jpg" }],
+        screenshotTiles: [{ index: 0, url: "https://texttext.example/new-0.jpg" }],
       },
       {
         startedAt: "2026-07-14T00:00:00.000Z",
@@ -201,7 +201,7 @@ describe("bookmark capture generations", () => {
         url: "https://example.com/long-article",
         assets: imageUrls.map((originalUrl, index) => ({
           originalUrl,
-          url: `https://write.example/long-article-generation/image-${index + 1}.jpg`,
+          url: `https://texttext.example/long-article-generation/image-${index + 1}.jpg`,
         })),
       },
       { startedAt: "2026-07-14T00:00:00.000Z" },
@@ -219,7 +219,7 @@ describe("bookmark capture generations", () => {
           screenshotTiles: [
             {
               index,
-              url: `https://write.example/long-article-generation/tile-${index}.jpg`,
+              url: `https://texttext.example/long-article-generation/tile-${index}.jpg`,
             },
           ],
         },

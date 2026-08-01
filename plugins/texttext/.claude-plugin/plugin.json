@@ -2,10 +2,10 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "texttext",
   "version": "0.1.0",
-  "description": "Create, reshape, publish, and maintain Texttext documents from Claude.",
+  "description": "Create, reshape, publish, and maintain TextText documents from Claude.",
   "author": {
-    "name": "Texttext",
-    "email": "support@texttext.app"
+    "name": "TextText",
+    "email": "support@TextText.app"
   },
   "skills": [
     "./skills/texttext",

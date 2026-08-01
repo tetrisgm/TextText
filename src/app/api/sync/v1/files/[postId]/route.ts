@@ -136,7 +136,7 @@ export async function PUT(request: Request, { params }: Props) {
   if (post.id && (await hasActiveCoEditors(post.id))) {
     return syncError(409, "This item is being co-edited right now; try again after the session ends");
   }
-  // The If-Match check above is fast but check-then-write: two PUTs on the same
+  // The If-Match check above is fast but check-then-texttext: two PUTs on the same
   // base both pass it before either commits. The base revision is carried into
   // the save as a compare-and-swap so the store only writes if the row is still
   // the exact version we just hashed. A loser gets PostConflictError -> 412.
@@ -333,7 +333,7 @@ export async function PATCH(request: Request, { params }: Props) {
   // sync file's content hash. Native clients therefore use the product-scoped
   // header; keep standard If-Match as a fallback for direct/local clients.
   const ifMatch =
-    request.headers.get("x-write-if-match") ??
+    request.headers.get("x-texttext-if-match") ??
     request.headers.get("if-match");
   if (!ifMatch) return syncError(428, "If-Match header is required");
   if (ifMatch.trim() === "*") {

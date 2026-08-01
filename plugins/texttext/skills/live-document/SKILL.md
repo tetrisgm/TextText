@@ -1,9 +1,9 @@
 ---
 name: live-document
-description: Use one Texttext item as a live shared canvas while the user and an agent work together. Trigger when the user wants to watch a document develop, co-write in Texttext, or keep a durable project document current throughout a task.
+description: Use one TextText item as a live shared canvas while the user and an agent work together. Trigger when the user wants to watch a document develop, co-write in TextText, or keep a durable project document current throughout a task.
 ---
 
-# Use a live Texttext document
+# Use a live TextText document
 
 ## With the `texttext` CLI
 
@@ -41,5 +41,5 @@ time, and their changes must survive yours.
 8. Keep the item useful as a standalone document. Do not paste raw chat logs or
    internal reasoning unless the user asks for them.
 
-Open Texttext editors and agent mutations share the same collaborative document.
+Open TextText editors and agent mutations share the same collaborative document.
 Do not create a detached replacement because the document is currently open.

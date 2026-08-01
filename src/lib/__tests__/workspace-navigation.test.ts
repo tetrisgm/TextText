@@ -104,12 +104,12 @@ describe("workspace hierarchy navigation", () => {
     expect(searchHref).toBe("/t/writer?q=cedar+plan");
     expect(
       workspaceSearchLocationFromUrl(
-        new URL(searchHref, "https://write.local"),
+        new URL(searchHref, "https://texttext.local"),
       ),
     ).toEqual(search);
     expect(
       workspaceSearchReturnFromUrl(
-        new URL(itemHref, "https://write.local"),
+        new URL(itemHref, "https://texttext.local"),
       ),
     ).toEqual(search);
     expect(
@@ -133,12 +133,12 @@ describe("workspace hierarchy navigation", () => {
     const href = workspaceSearchHref("/@writer", tag);
     expect(href).toBe("/@writer?tag=deep+work");
     expect(
-      workspaceSearchLocationFromUrl(new URL(href, "https://write.local")),
+      workspaceSearchLocationFromUrl(new URL(href, "https://texttext.local")),
     ).toEqual(tag);
     const returned = workspaceHrefWithSearchReturn("/@writer/post", tag);
     expect(
       workspaceSearchReturnFromUrl(
-        new URL(returned, "https://write.local"),
+        new URL(returned, "https://texttext.local"),
       ),
     ).toEqual(tag);
   });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command Texttext ship entry point. This is the owner-facing command:
+# One-command TextText ship entry point. This is the owner-facing command:
 # verify the web app, cut the Mac app release, then deploy the public download
 # and appcast routes as the final version marker. The lower-level release
 # script builds and uploads immutable artifacts before the web deploy flips.
@@ -19,8 +19,8 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 PB=/usr/libexec/PlistBuddy
 
-mkdir -p "$ROOT/.write"
-SHIP_LOCK="$ROOT/.write/delivery.lock"
+mkdir -p "$ROOT/.texttext"
+SHIP_LOCK="$ROOT/.texttext/delivery.lock"
 acquire_ship_lock() {
   local owner_pid=""
   if mkdir "$SHIP_LOCK" 2>/dev/null; then
@@ -30,12 +30,12 @@ acquire_ship_lock() {
     return 0
   fi
   if [ "$(cat "$SHIP_LOCK/lane" 2>/dev/null || true)" = "work" ]; then
-    echo "An active Texttext work unit owns the delivery lane." >&2
+    echo "An active TextText work unit owns the delivery lane." >&2
     exit 75
   fi
   owner_pid="$(cat "$SHIP_LOCK/pid" 2>/dev/null || true)"
   if [ -n "$owner_pid" ] && kill -0 "$owner_pid" 2>/dev/null; then
-    echo "Another Texttext ship owns the release lock (pid $owner_pid)." >&2
+    echo "Another TextText ship owns the release lock (pid $owner_pid)." >&2
     exit 75
   fi
   rm -rf "$SHIP_LOCK"
@@ -52,13 +52,13 @@ release_ship_lock() {
 acquire_ship_lock
 trap release_ship_lock EXIT INT TERM
 
-# Texttext's public release identity is product configuration, not secret input.
+# TextText's public release identity is product configuration, not secret input.
 # Keep it here so the owner-facing command is genuinely one command.
-export WRITE_NOTARY_PROFILE="${WRITE_NOTARY_PROFILE:-write-notary}"
-export WRITE_BUNDLE_ID="${WRITE_BUNDLE_ID:-net.writeapp.write.mac}"
-export WRITE_APP_GROUP="${WRITE_APP_GROUP:-group.net.writeapp.write}"
-export WRITE_PRODUCT_ORIGIN="${WRITE_PRODUCT_ORIGIN:-https://texttext.app}"
-export WRITE_SPARKLE_PUBLIC_KEY="${WRITE_SPARKLE_PUBLIC_KEY:-qFmaq5ijn3m2sbiadmkBVvGIjz8v9+piqE/T+YZ1/u0=}"
+export TEXTTEXT_NOTARY_PROFILE="${TEXTTEXT_NOTARY_PROFILE:-texttext-notary}"
+export TEXTTEXT_BUNDLE_ID="${TEXTTEXT_BUNDLE_ID:-app.texttext.mac}"
+export TEXTTEXT_APP_GROUP="${TEXTTEXT_APP_GROUP:-group.app.texttext}"
+export TEXTTEXT_PRODUCT_ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-https://TextText.app}"
+export TEXTTEXT_SPARKLE_PUBLIC_KEY="${TEXTTEXT_SPARKLE_PUBLIC_KEY:-qFmaq5ijn3m2sbiadmkBVvGIjz8v9+piqE/T+YZ1/u0=}"
 
 VERSION=""
 ALLOW_DIRTY=0
@@ -138,7 +138,7 @@ if [ "$NO_PUBLISH" != "1" ]; then
   )
 fi
 
-echo ">> ship Texttext $VERSION"
+echo ">> ship TextText $VERSION"
 
 if [ "$SKIP_TESTS" != "1" ]; then
   echo ">> verify exact release source"
@@ -147,14 +147,14 @@ else
   echo ">> reuse exact release receipt"
   npx tsx "$ROOT/scripts/verify-release.ts" --check
 fi
-RELEASE_GATE_RECEIPT="$ROOT/.write/release-gate-receipt.json"
-export WRITE_RELEASE_GATE_RECEIPT="$RELEASE_GATE_RECEIPT"
+RELEASE_GATE_RECEIPT="$ROOT/.texttext/release-gate-receipt.json"
+export TEXTTEXT_RELEASE_GATE_RECEIPT="$RELEASE_GATE_RECEIPT"
 
 echo ">> evaluate workflow capability contracts"
 WORKFLOW_CAPABILITY_RECEIPT="$ROOT/mac/build/workflow-capability-receipt.json"
 "$ROOT/mac/scripts/verify-workflow-capabilities.sh" \
   "$WORKFLOW_CAPABILITY_RECEIPT"
-export WRITE_WORKFLOW_CAPABILITY_RECEIPT="$WORKFLOW_CAPABILITY_RECEIPT"
+export TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT="$WORKFLOW_CAPABILITY_RECEIPT"
 
 if [ "$NO_PUBLISH" = "1" ]; then
   echo ">> verify one dry-run web build"
@@ -163,24 +163,24 @@ if [ "$NO_PUBLISH" = "1" ]; then
   echo ">> dry-run Mac app build"
   DRY_BUILD="$(( $("$PB" -c 'Print :CFBundleVersion' "$ROOT/mac/Info.plist") + 1 ))"
   DRY_ATTESTATION="$ROOT/mac/build/app-health-attestation.json"
-  "$ROOT/mac/scripts/write-build-attestation.sh" \
+  "$ROOT/mac/scripts/texttext-build-attestation.sh" \
     "$DRY_ATTESTATION" "$VERSION" "$DRY_BUILD"
   APP_VERSION="$VERSION" \
   APP_BUILD_NUMBER="$DRY_BUILD" \
-  WRITE_BUILD_ATTESTATION="$DRY_ATTESTATION" \
+  TEXTTEXT_BUILD_ATTESTATION="$DRY_ATTESTATION" \
     "$ROOT/mac/scripts/build-app.sh"
-  DRY_PLIST="$ROOT/mac/build/Texttext.app/Contents/Info.plist"
+  DRY_PLIST="$ROOT/mac/build/TextText.app/Contents/Info.plist"
   [ "$("$PB" -c 'Print :CFBundleShortVersionString' "$DRY_PLIST")" = "$VERSION" ]
   [ "$("$PB" -c 'Print :CFBundleVersion' "$DRY_PLIST")" = "$DRY_BUILD" ]
-  [ "$("$PB" -c 'Print :SUFeedURL' "$DRY_PLIST")" = "${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" ]
+  [ "$("$PB" -c 'Print :SUFeedURL' "$DRY_PLIST")" = "${TEXTTEXT_PRODUCT_ORIGIN%/}/appcast.xml" ]
   "$ROOT/mac/scripts/verify-app-health.sh" \
-    "$ROOT/mac/build/Texttext.app" "$VERSION" "$DRY_BUILD"
+    "$ROOT/mac/build/TextText.app" "$VERSION" "$DRY_BUILD"
   EXPECTED_BUILD="$DRY_BUILD"
   if [ "$LOCAL_INSTALL" != "1" ]; then
     echo
-    echo "Verified Texttext $VERSION (not published)"
+    echo "Verified TextText $VERSION (not published)"
     echo "  web build: .next (one production build)"
-    echo "  app build: mac/build/Texttext.app ($VERSION build $DRY_BUILD)"
+    echo "  app build: mac/build/TextText.app ($VERSION build $DRY_BUILD)"
     exit 0
   fi
 fi
@@ -220,7 +220,7 @@ DEPLOYMENT_VERSION="${VERSION//./_}"
 # This identity lets Next detect an app window that survived a web deployment.
 # The assistant itself uses stable JSON commands, while remaining Server Action
 # calls recover with a hard navigation instead of submitting stale action ids.
-export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-write-${DEPLOYMENT_VERSION}-${EXPECTED_BUILD}}"
+export NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-texttext-${DEPLOYMENT_VERSION}-${EXPECTED_BUILD}}"
 echo "   web deployment identity: $NEXT_DEPLOYMENT_ID"
 
 if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
@@ -247,7 +247,7 @@ if [ "$SKIP_WEB_DEPLOY" != "1" ]; then
     npx vercel deploy --prebuilt --prod --yes
 fi
 
-ORIGIN="${WRITE_PRODUCT_ORIGIN:-}"
+ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-}"
 if [ -n "$ORIGIN" ]; then
   ORIGIN="${ORIGIN%/}"
   echo ">> verify public release"
@@ -285,8 +285,8 @@ if [ -n "$ORIGIN" ]; then
   [ -n "$PUBLIC_ZIP_URL" ] || { echo "Public appcast is missing an enclosure URL." >&2; exit 1; }
   [ -n "$PUBLIC_SIGNATURE" ] || { echo "Public appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
   curl -fsSI "$PUBLIC_ZIP_URL" >/dev/null
-  curl -fsSI "$ORIGIN/download/Texttext.zip" >/dev/null
-  curl -fsSI "$ORIGIN/download/Write.zip" >/dev/null
+  curl -fsSI "$ORIGIN/download/TextText.zip" >/dev/null
+  curl -fsSI "$ORIGIN/download/TextText.zip" >/dev/null
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
   GUEST_SMOKE_DIR="$(mktemp -d)"
@@ -317,7 +317,7 @@ if [ -n "$ORIGIN" ]; then
   # content-blind capability receipts above. Needs DB access; skipped without it.
   if [ -n "${DATABASE_URL:-}" ]; then
     echo ">> verify workspace workflows on the live release"
-    WRITE_ORIGIN="$ORIGIN" DATABASE_URL="$DATABASE_URL" \
+    TEXTTEXT_ORIGIN="$ORIGIN" DATABASE_URL="$DATABASE_URL" \
       npx tsx "$ROOT/scripts/verify-workflow-live.ts"
   else
     echo "   (skipping live workflow probe: DATABASE_URL not set)"
@@ -326,55 +326,55 @@ fi
 fi
 
 echo ">> install verified Mac app"
-INSTALL_PATH="${TEXTTEXT_INSTALLED_APP_PATH:-${WRITE_INSTALLED_APP_PATH:-/Applications/Texttext.app}}"
-LEGACY_INSTALL_PATH="/Applications/Write.app"
+INSTALL_PATH="${TEXTTEXT_INSTALLED_APP_PATH:-/Applications/TextText.app}"
+LEGACY_INSTALL_PATH=""
 INSTALL_PARENT="$(dirname "$INSTALL_PATH")"
-INSTALL_NEW="$INSTALL_PARENT/.Texttext.app.new.$$"
-INSTALL_OLD="$INSTALL_PARENT/.Texttext.app.previous.$$"
-LEGACY_OLD="$INSTALL_PARENT/.Write.app.previous.$$"
-INSTALL_EXECUTABLE="$INSTALL_PATH/Contents/MacOS/Write"
-LEGACY_EXECUTABLE="$LEGACY_INSTALL_PATH/Contents/MacOS/Write"
+INSTALL_NEW="$INSTALL_PARENT/.TextText.app.new.$$"
+INSTALL_OLD="$INSTALL_PARENT/.TextText.app.previous.$$"
+LEGACY_OLD=""
+INSTALL_EXECUTABLE="$INSTALL_PATH/Contents/MacOS/TextText"
+LEGACY_EXECUTABLE=""
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
-installed_write_pids() {
+installed_texttext_pids() {
   ps ax -o pid=,command= | awk \
     -v executable="$INSTALL_EXECUTABLE" \
     -v legacy="$LEGACY_EXECUTABLE" \
     '$2 == executable || $2 == legacy { print $1 }'
 }
 
-installed_write_is_running() {
-  [ -n "$(installed_write_pids)" ]
+installed_texttext_is_running() {
+  [ -n "$(installed_texttext_pids)" ]
 }
 
-stop_installed_write() {
+stop_installed_texttext() {
   local pids
   local attempt
 
-  installed_write_is_running || return 0
-  osascript -e 'tell application id "net.writeapp.write.mac" to quit' </dev/null >/dev/null 2>&1 || true
+  installed_texttext_is_running || return 0
+  osascript -e 'tell application id "app.texttext.mac" to quit' </dev/null >/dev/null 2>&1 || true
   for attempt in {1..10}; do
-    installed_write_is_running || return 0
+    installed_texttext_is_running || return 0
     sleep 0.5
   done
 
-  pids="$(installed_write_pids)"
+  pids="$(installed_texttext_pids)"
   [ -z "$pids" ] || kill -TERM $pids 2>/dev/null || true
   for attempt in {1..10}; do
-    installed_write_is_running || return 0
+    installed_texttext_is_running || return 0
     sleep 0.5
   done
 
-  pids="$(installed_write_pids)"
+  pids="$(installed_texttext_pids)"
   [ -z "$pids" ] || kill -KILL $pids 2>/dev/null || true
   for attempt in {1..10}; do
-    installed_write_is_running || return 0
+    installed_texttext_is_running || return 0
     sleep 0.2
   done
   return 1
 }
 
-launch_installed_write() {
+launch_installed_texttext() {
   local attempt
   local launch_path
   local settle
@@ -388,12 +388,12 @@ launch_installed_write() {
   for attempt in {1..5}; do
     if open -g "$launch_path" </dev/null >/dev/null 2>&1; then
       for settle in {1..20}; do
-        if installed_write_is_running; then
+        if installed_texttext_is_running; then
           for stable in {1..8}; do
             sleep 0.25
-            installed_write_is_running || break
+            installed_texttext_is_running || break
           done
-          installed_write_is_running && return 0
+          installed_texttext_is_running && return 0
         fi
         sleep 0.25
       done
@@ -403,10 +403,10 @@ launch_installed_write() {
   return 1
 }
 
-rollback_installed_write() {
-  local failed_install="$INSTALL_PARENT/.Texttext.app.failed.$$"
+rollback_installed_texttext() {
+  local failed_install="$INSTALL_PARENT/.TextText.app.failed.$$"
 
-  stop_installed_write || true
+  stop_installed_texttext || true
   rm -rf "$failed_install"
   [ ! -e "$INSTALL_PATH" ] || mv "$INSTALL_PATH" "$failed_install"
   if [ -e "$INSTALL_OLD" ]; then
@@ -416,24 +416,24 @@ rollback_installed_write() {
     mv "$LEGACY_OLD" "$LEGACY_INSTALL_PATH"
   fi
   if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
-    launch_installed_write || true
+    launch_installed_texttext || true
   fi
   rm -rf "$failed_install" "$INSTALL_NEW" "$INSTALL_OLD" "$LEGACY_OLD"
 }
 
-fail_installed_write() {
+fail_installed_texttext() {
   echo "$1" >&2
-  rollback_installed_write
+  rollback_installed_texttext
   exit 1
 }
 
 rm -rf "$INSTALL_NEW" "$INSTALL_OLD" "$LEGACY_OLD"
-ditto "$ROOT/mac/build/Texttext.app" "$INSTALL_NEW"
+ditto "$ROOT/mac/build/TextText.app" "$INSTALL_NEW"
 INSTALL_WAS_RUNNING=0
-installed_write_is_running && INSTALL_WAS_RUNNING=1
-if ! stop_installed_write; then
+installed_texttext_is_running && INSTALL_WAS_RUNNING=1
+if ! stop_installed_texttext; then
   rm -rf "$INSTALL_NEW"
-  echo "The running Texttext app did not quit before installation." >&2
+  echo "The running TextText app did not quit before installation." >&2
   exit 1
 fi
 if [ -e "$INSTALL_PATH" ]; then mv "$INSTALL_PATH" "$INSTALL_OLD"; fi
@@ -441,26 +441,26 @@ if [ "$LEGACY_INSTALL_PATH" != "$INSTALL_PATH" ] && [ -e "$LEGACY_INSTALL_PATH" 
   mv "$LEGACY_INSTALL_PATH" "$LEGACY_OLD"
 fi
 mv "$INSTALL_NEW" "$INSTALL_PATH"
-defaults write net.writeapp.write.mac SUEnableAutomaticChecks -bool true
-defaults write net.writeapp.write.mac SUAutomaticallyUpdate -bool true
+defaults write app.texttext.mac SUEnableAutomaticChecks -bool true
+defaults write app.texttext.mac SUAutomaticallyUpdate -bool true
 INSTALLED_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$INSTALL_PATH/Contents/Info.plist")"
 INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALL_PATH/Contents/Info.plist")"
-[ "$INSTALLED_VERSION" = "$VERSION" ] || fail_installed_write "Installed app version is $INSTALLED_VERSION, expected $VERSION."
-[ "$INSTALLED_BUILD" = "$EXPECTED_BUILD" ] || fail_installed_write "Installed app build is $INSTALLED_BUILD, expected $EXPECTED_BUILD."
-codesign --verify --strict --verbose=2 "$INSTALL_PATH" || fail_installed_write "Installed Texttext app failed code-signature verification."
+[ "$INSTALLED_VERSION" = "$VERSION" ] || fail_installed_texttext "Installed app version is $INSTALLED_VERSION, expected $VERSION."
+[ "$INSTALLED_BUILD" = "$EXPECTED_BUILD" ] || fail_installed_texttext "Installed app build is $INSTALLED_BUILD, expected $EXPECTED_BUILD."
+codesign --verify --strict --verbose=2 "$INSTALL_PATH" || fail_installed_texttext "Installed TextText app failed code-signature verification."
 if ! "$ROOT/mac/scripts/verify-apple-silicon-app.sh" \
   "$INSTALL_PATH" --require-extensions; then
-  fail_installed_write "Installed Texttext app failed Apple silicon verification."
+  fail_installed_texttext "Installed TextText app failed Apple silicon verification."
 fi
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
-  launch_installed_write || fail_installed_write "Installed Texttext app did not launch after bounded retries."
+  launch_installed_texttext || fail_installed_texttext "Installed TextText app did not launch after bounded retries."
 fi
 rm -rf "$INSTALL_OLD" "$LEGACY_OLD"
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
   echo ">> verify installed app health"
-  LOCAL_HEALTH="$HOME/Library/Application Support/Write/health/latest.json"
+  LOCAL_HEALTH="$HOME/Library/Application Support/TextText/health/latest.json"
   LOCAL_HEALTH_VERSION=""
   LOCAL_HEALTH_BUILD=""
   LOCAL_HEALTH_STATUS=""
@@ -502,7 +502,7 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
   if [ "$LOCAL_INSTALL" != "1" ]; then
     echo ">> verify uploaded app health"
     npm run health:review -- \
-      --app-identifier "$WRITE_BUNDLE_ID" \
+      --app-identifier "$TEXTTEXT_BUNDLE_ID" \
       --version "$VERSION" \
       --build "$EXPECTED_BUILD" \
       --wait-seconds 30 \
@@ -510,14 +510,14 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
       --fail-on-failure
   fi
 else
-  echo "   Texttext was not running before installation; leaving it closed and deferring runtime health until next launch."
+  echo "   TextText was not running before installation; leaving it closed and deferring runtime health until next launch."
 fi
 
 echo
 if [ "$LOCAL_INSTALL" = "1" ]; then
-  echo "Installed local Texttext $VERSION build $EXPECTED_BUILD"
+  echo "Installed local TextText $VERSION build $EXPECTED_BUILD"
 else
-  echo "Shipped Texttext $VERSION"
+  echo "Shipped TextText $VERSION"
   if [ -n "$ORIGIN" ]; then
     echo "  download: $ORIGIN/download"
     echo "  appcast:  $ORIGIN/appcast.xml"

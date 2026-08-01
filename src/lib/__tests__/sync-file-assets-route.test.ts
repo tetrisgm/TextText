@@ -84,7 +84,7 @@ describe("sync file artifact GET", () => {
       });
 
       const response = await GET(
-        new Request(`https://write.example/api/sync/v1/files/${postId}/artifacts`),
+        new Request(`https://texttext.example/api/sync/v1/files/${postId}/artifacts`),
         { params: Promise.resolve({ postId }) },
       );
       const body = await response.json();
@@ -154,7 +154,7 @@ describe("sync file artifact GET", () => {
     mocks.getPostById.mockResolvedValue(post);
 
     const response = await GET(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/artifacts`),
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/artifacts`),
       { params: Promise.resolve({ postId }) },
     );
 
@@ -199,7 +199,7 @@ describe("sync file artifact GET", () => {
   it("hides an item from callers without view access", async () => {
     mocks.resolveItemAccess.mockResolvedValue({ canView: false });
     const response = await GET(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/artifacts`),
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/artifacts`),
       { params: Promise.resolve({ postId }) },
     );
 
@@ -232,7 +232,7 @@ describe("sync file asset POST", () => {
     );
 
     const response = await POST(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/assets`, {
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/assets`, {
         method: "POST",
         body: form,
       }),
@@ -283,7 +283,7 @@ describe("sync file asset POST", () => {
     form.append("file", new File(["image"], "photo.png", { type: "image/png" }));
 
     const response = await POST(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/assets`, {
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/assets`, {
         method: "POST",
         body: form,
       }),
@@ -313,7 +313,7 @@ describe("sync file asset POST", () => {
     );
 
     const response = await POST(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/assets`, {
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/assets`, {
         method: "POST",
         body: form,
       }),
@@ -340,7 +340,7 @@ describe("sync file asset POST", () => {
     const textForm = new FormData();
     textForm.append("file", new File(["plain"], "note.txt", { type: "text/plain" }));
     const textResponse = await POST(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/assets`, {
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/assets`, {
         method: "POST",
         body: textForm,
       }),
@@ -352,7 +352,7 @@ describe("sync file asset POST", () => {
     multipleForm.append("file", new File(["one"], "one.png", { type: "image/png" }));
     multipleForm.append("extra", new File(["two"], "two.mp4", { type: "video/mp4" }));
     const multipleResponse = await POST(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/assets`, {
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/assets`, {
         method: "POST",
         body: multipleForm,
       }),
@@ -366,7 +366,7 @@ describe("sync file asset POST", () => {
     const form = new FormData();
     form.append("file", new File(["small"], "photo.png", { type: "image/png" }));
     const response = await POST(
-      new Request(`https://write.example/api/sync/v1/files/${postId}/assets`, {
+      new Request(`https://texttext.example/api/sync/v1/files/${postId}/assets`, {
         method: "POST",
         body: form,
         headers: { "Content-Length": String(52 * 1024 * 1024) },

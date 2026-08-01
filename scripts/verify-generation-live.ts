@@ -14,13 +14,13 @@
 //      rendered markers: the verdict pill, the formatted rating, the facts
 //      strip values, and the aroma pills.
 //
-// Runs against WRITE_ORIGIN (the live eval harness) or localhost:3000.
+// Runs against TEXTTEXT_ORIGIN (the live eval harness) or localhost:3000.
 //
 //   node --env-file=.env.local --import tsx scripts/verify-generation-live.ts
 
-import { TexttextClient } from "./texttext-live-client";
+import { TextTextClient } from "./texttext-live-client";
 
-const ORIGIN = process.env.WRITE_ORIGIN ?? "http://localhost:3000";
+const ORIGIN = process.env.TEXTTEXT_ORIGIN ?? "http://localhost:3000";
 const ITEM_TITLE = "Chateau Musar 2017";
 
 const OPERATIONS = [
@@ -158,7 +158,7 @@ function assertContains(haystack: string, needle: string, label: string) {
 }
 
 async function main() {
-  const client = new TexttextClient(ORIGIN);
+  const client = new TextTextClient(ORIGIN);
   await client.signIn("generation@texttext.dev", "Generation Proof");
   const token = await client.mintToken("generation-proof");
 

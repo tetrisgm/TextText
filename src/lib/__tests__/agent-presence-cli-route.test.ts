@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // while the `texttext` CLI works on it. It authenticates with the device
 // credential the app already holds, so there is no session cookie here.
 
-const verifyWriteApiToken = vi.fn();
+const verifyTextTextApiToken = vi.fn();
 const getPostStoreContext = vi.fn();
 const signalWorkspaceChange = vi.fn();
 const upsertPresence = vi.fn();
@@ -13,7 +13,7 @@ const agentSelectionAtEnd = vi.fn();
 const buildAgentPresence = vi.fn();
 
 vi.mock("@/lib/mcp/auth", () => ({
-  verifyWriteApiToken: (...args: unknown[]) => verifyWriteApiToken(...args),
+  verifyTextTextApiToken: (...args: unknown[]) => verifyTextTextApiToken(...args),
 }));
 vi.mock("@/lib/store", () => ({
   getPostStoreContext: (...args: unknown[]) => getPostStoreContext(...args),
@@ -31,7 +31,7 @@ vi.mock("@/lib/collab/agent-presence.server", () => ({
 const { POST } = await import("@/app/api/agent/presence/route");
 
 function post(body: unknown): Request {
-  return new Request("https://texttext.app/api/agent/presence", {
+  return new Request("https://TextText.app/api/agent/presence", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -48,7 +48,7 @@ const PRESENCE = {
 describe("POST /api/agent/presence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    verifyWriteApiToken.mockResolvedValue({ extra: { userId: "user-1" } });
+    verifyTextTextApiToken.mockResolvedValue({ extra: { userId: "user-1" } });
     getPostStoreContext.mockResolvedValue({ handle: "shoku" });
     agentSelectionAtEnd.mockResolvedValue(null);
     buildAgentPresence.mockReturnValue(PRESENCE);
@@ -70,7 +70,7 @@ describe("POST /api/agent/presence", () => {
   });
 
   it("rejects a caller with no device token", async () => {
-    verifyWriteApiToken.mockResolvedValue(undefined);
+    verifyTextTextApiToken.mockResolvedValue(undefined);
 
     const response = await POST(post({ itemId: "p1", agent: "codex" }));
 

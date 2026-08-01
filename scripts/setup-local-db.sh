@@ -31,9 +31,11 @@ DATABASE_URL="$URL" npx tsx scripts/audit-canonical-documents.ts
 
 echo ">> install sync revision, slug history, and workspace cursor triggers"
 "$PGBIN/psql" -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
+CREATE SEQUENCE IF NOT EXISTS texttext_change_seq;
+
 CREATE OR REPLACE FUNCTION bump_revision() RETURNS trigger AS $$
 BEGIN
-  NEW.revision := nextval('write_change_seq');
+  NEW.revision := nextval('texttext_change_seq');
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

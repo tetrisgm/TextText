@@ -35,8 +35,8 @@ from a newer title, repeated conflict retries, and an old post URL becoming a
 - `PUT`, `PATCH`, and `DELETE` require a specific `If-Match` validator. Missing
   validators return 428 and `*` returns 412.
 - Hosted metadata `PATCH` requests carry that same validator in
-  `X-Write-If-Match`. Vercel consumes standard `If-Match` on `PATCH` before the
-  route runs; the scoped header lets Texttext perform the intended file-hash and
+  `X-TextText-If-Match`. Vercel consumes standard `If-Match` on `PATCH` before the
+  route runs; the scoped header lets TextText perform the intended file-hash and
   database-revision checks. The route still accepts standard `If-Match` for
   direct and local clients. `PUT` and `DELETE` continue to use the standard
   header.
@@ -69,7 +69,7 @@ from a newer title, repeated conflict retries, and an old post URL becoming a
 ### Finder filename portability
 
 The server title remains the source text. Finder receives a reversible encoded
-path component from `WriteFilename`:
+path component from `TextTextFilename`:
 
 - NFC normalization produces one canonical spelling.
 - Reserved characters `< > : " / \\ | ? *`, square brackets, controls, a
@@ -136,7 +136,7 @@ No MCP or OAuth surface is changed by this work.
 - Vitest: 23 files and 243 tests passed.
 - Swift: 239 tests passed, including portable names, collisions, overlong
   components, Finder/app races, and File Provider reconciliation.
-- Production sync probe: 15 checks passed against `texttext.app`, including
+- Production sync probe: 15 checks passed against `TextText.app`, including
   concurrent compare-and-swap writes, stale and wildcard rejection, metadata
   ETag changes, `Question??` title preservation, slug-history redirects, and a
   durable change cursor.

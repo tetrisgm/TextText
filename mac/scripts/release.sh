@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Cut a Texttext.app release from the owner's Mac: bump, build, sign, notarize,
+# Cut a TextText.app release from the owner's Mac: bump, build, sign, notarize,
 # staple, zip, sign the Sparkle appcast, then upload. No CI secrets; the
 # local Developer ID cert, the notarytool profile, and the Sparkle private
 # key in the login keychain do all the work.
 #
 # Usage:
-#   WRITE_NOTARY_PROFILE=write-notary \
-#   WRITE_BUNDLE_ID=<real bundle id> \
-#   WRITE_PRODUCT_ORIGIN=https://texttext.app \
-#   WRITE_SPARKLE_PUBLIC_KEY=<EdDSA public key> \
+#   TEXTTEXT_NOTARY_PROFILE=texttext-notary \
+#   TEXTTEXT_BUNDLE_ID=<real bundle id> \
+#   TEXTTEXT_PRODUCT_ORIGIN=https://TextText.app \
+#   TEXTTEXT_SPARKLE_PUBLIC_KEY=<EdDSA public key> \
 #   mac/scripts/release.sh <version X.Y>
 #
 # Ordering is load-bearing (a push must never point at a 404):
@@ -38,13 +38,13 @@ require_release_env() {
   fi
 }
 
-require_release_env WRITE_NOTARY_PROFILE
-require_release_env WRITE_PRODUCT_ORIGIN
-require_release_env WRITE_SPARKLE_PUBLIC_KEY
-require_release_env WRITE_BUNDLE_ID
-require_release_env WRITE_APP_GROUP
+require_release_env TEXTTEXT_NOTARY_PROFILE
+require_release_env TEXTTEXT_PRODUCT_ORIGIN
+require_release_env TEXTTEXT_SPARKLE_PUBLIC_KEY
+require_release_env TEXTTEXT_BUNDLE_ID
+require_release_env TEXTTEXT_APP_GROUP
 
-ORIGIN="${WRITE_PRODUCT_ORIGIN%/}"
+ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN%/}"
 
 # 1. Bump. CFBundleVersion is Sparkle's monotonic comparison key; it is
 # auto-incremented here so no human ever hand-edits it. Advance past BOTH the
@@ -54,11 +54,11 @@ ORIGIN="${WRITE_PRODUCT_ORIGIN%/}"
 # installed" guard below forever. Taking the max makes every retry move forward.
 SOURCE_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$MAC/Info.plist")"
 INSTALLED_BUILD_FOR_BUMP=0
-BUMP_INSTALLED_APP="${WRITE_INSTALLED_APP_PATH:-}"
+BUMP_INSTALLED_APP="${TEXTTEXT_INSTALLED_APP_PATH:-}"
 if [ -z "$BUMP_INSTALLED_APP" ]; then
   for candidate in \
-    /Applications/Texttext.app "$HOME/Applications/Texttext.app" \
-    /Applications/Write.app "$HOME/Applications/Write.app"; do
+    /Applications/TextText.app "$HOME/Applications/TextText.app" \
+    /Applications/TextText.app "$HOME/Applications/TextText.app"; do
     if [ -d "$candidate" ]; then BUMP_INSTALLED_APP="$candidate"; break; fi
   done
 fi
@@ -72,16 +72,16 @@ echo ">> version v$VERSION (build $BUILD)"
 
 echo ">> [1/5] build + sign"
 ATTESTATION="$MAC/build/app-health-attestation.json"
-"$MAC/scripts/write-build-attestation.sh" "$ATTESTATION" "$VERSION" "$BUILD"
-WRITE_BUILD_ATTESTATION="$ATTESTATION" "$MAC/scripts/build-app.sh"
-"$MAC/scripts/verify-app-health.sh" "$MAC/build/Texttext.app" "$VERSION" "$BUILD"
+"$MAC/scripts/texttext-build-attestation.sh" "$ATTESTATION" "$VERSION" "$BUILD"
+TEXTTEXT_BUILD_ATTESTATION="$ATTESTATION" "$MAC/scripts/build-app.sh"
+"$MAC/scripts/verify-app-health.sh" "$MAC/build/TextText.app" "$VERSION" "$BUILD"
 
 echo ">> [2/5] notarize + staple"
 "$MAC/scripts/notarize.sh"
 
-echo ">> [3/5] package dist/Texttext-$VERSION.zip"
+echo ">> [3/5] package dist/TextText-$VERSION.zip"
 rm -rf "$MAC/dist" && mkdir -p "$MAC/dist"
-ditto -c -k --keepParent "$MAC/build/Texttext.app" "$MAC/dist/Texttext-$VERSION.zip"
+ditto -c -k --keepParent "$MAC/build/TextText.app" "$MAC/dist/TextText-$VERSION.zip"
 
 echo ">> [4/5] sign the Sparkle appcast"
 if [ ! -x "$SPK/generate_appcast" ]; then
@@ -93,7 +93,7 @@ if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
   exit 1
 fi
 # The appcast enclosure must be the IMMUTABLE Blob URL of the zip, not an
-# /download/ route (that route only serves the stable Texttext.zip alias, which
+# /download/ route (that route only serves the stable TextText.zip alias, which
 # resolves through the release pointer). Derive the public Blob base from the
 # token exactly as src/lib/app-release.ts does.
 STORE_ID="$(printf '%s' "$BLOB_READ_WRITE_TOKEN" | sed -n 's/^vercel_blob_rw_\([A-Za-z0-9]*\)_.*$/\1/p' | tr 'A-Z' 'a-z')"
@@ -113,7 +113,7 @@ else
 fi
 
 echo ">> verify staged appcast"
-APP_PLIST="$MAC/build/Texttext.app/Contents/Info.plist"
+APP_PLIST="$MAC/build/TextText.app/Contents/Info.plist"
 APPCAST="$MAC/dist/appcast.xml"
 APP_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$APP_PLIST")"
 APP_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$APP_PLIST")"
@@ -124,7 +124,7 @@ APPCAST_VERSION="$(sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:sh
 APPCAST_HARDWARE_REQUIREMENTS="$(sed -n 's|.*<sparkle:hardwareRequirements>\([^<]*\)</sparkle:hardwareRequirements>.*|\1|p' "$APPCAST" | head -1)"
 APPCAST_ZIP_URL="$(sed -n 's|.*<enclosure[^>]* url="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
 APPCAST_SIGNATURE="$(sed -n 's|.*<enclosure[^>]* sparkle:edSignature="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
-EXPECTED_ZIP_URL="$BLOB_BASE/downloads/Texttext-$VERSION.zip"
+EXPECTED_ZIP_URL="$BLOB_BASE/downloads/TextText-$VERSION.zip"
 
 [ "$APP_VERSION" = "$VERSION" ] || { echo "Built app version is $APP_VERSION, expected $VERSION." >&2; exit 1; }
 [ "$APP_BUILD" = "$BUILD" ] || { echo "Built app build is $APP_BUILD, expected $BUILD." >&2; exit 1; }
@@ -136,11 +136,11 @@ EXPECTED_ZIP_URL="$BLOB_BASE/downloads/Texttext-$VERSION.zip"
 [ "$APPCAST_ZIP_URL" = "$EXPECTED_ZIP_URL" ] || { echo "Appcast zip URL is $APPCAST_ZIP_URL, expected $EXPECTED_ZIP_URL." >&2; exit 1; }
 [ -n "$APPCAST_SIGNATURE" ] || { echo "Appcast enclosure is missing sparkle:edSignature." >&2; exit 1; }
 
-INSTALLED_APP="${WRITE_INSTALLED_APP_PATH:-}"
+INSTALLED_APP="${TEXTTEXT_INSTALLED_APP_PATH:-}"
 if [ -z "$INSTALLED_APP" ]; then
   for candidate in \
-    /Applications/Texttext.app "$HOME/Applications/Texttext.app" \
-    /Applications/Write.app "$HOME/Applications/Write.app"; do
+    /Applications/TextText.app "$HOME/Applications/TextText.app" \
+    /Applications/TextText.app "$HOME/Applications/TextText.app"; do
     if [ -d "$candidate" ]; then
       INSTALLED_APP="$candidate"
       break
@@ -156,7 +156,7 @@ if [ -n "$INSTALLED_APP" ] && [ -f "$INSTALLED_APP/Contents/Info.plist" ]; then
     exit 1
   fi
 else
-  echo "No installed Texttext.app or legacy Write.app found; skipping installed-build comparison."
+  echo "No installed TextText.app found; skipping installed-build comparison."
 fi
 echo "   built app: $APP_VERSION ($APP_BUILD)"
 echo "   appcast:   $APPCAST_VERSION ($APPCAST_BUILD, $APPCAST_HARDWARE_REQUIREMENTS)"
@@ -164,7 +164,7 @@ echo "   feed:      $APP_FEED"
 echo "   zip:       $APPCAST_ZIP_URL"
 
 echo ">> [5/5] upload artifacts"
-# Uploads immutable Texttext-$VERSION.zip and appcast-$VERSION.xml, then writes
+# Uploads immutable TextText-$VERSION.zip and appcast-$VERSION.xml, then writes
 # src/generated/app-release.ts. The outer ship command deploys that generated
 # marker so /appcast.xml, /download/*, and /api/app/version flip together.
 ( cd "$MAC/.." && node scripts/publish-mac-release.mjs "$VERSION" )
@@ -172,4 +172,4 @@ echo ">> [5/5] upload artifacts"
 echo
 echo "Released v$VERSION (build $BUILD)"
 echo "  feed:     $ORIGIN/appcast.xml"
-echo "  download: $ORIGIN/download/Texttext.zip"
+echo "  download: $ORIGIN/download/TextText.zip"

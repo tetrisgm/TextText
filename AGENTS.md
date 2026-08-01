@@ -5,7 +5,7 @@ This version has breaking changes. Read the relevant guide under
 `node_modules/next/dist/docs/` before changing Next.js APIs or conventions.
 <!-- END:nextjs-agent-rules -->
 
-# Texttext agent contract
+# TextText agent contract
 
 ## Product
 
@@ -39,7 +39,7 @@ full gate never use production Neon. Production migrations load
 Use the installed `texttext:project-changelog` skill. The sole changelog item is:
 
 ```text
-Shoku's Space/My Notes/Write Changelog.textpack
+Shoku's Space/My Notes/TextText Changelog.textpack
 ```
 
 Resolve it by this full path, confirm the version that actually shipped, and do

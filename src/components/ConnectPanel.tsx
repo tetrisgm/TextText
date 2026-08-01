@@ -53,7 +53,7 @@ export function ConnectPanel({
   const remoteOrigin =
     origin ||
     (typeof window === "undefined"
-      ? "https://texttext.app"
+      ? "https://TextText.app"
       : window.location.origin);
   const remoteMcpUrl = hostedMcpUrl(remoteOrigin);
 
@@ -159,11 +159,11 @@ export function ConnectPanel({
     <div>
       <section className="connect-section" aria-labelledby="connect-primary">
         <h2 className="connect-section-title" id="connect-primary">
-          Add Texttext to your agents
+          Add TextText to your agents
         </h2>
         <p className="connect-sub">
-          Install Texttext once in the AI products you already use. Each agent
-          keeps its own model, account, and billing while Texttext stays the
+          Install TextText once in the AI products you already use. Each agent
+          keeps its own model, account, and billing while TextText stays the
           durable home for your documents.
         </p>
 
@@ -233,7 +233,7 @@ export function ConnectPanel({
 
         <div className="connect-capability-strip" aria-label="Connection features">
           <span>29 document tools</span>
-          <span>Texttext OAuth</span>
+          <span>TextText OAuth</span>
           <span>Read, write, publish, and collaborate</span>
         </div>
       </section>
@@ -243,7 +243,7 @@ export function ConnectPanel({
           Ready-made workflows
         </h2>
         <p className="connect-sub">
-          The plugins teach Claude and Codex how to use Texttext safely. These
+          The plugins teach Claude and Codex how to use TextText safely. These
           same workflows work in ChatGPT and other MCP clients.
         </p>
         <div className="connect-workflow-grid">
@@ -272,7 +272,7 @@ export function ConnectPanel({
           Connected apps
         </h2>
         <p className="connect-sub">
-          These clients approved access through Texttext. Disconnecting revokes
+          These clients approved access through TextText. Disconnecting revokes
           every active grant for that client.
         </p>
         {connections.length === 0 ? (
@@ -336,7 +336,7 @@ export function ConnectPanel({
           In-app assistant
         </h2>
         <p className="connect-body">
-          To use the Texttext assistant sidebar, add a workspace-owned Anthropic
+          To use the TextText assistant sidebar, add a workspace-owned Anthropic
           or OpenAI API key in Workspace Settings and choose a model. Provider
           API billing is separate from Claude.ai and ChatGPT subscriptions.
         </p>
@@ -346,7 +346,7 @@ export function ConnectPanel({
         <summary className="connect-section-title">Advanced connections</summary>
         <p className="connect-sub">
           Use direct MCP commands or bearer tokens only when a client cannot
-          install the Texttext plugin or complete OAuth.
+          install the TextText plugin or complete OAuth.
         </p>
 
         <h3 className="connect-minor-title">Agents on this Mac</h3>

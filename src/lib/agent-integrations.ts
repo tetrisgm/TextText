@@ -1,11 +1,11 @@
-export const TEXTTEXT_HOSTED_MCP_URL = "https://texttext.app/api/mcp";
-export const TEXTTEXT_PLUGIN_REPOSITORY = "tetrisgm/write";
+export const TEXTTEXT_HOSTED_MCP_URL = "https://TextText.app/api/mcp";
+export const TEXTTEXT_PLUGIN_REPOSITORY = "tetrisgm/TextText";
 
 export const CLAUDE_PLUGIN_INSTALL_COMMAND =
-  "claude plugin marketplace add tetrisgm/write && claude plugin install texttext@texttext";
+  "claude plugin marketplace add tetrisgm/TextText && claude plugin install texttext@texttext";
 
 export const CODEX_PLUGIN_INSTALL_COMMAND =
-  "codex plugin marketplace add tetrisgm/write && codex plugin add texttext@texttext";
+  "codex plugin marketplace add tetrisgm/TextText && codex plugin add texttext@texttext";
 
 export const CHATGPT_CONNECTOR_URL =
   "https://chatgpt.com/#settings/Connectors";
@@ -30,7 +30,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "Anthropic",
     monogram: "C",
     description:
-      "Install Texttext once, then create, reshape, publish, and maintain documents from Claude.",
+      "Install TextText once, then create, reshape, publish, and maintain documents from Claude.",
     environment: "Claude Code and Claude.ai",
     action: {
       kind: "copy",
@@ -49,7 +49,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "OpenAI",
     monogram: "O",
     description:
-      "Add the Texttext plugin to Codex for durable project notes, changelogs, publishing, and collaboration.",
+      "Add the TextText plugin to Codex for durable project notes, changelogs, publishing, and collaboration.",
     environment: "Codex app and CLI",
     action: {
       kind: "copy",
@@ -64,7 +64,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "OpenAI",
     monogram: "G",
     description:
-      "Connect your Texttext workspace as a ChatGPT app and approve access with your Texttext account.",
+      "Connect your TextText workspace as a ChatGPT app and approve access with your TextText account.",
     environment: "ChatGPT apps",
     action: {
       kind: "link",
@@ -101,9 +101,9 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
     id: "live-document",
     title: "Use a live document canvas",
     description:
-      "Keep one Texttext document open while you and an agent develop the work together.",
+      "Keep one TextText document open while you and an agent develop the work together.",
     prompt:
-      "Use Texttext as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.",
+      "Use TextText as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.",
   },
   {
     id: "capture-conversation",
@@ -111,7 +111,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
     description:
       "Turn the useful answer or full discussion into a clean note with source context.",
     prompt:
-      "Save the useful decisions from this conversation as a Texttext note. Include the source context and verify the saved note.",
+      "Save the useful decisions from this conversation as a TextText note. Include the source context and verify the saved note.",
   },
   {
     id: "project-changelogs",

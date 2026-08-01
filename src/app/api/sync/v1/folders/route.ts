@@ -1,5 +1,5 @@
 // Create a subfolder from a sync client: the Mac app calls this when it sees
-// a new local directory inside the tree, so `mkdir ~/Texttext/blog/ideas` on
+// a new local directory inside the tree, so `mkdir ~/TextText/blog/ideas` on
 // disk becomes a real folder (a category) server-side. Mode is inherited
 // from the parent; nesting is capped in the store.
 //

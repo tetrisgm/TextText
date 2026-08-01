@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build, embed, and sign the Share, Quick Look, and File Provider extensions into an
-# already-assembled Texttext.app, inside-out, before the main app is signed.
+# already-assembled TextText.app, inside-out, before the main app is signed.
 #
 #   mac/scripts/embed-extensions.sh <app-bundle> <sign-id> <app-group> <bundle-id> <version> <build>
 #
@@ -17,14 +17,14 @@ PB=/usr/libexec/PlistBuddy
 APP="$1"; SIGN_ID="$2"; APP_GROUP="$3"; BUNDLE_ID="$4"; VERSION="$5"; BUILD="$6"
 
 # The File Provider extension shares a keychain access group with the app to read
-# the sync token (<TeamID>.net.writeapp.write.fp). Resolve the team from the
+# the sync token (<TeamID>.app.texttext.fp). Resolve the team from the
 # signing identity so the Info.plist carries the same string the app does.
 TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
-KEYCHAIN_GROUP="${TEAM:+$TEAM.net.writeapp.write.fp}"
+KEYCHAIN_GROUP="${TEAM:+$TEAM.app.texttext.fp}"
 
-SHARE_PROFILE="$MAC/profiles/Write_Share_Developer_ID.provisionprofile"
-QL_PROFILE="$MAC/profiles/Write_QuickLook_Developer_ID.provisionprofile"
-FP_PROFILE="$MAC/profiles/Write_FileProvider_Developer_ID.provisionprofile"
+SHARE_PROFILE="$MAC/profiles/TextText_Share_Developer_ID.provisionprofile"
+QL_PROFILE="$MAC/profiles/TextText_QuickLook_Developer_ID.provisionprofile"
+FP_PROFILE="$MAC/profiles/TextText_FileProvider_Developer_ID.provisionprofile"
 if [ ! -f "$SHARE_PROFILE" ] || [ ! -f "$QL_PROFILE" ] || [ ! -f "$FP_PROFILE" ]; then
   echo ">> extensions: no provisioning profiles in mac/profiles; skipping embed"
   exit 0
@@ -48,20 +48,20 @@ TARGET_TRIPLE="arm64-apple-macosx14.0"
 PLUGINS="$APP/Contents/PlugIns"
 mkdir -p "$PLUGINS"
 
-# WriteShareCore (Foundation only) is the sole library dependency of the Share
+# TextTextShareCore (Foundation only) is the sole library dependency of the Share
 # and Quick Look extensions; collect its release objects once.
 CORE_OBJS=()
-while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(find "$BIN/WriteShareCore.build" -name '*.o')
-[ "${#CORE_OBJS[@]}" -gt 0 ] || { echo "no WriteShareCore objects; run swift build -c release first" >&2; exit 1; }
+while IFS= read -r f; do CORE_OBJS+=("$f"); done < <(find "$BIN/TextTextShareCore.build" -name '*.o')
+[ "${#CORE_OBJS[@]}" -gt 0 ] || { echo "no TextTextShareCore objects; run swift build -c release first" >&2; exit 1; }
 
 # The File Provider extension depends instead on the FP Kit + Bridge and
-# ZIPFoundation (not WriteShareCore); collect their release objects for its
+# ZIPFoundation (not TextTextShareCore); collect their release objects for its
 # dedicated link. The
 # extension's own two sources are compiled fresh by embed_appex below, so do NOT
-# also link WriteFileProviderExtensionCore objects (that would double symbols).
+# also link TextTextFileProviderExtensionCore objects (that would double symbols).
 FP_OBJS=()
 while IFS= read -r f; do FP_OBJS+=("$f"); done < <(find \
-  "$BIN/WriteFileProviderKit.build" "$BIN/WriteFileProviderBridge.build" \
+  "$BIN/TextTextFileProviderKit.build" "$BIN/TextTextFileProviderBridge.build" \
   "$BIN/ZIPFoundation.build" -name '*.o')
 [ "${#FP_OBJS[@]}" -gt 0 ] || { echo "no File Provider objects; run swift build -c release first" >&2; exit 1; }
 
@@ -93,9 +93,9 @@ embed_appex() { # returns nonzero on failure
     -e "s/\$(PRODUCT_MODULE_NAME)/$name/g" \
     -e "s/\$(EXECUTABLE_NAME)/$name/g" \
     -e "s/\$(DEVELOPMENT_LANGUAGE)/en/g" \
-    -e "s/WRITE_BUNDLE_ID/$BUNDLE_ID/g" \
-    -e "s/WRITE_APP_GROUP/$APP_GROUP/g" \
-    -e "s/WRITE_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
+    -e "s/TEXTTEXT_BUNDLE_ID/$BUNDLE_ID/g" \
+    -e "s/TEXTTEXT_APP_GROUP/$APP_GROUP/g" \
+    -e "s/TEXTTEXT_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
     "$plist"
   "$PB" -c "Set :CFBundleShortVersionString $VERSION" "$plist"
   "$PB" -c "Set :CFBundleVersion $BUILD" "$plist"
@@ -105,10 +105,10 @@ embed_appex() { # returns nonzero on failure
 
   # Entitlements from the template, with the real group substituted. This file
   # must live OUTSIDE the bundle, or codesign signs it as a nested component.
-  local ent; ent="$(mktemp -t write-appex-ent)"
+  local ent; ent="$(mktemp -t texttext-appex-ent)"
   /usr/bin/sed \
-    -e "s/WRITE_APP_GROUP/$APP_GROUP/g" \
-    -e "s/WRITE_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
+    -e "s/TEXTTEXT_APP_GROUP/$APP_GROUP/g" \
+    -e "s/TEXTTEXT_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
     "$MAC/Extensions/$srcdir/$ent_tmpl" > "$ent"
 
   echo "   signing $name"
@@ -118,8 +118,8 @@ embed_appex() { # returns nonzero on failure
   codesign --verify --strict "$appex"
 
   local signed_entitlements signed_group plist_group document_group
-  if grep -q 'WRITE_APP_GROUP' "$MAC/Extensions/$srcdir/$ent_tmpl"; then
-    signed_entitlements="$(mktemp -t write-signed-ent)"
+  if grep -q 'TEXTTEXT_APP_GROUP' "$MAC/Extensions/$srcdir/$ent_tmpl"; then
+    signed_entitlements="$(mktemp -t texttext-signed-ent)"
     codesign -d --entitlements :- "$appex" > "$signed_entitlements" 2>/dev/null
     signed_group="$($PB -c 'Print :com.apple.security.application-groups:0' "$signed_entitlements" 2>/dev/null || true)"
     rm -f "$signed_entitlements"
@@ -129,13 +129,13 @@ embed_appex() { # returns nonzero on failure
     fi
   fi
 
-  plist_group="$($PB -c 'Print :WriteAppGroupIdentifier' "$plist" 2>/dev/null || true)"
+  plist_group="$($PB -c 'Print :TextTextAppGroupIdentifier' "$plist" 2>/dev/null || true)"
   if [ -n "$plist_group" ] && [ "$plist_group" != "$APP_GROUP" ]; then
     echo "$name plist app group is '$plist_group', expected '$APP_GROUP'." >&2
     exit 1
   fi
   document_group="$($PB -c 'Print :NSExtension:NSExtensionFileProviderDocumentGroup' "$plist" 2>/dev/null || true)"
-  if [ "$name" = "WriteFileProviderExtension" ] && [ "$document_group" != "$APP_GROUP" ]; then
+  if [ "$name" = "TextTextFileProviderExtension" ] && [ "$document_group" != "$APP_GROUP" ]; then
     echo "$name document group is '$document_group', expected '$APP_GROUP'." >&2
     exit 1
   fi
@@ -143,21 +143,21 @@ embed_appex() { # returns nonzero on failure
 
 echo ">> embedding Share extension"
 LINK_OBJS=("${CORE_OBJS[@]}")
-embed_appex "WriteShareExtension" "WriteShareExtension" \
-  "$SHARE_PROFILE" "WriteShareExtension.entitlements.template" \
+embed_appex "TextTextShareExtension" "TextTextShareExtension" \
+  "$SHARE_PROFILE" "TextTextShareExtension.entitlements.template" \
   -framework Foundation -framework AppKit -framework UniformTypeIdentifiers
 
 echo ">> embedding Quick Look extension"
 LINK_OBJS=("${CORE_OBJS[@]}")
-embed_appex "WriteQuickLookPreview" "WriteQuickLookPreview" \
-  "$QL_PROFILE" "WriteQuickLookPreview.entitlements.template" \
+embed_appex "TextTextQuickLookPreview" "TextTextQuickLookPreview" \
+  "$QL_PROFILE" "TextTextQuickLookPreview.entitlements.template" \
   -framework Foundation -framework AppKit -framework CoreGraphics \
   -framework QuickLookUI -framework UniformTypeIdentifiers
 
 echo ">> embedding File Provider extension"
 LINK_OBJS=("${FP_OBJS[@]}")
-embed_appex "WriteFileProviderExtension" "WriteFileProviderExtension" \
-  "$FP_PROFILE" "WriteFileProviderExtension.entitlements.template" \
+embed_appex "TextTextFileProviderExtension" "TextTextFileProviderExtension" \
+  "$FP_PROFILE" "TextTextFileProviderExtension.entitlements.template" \
   -framework Foundation -framework AppKit -framework FileProvider \
   -framework UniformTypeIdentifiers -lz
 

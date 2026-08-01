@@ -46,6 +46,6 @@ mac/profiles/
 release/.autobuild*.log
 
 # per-work-unit timings, receipts, and local cache history
-/.write/
+/.texttext/
 .env.release.local
 .claude/

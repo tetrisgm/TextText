@@ -19,9 +19,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { template } = await params;
   const example = templateExample(template);
-  if (!example) return { title: "Templates · Texttext" };
+  if (!example) return { title: "Templates · TextText" };
   return {
-    title: `${example.template.name} template · Texttext`,
+    title: `${example.template.name} template · TextText`,
     description: example.template.description,
   };
 }

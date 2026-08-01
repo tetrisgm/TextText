@@ -29,7 +29,7 @@ import {
   parseSyncFileRepresentation,
   syncError,
   syncManifestItem,
-  WRITE_FILE_REPRESENTATION_HEADER,
+  TEXTTEXT_FILE_REPRESENTATION_HEADER,
 } from "../sync";
 
 export const dynamic = "force-dynamic";
@@ -44,12 +44,12 @@ export async function POST(request: Request) {
   }
 
   const representation = parseSyncFileRepresentation(
-    request.headers.get(WRITE_FILE_REPRESENTATION_HEADER),
+    request.headers.get(TEXTTEXT_FILE_REPRESENTATION_HEADER),
   );
   if (!representation) {
     return syncError(
       400,
-      `${WRITE_FILE_REPRESENTATION_HEADER} must be textbundle, textpack, markdown, or text`,
+      `${TEXTTEXT_FILE_REPRESENTATION_HEADER} must be textbundle, textpack, markdown, or text`,
     );
   }
 

@@ -87,7 +87,7 @@ type CommandEnvironment = Record<string, string | undefined>;
 
 const scriptPath = fileURLToPath(import.meta.url);
 export const repositoryRoot = resolve(dirname(scriptPath), "..");
-const stateRoot = (root: string) => join(root, ".write");
+const stateRoot = (root: string) => join(root, ".texttext");
 const deliveryLockPath = (root: string) => join(stateRoot(root), "delivery.lock");
 const currentWorkUnitPath = (root: string) =>
   join(stateRoot(root), "current-work-unit.json");
@@ -168,7 +168,7 @@ export function beginWorkUnit(label: string, root = repositoryRoot) {
   const workUnit: WorkUnit = {
     schemaVersion: 1,
     id: `${compactTime}-${sourceCommit.slice(0, 8)}`,
-    label: label.trim() || "Texttext work unit",
+    label: label.trim() || "TextText work unit",
     baseCommit: sourceCommit,
     startedAt,
   };
@@ -200,8 +200,8 @@ function commandFingerprint(
         [
           "NODE_ENV",
           "NEXT_DEPLOYMENT_ID",
-          "WRITE_LIVE_AI_PROBE",
-          "WRITE_PRODUCT_ORIGIN",
+          "TEXTTEXT_LIVE_AI_PROBE",
+          "TEXTTEXT_PRODUCT_ORIGIN",
         ].includes(key),
       )
       .sort(([left], [right]) => left.localeCompare(right)),
@@ -626,7 +626,7 @@ function parseRunArguments(args: string[]) {
 async function main() {
   const [subcommand = "summary", ...args] = process.argv.slice(2);
   if (subcommand === "begin") {
-    beginWorkUnit(args.join(" ") || "Texttext work unit");
+    beginWorkUnit(args.join(" ") || "TextText work unit");
     return;
   }
   if (subcommand === "run") {

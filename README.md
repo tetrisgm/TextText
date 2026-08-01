@@ -1,10 +1,10 @@
-# Texttext
+# TextText
 
 A blog that reads like a broadsheet. An Apple-grade writing and publishing
 platform: one display serif for the headlines, one quiet accent per post, and
 a reading column that puts the words first.
 
-There is a web app at texttext.app and a native macOS app that mounts your
+There is a web app at TextText.app and a native macOS app that mounts your
 workspace as a Finder location, so your writing is just files you own.
 
 ## Run it
@@ -33,7 +33,7 @@ No database or credentials are needed for the demo. For real data, run
 ## For AI agents
 
 - On this Mac, use the `texttext` CLI that ships inside the app bundle.
-- Anywhere else, connect to `https://texttext.app/api/mcp` with OAuth.
+- Anywhere else, connect to `https://TextText.app/api/mcp` with OAuth.
 
 `docs/agent-interoperability.md` is the reference for both.
 

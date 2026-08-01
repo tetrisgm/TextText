@@ -13,13 +13,13 @@ import { GET } from "@/app/api/app/health/status/route";
 const originalReviewToken = process.env.APP_HEALTH_REVIEW_TOKEN;
 const reviewToken = "r".repeat(48);
 const target = {
-  appIdentifier: "net.writeapp.write.mac",
+  appIdentifier: "app.texttext.mac",
   appVersion: "0.71",
   buildNumber: "76",
 };
 
 function request(query = "version=0.71&build=76", token = reviewToken) {
-  return new Request(`https://write.example/api/app/health/status?${query}`, {
+  return new Request(`https://texttext.example/api/app/health/status?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 }

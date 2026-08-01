@@ -29,15 +29,15 @@ const footerColumns = [
 
 export function LandingFooter() {
   return (
-    <footer className="write-landing-footer" aria-label="Footer">
-      <div className="write-landing-footer-inner">
-        <div className="write-landing-footer-brand">
-          <Link className="write-landing-footer-mark" href="/">
-            Texttext
+    <footer className="texttext-landing-footer" aria-label="Footer">
+      <div className="texttext-landing-footer-inner">
+        <div className="texttext-landing-footer-brand">
+          <Link className="texttext-landing-footer-mark" href="/">
+            TextText
           </Link>
           <p>Folders, Markdown, and publishing in one quiet workspace.</p>
         </div>
-        <div className="write-landing-footer-columns">
+        <div className="texttext-landing-footer-columns">
           {footerColumns.map((column) => (
             <section key={column.title} aria-labelledby={`footer-${column.title}`}>
               <h2 id={`footer-${column.title}`}>{column.title}</h2>

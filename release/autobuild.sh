@@ -3,15 +3,15 @@
 set -euo pipefail
 exec </dev/null
 
-readonly REPO="$HOME/dev/write"
+readonly REPO="$HOME/dev/TextText"
 readonly GIT="/usr/bin/git"
 readonly NPX="/opt/homebrew/bin/npx"
 readonly RUN_CAPPED="$HOME/dev/stack/bin/run-capped"
 readonly QUIET_SECONDS="${TEXTTEXT_DELIVERY_QUIET_SECONDS:-900}"
 readonly PUBLIC_INTERVAL_SECONDS="${TEXTTEXT_DELIVERY_PUBLIC_INTERVAL_SECONDS:-86400}"
 readonly LOG="$REPO/release/.autobuild.log"
-readonly STATE="$REPO/.write/autobuild"
-readonly RELEASE_ENV="$HOME/.config/write/release.env"
+readonly STATE="$REPO/.texttext/autobuild"
+readonly RELEASE_ENV="$HOME/.config/TextText/release.env"
 
 mkdir -p "$STATE"
 touch "$LOG"
@@ -66,7 +66,7 @@ fi
 
 # A completed release whose final source push failed is retried without a build.
 case "$("$GIT" log -1 --format=%s)" in
-  "Release Texttext"*|"Release Write"*)
+  "Release TextText"*|"Release TextText"*)
     if clean_tree && [ "$("$GIT" rev-list --count origin/main..HEAD)" -gt 0 ]; then
       "$RUN_CAPPED" --seconds 300 --label texttext-release-push -- \
         "$GIT" push origin main >>"$LOG" 2>&1 || {
@@ -146,7 +146,7 @@ if [ "$PUBLIC_DUE" = "1" ]; then
     exit 0
   }
   "$GIT" add mac/Info.plist src/generated/app-release.ts
-  "$GIT" commit -q -m "Release Texttext $version"
+  "$GIT" commit -q -m "Release TextText $version"
   write_state installed-source "$TARGET"
   write_state published-source "$TARGET"
   write_state last-public-at "$(date +%s)"

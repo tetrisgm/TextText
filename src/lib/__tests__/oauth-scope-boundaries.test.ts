@@ -15,7 +15,7 @@ vi.mock("@/lib/store", () => ({
 import { resolveSyncWorkspace } from "@/app/api/sync/v1/auth";
 import {
   enforceMcpToolScope,
-  verifyWriteApiToken,
+  verifyTextTextApiToken,
 } from "@/lib/mcp/auth";
 import { protectedResourceMetadataResponse } from "@/lib/mcp/resource-metadata";
 
@@ -24,7 +24,7 @@ type AuthenticatedRequest = Request & {
 };
 
 function mcpRequest(scope: string, name: string): Request {
-  const request = new Request("https://write.example/api/mcp", {
+  const request = new Request("https://texttext.example/api/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -45,10 +45,10 @@ beforeEach(() => {
 describe("OAuth scope boundaries", () => {
   it("advertises read and sync in protected-resource metadata", async () => {
     const response = protectedResourceMetadataResponse(
-      new Request("https://write.example/.well-known/oauth-protected-resource"),
+      new Request("https://texttext.example/.well-known/oauth-protected-resource"),
     );
     await expect(response.json()).resolves.toMatchObject({
-      resource: "https://write.example/api/mcp",
+      resource: "https://texttext.example/api/mcp",
       scopes_supported: ["read", "sync"],
     });
   });
@@ -64,8 +64,8 @@ describe("OAuth scope boundaries", () => {
     });
 
     await expect(
-      verifyWriteApiToken(
-        new Request("https://write.example/api/mcp", {
+      verifyTextTextApiToken(
+        new Request("https://texttext.example/api/mcp", {
           headers: { Authorization: `Bearer wsk_${"a".repeat(43)}` },
         }),
         `wsk_${"a".repeat(43)}`,
@@ -116,7 +116,7 @@ describe("OAuth scope boundaries", () => {
       expiresAt: new Date("2026-07-15T13:00:00.000Z"),
     });
     const result = await resolveSyncWorkspace(
-      new Request("https://write.example/api/sync/v1/files", {
+      new Request("https://texttext.example/api/sync/v1/files", {
         method: "POST",
         headers: { Authorization: `Bearer wsk_${"a".repeat(43)}` },
       }),
@@ -136,7 +136,7 @@ describe("OAuth scope boundaries", () => {
     );
 
     const result = await resolveSyncWorkspace(
-      new Request("https://write.example/api/sync/v1/changes", {
+      new Request("https://texttext.example/api/sync/v1/changes", {
         headers: { Authorization: `Bearer wsk_${"a".repeat(43)}` },
       }),
     );

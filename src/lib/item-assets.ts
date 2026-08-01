@@ -170,7 +170,7 @@ async function fetchPublicMedia(sourceUrl: string): Promise<{
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         accept: "image/*,video/*",
-        "user-agent": "write-asset-import/1",
+        "user-agent": "texttext-asset-import/1",
       },
     });
     if (response.status >= 300 && response.status < 400) {

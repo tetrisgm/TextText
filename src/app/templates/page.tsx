@@ -6,8 +6,8 @@ import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { templateExamples } from "./shared";
 
 export const metadata: Metadata = {
-  title: "Choose a look · Texttext",
-  description: "Choose a familiar look for a Texttext document.",
+  title: "Choose a look · TextText",
+  description: "Choose a familiar look for a TextText document.",
 };
 
 const GALLERY_CSS = `
@@ -39,7 +39,7 @@ export default function TemplatesPage() {
   return (
     <main className="tpl-gallery">
       <style>{GALLERY_CSS}</style>
-      <Link href="/" className="tpl-back" aria-label="Back to Texttext">
+      <Link href="/" className="tpl-back" aria-label="Back to TextText">
         <span aria-hidden="true">&larr;</span>
         Back
       </Link>

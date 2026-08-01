@@ -1,6 +1,6 @@
 # App-owned reliability
 
-Texttext carries its reliability system inside the shipped product. Each release
+TextText carries its reliability system inside the shipped product. Each release
 proves its source gates, each installed version checks its production
 integrations, and reports can be reviewed without collecting document content.
 
@@ -48,7 +48,7 @@ that controller once with:
 bash release/install-autobuild.sh
 ```
 
-The installer writes and loads `net.writeapp.write.autobuild`. Normal product
+The installer writes and loads `app.texttext.autobuild`. Normal product
 work kickstarts the installed job and does not rerun the installer.
 
 Finder reliability has two complementary gates. The Swift suite runs a
@@ -109,10 +109,10 @@ presence, revision, or collaboration persistence code changes, but it is not a
 network-variable ship gate.
 
 `npm run verify:workflows` and `npm run eval:sync:live` are local-first,
-destructive evaluators for isolated scratch workspaces. Run a local Texttext
+destructive evaluators for isolated scratch workspaces. Run a local TextText
 server with `AUTH_DEV_LOGIN=1` before invoking them. They use `.env.local` and
 default to `http://localhost:3000`; production requires an explicit
-`WRITE_ORIGIN=https://texttext.app`. Both always remove their scratch data in a
+`TEXTTEXT_ORIGIN=https://TextText.app`. Both always remove their scratch data in a
 `finally` block.
 
 `npm run eval:clients:live` owns that local server lifecycle. It refuses a
@@ -125,13 +125,13 @@ page creation, sharing, access, sync, collaboration, and connector behavior
 against the real local application and database.
 
 The release also has one architecture identity from build through update. The
-Texttext executable and its three extensions must be arm64-only, while Sparkle is
+TextText executable and its three extensions must be arm64-only, while Sparkle is
 left universal. The staged and public appcasts must advertise
 `sparkle:hardwareRequirements` as `arm64`; a missing marker blocks publishing
 or completion of the owner ship command.
 
 This follows the useful PartyParty pattern of a bounded local history, lifecycle
-probes, best-effort upload, and centralized review. Texttext uses a structured,
+probes, best-effort upload, and centralized review. TextText uses a structured,
 content-blind report instead of an unstructured session log because document
 privacy is a product invariant.
 
@@ -175,7 +175,7 @@ Review recent reports:
 npm run health:review
 npm run health:review -- --version 0.70
 npm run health:review -- --version 0.70 --build 75 --wait-seconds 30 --require-reports
-npm run health:review -- --app-identifier net.writeapp.write.mac --version 0.70 --build 75 --json
+npm run health:review -- --app-identifier app.texttext.mac --version 0.70 --build 75 --json
 npm run health:review -- --limit 500 --json
 ```
 
@@ -254,13 +254,13 @@ are stored.
    use a signed capability receipt when a safe runtime probe would mutate
    production state.
 3. Keep the check fast and independent of the web view.
-4. Add the ID to `WriteHealthChecks.required` in
-   `mac/Sources/Write/AppHealthReporter.swift`, then run
+4. Add the ID to `TextTextHealthChecks.required` in
+   `mac/Sources/TextText/AppHealthReporter.swift`, then run
    `npx tsx scripts/sync-health-checks.ts`.
 5. Add a focused unit test.
 6. Add the equivalent reusable primitive or contract to `~/dev/stack/mac-kit`.
 
-`WriteHealthChecks.required` is the single source of truth for which checks a
+`TextTextHealthChecks.required` is the single source of truth for which checks a
 release must report. `mac/health-checks.json` is generated from it, and both
 `mac/scripts/verify-app-health.sh` and `AppHealthReporterTests` read the
 generated file. The list used to be written out three times in three languages,

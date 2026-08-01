@@ -29,7 +29,7 @@ describe("production authentication", () => {
     const token = mintAppleClientSecret({
       teamId: "52WM463HR2",
       keyId: "J6958HV8HB",
-      servicesId: "net.writeapp.write.web",
+      servicesId: "app.texttext.web",
       privateKeyPem: privateKey.export({
         type: "pkcs8",
         format: "pem",
@@ -55,7 +55,7 @@ describe("production authentication", () => {
     expect(payload).toMatchObject({
       iss: "52WM463HR2",
       aud: "https://appleid.apple.com",
-      sub: "net.writeapp.write.web",
+      sub: "app.texttext.web",
     });
     expect(payload.exp - payload.iat).toBe(180 * 24 * 60 * 60);
     expect(
@@ -76,7 +76,7 @@ describe("production authentication", () => {
     expect(resolveAppleClientSecret()).toBe("explicit-secret");
 
     delete process.env.AUTH_APPLE_SECRET;
-    process.env.AUTH_APPLE_ID = "net.writeapp.write.web";
+    process.env.AUTH_APPLE_ID = "app.texttext.web";
     process.env.AUTH_APPLE_TEAM_ID = "52WM463HR2";
     process.env.AUTH_APPLE_KEY_ID = "J6958HV8HB";
     process.env.AUTH_APPLE_PRIVATE_KEY = "not-a-private-key";
@@ -86,20 +86,20 @@ describe("production authentication", () => {
     expect(error).toHaveBeenCalledOnce();
   });
 
-  it("keeps email identities stable and magic links Texttext-only", () => {
+  it("keeps email identities stable and magic links TextText-only", () => {
     const url =
-      "https://texttext.app/api/auth/callback/nodemailer?token=a%26b";
+      "https://TextText.app/api/auth/callback/nodemailer?token=a%26b";
     const text = verificationText(url);
     const html = verificationHtml(url);
 
     expect(emailSub("  Person@Example.COM ")).toBe(
       "email:person@example.com",
     );
-    expect(text).toContain("Sign in to Texttext");
+    expect(text).toContain("Sign in to TextText");
     expect(text).toContain(url);
-    expect(html).toContain("Sign in to Texttext");
+    expect(html).toContain("Sign in to TextText");
     expect(html).toContain(
-      "https://texttext.app/api/auth/callback/nodemailer?token=a%26b",
+      "https://TextText.app/api/auth/callback/nodemailer?token=a%26b",
     );
     const legacyHost = ["ramine", "net"].join(".");
     expect(html).not.toContain(legacyHost);

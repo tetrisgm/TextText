@@ -1,27 +1,27 @@
 # Apple Workspace Boundary
 
 > Historical note: the iCloud Drive workspace described in the first part of
-> this file is retired. The shipped Finder surface is the Texttext File Provider
+> this file is retired. The shipped Finder surface is the TextText File Provider
 > documented in [file-provider.md](file-provider.md) and
 > [design/native-folder-sync.md](design/native-folder-sync.md). Do not provision
 > the current app from the legacy iCloud instructions below.
 
-Texttext for macOS uses a normal folder as the local source of truth for user
+TextText for macOS uses a normal folder as the local source of truth for user
 content. The preferred location is:
 
 ```text
-~/Library/Mobile Documents/com~apple~CloudDocs/Texttext
+~/Library/Mobile Documents/com~apple~CloudDocs/TextText
 ```
 
-Finder shows this as `iCloud Drive/Texttext`. When iCloud Drive is unavailable,
-Texttext falls back to:
+Finder shows this as `iCloud Drive/TextText`. When iCloud Drive is unavailable,
+TextText falls back to:
 
 ```text
-~/Texttext Local
+~/TextText Local
 ```
 
 The status window and activity log surface the fallback state. The fallback is
-not `~/Texttext`, because that path is the legacy mirror migration source.
+not `~/TextText`, because that path is the legacy mirror migration source.
 
 ## Folder Sync
 
@@ -29,11 +29,11 @@ iCloud Drive is responsible for moving files between Macs, materializing files
 that are not downloaded yet, conflict files created by the system, storage
 optimization, and Finder visibility.
 
-Texttext does not use CloudKit, File Provider, or an iCloud container entitlement
+TextText does not use CloudKit, File Provider, or an iCloud container entitlement
 for this workspace. The app is a non-sandboxed Developer ID app and accesses
 the visible iCloud Drive path through `FileManager`.
 
-Texttext coordinates reads and writes with `NSFileCoordinator` and registers an
+TextText coordinates reads and writes with `NSFileCoordinator` and registers an
 `NSFilePresenter` for the workspace root. It also watches the folder with
 FSEvents and observes ubiquitous item changes with `NSMetadataQuery`.
 
@@ -42,7 +42,7 @@ FSEvents and observes ubiquitous item changes with `NSMetadataQuery`.
 The local workspace is ordinary files and folders:
 
 ```text
-Texttext/
+TextText/
   Blogs/
     <handle>/
       blog.yaml
@@ -57,24 +57,24 @@ Texttext/
   Drafts/
     draft.md
   Media/
-  .write/
+  .texttext/
     workspace.yaml
     state/
-  .write-local.nosync/
+  .texttext-local.nosync/
     state/
       sync-marker.txt
 ```
 
-Markdown files carry normal Texttext front matter plus local identity keys:
+Markdown files carry normal TextText front matter plus local identity keys:
 
 ```yaml
-writeId: "server-post-id"
-writeFolderId: "server-folder-id"
-writeKind: "note"
+textTextId: "server-post-id"
+textTextFolderId: "server-folder-id"
+textTextKind: "note"
 ```
 
 Those keys are local identity metadata. Before comparing content hashes or
-sending file bodies to the backend, Texttext strips them so server hashes still
+sending file bodies to the backend, TextText strips them so server hashes still
 match the server-rendered markdown vocabulary.
 
 Phase 1 mirrors markdown content. Media directories are visible scaffolding, but
@@ -86,12 +86,12 @@ downloaded into `Media/`; that belongs to the later publishing/media sync work.
 Application Support stores the per-device sync index that maps stable server
 item ids to relative file paths, content hashes, modification times, folder
 ids, and item kinds. It is a cache and can be rebuilt by scanning markdown
-files for `writeId` front matter, but a rebuilt scan is not treated as the
+files for `textTextId` front matter, but a rebuilt scan is not treated as the
 three-way delete baseline.
 
-No user-authored markdown body exists only in `.write` or in Application
+No user-authored markdown body exists only in `.texttext` or in Application
 Support. Application Support still stores credentials, cached account metadata,
-and the authoritative per-device sync index. The `.write-local.nosync` marker
+and the authoritative per-device sync index. The `.texttext-local.nosync` marker
 is also per-device and is not intended to sync through iCloud.
 
 ## Publishing Backend
@@ -110,14 +110,14 @@ sync API.
 Files created, edited, renamed, moved, or deleted in Finder are detected by the
 folder watcher and by index reconciliation during sync passes.
 
-When a file with a known `writeId` moves or is renamed, Texttext updates the local
+When a file with a known `textTextId` moves or is renamed, TextText updates the local
 index instead of treating the old path as a delete and the new path as a new
 post. A rename also updates the markdown `slug` front matter so the existing
 sync API can carry the change onward.
 
 Deletes remain intentional only when the per-device workspace marker under
-`.write-local.nosync/state` is present. If the whole workspace appears newly
-created or lost, Texttext drops the index and mirrors from the backend instead of
+`.texttext-local.nosync/state` is present. If the whole workspace appears newly
+created or lost, TextText drops the index and mirrors from the backend instead of
 propagating mass deletion.
 
 A server delete requires the full ladder to pass: the marker exists and its
@@ -148,7 +148,7 @@ until it is actually published, which avoids backdating.
 
 One asymmetry to know: file CONTENT is local-canonical, but the file NAME
 follows the server's slug. A slug change on the server renames the local
-file; the native editor follows those renames by writeId.
+file; the native editor follows those renames by textTextId.
 
 When the backend is unreachable, nothing local changes: passes abort early,
 report the pause in the activity log, and every local mutation the engine
@@ -164,7 +164,7 @@ ignored-ranges delegate). Front matter never enters the text view and
 round-trips byte-for-byte. Saves are compare-and-swap: an external write that
 landed unseen is preserved as a conflicted copy; identity-only rewrites from
 the sync engine merge into the buffer silently; a save that fails at window
-close preserves the buffer under `.write-local.nosync/recovery/`.
+close preserves the buffer under `.texttext-local.nosync/recovery/`.
 
 ## App Intents and Spotlight
 
@@ -175,9 +175,9 @@ completeness test from it. Intents operate on local workspace files only.
 
 Core Spotlight indexes the workspace incrementally from the engine's sync
 index (title, body, kind, blog, folder, publication state, keywords, public
-URL), never reads `.write/` metadata, never force-downloads evicted files,
+URL), never reads `.texttext/` metadata, never force-downloads evicted files,
 and reconciles persisted state across launches and root changes. Results and
-`write-app://item/<writeId>` links open the item directly.
+`texttext-app://item/<textTextId>` links open the item directly.
 
 Shortcuts discovery: the release build embeds
 `Contents/Resources/Metadata.appintents`, produced by an xcodebuild
@@ -192,7 +192,7 @@ app-group inbox. The Share extension serializes each shared item into
 `<app group container>/Inbox/<uuid>/` as a JSON sidecar plus optional
 payload (payload written first, JSON last, so a half-written item is
 invisible), and the main app drains the inbox on launch and while running,
-filing each item through `WriteWorkspaceCore`. Notes, drafts, and bookmarks
+filing each item through `TextTextWorkspaceCore`. Notes, drafts, and bookmarks
 become markdown (a bookmark's URL rides in the `links:` list, not a `url:`
 key the server drops); appends are coordinated read-modify-writes that
 preserve the existing body; files land in `Media/` with unique suffixes.
@@ -205,7 +205,7 @@ The extensions ship embedded as of v0.28. `mac/scripts/build-app.sh` calls
 `mac/scripts/embed-extensions.sh`, which links each `.appex` executable from
 the SwiftPM sources with an `_NSExtensionMain` entry point, embeds the
 Developer ID provisioning profile that authorizes the app group
-(`group.net.writeapp.write`), and signs each inside-out with hardened runtime
+(`group.app.texttext`), and signs each inside-out with hardened runtime
 and its sandbox + app-group entitlements before the main app is signed. It is
 a no-op unless the two profiles are present in `mac/profiles/` and a real
 Developer ID identity is in use, so profile-less and ad-hoc builds still
@@ -213,7 +213,7 @@ succeed.
 
 The main app remains non-sandboxed but carries the
 `com.apple.security.application-groups` entitlement for
-`group.net.writeapp.write`. The File Provider, Share, and Quick Look extensions
+`group.app.texttext`. The File Provider, Share, and Quick Look extensions
 carry the same group. That signed entitlement is the supported handoff boundary
 for workspace connection data and extension inboxes.
 
@@ -224,26 +224,26 @@ means re-running the Developer portal steps below and dropping fresh
 Owner steps to embed the extensions:
 
 1. In the Apple Developer portal, register an App Group (for example
-   `group.net.writeapp.write`) and add it to the App IDs for the main app
-   (`net.writeapp.write.mac`), the File Provider extension
-   (`net.writeapp.write.mac.fileprovider`), the share extension
-   (`net.writeapp.write.mac.share`), and the Quick Look extension
-   (`net.writeapp.write.mac.quicklook`). Create and download Developer ID
+   `group.app.texttext`) and add it to the App IDs for the main app
+   (`app.texttext.mac`), the File Provider extension
+   (`app.texttext.mac.fileprovider`), the share extension
+   (`app.texttext.mac.share`), and the Quick Look extension
+   (`app.texttext.mac.quicklook`). Create and download Developer ID
    provisioning profiles that include the group for each.
-2. Substitute the real group id for the `WRITE_APP_GROUP` placeholder in
-   `mac/Info.plist` (`WriteAppGroupIdentifier`) and in both
+2. Substitute the real group id for the `TEXTTEXT_APP_GROUP` placeholder in
+   `mac/Info.plist` (`TextTextAppGroupIdentifier`) and in both
    `mac/Extensions/*/`.entitlements.template files, and add
    `com.apple.security.application-groups` with that id to the main app's
-   `mac/write.entitlements`.
+   `mac/texttext.entitlements`.
 3. Compile each extension as an `.appex`: link the extension sources against
-   their `WriteShareCore`/`WriteQuickLookCore` library plus a
+   their `TextTextShareCore`/`TextTextQuickLookCore` library plus a
    `-e _NSExtensionMain` entry point, place the built binary and its
-   `Info.plist` under `Write.app/Contents/PlugIns/<Name>.appex/Contents/`,
+   `Info.plist` under `TextText.app/Contents/PlugIns/<Name>.appex/Contents/`,
    and embed the downloaded provisioning profile as `embedded.provisionprofile`.
 4. Sign inside-out with hardened runtime: each `.appex` with its
    sandbox + app-group entitlements first, then the main app. Verify with
    `codesign --verify --strict --deep` and
-   `pluginkit -m -p com.apple.share-services | grep -i write`, then notarize
+   `pluginkit -m -p com.apple.share-services | grep -i texttext`, then notarize
    the whole app as usual.
 
 ## Evals

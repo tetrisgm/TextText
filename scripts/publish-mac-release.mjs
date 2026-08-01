@@ -6,12 +6,12 @@
 //   node scripts/publish-mac-release.mjs <version>
 //
 // Uploads (immutable first, so nothing ever references a missing artifact):
-//   downloads/Texttext-<version>.zip  immutable, referenced by the appcast
+//   downloads/TextText-<version>.zip  immutable, referenced by the appcast
 //   downloads/appcast-<version>.xml signed immutable appcast
 //   src/generated/app-release.ts    website marker for appcast/download/version
 //
 // The appcast enclosure must already be the immutable Blob URL
-// <blobBase>/downloads/Texttext-<version>.zip (release.sh runs generate_appcast
+// <blobBase>/downloads/TextText-<version>.zip (release.sh runs generate_appcast
 // with --download-url-prefix "<blobBase>/downloads/").
 
 import pkg from "@next/env";
@@ -46,7 +46,7 @@ async function upload(pathname, body, contentType, allowOverwrite) {
   console.log("uploaded", pathname, "->", res.url);
 }
 
-const zip = await readFile(`mac/dist/Texttext-${version}.zip`);
+const zip = await readFile(`mac/dist/TextText-${version}.zip`);
 const appcast = await readFile("mac/dist/appcast.xml", "utf8");
 const buildNumber = Number(appcast.match(/<sparkle:version>(\d+)<\/sparkle:version>/)?.[1]);
 if (!Number.isInteger(buildNumber) || buildNumber <= 0) {
@@ -70,13 +70,13 @@ if (hardwareRequirements !== "arm64") {
   process.exit(1);
 }
 
-const zipUrl = `${blobBase}/downloads/Texttext-${version}.zip`;
+const zipUrl = `${blobBase}/downloads/TextText-${version}.zip`;
 const appcastUrl = `${blobBase}/downloads/appcast-${version}.xml`;
 
 // Immutable per-version zip first; the immutable appcast references it. The
 // stable aliases are maintained as best-effort human conveniences, but the app
 // and website never depend on overwriting them.
-await upload(`downloads/Texttext-${version}.zip`, zip, "application/zip", false);
+await upload(`downloads/TextText-${version}.zip`, zip, "application/zip", false);
 await upload(
   `downloads/appcast-${version}.xml`,
   appcast,
@@ -84,14 +84,14 @@ await upload(
   false,
 );
 await upload(
-  "downloads/Texttext.zip",
+  "downloads/TextText.zip",
   zip,
   "application/zip",
   true,
 );
 // Keep the legacy alias alive for old bookmarks and download pages. New release
 // manifests and appcasts never depend on it.
-await upload("downloads/Write.zip", zip, "application/zip", true);
+await upload("downloads/TextText.zip", zip, "application/zip", true);
 await upload(
   "downloads/appcast.xml",
   appcast,

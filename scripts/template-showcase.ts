@@ -18,12 +18,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { EXEMPLARS } from "./template-exemplars";
-import { TexttextClient } from "./texttext-live-client";
+import { TextTextClient } from "./texttext-live-client";
 
 const ORIGIN = process.env.SHOWCASE_ORIGIN ?? "http://localhost:3000";
-const OUT = ".write/showcase";
+const OUT = ".texttext/showcase";
 
-const client = new TexttextClient(ORIGIN);
+const client = new TextTextClient(ORIGIN);
 const tool = (token: string, name: string, args: Record<string, unknown>) =>
   client.tool(token, name, args);
 

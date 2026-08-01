@@ -1,7 +1,7 @@
 // The workspace change cursor behind GET /api/sync/v1/changes: `blogs.change_seq`,
 // a durable per-workspace high-water-mark. An AFTER trigger on posts and folders
 // bumps it to the row's `revision` on every insert or update, and `revision`
-// comes from the shared `write_change_seq` sequence, so the cursor moves on EVERY
+// comes from the shared `texttext_change_seq` sequence, so the cursor moves on EVERY
 // mutation (present or future), values are globally unique and strictly
 // increasing, and two changes in the same millisecond are distinct.
 //

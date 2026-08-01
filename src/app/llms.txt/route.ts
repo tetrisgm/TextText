@@ -1,4 +1,4 @@
-// Platform-level llms.txt: what Texttext is and where its machine surfaces
+// Platform-level llms.txt: what TextText is and where its machine surfaces
 // live, for agents landing on the root domain. Per-blog llms.txt (under
 // /@{username}/llms.txt) indexes one blog's posts; this file describes the
 // platform. Terse and factual on purpose.
@@ -19,9 +19,9 @@ export function GET() {
     (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write",
   );
 
-  const text = `# Texttext
+  const text = `# TextText
 
-Texttext is a publishing platform. Each blog is a workspace of folders, and every
+TextText is a publishing platform. Each blog is a workspace of folders, and every
 item in a folder is a Markdown file with metadata frontmatter and a body.
 Folder modes:
 
@@ -42,14 +42,14 @@ Base URL: ${origin}/@{username}
 
 ## If you are running on the user's Mac, use the CLI instead
 
-Texttext for macOS ships a "texttext" command inside the app bundle. It edits
+TextText for macOS ships a "texttext" command inside the app bundle. It edits
 documents as files, owns the document format so an edit cannot corrupt a
 package, writes atomically, and shows you in the open document as a named
 collaborator while you work. It needs no token, no port, and no OAuth, because
 it runs as the user.
 
 Check for it with "command -v texttext", falling back to
-/Applications/Texttext.app/Contents/MacOS/texttext.
+/Applications/TextText.app/Contents/MacOS/texttext.
 
   texttext ls                                    list documents
   texttext sections <doc>                        list the headings
@@ -163,7 +163,7 @@ ${WORKSPACE_TOOL_NAMES.length}-tool MCP contract.
 The workspace owner can connect an Anthropic or OpenAI API account and choose
 the model used by the in-app assistant. It calls the same
 ${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the signed-in
-page and does not use Texttext's MCP endpoint. ChatGPT, Claude, Cursor, and
+page and does not use TextText's MCP endpoint. ChatGPT, Claude, Cursor, and
 other hosts can connect as external MCP clients.
 
 Human setup: ${origin}/docs/ai. Approval flow: ${origin}/api/mcp advertises OAuth from its 401.

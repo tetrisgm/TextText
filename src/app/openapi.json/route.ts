@@ -24,13 +24,13 @@ function openApiDocument(origin: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Texttext AI connector API",
+      title: "TextText AI connector API",
       version: "1.0.0",
-      summary: "OAuth setup and markdown content actions for Texttext.",
+      summary: "OAuth setup and markdown content actions for TextText.",
       description:
         "Import this document into ChatGPT Actions or another AI connector. " +
         "These actions use the sync HTTP API and require the sync scope. " +
-        `Texttext also offers a read-only OAuth scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
+        `TextText also offers a read-only OAuth scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
         "but this document is a smaller action surface, not the complete " +
         `${WORKSPACE_TOOL_COUNT}-tool MCP contract. OAuth uses authorization code with PKCE S256, ` +
         "one-hour access tokens, and rotating refresh tokens.",
@@ -634,7 +634,7 @@ function openApiDocument(origin: string) {
           additionalProperties: false,
           required: ["schema", "blog", "folders"],
           properties: {
-            schema: { type: "string", enum: ["write.workspace.v1"] },
+            schema: { type: "string", enum: ["texttext.workspace.v1"] },
             blog: { $ref: "#/components/schemas/Blog" },
             folders: {
               type: "array",
@@ -716,7 +716,7 @@ function openApiDocument(origin: string) {
           additionalProperties: false,
           required: ["schema", "folder", "items"],
           properties: {
-            schema: { type: "string", enum: ["write.folder.v1"] },
+            schema: { type: "string", enum: ["texttext.folder.v1"] },
             folder: { $ref: "#/components/schemas/ManifestFolder" },
             items: {
               type: "array",
@@ -810,18 +810,18 @@ function openApiDocument(origin: string) {
           summary: "Draft article markdown",
           value:
             "---\n" +
-            "schema: write.markdown-file.v1\n" +
+            "schema: texttext.markdown-file.v1\n" +
             "kind: article\n" +
             "title: Draft from ChatGPT\n" +
             "status: draft\n" +
             "---\n\n" +
-            "Write the body here.\n",
+            "Draft the body here.\n",
         },
         RenderedMarkdownFile: {
           summary: "Rendered markdown file",
           value:
             "---\n" +
-            "schema: write.markdown-file.v1\n" +
+            "schema: texttext.markdown-file.v1\n" +
             "folder: alice\n" +
             "folderName: Alice Writes\n" +
             "mode: blog\n" +

@@ -2,19 +2,19 @@ version: 1
 entities:
   - id: Document
     displayName: Document
-    doc: Local markdown document in the Texttext workspace.
+    doc: Local markdown document in the TextText workspace.
   - id: Folder
     displayName: Folder
-    doc: Local folder in the Texttext workspace.
+    doc: Local folder in the TextText workspace.
   - id: Blog
     displayName: Blog
-    doc: Local blog folder in the Texttext workspace.
+    doc: Local blog folder in the TextText workspace.
   - id: Publication
     displayName: Publication
     doc: Published state for a local markdown document.
   - id: Bookmark
     displayName: Bookmark
-    doc: Local markdown bookmark in the Texttext workspace.
+    doc: Local markdown bookmark in the TextText workspace.
 intents:
   - id: createDocument
     displayName: Create document

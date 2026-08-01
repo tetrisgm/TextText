@@ -35,7 +35,7 @@ vi.mock("@/lib/store", () => ({
 import { POST } from "@/app/api/workspace/trash/route";
 
 function request(body: unknown) {
-  return new Request("https://texttext.app/api/workspace/trash", {
+  return new Request("https://TextText.app/api/workspace/trash", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

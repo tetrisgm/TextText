@@ -1,10 +1,10 @@
 #!/bin/bash
-# Install the bounded Texttext delivery controller. launchd invokes one pass
+# Install the bounded TextText delivery controller. launchd invokes one pass
 # every five minutes; the script never contains its own polling loop.
 set -euo pipefail
 
-LABEL="net.writeapp.write.autobuild"
-REPO="$HOME/dev/write"
+LABEL="app.texttext.autobuild"
+REPO="$HOME/dev/TextText"
 SCRIPT="$REPO/release/autobuild.sh"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 

@@ -49,7 +49,7 @@ function htmlEscape(value: string): string {
 
 export function verificationText(url: string): string {
   return [
-    "Sign in to Texttext",
+    "Sign in to TextText",
     "",
     "Use this secure link to finish signing in:",
     url,
@@ -68,7 +68,7 @@ export function verificationHtml(url: string): string {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <meta name="supported-color-schemes" content="light dark">
-    <title>Sign in to Texttext</title>
+    <title>Sign in to TextText</title>
     <style>
       :root { color-scheme: light dark; supported-color-schemes: light dark; }
       body { margin: 0; padding: 0; background: #f5f5f7; color: #1d1d1f; }
@@ -95,8 +95,8 @@ export function verificationHtml(url: string): string {
   <body>
     <div class="wrap">
       <main class="panel">
-        <p class="wordmark">Texttext</p>
-        <h1>Sign in to Texttext</h1>
+        <p class="wordmark">TextText</p>
+        <h1>Sign in to TextText</h1>
         <p>Use this secure link to finish signing in. It works once and expires after 24 hours.</p>
         <p><a class="button" href="${safeUrl}">Sign in</a></p>
         <p class="link"><a href="${safeUrl}">${safeUrl}</a></p>
@@ -107,7 +107,7 @@ export function verificationHtml(url: string): string {
 </html>`;
 }
 
-export async function sendWriteVerificationRequest({
+export async function sendTextTextVerificationRequest({
   identifier,
   url,
   provider,
@@ -120,7 +120,7 @@ export async function sendWriteVerificationRequest({
   const result = await transport.sendMail({
     to: identifier,
     from: provider.from,
-    subject: "Sign in to Texttext",
+    subject: "Sign in to TextText",
     text: verificationText(url),
     html: verificationHtml(url),
   });

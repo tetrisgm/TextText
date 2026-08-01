@@ -68,7 +68,7 @@ NULL (any existing log is treated as "unknown provenance", so the first reopen
 reseeds once, which is safe). Re-run note goes in the migrate script, same
 pattern as `scripts/migrate-add-revision.mjs`.
 
-### Texttext paths set provenance
+### TextText paths set provenance
 
 - **Collab materialization** (the Yjs-shell autosave via `savePostContentPatch`,
   AND `POST /api/collab/{id}/materialize`): set `collab_body_epoch = collab_epoch`
@@ -133,7 +133,7 @@ Its row is a complete, valid update in an old generation, never an orphan.
 ## Implementation wrinkle found 2026-07-16 (revision is trigger-assigned)
 
 `posts.revision` is bumped by a `BEFORE UPDATE` trigger (`bump_revision()` sets
-`NEW.revision := nextval('write_change_seq')`), so the new revision does not
+`NEW.revision := nextval('texttext_change_seq')`), so the new revision does not
 exist at SET time. That means the "record the revision the log materialized from"
 variant cannot set `collab_materialized_revision = <new revision>` atomically in
 the same UPDATE. Two viable atomic options: (a) extend `bump_revision()` to also

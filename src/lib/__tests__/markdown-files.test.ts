@@ -157,7 +157,7 @@ describe("render -> parse round trip", () => {
   it.each(menagerie)("round-trips %s", (_label, post) => {
     const file = renderPostMarkdownFile({
       blog,
-      canonicalUrl: `https://write.example/t/demo/${post.slug}`,
+      canonicalUrl: `https://texttext.example/t/demo/${post.slug}`,
       post,
     });
     const parsed = parsePostMarkdownFile(file);
@@ -388,12 +388,12 @@ describe("unknown keys", () => {
     const parsed = parsePostMarkdownFile(
       [
         "---",
-        'schema: "write.markdown-file.v1"',
+        'schema: "texttext.markdown-file.v1"',
         'workspace: "The Demo Broadsheet"',
         'folder: "demo"',
         'folderName: "The Demo Broadsheet"',
         'mode: "blog"',
-        'canonical: "https://write.example/t/demo/x"',
+        'canonical: "https://texttext.example/t/demo/x"',
         "---",
         "x",
       ].join("\n"),
@@ -419,13 +419,13 @@ describe("files without frontmatter", () => {
 describe("folder manifest v2", () => {
   const posts = [fullArticle, project, untitledDraft];
   const postUrlFor = (post: Post) =>
-    `https://write.example/t/demo/${post.slug}`;
+    `https://texttext.example/t/demo/${post.slug}`;
   const fileUrlFor = (post: Post) =>
-    `https://write.example/t/demo/${post.slug}/index.md`;
+    `https://texttext.example/t/demo/${post.slug}/index.md`;
 
   it("carries folder identity, mode, and activeView", () => {
     const manifest = renderFolderManifest(blog, posts, { folder });
-    expect(manifest.schema).toBe("write.folder.v1");
+    expect(manifest.schema).toBe("texttext.folder.v1");
     expect(manifest.folder.handle).toBe("demo");
     expect(manifest.folder.name).toBe("The Demo Broadsheet");
     expect(manifest.folder.id).toBe("folder-1");
@@ -463,10 +463,10 @@ describe("folder manifest v2", () => {
     expect(item.createdAt).toBe("2026-06-30T08:00:00.000Z");
     expect(item.updatedAt).toBe("2026-07-01T09:30:00.000Z");
     expect(item.url).toBe(
-      "https://write.example/t/demo/everything-bagel/index.md",
+      "https://texttext.example/t/demo/everything-bagel/index.md",
     );
     expect(item.canonicalUrl).toBe(
-      "https://write.example/t/demo/everything-bagel",
+      "https://texttext.example/t/demo/everything-bagel",
     );
     expect(item.hash).toBe(
       markdownFileHash(

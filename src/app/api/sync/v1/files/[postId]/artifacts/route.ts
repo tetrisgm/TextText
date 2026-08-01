@@ -75,7 +75,7 @@ function inlineArtifacts(post: Post, handle: string, postId: string): Artifact[]
     if (
       !url ||
       screenshotURLs.has(url) ||
-      !isWriteHostedAssetURL(url, handle, postId)
+      !isTextTextHostedAssetURL(url, handle, postId)
     ) {
       return;
     }
@@ -143,7 +143,7 @@ function sequence(value: number): string {
   return String(value).padStart(3, "0");
 }
 
-function isWriteHostedAssetURL(
+function isTextTextHostedAssetURL(
   raw: string,
   handle: string,
   postId: string,

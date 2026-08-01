@@ -27,9 +27,9 @@ export const MCP_SUPPORTED_VERSIONS = [MCP_PROTOCOL_VERSION] as const;
 
 export const MCP_SERVER_INFO = {
   name: "texttext",
-  title: "Texttext",
+  title: "TextText",
   version: "2.0.0",
-  websiteUrl: "https://texttext.app",
+  websiteUrl: "https://TextText.app",
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -61,7 +61,7 @@ export function AgentIntegrationHome({
             Keep a document open while your agents work in it
           </h2>
           <span>
-            Connect the AI tools you already use. Texttext keeps the document
+            Connect the AI tools you already use. TextText keeps the document
             visible, editable, and current while Claude, Codex, ChatGPT, or
             another MCP client works beside you.
           </span>
@@ -134,7 +134,7 @@ export function AgentIntegrationHome({
         <ol>
           <li>
             <strong>Connect</strong>
-            <span>Approve Texttext in your AI tool once.</span>
+            <span>Approve TextText in your AI tool once.</span>
           </li>
           <li>
             <strong>Open a document</strong>

@@ -93,7 +93,7 @@ function patchRequest(
 ): Request {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (ifMatch) headers.set(header, ifMatch);
-  return new Request(`https://write.example/api/sync/v1/files/${postId}`, {
+  return new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
     method: "PATCH",
     headers,
     body: JSON.stringify(body),
@@ -107,7 +107,7 @@ function mutationRequest(
   const headers = new Headers();
   if (ifMatch) headers.set("If-Match", ifMatch);
   if (method === "PUT") headers.set("Content-Type", "text/markdown");
-  return new Request(`https://write.example/api/sync/v1/files/${postId}`, {
+  return new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
     method,
     headers,
     body: method === "PUT" ? "---\ntype: article\n---\n\nBody" : undefined,
@@ -132,7 +132,7 @@ function structuredMutationRequest(
       theme: { accent: "#0066cc" as const },
     },
   };
-  return new Request(`https://write.example/api/sync/v1/files/${postId}`, {
+  return new Request(`https://texttext.example/api/sync/v1/files/${postId}`, {
     method,
     headers: {
       "Content-Type": SYNC_DOCUMENT_CONTENT_TYPE,
@@ -187,7 +187,7 @@ describe("sync file PATCH", () => {
       patchRequest(
         { title: "Changed" },
         `"${renderSyncFile(blog, post).hash}"`,
-        "X-Write-If-Match",
+        "X-TextText-If-Match",
       ),
       { params: Promise.resolve({ postId }) },
     );
@@ -432,7 +432,7 @@ describe("sync file PUT during a live co-editing session", () => {
 
   it("serves the complete canonical document to textpack clients", async () => {
     const request = new Request(
-      `https://write.example/api/sync/v1/files/${postId}`,
+      `https://texttext.example/api/sync/v1/files/${postId}`,
       { headers: { Accept: SYNC_DOCUMENT_CONTENT_TYPE } },
     );
 

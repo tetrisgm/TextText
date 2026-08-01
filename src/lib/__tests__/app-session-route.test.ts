@@ -25,14 +25,14 @@ function request(
     appHeader?: string;
   } = {},
 ) {
-  const origin = options.origin ?? "https://texttext.app";
+  const origin = options.origin ?? "https://TextText.app";
   const url = new URL("/api/app/session", origin);
   if (options.next) url.searchParams.set("next", options.next);
   return new NextRequest(url, {
     method: "POST",
     headers: {
       authorization: `Bearer ${options.token ?? appToken}`,
-      "x-write-app": options.appHeader ?? "1",
+      "x-texttext-app": options.appHeader ?? "1",
     },
   });
 }
@@ -57,7 +57,7 @@ describe("app session route", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "https://texttext.app/t/workspace/post?edit=1",
+      new URL("https://TextText.app/t/workspace/post?edit=1").href,
     );
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toContain(

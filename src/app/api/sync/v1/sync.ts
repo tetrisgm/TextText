@@ -25,8 +25,8 @@ import {
   type RenderFolderManifestOptions,
 } from "@/lib/markdown-files";
 
-export const WORKSPACE_SCHEMA = "write.workspace.v1";
-export const WRITE_FILE_REPRESENTATION_HEADER = "Write-File-Representation";
+export const WORKSPACE_SCHEMA = "texttext.workspace.v1";
+export const TEXTTEXT_FILE_REPRESENTATION_HEADER = "TextText-File-Representation";
 
 const SYNC_FILE_EXTENSIONS: Record<FileRepresentation, string> = {
   textbundle: ".textbundle",

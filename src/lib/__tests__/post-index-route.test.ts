@@ -40,13 +40,13 @@ describe("historical index.md routes", () => {
   it("redirects one visible historical alias without permanent caching", async () => {
     mocks.resolvePostSlug.mockResolvedValue({ kind: "history", post });
     const response = await GET(
-      new Request("https://texttext.app/@writer/old-name/index.md"),
+      new Request("https://TextText.app/@writer/old-name/index.md"),
       { params: Promise.resolve({ handle: blog.handle, slug: "old-name" }) },
     );
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "https://texttext.app/@writer/canonical/index.md",
+      new URL("https://TextText.app/@writer/canonical/index.md").href,
     );
     expect(response.headers.get("cache-control")).toContain("no-store");
   });
@@ -54,7 +54,7 @@ describe("historical index.md routes", () => {
   it("keeps the internal sync revision out of public Markdown", async () => {
     mocks.resolvePostSlug.mockResolvedValue({ kind: "exact", post });
     const response = await GET(
-      new Request("https://texttext.app/@writer/canonical/index.md"),
+      new Request("https://TextText.app/@writer/canonical/index.md"),
       { params: Promise.resolve({ handle: blog.handle, slug: post.slug }) },
     );
 
@@ -68,7 +68,7 @@ describe("historical index.md routes", () => {
       post: { ...post, type: "bookmark", status: "draft" },
     });
     const response = await GET(
-      new Request("https://texttext.app/@writer/private-old/index.md"),
+      new Request("https://TextText.app/@writer/private-old/index.md"),
       { params: Promise.resolve({ handle: blog.handle, slug: "private-old" }) },
     );
 
@@ -78,7 +78,7 @@ describe("historical index.md routes", () => {
   it("fails closed for an ambiguous alias", async () => {
     mocks.resolvePostSlug.mockResolvedValue({ kind: "ambiguous" });
     const response = await GET(
-      new Request("https://texttext.app/@writer/shared/index.md"),
+      new Request("https://TextText.app/@writer/shared/index.md"),
       { params: Promise.resolve({ handle: blog.handle, slug: "shared" }) },
     );
 

@@ -11,7 +11,7 @@ The buildable plan for `docs/archive/2026-07-28-decision-local-mcp-trust.md`. Wr
 after a de-risking spike. Read the decision doc first for why; this is what and
 in what order.
 
-Baseline: `main` at `9afd1e7`, Texttext 0.142 build 148 shipped and installed.
+Baseline: `main` at `9afd1e7`, TextText 0.142 build 148 shipped and installed.
 
 Three units, in order. Unit A ships alone and closes a live hole. Unit B is
 independent of the auth decision. Unit C is the product feature and depends on
@@ -174,12 +174,12 @@ connect command does not change.**
 2. **There is no audience column, so widening (1) naively creates audience
    confusion.** `api_tokens` has `scopes` but no audience
    (`src/lib/db/schema.ts:254-264`). Without one, a token minted for the
-   loopback is a fully valid credential against `https://texttext.app/api/mcp`
+   loopback is a fully valid credential against `https://TextText.app/api/mcp`
    **from anywhere on the internet**. That is the single biggest new risk Tier 1
    introduces, because it moves a workspace credential into a local agent's
    config file. Add a nullable `audience` column, set it from the validated
    `resource` at mint (`src/lib/oauth.ts:243-250` and the insert at `:375-395`),
-   return it from `resolveApiToken`, and have `verifyWriteApiToken`
+   return it from `resolveApiToken`, and have `verifyTextTextApiToken`
    (`src/lib/mcp/auth.ts:22-46`) reject loopback-audience tokens while
    introspection rejects hosted-audience ones.
 
@@ -203,7 +203,7 @@ Three options were evaluated. **Choose (b).**
   served offline from an in-memory manifest, require a network round trip. And
   decisively, it cannot answer the question Tier 1 exists to answer: identity
   still arrives from the same untrusted process that supplied `clientInfo`.
-- **(b) The app introspects against texttext.app: chosen.** Two distinct
+- **(b) The app introspects against TextText.app: chosen.** Two distinct
   principals, no deputy. Works windowless. No secret in page JavaScript. Yields
   verified client identity for free. Same validator serves the fallback path.
 - **(c) A local-only secret: emergency fallback only.** No server-issued
@@ -247,14 +247,14 @@ serves both forms:
 GET /.well-known/oauth-protected-resource/mcp
 GET /.well-known/oauth-protected-resource
 { "resource": "http://127.0.0.1:47118/mcp",
-  "authorization_servers": ["https://texttext.app"],
+  "authorization_servers": ["https://TextText.app"],
   "scopes_supported": ["read", "sync"],
   "bearer_methods_supported": ["header"],
-  "resource_name": "Texttext on this Mac" }
+  "resource_name": "TextText on this Mac" }
 ```
 
 `authorization_servers` comes from `resolveServerOrigin(credentials:)`
-(`mac/Sources/Write/Constants.swift:24-41`), not a hardcoded string, so dev
+(`mac/Sources/TextText/Constants.swift:24-41`), not a hardcoded string, so dev
 builds pointing at `http://localhost:3000` work. Plus the 401 with
 `WWW-Authenticate` that starts the chain.
 
@@ -277,7 +277,7 @@ it already declares out of scope. Do not imply `read` is server-enforced the way
 `src/lib/agent-integrations.ts:2` (unchanged value, but the docs around it),
 `ConnectPanel.tsx:61-65`, `src/app/docs/ai/page.tsx:239-246`, `CLAUDE.md:79`,
 `docs/ai-sidebar-architecture.md:111-115` and `:148-150` (the line that says
-Claude Code and Codex can use it "without a Texttext token" is the doctrine this
+Claude Code and Codex can use it "without a TextText token" is the doctrine this
 rewrites), `docs/codex/HANDOFF.md:65-66` and `:121`.
 
 ---

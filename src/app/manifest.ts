@@ -5,8 +5,8 @@ const description =
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Texttext",
-    short_name: "Texttext",
+    name: "TextText",
+    short_name: "TextText",
     description,
     start_url: "/",
     scope: "/",

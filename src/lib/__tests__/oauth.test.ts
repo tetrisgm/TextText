@@ -227,9 +227,9 @@ describe("OAuth scopes and metadata", () => {
   });
 
   it("advertises refresh rotation and both scopes", () => {
-    expect(oauthAuthorizationServerMetadata("https://write.example/")).toMatchObject(
+    expect(oauthAuthorizationServerMetadata("https://texttext.example/")).toMatchObject(
       {
-        issuer: "https://write.example",
+        issuer: "https://texttext.example",
         grant_types_supported: ["authorization_code", "refresh_token"],
         scopes_supported: ["read", "sync"],
       },

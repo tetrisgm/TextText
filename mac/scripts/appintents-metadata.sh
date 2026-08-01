@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build App Intents metadata for a SwiftPM-built Texttext.app bundle.
+# Build App Intents metadata for a SwiftPM-built TextText.app bundle.
 #
 # Usage:
 #   mac/scripts/appintents-metadata.sh <built-binary-path> <bundle-path>
@@ -8,7 +8,7 @@
 # Contents/MacOS and before codesigning the app bundle.
 #
 # Const values come from an xcodebuild pass (SwiftPM cannot emit them):
-# build-app.sh builds the Write scheme with SWIFT_EMIT_CONST_VALUES=YES into
+# build-app.sh builds the TextText scheme with SWIFT_EMIT_CONST_VALUES=YES into
 # a derived-data cache and passes the resulting .swiftconstvalues via
 # APPINTENTS_SWIFT_CONST_VALS_LIST. Note the extractor also requires
 # compile-time-literal spellings, e.g.
@@ -35,7 +35,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MAC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-TMP="${TMPDIR:-/tmp}/write-appintents-$$"
+TMP="${TMPDIR:-/tmp}/texttext-appintents-$$"
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -54,7 +54,7 @@ RESOURCES="$APP/Contents/Resources"
 METADATA="$RESOURCES/Metadata.appintents"
 
 if [ -z "${APPINTENTS_SOURCE_FILE_LIST:-}" ]; then
-  find "$MAC_DIR/Sources/Write" "$MAC_DIR/Sources/WriteAppIntents" -name '*.swift' | sort > "$SOURCE_LIST"
+  find "$MAC_DIR/Sources/TextText" "$MAC_DIR/Sources/TextTextAppIntents" -name '*.swift' | sort > "$SOURCE_LIST"
 fi
 if [ -z "${APPINTENTS_SWIFT_CONST_VALS_LIST:-}" ]; then
   # SwiftPM builds can emit per-module const values with
@@ -68,7 +68,7 @@ set +e
 "$PROCESSOR" \
   --output "$RESOURCES" \
   --toolchain-dir "$TOOLCHAIN_DIR" \
-  --module-name Write \
+  --module-name TextText \
   --sdk-root "$SDK_ROOT" \
   --xcode-version "$XCODE_VERSION" \
   --platform-family macOS \

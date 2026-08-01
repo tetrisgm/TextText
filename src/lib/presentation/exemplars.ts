@@ -264,7 +264,7 @@ export const EXEMPLARS: Exemplar[] = [
   },
   {
     template: "texttext.changelog",
-    title: "Texttext 0.154",
+    title: "TextText 0.154",
     body: `The document-types release. Documents now have real shapes, built from typed fields and rendered by the engine.`,
     fields: {
       version: "0.154",
@@ -559,13 +559,13 @@ export const EXEMPLARS: Exemplar[] = [
       links: [
         {
           title: "Documents now have shapes",
-          url: "https://texttext.app/changelog",
+          url: "https://TextText.app/changelog",
           blurb:
             "The 0.154 release: 23 looks, typed fields, folders that organize themselves.",
         },
         {
           title: "The case for slow publishing",
-          url: "https://texttext.app/@demo/slow-publishing",
+          url: "https://TextText.app/@demo/slow-publishing",
           blurb:
             "The writing worth reading in five years is the writing someone sat on for five weeks.",
         },
@@ -587,7 +587,7 @@ export const EXEMPLARS: Exemplar[] = [
       currently: [
         {
           area: "Building",
-          detail: "Texttext, a document workspace where every page has a shape",
+          detail: "TextText, a document workspace where every page has a shape",
         },
         { area: "Reading", detail: "Piranesi, slowly, on purpose" },
         {

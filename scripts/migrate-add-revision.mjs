@@ -1,5 +1,5 @@
 // One-shot migration: add the monotonic `revision` version column to posts and
-// folders, backed by a shared `write_change_seq` sequence. Revision is the
+// folders, backed by a shared `texttext_change_seq` sequence. Revision is the
 // optimistic-lock (compare-and-swap) token for sync writes and the source of
 // the workspace change cursor. Idempotent (IF NOT EXISTS), so re-running is safe.
 //
@@ -30,21 +30,43 @@ function loadDatabaseUrl() {
 async function main() {
   const sql = neon(loadDatabaseUrl());
 
-  console.log("Creating sequence write_change_seq (if missing)...");
-  await sql`CREATE SEQUENCE IF NOT EXISTS write_change_seq`;
+  console.log("Creating sequence texttext_change_seq (if missing)...");
+  await sql`CREATE SEQUENCE IF NOT EXISTS texttext_change_seq`;
 
   console.log("Adding posts.revision (backfilling existing rows)...");
   await sql`
     ALTER TABLE posts
       ADD COLUMN IF NOT EXISTS revision bigint NOT NULL
-      DEFAULT nextval('write_change_seq')
+      DEFAULT nextval('texttext_change_seq')
   `;
 
   console.log("Adding folders.revision (backfilling existing rows)...");
   await sql`
     ALTER TABLE folders
       ADD COLUMN IF NOT EXISTS revision bigint NOT NULL
-      DEFAULT nextval('write_change_seq')
+      DEFAULT nextval('texttext_change_seq')
+  `;
+
+  console.log("Ensuring revision defaults use texttext_change_seq...");
+  await sql`
+    ALTER TABLE posts
+      ALTER COLUMN revision SET DEFAULT nextval('texttext_change_seq')
+  `;
+  await sql`
+    ALTER TABLE folders
+      ALTER COLUMN revision SET DEFAULT nextval('texttext_change_seq')
+  `;
+
+  console.log("Advancing texttext_change_seq past existing revisions...");
+  await sql`
+    WITH max_revision AS (
+      SELECT GREATEST(
+        COALESCE((SELECT max(revision) FROM posts), 0),
+        COALESCE((SELECT max(revision) FROM folders), 0)
+      ) AS value
+    )
+    SELECT setval('texttext_change_seq', GREATEST(value, 1), value > 0)
+    FROM max_revision
   `;
 
   // A BEFORE UPDATE trigger bumps revision on EVERY update, so no mutation path
@@ -58,7 +80,7 @@ async function main() {
   await sql`
     CREATE OR REPLACE FUNCTION bump_revision() RETURNS trigger AS $$
     BEGIN
-      NEW.revision := nextval('write_change_seq');
+      NEW.revision := nextval('texttext_change_seq');
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql
@@ -129,7 +151,7 @@ async function main() {
 
   const [{ posts_max }] = await sql`SELECT max(revision) AS posts_max FROM posts`;
   const [{ folders_max }] = await sql`SELECT max(revision) AS folders_max FROM folders`;
-  const [{ seq }] = await sql`SELECT last_value AS seq FROM write_change_seq`;
+  const [{ seq }] = await sql`SELECT last_value AS seq FROM texttext_change_seq`;
   console.log(
     `Done. posts.max=${posts_max ?? 0} folders.max=${folders_max ?? 0} seq=${seq}`,
   );

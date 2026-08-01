@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Texttext</string>
+	<string>TextText</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -45,15 +45,15 @@
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>Write</string>
+	<string>TextText</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.example.write.mac</string>
+	<string>com.example.texttext.mac</string>
 	<key>CFBundleName</key>
-	<string>Texttext</string>
+	<string>TextText</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -62,10 +62,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>Texttext item links</string>
+			<string>TextText item links</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>write-app</string>
+				<string>texttext-app</string>
 			</array>
 		</dict>
 	</array>
@@ -80,7 +80,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://texttext.app/appcast.xml</string>
+	<string>https://TextText.app/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
 	<key>SUScheduledCheckInterval</key>
@@ -152,7 +152,7 @@
 			</dict>
 		</dict>
 	</array>
-	<key>WriteAppGroupIdentifier</key>
-	<string>WRITE_APP_GROUP</string>
+	<key>TextTextAppGroupIdentifier</key>
+	<string>TEXTTEXT_APP_GROUP</string>
 </dict>
 </plist>

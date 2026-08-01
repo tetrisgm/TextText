@@ -10,21 +10,21 @@ const statusUrl = process.env.NEXT_PUBLIC_STATUS_URL;
 
 const globalStyles = `
 @font-face {
-  font-family: "Write Inter";
+  font-family: "TextText Inter";
   src: url("/fonts/Inter-Regular.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 400;
 }
 @font-face {
-  font-family: "Write Inter";
+  font-family: "TextText Inter";
   src: url("/fonts/Inter-SemiBold.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 600;
 }
 @font-face {
-  font-family: "Write Fraunces";
+  font-family: "TextText Fraunces";
   src: url("/fonts/Fraunces-SemiBold.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
@@ -37,8 +37,8 @@ const globalStyles = `
   --hairline: #d2d2d7;
   --bg: #ffffff;
   --accent: #0066cc;
-  --font-newsroom-display: "Write Fraunces", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
-  --font-newsroom-text: "Write Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-newsroom-display: "TextText Fraunces", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-newsroom-text: "TextText Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
@@ -164,7 +164,7 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body>
-        <title>Texttext error</title>
+        <title>TextText error</title>
         <style>{globalStyles}</style>
         <main className="not-found-page">
           <div aria-hidden="true" className="error-mark">

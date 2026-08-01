@@ -110,7 +110,7 @@ describe("POST /api/collab/[postId]/materialize", () => {
 
   it("skips (does not clobber) when the revision was superseded mid-flight", async () => {
     // A boundary-timed external write or a co-editor autosave bumped the revision
-    // between our read and our write: the guarded UPDATE matches nothing.
+    // between our read and our texttext: the guarded UPDATE matches nothing.
     mocks.savePost.mockRejectedValue(new mocks.PostConflictError());
     const res = await POST(req({ handle: "demo-blog", body: "New body" }), ctx);
     const json = await res.json();

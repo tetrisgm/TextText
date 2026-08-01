@@ -5,11 +5,11 @@ record, not an outstanding setup step.
 
 ## Registered identity
 
-- App ID: `net.writeapp.write.mac.fileprovider`
-- App group: `group.net.writeapp.write`
+- App ID: `app.texttext.mac.fileprovider`
+- App group: `group.app.texttext`
 - Distribution: Developer ID
 - Local profile:
-  `mac/profiles/Write_FileProvider_Developer_ID.provisionprofile`
+  `mac/profiles/TextText_FileProvider_Developer_ID.provisionprofile`
 
 The File Provider extension needs its own App ID because it is a separately
 sandboxed extension. The shared app group lets the signed container app hand

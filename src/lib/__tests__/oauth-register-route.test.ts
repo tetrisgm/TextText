@@ -19,7 +19,7 @@ vi.mock("@/app/oauth/clients", () => ({
 import { POST } from "@/app/oauth/register/route";
 
 function registrationRequest(metadata: Record<string, unknown>): Request {
-  return new Request("https://write.example/oauth/register", {
+  return new Request("https://texttext.example/oauth/register", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

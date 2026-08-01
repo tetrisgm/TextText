@@ -12,8 +12,8 @@ afterEach(() => {
 describe("assistant composer drafts", () => {
   it("restores text independently for each selected context", () => {
     const values = new Map([
-      ["write:assistant-composer:local:item:one", "Question for one"],
-      ["write:assistant-composer:local:item:two", "Question for two"],
+      ["texttext:assistant-composer:local:item:one", "Question for one"],
+      ["texttext:assistant-composer:local:item:two", "Question for two"],
     ]);
     vi.stubGlobal("window", {
       sessionStorage: {

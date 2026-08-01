@@ -13,7 +13,7 @@
 // Usage:
 //   node scripts/apple-client-secret.mjs \
 //     --team-id ABCDE12345 --key-id KEY1234567 \
-//     --services-id com.example.write.web --p8 ./AuthKey_KEY1234567.p8
+//     --services-id com.example.texttext.web --p8 ./AuthKey_KEY1234567.p8
 //
 // Prints the JWT to stdout. Set it as AUTH_APPLE_SECRET (locally in .env.local,
 // in production on the Vercel project). Never commit the .p8 or the JWT.

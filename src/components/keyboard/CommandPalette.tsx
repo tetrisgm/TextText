@@ -25,8 +25,8 @@ import {
   blogPostPath,
 } from "@/lib/public-paths";
 
-export const OPEN_COMMAND_PALETTE_EVENT = "write:open-command-palette";
-export const OPEN_KEYBOARD_SHORTCUTS_EVENT = "write:open-keyboard-shortcuts";
+export const OPEN_COMMAND_PALETTE_EVENT = "texttext:open-command-palette";
+export const OPEN_KEYBOARD_SHORTCUTS_EVENT = "texttext:open-keyboard-shortcuts";
 
 type PaletteResult = {
   id: string;
@@ -266,7 +266,7 @@ export function CommandPalette({
                 group: "Search",
                 run: () => {
                   window.dispatchEvent(
-                    new CustomEvent("write:filter-current-folder", {
+                    new CustomEvent("texttext:filter-current-folder", {
                       detail: { query: cleanQuery },
                     }),
                   );

@@ -5,7 +5,7 @@ import { LandingHeader } from "@/components/LandingHeader";
 export const metadata: Metadata = {
   title: "Security",
   description:
-    "How Texttext protects portable Markdown files, unlisted notes, tokens, and sync.",
+    "How TextText protects portable Markdown files, unlisted notes, tokens, and sync.",
 };
 
 const securityFacts = [
@@ -18,18 +18,18 @@ const securityFacts = [
 
 export default function SecurityPage() {
   return (
-    <main className="write-landing write-legal-page">
+    <main className="texttext-landing texttext-legal-page">
       <LandingHeader signedIn={false} />
-      <article className="write-legal-article write-security-article">
-        <p className="write-landing-kicker">Security</p>
+      <article className="texttext-legal-article texttext-security-article">
+        <p className="texttext-landing-kicker">Security</p>
         <h1>Your writing stays portable first</h1>
-        <p className="write-legal-lede">
-          Texttext starts with a simple security claim: every post is a portable
+        <p className="texttext-legal-lede">
+          TextText starts with a simple security claim: every post is a portable
           Markdown file you can export. The product is built so you can leave
           with your work instead of trusting a closed database forever.
         </p>
 
-        <ul className="write-security-facts">
+        <ul className="texttext-security-facts">
           {securityFacts.map((fact) => (
             <li key={fact}>{fact}</li>
           ))}
@@ -67,8 +67,8 @@ export default function SecurityPage() {
         <section>
           <h2>Infrastructure basics</h2>
           <p>
-            Texttext uses TLS in transit. Production secrets are environment-only
-            values, not committed files. The Mac app signs in through Texttext
+            TextText uses TLS in transit. Production secrets are environment-only
+            values, not committed files. The Mac app signs in through TextText
             instead of asking you to paste account passwords into the app.
           </p>
         </section>
@@ -76,7 +76,7 @@ export default function SecurityPage() {
         <section>
           <h2>Compliance</h2>
           <p>
-            Texttext is in beta and does not claim SOC 2, ISO 27001, HIPAA, or
+            TextText is in beta and does not claim SOC 2, ISO 27001, HIPAA, or
             similar certifications.
           </p>
         </section>
@@ -85,7 +85,7 @@ export default function SecurityPage() {
           <h2>Report a security issue</h2>
           <p>
             Send security reports to{" "}
-            <a href="mailto:security@texttext.app">security@texttext.app</a>.
+            <a href="mailto:security@TextText.app">security@TextText.app</a>.
             Include the affected URL, steps to reproduce, and whether any data
             may have been exposed.
           </p>

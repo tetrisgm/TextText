@@ -1,8 +1,8 @@
 ---
-description: Append one release entry to the matching Texttext project changelog
+description: Append one release entry to the matching TextText project changelog
 ---
 
-Use the Texttext MCP tools and the `project-changelog` skill.
+Use the TextText MCP tools and the `project-changelog` skill.
 
 Find the existing project changelog or create it once. Append the user-facing
 release result exactly once with a stable idempotency key derived from the

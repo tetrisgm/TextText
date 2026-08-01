@@ -9,7 +9,7 @@ import {
 } from "@/lib/app-release";
 import { generatedAppRelease } from "@/generated/app-release";
 
-const ENV_KEYS = ["WRITE_RELEASE_BLOB_BASE", "BLOB_READ_WRITE_TOKEN"] as const;
+const ENV_KEYS = ["TEXTTEXT_RELEASE_BLOB_BASE", "BLOB_READ_WRITE_TOKEN"] as const;
 const savedEnv = new Map<string, string | undefined>();
 
 beforeEach(() => {
@@ -35,8 +35,8 @@ describe("blobBaseUrl", () => {
     expect(blobBaseUrl()).toBe("https://abc123xyz.public.blob.vercel-storage.com");
   });
 
-  it("prefers WRITE_RELEASE_BLOB_BASE and trims trailing slashes", () => {
-    process.env.WRITE_RELEASE_BLOB_BASE = "https://cdn.example.com/";
+  it("prefers TEXTTEXT_RELEASE_BLOB_BASE and trims trailing slashes", () => {
+    process.env.TEXTTEXT_RELEASE_BLOB_BASE = "https://cdn.example.com/";
     process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Abc123_secret";
     expect(blobBaseUrl()).toBe("https://cdn.example.com");
   });

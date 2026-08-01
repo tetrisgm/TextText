@@ -5,9 +5,9 @@ import { LandingHeader } from "@/components/LandingHeader";
 import { LandingFooter } from "@/components/LandingFooter";
 
 export const metadata: Metadata = {
-  title: "Download Texttext",
+  title: "Download TextText",
   description:
-    "Get the Texttext desktop app for Apple silicon Macs. Windows and Linux are on the way.",
+    "Get the TextText desktop app for Apple silicon Macs. Windows and Linux are on the way.",
 };
 
 export const dynamic = "force-dynamic";
@@ -39,27 +39,27 @@ export default async function DownloadPage() {
   const macAvailable = Boolean(advertised);
 
   return (
-    <main className="write-landing">
+    <main className="texttext-landing">
       <LandingHeader signedIn={Boolean(user)} />
 
-      <section className="write-download-hero">
-        <p className="write-landing-kicker">The desktop app</p>
-        <h1>Download Texttext</h1>
+      <section className="texttext-download-hero">
+        <p className="texttext-landing-kicker">The desktop app</p>
+        <h1>Download TextText</h1>
         <p>
-          Download the Mac app for Apple silicon, open Texttext, and sign in when
+          Download the Mac app for Apple silicon, open TextText, and sign in when
           it launches. You get the same editor and folders as the web, backed
           by Markdown files that sync both ways.
         </p>
         {advertised && (
-          <p className="write-download-version">
+          <p className="texttext-download-version">
             Latest version {advertised.version}
           </p>
         )}
       </section>
 
       <section
-        className="write-download-steps"
-        aria-label="Download, open Texttext, sign in"
+        className="texttext-download-steps"
+        aria-label="Download, open TextText, sign in"
       >
         <ol>
           <li>
@@ -68,7 +68,7 @@ export default async function DownloadPage() {
           </li>
           <li>
             <span>2</span>
-            <strong>Open Texttext</strong>
+            <strong>Open TextText</strong>
           </li>
           <li>
             <span>3</span>
@@ -78,52 +78,52 @@ export default async function DownloadPage() {
         <p>You sign in when you open it.</p>
       </section>
 
-      <section className="write-download-grid" aria-label="Platforms">
-        <article className="write-download-card">
+      <section className="texttext-download-grid" aria-label="Platforms">
+        <article className="texttext-download-card">
           <h2>Mac, Apple silicon</h2>
           <p>macOS 14 Sonoma or later. Requires an Apple silicon Mac.</p>
           {macAvailable ? (
-            <a className="write-landing-primary" href="/download/Texttext.zip">
+            <a className="texttext-landing-primary" href="/download/TextText.zip">
               Download for Apple silicon
             </a>
           ) : (
             <button
-              className="write-landing-primary write-download-disabled"
+              className="texttext-landing-primary texttext-download-disabled"
               type="button"
               disabled
             >
               Download for Apple silicon
             </button>
           )}
-          <p className="write-download-card-note">
+          <p className="texttext-download-card-note">
             Signed and notarized by Apple; macOS asks once.
           </p>
         </article>
         {platforms.map((platform) => (
           <article
             key={platform.key}
-            className={`write-download-card${
+            className={`texttext-download-card${
               platform.available ? "" : " is-soon"
             }`}
           >
             <h2>{platform.name}</h2>
             <p>{platform.detail}</p>
             {platform.available && platform.href ? (
-              <a className="write-landing-primary" href={platform.href}>
+              <a className="texttext-landing-primary" href={platform.href}>
                 {platform.cta}
               </a>
             ) : (
-              <span className="write-download-soon">{platform.cta}</span>
+              <span className="texttext-download-soon">{platform.cta}</span>
             )}
           </article>
         ))}
       </section>
 
-      <section className="write-download-note-block">
+      <section className="texttext-download-note-block">
         <p>
-          Open the zip, launch Texttext, and keep it in Applications if you want
+          Open the zip, launch TextText, and keep it in Applications if you want
           it there. The app auto-updates itself once installed; your Markdown
-          files land in a Texttext folder in your home directory.
+          files land in a TextText folder in your home directory.
         </p>
       </section>
       <LandingFooter />

@@ -1,4 +1,4 @@
-# Texttext unified document architecture
+# TextText unified document architecture
 
 Status: implemented on `main`. This document is the architecture contract for
 the unified document engine, not a future feature plan. The dynamic
@@ -6,7 +6,7 @@ document-types wave (2026-07-29) extended it: see "Wave-1 primitives" below.
 
 ## Product contract
 
-Texttext has one document model. Article, note, bookmark, gallery, and talk are
+TextText has one document model. Article, note, bookmark, gallery, and talk are
 presentation templates and capability defaults, not separate content types.
 
 The product must preserve these outcomes:
@@ -64,7 +64,7 @@ look must not change privacy or folder behavior.
 
 ## Portable file format
 
-Every Texttext item is represented as a `.textpack`. Its package contains:
+Every TextText item is represented as a `.textpack`. Its package contains:
 
 ```text
 Document.textpack/
@@ -88,7 +88,7 @@ known frontmatter values win. Structured fields not represented in Markdown,
 assets, and presentation remain intact. Unknown frontmatter never becomes a
 render instruction. Deterministic key ordering prevents hash churn.
 
-The native implementation in `mac/Sources/WriteFileProviderKit` materializes and
+The native implementation in `mac/Sources/TextTextFileProviderKit` materializes and
 uploads `document.json`, rewrites remote asset URLs to package-local paths, and
 selects the structured document hash when available. Legacy Markdown-only
 packages remain valid.
@@ -414,7 +414,7 @@ Collections: sort by `content.fields.<id>` and declarative `filters`
 SQL (GIN jsonb_path_ops index) and in process
 (`src/lib/documents/collection-query.ts`).
 
-Catalog: 23 built-in templates in six categories (Write, Plan, Track, Collect,
+Catalog: 23 built-in templates in six categories (Text, Plan, Track, Collect,
 Work, Publish), every one validated at module load. `TEMPLATE_CATALOG` in
 `src/lib/presentation/templates.ts` is the grouping.
 

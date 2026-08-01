@@ -884,29 +884,29 @@ const STARTER_NOTE = {
 };
 
 const STARTER_BOOKMARK = {
-  slug: "write-ai-setup-guide",
-  title: "Texttext AI setup guide",
+  slug: "texttext-ai-setup-guide",
+  title: "TextText AI setup guide",
 };
 
 const STARTER_AGENT_GUIDES = [
   {
     slug: "connect-your-ai-tools",
     title: "Connect your AI tools",
-    body: `Texttext works beside the AI tools you already use. Each connected agent appears in live documents with its own name and avatar.
+    body: `TextText works beside the AI tools you already use. Each connected agent appears in live documents with its own name and avatar.
 
 ## Claude
 
-Install the Texttext plugin from Terminal:
+Install the TextText plugin from Terminal:
 
 \`\`\`text
 ${CLAUDE_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-For Claude.ai, open **Settings > Connectors**, add ${TEXTTEXT_HOSTED_MCP_URL}, and approve the connection in Texttext.
+For Claude.ai, open **Settings > Connectors**, add ${TEXTTEXT_HOSTED_MCP_URL}, and approve the connection in TextText.
 
 ## Codex
 
-Install the Texttext plugin from Terminal:
+Install the TextText plugin from Terminal:
 
 \`\`\`text
 ${CODEX_PLUGIN_INSTALL_COMMAND}
@@ -916,13 +916,13 @@ Codex appears as **Codex** while it works in an open document.
 
 ## ChatGPT
 
-Open ${CHATGPT_CONNECTOR_URL}, add a custom app using ${TEXTTEXT_HOSTED_MCP_URL}, and approve access in Texttext.
+Open ${CHATGPT_CONNECTOR_URL}, add a custom app using ${TEXTTEXT_HOSTED_MCP_URL}, and approve access in TextText.
 
 ChatGPT appears as **ChatGPT** while it works in an open document.
 
 ## Other MCP clients
 
-Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with OAuth. Give the connection a descriptive name. Texttext uses that approved name when the client is not Claude, Codex, ChatGPT, or Cursor.
+Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with OAuth. Give the connection a descriptive name. TextText uses that approved name when the client is not Claude, Codex, ChatGPT, or Cursor.
 
 ## What agents can do
 
@@ -930,22 +930,22 @@ Connected agents can create and find documents, update or append content, move i
   },
   {
     slug: "use-texttext-as-a-live-ai-canvas",
-    title: "Use Texttext as a live AI canvas",
-    body: `Keep a Texttext document open beside Claude, Codex, ChatGPT, or another connected agent. The document stays the main surface. The agent assists inside it.
+    title: "Use TextText as a live AI canvas",
+    body: `Keep a TextText document open beside Claude, Codex, ChatGPT, or another connected agent. The document stays the main surface. The agent assists inside it.
 
 ## Start with one document
 
 Tell the agent:
 
-> Use Texttext as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.
+> Use TextText as the live canvas for this task. Find the matching document or create it once, tell me which document to open, and keep that same item current as our work develops. Preserve my concurrent edits, reconcile conflicts, and use stable idempotency keys for every append that may retry.
 
-Open the item in Texttext. When the agent writes, its provider name and avatar appear with the other collaborators. You can keep typing while it works.
+Open the item in TextText. When the agent writes, its provider name and avatar appear with the other collaborators. You can keep typing while it works.
 
 ## Capture useful AI conversations
 
 Tell the agent:
 
-> Save the useful decisions from this conversation as a Texttext note. Include the source context and verify the saved note.
+> Save the useful decisions from this conversation as a TextText note. Include the source context and verify the saved note.
 
 ## Maintain a project changelog
 
@@ -4042,7 +4042,7 @@ type SavePostOptions = {
    * set, the UPDATE only lands if the row still carries that exact revision, and
    * a zero-row result throws `PostConflictError` instead of falling through to
    * an insert. This makes a check-then-write a true compare-and-swap: every
-   * mutation assigns a fresh `nextval('write_change_seq')`, so a concurrent
+   * mutation assigns a fresh `nextval('texttext_change_seq')`, so a concurrent
    * writer that commits first changes the revision (even within the same
    * millisecond) and the second save conflicts instead of clobbering it. A
    * stale save can likewise never resurrect a deleted post.
@@ -4684,7 +4684,7 @@ export async function signalWorkspaceChange(handle: string): Promise<void> {
   if (!db) throw new Error("signalWorkspaceChange requires DATABASE_URL");
   const [updated] = await db
     .update(blogs)
-    .set({ changeSeq: sql`nextval('write_change_seq')` })
+    .set({ changeSeq: sql`nextval('texttext_change_seq')` })
     .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt)))
     .returning({ id: blogs.id });
   if (!updated) throw new Error("Workspace not found");

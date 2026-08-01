@@ -354,7 +354,7 @@ describe("MCP workspace tool adapter", () => {
       },
       mode: "edit",
       native_url:
-        `write-app://item/${id}?workspace=local&mode=edit`,
+        `texttext-app://item/${id}?workspace=local&mode=edit`,
     });
     expect(mocks.createAgentAwareness).toHaveBeenCalledWith(
       expect.objectContaining({

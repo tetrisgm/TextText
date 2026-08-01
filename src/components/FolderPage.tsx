@@ -105,8 +105,8 @@ export type FolderCaptureResolved = (post: Post) => void;
 export type FolderViewMode = WorkspaceViewMode;
 export type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
 
-const CREATE_FOLDER_ITEM_EVENT = "write:create-folder-item";
-const EDIT_FOLDER_TITLE_EVENT = "write:edit-folder-title";
+const CREATE_FOLDER_ITEM_EVENT = "texttext:create-folder-item";
+const EDIT_FOLDER_TITLE_EVENT = "texttext:edit-folder-title";
 type FolderUiEventDetail = { folderId: string };
 
 function dispatchFolderUiEvent(type: string, folderId: string) {
@@ -1645,9 +1645,9 @@ export function FolderPage({
       );
       if (firstMatch?.id) onSelectPost(firstMatch.id);
     };
-    window.addEventListener("write:filter-current-folder", applyFilter);
+    window.addEventListener("texttext:filter-current-folder", applyFilter);
     return () =>
-      window.removeEventListener("write:filter-current-folder", applyFilter);
+      window.removeEventListener("texttext:filter-current-folder", applyFilter);
   }, [items, onSelectPost]);
 
   useEffect(() => {

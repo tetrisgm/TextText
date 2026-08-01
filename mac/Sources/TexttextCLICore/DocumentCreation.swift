@@ -1,5 +1,5 @@
 import Foundation
-import WriteFileProviderKit
+import TextTextFileProviderKit
 
 /// Creating and validating documents on disk.
 ///
@@ -25,7 +25,7 @@ public enum DocumentCreation {
         // separates frontmatter from body.
         return """
             ---
-            schema: "write.markdown-file.v1"
+            schema: "texttext.markdown-file.v1"
             kind: \(json(kind))
             type: \(json(kind))
             title: \(json(title))
@@ -89,7 +89,7 @@ public enum DocumentLinter {
         defer { try? FileManager.default.removeItem(at: temporary) }
 
         do {
-            let contents = try WriteTextBundlePackage.read(from: url, in: temporary)
+            let contents = try TextTextTextBundlePackage.read(from: url, in: temporary)
             if contents.markdown.isEmpty {
                 findings.append(LintFinding(document: name, problem: "empty text.md"))
             }

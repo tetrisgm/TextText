@@ -72,7 +72,7 @@ function renderRss(
     `    <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml" />`,
     "    <language>en</language>",
     `    <lastBuildDate>${escapeXml(lastBuildDate)}</lastBuildDate>`,
-    "    <generator>Texttext</generator>",
+    "    <generator>TextText</generator>",
     items,
     "  </channel>",
     "</rss>",

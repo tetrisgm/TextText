@@ -1,6 +1,6 @@
 # File Provider authentication and Finder actions
 
-Texttext appears as a normal Finder Location through a replicated File Provider
+TextText appears as a normal Finder Location through a replicated File Provider
 extension. The main app owns sign-in and passes the minimum credential needed
 by the extension through the shared keychain access group. The app group is
 used for File Provider coordination and the signed extension relationship.
@@ -9,10 +9,10 @@ used for File Provider coordination and the signed extension relationship.
 
 The production build uses these explicit identifiers:
 
-- Main app: `net.writeapp.write.mac`
-- File Provider: `net.writeapp.write.mac.fileprovider`
-- Shared app group: `group.net.writeapp.write`
-- Shared keychain group: `<TeamID>.net.writeapp.write.fp`
+- Main app: `app.texttext.mac`
+- File Provider: `app.texttext.mac.fileprovider`
+- Shared app group: `group.app.texttext`
+- Shared keychain group: `<TeamID>.app.texttext.fp`
 
 The Developer ID profiles live in `mac/profiles/`. `build-app.sh` embeds the
 main profile and `embed-extensions.sh` embeds the extension profile before the
@@ -35,18 +35,18 @@ attributes, public URLs, or health reports.
 The sync manifest carries two deliberately separate URLs:
 
 - `url` is the authenticated content transport endpoint used by File Provider.
-- `canonicalUrl` is the human-facing Texttext page used by Finder actions.
+- `canonicalUrl` is the human-facing TextText page used by Finder actions.
 
-Copy Texttext Link, Share, and Manage Access use only `canonicalUrl`. The mapper
+Copy TextText Link, Share, and Manage Access use only `canonicalUrl`. The mapper
 accepts an older public `url` for compatibility, but rejects any legacy value
 whose path starts with `/api/sync/`. This prevents Finder from exposing a URL
 that returns `A valid API token is required` in a browser.
 
 Regression coverage:
 
-- `WriteItemMapperTests` proves the canonical URL wins and a private transport
+- `TextTextItemMapperTests` proves the canonical URL wins and a private transport
   URL is never published as item metadata.
-- `FileProviderExtensionTests` proves Copy Texttext Link copies only the public
+- `FileProviderExtensionTests` proves Copy TextText Link copies only the public
   page URL.
 - `sync-http.test.ts` proves the server manifest emits both roles correctly.
 
@@ -54,5 +54,5 @@ Regression coverage:
 
 The installed app reports `finder.provider` as part of its content-blind app
 health suite. Finder also presents native progress and error decorations from
-File Provider. Texttext keeps every document downloaded and does not offer
+File Provider. TextText keeps every document downloaded and does not offer
 online-only files or selective sync.

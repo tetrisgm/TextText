@@ -1,6 +1,6 @@
-# Texttext MCP workspace command reference
+# TextText MCP workspace command reference
 
-Texttext exposes one file-backed workspace command surface to three consumers:
+TextText exposes one file-backed workspace command surface to three consumers:
 the product UI, the workspace-configured assistant, and external agents over
 MCP. The application calls the commands directly. It does not call its own MCP
 endpoint.
@@ -20,7 +20,7 @@ annotations. The MCP adapter registers those definitions in
 
 ## Protocol revision
 
-Texttext implements **MCP `2026-07-28`** and only that revision. It is stateless:
+TextText implements **MCP `2026-07-28`** and only that revision. It is stateless:
 there is no `initialize` handshake, no `Mcp-Session-Id`, no GET stream, and no
 SSE resumability. Every request stands alone.
 
@@ -87,7 +87,7 @@ this revision.
 ### Subscriptions
 
 `subscriptions/listen` replaced the GET stream and `resources/subscribe`.
-Texttext has no server-pushed changes to offer, so it acknowledges an empty
+TextText has no server-pushed changes to offer, so it acknowledges an empty
 filter and closes the stream gracefully with the empty result the spec defines,
 rather than holding a connection open that would never emit.
 
@@ -96,11 +96,11 @@ rather than holding a connection open that would never emit.
 The normal connection flow is OAuth authorization code with PKCE S256:
 
 1. The client follows the protected-resource and authorization-server
-   metadata advertised by Texttext.
+   metadata advertised by TextText.
 2. Public clients can register at `/oauth/register` and request the least
    privilege they need: `read` or `sync`. A client that requests both
    advertised scopes receives effective `sync` access.
-3. Texttext shows the signed-in owner a consent page naming the client and
+3. TextText shows the signed-in owner a consent page naming the client and
    requested access. The owner must click Approve.
 4. The authorization code exchange returns a `wsk_` bearer access token and a
    `wrt_` refresh token. Access tokens expire after 3,600 seconds.
@@ -165,7 +165,7 @@ or workspace selector that could cross that boundary.
 | `list_folders` | `read` or `sync` | List every folder you can see with its id, path, mode, and item count. |
 | `list_items` | `read` or `sync` | List the live items in one folder with their ids, titles, tags, status, and content hash. |
 | `read_item` | `read` or `sync` | Read one item's markdown, metadata, tags, outbound links, backlinks, and assets by id. |
-| `open_item` | `read` or `sync` | Open one exact item in Texttext for the user and join its live collaboration session. |
+| `open_item` | `read` or `sync` | Open one exact item in TextText for the user and join its live collaboration session. |
 | `search` | `read` or `sync` | Search item titles, excerpts, and bodies you can access, and return matches with snippets. |
 | `list_trash` | `read` or `sync` | List soft-deleted items and folder restore-units. Nothing here is permanently deleted. |
 | `list_comments` | `read` or `sync` | List comment threads on one item, with anchored quotes and resolution state. |
@@ -181,7 +181,7 @@ or workspace selector that could cross that boundary.
 | `move_item` | `sync` | Move one item to another folder of the same mode. |
 | `delete_item` | `sync` | Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `restore_item` | `sync` | Restore one item from Trash with its previous status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
-| `add_item_asset` | `sync` | Import one public image or video URL into Texttext and attach it as cover, body, or gallery. |
+| `add_item_asset` | `sync` | Import one public image or video URL into TextText and attach it as cover, body, or gallery. |
 | `remove_item_asset` | `sync` | Remove references to one asset URL from an item's cover, body, and gallery. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `recapture_bookmark` | `sync` | Re-fetch one bookmark from its saved URL. The current capture stays visible until the new one lands. |
 | `add_comment` | `sync` | Add a comment or reply on one item, optionally anchored to an exact quote. |

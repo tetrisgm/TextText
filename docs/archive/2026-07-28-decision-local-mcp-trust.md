@@ -24,7 +24,7 @@ is therefore small. Tier 1's real value is three product properties: a truthful
 agent badge, a revoke button, and a read-only mode. Revisit it when one of those
 three actually matters, not on security grounds alone.
 
-The subject is `LocalAgentServer` (`mac/Sources/Write/LocalAgentServer.swift`),
+The subject is `LocalAgentServer` (`mac/Sources/TextText/LocalAgentServer.swift`),
 the loopback MCP endpoint at `http://127.0.0.1:47118/mcp` that lets a local
 Codex or Claude session drive the signed-in workspace.
 
@@ -58,7 +58,7 @@ this is a blind write, not a read. Blind is not harmless:
 - `search` latency is measurable even when the response is unreadable, which is
   a slow but genuine exfiltration oracle against private notes.
 - `GET /health` returning 200 lets any website fingerprint that this visitor
-  runs Texttext.
+  runs TextText.
 
 Chrome shipped a Local Network Access prompt in 142 (October 2025) and Firefox
 in 149, but Safari does not prompt at all, Chrome's protection does not yet
@@ -134,7 +134,7 @@ Real local authentication, and these are the models:
   with Touch ID, scopes the grant, and expires it after inactivity. Their
   documentation states plainly that "the user acts as the final validator".
 
-So requiring a credential would put Texttext ahead of every creative-tool peer,
+So requiring a credential would put TextText ahead of every creative-tool peer,
 not behind. That is a product opportunity, not just a hardening chore.
 
 ### Client support is the gating constraint, and it is favorable
@@ -302,7 +302,7 @@ Replace the TCP listener with a Unix domain socket plus a small stdio bridge
 binary in the app bundle:
 
 ```
-claude mcp add texttext -- /Applications/Texttext.app/Contents/MacOS/texttext-mcp
+claude mcp add texttext -- /Applications/TextText.app/Contents/MacOS/texttext-mcp
 ```
 
 This removes the browser, other-user, sandboxed, and squatter classes *by
@@ -318,7 +318,7 @@ bridge binary.
 **The expected UX is the one this product already implements for hosted MCP:
 OAuth. The local path is the only surface that does something else.**
 
-Texttext already has a complete "connect an agent" flow: `/connect`, an
+TextText already has a complete "connect an agent" flow: `/connect`, an
 authorize page that names the client and offers read-only versus read-write
 (`src/app/oauth/authorize/page.tsx:91-130`), a connected-apps list with per-client
 revoke (`ConnectPanel.tsx:272-334`), and token minting through `createApiToken`.
@@ -359,7 +359,7 @@ What this gets that a bearer-in-the-command does not:
 
 Feasibility questions to spike before committing:
 
-1. How the loopback server validates a token minted by texttext.app. The
+1. How the loopback server validates a token minted by TextText.app. The
    natural path is forwarding the `Authorization` header through the page bridge,
    which already holds an authenticated session, but that is a round trip and
    needs designing.
@@ -482,7 +482,7 @@ curl -X POST http://127.0.0.1:47118/mcp \
 `text/plain` is CORS-safelisted, so a browser sends it with no preflight, and the
 server never inspected the content type. That is the whole exploit.
 
-What shipped, all in `mac/Sources/Write/LocalAgentServer.swift`:
+What shipped, all in `mac/Sources/TextText/LocalAgentServer.swift`:
 
 - `rejection(for:)`, a `nonisolated static` pure guard, so the health reporter
   and the tests run the exact code the server runs rather than a proxy for it.
@@ -509,7 +509,7 @@ bind. On BSD this flag permits rebinding a port in TIME_WAIT, not co-binding a
 live listener, so it is not the squatting risk. The real defect was that a bind
 failure was invisible, which is what `isListening` and the log now address.
 
-Coverage: 29 tests in `mac/Tests/WriteTests/LocalAgentServerTests.swift`, a
+Coverage: 29 tests in `mac/Tests/TextTextTests/LocalAgentServerTests.swift`, a
 rewritten `checkLocalAgentBridge` in `AppHealthReporter.swift` that exercises the
 guard instead of asserting `loopback_only` as though it were a security
 property, and eight assertions in `scripts/verify-agent-interoperability.ts`

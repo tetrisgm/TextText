@@ -237,7 +237,7 @@ describe("hash stability and sensitivity", () => {
     venue: "Somewhere",
     duration: "10 min",
   };
-  const canonicalUrl = "https://write.example/t/demo/adversarial";
+  const canonicalUrl = "https://texttext.example/t/demo/adversarial";
   // null means "render with NO canonical line"; an explicit undefined would
   // trip the default parameter and silently hash the same file as base.
   const hashOf = (p: Post, url: string | null = canonicalUrl) =>
@@ -272,7 +272,7 @@ describe("hash stability and sensitivity", () => {
       venue: hashOf({ ...post, venue: "Elsewhere" }),
       duration: hashOf({ ...post, duration: "11 min" }),
       body: hashOf({ ...post, body: "Plain body!" }),
-      canonical: hashOf(post, "https://write.example/t/demo/other"),
+      canonical: hashOf(post, "https://texttext.example/t/demo/other"),
       noCanonical: hashOf(post, null),
     };
     const hashes = Object.values(variants);
@@ -294,8 +294,8 @@ describe("hash stability and sensitivity", () => {
 
 describe("manifest compatibility and integrity", () => {
   const fileUrlFor = (post: Post) =>
-    `https://write.example/t/demo/${post.slug}/index.md`;
-  const postUrlFor = (post: Post) => `https://write.example/t/demo/${post.slug}`;
+    `https://texttext.example/t/demo/${post.slug}/index.md`;
+  const postUrlFor = (post: Post) => `https://texttext.example/t/demo/${post.slug}`;
 
   it("serializes with no undefined leakage in either v1 or v2 shape", () => {
     for (const options of [undefined, { folder, fileUrlFor, postUrlFor }]) {
@@ -306,7 +306,7 @@ describe("manifest compatibility and integrity", () => {
 
   it("keeps every v1 field with v1 values when options are omitted", () => {
     const manifest = renderFolderManifest(blog, [basePost]);
-    expect(manifest.schema).toBe("write.folder.v1");
+    expect(manifest.schema).toBe("texttext.folder.v1");
     expect(manifest.folder).toMatchObject({
       handle: "demo",
       name: "The Demo Broadsheet",
@@ -375,7 +375,7 @@ describe("folder.json route conditional GET", () => {
     expect(response.headers.get("ETag")).toBe(`"${markdownFileHash(body)}"`);
 
     const manifest = JSON.parse(body);
-    expect(manifest.schema).toBe("write.folder.v1");
+    expect(manifest.schema).toBe("texttext.folder.v1");
     expect(manifest.folder.mode).toBe("blog");
     expect(manifest.folder.id).toBe("demo-blog-folder");
     expect(manifest.folder.path).toBe("blog");

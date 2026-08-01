@@ -149,7 +149,7 @@ function nextMessageId(): string {
 }
 
 function storageKey(threadKey: string): string {
-  return `write:assistant:${threadKey}`;
+  return `texttext:assistant:${threadKey}`;
 }
 
 function threadFor(threadKey: string): AssistantMessage[] {

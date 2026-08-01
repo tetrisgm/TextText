@@ -18,7 +18,7 @@ export async function sendShareInviteEmail(opts: {
 }): Promise<void> {
   const server = process.env.AUTH_EMAIL_SERVER;
   const from =
-    process.env.AUTH_EMAIL_FROM ?? "Texttext <noreply@texttext.app>";
+    process.env.AUTH_EMAIL_FROM ?? "TextText <noreply@TextText.app>";
   if (!server || !from) return;
 
   const blog = await getBlog(opts.handle).catch(() => null);

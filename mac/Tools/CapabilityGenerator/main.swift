@@ -1,5 +1,5 @@
 import Foundation
-import WriteCapabilitySpec
+import TextTextCapabilitySpec
 
 struct Arguments {
     var manifestPath = "mac/Resources/AppCapabilities.yaml"

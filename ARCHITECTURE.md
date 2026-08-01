@@ -1,4 +1,4 @@
-# Texttext: architecture
+# TextText: architecture
 
 A multi-tenant publishing platform: Next.js App Router on Vercel, plus a native
 macOS app that mounts the workspace as a Finder location.
@@ -69,7 +69,7 @@ external-agent presence, shared by hosted MCP and the CLI.
 
 - `/api/sync/v1`: bearer `wsk_` tokens, manifest hashes, If-Match conflicts.
 - `/api/mcp`: hosted MCP for agents that are not on the user's Mac.
-- The `texttext` CLI (`mac/Sources/TexttextCLI`): for agents that ARE on the
+- The `texttext` CLI (`mac/Sources/TextTextCLI`): for agents that ARE on the
   user's Mac. It edits documents as files and publishes presence automatically.
   There is no local MCP server.
 - Tokens are minted at `/connect`. Agent docs are at `/docs/ai` and `/llms.txt`.

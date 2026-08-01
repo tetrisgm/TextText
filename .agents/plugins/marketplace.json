@@ -1,7 +1,7 @@
 {
   "name": "texttext",
   "interface": {
-    "displayName": "Texttext"
+    "displayName": "TextText"
   },
   "plugins": [
     {

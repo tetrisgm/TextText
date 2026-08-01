@@ -62,7 +62,7 @@ const demoHref = "/@demo";
 function PrimaryAction({ signedIn }: { signedIn: boolean }) {
   return (
     <Link
-      className="write-landing-primary"
+      className="texttext-landing-primary"
       href={signedIn ? "/start?to=home" : actionHref}
     >
       {signedIn ? "Open your workspace" : "Get started"}
@@ -72,7 +72,7 @@ function PrimaryAction({ signedIn }: { signedIn: boolean }) {
 
 function DemoAction() {
   return (
-    <Link className="write-landing-secondary" href={demoHref}>
+    <Link className="texttext-landing-secondary" href={demoHref}>
       See a live blog
     </Link>
   );
@@ -80,13 +80,13 @@ function DemoAction() {
 
 function ProductPreview() {
   return (
-    <div className="write-landing-product" aria-label="Texttext product preview">
-      <div className="write-landing-sidebar" aria-hidden="true">
-        <div className="write-landing-sidebar-dot" />
+    <div className="texttext-landing-product" aria-label="TextText product preview">
+      <div className="texttext-landing-sidebar" aria-hidden="true">
+        <div className="texttext-landing-sidebar-dot" />
         {workspacePlaces.map((folder) => (
           <div
             key={folder.name}
-            className={`write-landing-folder${
+            className={`texttext-landing-folder${
               folder.name === "Home" ? " is-active" : ""
             }`}
           >
@@ -95,18 +95,18 @@ function ProductPreview() {
           </div>
         ))}
       </div>
-      <article className="write-landing-document">
-        <div className="write-landing-editor-bar">
+      <article className="texttext-landing-document">
+        <div className="texttext-landing-editor-bar">
           <span>Create an item</span>
           <span>Saved locally</span>
         </div>
-        <p className="write-landing-document-eyebrow">Your next item</p>
+        <p className="texttext-landing-document-eyebrow">Your next item</p>
         <h2>Start with words, a URL, or a conversation</h2>
         <p>
           The item appears immediately. Pick a look, work with the assistant,
           and share only when you decide it is ready.
         </p>
-        <dl className="write-landing-file-list">
+        <dl className="texttext-landing-file-list">
           {previewFiles.map((file) => (
             <div key={file.label}>
               <dt>{file.label}</dt>
@@ -129,8 +129,8 @@ function SectionHeading({
   body: string;
 }) {
   return (
-    <div className="write-section-heading">
-      <p className="write-landing-kicker">{kicker}</p>
+    <div className="texttext-section-heading">
+      <p className="texttext-landing-kicker">{kicker}</p>
       <h2>{title}</h2>
       <p>{body}</p>
     </div>
@@ -145,7 +145,7 @@ function TextLink({
   children: React.ReactNode;
 }) {
   return (
-    <Link className="write-text-link" href={href}>
+    <Link className="texttext-text-link" href={href}>
       {children}
     </Link>
   );
@@ -153,7 +153,7 @@ function TextLink({
 
 function TrustList() {
   return (
-    <ul className="write-landing-proof-list">
+    <ul className="texttext-landing-proof-list">
       {trustPoints.map((point) => (
         <li key={point}>{point}</li>
       ))}
@@ -163,9 +163,9 @@ function TrustList() {
 
 function FolderCards() {
   return (
-    <div className="write-landing-folders">
+    <div className="texttext-landing-folders">
       {productSteps.map((folder) => (
-        <article key={folder.name} className="write-landing-folder-card">
+        <article key={folder.name} className="texttext-landing-folder-card">
           <span>{folder.meta}</span>
           <h3>{folder.name}</h3>
           <h4>{folder.title}</h4>
@@ -180,9 +180,9 @@ function DocumentDemo({ slug }: { slug: string }) {
   const example = templateExample(slug);
   if (!example) return null;
   return (
-    <div className="write-doc-demo" aria-hidden="true">
+    <div className="texttext-doc-demo" aria-hidden="true">
       <DocumentEngineStyles />
-      <div className="write-doc-demo-inner">
+      <div className="texttext-doc-demo-inner">
         <DocumentRenderer
           document={example.document}
           template={example.template}
@@ -195,10 +195,10 @@ function DocumentDemo({ slug }: { slug: string }) {
 
 function LandingDownload() {
   return (
-    <section id="mac" className="write-landing-download" aria-label="Download Texttext">
-      <div className="write-landing-download-copy">
-        <p className="write-landing-kicker">The desktop app</p>
-        <h2>Texttext on your Mac</h2>
+    <section id="mac" className="texttext-landing-download" aria-label="Download TextText">
+      <div className="texttext-landing-download-copy">
+        <p className="texttext-landing-kicker">The desktop app</p>
+        <h2>TextText on your Mac</h2>
         <p>
           The same workspace as the web, in a native window you open from the
           Dock or the menu bar. Your documents sit in the Finder sidebar as
@@ -206,14 +206,14 @@ function LandingDownload() {
           link captures the whole page.
         </p>
       </div>
-      <div className="write-landing-download-actions">
-        <Link className="write-landing-primary" href="/download">
+      <div className="texttext-landing-download-actions">
+        <Link className="texttext-landing-primary" href="/download">
           Download for Mac
         </Link>
-        <Link className="write-landing-secondary" href="/connect">
+        <Link className="texttext-landing-secondary" href="/connect">
           Connect an agent
         </Link>
-        <p className="write-landing-download-note">
+        <p className="texttext-landing-download-note">
           Windows and Linux are on the way.
         </p>
       </div>
@@ -225,8 +225,8 @@ function LandingSections() {
   return (
     <>
       <section
-        className="write-landing-folder-section"
-        aria-label="How Texttext works"
+        className="texttext-landing-folder-section"
+        aria-label="How TextText works"
       >
         <SectionHeading
           kicker="One item, any shape"
@@ -236,9 +236,9 @@ function LandingSections() {
         <FolderCards />
       </section>
 
-      <section className="write-chapter" aria-label="Familiar document looks">
-        <header className="write-chapter-head">
-          <p className="write-landing-kicker">Familiar looks</p>
+      <section className="texttext-chapter" aria-label="Familiar document looks">
+        <header className="texttext-chapter-head">
+          <p className="texttext-landing-kicker">Familiar looks</p>
           <h2>Make it feel like the right place to write.</h2>
           <p>
             Start with a proven reading experience, then change it without
@@ -246,7 +246,7 @@ function LandingSections() {
           </p>
         </header>
         <DocumentDemo slug="article" />
-        <div className="write-chapter-claims">
+        <div className="texttext-chapter-claims">
           <article>
             <h3>Medium article</h3>
             <p>
@@ -272,15 +272,15 @@ function LandingSections() {
         <TextLink href="/templates">Browse familiar looks</TextLink>
       </section>
 
-      <section className="write-landing-portability" aria-label="Portability">
-        <div className="write-landing-band-inner">
+      <section className="texttext-landing-portability" aria-label="Portability">
+        <div className="texttext-landing-band-inner">
           <div>
-            <p className="write-landing-kicker">Local, shared, durable</p>
+            <p className="texttext-landing-kicker">Local, shared, durable</p>
             <h2>Your writing stays yours</h2>
           </div>
-          <div className="write-landing-band-copy">
+          <div className="texttext-landing-band-copy">
             <p>
-              Texttext keeps your writing and assets in portable textpacks.
+              TextText keeps your writing and assets in portable textpacks.
               The Mac app works from local files, sync keeps devices current,
               and live collaboration adds people without changing the source.
             </p>
@@ -290,9 +290,9 @@ function LandingSections() {
         </div>
       </section>
 
-      <section className="write-landing-split" aria-label="Sharing and agents">
+      <section className="texttext-landing-split" aria-label="Sharing and agents">
         <article>
-          <p className="write-landing-kicker">Work together</p>
+          <p className="texttext-landing-kicker">Work together</p>
           <h2>Share a document, not a new workflow</h2>
           <p>
             Invite people to edit or comment, publish openly, or keep a page
@@ -301,7 +301,7 @@ function LandingSections() {
           </p>
         </article>
         <article>
-          <p className="write-landing-kicker">Use your AI</p>
+          <p className="texttext-landing-kicker">Use your AI</p>
           <h2>Keep the document at the center</h2>
           <p>
             Claude, ChatGPT, Codex, and other MCP clients can create, find, and
@@ -323,19 +323,19 @@ export default async function Home() {
   const user = await getCurrentUser();
 
   return (
-    <main className="write-landing">
+    <main className="texttext-landing">
       <LandingHeader signedIn={Boolean(user)} />
 
-      <section className="write-landing-hero">
-        <div className="write-landing-copy">
-          <p className="write-landing-kicker">Write first. Shape it later.</p>
+      <section className="texttext-landing-hero">
+        <div className="texttext-landing-copy">
+          <p className="texttext-landing-kicker">Draft first. Shape it later.</p>
           <h1>Create the item. Make it yours.</h1>
           <p>
             Type a thought, paste a link or conversation, or choose a template.
             Then write, reshape it with AI, collaborate live, and publish it
             with a link.
           </p>
-          <div className="write-landing-actions">
+          <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />
             <DemoAction />
           </div>

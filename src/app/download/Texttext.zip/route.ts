@@ -1,4 +1,4 @@
-// Stable app-zip URL: redirects to the current immutable Texttext release.
+// Stable app-zip URL: redirects to the current immutable TextText release.
 
 import { releaseZipUrl } from "@/lib/app-release";
 

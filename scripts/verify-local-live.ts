@@ -8,9 +8,9 @@ import {
   type LocalLiveReadinessProbe,
 } from "./local-live-readiness";
 
-const port = Number.parseInt(process.env.WRITE_EVAL_PORT ?? "3107", 10);
+const port = Number.parseInt(process.env.TEXTTEXT_EVAL_PORT ?? "3107", 10);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-  throw new Error("WRITE_EVAL_PORT must be an unprivileged TCP port.");
+  throw new Error("TEXTTEXT_EVAL_PORT must be an unprivileged TCP port.");
 }
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -24,7 +24,7 @@ if (!["localhost", "127.0.0.1", "::1"].includes(databaseHost)) {
 // through that same public origin so OAuth's same-origin approval check tests
 // the real browser contract instead of an equivalent 127.0.0.1 alias.
 const origin = `http://localhost:${port}`;
-const evaluationDistDir = ".write/next-live-eval";
+const evaluationDistDir = ".texttext/next-live-eval";
 const evaluationDistPath = join(process.cwd(), evaluationDistDir);
 const commandTimeoutMilliseconds = 300_000;
 const suiteNames = new Set([
@@ -35,7 +35,7 @@ const suiteNames = new Set([
   "generation",
 ]);
 const requestedSuites = new Set(
-  (process.env.WRITE_EVAL_ONLY ?? "")
+  (process.env.TEXTTEXT_EVAL_ONLY ?? "")
     .split(",")
     .map((suite) => suite.trim())
     .filter(Boolean),
@@ -43,7 +43,7 @@ const requestedSuites = new Set(
 for (const suite of requestedSuites) {
   if (!suiteNames.has(suite)) {
     throw new Error(
-      `WRITE_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, oauth, or generation.`,
+      `TEXTTEXT_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, oauth, or generation.`,
     );
   }
 }
@@ -87,7 +87,7 @@ async function waitForServer() {
   while (Date.now() < deadline) {
     if (server?.exitCode !== null) {
       throw new Error(
-        `Local Texttext server exited before readiness.\n${serverOutput}`,
+        `Local TextText server exited before readiness.\n${serverOutput}`,
       );
     }
     const probeResults = await Promise.all(
@@ -112,7 +112,7 @@ async function waitForServer() {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(
-    `Local Texttext server did not become ready. Last probes: ${lastReadinessDiagnostic}\n${serverOutput}`,
+    `Local TextText server did not become ready. Last probes: ${lastReadinessDiagnostic}\n${serverOutput}`,
   );
 }
 
@@ -130,7 +130,7 @@ async function runBounded(
       ...process.env,
       AUTH_DEV_LOGIN: "1",
       NEXT_TELEMETRY_DISABLED: "1",
-      WRITE_ORIGIN: origin,
+      TEXTTEXT_ORIGIN: origin,
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -178,8 +178,8 @@ async function main() {
         ...process.env,
         AUTH_DEV_LOGIN: "1",
         NEXT_TELEMETRY_DISABLED: "1",
-        WRITE_NEXT_DIST_DIR: evaluationDistDir,
-        WRITE_ORIGIN: origin,
+        TEXTTEXT_NEXT_DIST_DIR: evaluationDistDir,
+        TEXTTEXT_ORIGIN: origin,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },

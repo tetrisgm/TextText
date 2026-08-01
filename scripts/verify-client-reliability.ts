@@ -21,7 +21,7 @@ function emptyPool(): WorkspacePoolPayload {
     blog: {
       handle: "reliability",
       name: "Reliability",
-      author: "Texttext",
+      author: "TextText",
       tagline: "",
       cardStyle: "cover",
       homeLayout: "grid",
@@ -82,7 +82,7 @@ const optimistic = Array.from({ length: 120 }, (_, index) => {
     {
       type: "bookmark",
       folderPath: "bookmarks",
-      url: `https://texttext.app/reliability/${index}`,
+      url: `https://TextText.app/reliability/${index}`,
     },
     createdAt,
   );

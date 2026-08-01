@@ -4,9 +4,9 @@ import type { CallToolResult } from "./types";
 import { z } from "zod";
 import { runWorkspaceToolForAuth, type ToolContext } from "./tools";
 
-const AGENT_GUIDE = `# Texttext agent guide
+const AGENT_GUIDE = `# TextText agent guide
 
-Texttext is a workspace of portable documents. Use the tools exposed by this
+TextText is a workspace of portable documents. Use the tools exposed by this
 server for every read and mutation. Do not construct private storage URLs or
 write directly to the database.
 
@@ -33,10 +33,10 @@ event key. This makes repeated agent runs safe and prevents duplicate entries.
 
 ## Live document canvases
 
-Use one durable Texttext item as the visible canvas for a body of work. Search
+Use one durable TextText item as the visible canvas for a body of work. Search
 for it first or create it once with a stable key, keep its item ID, and tell the
 user which item to open. Keep updating that same item while the work develops.
-When it is open in Texttext, agent changes and the user's edits share the live
+When it is open in TextText, agent changes and the user's edits share the live
 collaboration document. Use guarded update_item calls for coherent rewrites and
 append_to_item with a stable source-event key for incremental additions. If an
 edit conflicts, read the latest item, merge both intents, and retry.
@@ -66,9 +66,9 @@ export function registerAgentSurface(server: CapabilityCollector): void {
     "texttext-agent-guide",
     "texttext://agent-guide",
     {
-      title: "Texttext agent guide",
+      title: "TextText agent guide",
       description:
-        "Reliability, privacy, and workflow rules for agents using Texttext.",
+        "Reliability, privacy, and workflow rules for agents using TextText.",
       mimeType: "text/markdown",
     },
     async () => ({
@@ -86,7 +86,7 @@ export function registerAgentSurface(server: CapabilityCollector): void {
     "texttext-workspace",
     "texttext://workspace",
     {
-      title: "Connected Texttext workspace",
+      title: "Connected TextText workspace",
       description: "The connected workspace and its visible folders.",
       mimeType: "application/json",
     },
@@ -119,7 +119,7 @@ export function registerAgentSurface(server: CapabilityCollector): void {
     "texttext-item",
     new ResourceTemplate("texttext://items/{id}"),
     {
-      title: "Texttext item",
+      title: "TextText item",
       description: "One item, including its Markdown, metadata, and assets.",
       mimeType: "application/json",
     },
@@ -169,7 +169,7 @@ export function registerAgentSurface(server: CapabilityCollector): void {
           role: "user",
           content: {
             type: "text",
-            text: `Maintain project documents in Texttext.
+            text: `Maintain project documents in TextText.
 
 Projects:
 ${projects}
@@ -215,7 +215,7 @@ Do not publish, share, or delete anything without explicit confirmation.`,
           role: "user",
           content: {
             type: "text",
-            text: `Use one Texttext item as the live document canvas for this work.
+            text: `Use one TextText item as the live document canvas for this work.
 
 Title: ${title}
 Goal: ${goal}
@@ -224,12 +224,12 @@ Stable source ID: ${source_id}
 
 Search for the existing item first. If it does not exist, call create_item once
 with idempotency_key "canvas:${source_id}". Keep its returned item ID and tell
-the user exactly which item to open in Texttext. Keep that same item current as
+the user exactly which item to open in TextText. Keep that same item current as
 the work develops. Use guarded update_item calls for coherent rewrites. Use
 append_to_item for incremental additions with an idempotency_key derived from
 the durable source event. Reuse that event key on retries.
 
-The user may edit the open item while you work. Texttext routes active edits
+The user may edit the open item while you work. TextText routes active edits
 through its collaboration document. Preserve the user's concurrent changes. If
 a mutation conflicts, read the latest item, merge both intents, and retry. Do
 not publish, share, delete, or change access without explicit confirmation.`,
@@ -244,7 +244,7 @@ not publish, share, delete, or change access without explicit confirmation.`,
     {
       title: "Capture a conversation",
       description:
-        "Turn a useful AI conversation or excerpt into a portable Texttext document.",
+        "Turn a useful AI conversation or excerpt into a portable TextText document.",
       argsSchema: {
         title: z.string().min(1),
         conversation: z.string().min(1),
@@ -258,7 +258,7 @@ not publish, share, delete, or change access without explicit confirmation.`,
           role: "user",
           content: {
             type: "text",
-            text: `Create a draft Texttext item titled "${title}" in
+            text: `Create a draft TextText item titled "${title}" in
 "${folder_path || "notes"}". Preserve useful prompts, answers, decisions, and
 source context as readable Markdown. Use create_item with idempotency_key
 "conversation:${source_id}". Do not publish it.
@@ -289,7 +289,7 @@ ${conversation}`,
           role: "user",
           content: {
             type: "text",
-            text: `Read Texttext item ${item_id}. Append a dated Markdown release
+            text: `Read TextText item ${item_id}. Append a dated Markdown release
 section for version ${version} containing the changes below. Use append_to_item
 with idempotency_key "release:${item_id}:${version}". Do not publish or change
 access without explicit confirmation.

@@ -1,8 +1,8 @@
 // Idempotent migration for a post's immutable local file representation.
-// Existing Texttext content defaults to textbundle. Posts known to have been
+// Existing TextText content defaults to textbundle. Posts known to have been
 // explicitly imported from external files through the pre-header sync API are
 // backfilled to markdown once via their resolved idempotency key. Other
-// idempotent creates (for example new-note:*) are Texttext-created content and must
+// idempotent creates (for example new-note:*) are TextText-created content and must
 // remain TextBundles.
 //
 //   node scripts/migrate-add-file-representation.mjs
@@ -10,7 +10,8 @@
 import { readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";
 
-const BACKFILL_MARKER = "write:file-representation:v1-backfilled";
+const BACKFILL_MARKER = "texttext:file-representation:v1-backfilled";
+const BACKFILL_MARKER_SUFFIX = ":file-representation:v1-backfilled";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -59,7 +60,15 @@ async function main() {
   `;
 
   let backfilled = 0;
-  if (column?.comment !== BACKFILL_MARKER) {
+  if (
+    column?.comment?.endsWith(BACKFILL_MARKER_SUFFIX) &&
+    column.comment !== BACKFILL_MARKER
+  ) {
+    await sql`
+      COMMENT ON COLUMN posts.file_representation IS
+        'texttext:file-representation:v1-backfilled'
+    `;
+  } else if (column?.comment !== BACKFILL_MARKER) {
     // A partially completed prior run may already have installed the guard.
     // Remove it only around this one-time historical correction.
     await sql`
@@ -94,7 +103,7 @@ async function main() {
     // idempotency key, and migration reruns must leave it untouched.
     await sql`
       COMMENT ON COLUMN posts.file_representation IS
-        'write:file-representation:v1-backfilled'
+        'texttext:file-representation:v1-backfilled'
     `;
   }
 

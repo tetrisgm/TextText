@@ -1,4 +1,4 @@
-// /docs/ai: the canonical provider-first setup and tool reference for Texttext.
+// /docs/ai: the canonical provider-first setup and tool reference for TextText.
 
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -18,14 +18,14 @@ import "@/styles/connect.css";
 const READ_TOOLS = WORKSPACE_TOOL_NAMES.filter(
   (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "read",
 );
-const WRITE_TOOLS = WORKSPACE_TOOL_NAMES.filter(
+const TEXTTEXT_TOOLS = WORKSPACE_TOOL_NAMES.filter(
   (name) => WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write",
 );
 
 export const metadata: Metadata = {
-  title: "Add Texttext to your AI",
+  title: "Add TextText to your AI",
   description:
-    "Install Texttext in Claude and Codex, connect ChatGPT, or use any MCP client.",
+    "Install TextText in Claude and Codex, connect ChatGPT, or use any MCP client.",
 };
 
 function ToolTable({ names }: { names: typeof WORKSPACE_TOOL_NAMES }) {
@@ -82,11 +82,11 @@ export default function AiDocsPage() {
     <div className="applecms connect-shell">
       <main className="connect-main connect-doc">
         <p className="connect-provider-kicker">Agents and integrations</p>
-        <h1 className="connect-title">Add Texttext to your AI</h1>
+        <h1 className="connect-title">Add TextText to your AI</h1>
         <p className="connect-lede">
-          Texttext becomes the durable document workspace for Claude, Codex,
+          TextText becomes the durable document workspace for Claude, Codex,
           ChatGPT, and other agents. Your AI keeps its own account and model.
-          Texttext supplies the documents, permissions, collaboration, and
+          TextText supplies the documents, permissions, collaboration, and
           publishing tools.
         </p>
 
@@ -126,7 +126,7 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Claude</h2>
           <p className="connect-body">
-            The Texttext plugin gives Claude Code the MCP connection and the
+            The TextText plugin gives Claude Code the MCP connection and the
             skills for conversation capture, project changelogs, publishing,
             and collaboration. Install it once:
           </p>
@@ -134,7 +134,7 @@ export default function AiDocsPage() {
             Claude Code
           </InstallCommand>
           <p className="connect-body">
-            Claude opens Texttext so you can approve access. In Claude.ai or
+            Claude opens TextText so you can approve access. In Claude.ai or
             Claude Desktop, add a custom connector and paste{" "}
             <code className="connect-inline-code">
               {TEXTTEXT_HOSTED_MCP_URL}
@@ -146,14 +146,14 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Codex</h2>
           <p className="connect-body">
-            The Texttext plugin gives the Codex app and CLI the same connection
+            The TextText plugin gives the Codex app and CLI the same connection
             and reusable skills:
           </p>
           <InstallCommand command={CODEX_PLUGIN_INSTALL_COMMAND}>
             Codex app or CLI
           </InstallCommand>
           <p className="connect-body">
-            Codex opens Texttext during installation so you can approve access.
+            Codex opens TextText during installation so you can approve access.
             The plugin is then available in future tasks without repeating the
             setup.
           </p>
@@ -171,10 +171,10 @@ export default function AiDocsPage() {
               </code>{" "}
               and scan the tools.
             </li>
-            <li>Choose Connect and approve Texttext in the browser.</li>
+            <li>Choose Connect and approve TextText in the browser.</li>
           </ol>
           <p className="connect-body">
-            ChatGPT supplies the model and billing. Texttext never needs your
+            ChatGPT supplies the model and billing. TextText never needs your
             ChatGPT password or API key.
           </p>
         </section>
@@ -216,13 +216,13 @@ export default function AiDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Verify the connection</h2>
           <p className="connect-body">
-            Ask: <em>&quot;What folders are in my Texttext workspace?&quot;</em>{" "}
+            Ask: <em>&quot;What folders are in my TextText workspace?&quot;</em>{" "}
             The agent should request approval if needed, then list your folders.
           </p>
           <p className="connect-body">
             Then ask:{" "}
             <em>
-              &quot;Create a draft note in Texttext titled MCP test and read it
+              &quot;Create a draft note in TextText titled MCP test and read it
               back to verify it.&quot;
             </em>
           </p>
@@ -250,7 +250,7 @@ export default function AiDocsPage() {
             <code className="connect-inline-code">
               {TEXTTEXT_HOSTED_MCP_URL}
             </code>{" "}
-            and use Texttext OAuth.
+            and use TextText OAuth.
           </p>
           <h3>Bearer token fallback</h3>
           <p className="connect-body">
@@ -264,7 +264,7 @@ export default function AiDocsPage() {
 
         <section className="connect-section">
           <h2 className="connect-section-title">Troubleshooting</h2>
-          <h3>The client shows no Texttext tools</h3>
+          <h3>The client shows no TextText tools</h3>
           <p className="connect-body">
             Restart the AI client after installing the plugin. If approval was
             interrupted, remove the connection and install it again.
@@ -286,8 +286,8 @@ export default function AiDocsPage() {
           <summary className="connect-section-title">Tool reference</summary>
           <h3>Read tools ({READ_TOOLS.length})</h3>
           <ToolTable names={READ_TOOLS} />
-          <h3>Write tools ({WRITE_TOOLS.length})</h3>
-          <ToolTable names={WRITE_TOOLS} />
+          <h3>Mutation tools ({TEXTTEXT_TOOLS.length})</h3>
+          <ToolTable names={TEXTTEXT_TOOLS} />
         </details>
       </main>
     </div>

@@ -31,7 +31,7 @@ function tokenRequest(
   fields: Record<string, string> | URLSearchParams,
   headers: HeadersInit = {},
 ) {
-  return new Request("https://write.example/oauth/token", {
+  return new Request("https://texttext.example/oauth/token", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -94,7 +94,7 @@ describe("OAuth token route", () => {
         redirect_uri: clients[0].redirectUris[0],
         client_id: clients[0].clientId,
         code_verifier: "v".repeat(43),
-        resource: "https://write.example/api/mcp",
+        resource: "https://texttext.example/api/mcp",
       }),
     );
     expect(authorizationResponse.status).toBe(200);
@@ -104,7 +104,7 @@ describe("OAuth token route", () => {
         grant_type: "refresh_token",
         refresh_token: `wrt_${"f".repeat(43)}`,
         client_id: clients[0].clientId,
-        resource: "https://write.example/api/mcp",
+        resource: "https://texttext.example/api/mcp",
       }),
     );
     expect(refreshResponse.status).toBe(200);
@@ -131,8 +131,8 @@ describe("OAuth token route", () => {
       refresh_token: `wrt_${"f".repeat(43)}`,
       client_id: clients[0].clientId,
     });
-    repeated.append("resource", "https://write.example/api/mcp");
-    repeated.append("resource", "https://write.example/api/mcp");
+    repeated.append("resource", "https://texttext.example/api/mcp");
+    repeated.append("resource", "https://texttext.example/api/mcp");
     const repeatedResource = await POST(tokenRequest(repeated));
     expect(repeatedResource.status).toBe(400);
     await expect(repeatedResource.json()).resolves.toMatchObject({

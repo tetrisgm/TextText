@@ -355,7 +355,7 @@ export async function BlogHomeForHandle({
   // the first request). It drops you straight into the workspace, so the
   // folder sidebar starts OPEN there unless you've explicitly collapsed it,
   // and the feeds footer is chrome the app doesn't need.
-  const inWriteApp = cookieStore.get("wr_app")?.value === "1";
+  const inTextTextApp = cookieStore.get("wr_app")?.value === "1";
   const sidebarCookie = cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value;
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(sidebarCookie);
   if (redirectClaimed && blog.username) {
@@ -589,7 +589,7 @@ export async function BlogHomeForHandle({
         <BlogIndex blog={displayBlog} posts={posts} />
       )}
 
-      {posts.length > 0 && !inWriteApp && (
+      {posts.length > 0 && !inTextTextApp && (
         <footer className="blog-home-footer" aria-label="Feeds">
           <span className="blog-home-footer-label">Feeds</span>
           {feedLinks.map((feed) => (

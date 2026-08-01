@@ -143,7 +143,7 @@ const baseFields = {
   pitch: "Make it obvious.",
   speaker: "Sam Carter",
   tasks: [
-    { label: "Write spec", done: true, minutes: 90, stars: 3.5 },
+    { label: "Draft spec", done: true, minutes: 90, stars: 3.5 },
     { label: "Build renderer", done: false, minutes: 30 },
     { label: "Ship", done: false },
   ],
@@ -185,7 +185,7 @@ describe("checklist", () => {
   it("moves done rows last and reports the rollup", () => {
     const html = render();
     expect(html).toContain("1 of 3");
-    const done = html.indexOf("Write spec");
+    const done = html.indexOf("Draft spec");
     const undone = html.indexOf("Build renderer");
     expect(undone).toBeGreaterThan(-1);
     expect(done).toBeGreaterThan(-1);
@@ -195,7 +195,7 @@ describe("checklist", () => {
       html.indexOf('class="tt-checklist"'),
       html.indexOf('class="tt-rows '),
     );
-    expect(checklist.indexOf("Build renderer")).toBeLessThan(checklist.indexOf("Write spec"));
+    expect(checklist.indexOf("Build renderer")).toBeLessThan(checklist.indexOf("Draft spec"));
   });
 });
 

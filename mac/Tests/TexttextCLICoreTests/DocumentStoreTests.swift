@@ -1,6 +1,6 @@
 import XCTest
-import WriteFileProviderKit
-@testable import TexttextCLICore
+import TextTextFileProviderKit
+@testable import TextTextCLICore
 
 final class DocumentStoreTests: XCTestCase {
     private var root: URL!
@@ -22,17 +22,17 @@ final class DocumentStoreTests: XCTestCase {
     @discardableResult
     private func makeTextpack(
         named name: String, markdown: String, folder: String? = nil,
-        assets: [WriteTextBundlePackage.MaterializedAsset] = []
+        assets: [TextTextTextBundlePackage.MaterializedAsset] = []
     ) throws -> URL {
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporary) }
 
-        let package = try WriteTextBundlePackage.materialize(
+        let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: markdown, documentJSON: nil,
             assets: assets, sourceURL: nil, in: temporary)
-        let packed = try WriteTextBundlePackage.zipToTextPack(
+        let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
 
         var destination = root!
@@ -65,7 +65,7 @@ final class DocumentStoreTests: XCTestCase {
     }
 
     func testWritePreservesAssets() throws {
-        let asset = WriteTextBundlePackage.MaterializedAsset(
+        let asset = TextTextTextBundlePackage.MaterializedAsset(
             filename: "cover.png",
             data: Data([0x89, 0x50, 0x4E, 0x47]),
             remoteURL: "https://cdn.example.com/cover.png",
@@ -82,7 +82,7 @@ final class DocumentStoreTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporary) }
-        let contents = try WriteTextBundlePackage.read(from: url, in: temporary)
+        let contents = try TextTextTextBundlePackage.read(from: url, in: temporary)
         XCTAssertEqual(contents.assets.map(\.filename), ["cover.png"])
         XCTAssertTrue(contents.markdown.contains("Edited."))
     }
@@ -112,7 +112,7 @@ final class DocumentStoreTests: XCTestCase {
         try makeTextpack(named: "Same", markdown: "# B", folder: "Notes")
 
         XCTAssertThrowsError(try store.resolve("Same")) { error in
-            guard case TexttextCLIError.ambiguous(_, let matches) = error else {
+            guard case TextTextCLIError.ambiguous(_, let matches) = error else {
                 return XCTFail("expected an ambiguous error, got \(error)")
             }
             XCTAssertEqual(matches.count, 2)
@@ -121,7 +121,7 @@ final class DocumentStoreTests: XCTestCase {
 
     func testMissingDocumentIsAClearError() {
         XCTAssertThrowsError(try store.resolve("Nope")) { error in
-            guard case TexttextCLIError.documentNotFound = error else {
+            guard case TextTextCLIError.documentNotFound = error else {
                 return XCTFail("expected documentNotFound, got \(error)")
             }
         }
@@ -175,7 +175,7 @@ final class DocumentStoreTests: XCTestCase {
             """.utf8).write(to: path)
 
         let credentials = DeviceCredentials.load(
-            environment: ["WRITE_CREDENTIALS_PATH": path.path])
+            environment: ["TEXTTEXT_CREDENTIALS_PATH": path.path])
 
         XCTAssertEqual(credentials?.token, "wsk_test")
         XCTAssertEqual(credentials?.serverOrigin, "https://example.com")

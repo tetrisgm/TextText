@@ -1,7 +1,7 @@
 # Assistant and workspace command architecture
 
 This document describes the implemented AI architecture as of 2026-07-29.
-Texttext has one shared workspace tool contract, an in-app provider adapter, the
+TextText has one shared workspace tool contract, an in-app provider adapter, the
 `texttext` CLI for agents on this Mac, and a hosted MCP adapter for remote
 agents. The web product does not call its own MCP server.
 
@@ -109,13 +109,13 @@ the provider and model in Settings and supplies the API key. The key is
 encrypted server-side, is write-only in the UI, and is never returned to the
 browser.
 
-Texttext does not send an in-app assistant request through `/api/mcp`. MCP is an
+TextText does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
 
 ### Agents on this Mac
 
 An agent running on the same Mac does not speak a protocol. It uses the
-`texttext` CLI (`mac/Sources/TexttextCLI`), which ships inside the app bundle and
+`texttext` CLI (`mac/Sources/TextTextCLI`), which ships inside the app bundle and
 edits documents as files in the File Provider workspace. There is no port, no
 token to paste, and no pairing step: the CLI runs as the user and reads the
 device credential the app already stores.
@@ -130,7 +130,7 @@ Deleting the port deleted the whole local trust problem with it.
 ## Assistant status
 
 The assistant is available on the Mac app and web after a workspace owner
-connects Anthropic or OpenAI. Texttext does not use an owner-funded shared
+connects Anthropic or OpenAI. TextText does not use an owner-funded shared
 gateway and does not automatically fall back to an on-device model.
 
 Current assistant behavior includes:
@@ -173,7 +173,7 @@ leaking workspace data or provider credentials.
    fallbacks, not the primary experience.
 
 ChatGPT connects as a hosted app because it does not install repository plugins.
-It uses the same OAuth endpoint and command surface. Texttext never receives a
+It uses the same OAuth endpoint and command surface. TextText never receives a
 user's Claude, ChatGPT, or Codex password.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains

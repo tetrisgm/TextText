@@ -1,4 +1,4 @@
-// A minimal authenticated client for driving a local Texttext server the way
+// A minimal authenticated client for driving a local TextText server the way
 // a real agent does: NextAuth dev-login for a browser session, a wsk_ token
 // minted through the app-token route, and tool calls over the hosted MCP
 // endpoint speaking protocol 2026-07-28. Shared by the template showcase and
@@ -6,7 +6,7 @@
 
 export const MCP_PROTOCOL_VERSION = "2026-07-28";
 
-export class TexttextClient {
+export class TextTextClient {
   private readonly jar = new Map<string, string>();
   private rpcId = 0;
 
@@ -51,7 +51,7 @@ export class TexttextClient {
   async mintToken(device = "live-client"): Promise<string> {
     const res = await this.http("/api/app/token", {
       method: "POST",
-      headers: { "x-write-app": "1", "x-write-device": device },
+      headers: { "x-texttext-app": "1", "x-texttext-device": device },
     });
     const body = (await res.json()) as { token?: string; accessToken?: string };
     const token = body.token ?? body.accessToken;

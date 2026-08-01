@@ -7,32 +7,32 @@ export function LandingHeader({
   signedIn: boolean;
 }) {
   return (
-    <nav className="write-landing-nav" aria-label="Texttext">
-      <div className="write-landing-nav-left">
-        <Link className="write-landing-mark" href="/">
-          Texttext
+    <nav className="texttext-landing-nav" aria-label="TextText">
+      <div className="texttext-landing-nav-left">
+        <Link className="texttext-landing-mark" href="/">
+          TextText
         </Link>
-        <Link className="write-landing-nav-item" href="/download">
+        <Link className="texttext-landing-nav-item" href="/download">
           Download
         </Link>
-        <Link className="write-landing-nav-item" href="/docs/ai">
+        <Link className="texttext-landing-nav-item" href="/docs/ai">
           For agents
         </Link>
       </div>
-      <div className="write-landing-nav-actions">
+      <div className="texttext-landing-nav-actions">
         {signedIn ? (
           <>
-            <Link className="write-landing-button" href="/start?to=home">
-              Open Texttext
+            <Link className="texttext-landing-button" href="/start?to=home">
+              Open TextText
             </Link>
-            <SignOutButton className="write-landing-link" redirectTo="/" />
+            <SignOutButton className="texttext-landing-link" redirectTo="/" />
           </>
         ) : (
           <>
-            <Link className="write-landing-link" href="/try">
+            <Link className="texttext-landing-link" href="/try">
               Start writing
             </Link>
-            <Link className="write-landing-button" href="/start">
+            <Link className="texttext-landing-button" href="/start">
               Get started
             </Link>
           </>

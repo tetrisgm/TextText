@@ -21,7 +21,7 @@ export function protectedResourceMetadataResponse(request: Request): Response {
   const metadata = {
     resource: `${origin}/api/mcp`,
     authorization_servers: [origin],
-    resource_name: "Texttext",
+    resource_name: "TextText",
     resource_documentation: `${origin}/docs/ai`,
     scopes_supported: [...OAUTH_SCOPES],
     bearer_methods_supported: ["header"],

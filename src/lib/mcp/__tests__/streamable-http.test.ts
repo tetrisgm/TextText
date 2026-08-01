@@ -18,7 +18,7 @@ vi.mock("@/lib/store", () => ({
 const { handleMcpRequest } = await import("../streamable-http");
 const { MCP_PROTOCOL_VERSION } = await import("../protocol");
 
-const ORIGIN = "https://texttext.app";
+const ORIGIN = "https://TextText.app";
 const ENDPOINT = `${ORIGIN}/api/mcp`;
 
 type Body = {

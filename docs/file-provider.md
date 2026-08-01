@@ -1,15 +1,15 @@
-# Texttext for macOS: File Provider status
+# TextText for macOS: File Provider status
 
-This document records the File Provider architecture that is shipped in Texttext.
+This document records the File Provider architecture that is shipped in TextText.
 It replaces the earlier implementation plan.
 
 ## Product contract
 
-- Texttext appears as one normal Location in the Finder sidebar.
+- TextText appears as one normal Location in the Finder sidebar.
 - The root contains one folder per workspace and a separate `Data` tree for
-  Texttext-owned auxiliary files.
+  TextText-owned auxiliary files.
 - Workspace folders contain the person's ordinary content documents.
-- Every document is downloaded eagerly and kept on the Mac. Texttext does not
+- Every document is downloaded eagerly and kept on the Mac. TextText does not
   offer online-only files, eviction, or selective sync.
 - Finder's File Provider state is authoritative for pending uploads, pending
   downloads, progress, and errors. The app does not invent a parallel badge.
@@ -19,16 +19,16 @@ It replaces the earlier implementation plan.
 
 ## Native document formats
 
-Texttext-created rich documents use TextBundle packages. Their Markdown and
+TextText-created rich documents use TextBundle packages. Their Markdown and
 assets travel as one Finder item, so a workspace folder stays readable and is
 not polluted by one visible asset folder per post.
 
-Texttext also opens and imports ordinary `.md` and `.txt` files. When an imported
+TextText also opens and imports ordinary `.md` and `.txt` files. When an imported
 plain file references assets, the plain file stays plain and its managed copies
 live under:
 
 ```text
-Texttext/
+TextText/
   Data/
     Attachments/
       <workspace>/
@@ -36,7 +36,7 @@ Texttext/
           <asset files>
 ```
 
-The `Data` hierarchy is read-only in Finder. Texttext-created TextBundles remain
+The `Data` hierarchy is read-only in Finder. TextText-created TextBundles remain
 self-contained and do not also appear there.
 
 Filenames are display metadata, not identity. Stable server IDs identify
@@ -87,9 +87,9 @@ posts materialize as TextBundles.
 
 ## Finder actions
 
-Files expose these actions when a canonical public Texttext page exists:
+Files expose these actions when a canonical public TextText page exists:
 
-- `Copy Texttext Link`
+- `Copy TextText Link`
 - `Share`
 - `Manage Access`
 
@@ -100,7 +100,7 @@ The sync manifest carries two distinct URLs:
 
 The extension refuses `/api/sync/` transport endpoints as public links. Older
 manifests that put a genuine public page in `url` remain compatible. Share and
-Manage Access open the signed Texttext app through a `write-app:` deep link; the
+Manage Access open the signed TextText app through a `texttext-app:` deep link; the
 app validates the destination against its linked server origin before sharing
 or loading access controls.
 
@@ -121,11 +121,11 @@ replaces optimistic client state, or blocks editing and sync.
 
 ## Provisioning
 
-The shipped extension identifier is `net.writeapp.write.mac.fileprovider`. It
-uses the existing `group.net.writeapp.write` app group and the checked local
+The shipped extension identifier is `app.texttext.mac.fileprovider`. It
+uses the existing `group.app.texttext` app group and the checked local
 Developer ID provisioning profile at:
 
-`mac/profiles/Write_FileProvider_Developer_ID.provisionprofile`
+`mac/profiles/TextText_FileProvider_Developer_ID.provisionprofile`
 
 Release verification confirms the File Provider extension is embedded, signed,
 and present in the staged app before any artifact is uploaded.

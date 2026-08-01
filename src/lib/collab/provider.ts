@@ -14,7 +14,7 @@ import {
 
 const REMOTE_ORIGIN = "collab-remote";
 const REMOTE_AWARENESS_ORIGIN = "collab-awareness-remote";
-const CLIENT_ID_STORAGE_PREFIX = "write:collab:client:";
+const CLIENT_ID_STORAGE_PREFIX = "texttext:collab:client:";
 const PUSH_DEBOUNCE_MS = 250;
 const PUSH_RETRY_MS = 1500;
 const PUSH_MAX_RETRY_MS = 30_000;

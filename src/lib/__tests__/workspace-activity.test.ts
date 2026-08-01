@@ -75,7 +75,7 @@ describe("workspace activity", () => {
       edited: 200,
       opened: 100,
     });
-    storage.setItem("write:workspace-document-opens:workspace-1", "not-json");
+    storage.setItem("texttext:workspace-document-opens:workspace-1", "not-json");
     expect(readWorkspaceDocumentOpenHistory("workspace-1", storage)).toEqual(
       {},
     );

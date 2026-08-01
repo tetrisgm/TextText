@@ -1,0 +1,3 @@
+import TextTextWorkspaceCore
+
+typealias FolderWatcher = WorkspaceFolderWatcher

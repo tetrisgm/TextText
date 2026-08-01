@@ -3,10 +3,10 @@ import { generatedAppRelease } from "@/generated/app-release";
 // The Mac app release lives at immutable Blob paths selected by a generated
 // manifest.
 // Each release uploads (via scripts/publish-mac-release.mjs):
-//   downloads/Texttext-<version>.zip  immutable, referenced by the appcast enclosure
+//   downloads/TextText-<version>.zip  immutable, referenced by the appcast enclosure
 //   downloads/appcast-<version>.xml immutable, proxied by /appcast.xml
 // The public website deployment is the final version marker: it includes the
-// generated manifest that points /appcast.xml, /download/Texttext.zip, and
+// generated manifest that points /appcast.xml, /download/TextText.zip, and
 // /api/app/version at the same immutable release.
 //
 // The Blob-base fallback remains for older deployments and local experiments.
@@ -16,13 +16,13 @@ const DOWNLOADS_PREFIX = "downloads";
 /**
  * The public Blob origin, without a trailing slash.
  *
- * WRITE_RELEASE_BLOB_BASE wins when set (dev or a future store move);
+ * TEXTTEXT_RELEASE_BLOB_BASE wins when set (dev or a future store move);
  * otherwise the origin is derived from BLOB_READ_WRITE_TOKEN, whose store id
  * segment is the public hostname's first label
  * (vercel_blob_rw_{storeId}_{secret} -> {storeid}.public.blob.vercel-storage.com).
  */
 export function blobBaseUrl(): string | null {
-  const explicit = process.env.WRITE_RELEASE_BLOB_BASE?.trim().replace(/\/+$/, "");
+  const explicit = process.env.TEXTTEXT_RELEASE_BLOB_BASE?.trim().replace(/\/+$/, "");
   if (explicit) {
     try {
       const url = new URL(explicit);
@@ -63,7 +63,7 @@ export function releaseZipUrl(): string | null {
     return generatedAppRelease.zipUrl;
   }
   const base = blobBaseUrl();
-  return base ? `${base}/${DOWNLOADS_PREFIX}/Texttext.zip` : null;
+  return base ? `${base}/${DOWNLOADS_PREFIX}/TextText.zip` : null;
 }
 
 export interface AdvertisedVersion {

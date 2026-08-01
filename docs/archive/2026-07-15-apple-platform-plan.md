@@ -1,4 +1,4 @@
-# Texttext for macOS: Apple platform plan
+# TextText for macOS: Apple platform plan
 
 > **ARCHIVED / SHIPPED AND SUPERSEDED (historical record).** Phases 1 to 5
 > shipped in v0.21 to v0.25. The workspace substrate has since moved from the
@@ -12,7 +12,7 @@
 > docs/file-provider.md). This document is kept as the historical plan of
 > record; the "First execution task (Phase 1)" section is complete, not pending.
 > The only open Apple-platform work is File Provider Phase 5 (retire the native
-> ~/Texttext mirror at a proven cutover).
+> ~/TextText mirror at a proven cutover).
 
 Owner-approved plan of record (2026-07-12). This supersedes earlier
 File Provider scaffolding plans. macOS only; the web product and backend
@@ -20,12 +20,12 @@ continue unchanged in their roles.
 
 ## 1. Product model
 
-Texttext is a native macOS application backed by ordinary files. All
-user-created content lives inside one Texttext folder in iCloud Drive:
+TextText is a native macOS application backed by ordinary files. All
+user-created content lives inside one TextText folder in iCloud Drive:
 
 ```
 iCloud Drive/
-  Texttext/
+  TextText/
     Blogs/
     Notes/
     Bookmarks/
@@ -34,18 +34,18 @@ iCloud Drive/
 ```
 
 This folder is the canonical workspace for the application. When the user
-creates a blog, note, bookmark, article, page, or other Texttext object, Texttext
+creates a blog, note, bookmark, article, page, or other TextText object, TextText
 creates the corresponding files and folders inside this location.
 
 Goals:
 
 - files remain visible and accessible in Finder
 - files synchronize automatically through iCloud
-- files remain usable without Texttext
-- Texttext does not invent a proprietary document database for content
-- Texttext feels like a native macOS application rather than a wrapped web app
+- files remain usable without TextText
+- TextText does not invent a proprietary document database for content
+- TextText feels like a native macOS application rather than a wrapped web app
 
-Texttext's backend remains relevant for: publishing to the web, public URLs,
+TextText's backend remains relevant for: publishing to the web, public URLs,
 collaboration, comments, account services, cross-platform access,
 programmable modes, and agent access. The backend is NOT the primary file
 store for the macOS application.
@@ -53,7 +53,7 @@ store for the macOS application.
 ## 2. Canonical storage structure
 
 ```
-Texttext/
+TextText/
   Blogs/
     <blog-handle>/
       blog.yaml
@@ -67,7 +67,7 @@ Texttext/
       example-site.md
   Drafts/
   Media/
-  .write/
+  .texttext/
     workspace.yaml
     index.sqlite
     state/
@@ -80,9 +80,9 @@ Rules:
 3. User content is not hidden inside CloudKit records or an opaque database.
 4. Internal indexes and caches are rebuildable.
 5. Moving or editing files in Finder should not corrupt the workspace.
-6. Texttext should detect and reflect external file changes.
+6. TextText should detect and reflect external file changes.
 
-`.write/` may contain application metadata but never the only copy of
+`.texttext/` may contain application metadata but never the only copy of
 user-authored content.
 
 ## 3. iCloud Drive behavior
@@ -100,7 +100,7 @@ canonical copy.
 
 ## 4. External folders and files
 
-Texttext may open Markdown files and folders outside the workspace via the
+TextText may open Markdown files and folders outside the workspace via the
 standard document picker and security-scoped access: local folders,
 external drives, network volumes, iCloud Drive, and third-party locations
 exposed through Finder. No bespoke Dropbox/Google Drive/OneDrive
@@ -115,9 +115,9 @@ Do not introduce in the first implementation.
 ## 6. File Provider
 
 Adopted as its own effort (this section previously deferred it). The workspace
-now surfaces through a File Provider that makes Texttext a first-class Finder
+now surfaces through a File Provider that makes TextText a first-class Finder
 sidebar location, under Locations, backed directly by the server. It replaces
-the iCloud Drive/Texttext folder as the canonical local surface. See
+the iCloud Drive/TextText folder as the canonical local surface. See
 `docs/file-provider.md` for the plan and current status.
 
 ## 7. macOS-only scope
@@ -145,14 +145,14 @@ code, URLs, slugs, internal identifiers, machine-readable directives, and
 embedded application syntax.
 
 Acceptance: prose edits work and update the document, undo restores, the
-Markdown stays valid, unsupported Macs get a normal editor, and no Texttext
+Markdown stays valid, unsupported Macs get a normal editor, and no TextText
 server request is required.
 
 ## 10. App Intents
 
 Expose document and publishing operations through App Intents. Maintain a
 central human-editable capability manifest at
-`WriteCore/Resources/AppCapabilities.yaml` (entities, intents, parameters,
+`TextTextCore/Resources/AppCapabilities.yaml` (entities, intents, parameters,
 result types, display names, availability, documentation).
 
 Entities: Document, Folder, Blog, Publication, Bookmark.
@@ -172,20 +172,20 @@ Index the workspace: title, body text, content type, blog, folder path,
 publication, modified date, publication state, keywords, published URL.
 Deep-link into the relevant document. Update on save, external change,
 move, rename, delete, and iCloud sync from another Mac. Do not index
-`.write/` metadata as user content.
+`.texttext/` metadata as user content.
 
 ## 12. Share extension
 
 macOS Share extension accepting selected text, URLs, web pages, images,
 PDFs, and files. Actions: create note, create bookmark, create draft,
 append to an existing document, save a file or image into the workspace.
-Writes directly into the iCloud Drive Texttext folder; must not require the
+Writes directly into the iCloud Drive TextText folder; must not require the
 full app to be running. Shared URLs become Markdown bookmarks with front
 matter (type, url, created_at) plus optional selected text.
 
 ## 13. Quick Look
 
-Quick Look support where Texttext introduces custom types or packages; good
+Quick Look support where TextText introduces custom types or packages; good
 rendered previews for Markdown (headings, paragraphs, lists, links,
 quotes, code, images, front matter interpretation; hide non-article
 metadata). No network access.
@@ -205,34 +205,34 @@ sync.
 ## 16. Repository structure (target)
 
 ```
-Texttext/
-  Apps/            WriteMac/ WriteWeb/
-  Extensions/      WriteShareExtension/ WriteQuickLookPreview/ WriteQuickLookThumbnail/
+TextText/
+  Apps/            TextTextMac/ TextTextWeb/
+  Extensions/      TextTextShareExtension/ TextTextQuickLookPreview/ TextTextQuickLookThumbnail/
   Packages/
-    WriteCore/          Documents/ Markdown/ Workspace/ Blogs/ Bookmarks/ Publishing/ Resources/AppCapabilities.yaml
-    WriteAppleStorage/  ICloudWorkspace/ FileCoordination/ SecurityScopedAccess/
-    WriteEditor/        TextKit/ WritingTools/
-    WriteAppIntents/
-    WriteSpotlight/
-    WritePublishing/
+    TextTextCore/          Documents/ Markdown/ Workspace/ Blogs/ Bookmarks/ Publishing/ Resources/AppCapabilities.yaml
+    TextTextAppleStorage/  ICloudWorkspace/ FileCoordination/ SecurityScopedAccess/
+    TextTextEditor/        TextKit/ WritingTools/
+    TextTextAppIntents/
+    TextTextSpotlight/
+    TextTextPublishing/
   Tools/           CapabilityGenerator/
   Tests/           WorkspaceTests/ MarkdownFixtures/ FileCoordinationTests/ AppIntentTests/ SpotlightTests/
 ```
 
-Remove for now: WriteIOS, WriteFileProvider, WriteRemoteSync, CloudKit.
+Remove for now: TextTextIOS, TextTextFileProvider, TextTextRemoteSync, CloudKit.
 
 ## 17. Implementation phases
 
 ### Phase 1: iCloud workspace foundation
-macOS app owns one canonical Texttext folder in iCloud Drive; folder and file
+macOS app owns one canonical TextText folder in iCloud Drive; folder and file
 structure for content; creation of notes, blogs, posts, bookmarks, drafts
 as files; file coordination; iCloud sync handling; observation of external
 changes; Finder-compatible rename/move/delete; rebuildable workspace index;
 tests for file preservation and synchronization events.
 
 Exit criteria: every content object exists as a file or folder in
-`iCloud Drive/Texttext`; files readable outside Texttext; Finder changes appear
-in Texttext and vice versa; iCloud sync does not require Texttext's backend; no
+`iCloud Drive/TextText`; files readable outside TextText; Finder changes appear
+in TextText and vice versa; iCloud sync does not require TextText's backend; no
 user content exists only in an opaque database.
 
 ### Phase 2: TextKit and Writing Tools
@@ -268,24 +268,24 @@ mirror is retired at the cutover, not run alongside permanently.
 
 ## 19. First execution task (Phase 1, shipped)
 
-Implement the iCloud workspace foundation for the existing macOS Texttext
+Implement the iCloud workspace foundation for the existing macOS TextText
 application:
 
-1. One canonical app-owned Texttext folder in iCloud Drive.
-2. All Texttext content inside as ordinary files and directories.
+1. One canonical app-owned TextText folder in iCloud Drive.
+2. All TextText content inside as ordinary files and directories.
 3. Clear file structure for blogs, notes, bookmarks, drafts, media, and
    internal rebuildable metadata.
 4. Markdown content as `.md` files.
 5. Preserve existing application concepts; no editor or mode redesign.
 6. Standard coordinated file access (NSFileCoordinator/NSFilePresenter).
-7. Detect files created, edited, renamed, moved, or deleted outside Texttext.
+7. Detect files created, edited, renamed, moved, or deleted outside TextText.
 8. Reflect those changes in the application.
 9. Internal indexes rebuildable from disk.
 10. Tests confirming no user-authored content exists solely in an internal
     database.
 11. Tests for external edits and Finder operations.
-12. Document the boundary between iCloud file sync, Texttext's local index,
-    and Texttext's publishing backend.
+12. Document the boundary between iCloud file sync, TextText's local index,
+    and TextText's publishing backend.
 13. Do not implement: CloudKit, File Provider, iOS/iPadOS, App Intents,
     Spotlight, Share extension, Quick Look, publishing sync, editor
     redesign.

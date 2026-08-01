@@ -1,5 +1,5 @@
 import XCTest
-@testable import TexttextCLICore
+@testable import TextTextCLICore
 
 final class DocumentSectionsTests: XCTestCase {
     private let document = """

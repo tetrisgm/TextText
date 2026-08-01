@@ -1,7 +1,7 @@
 # Plan: the `texttext` CLI
 
 > **ARCHIVED / DELIVERED (historical record).** Every unit of this plan shipped in
-> Texttext `0.146`: the CLI, sections, automatic presence, audit intent, `new`,
+> TextText `0.146`: the CLI, sections, automatic presence, audit intent, `new`,
 > `open`, `lint`, `install`, the skills rewrite, the `PostToolUse` hook, and the
 > retirement of the loopback MCP server. Kept for the reasoning behind the design.
 > For the CURRENT reference see `docs/agent-interoperability.md`, which documents
@@ -23,7 +23,7 @@ server retires.
 ## 1. Why the CLI can do what MCP could not
 
 The CLI ships inside the app bundle and runs as the user, and the app already
-keeps a device credential at `~/Library/Application Support/Write/credentials.json`
+keeps a device credential at `~/Library/Application Support/TextText/credentials.json`
 (mode 0600, a `wsk_` token plus origin, `Credentials.swift:7-12`). So the CLI is
 authenticated by construction. There is no cookie problem, no port, no OAuth, no
 pairing.
@@ -101,15 +101,15 @@ typing elsewhere is untouched.
 
 ## 6. Build and install
 
-- `.executableTarget(name: "TexttextCLI")` in `mac/Package.swift`, depending on
-  `WriteFileProviderKit`.
+- `.executableTarget(name: "TextTextCLI")` in `mac/Package.swift`, depending on
+  `TextTextFileProviderKit`.
 - `mac/scripts/build-app.sh` copies the binary to `Contents/MacOS/texttext` and
   signs it with the app's identity and hardened runtime. One extra `codesign`
   call, no entitlements.
 - The app offers to symlink it to `~/.local/bin/texttext` on first run. No admin
   prompt, unlike `/usr/local/bin`. The absolute bundle path always works as a
   fallback, and the skills name it.
-- `texttext open` uses the existing `write-app://` scheme (`mac/Info.plist:66-69`),
+- `texttext open` uses the existing `texttext-app://` scheme (`mac/Info.plist:66-69`),
   which already parses deep links and queues them across cold launches.
 
 ## 7. Skills

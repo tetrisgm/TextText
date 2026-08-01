@@ -1,13 +1,13 @@
 # Agent interoperability
 
-Texttext exposes one workspace command contract to the product UI, the in-app
+TextText exposes one workspace command contract to the product UI, the in-app
 assistant, and external agents. How an agent reaches that contract depends on
 where it runs.
 
 | Where the agent runs | How it works | Auth |
 |---|---|---|
 | On this Mac (Claude Code, Codex, a script) | The `texttext` CLI, editing documents as files | The device credential the app already holds |
-| Anywhere else (Claude.ai, ChatGPT, Cursor, a phone) | Hosted MCP at `https://texttext.app/api/mcp` | OAuth, or a `wsk_` token from `/connect` |
+| Anywhere else (Claude.ai, ChatGPT, Cursor, a phone) | Hosted MCP at `https://TextText.app/api/mcp` | OAuth, or a `wsk_` token from `/connect` |
 
 The app never calls its own MCP endpoint. There is no loopback server: the local
 MCP endpoint was retired in `0.146`, and with it the port, the transport guard,
@@ -16,8 +16,8 @@ and the whole local-trust problem.
 ## Agents on this Mac: the `texttext` CLI
 
 An agent with a shell should edit files, not drive a protocol. The CLI ships
-inside the app bundle (`mac/Sources/TexttextCLI`, copied to
-`Texttext.app/Contents/MacOS/texttext` and signed with the app), so it is present
+inside the app bundle (`mac/Sources/TextTextCLI`, copied to
+`TextText.app/Contents/MacOS/texttext` and signed with the app), so it is present
 whenever the app is, and it runs as the user.
 
 ```text
@@ -26,7 +26,7 @@ texttext read <doc> [--section "## H"]   print the body, or one section
 texttext write <doc> [--from FILE]       replace the body (stdin by default)
 texttext append <doc> [--from FILE]      append to the body
 texttext edit <doc> --section "## H"     replace one section (stdin by default)
-texttext open <doc> [--section "## H"]   open it in Texttext
+texttext open <doc> [--section "## H"]   open it in TextText
 texttext sections <doc>                  list the headings
 texttext new <title> [--folder F]        create a document
 texttext lint [<doc>]                    check documents are well formed
@@ -40,7 +40,7 @@ when it matches exactly one document.
 ### Why there is no port, token, or pairing step
 
 The app stores a device credential at
-`~/Library/Application Support/Write/credentials.json` (mode 0600, a `wsk_` token
+`~/Library/Application Support/TextText/credentials.json` (mode 0600, a `wsk_` token
 plus its origin). The CLI runs as the same user and reads it, so it is
 authenticated by construction. Nothing to configure, nothing to paste, and no
 listening socket for a web page to reach.
@@ -56,7 +56,7 @@ texttext edit posts/launch.md --section "## Pricing" \
   --as codex --message "tighten the pricing copy"
 ```
 
-While that runs, an open Texttext document shows Codex with its provider color,
+While that runs, an open TextText document shows Codex with its provider color,
 anchored at the Pricing heading. Section anchoring is the right unit for an
 agent: a human has a caret, an agent has a region of interest, and headings
 survive edits above them.
@@ -73,7 +73,7 @@ tightened the pricing copy rather than that something changed.
 ### Correctness guarantees
 
 - **The CLI owns the `.textpack` format.** It reuses
-  `WriteFileProviderKit/TextBundlePackage.swift` rather than reimplementing it,
+  `TextTextFileProviderKit/TextBundlePackage.swift` rather than reimplementing it,
   so frontmatter, `info.json`, and assets survive a round trip and an agent never
   touches the zip.
 - **Writes are atomic.** The replacement is built in a temporary file and swapped
@@ -89,7 +89,7 @@ tightened the pricing copy rather than that something changed.
 
 ## Remote agents: hosted MCP
 
-External clients connect to `https://texttext.app/api/mcp` with OAuth
+External clients connect to `https://TextText.app/api/mcp` with OAuth
 (click-to-approve) or a manual `wsk_` token from `/connect`. The server
 implements **MCP `2026-07-28`**, the stateless revision: no `initialize`, no
 session header, no GET stream. Call `server/discover` to see what it supports.
@@ -108,7 +108,7 @@ of truth for tool names and schemas.
 
 ### Project documents
 
-Use one Texttext item per project. The repository URL or another durable project
+Use one TextText item per project. The repository URL or another durable project
 identifier is the creation identity:
 
 ```text
@@ -132,7 +132,7 @@ only support tools use `create_item`, retain the returned item ID, and call
 ### Conversation capture
 
 Use `capture_conversation` to save useful prompts, answers, decisions, and source
-context as a portable Texttext note. The source conversation or message ID is
+context as a portable TextText note. The source conversation or message ID is
 the stable creation key.
 
 ### Protocol surface

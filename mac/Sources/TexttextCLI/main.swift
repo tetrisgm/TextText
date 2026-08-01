@@ -1,12 +1,12 @@
 import Foundation
-import TexttextCLICore
+import TextTextCLICore
 
-// The agent's interface to a Texttext workspace. Editing is one verb; the
+// The agent's interface to a TextText workspace. Editing is one verb; the
 // others let an agent say who it is and where it is working, so it shows up in
 // the document like a person. See docs/agent-interoperability.md.
 
 let usage = """
-texttext - work with a Texttext workspace
+texttext - work with a TextText workspace
 
 USAGE
   texttext ls [folder]                     list documents
@@ -14,7 +14,7 @@ USAGE
   texttext write <doc> [--from FILE]       replace the body (stdin by default)
   texttext append <doc> [--from FILE]      append to the body
   texttext edit <doc> --section "## H"     replace one section (stdin by default)
-  texttext open <doc> [--section "## H"]   open it in Texttext
+  texttext open <doc> [--section "## H"]   open it in TextText
   texttext sections <doc>                  list the headings
   texttext new <title> [--folder F]        create a document
   texttext lint [<doc>]                    check documents are well formed
@@ -149,7 +149,7 @@ do {
         let markdown = try store.readMarkdown(at: url)
         if let wanted = options.section {
             guard let section = DocumentSections.find(wanted, in: markdown) else {
-                throw TexttextCLIError.sectionNotFound(
+                throw TextTextCLIError.sectionNotFound(
                     wanted,
                     available: DocumentSections.parse(markdown).map(\.title))
             }
@@ -180,7 +180,7 @@ do {
                     fail("edit needs --section; use write to replace the whole body")
                 }
                 guard let section = DocumentSections.find(wanted, in: current) else {
-                    throw TexttextCLIError.sectionNotFound(
+                    throw TextTextCLIError.sectionNotFound(
                         wanted,
                         available: DocumentSections.parse(current).map(\.title))
                 }
@@ -197,7 +197,7 @@ do {
         guard let name = options.positional.first else { fail("usage: texttext open <doc>") }
         let url = try store.resolve(name)
         let relative = store.relativePath(of: url)
-        var link = "write-app://open?path=" + (relative
+        var link = "texttext-app://open?path=" + (relative
             .addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? relative)
         if let section = options.section,
            let encoded = section.addingPercentEncoding(withAllowedCharacters: .alphanumerics)

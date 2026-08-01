@@ -1,6 +1,6 @@
 ---
 name: capture-conversation
-description: Save a useful AI answer, prompt-response pair, or full conversation into Texttext with source context and a clean title. Trigger when the user asks to keep, capture, archive, or turn the current discussion into a note or article.
+description: Save a useful AI answer, prompt-response pair, or full conversation into TextText with source context and a clean title. Trigger when the user asks to keep, capture, archive, or turn the current discussion into a note or article.
 ---
 
 # Capture a conversation
@@ -31,7 +31,7 @@ The CLI has no `new` command yet, so to start a fresh note use MCP's
    - Include the source client and capture date in the body.
 4. Create the item with a stable idempotency key derived from the conversation
    or task identifier.
-5. Read the new item and return its title, folder, and Texttext link.
+5. Read the new item and return its title, folder, and TextText link.
 
 Do not publish the capture unless the user explicitly asks. If the user wants a
 verbatim excerpt, preserve it as quoted markdown rather than paraphrasing.

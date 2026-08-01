@@ -1031,7 +1031,7 @@ export async function executeMcpTool(
           ? blogPostEditPath(resolved.blog, resolved.post)
           : blogPostPath(resolved.blog, resolved.post);
       const nativeUrl =
-        `write-app://item/${encodeURIComponent(postId)}` +
+        `texttext-app://item/${encodeURIComponent(postId)}` +
         `?workspace=${encodeURIComponent(resolved.blog.handle)}` +
         `&mode=${mode}`;
       const userId = extra.authInfo?.extra?.userId;

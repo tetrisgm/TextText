@@ -1,57 +1,57 @@
 #!/usr/bin/env bash
-# Assemble mac/build/Texttext.app: the Swift binary + Sparkle.framework, signed
+# Assemble mac/build/TextText.app: the Swift binary + Sparkle.framework, signed
 # inside-out (the partyparty recipe, minus the Helpers tree).
 #
 #   mac/scripts/build-app.sh                 -> auto-detects a Developer ID
 #                                               Application identity, else ad-hoc
-#   WRITE_SIGN_ID="Developer ID Application: ... (<TEAMID>)" mac/scripts/build-app.sh
+#   TEXTTEXT_SIGN_ID="Developer ID Application: ... (<TEAMID>)" mac/scripts/build-app.sh
 #
 # Identity/origin injection happens HERE, on the STAGED plist only; the
 # committed mac/Info.plist keeps its neutral placeholders:
-#   WRITE_BUNDLE_ID          -> CFBundleIdentifier
-#   WRITE_PRODUCT_ORIGIN=https://texttext.app
+#   TEXTTEXT_BUNDLE_ID          -> CFBundleIdentifier
+#   TEXTTEXT_PRODUCT_ORIGIN=https://TextText.app
 #                            -> SUFeedURL = <origin>/appcast.xml (the app also
 #                               derives its default server origin from SUFeedURL)
-#   WRITE_SPARKLE_PUBLIC_KEY -> SUPublicEDKey
+#   TEXTTEXT_SPARKLE_PUBLIC_KEY -> SUPublicEDKey
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MAC="$(pwd)"
-APP="$MAC/build/Texttext.app"
-ENT="$MAC/write.entitlements"
+APP="$MAC/build/TextText.app"
+ENT="$MAC/texttext.entitlements"
 PB=/usr/libexec/PlistBuddy
 
 require_release_env() {
   local name="$1"
   if [ -z "${!name:-}" ]; then
-    echo "Refusing: $name must be set to build Texttext.app." >&2
+    echo "Refusing: $name must be set to build TextText.app." >&2
     exit 1
   fi
 }
 
-require_release_env WRITE_BUNDLE_ID
-require_release_env WRITE_PRODUCT_ORIGIN
-require_release_env WRITE_SPARKLE_PUBLIC_KEY
+require_release_env TEXTTEXT_BUNDLE_ID
+require_release_env TEXTTEXT_PRODUCT_ORIGIN
+require_release_env TEXTTEXT_SPARKLE_PUBLIC_KEY
 
 # Stable signing keeps macOS trust anchored across rebuilds. Prefer an
-# explicit WRITE_SIGN_ID, else auto-detect a local Developer ID Application
+# explicit TEXTTEXT_SIGN_ID, else auto-detect a local Developer ID Application
 # identity, else fall back to ad-hoc.
-SIGN_ID="${WRITE_SIGN_ID:-}"
+SIGN_ID="${TEXTTEXT_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
   SIGN_ID="$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/{print $2; exit}')"
   [ -z "$SIGN_ID" ] && SIGN_ID="-"
 fi
 
-if [ -n "${WRITE_APP_GROUP:-}" ] && ! [[ "$WRITE_APP_GROUP" =~ ^group\.[A-Za-z0-9.-]+$ ]]; then
-  echo "Refusing: WRITE_APP_GROUP is not a valid application group: $WRITE_APP_GROUP" >&2
+if [ -n "${TEXTTEXT_APP_GROUP:-}" ] && ! [[ "$TEXTTEXT_APP_GROUP" =~ ^group\.[A-Za-z0-9.-]+$ ]]; then
+  echo "Refusing: TEXTTEXT_APP_GROUP is not a valid application group: $TEXTTEXT_APP_GROUP" >&2
   exit 1
 fi
 
 # A signed release with extension profiles but no group produces an appex that
 # codesign accepts but File Provider cannot launch. Development ad-hoc builds
 # may omit the group; a Developer ID build may not.
-FP_PROFILE="$MAC/profiles/Write_FileProvider_Developer_ID.provisionprofile"
-if [ "$SIGN_ID" != "-" ] && [ -f "$FP_PROFILE" ] && [ -z "${WRITE_APP_GROUP:-}" ]; then
-  echo "Refusing: WRITE_APP_GROUP must be set for a signed File Provider build." >&2
+FP_PROFILE="$MAC/profiles/TextText_FileProvider_Developer_ID.provisionprofile"
+if [ "$SIGN_ID" != "-" ] && [ -f "$FP_PROFILE" ] && [ -z "${TEXTTEXT_APP_GROUP:-}" ]; then
+  echo "Refusing: TEXTTEXT_APP_GROUP must be set for a signed File Provider build." >&2
   exit 1
 fi
 
@@ -63,8 +63,8 @@ BIN="$(swift build -c release --triple arm64-apple-macosx14.0 \
 echo ">> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
-cp "$BIN/Write" "$APP/Contents/MacOS/Write"
-# The agent CLI ships beside the app binary so it is present wherever Texttext
+cp "$BIN/TextText" "$APP/Contents/MacOS/TextText"
+# The agent CLI ships beside the app binary so it is present wherever TextText
 # is installed, and so one implementation owns the .textpack format.
 cp "$BIN/texttext" "$APP/Contents/MacOS/texttext"
 cp "$MAC/Info.plist" "$APP/Contents/Info.plist"
@@ -73,12 +73,12 @@ if [ -f "$MAC/AppIcon.icns" ]; then
 else
   echo "   (no AppIcon.icns yet; run mac/scripts/make-icon.sh)"
 fi
-if [ -n "${WRITE_BUILD_ATTESTATION:-}" ]; then
-  [ -f "$WRITE_BUILD_ATTESTATION" ] || {
-    echo "WRITE_BUILD_ATTESTATION does not exist: $WRITE_BUILD_ATTESTATION" >&2
+if [ -n "${TEXTTEXT_BUILD_ATTESTATION:-}" ]; then
+  [ -f "$TEXTTEXT_BUILD_ATTESTATION" ] || {
+    echo "TEXTTEXT_BUILD_ATTESTATION does not exist: $TEXTTEXT_BUILD_ATTESTATION" >&2
     exit 1
   }
-  cp "$WRITE_BUILD_ATTESTATION" \
+  cp "$TEXTTEXT_BUILD_ATTESTATION" \
     "$APP/Contents/Resources/AppHealthBuildAttestation.json"
 fi
 
@@ -88,37 +88,37 @@ echo ">> App Intents metadata (xcodebuild const-values pass)"
 # binary stays the SwiftPM one above. The derived-data cache makes this fast
 # after the first release. Metadata failure fails the build: the intents
 # would silently be invisible to Shortcuts otherwise.
-xcodebuild build -scheme Write -destination 'platform=macOS,arch=arm64' \
+xcodebuild build -scheme TextText -destination 'platform=macOS,arch=arm64' \
   -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
   SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
 CONSTVALS="$MAC/build/appintents-constvals.txt"
 find "$MAC/.build/xcode-dd" -name '*.swiftconstvalues' | sort > "$CONSTVALS"
 [ -s "$CONSTVALS" ] || { echo "xcodebuild emitted no .swiftconstvalues" >&2; exit 1; }
 APPINTENTS_SWIFT_CONST_VALS_LIST="$CONSTVALS" "$MAC/scripts/appintents-metadata.sh" \
-  "$APP/Contents/MacOS/Write" "$APP"
+  "$APP/Contents/MacOS/TextText" "$APP"
 rm -f "$CONSTVALS"
 
 STAGED="$APP/Contents/Info.plist"
-"$PB" -c "Set :CFBundleIdentifier $WRITE_BUNDLE_ID" "$STAGED"
-"$PB" -c "Set :SUFeedURL ${WRITE_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
-"$PB" -c "Set :SUPublicEDKey $WRITE_SPARKLE_PUBLIC_KEY" "$STAGED"
+"$PB" -c "Set :CFBundleIdentifier $TEXTTEXT_BUNDLE_ID" "$STAGED"
+"$PB" -c "Set :SUFeedURL ${TEXTTEXT_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
+"$PB" -c "Set :SUPublicEDKey $TEXTTEXT_SPARKLE_PUBLIC_KEY" "$STAGED"
 # The app locates the share inbox by this group id (scan-based; the app itself
-# needs no app-group entitlement). Empty leaves the WRITE_APP_GROUP placeholder,
+# needs no app-group entitlement). Empty leaves the TEXTTEXT_APP_GROUP placeholder,
 # which the resolver ignores.
-if [ -n "${WRITE_APP_GROUP:-}" ]; then
-  "$PB" -c "Set :WriteAppGroupIdentifier $WRITE_APP_GROUP" "$STAGED" 2>/dev/null \
-    || "$PB" -c "Add :WriteAppGroupIdentifier string $WRITE_APP_GROUP" "$STAGED"
+if [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
+  "$PB" -c "Set :TextTextAppGroupIdentifier $TEXTTEXT_APP_GROUP" "$STAGED" 2>/dev/null \
+    || "$PB" -c "Add :TextTextAppGroupIdentifier string $TEXTTEXT_APP_GROUP" "$STAGED"
 fi
 # The app and the File Provider extension share a keychain access group to hand
 # the sync token across: the app cannot write the app-group container (that write
 # is sandbox-gated), but the keychain is not. The group is
-# <TeamID>.net.writeapp.write.fp; stamp the resolved value so both bundles read
-# the same string at runtime (Info.plist WriteKeychainAccessGroup).
+# <TeamID>.app.texttext.fp; stamp the resolved value so both bundles read
+# the same string at runtime (Info.plist TextTextKeychainAccessGroup).
 TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
 if [ -n "$TEAM" ]; then
-  KC_GROUP="$TEAM.net.writeapp.write.fp"
-  "$PB" -c "Set :WriteKeychainAccessGroup $KC_GROUP" "$STAGED" 2>/dev/null \
-    || "$PB" -c "Add :WriteKeychainAccessGroup string $KC_GROUP" "$STAGED"
+  KC_GROUP="$TEAM.app.texttext.fp"
+  "$PB" -c "Set :TextTextKeychainAccessGroup $KC_GROUP" "$STAGED" 2>/dev/null \
+    || "$PB" -c "Add :TextTextKeychainAccessGroup string $KC_GROUP" "$STAGED"
 fi
 if [ -n "${APP_VERSION:-}" ]; then
   [[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || {
@@ -138,12 +138,12 @@ fi
 # Sparkle framework (auto-update): embed + make it discoverable via rpath.
 if [ -d "$BIN/Sparkle.framework" ]; then
   cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Write" 2>/dev/null || true
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/TextText" 2>/dev/null || true
 else
   echo "!! Sparkle.framework not found in $BIN" >&2
   exit 1
 fi
-chmod +x "$APP/Contents/MacOS/Write"
+chmod +x "$APP/Contents/MacOS/TextText"
 chmod +x "$APP/Contents/MacOS/texttext"
 
 codesign_one() { # $1=path  $2=entitlements (optional)
@@ -163,18 +163,18 @@ codesign_one() { # $1=path  $2=entitlements (optional)
 # Provider credential handoff into the shared container the sandboxed extension
 # reads. That is a restricted entitlement: it needs an embedded Developer ID
 # provisioning profile authorizing the group. With the profile present (and a
-# real identity + WRITE_APP_GROUP), sign with the app-group entitlement; without
+# real identity + TEXTTEXT_APP_GROUP), sign with the app-group entitlement; without
 # it, sign with empty entitlements so dev/ad-hoc builds still succeed (the File
 # Provider just cannot authenticate).
-APP_PROFILE="$MAC/profiles/Write_App_Developer_ID.provisionprofile"
-MAIN_ENT="$(mktemp -t write-main-ent)"
-if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${WRITE_APP_GROUP:-}" ]; then
+APP_PROFILE="$MAC/profiles/TextText_App_Developer_ID.provisionprofile"
+MAIN_ENT="$(mktemp -t texttext-main-ent)"
+if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
   cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
   # codesign does NOT expand $(AppIdentifierPrefix); substitute the resolved
   # team-prefixed keychain group (computed above) just like the app group.
   /usr/bin/sed \
-    -e "s/WRITE_APP_GROUP/${WRITE_APP_GROUP}/g" \
-    -e "s/WRITE_KEYCHAIN_GROUP/${KC_GROUP:-}/g" \
+    -e "s/TEXTTEXT_APP_GROUP/${TEXTTEXT_APP_GROUP}/g" \
+    -e "s/TEXTTEXT_KEYCHAIN_GROUP/${KC_GROUP:-}/g" \
     "$ENT" > "$MAIN_ENT"
   echo ">> main app: app-group + keychain entitlement + embedded profile"
 else
@@ -199,12 +199,12 @@ else
   codesign_one "$SPK"
 fi
 codesign_one "$APP/Contents/MacOS/texttext"
-codesign_one "$APP/Contents/MacOS/Write" "$MAIN_ENT"
+codesign_one "$APP/Contents/MacOS/TextText" "$MAIN_ENT"
 # Extensions are assembled and signed here, inside-out, so the main app's
 # signature (next line) seals them. No-op unless mac/profiles/ holds the
 # provisioning profiles and a real Developer ID identity is in use.
-"$MAC/scripts/embed-extensions.sh" "$APP" "$SIGN_ID" "${WRITE_APP_GROUP:-}" \
-  "$WRITE_BUNDLE_ID" \
+"$MAC/scripts/embed-extensions.sh" "$APP" "$SIGN_ID" "${TEXTTEXT_APP_GROUP:-}" \
+  "$TEXTTEXT_BUNDLE_ID" \
   "$("$PB" -c 'Print :CFBundleShortVersionString' "$STAGED")" \
   "$("$PB" -c 'Print :CFBundleVersion' "$STAGED")"
 codesign_one "$APP" "$MAIN_ENT"

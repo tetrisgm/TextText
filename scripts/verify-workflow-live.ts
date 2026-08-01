@@ -1,5 +1,5 @@
 // Live end-to-end proof of the shared workspace workflows against a running
-// Texttext server,
+// TextText server,
 // driven through the real command surface (/api/mcp) the app, the native
 // assistant, and external agents all share.
 //
@@ -35,9 +35,9 @@ import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
 import { MCP_PROTOCOL_VERSION } from "../src/lib/mcp/protocol";
 
-const ORIGIN = process.env.WRITE_ORIGIN ?? "http://127.0.0.1:3000";
+const ORIGIN = process.env.TEXTTEXT_ORIGIN ?? "http://127.0.0.1:3000";
 const ASSET_FIXTURE_URL =
-  process.env.WRITE_ASSET_FIXTURE_URL ?? "https://texttext.app/opengraph-image";
+  process.env.TEXTTEXT_ASSET_FIXTURE_URL ?? "https://TextText.app/opengraph-image";
 const STAMP = Date.now().toString(36);
 const SUB = `scratch-workflow-verify-${STAMP}`;
 const HANDLE = `scratch-workflow-verify-${STAMP}`;
@@ -218,7 +218,7 @@ async function main() {
     );
 
     // ---- Workflow: cover_assets ----
-    // Attach a public Texttext image as an asset and use it as the cover in one
+    // Attach a public TextText image as an asset and use it as the cover in one
     // step. The asset importer correctly rejects localhost and private hosts.
     const cover = await tool("add_item_asset", {
       id: articleId,

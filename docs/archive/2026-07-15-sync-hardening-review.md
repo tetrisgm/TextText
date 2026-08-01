@@ -32,7 +32,7 @@
    `src/app/api/sync/v1/files/[postId]/route.ts:185`  
    `src/lib/store.ts:971`  
    `src/lib/store.ts:2058`  
-   `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:214`
+   `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:214`
 
    Failure scenario: a rename PATCH resolves post body `A`; the web editor saves body `B`; PATCH then calls `savePost({ ...post, slug })`. The stale body `A` is written back along with the slug, silently deleting `B`.
 
@@ -44,10 +44,10 @@
 
 3. **[DATA-LOSS] Stale clients can delete newer server edits without a conflict**
 
-   `src/app/api/sync/v1/files/[postId]/route.ts:160`  
-   `mac/Sources/Write/SyncEngine.swift:632`  
-   `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:238`  
-   `mac/Sources/Write/ServerClient.swift:234`
+   `src/app/api/sync/v1/files/[postId]/route.ts:160`
+   `mac/Sources/TextText/SyncEngine.swift:632`
+   `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:238`
+   `mac/Sources/TextText/ServerClient.swift:234`
 
    Failure scenario: the native mirror indexes `H0`; the web app saves `H1`; before the native full pull runs, the user deletes the local file. The FSEvents push-only pass calls unconditional DELETE, and the `H1` post is moved to server Trash.
 
@@ -59,10 +59,10 @@
 
 4. **[CORRECTNESS] A new file under Notes can be published publicly by the native engine**
 
-   `mac/Sources/Write/SyncEngine.swift:885`  
-   `mac/Sources/Write/SyncEngine.swift:981`  
-   `mac/Sources/Write/ServerClient.swift:220`  
-   `src/app/api/sync/v1/files/route.ts:37`  
+   `mac/Sources/TextText/SyncEngine.swift:885`
+   `mac/Sources/TextText/SyncEngine.swift:981`
+   `mac/Sources/TextText/ServerClient.swift:220`
+   `src/app/api/sync/v1/files/route.ts:37`
    `src/lib/store.ts:2072`
 
    Failure scenario: place this new file under the native `Notes/` mirror:
@@ -81,13 +81,13 @@
 
    The same omission causes ordinary native creates in subfolders to land in the system root. Native moves are also never PATCHed: an unchanged file moved between subfolders keeps the same sync hash, is skipped by the edit loop, and is moved back by the next pull.
 
-   Suggested fix: change native `postFile` to take and send `folderId`, exactly like `WriteSyncAPI.createFile`. Add a hash-guarded PATCH for detected local moves. The server should reject folderless private-kind creates from sync clients or require an explicit target folder.
+   Suggested fix: change native `postFile` to take and send `folderId`, exactly like `TextTextSyncAPI.createFile`. Add a hash-guarded PATCH for detected local moves. The server should reject folderless private-kind creates from sync clients or require an explicit target folder.
 
 5. **[DATA-LOSS] The mass-delete breaker does not protect small workspaces**
 
-   `mac/Sources/Write/SyncEngine.swift:648`  
-   `mac/Sources/Write/SyncEngine.swift:655`  
-   `mac/Sources/Write/SyncEngine.swift:659`
+   `mac/Sources/TextText/SyncEngine.swift:648`
+   `mac/Sources/TextText/SyncEngine.swift:655`
+   `mac/Sources/TextText/SyncEngine.swift:659`
 
    Failure scenario: an iCloud mirror with nine posts materializes its hidden sync marker before its content, with no `.icloud` placeholders yet. All nine paths return ENOENT, but `missingCount >= 10` is false. SyncEngine propagates nine server deletes - 100% of the workspace.
 
@@ -97,9 +97,9 @@
 
 6. **[DATA-LOSS] Failed conflict-copy preservation does not stop canonical overwrite**
 
-   `mac/Sources/Write/SyncEngine.swift:604`  
-   `mac/Sources/Write/SyncEngine.swift:761`  
-   `mac/Sources/Write/SyncEngine.swift:1009`
+   `mac/Sources/TextText/SyncEngine.swift:604`
+   `mac/Sources/TextText/SyncEngine.swift:761`
+   `mac/Sources/TextText/SyncEngine.swift:1009`
 
    Failure scenario: both sides changed, but moving the local file to the conflict-copy path fails because of a coordination or filesystem error. `preserveAsConflictedCopy` returns `nil`; SyncEngine nevertheless downloads the server copy over the canonical path. The local edit is gone.
 
@@ -109,11 +109,11 @@
 
 7. **[CORRECTNESS] The server’s sync projection is not a valid folder tree**
 
-   `src/app/api/sync/v1/workspace/route.ts:22`  
-   `src/lib/store.ts:1425`  
-   `src/app/api/sync/v1/folders/[folderId]/manifest/route.ts:35`  
-   `mac/Sources/WriteFileProviderKit/WorkspaceEnumerator.swift:103`  
-   `mac/Sources/WriteFileProviderKit/WorkspaceEnumerator.swift:161`
+   `src/app/api/sync/v1/workspace/route.ts:22`
+   `src/lib/store.ts:1425`
+   `src/app/api/sync/v1/folders/[folderId]/manifest/route.ts:35`
+   `mac/Sources/TextTextFileProviderKit/WorkspaceEnumerator.swift:103`
+   `mac/Sources/TextTextFileProviderKit/WorkspaceEnumerator.swift:161`
 
    Failure scenario: create `Blog/Ideas` and put post `P` in it. The workspace response omits `parentId`, so File Provider decodes Ideas as top-level. Separately, the root Blog manifest includes descendants, while Ideas’ manifest also contains `P`. File Provider therefore receives the same stable item identifier under two parents.
 
@@ -129,8 +129,8 @@
 
 8. **[CORRECTNESS] File Provider change enumeration never reports deletions**
 
-   `mac/Extensions/WriteFileProviderExtension/WriteEnumeratorAdapter.swift:56`  
-   `mac/Sources/Write/AppDelegate.swift:707`
+   `mac/Extensions/TextTextFileProviderExtension/TextTextEnumeratorAdapter.swift:56`
+   `mac/Sources/TextText/AppDelegate.swift:707`
 
    Failure scenario: a post is deleted on the web. The app signals the working-set enumerator. `enumerateChanges` lists survivors only through `didUpdate`; it never calls `didDeleteItems`. The old Finder item can remain as a ghost.
 
@@ -142,9 +142,9 @@
 
 9. **[RACE] File Provider applies rename/move even after content PUT fails**
 
-   `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:205`  
-   `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:220`  
-   `mac/Extensions/WriteFileProviderExtension/WriteEnumeratorAdapter.swift:86`
+   `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:205`
+   `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:220`
+   `mac/Extensions/TextTextFileProviderExtension/TextTextEnumeratorAdapter.swift:86`
 
    Failure scenario: one `modifyItem` contains content and filename changes. PUT returns 412 because the web editor changed the post. File Provider still executes PATCH, successfully renaming the server item, then reports `serverUnreachable`. The content did not save, the rename did, and the framework can retry indefinitely with the same stale base hash.
 
@@ -156,8 +156,8 @@
 
 10. **[ROBUSTNESS] File and folder creates are not idempotent**
 
-    `src/app/api/sync/v1/files/route.ts:41`  
-    `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:149`  
+    `src/app/api/sync/v1/files/route.ts:41`
+    `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:149`
     `src/lib/store.ts:644`
 
     Failure scenario: server POST commits, but the response is lost. File Provider retries:
@@ -172,8 +172,8 @@
 
 11. **[CORRECTNESS] The timestamp cursor can miss a change forever**
 
-    `src/lib/sync-cursor.ts:8`  
-    `src/lib/sync-cursor.ts:18`  
+    `src/lib/sync-cursor.ts:8`
+    `src/lib/sync-cursor.ts:18`
     `src/app/api/sync/v1/changes/route.ts:42`
 
     Failure scenario: the client holds cursor `...123Z`. Another mutation receives an `updated_at` within the same millisecond. PostgreSQL timestamps may differ below millisecond precision, but conversion through JavaScript `Date` and `toISOString()` produces the same cursor. With no later mutation, every poll continues returning equality and `changed:false`.
@@ -184,13 +184,13 @@
 
 12. **[RACE] File Provider can label new bytes with an old content version**
 
-    `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:65`  
-    `mac/Extensions/WriteFileProviderExtension/FileProviderExtension.swift:83`  
-    `mac/Sources/WriteFileProviderKit/LiveWriteSyncAPI.swift:41`
+    `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:65`
+    `mac/Extensions/TextTextFileProviderExtension/FileProviderExtension.swift:83`
+    `mac/Sources/TextTextFileProviderKit/LiveTextTextSyncAPI.swift:41`
 
     Failure scenario: `fetchContents` reads manifest hash `H1`; the web changes the file to `H2`; File Provider GETs body `H2` but returns the previously built item carrying `H1`. The user edits bytes based on `H2`, yet their next PUT sends `If-Match: H1` and falsely conflicts.
 
-    Why it is real: `requestedVersion` is ignored, and the `WriteFileContent.hash` returned from GET is discarded.
+    Why it is real: `requestedVersion` is ignored, and the `TextTextFileContent.hash` returned from GET is discarded.
 
     Suggested fix: verify the GET ETag equals the requested/current item version. Construct the returned item using the GET hash, or fail with `versionNoLongerAvailable` and force re-enumeration when versions differ.
 
@@ -213,7 +213,7 @@
 
 - File ETags are hashes of the exact rendered Markdown, and `If-Match` uses strong comparison correctly; the defect is atomic enforcement, not hash calculation.
 - Manifest ETags correctly hash the exact rendered JSON body.
-- `WriteItem.itemVersion.contentVersion` correctly carries the manifest hash; staleness and materialization pairing are the problems.
+- `TextTextItem.itemVersion.contentVersion` correctly carries the manifest hash; staleness and materialization pairing are the problems.
 - Folder-scoped File Provider creates and sync PUT’s type-family check preserve note/bookmark privacy. The unsafe exception is native folderless POST.
 - Native folder ETags are cached only after a clean pull, conflict-copy names avoid collisions, and the mirror-ID breadcrumb correctly blocks deletes against a clearly different root.
 - The long-poll wait bounds, timeout headroom, inequality comparison, and abort check are sound once the cursor source is made collision-free.
@@ -221,7 +221,7 @@
 
 ## Overall assessment
 
-Texttext’s sync is not bulletproof: its hashes and three-way native merge design are good foundations, but the server lacks an atomic versioned mutation primitive, so simultaneous writers can both “win” and silently overwrite each other. The top three fixes are: implement store-level CAS for PUT/PATCH/DELETE and remove `savePost`’s update-to-insert fallthrough; make native creates and moves folder-aware to close the Notes publication leak; and replace File Provider’s relist-as-updates behavior with real versioned deltas, deletion reporting, and atomic compound modifications.
+TextText’s sync is not bulletproof: its hashes and three-way native merge design are good foundations, but the server lacks an atomic versioned mutation primitive, so simultaneous writers can both “win” and silently overwrite each other. The top three fixes are: implement store-level CAS for PUT/PATCH/DELETE and remove `savePost`’s update-to-insert fallthrough; make native creates and moves folder-aware to close the Notes publication leak; and replace File Provider’s relist-as-updates behavior with real versioned deltas, deletion reporting, and atomic compound modifications.
 
 ## Fixes applied (2026-07-12)
 
@@ -234,7 +234,7 @@ transactions, so the compare-and-swap is a single-statement optimistic lock, not
 Round 1 tried a timestamp CAS and a tie-counted cursor; a second Codex pass
 showed both miss same-millisecond writes. The real fix is one primitive: a
 `revision bigint` on `posts` and `folders`, drawn from a shared
-`write_change_seq` sequence, assigned by the column default on insert and by a
+`texttext_change_seq` sequence, assigned by the column default on insert and by a
 `BEFORE UPDATE` trigger (`bump_revision()`) on every update. Revisions are
 globally unique and strictly increasing, so no mutation path can forget to bump
 one and no two changes ever share a value. DDL in `scripts/migrate-add-revision.mjs`.
@@ -280,7 +280,7 @@ This single primitive resolves #1, #2, #3, #9, and #11:
   `releaseIdempotencyKey`), so a retried ambiguous create returns the original
   item instead of duplicating it. Clients send the key (Mac client track).
 - **#12 FP version** - `fetchContents` returns the item carrying the fetched
-  `content.hash` (new `WriteItem.withContentHash`).
+  `content.hash` (new `TextTextItem.withContentHash`).
 - **#13 audit** - `recordAction` now retries once and logs loudly on failure
   rather than silently swallowing. Truly atomic mutation+audit is limited by the
   no-transaction driver (it would need a data-modifying CTE folded into each

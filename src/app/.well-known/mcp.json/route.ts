@@ -12,9 +12,9 @@ export async function GET(request: Request) {
   const origin = getPublicOrigin(request);
   return Response.json(
     {
-      name: "Texttext",
+      name: "TextText",
       description:
-        "Read and write the folders and markdown items in your Texttext workspace.",
+        "Read and write the folders and markdown items in your TextText workspace.",
       icon: `${origin}/apple-icon`,
       endpoint: `${origin}/api/mcp`,
       protocolVersions: [MCP_PROTOCOL_VERSION],

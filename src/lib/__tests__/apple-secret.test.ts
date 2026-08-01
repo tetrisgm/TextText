@@ -20,7 +20,7 @@ describe("mintAppleClientSecret", () => {
   const inputs = {
     teamId: "TEAM123456",
     keyId: "KEY1234567",
-    servicesId: "com.example.write.web",
+    servicesId: "com.example.texttext.web",
     privateKeyPem: pem,
   };
 
@@ -34,7 +34,7 @@ describe("mintAppleClientSecret", () => {
 
     const payload = decodeSegment(payloadSeg);
     expect(payload.iss).toBe("TEAM123456");
-    expect(payload.sub).toBe("com.example.write.web");
+    expect(payload.sub).toBe("com.example.texttext.web");
     expect(payload.aud).toBe("https://appleid.apple.com");
     const iat = payload.iat as number;
     const exp = payload.exp as number;

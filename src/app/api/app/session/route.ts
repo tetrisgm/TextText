@@ -15,7 +15,7 @@ function authSecret(): string | null {
 }
 
 export async function POST(request: NextRequest) {
-  if (request.headers.get("x-write-app") !== "1") {
+  if (request.headers.get("x-texttext-app") !== "1") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (!isAuthConfigured || !authSecret()) {

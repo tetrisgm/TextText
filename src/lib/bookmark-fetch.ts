@@ -188,7 +188,7 @@ export async function lightCaptureBookmark(
     try {
       const response = await fetchPublicResource(url, {
         signal: controller.signal,
-        headers: { accept: "text/html,*/*", "user-agent": "write-bookmark/1" },
+        headers: { accept: "text/html,*/*", "user-agent": "texttext-bookmark/1" },
       });
       if (!response) return;
       const type = response.headers.get("content-type") ?? "";

@@ -4,5 +4,5 @@ export const generatedAppRelease = {
   appcastUrl:
     "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/appcast-0.169.xml",
   zipUrl:
-    "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/Texttext-0.169.zip",
+    "https://fkxlzavaphs5epsz.public.blob.vercel-storage.com/downloads/TextText-0.169.zip",
 } as const;

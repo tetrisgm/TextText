@@ -1,6 +1,6 @@
 import XCTest
-import WriteFileProviderKit
-@testable import TexttextCLICore
+import TextTextFileProviderKit
+@testable import TextTextCLICore
 
 final class DocumentCreationTests: XCTestCase {
     private var root: URL!
@@ -38,7 +38,7 @@ final class DocumentCreationTests: XCTestCase {
         let frontmatter = DocumentCreation.frontmatter(title: "T", kind: "note")
         // Identity, slug, and canonical URL belong to the server. Guessing at
         // them would be ignored at best and conflict at worst.
-        for owned in ["slug:", "canonical:", "writeId:", "syncRevision:", "workspace:"] {
+        for owned in ["slug:", "canonical:", "textTextId:", "syncRevision:", "workspace:"] {
             XCTAssertFalse(
                 frontmatter.contains(owned),
                 "\(owned) is assigned by the server and must not be invented")
@@ -70,7 +70,7 @@ final class DocumentCreationTests: XCTestCase {
         _ = try store.create(title: "Once", body: "", folder: "Notes")
 
         XCTAssertThrowsError(try store.create(title: "Once", body: "", folder: "Notes")) {
-            guard case TexttextCLIError.invalidDocument = $0 else {
+            guard case TextTextCLIError.invalidDocument = $0 else {
                 return XCTFail("expected invalidDocument, got \($0)")
             }
         }

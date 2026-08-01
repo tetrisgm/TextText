@@ -1,6 +1,6 @@
 ---
 name: publish-collaborate
-description: Reshape a Texttext draft, apply a validated template, publish it, and manage collaborators safely. Trigger when the user wants a finished public page, a shared editing link, comments, or account-based access.
+description: Reshape a TextText draft, apply a validated template, publish it, and manage collaborators safely. Trigger when the user wants a finished public page, a shared editing link, comments, or account-based access.
 ---
 
 # Publish and collaborate

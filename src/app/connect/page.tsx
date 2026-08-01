@@ -22,7 +22,7 @@ import "@/styles/connect.css";
 export const metadata: Metadata = {
   title: "Connect Claude, Codex, and ChatGPT",
   description:
-    "Connect Claude, Codex, ChatGPT, and other agents to Texttext.",
+    "Connect Claude, Codex, ChatGPT, and other agents to TextText.",
 };
 
 export default async function ConnectPage() {
@@ -34,10 +34,10 @@ export default async function ConnectPage() {
       <div className="applecms connect-shell">
         <main className="connect-main">
           <p className="connect-provider-kicker">Agents and integrations</p>
-          <h1 className="connect-title">Add Texttext to your AI</h1>
+          <h1 className="connect-title">Add TextText to your AI</h1>
           <p className="connect-lede">
-            Install Texttext in Claude or Codex, connect it to ChatGPT, or use
-            any MCP client. Your AI keeps its account and model while Texttext
+            Install TextText in Claude or Codex, connect it to ChatGPT, or use
+            any MCP client. Your AI keeps its account and model while TextText
             becomes its durable document workspace.
           </p>
           <div className="connect-integration-grid">
@@ -113,7 +113,7 @@ export default async function ConnectPage() {
         <h1 className="connect-title">Connect</h1>
         <p className="connect-lede">
           Use Claude, Codex, or ChatGPT to create, edit, organize, publish, and
-          collaborate on Texttext documents.{" "}
+          collaborate on TextText documents.{" "}
           <Link href="/docs/ai">Open the complete setup guide</Link>.
         </p>
         <ConnectPanel

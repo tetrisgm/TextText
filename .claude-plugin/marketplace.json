@@ -2,17 +2,17 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "texttext",
   "owner": {
-    "name": "Texttext",
-    "email": "support@texttext.app"
+    "name": "TextText",
+    "email": "support@TextText.app"
   },
   "plugins": [
     {
       "name": "texttext",
-      "description": "Create, reshape, publish, and maintain Texttext documents from Claude.",
+      "description": "Create, reshape, publish, and maintain TextText documents from Claude.",
       "version": "0.1.0",
       "author": {
-        "name": "Texttext",
-        "email": "support@texttext.app"
+        "name": "TextText",
+        "email": "support@TextText.app"
       },
       "source": "./plugins/texttext"
     }

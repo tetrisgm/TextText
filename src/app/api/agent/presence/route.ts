@@ -21,7 +21,7 @@ import {
   upsertPresence,
 } from "@/lib/collab";
 import { buildAgentPresence } from "@/lib/collab/agent-presence.server";
-import { verifyWriteApiToken } from "@/lib/mcp/auth";
+import { verifyTextTextApiToken } from "@/lib/mcp/auth";
 import { getPostStoreContext, signalWorkspaceChange } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -34,11 +34,11 @@ function noStore(body: unknown, status = 200): Response {
 }
 
 export async function POST(request: Request) {
-  const auth = await verifyWriteApiToken(request);
+  const auth = await verifyTextTextApiToken(request);
   const userId =
     typeof auth?.extra?.userId === "string" ? auth.extra.userId : null;
   if (!auth || !userId) {
-    return noStore({ error: "Sign in to Texttext on this Mac" }, 401);
+    return noStore({ error: "Sign in to TextText on this Mac" }, 401);
   }
 
   let body: Record<string, unknown>;

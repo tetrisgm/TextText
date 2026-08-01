@@ -314,12 +314,12 @@ describe("renderSyncDocumentFile", () => {
 
 describe("syncManifestItem", () => {
   it("points at the sync file url with the file's hash", () => {
-    vi.stubEnv("NEXT_PUBLIC_ROOT_DOMAIN", "write.example");
+    vi.stubEnv("NEXT_PUBLIC_ROOT_DOMAIN", "texttext.example");
     const item = syncManifestItem(blog, post);
     expect(item.url).toBe(syncFileUrl(post.id ?? ""));
     expect(item.url).toBe(`/api/sync/v1/files/${post.id}`);
     expect(item.canonicalUrl).toBe(
-      "https://write.example/t/demo/hello-sync",
+      "https://texttext.example/t/demo/hello-sync",
     );
     expect(item.hash).toBe(renderSyncFile(blog, post).hash);
     expect(item.id).toBe(post.id);

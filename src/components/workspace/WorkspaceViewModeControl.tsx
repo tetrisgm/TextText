@@ -5,7 +5,7 @@ import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 
 export type WorkspaceViewMode = "list" | "column" | "grid";
 
-const VIEW_MODE_EVENT = "write:workspace-view-mode-changed";
+const VIEW_MODE_EVENT = "texttext:workspace-view-mode-changed";
 
 export const WORKSPACE_VIEW_MODE_LABELS: Record<WorkspaceViewMode, string> = {
   list: "List",
@@ -24,8 +24,8 @@ export function useWorkspaceViewMode(
   defaultMode: WorkspaceViewMode,
 ): [WorkspaceViewMode, (mode: WorkspaceViewMode) => void] {
   const key = id.startsWith("folder:")
-    ? `write:folder-view:${id.slice("folder:".length)}`
-    : `write:workspace-view:${id}`;
+    ? `texttext:folder-view:${id.slice("folder:".length)}`
+    : `texttext:workspace-view:${id}`;
   const subscribe = useCallback((notify: () => void) => {
     window.addEventListener("storage", notify);
     window.addEventListener(VIEW_MODE_EVENT, notify);

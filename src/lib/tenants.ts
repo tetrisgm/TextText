@@ -12,7 +12,7 @@ import { RESERVED_HANDLES } from "./reserved-names";
 export { RESERVED_HANDLES };
 
 /** Platform root, no scheme, may include a port. */
-export const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "texttext.app";
+export const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "TextText.app";
 
 /** The seeded demo blog: reserved from claiming, but it must still resolve. */
 const DEMO_HANDLE = "demo";

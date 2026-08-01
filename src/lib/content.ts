@@ -110,7 +110,7 @@ export type ItemKind =
 /**
  * Everything a completed bookmark capture produced. Binary artifacts live in
  * Blob storage (URLs here); the readable extraction lives in the post body
- * itself so the Markdown file round-trips it. Native Texttext documents package
+ * itself so the Markdown file round-trips it. Native TextText documents package
  * these artifacts inside their TextBundle; imported plain files address them
  * through the single root Data/Attachments tree.
  */
@@ -142,7 +142,7 @@ export type BookmarkCaptureScreenshotTile = {
 export type BookmarkCaptureAsset = {
   /** original remote image URL seen in the captured page */
   originalUrl: string;
-  /** Blob URL served by Texttext */
+  /** Blob URL served by TextText */
   url: string;
   contentType?: string;
   filename?: string;
@@ -216,7 +216,7 @@ export interface Post {
   createdAt?: string;
   updatedAt?: string;
   /**
-   * Monotonic per-mutation version from the DB `write_change_seq` sequence.
+   * Monotonic per-mutation version from the DB `texttext_change_seq` sequence.
    * The sync layer uses it as the compare-and-swap token: a write carries the
    * revision it read, and the store only lands if the row still holds it.
    * Absent for demo/seed content (no database).

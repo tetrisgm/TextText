@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // POST cannot set it, and setting it cross-origin trips a CORS preflight we
 // never answer); the session cookie does the actual authentication.
 export async function POST(request: NextRequest) {
-  if (request.headers.get("x-write-app") !== "1") {
+  if (request.headers.get("x-texttext-app") !== "1") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (!isAuthConfigured) {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sign in first" }, { status: 401 });
   }
 
-  const device = request.headers.get("x-write-device") ?? "this Mac";
+  const device = request.headers.get("x-texttext-device") ?? "this Mac";
   const result = await mintAppTokenForUser(user, device);
   if ("error" in result) {
     return NextResponse.json(result, { status: 400 });

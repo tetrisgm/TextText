@@ -332,7 +332,7 @@ export function finishEditTransition(postId: string) {
     performance.now(),
   );
   if (!result || typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("write:edit-ready", { detail: result }));
+  window.dispatchEvent(new CustomEvent("texttext:edit-ready", { detail: result }));
 }
 
 let sidebarCollapsedMemory: boolean | null = null;
@@ -340,7 +340,7 @@ const sidebarCollapsedListeners = new Set<() => void>();
 let sidebarWidthMemory: number | null = null;
 const sidebarWidthListeners = new Set<() => void>();
 
-const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = "write:workspace-sidebar-width";
+const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = "texttext:workspace-sidebar-width";
 const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 252;
 const WORKSPACE_SIDEBAR_MIN_WIDTH = 220;
 const WORKSPACE_SIDEBAR_MAX_WIDTH = 420;
@@ -349,10 +349,10 @@ const localWorkspaceDraftSessions = new Map<string, DraftState>();
 const localWorkspacePendingSaveIds = new Set<string>();
 const localWorkspaceDraftRevisions = new Map<string, number>();
 const localWorkspaceServerRevisions = new Map<string, string>();
-const WORKSPACE_ASSISTANT_STATE_KEY = "write:workspace-assistant-state";
+const WORKSPACE_ASSISTANT_STATE_KEY = "texttext:workspace-assistant-state";
 const WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY =
-  "write:workspace-assistant-state:v3";
-const WORKSPACE_ASSISTANT_WIDTH_KEY = "write:workspace-assistant-width";
+  "texttext:workspace-assistant-state:v3";
+const WORKSPACE_ASSISTANT_WIDTH_KEY = "texttext:workspace-assistant-width";
 let assistantStateMemory: AssistantSidebarState | null = null;
 let assistantWidthMemory: number | null = null;
 const assistantPreferenceListeners = new Set<() => void>();
@@ -374,7 +374,7 @@ const FALLBACK_FOLDERS: Folder[] = [
 ];
 
 const ROOT_SECTION_MODES: FolderMode[] = ["blog", "notes", "bookmarks"];
-const STOP_LOCAL_EDITING_EVENT = "write:stop-local-editing";
+const STOP_LOCAL_EDITING_EVENT = "texttext:stop-local-editing";
 
 function localDraftRevision(postId: string): number {
   return localWorkspaceDraftRevisions.get(postId) ?? 0;
@@ -1259,8 +1259,8 @@ function buildFolderTree(folders: Folder[]): FolderTreeNode[] {
   return (byParent.get(null) ?? []).map(materialize);
 }
 
-const FOLDER_EXPANDED_KEY = "write.folders.expanded";
-const FOLDER_EXPANDED_EVENT = "write:folders-expanded";
+const FOLDER_EXPANDED_KEY = "texttext.folders.expanded";
+const FOLDER_EXPANDED_EVENT = "texttext:folders-expanded";
 const MAX_FOLDER_DEPTH = 4;
 
 function persistedExpandedSnapshot(): string {

@@ -9,7 +9,7 @@ import {
 } from "@/lib/app-health-rollup";
 
 const target = {
-  appIdentifier: "net.writeapp.write.mac",
+  appIdentifier: "app.texttext.mac",
   appVersion: "0.71",
   buildNumber: "76",
 };

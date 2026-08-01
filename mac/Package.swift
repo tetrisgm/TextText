@@ -1,28 +1,28 @@
 // swift-tools-version: 5.10
 import PackageDescription
 
-// The native Mac client for the Write platform: a pure AppKit shell whose File
+// The native Mac client for the TextText platform: a pure AppKit shell whose File
 // Provider extension materializes the server-backed workspace in Finder.
 // Built with SwiftPM (no .xcodeproj) so CI is one command:
 //   swift build --package-path mac
 // The .app bundle is assembled by mac/scripts/build-app.sh. Sparkle is the
 // app dependencies are vendored or statically linked where required.
 let package = Package(
-    name: "Write",
+    name: "TextText",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "WriteWorkspaceCore", targets: ["WriteWorkspaceCore"]),
-        .library(name: "WriteShareCore", targets: ["WriteShareCore"]),
-        .library(name: "WriteEditor", targets: ["WriteEditor"]),
-        .library(name: "WriteAppIntents", targets: ["WriteAppIntents"]),
-        .library(name: "WriteSpotlight", targets: ["WriteSpotlight"]),
-        .library(name: "WriteShareExtensionCore", targets: ["WriteShareExtensionCore"]),
-        .library(name: "WriteQuickLookCore", targets: ["WriteQuickLookCore"]),
-        .library(name: "WriteFileProviderKit", targets: ["WriteFileProviderKit"]),
-        .library(name: "WriteFileProviderBridge", targets: ["WriteFileProviderBridge"]),
-        .library(name: "WriteFileProviderExtensionCore", targets: ["WriteFileProviderExtensionCore"]),
-        .library(name: "TexttextCLICore", targets: ["TexttextCLICore"]),
-        .executable(name: "texttext", targets: ["TexttextCLI"])
+        .library(name: "TextTextWorkspaceCore", targets: ["TextTextWorkspaceCore"]),
+        .library(name: "TextTextShareCore", targets: ["TextTextShareCore"]),
+        .library(name: "TextTextEditor", targets: ["TextTextEditor"]),
+        .library(name: "TextTextAppIntents", targets: ["TextTextAppIntents"]),
+        .library(name: "TextTextSpotlight", targets: ["TextTextSpotlight"]),
+        .library(name: "TextTextShareExtensionCore", targets: ["TextTextShareExtensionCore"]),
+        .library(name: "TextTextQuickLookCore", targets: ["TextTextQuickLookCore"]),
+        .library(name: "TextTextFileProviderKit", targets: ["TextTextFileProviderKit"]),
+        .library(name: "TextTextFileProviderBridge", targets: ["TextTextFileProviderBridge"]),
+        .library(name: "TextTextFileProviderExtensionCore", targets: ["TextTextFileProviderExtensionCore"]),
+        .library(name: "TextTextCLICore", targets: ["TextTextCLICore"]),
+        .executable(name: "texttext", targets: ["TextTextCLI"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
@@ -31,158 +31,158 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "WriteWorkspaceCore",
-            path: "Sources/WriteWorkspaceCore"
+            name: "TextTextWorkspaceCore",
+            path: "Sources/TextTextWorkspaceCore"
         ),
         .target(
-            name: "WriteShareCore",
-            path: "Sources/WriteShareCore"
+            name: "TextTextShareCore",
+            path: "Sources/TextTextShareCore"
         ),
         .target(
-            name: "WriteEditor",
-            dependencies: ["WriteWorkspaceCore"],
-            path: "Sources/WriteEditor"
+            name: "TextTextEditor",
+            dependencies: ["TextTextWorkspaceCore"],
+            path: "Sources/TextTextEditor"
         ),
         .target(
-            name: "WriteCapabilitySpec",
-            path: "Sources/WriteCapabilitySpec"
+            name: "TextTextCapabilitySpec",
+            path: "Sources/TextTextCapabilitySpec"
         ),
         .target(
-            name: "WriteAppIntents",
-            dependencies: ["WriteWorkspaceCore"],
-            path: "Sources/WriteAppIntents"
+            name: "TextTextAppIntents",
+            dependencies: ["TextTextWorkspaceCore"],
+            path: "Sources/TextTextAppIntents"
         ),
         .target(
-            name: "WriteSpotlight",
-            dependencies: ["WriteWorkspaceCore"],
-            path: "Sources/WriteSpotlight"
+            name: "TextTextSpotlight",
+            dependencies: ["TextTextWorkspaceCore"],
+            path: "Sources/TextTextSpotlight"
         ),
         .target(
-            name: "WriteShareExtensionCore",
-            dependencies: ["WriteShareCore"],
-            path: "Extensions/WriteShareExtension",
-            exclude: ["Info.plist", "WriteShareExtension.entitlements.template"]
+            name: "TextTextShareExtensionCore",
+            dependencies: ["TextTextShareCore"],
+            path: "Extensions/TextTextShareExtension",
+            exclude: ["Info.plist", "TextTextShareExtension.entitlements.template"]
         ),
         .target(
-            name: "WriteQuickLookCore",
-            dependencies: ["WriteShareCore"],
-            path: "Extensions/WriteQuickLookPreview",
-            exclude: ["Info.plist", "WriteQuickLookPreview.entitlements.template"]
+            name: "TextTextQuickLookCore",
+            dependencies: ["TextTextShareCore"],
+            path: "Extensions/TextTextQuickLookPreview",
+            exclude: ["Info.plist", "TextTextQuickLookPreview.entitlements.template"]
         ),
         .target(
-            name: "WriteFileProviderKit",
+            name: "TextTextFileProviderKit",
             dependencies: [
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
-            path: "Sources/WriteFileProviderKit"
+            path: "Sources/TextTextFileProviderKit"
         ),
         .target(
-            name: "TexttextCLICore",
-            dependencies: ["WriteFileProviderKit"],
-            path: "Sources/TexttextCLICore"
+            name: "TextTextCLICore",
+            dependencies: ["TextTextFileProviderKit"],
+            path: "Sources/TextTextCLICore"
         ),
         .executableTarget(
-            name: "TexttextCLI",
-            dependencies: ["TexttextCLICore"],
-            path: "Sources/TexttextCLI"
+            name: "TextTextCLI",
+            dependencies: ["TextTextCLICore"],
+            path: "Sources/TextTextCLI"
         ),
         .target(
-            name: "WriteFileProviderBridge",
-            dependencies: ["WriteFileProviderKit"],
-            path: "Sources/WriteFileProviderBridge"
+            name: "TextTextFileProviderBridge",
+            dependencies: ["TextTextFileProviderKit"],
+            path: "Sources/TextTextFileProviderBridge"
         ),
         .target(
             // The replicated File Provider extension's Swift sources, compiled
             // as a library so `swift test` can exercise them. The .appex itself
             // is linked separately by mac/scripts/embed-extensions.sh.
-            name: "WriteFileProviderExtensionCore",
-            dependencies: ["WriteFileProviderBridge"],
-            path: "Extensions/WriteFileProviderExtension",
-            exclude: ["Info.plist", "WriteFileProviderExtension.entitlements.template"]
+            name: "TextTextFileProviderExtensionCore",
+            dependencies: ["TextTextFileProviderBridge"],
+            path: "Extensions/TextTextFileProviderExtension",
+            exclude: ["Info.plist", "TextTextFileProviderExtension.entitlements.template"]
         ),
         .executableTarget(
-            name: "Write",
+            name: "TextText",
             dependencies: [
-                "WriteShareCore",
-                "WriteWorkspaceCore",
-                "WriteAppIntents",
-                "WriteSpotlight",
-                "WriteFileProviderKit",
+                "TextTextShareCore",
+                "TextTextWorkspaceCore",
+                "TextTextAppIntents",
+                "TextTextSpotlight",
+                "TextTextFileProviderKit",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "libwebp", package: "libwebp-Xcode")
             ],
-            path: "Sources/Write"
+            path: "Sources/TextText"
         ),
         .executableTarget(
             // Depends only on the standalone spec module so a manifest edit
             // can always regenerate, even when generated code is stale.
             name: "capability-generator",
-            dependencies: ["WriteCapabilitySpec"],
+            dependencies: ["TextTextCapabilitySpec"],
             path: "Tools/CapabilityGenerator"
         ),
         .testTarget(
-            name: "TexttextCLICoreTests",
-            dependencies: ["TexttextCLICore", "WriteFileProviderKit"],
-            path: "Tests/TexttextCLICoreTests"
+            name: "TextTextCLICoreTests",
+            dependencies: ["TextTextCLICore", "TextTextFileProviderKit"],
+            path: "Tests/TextTextCLICoreTests"
         ),
         .testTarget(
-            name: "WriteWorkspaceCoreTests",
-            dependencies: ["WriteWorkspaceCore"],
-            path: "Tests/WriteWorkspaceCoreTests"
+            name: "TextTextWorkspaceCoreTests",
+            dependencies: ["TextTextWorkspaceCore"],
+            path: "Tests/TextTextWorkspaceCoreTests"
         ),
         .testTarget(
-            name: "WriteEditorTests",
-            dependencies: ["WriteEditor"],
-            path: "Tests/WriteEditorTests"
+            name: "TextTextEditorTests",
+            dependencies: ["TextTextEditor"],
+            path: "Tests/TextTextEditorTests"
         ),
         .testTarget(
-            name: "WriteAppIntentsTests",
-            dependencies: ["WriteAppIntents", "WriteCapabilitySpec"],
-            path: "Tests/WriteAppIntentsTests"
+            name: "TextTextAppIntentsTests",
+            dependencies: ["TextTextAppIntents", "TextTextCapabilitySpec"],
+            path: "Tests/TextTextAppIntentsTests"
         ),
         .testTarget(
-            name: "WriteSpotlightTests",
-            dependencies: ["WriteSpotlight"],
-            path: "Tests/WriteSpotlightTests"
+            name: "TextTextSpotlightTests",
+            dependencies: ["TextTextSpotlight"],
+            path: "Tests/TextTextSpotlightTests"
         ),
         .testTarget(
-            name: "WriteShareCoreTests",
+            name: "TextTextShareCoreTests",
             dependencies: [
-                "Write",
-                "WriteShareCore",
-                "WriteShareExtensionCore",
-                "WriteQuickLookCore",
+                "TextText",
+                "TextTextShareCore",
+                "TextTextShareExtensionCore",
+                "TextTextQuickLookCore",
             ],
-            path: "Tests/WriteShareCoreTests"
+            path: "Tests/TextTextShareCoreTests"
         ),
         .testTarget(
-            name: "WriteTests",
+            name: "TextTextTests",
             dependencies: [
-                "Write",
-                "WriteFileProviderExtensionCore",
-                "WriteFileProviderBridge",
-                "WriteFileProviderKit",
+                "TextText",
+                "TextTextFileProviderExtensionCore",
+                "TextTextFileProviderBridge",
+                "TextTextFileProviderKit",
             ],
-            path: "Tests/WriteTests"
+            path: "Tests/TextTextTests"
         ),
         .testTarget(
-            name: "WriteFileProviderKitTests",
-            dependencies: ["WriteFileProviderKit"],
-            path: "Tests/WriteFileProviderKitTests"
+            name: "TextTextFileProviderKitTests",
+            dependencies: ["TextTextFileProviderKit"],
+            path: "Tests/TextTextFileProviderKitTests"
         ),
         .testTarget(
-            name: "WriteFileProviderBridgeTests",
-            dependencies: ["WriteFileProviderBridge", "WriteFileProviderKit"],
-            path: "Tests/WriteFileProviderBridgeTests"
+            name: "TextTextFileProviderBridgeTests",
+            dependencies: ["TextTextFileProviderBridge", "TextTextFileProviderKit"],
+            path: "Tests/TextTextFileProviderBridgeTests"
         ),
         .testTarget(
-            name: "WriteFileProviderExtensionCoreTests",
+            name: "TextTextFileProviderExtensionCoreTests",
             dependencies: [
-                "WriteFileProviderExtensionCore",
-                "WriteFileProviderBridge",
-                "WriteFileProviderKit"
+                "TextTextFileProviderExtensionCore",
+                "TextTextFileProviderBridge",
+                "TextTextFileProviderKit"
             ],
-            path: "Tests/WriteFileProviderExtensionCoreTests"
+            path: "Tests/TextTextFileProviderExtensionCoreTests"
         )
     ]
 )

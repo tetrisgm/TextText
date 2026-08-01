@@ -25,7 +25,7 @@ import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
 import type { TemplateDefinition } from "../presentation/schema";
 
-export const writeChangeSequence = pgSequence("write_change_seq");
+export const textTextChangeSequence = pgSequence("texttext_change_seq");
 
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
 export const fileRepresentation = pgEnum("file_representation", [
@@ -306,7 +306,7 @@ export const folders = pgTable(
       .default(1),
     position: integer("position").notNull().default(0),
     /**
-     * Monotonic per-mutation version from the shared `write_change_seq`
+     * Monotonic per-mutation version from the shared `texttext_change_seq`
      * sequence: the compare-and-swap token for optimistic locking and the source
      * of the workspace change cursor (max revision). Globally unique and strictly
      * increasing, so same-millisecond writes get distinct revisions and a value
@@ -317,7 +317,7 @@ export const folders = pgTable(
      */
     revision: bigint("revision", { mode: "number" })
       .notNull()
-      .default(sql`nextval('write_change_seq')`),
+      .default(sql`nextval('texttext_change_seq')`),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
@@ -428,14 +428,14 @@ export const posts = pgTable(
     starred: boolean("starred").notNull().default(false),
     publishedAt: timestamp("published_at"),
     /**
-     * Monotonic per-mutation version from the shared `write_change_seq`
+     * Monotonic per-mutation version from the shared `texttext_change_seq`
      * sequence; the optimistic-lock (compare-and-swap) token and the source of
      * the workspace change cursor. See the folders.revision note and
      * scripts/migrate-add-revision.mjs.
      */
     revision: bigint("revision", { mode: "number" })
       .notNull()
-      .default(sql`nextval('write_change_seq')`),
+      .default(sql`nextval('texttext_change_seq')`),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),

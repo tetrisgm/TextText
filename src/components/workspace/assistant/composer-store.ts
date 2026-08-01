@@ -14,7 +14,7 @@ const listeners = new Set<() => void>();
 let attachmentCounter = 0;
 
 function storageKey(contextKey: string): string {
-  return `write:assistant-composer:${contextKey}`;
+  return `texttext:assistant-composer:${contextKey}`;
 }
 
 function notify() {

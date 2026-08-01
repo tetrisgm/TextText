@@ -1035,7 +1035,7 @@ async function storedItemComments(postId: string): Promise<ItemCommentView[]> {
 function cleanCommentBody(value: unknown): string {
   if (typeof value !== "string") throw new Error("Comment must be text");
   const body = value.replace(/\u0000/g, "").trim();
-  if (!body) throw new Error("Write a comment first");
+  if (!body) throw new Error("Add a comment first");
   if (body.length > 4_000) throw new Error("Comments can be up to 4,000 characters");
   return body;
 }

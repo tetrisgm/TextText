@@ -24,13 +24,13 @@ mac/scripts/apple-plan-eval.sh --skip-tests
 
 `--skip-tests` means the exact source fingerprint already completed the suite.
 The owner-facing ship command refuses an independent `--skip-tests` release
-unless `.write/release-gate-receipt.json` matches the current commit, source
+unless `.texttext/release-gate-receipt.json` matches the current commit, source
 state, required commands, and passing statuses.
 
 After TypeScript, web unit, Swift unit, live on-device assistant, and Apple
 acceptance gates pass, `mac/scripts/verify-workflow-capabilities.sh` evaluates the five web-owned
 workflow command classes without executing a production mutation. Then
-`mac/scripts/write-build-attestation.sh` records their stable receipt IDs with
+`mac/scripts/texttext-build-attestation.sh` records their stable receipt IDs with
 the source suites, durations, source commit, app version, and build number. The
 real Vercel production build runs once later, after the immutable Mac artifact
 has established the release marker. `build-app.sh`
@@ -80,7 +80,7 @@ person's documents.
 
 ## Apple silicon release gate
 
-`build-app.sh` builds Texttext explicitly for arm64. The reusable staged-bundle
+`build-app.sh` builds TextText explicitly for arm64. The reusable staged-bundle
 check verifies the main executable and the Share, Quick Look, and File Provider
 extensions contain only the arm64 slice. Sparkle remains universal because its
 framework and update helpers do not need to be thinned.
@@ -102,10 +102,10 @@ The Swift suite retains detailed behavioral coverage:
 - `IntentBehaviorGoldenEvalTests`
 - `WorkspaceSpotlightIndexerTests`
 - `SyncEngineRegressionTests`
-- `WriteShareCoreTests`
+- `TextTextShareCoreTests`
 - `EditorDocumentTests`
 - `WorkspaceEnumeratorTests`
-- `WriteItemMapperTests`
+- `TextTextItemMapperTests`
 - `BridgeTests`
 - `EnumeratorAdapterTests`
 - `FileProviderExtensionTests`

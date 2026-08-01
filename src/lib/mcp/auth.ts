@@ -19,7 +19,7 @@ import { publicOrigin } from "./origin";
  * the MCP-proper 401 (WWW-Authenticate: Bearer plus an OAuth error body) for a
  * missing, malformed, unknown, or revoked token.
  */
-export async function verifyWriteApiToken(
+export async function verifyTextTextApiToken(
   request: Request,
   bearerToken?: string,
 ): Promise<AuthInfo | undefined> {
