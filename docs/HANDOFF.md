@@ -2,13 +2,13 @@
 
 ## Current position
 
-Renamed the product surface to TextText and TextText.app across app copy, URLs, package metadata, plugin metadata, Mac package targets, bundle names, identifiers, extensions, scripts, tests, and local ignored workspace metadata. Converged revision migration defaults and sequence advancement onto texttext_change_seq. Cleaned generated stale artifacts out of the repo tree.
+Cleaned remaining Git-tracked path casing so the download route and Swift CLI target folders are recorded as TextText in the repository index.
 
-Workshop checkpoint: `1785543011596-c3a94763` (product).
+Workshop checkpoint: `1785545368932-3d7cca9f` (product).
 
 ## Next concrete step
 
-Rerun Workshop verification for the registered product route, then finish through Workshop with a coherent commit and push before handling outer repo/folder/NAS renames.
+Verify the case-only path cleanup through Workshop, then finish with a small follow-up commit.
 
 ## Blockers
 
@@ -17,3 +17,4 @@ None recorded.
 ## Ruled out
 
 - Broad lower-case write replacement: remaining lower-case write hits are verbs, permission/API terms, or platform constants rather than product references.
+- Leaving filesystem-only case changes: Git still tracked the prior casing on the case-insensitive macOS checkout.
