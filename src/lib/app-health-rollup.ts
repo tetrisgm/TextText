@@ -193,7 +193,7 @@ export function evaluateAppHealthOwnerReleaseGate(
   // is a soft, usually transient signal (e.g. the File Provider mount still
   // warming up in the first seconds after a fresh install, which reports a
   // finder.provider latency warning and then settles). Blocking a release on a
-  // warning wedges the autobuild ship loop and drifts public state ahead of
+  // warning wedges a release and drifts public state ahead of
   // source. This mirrors the local install-health gate, which is warning-tolerant.
   const blockingCodes: AppHealthOwnerReleaseBlockingCode[] =
     evaluation.alerts.map((alert) => alert.code);

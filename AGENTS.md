@@ -47,8 +47,14 @@ the public appcast, or to any user-visible update channel.
 ## Database
 
 `.env.local` must point to local Postgres. Development, tests, builds, and the
-full gate never use production Neon. Production migrations load
-`.env.release.local`.
+full gate never use production Neon.
+
+Production release credentials live in the macOS login Keychain, never in a
+plaintext file: service `texttext-release`, accounts `DATABASE_URL` and
+`BLOB_READ_WRITE_TOKEN`, read through `release/secrets.sh`. Store or rotate one
+with `release/secrets.sh store <NAME>`. A missing secret stops the release
+rather than letting it target the wrong database or bucket. Never pass a
+credential as a command argument, and never echo one into a log.
 
 ## Changelog
 

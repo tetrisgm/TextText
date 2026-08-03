@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Set up a LOCAL Postgres for dev/test/CI so nothing routine touches the paid
 # Neon database. The production DB is only ever hit by the deployed app and by
-# release migrations (which load prod creds from .env.release.local).
+# release migrations (which load prod creds from the login Keychain).
 #
 # One-time: brew install postgresql@17 && brew services start postgresql@17
 # Then:      bash scripts/setup-local-db.sh

@@ -55,6 +55,9 @@ trap release_ship_lock EXIT INT TERM
 # TextText's public release identity is product configuration, not secret input.
 # Keep it here so the owner-facing command is genuinely one command.
 export TEXTTEXT_NOTARY_PROFILE="${TEXTTEXT_NOTARY_PROFILE:-texttext-notary}"
+
+# Release credentials come from the login Keychain, never a plaintext file.
+. "$ROOT/release/secrets.sh"
 export TEXTTEXT_BUNDLE_ID="${TEXTTEXT_BUNDLE_ID:-app.texttext.mac}"
 export TEXTTEXT_APP_GROUP="${TEXTTEXT_APP_GROUP:-group.app.texttext}"
 export TEXTTEXT_PRODUCT_ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-https://TextText.app}"
@@ -119,15 +122,9 @@ if [ "$NO_PUBLISH" != "1" ]; then
 
   # Fail before expensive release gates when production cannot accept the
   # migration or serve the deployed app. This query is read-only.
-  if [ ! -f "$ROOT/.env.release.local" ]; then
-    echo "Missing .env.release.local (production DB creds required to ship)." >&2
-    exit 1
-  fi
   echo ">> preflight production database"
   (
-    set -a
-    . "$ROOT/.env.release.local"
-    set +a
+    require_release_secret DATABASE_URL || exit 1
     case "${DATABASE_URL:-}" in
       *neon.tech*) ;;
       *) echo "Refusing: release DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
@@ -188,12 +185,11 @@ fi
 if [ "$LOCAL_INSTALL" != "1" ]; then
 echo ">> migrate database (production only)"
 # The dev DB (.env.local) is a LOCAL Postgres, so migrations must load the
-# production Neon creds from the release-only file. Guard hard: never migrate
-# anything that is not the prod Neon endpoint, so a misconfigured machine can
-# never point a release at a local or throwaway database.
-set -a
-. "$ROOT/.env.release.local"
-set +a
+# production Neon creds from the login Keychain (release/secrets.sh). Guard
+# hard: never migrate anything that is not the prod Neon endpoint, so a
+# misconfigured machine can never point a release at a local or throwaway
+# database.
+require_release_secret DATABASE_URL
 case "${DATABASE_URL:-}" in
   *neon.tech*) ;;
   *) echo "Refusing: migration DATABASE_URL is not the prod Neon DB." >&2; exit 1 ;;
@@ -203,12 +199,7 @@ DATABASE_URL="$DATABASE_URL" npx tsx "$ROOT/scripts/work-unit.ts" run \
   "$ROOT/scripts/run-release-migrations.sh"
 
 if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
-  export BLOB_READ_WRITE_TOKEN="$(node --input-type=module <<'NODE'
-import pkg from "@next/env";
-pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
-process.stdout.write(process.env.BLOB_READ_WRITE_TOKEN ?? "");
-NODE
-)"
+  require_release_secret BLOB_READ_WRITE_TOKEN
 fi
 
 echo ">> release Mac app"
@@ -483,7 +474,7 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
   [ "$LOCAL_HEALTH_BUILD" = "$EXPECTED_BUILD" ] || { echo "Installed app health build is $LOCAL_HEALTH_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
   # A "fail" is a hard block. A residual "warning" (never "fail") is non-blocking:
   # it is a soft, usually transient signal (e.g. the File Provider mount still warming
-  # up moments after install) and must not wedge the autobuild ship loop. The uploaded
+  # up moments after install) and must not wedge the release. The uploaded
   # health gate below (health:review --fail-on-failure) already blocks only on failure.
   case "$LOCAL_HEALTH_STATUS" in
     pass)
