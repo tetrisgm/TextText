@@ -28,6 +28,22 @@ This version has breaking changes. Read the relevant guide under
 - The zero-setup demo is `/@demo`; `/t/demo` redirects there.
 - Full AI architecture is in `docs/ai-sidebar-architecture.md`.
 
+## Releases
+
+Releases and store uploads happen only when the owner asks. Releasing is a
+decision, not a trigger.
+
+No launchd job, cron entry, CI schedule, watcher, or git hook may build,
+publish, deploy, notarize, upload, or reinstall this project on its own. A
+commit is not a release signal, and neither is a timer. Do not install, arm,
+or restore such a job, and do not add a script whose purpose is to run one.
+
+`release/ship.sh` (`npm run ship`) is a deliberate command a human runs. It
+must never be wrapped in a watcher, loop, or scheduler.
+
+Debugging happens locally. Never diagnose by pushing a build to a store, to
+the public appcast, or to any user-visible update channel.
+
 ## Database
 
 `.env.local` must point to local Postgres. Development, tests, builds, and the

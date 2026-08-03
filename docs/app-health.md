@@ -41,15 +41,9 @@ untracked source, so a stale pass cannot authorize different code. Local
 receipts contain commands, stable source hashes, status, and durations only.
 They do not contain document content, credentials, or model output.
 
-The owner Mac uses a bounded launchd delivery controller. Install or replace
-that controller once with:
-
-```sh
-bash release/install-autobuild.sh
-```
-
-The installer writes and loads `app.texttext.autobuild`. Normal product
-work kickstarts the installed job and does not rerun the installer.
+There is no delivery controller and no scheduled job. Releasing is a decision,
+not a trigger: the owner runs `npm run ship` deliberately when a release is
+wanted. See the Releases section of `AGENTS.md`.
 
 Finder reliability has two complementary gates. The Swift suite runs a
 deterministic 20-cycle lifecycle through the real File Provider extension core:

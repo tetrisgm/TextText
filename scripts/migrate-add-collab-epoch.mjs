@@ -14,8 +14,7 @@
 // .env.local (no dotenv dep). Additive only. Existing posts get epoch 0 and no
 // collab_state row; the runtime treats "no collab_state / NULL
 // materialized_revision" as "reseed once from posts.body on next open", which is
-// the accepted reset of any pre-existing co-editing log (owner-approved). See
-// docs/archive/2026-07-15-collab-hole2-reset-generation.md.
+// the accepted reset of any pre-existing co-editing log (owner-approved).
 
 import { readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";

@@ -729,7 +729,7 @@ export const collabUpdates = pgTable(
      * The log GENERATION this row belongs to. Retiring a stale between-sessions
      * log bumps collab_state.epoch; rows from a retired epoch are ignored by the
      * relay (never deleted, so no orphaned delta), and an append fenced on an old
-     * epoch is rejected. See docs/archive/2026-07-15-collab-hole2-reset-generation.md.
+     * epoch is rejected. Verified by scripts/verify-collab-epoch-live.ts.
      */
     epoch: integer("epoch").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
