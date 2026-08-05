@@ -67,3 +67,5 @@ Shoku's Space/My Notes/TextText Changelog.textpack
 Resolve it by this full path, confirm the version that actually shipped, and do
 not create a repository copy. Internal infrastructure-only changes need no
 entry.
+
+- GitHub Actions is never used in this repo: no workflow files, secrets, or runners. Verification is merge-gate on the PC Linux lane (stack/runbooks/workflow.md); GitHub is a git host only.
