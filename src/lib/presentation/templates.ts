@@ -258,7 +258,7 @@ const talk = {
   description: "A video or talk with its notes underneath.",
   fields: [
     { id: "cover", label: "Cover", type: "image" },
-    { id: "videoUrl", label: "Video", type: "url", required: true },
+    { id: "videoUrl", label: "Video", type: "url" },
   ],
   capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
@@ -276,6 +276,14 @@ const talk = {
         bind: "content.fields.videoUrl",
         alt: "content.title",
         height: "large",
+        showWhen: "content.fields.videoUrl",
+      },
+      {
+        type: "cover",
+        bind: "content.fields.cover",
+        alt: "content.title",
+        height: "large",
+        showWhen: "content.fields.cover",
       },
       {
         type: "masthead",

@@ -1358,12 +1358,6 @@ export async function executeMcpTool(
       const useLiveDocument =
         contentFields.length > 0 &&
         Boolean(post.id && (await hasActiveCoEditors(post.id)));
-      if (fieldsChanged && useLiveDocument) {
-        return errorResult(
-          "Someone is editing this document right now; field values cannot change mid-session. Retry when the session ends.",
-        );
-      }
-
       try {
         const saved = useLiveDocument
           ? await saveLiveContentMutation({
@@ -1381,6 +1375,8 @@ export async function executeMcpTool(
                 tags: !sameValue(content.tags, normalizeTags(post.tags))
                   ? content.tags
                   : undefined,
+                fields:
+                  fieldsChanged && requestedFields ? requestedFields : undefined,
               },
               ownerPatch: access.isOwner
                 ? {

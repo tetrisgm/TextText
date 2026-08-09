@@ -87,9 +87,12 @@ export const EXEMPLARS: Exemplar[] = [
   },
   {
     template: "texttext.talk",
-    title: "Simple made easy",
-    body: `Rich Hickey's argument that simplicity is an objective property of code, distinct from ease, and that most of our tools optimize the wrong one. The talk that gave "complect" back to the language.`,
-    fields: { videoUrl: "https://www.youtube.com/watch?v=SxdOUGdseq4" },
+    title: "Writing for people who will never meet you",
+    body: `Notes from the talk, written up the same evening while the questions were still fresh.\n\n## The premise\n\nMost technical writing is addressed to the person sitting next to you. The reader who actually shows up is a stranger, two years later, halfway through a bad day.\n\n## What changes\n\nYou stop writing "obviously". You define the term the first time. You say what you tried that did not work, because that is the part they cannot reconstruct.\n\n## The question I could not answer\n\nSomeone asked how you write for a stranger without writing for nobody. I still think the answer is that you pick one real person and let the stranger overhear.`,
+    // Deliberately no videoUrl: a talk page exists before the recording does,
+    // and the shipped example stands on its own media rather than borrowing
+    // another company's player.
+    fields: { cover: "/covers/cover-119.jpg" },
   },
   {
     template: "texttext.todo",

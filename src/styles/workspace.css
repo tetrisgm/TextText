@@ -1,6 +1,14 @@
 /* TextText workspace chrome
    One restrained operational system for navigation, toolbars, collections,
-   dialogs, settings, and the assistant. Document templates remain independent. */
+   dialogs, settings, and the assistant. Document templates remain independent.
+
+   LAYERING: this file is imported after broadsheet.css in src/app/layout.tsx,
+   so for any selector both files carry, this one wins. It is the last word on
+   the workspace surfaces. Put a workspace change here, not in broadsheet.css,
+   or it will look like it did nothing. Rules in broadsheet.css whose every
+   property was reset here have been removed; the ones that remain are still
+   load-bearing for surfaces this file does not cover (the reader, the public
+   blog, the landing page). */
 
 :where(
   .post-editor-shell,

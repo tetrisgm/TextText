@@ -16,6 +16,11 @@ export type DocumentMutation = {
   body?: string;
   appendBody?: string;
   tags?: string[];
+  /** Declared field values. A null clears one. */
+  fields?: Record<string, DocumentFieldValue | null>;
+  /** The look, as an exact pinned reference. */
+  template?: { id: string; version: number };
+  assets?: DocumentAsset[];
   operationId?: string;
 };
 
@@ -138,6 +143,25 @@ export function applyDocumentMutation(
     }
     if (mutation.tags !== undefined) {
       replaceArray(array(rootMap, "tags"), mutation.tags);
+    }
+    if (mutation.fields !== undefined) {
+      const fields = map(rootMap, "fields");
+      for (const [key, value] of Object.entries(mutation.fields)) {
+        if (value === null) fields.delete(key);
+        else fields.set(key, value);
+      }
+    }
+    if (mutation.assets !== undefined) {
+      replaceArray(array(rootMap, "assets"), mutation.assets);
+    }
+    if (mutation.template !== undefined) {
+      // Presentation is a pinned reference, never a merged structure: two
+      // concurrent look changes must resolve to one whole look, not a mix.
+      const presentation = map(rootMap, "presentation");
+      presentation.set("template", {
+        id: mutation.template.id,
+        version: mutation.template.version,
+      });
     }
     if (mutation.operationId) {
       operations.set(mutation.operationId, Date.now());
