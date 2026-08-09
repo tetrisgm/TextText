@@ -21,6 +21,7 @@ import {
   createAnonymousBlogRecord,
   createDraft,
   createDraftInFolder,
+  getDocumentTemplate,
   getFolderByPath,
   createSubfolder,
   deletePost,
@@ -168,18 +169,32 @@ function cleanWorkspaceCreateType(value: unknown): Extract<
     : "article";
 }
 
-function cleanTemplateReference(value: unknown): TemplateReference | undefined {
+/**
+ * A look may be one this workspace authored, not only a built-in. Validating
+ * against `getBuiltinTemplate` alone meant the composer refused to create an
+ * item in a folder whose look the AI had just made: the folder carried the
+ * template, the create request named it, and the server answered "Template
+ * not found".
+ */
+async function cleanTemplateReference(
+  value: unknown,
+  blogId: string | null | undefined,
+): Promise<TemplateReference | undefined> {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as { id?: unknown; version?: unknown };
   if (
     typeof candidate.id !== "string" ||
     typeof candidate.version !== "number" ||
-    !Number.isInteger(candidate.version) ||
-    !getBuiltinTemplate(candidate.id, candidate.version)
+    !Number.isInteger(candidate.version)
   ) {
     throw new Error("Template not found");
   }
-  return { id: candidate.id, version: candidate.version };
+  const reference = { id: candidate.id, version: candidate.version };
+  const resolved = blogId
+    ? await getDocumentTemplate(blogId, reference)
+    : getBuiltinTemplate(reference.id, reference.version);
+  if (!resolved) throw new Error("Template not found");
+  return reference;
 }
 
 // Notes and bookmarks live in their own folders and are always unlisted.
@@ -710,7 +725,7 @@ export async function createWorkspacePostAction(
   const { handle, access } = await editableHandleFor(handleInput);
   await enforceAnonymousPostLimit(handle, access);
   const type = cleanWorkspaceCreateType(typeInput);
-  const template = cleanTemplateReference(templateInput);
+  const template = await cleanTemplateReference(templateInput, access.blogId);
   const created = await createDraft(handle, type, { template });
   const title = cleanOptionalLine(titleInput, "Title");
   const body = cleanBody(bodyInput);
@@ -796,7 +811,7 @@ export async function createFolderItemAction(
 
   if (folder === "notes") {
     const created = await createDraft(handle, "note", {
-      template: cleanTemplateReference(input?.template),
+      template: await cleanTemplateReference(input?.template, access.blogId),
     });
     const title = cleanOptionalLine(input?.title, "Title");
     const body = cleanBody(input?.body);
@@ -823,7 +838,7 @@ export async function createFolderItemAction(
   const title = cleanOptionalLine(input?.title, "Title") || host;
   const description = cleanOptionalLine(input?.description, "Description");
   const created = await createDraft(handle, "bookmark", {
-    template: cleanTemplateReference(input?.template),
+    template: await cleanTemplateReference(input?.template, access.blogId),
   });
   const saved = await savePost(handle, {
     ...created,

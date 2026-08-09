@@ -902,3 +902,17 @@
     overflow-x: auto;
   }
 }
+
+/* A look declares how its index is laid out. The reader's view control still
+   chooses grid/list/column; within a grid, the look's column count and gap
+   decide the density, which is the difference between a two-column magazine
+   index and a four-column gallery. Both were declared and validated by the
+   presentation schema and read by nothing until now, so a look could ask for
+   a shape and silently get the CSS default. */
+.universal-item-collection.is-grid {
+  grid-template-columns: repeat(
+    var(--collection-columns, auto-fill),
+    minmax(min(280px, 100%), 1fr)
+  );
+  gap: var(--collection-gap, 22px);
+}

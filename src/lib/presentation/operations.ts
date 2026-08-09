@@ -36,10 +36,17 @@ export const templateOperationSchema = z.discriminatedUnion("op", [
     op: z.literal("replace-collection-item"),
     item: renderNodeSchema,
   }).strict(),
+  // A board needs the enum it groups by and a calendar needs the date it
+  // places by. Without them the layout is declared, stored, validated, and
+  // then falls back to a plain grid at render time - the look silently does
+  // not do the one thing it was asked for.
   z.object({
     op: z.literal("set-collection-layout"),
     layout: collectionRenderSchema.shape.layout,
     columns: collectionRenderSchema.shape.columns.optional(),
+    groupBy: collectionRenderSchema.shape.groupBy,
+    dateBy: collectionRenderSchema.shape.dateBy,
+    gap: collectionRenderSchema.shape.gap.optional(),
   }).strict(),
   // Sort and filters are what turn declared fields into an organized
   // collection: "Books by rating, unread first" is exactly one of each.
@@ -121,6 +128,9 @@ export function applyTemplateOperations(
             ...next.collection,
             layout: operation.layout,
             columns: operation.columns ?? next.collection.columns,
+            gap: operation.gap ?? next.collection.gap,
+            groupBy: operation.groupBy ?? next.collection.groupBy,
+            dateBy: operation.dateBy ?? next.collection.dateBy,
           },
         };
         break;

@@ -83,6 +83,8 @@ const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
   "list_access",
   "list_document_templates",
   "customize_document_template",
+  "preview_document_template",
+  "set_folder_template",
   "set_item_template",
   "update_item",
   "append_to_item",
@@ -142,10 +144,18 @@ const PROMPT_TOOL_GROUPS: Array<{
     tools: ["recapture_bookmark"],
   },
   {
-    pattern: /\b(template|look|layout|design|style)\b/i,
+    // A look is asked for in ordinary words ("make my blog look like Medium"),
+    // so the words that reach for one are broader than "template". Applying it
+    // to the FOLDER is what makes the request finish: without
+    // set_folder_template the model can author a look and restyle one item,
+    // and the blog it was asked about stays exactly as it was.
+    pattern:
+      /\b(template|look|looks|layout|design|style|theme|blog|magazine|gallery|board|feed)\b/i,
     tools: [
       "list_document_templates",
       "customize_document_template",
+      "preview_document_template",
+      "set_folder_template",
       "set_item_template",
     ],
   },

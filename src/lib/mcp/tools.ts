@@ -71,6 +71,7 @@ import {
   getAccessibleFolderCounts,
   getAccessibleFolderPostFiles,
   getAccessibleFolders,
+  getFolderByPath,
   getPostById,
   getPostStoreContext,
   getTrashedFolders,
@@ -87,6 +88,7 @@ import {
   restorePost,
   savePost,
   savePostContentPatch,
+  setFolderTemplate,
   setItemCommentResolved,
   signalWorkspaceChange,
   trashFolder,
@@ -744,6 +746,72 @@ export async function executeMcpTool(
           error instanceof Error
             ? `Template rejected: ${error.message}`
             : "Template rejected.",
+        );
+      }
+    }
+
+    case "preview_document_template": {
+      const input = args as WorkspaceToolInput<"preview_document_template">;
+      const resolved = await requireWorkspace(extra);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      const base = await getDocumentTemplate(resolved.access.blogId, {
+        id: input.base_template_id,
+        version: input.base_template_version,
+      });
+      if (!base) return errorResult("Base template not found.");
+      try {
+        // Nothing is written. The point is that a model can learn its batch is
+        // wrong for the price of a read.
+        const template = applyTemplateOperations(base, input.operations);
+        return jsonResult({ ok: true, template });
+      } catch (error) {
+        return jsonResult({
+          ok: false,
+          rejected:
+            error instanceof Error ? error.message : "Template rejected.",
+        });
+      }
+    }
+
+    case "set_folder_template": {
+      const input = args as WorkspaceToolInput<"set_folder_template">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      const folder = await getFolderByPath(
+        resolved.blog.handle,
+        input.folder_path,
+      );
+      if (!folder) return errorResult("Folder not found.");
+      try {
+        const updated = await setFolderTemplate(
+          resolved.blog.handle,
+          folder.id,
+          { id: input.template_id, version: input.template_version },
+        );
+        await recordAction(
+          mcpAuditEntry(
+            extra,
+            "mcp.set_folder_template",
+            "folder",
+            folder.id,
+            `${input.template_id}@${input.template_version}`,
+          ),
+        );
+        revalidateBlogPaths(resolved.blog, []);
+        return jsonResult({
+          folder: updated,
+          template: await getDocumentTemplate(resolved.access.blogId, {
+            id: input.template_id,
+            version: input.template_version,
+          }),
+        });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error
+            ? error.message
+            : "The folder's look could not be set.",
         );
       }
     }

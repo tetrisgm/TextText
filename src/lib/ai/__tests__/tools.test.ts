@@ -20,6 +20,8 @@ const EXPECTED_NAMES = [
   "list_access",
   "list_document_templates",
   "customize_document_template",
+  "preview_document_template",
+  "set_folder_template",
   "set_item_template",
   "create_item",
   "update_item",
@@ -65,6 +67,7 @@ const IDEMPOTENT_WRITES = new Set([
   "revoke_access",
   "set_comment_resolved",
   "remove_item_asset",
+  "set_folder_template",
   "set_item_template",
 ]);
 

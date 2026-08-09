@@ -3993,6 +3993,7 @@ function LocalWorkspaceContent({
           onSelectPost={onSelectPost}
           selectedPostId={selectedPostId}
           selectedPostIds={selectedPostIds}
+          availableTemplates={pool.templates}
         />
       );
     }

@@ -405,8 +405,19 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   }),
   customize_document_template: defineTool("customize_document_template", {
     title: "Customize document template",
-    description:
-      "Create the next immutable workspace template version by applying constrained operations to an existing valid template. Templates are data only and cannot contain HTML, CSS, or JavaScript.",
+    description: [
+      "Create an immutable workspace template (a 'look') by applying operations to an existing one. A look is data only: it can never contain HTML, CSS, or JavaScript, and anything that tries is rejected.",
+      "",
+      "A look controls BOTH surfaces: `item` is how one document renders when opened, and `collection` is how the folder's index renders. Set both, or the folder page will not match the item pages.",
+      "",
+      "The sequence that works, for a request like 'make my blog look like Medium':",
+      "1. list_document_templates - see what exists and pick the closest base.",
+      "2. preview_document_template - dry-run your operations; nothing is saved and a rejection is free.",
+      "3. customize_document_template - write the version once the preview is clean.",
+      "4. set_folder_template - point the folder at it. WITHOUT THIS STEP NOTHING THE PERSON CAN SEE HAS CHANGED: new items get the look and the folder index renders from it only once the folder carries it.",
+      "",
+      "Rules that cause most rejections: every binding must name a field declared by `set-fields` (bindings look like `content.fields.<id>`, plus `content.title`, `content.subtitle`, `content.body`, `content.tags`); if you replace the fields you must also replace `item` AND `collection.item` in the same call, because the whole template is revalidated together; a `board` layout also needs `groupBy` and a `calendar` layout needs `dateBy`.",
+    ].join("\n"),
     inputSchema: z
       .object({
         base_template_id: templateId,
@@ -417,6 +428,38 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       })
       .strict(),
     mutability: "write",
+  }),
+  preview_document_template: defineTool("preview_document_template", {
+    title: "Preview document template",
+    description:
+      "Dry-run template operations and return the resulting template, or the reason it was rejected, WITHOUT saving anything. Use this to check a look before customize_document_template writes a version: a rejected batch here costs nothing, while a rejected write costs a round trip and leaves the workspace unchanged anyway.",
+    inputSchema: z
+      .object({
+        base_template_id: templateId,
+        base_template_version: templateVersion,
+        operations: templateOperationsSchema,
+      })
+      .strict(),
+    mutability: "read",
+  }),
+  set_folder_template: defineTool("set_folder_template", {
+    title: "Set folder look",
+    description:
+      "Give a folder a look. The template becomes what new items in the folder are created with AND what the folder's index page renders from, so this is how a request like 'make this folder a magazine' is actually applied. Existing items keep the template they were made with.",
+    inputSchema: z
+      .object({
+        folder_path: z
+          .string()
+          .trim()
+          .min(1)
+          .max(255)
+          .describe('Folder path inside the workspace, e.g. "blog" or "blog/ideas".'),
+        template_id: templateId,
+        template_version: templateVersion,
+      })
+      .strict(),
+    mutability: "write",
+    idempotent: true,
   }),
   set_item_template: defineTool("set_item_template", {
     title: "Set item template",

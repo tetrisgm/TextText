@@ -1100,6 +1100,48 @@ export async function renameFolder(
 }
 
 /**
+ * Give a folder a look. The reference is what new items in the folder are
+ * created with, and what the folder page renders its index from, so this one
+ * write is what turns "make me a Medium blog" into a working folder.
+ *
+ * The template must already exist and resolve for this workspace, built-in or
+ * workspace-authored. Pointing a folder at a template that cannot resolve
+ * would leave every new item in it unrenderable, so it is refused here rather
+ * than discovered later.
+ */
+export async function setFolderTemplate(
+  handle: string,
+  folderId: string,
+  reference: TemplateReference,
+): Promise<Folder> {
+  if (!db) throw new Error("Setting a folder's look needs a database.");
+  const blogId = await blogIdFor(handle);
+  const template = await getDocumentTemplate(blogId, reference);
+  if (!template) {
+    throw new Error(
+      `Unknown template ${reference.id}@${reference.version}`,
+    );
+  }
+  const updated = await db
+    .update(folders)
+    .set({
+      defaultTemplateId: reference.id,
+      defaultTemplateVersion: reference.version,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(folders.id, folderId),
+        eq(folders.blogId, blogId),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .returning();
+  if (!updated[0]) throw new Error("Folder not found");
+  return mapFolder(updated[0]);
+}
+
+/**
  * Bookmarks waiting for a capture agent (normally the Mac app). Each entry
  * carries the URL to capture: the first link's href, set at creation.
  */

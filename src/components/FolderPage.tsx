@@ -13,6 +13,7 @@ import {
   useTransition,
 } from "react";
 import type {
+  CSSProperties,
   FormEvent,
   MouseEvent,
   ReactNode,
@@ -56,6 +57,7 @@ import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { applyCollectionSpec } from "@/lib/documents/collection-query";
 import { parseItemInput } from "@/lib/item-creation";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
 import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
@@ -195,6 +197,20 @@ function expandedPreview(body: string): string {
   const wordBreak = sliced.lastIndexOf(" ");
   return `${wordBreak > 600 ? sliced.slice(0, wordBreak) : sliced}...`;
 }
+
+/**
+ * The engine's spacing tokens as lengths. The container is not a
+ * `.tt-document`, so the `--tt-gap-*` custom properties are not in scope on
+ * it and a look's declared gap has to arrive as a value.
+ */
+const COLLECTION_GAP: Record<string, string> = {
+  none: "0",
+  xs: "0.35rem",
+  sm: "0.75rem",
+  md: "1.25rem",
+  lg: "2rem",
+  xl: "3.5rem",
+};
 
 function defaultTemplateForFolder(folder: Folder): TemplateReference {
   if (folder.defaultTemplate) return folder.defaultTemplate;
@@ -802,10 +818,12 @@ function UniversalFolderContents({
   onOpenPost,
   onOpenTag,
   onSelectPost,
+  availableTemplates,
   selectedPostId,
   selectedPostIds,
   viewMode,
 }: {
+  availableTemplates?: readonly TemplateDefinition[];
   blog: Blog;
   folder: Folder;
   handle: string;
@@ -828,9 +846,25 @@ function UniversalFolderContents({
   // the historical most-recent-first order stands. Pinned stays the outermost
   // order either way: pin is a personal "keep on top" that outranks any
   // template opinion.
-  const collectionDefinition = useMemo(() => {
+  // A look may be one the workspace authored rather than a built-in. Resolving
+  // only built-ins meant an AI-made look was silently ignored on this page:
+  // the index kept the default order while its cards fell all the way back to
+  // Article, so a folder someone had just restyled looked untouched.
+  const resolveTemplate = useCallback(
+    (reference: TemplateReference) =>
+      availableTemplates?.find(
+        (entry) =>
+          entry.id === reference.id && entry.version === reference.version,
+      ) ?? getBuiltinTemplate(reference.id, reference.version),
+    [availableTemplates],
+  );
+  const collectionDefinition = useMemo(
+    () => resolveTemplate(defaultTemplateForFolder(folder)),
+    [folder, resolveTemplate],
+  );
+  const usesStockArticleLook = useMemo(() => {
     const reference = defaultTemplateForFolder(folder);
-    return getBuiltinTemplate(reference.id, reference.version);
+    return reference.id === "texttext.article" && reference.version === 1;
   }, [folder]);
   const collectionSpec = useMemo(() => {
     if (!collectionDefinition) return null;
@@ -1008,7 +1042,14 @@ function UniversalFolderContents({
               );
             })}
           </div>
-        ) : folder.mode === "blog" ? (
+        ) : folder.mode === "blog" && usesStockArticleLook ? (
+          // The stock blog feed is hardcoded markup that predates the document
+          // engine, so it renders the same whatever look the folder carries.
+          // It stays as the fast path for a folder still on the built-in
+          // Article look, which is what it was drawn for; give the folder any
+          // other look - including one an agent just authored - and the
+          // template drives the index instead. Expressing this feed as
+          // `article.collection` would remove the branch entirely.
           <div
             className="blog-folder-feed"
             role="listbox"
@@ -1224,7 +1265,7 @@ function UniversalFolderContents({
             const document = post.document ?? documentFromLegacyPost(post);
             const reference = post.template ?? document.presentation.template;
             const definition =
-              getBuiltinTemplate(reference.id, reference.version) ??
+              resolveTemplate(reference) ??
               getBuiltinTemplate("texttext.article", 1)!;
             const notePreview = expandedPreview(
               postBodyPreview(post) || post.excerpt || "",
@@ -1529,9 +1570,24 @@ function UniversalFolderContents({
               </div>
             );
           }
+          // The look says how its index is laid out; the view control is the
+          // reader's override on top of that. `columns` and `gap` were
+          // declared, defaulted and validated by the schema but read by
+          // nothing, so a look could ask for a two-column index and get
+          // whatever CSS happened to say.
           return (
             <div
               className={`universal-item-collection is-${viewMode}`}
+              data-collection-layout={collectionDefinition?.collection.layout}
+              style={
+                {
+                  "--collection-columns":
+                    collectionDefinition?.collection.columns,
+                  "--collection-gap": collectionDefinition
+                    ? COLLECTION_GAP[collectionDefinition.collection.gap]
+                    : undefined,
+                } as CSSProperties
+              }
               role="listbox"
               aria-label="Folder items"
               aria-activedescendant={postOptionId(selectedPostId)}
@@ -1547,6 +1603,7 @@ function UniversalFolderContents({
 }
 
 export function FolderPage({
+  availableTemplates,
   blog,
   folder,
   handle,
@@ -1568,6 +1625,7 @@ export function FolderPage({
   onDeleteFolder,
   canShareFolders = true,
 }: {
+  availableTemplates?: readonly TemplateDefinition[];
   blog: Blog;
   folder: Folder;
   handle: string;
@@ -1696,6 +1754,7 @@ export function FolderPage({
         </div>
       )}
       <UniversalFolderContents
+        availableTemplates={availableTemplates}
         blog={blog}
         folder={folder}
         handle={handle}
