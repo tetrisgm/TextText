@@ -181,6 +181,38 @@ The live run proves it end to end: 24/24, with the writer's insertion point
 moving 594 to 582 and an idle watcher seeing a colleague's caret move after
 1239 ms, on a body whose every line carries that run's stamp.
 
+### The Mac app is the same UI, and now says where it is pointing
+
+The Mac client is a native window around the web app (`WebAppWindowController`
+is a `WKWebView` on the server origin), so everything above appears there too.
+The native parts around it are the File Provider mirror to `~/TextText/*.md`,
+Spotlight, Shortcuts, quick capture, the capture agent, and the `texttext` CLI.
+
+Three things made a dev launch look like a broken app:
+
+1. **It silently talked to production.** With no `TEXTTEXT_SERVER`, no linked
+   credential and no release plist, `resolveServerOrigin` fell through to the
+   product origin, so `swift run` read and wrote the LIVE workspace. A build
+   with no `SUFeedURL` is not a release build, and now defaults to
+   `http://localhost:3000`. Every run prints the origin it chose, and why, to
+   stderr on first use.
+2. **An unreachable origin was a blank white window.** The window controller
+   implemented no `didFail` handler at all. It now renders what it tried to
+   reach, the underlying reason, the command to start the server, and a Retry
+   button.
+3. **`npm run mac:dev`** (`mac/scripts/dev-run.sh`) waits for the server to
+   answer before launching, so starting the client too early is a clear message
+   rather than a mystery. `npm run mac:build` and `npm run mac:test` are there
+   too.
+
+Latent hazard, documented but not fixed: the `TextText` app product and the
+`texttext` CLI product differ only in case, so on a stock case-insensitive Mac
+volume they share one path in `.build/debug/` and whichever linked last wins.
+Running `./.build/debug/TextText` straight after `swift test` runs the CLI and
+looks like the app failing to launch. Going through `swift run --package-path
+mac TextText` rebuilds the right one first. Renaming one product would remove
+it outright.
+
 ## Open
 
 Nothing from today's list. Two notes for whoever picks this up:
@@ -202,6 +234,11 @@ scheduled anything.
 - `npm run build` succeeds.
 - `npm run eval:collaboration:browser`: 24/24.
 - `npx eslint src`: 26, against `main`'s 27.
+- `swift build --package-path mac` clean; `swift test --package-path mac`: 413
+  tests, 0 failures.
+- The client launched against a local server end to end: origin resolved to
+  `http://localhost:3000 (dev build, no release feed)` and the window stayed
+  up.
 
 ## Next concrete step
 

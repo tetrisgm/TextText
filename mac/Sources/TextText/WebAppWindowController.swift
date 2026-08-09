@@ -332,8 +332,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         _ ucc: WKUserContentController, didReceive message: WKScriptMessage
     ) {
         guard message.name == "textTextApp",
-              let body = message.body as? [String: Any],
-              body["action"] as? String == "linked",
+              let body = message.body as? [String: Any]
+        else { return }
+        // The unreachable-origin page's Retry button.
+        if body["action"] as? String == "retry" {
+            webView.load(request(for: startupNavigation.path))
+            return
+        }
+        guard body["action"] as? String == "linked",
               let token = body["token"] as? String,
               let originString = body["origin"] as? String,
               let linkedOrigin = URL(string: originString)
@@ -406,6 +412,71 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
+    }
+
+    // A window is a native shell around the web app, so an origin that does not
+    // answer used to leave a blank white rectangle with no explanation: it
+    // looks exactly like the app being broken. Say what it tried to reach and
+    // what to do about it.
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        showUnreachable(error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        showUnreachable(error)
+    }
+
+    private func showUnreachable(_ error: Error) {
+        // -999 is "a newer navigation replaced this one", which is normal.
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        window?.title = "TextText"
+        let isLocal = ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")
+        let hint = isLocal
+            ? "Start the web app in a terminal, then press Retry:"
+            : "Check that the server is reachable, then press Retry:"
+        let command = isLocal
+            ? "npm run dev        # in your TextText checkout"
+            : "TEXTTEXT_SERVER=&lt;origin&gt; npm run mac:dev"
+        let reason = (error as NSError).localizedDescription
+        let html = """
+        <!doctype html><meta charset="utf-8">
+        <meta name="color-scheme" content="light dark">
+        <style>
+          body{margin:0;display:grid;place-items:center;min-height:100vh;
+            font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+            color:#1d1d1f;background:#fff}
+          main{width:min(30rem,calc(100% - 4rem))}
+          h1{font-size:19px;margin:0 0 .4rem}
+          p{margin:0 0 1rem;color:#6e6e73}
+          code{display:block;padding:.7rem .8rem;border-radius:8px;
+            background:rgba(118,118,128,.12);
+            font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#1d1d1f}
+          button{margin-top:1.2rem;min-height:32px;padding:0 14px;border:0;
+            border-radius:8px;background:#0071e3;color:#fff;font:600 14px/1 inherit;
+            cursor:pointer}
+          @media(prefers-color-scheme:dark){
+            body{color:#f5f5f7;background:#1c1c1e}p{color:#a1a1a6}
+            code{background:rgba(118,118,128,.24);color:#f5f5f7}}
+        </style>
+        <main>
+          <h1>Cannot reach \(origin.absoluteString)</h1>
+          <p>\(reason)</p>
+          <p>\(hint)</p>
+          <code>\(command)</code>
+          <button onclick="window.webkit.messageHandlers.textTextApp.postMessage({action:'retry'})">
+            Retry
+          </button>
+        </main>
+        """
+        webView.loadHTMLString(html, baseURL: origin)
     }
 
     // MARK: WKUIDelegate

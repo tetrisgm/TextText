@@ -14,29 +14,54 @@ let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersion
 /// TEXTTEXT_SERVER env var. Never commit a real domain here.
 let placeholderProductOrigin = "https://TextText.app"
 
+/// Where a build with no release plist points. A bundle assembled by
+/// `mac/scripts/build-app.sh` always carries SUFeedURL; `swift run` never does.
+/// Falling through to the product origin in that case means a dev run silently
+/// reads and writes the LIVE workspace, which looks exactly like the app being
+/// broken and is how an afternoon disappears.
+let devDefaultOrigin = "http://localhost:3000"
+
 /// Server origin resolution, most specific first:
-///   1. TEXTTEXT_SERVER env (dev: http://localhost:3000)
+///   1. TEXTTEXT_SERVER env (dev override, any origin)
 ///   2. the linked credential's serverOrigin (the token belongs to it)
 ///   3. the origin of SUFeedURL in the running bundle (release builds carry
 ///      the real product origin there via the build script's plist override)
-///   4. the committed product fallback
+///   4. no SUFeedURL means this is not a release build: the local server
+///   5. the committed product fallback, for a release bundle with a bad feed
 func resolveServerOrigin(credentials: Credentials?) -> URL {
     if let raw = ProcessInfo.processInfo.environment["TEXTTEXT_SERVER"],
        let url = URL(string: raw), url.host != nil {
-        return url
+        return logOriginOnce(url, "TEXTTEXT_SERVER")
     }
     if let credentials, let url = URL(string: credentials.serverOrigin), url.host != nil {
-        return url
+        return logOriginOnce(url, "linked credential")
     }
-    if let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-       let feedURL = URL(string: feed), let scheme = feedURL.scheme, let host = feedURL.host {
+    let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+    if let feed, let feedURL = URL(string: feed), let scheme = feedURL.scheme,
+       let host = feedURL.host {
         var components = URLComponents()
         components.scheme = scheme
         components.host = host
         components.port = feedURL.port
-        if let url = components.url { return url }
+        if let url = components.url { return logOriginOnce(url, "release feed") }
     }
-    return URL(string: placeholderProductOrigin)!
+    if feed == nil, let url = URL(string: devDefaultOrigin) {
+        return logOriginOnce(url, "dev build, no release feed")
+    }
+    return logOriginOnce(URL(string: placeholderProductOrigin)!, "product fallback")
+}
+
+/// Say once, on stderr, which server this run is talking to. Silence here is
+/// what let a dev launch look like a broken app instead of a wrong origin.
+private nonisolated(unsafe) var loggedOrigin = false
+private func logOriginOnce(_ url: URL, _ reason: String) -> URL {
+    if !loggedOrigin {
+        loggedOrigin = true
+        FileHandle.standardError.write(
+            Data("TextText server origin: \(url.absoluteString) (\(reason))\n".utf8)
+        )
+    }
+    return url
 }
 
 /// True when dotted version a is strictly greater than b, component-wise

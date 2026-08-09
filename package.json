@@ -11,6 +11,9 @@
   ],
   "scripts": {
     "dev": "tsx scripts/work-unit.ts doctor --prune && next dev",
+    "mac:dev": "mac/scripts/dev-run.sh",
+    "mac:build": "swift build --package-path mac",
+    "mac:test": "swift test --package-path mac",
     "build": "node scripts/next-build.mjs",
     "start": "next start",
     "lint": "eslint",

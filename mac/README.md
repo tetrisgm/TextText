@@ -19,8 +19,25 @@ when both sides moved.
 Run the web app, then the client against it:
 
     npm run dev                # the platform, on localhost:3000
+    npm run mac:dev            # the client, against it
+
+`mac/scripts/dev-run.sh` (what `npm run mac:dev` calls) waits for the server to
+answer before launching, so a client started too early does not look like a
+broken app.
+
+The long form, if you want the flags in front of you:
+
     TEXTTEXT_SERVER=http://localhost:3000 TEXTTEXT_DEV_NO_MOVE=1 \
-      swift run --package-path mac
+      swift run --package-path mac TextText
+
+A build with no release plist (anything from `swift run`) now defaults to
+`http://localhost:3000` rather than the product origin, and every run prints
+the origin it resolved to stderr on its first request:
+
+    TextText server origin: http://localhost:3000 (dev build, no release feed)
+
+That line exists because the old fallback sent a dev launch to the LIVE
+workspace silently, which looks exactly like the app being broken.
 
 - `TEXTTEXT_SERVER` points the client at any server origin (dev override).
 - `TEXTTEXT_DEV_NO_MOVE=1` skips the move-to-Applications prompt. It is an env
@@ -29,6 +46,21 @@ Run the web app, then the client against it:
   from `~/Library/Application Support/TextText` for experiments.
 
 Type-check/build only: `swift build --package-path mac`.
+
+### One binary, two products
+
+`TextText` (the app) and `texttext` (the CLI) differ only in case, and a stock
+Mac volume is case-insensitive, so both land on the same path in
+`.build/debug/`. Whichever product linked last wins it. `swift build` then
+`./.build/debug/TextText` can therefore run the CLI and look like the app
+failing to launch.
+
+Always go through the product name, which rebuilds it first:
+
+    swift run --package-path mac TextText
+
+`npm run mac:dev` does that. Renaming one product would remove the hazard
+outright and is worth doing.
 
 ### Headless verify mode (CI, agents)
 
