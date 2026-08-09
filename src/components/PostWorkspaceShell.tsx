@@ -287,7 +287,6 @@ import {
 } from "@/lib/workspace-selection";
 import {
   homeFolderModeForPostType,
-  WORKSPACE_ITEM_TYPE_LABELS,
 } from "@/lib/workspace-item-presentation";
 import {
   WORKSPACE_DOCUMENT_OPENED_EVENT,
@@ -2390,10 +2389,13 @@ function WorkspacePostOption({
         <WorkspaceItemThumbnail post={post} />
         <span className="workspace-item-option-copy">
           <strong>{sidebarDocumentTitle(post)}</strong>
-          <span className="workspace-item-option-detail">
-            <em>{WORKSPACE_ITEM_TYPE_LABELS[post.type]}</em>
-            <small>{post.excerpt?.trim() || post.bodyPreview?.trim() || "No preview"}</small>
-          </span>
+          {/* The icon already says what kind of item this is, so the row
+              carries the title and whatever the document actually says. */}
+          {(post.excerpt?.trim() || post.bodyPreview?.trim()) && (
+            <span className="workspace-item-option-detail">
+              <small>{post.excerpt?.trim() || post.bodyPreview?.trim()}</small>
+            </span>
+          )}
         </span>
         {showUpdatedAt && (
           <time>
@@ -2469,8 +2471,8 @@ function WorkspaceRootLanding({
   const [bodyRevision, setBodyRevision] = useState(0);
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
   const [recentViewMode, setRecentViewMode] = useWorkspaceViewMode(
-    "library-v2",
-    "grid",
+    "library-v3",
+    "list",
   );
   const [itemFilter, setItemFilter] = useState<
     "all" | "article" | "note" | "bookmark"
@@ -2866,26 +2868,9 @@ function WorkspaceRootLanding({
               >
                 <UniversalItemComposer
                   blog={pool.blog}
+                  destinations={creationFolders}
                   folder={creationFolder}
                   handle={pool.blog.handle}
-                  leading={
-                    <label className="workspace-root-create-destination">
-                      <span className="sr-only">Save in</span>
-                      <select
-                        aria-label="Choose a folder"
-                        value={creationFolder.path}
-                        onChange={(event) =>
-                          setCreationFolderPath(event.currentTarget.value)
-                        }
-                      >
-                        {creationFolders.map((folder) => (
-                          <option key={folder.id} value={folder.path}>
-                            {folder.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  }
                   onCreateItem={onCreateItem}
                 />
               </section>

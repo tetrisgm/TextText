@@ -107,15 +107,16 @@ describe("batch 4 workspace UI contract", () => {
   it("uses the same universal item composer on Home and inside folders", () => {
     expect(folderSource).toContain("export function UniversalItemComposer");
     expect(shellSource).toContain("<UniversalItemComposer");
-    expect(shellSource).toContain('aria-label="Choose a folder"');
+    expect(shellSource).toContain("destinations={creationFolders}");
     expect(shellSource).toContain("onCreateItem={onCreateItem}");
   });
 
   it("keeps the library collection-first and embeds the destination in the capture row", () => {
     expect(shellSource).toContain('className="workspace-library-header"');
     expect(shellSource).toContain('id="workspace-root-title">Library</h1>');
-    expect(shellSource).toContain('"library-v2"');
-    expect(shellSource).toContain('"grid"');
+    expect(shellSource).toContain('"library-v3"');
+    // A list of documents reads as a list; cards are a deliberate choice.
+    expect(shellSource).toContain('"list"');
     expect(shellSource).toContain(">Collections</p>");
     expect(shellSource).toContain('aria-label="Filter library items"');
     expect(shellSource).toContain('className="workspace-library-toolbar"');
@@ -123,9 +124,11 @@ describe("batch 4 workspace UI contract", () => {
     expect(shellSource).toMatch(
       /workspace-library-toolbar[\s\S]*?workspace-library-filters[\s\S]*?workspace-library-controls/,
     );
-    expect(shellSource).toMatch(
-      /<UniversalItemComposer[\s\S]*?leading=\{[\s\S]*?workspace-root-create-destination/,
-    );
+    // Creating is one action: the capture row has no destination or look
+    // control to answer before you can type.
+    expect(shellSource).not.toContain("workspace-root-create-destination");
+    expect(shellSource).not.toContain('aria-label="Choose a folder"');
+    expect(folderSource).not.toContain('aria-label="Choose a look"');
     expect(folderSource).toContain(
       'folder.mode === "notes" || folder.mode === "bookmarks" ? "list" : "grid"',
     );

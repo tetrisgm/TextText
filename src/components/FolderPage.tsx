@@ -55,12 +55,7 @@ import type { TemplateReference } from "@/lib/documents/model";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
 import { applyCollectionSpec } from "@/lib/documents/collection-query";
 import { parseItemInput } from "@/lib/item-creation";
-import {
-  BUILTIN_TEMPLATES,
-  TEMPLATE_CATALOG,
-  TEMPLATE_CATEGORIES,
-  getBuiltinTemplate,
-} from "@/lib/presentation/templates";
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
 import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
@@ -608,30 +603,41 @@ function FolderTitleEditor({
   );
 }
 
+// Creating is one action, not a form. There is nothing to decide before you
+// type: the destination and the look follow from where you are and from what
+// you typed, and both stay changeable afterwards. `destinations` is the set of
+// root collections the workspace home may route into; a folder page passes
+// none, because a folder page already knows where the item goes.
 export function UniversalItemComposer({
   blog,
+  destinations,
   folder,
   handle,
-  leading,
   onCreateItem,
 }: {
   blog: Blog;
+  destinations?: readonly Folder[];
   folder: Folder;
   handle: string;
-  leading?: ReactNode;
   onCreateItem?: FolderCreateItem;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const initialTemplate = defaultTemplateForFolder(folder);
-  const [template, setTemplate] = useState<TemplateReference>(initialTemplate);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  useEffect(() => {
-    setTemplate(defaultTemplateForFolder(folder));
-  }, [folder]);
+  // A pasted link belongs with the other saved links, wherever you typed it.
+  const destinationFor = useCallback(
+    (sourceUrl: string | null): Folder => {
+      if (!sourceUrl || !destinations?.length) return folder;
+      return (
+        destinations.find((candidate) => candidate.mode === "bookmarks") ??
+        folder
+      );
+    },
+    [destinations, folder],
+  );
 
   useEffect(() => {
     const createRequested = (event: Event) => {
@@ -656,13 +662,15 @@ export function UniversalItemComposer({
       }
 
       const draft = parseItemInput(value);
+      const destination = destinationFor(draft.sourceUrl);
+      const template = defaultTemplateForFolder(destination);
       const type = compatibilityTypeForTemplate(template, draft.sourceUrl);
       const request: FolderCreateRequest =
         type === "bookmark"
           ? draft.sourceUrl
             ? {
                 type,
-                folderPath: folder.path,
+                folderPath: destination.path,
                 template,
                 url: draft.sourceUrl,
               }
@@ -670,14 +678,14 @@ export function UniversalItemComposer({
                 type,
                 blank: true,
                 body: draft.body,
-                folderPath: folder.path,
+                folderPath: destination.path,
                 template,
                 title: draft.title,
               }
           : {
               type,
               body: draft.body,
-              folderPath: folder.path,
+              folderPath: destination.path,
               template,
               title: draft.title,
             };
@@ -734,34 +742,27 @@ export function UniversalItemComposer({
           .finally(() => setCreating(false));
       });
     },
-    [blog, creating, folder.path, handle, onCreateItem, router, template],
+    [blog, creating, destinationFor, handle, onCreateItem, router],
   );
 
   return (
     <>
       <form className="universal-item-composer" onSubmit={createItem}>
-        {leading ? (
-          <>
-            <div className="universal-item-composer-leading">{leading}</div>
-            <span
-              className="universal-item-composer-divider"
-              aria-hidden="true"
-            />
-          </>
-        ) : null}
         <textarea
           ref={inputRef}
           name="item"
           className="universal-item-composer-input"
-          placeholder="Type a title, paste text, or paste a link"
+          placeholder="Type a title, or paste a link"
           aria-label="Create an item"
           autoCapitalize="sentences"
           autoCorrect="on"
           rows={1}
           onKeyDown={(event) => {
+            // Enter creates and opens the item, the way a new page does
+            // everywhere else. Shift+Enter is the newline.
             if (
               event.key === "Enter" &&
-              event.metaKey &&
+              !event.shiftKey &&
               !event.nativeEvent.isComposing
             ) {
               event.preventDefault();
@@ -769,38 +770,6 @@ export function UniversalItemComposer({
             }
           }}
         />
-        <label className="universal-item-template">
-          <span className="sr-only">Look</span>
-          <select
-            aria-label="Choose a look"
-            value={`${template.id}@${template.version}`}
-            onChange={(event) => {
-              const [id, rawVersion] = event.currentTarget.value.split("@");
-              setTemplate({ id, version: Number(rawVersion) || 1 });
-            }}
-          >
-            {TEMPLATE_CATEGORIES.map((category) => {
-              const members = BUILTIN_TEMPLATES.filter((definition) =>
-                TEMPLATE_CATALOG.some(
-                  (entry) => entry.id === definition.id && entry.category === category,
-                ),
-              );
-              if (members.length === 0) return null;
-              return (
-                <optgroup key={category} label={category}>
-                  {members.map((definition) => (
-                    <option
-                      key={`${definition.id}@${definition.version}`}
-                      value={`${definition.id}@${definition.version}`}
-                    >
-                      {definition.name}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </select>
-        </label>
         <button
           type="submit"
           className="ac-icon-btn universal-item-create"

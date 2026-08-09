@@ -2,10 +2,44 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { DocumentSnapshot } from "@/lib/documents/model";
+import {
+  validateDocumentSnapshot,
+  type DocumentSnapshot,
+} from "@/lib/documents/model";
+import { exemplarFor } from "@/lib/presentation/exemplars";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import styles from "./TemplateGallery.module.css";
+
+// A look is only legible through content. An empty document previews as eight
+// identical blank cards, so a document with nothing in it yet borrows the
+// template's own example instead. Still validated data, still the same
+// renderer: this only changes which snapshot is shown.
+function exampleFor(template: TemplateDefinition): DocumentSnapshot {
+  const exemplar = exemplarFor(template.id);
+  return validateDocumentSnapshot({
+    schemaVersion: 1,
+    content: {
+      title: exemplar?.title ?? template.name,
+      body: exemplar?.body ?? "",
+      fields: exemplar?.fields ?? {},
+      tags: [],
+      assets: exemplar?.assets ?? [],
+    },
+    presentation: {
+      template: { id: template.id, version: template.version },
+      theme: {},
+    },
+  });
+}
+
+function isBlank(document: DocumentSnapshot): boolean {
+  return (
+    !document.content.title.trim() &&
+    !document.content.body.trim() &&
+    !document.content.assets.length
+  );
+}
 
 export function TemplateGallery({
   document,
@@ -19,6 +53,9 @@ export function TemplateGallery({
   onClose: () => void;
 }) {
   const [preview, setPreview] = useState<TemplateDefinition | null>(null);
+  const blank = isBlank(document);
+  const shown = (template: TemplateDefinition) =>
+    blank ? exampleFor(template) : document;
   const [focusIndex, setFocusIndex] = useState(0);
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const backRef = useRef<HTMLButtonElement>(null);
@@ -88,7 +125,7 @@ export function TemplateGallery({
             Choose another look
           </button>
           <div className={styles.previewDocument}>
-            <DocumentRenderer document={document} template={preview} documentId="template-preview" />
+            <DocumentRenderer document={shown(preview)} template={preview} documentId="template-preview" />
           </div>
           <button
             ref={continueRef}
@@ -116,6 +153,11 @@ export function TemplateGallery({
           Back
         </button>
         <h2 id="template-gallery-title">Choose a look</h2>
+        {blank && (
+          <p className={styles.note}>
+            Previews use example content until this document has some.
+          </p>
+        )}
         <div className={styles.grid} onKeyDown={handleGridKey}>
           {templates.map((template, index) => (
             <button
@@ -128,11 +170,13 @@ export function TemplateGallery({
               aria-label={template.name}
             >
               <div className={styles.cardPreview} aria-hidden="true">
-                <DocumentRenderer
-                  document={document}
-                  template={template}
-                  documentId={`template-${index}`}
-                />
+                <div className={styles.cardPreviewInner}>
+                  <DocumentRenderer
+                    document={shown(template)}
+                    template={template}
+                    documentId={`template-${index}`}
+                  />
+                </div>
               </div>
               <span className={styles.cardName}>{template.name}</span>
             </button>

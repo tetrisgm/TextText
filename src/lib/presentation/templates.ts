@@ -6,8 +6,8 @@ const article = {
   engineVersion: 1,
   id: "texttext.article",
   version: 1,
-  name: "Medium article",
-  description: "A focused long-form story with Medium-inspired typography.",
+  name: "Article",
+  description: "A long-form story in one reading column.",
   fields: [{ id: "cover", label: "Cover", type: "image" }],
   capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
@@ -85,8 +85,8 @@ const note = {
   engineVersion: 1,
   id: "texttext.note",
   version: 1,
-  name: "Apple Notes",
-  description: "A clean, familiar note inspired by Apple Notes.",
+  name: "Note",
+  description: "A quick private note with no ceremony.",
   fields: [],
   capabilities: ["assets", "collaboration", "comments", "search"],
   theme: { typography: "system", measure: "reading", alignment: "start" },
@@ -136,8 +136,8 @@ const bookmark = {
   engineVersion: 1,
   id: "texttext.bookmark",
   version: 1,
-  name: "Instapaper reader",
-  description: "A calm saved-article view inspired by Instapaper.",
+  name: "Bookmark",
+  description: "A calm reading view of a page you saved.",
   fields: [
     { id: "cover", label: "Cover", type: "image" },
     { id: "sourceUrl", label: "Original link", type: "url", required: true },
@@ -204,8 +204,8 @@ const gallery = {
   engineVersion: 1,
   id: "texttext.gallery",
   version: 1,
-  name: "Pinterest board",
-  description: "An image-first board inspired by Pinterest.",
+  name: "Gallery",
+  description: "An image-first page where the pictures lead.",
   fields: [{ id: "cover", label: "Cover", type: "image" }],
   capabilities: ["assets", "collaboration", "comments", "publish", "search"],
   theme: {
@@ -254,8 +254,8 @@ const talk = {
   engineVersion: 1,
   id: "texttext.talk",
   version: 1,
-  name: "YouTube video",
-  description: "A focused video page inspired by YouTube.",
+  name: "Talk",
+  description: "A video or talk with its notes underneath.",
   fields: [
     { id: "cover", label: "Cover", type: "image" },
     { id: "videoUrl", label: "Video", type: "url", required: true },
@@ -307,8 +307,8 @@ const todo = {
   engineVersion: 1,
   id: "texttext.todo",
   version: 1,
-  name: "Apple Reminders",
-  description: "A focused checklist inspired by Apple Reminders.",
+  name: "Checklist",
+  description: "A focused list of things to finish.",
   fields: [
     {
       id: "area",
@@ -1831,8 +1831,8 @@ const project = {
   engineVersion: 1,
   id: "texttext.project",
   version: 1,
-  name: "Notion project",
-  description: "A flexible project page inspired by Notion.",
+  name: "Project",
+  description: "A project page with status, dates, and tasks.",
   fields: [
     {
       id: "status",
@@ -2579,8 +2579,8 @@ const newsletter = {
   engineVersion: 1,
   id: "texttext.newsletter",
   version: 1,
-  name: "Substack newsletter",
-  description: "A publication issue inspired by Substack.",
+  name: "Newsletter",
+  description: "A numbered issue you send and publish.",
   fields: [
     { id: "issueNumber", label: "Issue", type: "number", min: 1, step: 1 },
     { id: "sentAt", label: "Sent", type: "date" },

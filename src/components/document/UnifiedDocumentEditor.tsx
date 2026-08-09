@@ -153,18 +153,6 @@ function replaceYText(target: Y.Text, value: string, origin: unknown): void {
   }, origin);
 }
 
-function publishedDate(post: Post): string | undefined {
-  const value = post.date ?? post.createdAt;
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return undefined;
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
-}
-
 function selectionForField(
   awareness: Awareness,
   doc: Y.Doc,
@@ -415,6 +403,9 @@ export function UnifiedDocumentEditor({
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
+  const [showSubtitle, setShowSubtitle] = useState(false);
+  const canAddSubtitle =
+    !showSubtitle && !document.content.subtitle?.trim();
   const providerRef = useRef<CollabProvider | null>(null);
   const materializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const materializeQueueRef = useRef(Promise.resolve());
@@ -757,19 +748,23 @@ export function UnifiedDocumentEditor({
             grow
           />
         ),
-        "content.subtitle": (
-          <CollaborativeTextarea
-            field="subtitle"
-            label="Subtitle"
-            placeholder="Add a short description"
-            value={document.content.subtitle ?? ""}
-            selections={remoteSelections.subtitle}
-            onChange={(value) => updateText("subtitle", value)}
-            onSelection={updateSelection}
-            inputRef={subtitleRef}
-            grow
-          />
-        ),
+        ...(showSubtitle || document.content.subtitle?.trim()
+          ? {
+              "content.subtitle": (
+                <CollaborativeTextarea
+                  field="subtitle"
+                  label="Description"
+                  placeholder="Add a description"
+                  value={document.content.subtitle ?? ""}
+                  selections={remoteSelections.subtitle}
+                  onChange={(value) => updateText("subtitle", value)}
+                  onSelection={updateSelection}
+                  inputRef={subtitleRef}
+                  grow
+                />
+              ),
+            }
+          : {}),
         "content.body": (
           <CollaborativeTextarea
             field="body"
@@ -797,7 +792,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, remoteSelections, updateField, updateSelection, updateText],
+    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, remoteSelections, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -844,47 +839,73 @@ export function UnifiedDocumentEditor({
               <span className="tt-look-name">{activeTemplate.name}</span>
             </button>
           )}
-          {onDelete && (
+          {(canAddSubtitle || onDelete) && (
             <details className="tt-editor-more">
-              <summary aria-label="More actions" title="More actions">
-                <span aria-hidden="true">•••</span>
-              </summary>
-              <div className="tt-editor-more-menu">
-                <button type="button" onClick={() => void onDelete()}>
+            <summary aria-label="More actions" title="More actions">
+              <span aria-hidden="true">•••</span>
+            </summary>
+            <div className="tt-editor-more-menu">
+              {canAddSubtitle && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSubtitle(true);
+                    window.requestAnimationFrame(() =>
+                      subtitleRef.current?.focus(),
+                    );
+                  }}
+                >
+                  Add a description
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className="tt-editor-more-destructive"
+                  onClick={() => void onDelete()}
+                >
                   Move to Trash
                 </button>
-              </div>
-            </details>
+              )}
+            </div>
+          </details>
           )}
           <button type="button" className="ac-btn ac-btn-blue" onClick={() => void stopEditing()}>
             Stop editing
           </button>
         </div>
       </div>
+      {/* No byline while writing: the author, reading time, and date are
+          reader chrome, and showing them here turns the page into a preview
+          of itself instead of the thing being written. */}
       <DocumentRenderer
         document={document}
         documentId={post.id ?? post.slug}
         template={activeTemplate}
-        metadata={{
-          author: blog.author,
-          date: publishedDate(post),
-          readingTime: post.readingTime ? `${post.readingTime} min read` : undefined,
-        }}
         slots={slots}
         className="tt-document-editor"
       />
       {unboundFields.length > 0 && (
-        <aside className="tt-field-details" aria-label="Document details">
-          <h2 className="tt-field-details-title">Details</h2>
-          {unboundFields.map((field) => (
-            <FieldInput
-              key={field.id}
-              field={field}
-              value={document.content.fields[field.id]}
-              onChange={(value) => updateField(field.id, value)}
-            />
-          ))}
-        </aside>
+        // Fields the look declares but does not place stay one level down, so
+        // the writing surface is a document rather than a form.
+        <details className="tt-field-details">
+          <summary className="tt-field-details-title">
+            Details
+            <span className="tt-field-details-count" aria-hidden="true">
+              {unboundFields.length}
+            </span>
+          </summary>
+          <div className="tt-field-details-body">
+            {unboundFields.map((field) => (
+              <FieldInput
+                key={field.id}
+                field={field}
+                value={document.content.fields[field.id]}
+                onChange={(value) => updateField(field.id, value)}
+              />
+            ))}
+          </div>
+        </details>
       )}
       <div className={`tt-save-state is-${saveState}`} role="status" aria-live="polite">
         {saveState === "local" && !networkEnabled
@@ -921,7 +942,7 @@ export function UnifiedDocumentEditor({
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}
         .tt-look-button{display:inline-flex;align-items:center;gap:5px}.tt-look-name{max-width:9rem;overflow:hidden;color:var(--muted,#6e6e73);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
         .tt-editor-more{position:relative}.tt-editor-more>summary{display:grid;place-items:center;box-sizing:border-box;min-width:30px;height:30px;padding:0 8px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.12));color:var(--ink,#1d1d1f);font:700 11px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:1px;cursor:pointer;list-style:none}.tt-editor-more>summary::-webkit-details-marker{display:none}.tt-editor-more[open]>summary{background:var(--ac-fill-3,rgba(118,118,128,.2))}
-        .tt-editor-more-menu{position:absolute;z-index:420;top:calc(100% + 6px);right:0;min-width:160px;padding:5px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-editor-more-menu button{width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--tt-destructive,#d70015);font:500 13px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}.tt-editor-more-menu button:hover{background:color-mix(in srgb,var(--tt-destructive,#d70015) 10%,transparent)}
+        .tt-editor-more-menu{position:absolute;z-index:420;top:calc(100% + 6px);right:0;min-width:160px;padding:5px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:8px;background:color-mix(in srgb,var(--paper,#fff) 94%,transparent);box-shadow:0 12px 32px rgba(0,0,0,.16);backdrop-filter:blur(24px) saturate(150%)}.tt-editor-more-menu button{width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--ink,#1d1d1f);font:500 13px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}.tt-editor-more-menu button:hover{background:color-mix(in srgb,currentColor 10%,transparent)}.tt-editor-more-menu button.tt-editor-more-destructive{color:var(--tt-destructive,#d70015)}
         .tt-field-row{display:flex;align-items:center;gap:10px;margin:2px 0;font-size:14px;color:var(--ink,#1d1d1f)}
         .tt-field-row.is-richtext{align-items:flex-start}
         .tt-field-label{flex:0 0 8.5rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:600;letter-spacing:.01em}
@@ -941,7 +962,12 @@ export function UnifiedDocumentEditor({
         .tt-field-input.is-number{max-width:9rem}
         .tt-field-input.is-select{appearance:auto}
         .tt-field-details{max-width:44rem;margin:0 auto;padding:0 1.5rem 4rem}
-        .tt-field-details-title{margin:0 0 .6rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+        .tt-field-details-title{display:inline-flex;align-items:center;gap:7px;margin:0;padding:5px 0;color:var(--muted,#6e6e73);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;list-style:none}
+        .tt-field-details-title::-webkit-details-marker{display:none}
+        .tt-field-details-title::before{content:"›";display:inline-block;font-size:15px;line-height:1;transition:transform 140ms ease}
+        .tt-field-details[open]>.tt-field-details-title::before{transform:rotate(90deg)}
+        .tt-field-details-count{min-width:16px;padding:2px 5px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent);font-size:10px;letter-spacing:0;text-align:center}
+        .tt-field-details-body{padding-top:.4rem}
         .tt-field-multienum{display:flex;flex-wrap:wrap;gap:6px}
         .tt-field-choice{padding:3px 10px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
         .tt-field-choice.is-active{background:var(--tt-accent,#0071e3);border-color:var(--tt-accent,#0071e3);color:#fff}

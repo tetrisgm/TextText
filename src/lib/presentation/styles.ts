@@ -98,7 +98,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-quote-attribution{margin-top:.5rem;font-size:.85rem;font-weight:600;color:var(--muted,#6e6e73)}
 .tt-document.tt-collection-item{padding-bottom:0}
 
-/* Medium article */
+/* Article */
 .tt-document[data-template="texttext.article"]{--tt-accent:#1a8917;--tt-measure:42.5rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.article"]>.tt-stack{gap:2.75rem;padding:clamp(2.5rem,7vw,6rem) 0 5rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead{gap:1rem}
@@ -109,7 +109,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-title{font-size:1.55rem;line-height:1.12;letter-spacing:-.01em}
 .tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.94rem;line-height:1.45}
 
-/* Apple Notes */
+/* Note */
 .tt-document[data-template="texttext.note"]{--tt-accent:#ffb900;--paper:#fffef8;--ink:#1c1c1e;--muted:#8e8e93;--tt-measure:44rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.note"]>.tt-stack{gap:1.15rem;padding:clamp(2.25rem,7vw,5.25rem) 0}
 .tt-document[data-template="texttext.note"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2rem,4.5vw,3.35rem);font-weight:700;line-height:1.08;letter-spacing:0}
@@ -120,7 +120,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.note"] .tt-text-title{font-size:1.3rem}
 .tt-document.tt-collection-item[data-template="texttext.note"] .tt-metadata{justify-content:flex-start}
 
-/* Instapaper reader */
+/* Bookmark */
 .tt-document[data-template="texttext.bookmark"]{--tt-accent:#835f42;--paper:#f6f1e7;--ink:#26231f;--muted:#7a7167;--tt-measure:39rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.bookmark"]>.tt-stack{gap:2.1rem;padding:clamp(2.75rem,8vw,6.5rem) 0 5rem}
 .tt-document[data-template="texttext.bookmark"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(2.7rem,6vw,4.8rem);font-weight:700;line-height:1.02;letter-spacing:-.015em}
@@ -131,7 +131,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.bookmark"] .tt-text-title{font-size:1.45rem;line-height:1.16}
 .tt-document.tt-collection-item[data-template="texttext.bookmark"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.9rem}
 
-/* Pinterest board */
+/* Gallery */
 .tt-document[data-template="texttext.gallery"]{--tt-accent:#e60023;--tt-measure:78rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.gallery"]>.tt-stack{gap:2.5rem;padding:clamp(2rem,6vw,5rem) clamp(1rem,4vw,3.5rem) 5rem}
 .tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-copy"]{text-align:center;align-items:center}
@@ -145,17 +145,17 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.gallery"] .tt-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem}
 .tt-document.tt-collection-item[data-template="texttext.gallery"] .tt-gallery img,.tt-document.tt-collection-item[data-template="texttext.gallery"] .tt-gallery video{border-radius:.35rem}
 
-/* YouTube video */
+/* Talk */
 .tt-document[data-template="texttext.talk"]{--tt-accent:#ff0033;--tt-measure:68rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.talk"]>.tt-stack{gap:1.4rem;padding:clamp(1.5rem,4vw,3rem) 0 5rem}
 .tt-document[data-template="texttext.talk"] .tt-video{width:min(76rem,calc(100% - 2rem));height:auto;aspect-ratio:16/9;border-radius:.5rem;background:#000}
-.tt-document[data-template="texttext.talk"] .tt-text-title{font-family:Roboto,-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:clamp(1.8rem,3.5vw,2.6rem);font-weight:700;line-height:1.12;letter-spacing:0}
+.tt-document[data-template="texttext.talk"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:clamp(1.8rem,3.5vw,2.6rem);font-weight:700;line-height:1.12;letter-spacing:0}
 .tt-document[data-template="texttext.talk"] .tt-masthead{gap:.55rem}
 .tt-document[data-template="texttext.talk"] .tt-byline{margin-top:.35rem}
 .tt-document[data-template="texttext.talk"] .tt-prose{font-size:1rem;line-height:1.65}
 .tt-document.tt-collection-item[data-template="texttext.talk"] .tt-text-title{font-size:1.3rem}
 
-/* Apple Reminders */
+/* Checklist */
 .tt-document[data-template="texttext.todo"]{--tt-accent:#0a84ff;--paper:#f2f2f7;--ink:#1c1c1e;--muted:#8e8e93;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.todo"]>.tt-stack{gap:1.25rem;padding:clamp(2rem,6vw,4.5rem) 0 5rem}
 .tt-document[data-template="texttext.todo"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2.4rem,5vw,4.1rem);font-weight:750;line-height:1;letter-spacing:0;color:#0a84ff}
@@ -167,7 +167,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.todo"] .tt-text-title{font-size:1.45rem;color:#0a84ff}
 .tt-document.tt-collection-item[data-template="texttext.todo"] .tt-checklist{padding:.15rem .75rem}
 
-/* Notion project */
+/* Project */
 .tt-document[data-template="texttext.project"]{--tt-accent:#2383e2;--tt-measure:52rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.project"]>.tt-stack{gap:1.35rem;padding:clamp(3rem,8vw,7rem) 0 5rem}
 .tt-document[data-template="texttext.project"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2.6rem,5vw,4.6rem);font-weight:700;line-height:1.05;letter-spacing:-.015em}
@@ -178,7 +178,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-text-title{font-size:1.45rem}
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-facts{font-size:.8rem}
 
-/* Substack newsletter */
+/* Newsletter */
 .tt-document[data-template="texttext.newsletter"]{--tt-accent:#ff6719;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.newsletter"]>.tt-stack{gap:2rem;padding:clamp(2.5rem,7vw,6rem) 0 5rem}
 .tt-document[data-template="texttext.newsletter"] .tt-masthead{text-align:center;align-items:center}

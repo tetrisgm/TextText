@@ -41,6 +41,13 @@
   font-size: 18px;
 }
 
+.note {
+  width: min(1380px, 100%);
+  margin: -14px auto 20px;
+  color: color-mix(in srgb, currentColor 62%, transparent);
+  font: 500 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -71,18 +78,21 @@
   outline-offset: 1px;
 }
 
+/* A miniature has to show enough of the document to tell the looks apart, so
+   the card is a query container and the document renders at its real width
+   inside it, scaled down. Same recipe as the public catalog. */
 .cardPreview {
-  width: 200%;
-  height: 200%;
-  transform: scale(.5);
-  transform-origin: top left;
-  pointer-events: none;
+  position: relative;
+  height: 100%;
   overflow: hidden;
+  pointer-events: none;
+  container-type: inline-size;
 }
 
-.cardPreview :global(.tt-document) {
-  min-height: 200%;
-  padding: 7% !important;
+.cardPreviewInner {
+  width: calc(100cqw / 0.3);
+  transform: scale(0.3);
+  transform-origin: top left;
 }
 
 .cardName {

@@ -304,10 +304,11 @@ export default async function Home() {
 
       <section className="texttext-landing-hero">
         <div className="texttext-landing-copy">
-          <h1>Your notes, articles, and saved links in one place.</h1>
+          <h1>Everything you write, in one place.</h1>
           <p>
-            Create an item, give it a look, work on it with other people or
-            your AI, and publish it with a link when it is ready.
+            Notes, articles, and the links you save. Create an item, give it a
+            look, work on it with other people or your AI, and publish it with
+            a link when it is ready.
           </p>
           <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />

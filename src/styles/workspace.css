@@ -157,11 +157,12 @@
   padding: 72px 34px 88px;
 }
 
+/* One ruled row: the title sits over the capture field, and the list toolbar
+   carries the only hairline on the page. */
 .workspace-library-header {
   min-height: auto;
-  margin: 0 0 26px;
-  padding: 0 0 18px;
-  border-bottom: 1px solid var(--hairline);
+  margin: 0 0 18px;
+  padding: 0;
 }
 
 .workspace-library-header h1 {

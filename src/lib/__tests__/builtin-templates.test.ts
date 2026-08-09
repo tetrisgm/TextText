@@ -48,15 +48,22 @@ describe("built-in templates", () => {
   it("offers only the focused catalog at version 1", () => {
     expect(BUILTIN_TEMPLATES).toHaveLength(8);
     expect(BUILTIN_TEMPLATES.map((template) => template.name)).toEqual([
-      "Medium article",
-      "Apple Notes",
-      "Instapaper reader",
-      "Pinterest board",
-      "YouTube video",
-      "Apple Reminders",
-      "Notion project",
-      "Substack newsletter",
+      "Article",
+      "Note",
+      "Bookmark",
+      "Gallery",
+      "Talk",
+      "Checklist",
+      "Project",
+      "Newsletter",
     ]);
+    // A look is named for the document it makes, never for another product.
+    const borrowed =
+      /medium|apple|instapaper|pinterest|youtube|notion|substack|figma/i;
+    for (const template of BUILTIN_TEMPLATES) {
+      expect(template.name).not.toMatch(borrowed);
+      expect(template.description ?? "").not.toMatch(borrowed);
+    }
     for (const template of BUILTIN_TEMPLATES) {
       expect(template.version).toBe(1);
       expect(template.id.startsWith("texttext.")).toBe(true);
@@ -75,7 +82,7 @@ describe("built-in templates", () => {
     ).toBe(false);
   });
 
-  it("keeps media in the Pinterest exemplar", () => {
+  it("keeps media in the gallery exemplar", () => {
     const exemplar = exemplarFor("texttext.gallery");
 
     expect(exemplar?.assets).toHaveLength(6);

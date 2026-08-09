@@ -1403,6 +1403,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-weight: 600;
   line-height: 0.96;
   letter-spacing: 0;
+  /* Display type at this size strands a one-word last line on most viewport
+     widths. Balancing is the typographic fix, not a shorter sentence. */
+  text-wrap: balance;
 }
 .texttext-landing-copy p:not(.texttext-landing-kicker) {
   max-width: 560px;
@@ -1551,6 +1554,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin-bottom: 28px;
 }
 .texttext-section-heading h2 {
+  text-wrap: balance;
   margin: 0;
   font-family: var(--font-display), var(--font-newsroom-display);
   color: var(--ink);
@@ -1627,6 +1631,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   letter-spacing: 0;
 }
 .texttext-landing-band-inner h2 {
+  text-wrap: balance;
   margin: 8px 0 0;
   color: var(--ink);
   font-size: 44px;
@@ -1737,6 +1742,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   max-width: 640px;
 }
 .texttext-chapter-head h2 {
+  text-wrap: balance;
   margin: 0;
   color: var(--ink);
   font-family: var(--font-display), var(--font-newsroom-display);
@@ -3760,7 +3766,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(100%, 980px);
   min-height: 52px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 36px;
+  grid-template-columns: minmax(0, 1fr) 36px;
   align-items: center;
   gap: 8px;
   margin: 0 auto 22px;
@@ -3773,8 +3779,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   border-color: color-mix(in srgb, var(--accent) 70%, var(--hairline));
   box-shadow: var(--ac-focus);
 }
-.universal-item-composer-input,
-.universal-item-template select {
+.universal-item-composer-input {
   min-width: 0;
   border: 0;
   outline: 0;
@@ -3789,13 +3794,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .universal-item-composer-input {
   min-height: 34px;
   max-height: 148px;
-  resize: vertical;
-}
-.universal-item-template select {
-  max-width: 126px;
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
+  resize: none;
 }
 .universal-item-create {
   width: 34px;
@@ -4103,12 +4102,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   padding-right: 28px;
 }
 @media (max-width: 620px) {
-  .universal-item-composer {
-    grid-template-columns: minmax(0, 1fr) 36px;
-  }
-  .universal-item-template {
-    display: none;
-  }
 }
 .post-folder-card-option {
   min-width: 0;
@@ -4734,24 +4727,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   display: grid;
   gap: 6px;
   margin-bottom: 10px;
-}
-.workspace-root-create-destination {
-  width: fit-content;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding-left: 3px;
-  color: var(--muted);
-  font: 600 12px/1.2 var(--font-body);
-}
-.workspace-root-create-destination select {
-  max-width: 180px;
-  border: 0;
-  outline: 0;
-  color: var(--ink);
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
 }
 .workspace-root-create .universal-item-composer {
   width: 100%;
@@ -7258,37 +7233,15 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     min-height: 0;
   }
 }
-.workspace-root-create-destination {
-  display: block;
-  padding: 0;
-  color: var(--muted);
-  font: 650 13px/1.2 var(--font-body);
-}
-.workspace-root-create-destination select {
-  max-width: 160px;
-  padding: 0 7px;
-}
 .universal-item-composer {
   width: 100%;
   min-height: 48px;
-  grid-template-columns: minmax(0, 1fr) auto 32px;
+  grid-template-columns: minmax(0, 1fr) 32px;
   margin-bottom: 14px;
   padding: 5px 7px 5px 14px;
   background: var(--bg);
   border-color: color-mix(in srgb, var(--ink) 15%, var(--hairline));
   box-shadow: 0 8px 24px -24px color-mix(in srgb, var(--ink) 70%, transparent);
-}
-.universal-item-composer:has(.universal-item-composer-leading) {
-  grid-template-columns: auto 1px minmax(0, 1fr) auto 32px;
-  padding-left: 7px;
-}
-.universal-item-composer-leading {
-  min-width: 0;
-}
-.universal-item-composer-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--hairline);
 }
 .universal-item-create {
   width: 32px;
@@ -7691,12 +7644,5 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .workspace-library-toolbar {
     align-items: stretch;
     flex-direction: column;
-  }
-  .universal-item-composer:has(.universal-item-composer-leading) {
-    grid-template-columns: minmax(72px, auto) 1px minmax(0, 1fr) 32px;
-  }
-  .universal-item-composer:has(.universal-item-composer-leading)
-    .universal-item-template {
-    display: none;
   }
 }

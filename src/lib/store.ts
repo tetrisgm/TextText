@@ -859,35 +859,6 @@ const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
   ...folder,
 }));
 
-const STARTER_BLOG_POST = {
-  slug: "welcome-to-your-blog",
-  title: "Welcome to your blog",
-  body: `This is a real draft in the Blog folder. Edit it, delete it, or publish it when you are ready.
-
-## Create
-
-Press C anywhere in the workspace to create a post in the current folder.
-
-## Commands
-
-Type / in the editor for blocks and formatting. Press Command K to search commands and move around your workspace.
-
-## Publish
-
-When a draft is ready, choose Publish in the top bar or run "Publish or unpublish" from Command K. Published articles appear on your public blog. Notes and bookmarks stay private.`,
-};
-
-const STARTER_NOTE = {
-  slug: "scratch-note",
-  title: "Scratch note",
-  body: "Use this private note for rough ideas. Notes never publish to your blog.",
-};
-
-const STARTER_BOOKMARK = {
-  slug: "texttext-ai-setup-guide",
-  title: "TextText AI setup guide",
-};
-
 const STARTER_AGENT_GUIDES = [
   {
     slug: "connect-your-ai-tools",
@@ -959,27 +930,18 @@ Ask the agent to find an existing item before creating one. For repeated automat
   },
 ] as const;
 
+// Workspaces provisioned before 2026-08-08 were handed a set of explanatory
+// documents. They still exist, and they still must not count against the
+// try-before-signup item cap. New workspaces are provisioned empty.
 const WORKSPACE_STARTER_POST_SLUGS = [
-  STARTER_BLOG_POST.slug,
-  STARTER_NOTE.slug,
-  STARTER_BOOKMARK.slug,
+  "welcome-to-your-blog",
+  "scratch-note",
+  "texttext-ai-setup-guide",
   ...STARTER_AGENT_GUIDES.map((guide) => guide.slug),
 ] as const;
 
 export function isWorkspaceStarterPost(post: Pick<Post, "slug">): boolean {
   return (WORKSPACE_STARTER_POST_SLUGS as readonly string[]).includes(post.slug);
-}
-
-function starterBookmarkUrl(): string {
-  return new URL("/docs/ai", rootDomainUrl()).toString();
-}
-
-function starterBookmarkLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return rootDomainUrl().hostname.replace(/^www\./, "");
-  }
 }
 
 function starterAgentGuideValues(blogId: string, folderId: string) {
@@ -2066,93 +2028,13 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   if (!blogFolderId || !notesFolderId || !bookmarksFolderId) {
     throw new Error("failed to resolve the workspace folders");
   }
-  const bookmarkUrl = starterBookmarkUrl();
-  const bookmarkLabel = starterBookmarkLabel(bookmarkUrl);
-  const articleDocument = validateDocumentSnapshot({
-    ...emptyDocumentSnapshot({ id: "texttext.article", version: 1 }),
-    content: {
-      ...emptyDocumentSnapshot({ id: "texttext.article", version: 1 }).content,
-      title: STARTER_BLOG_POST.title,
-      body: STARTER_BLOG_POST.body,
-    },
-  });
-  const noteDocument = validateDocumentSnapshot({
-    ...emptyDocumentSnapshot({ id: "texttext.note", version: 1 }),
-    content: {
-      ...emptyDocumentSnapshot({ id: "texttext.note", version: 1 }).content,
-      title: STARTER_NOTE.title,
-      body: STARTER_NOTE.body,
-    },
-  });
-  const bookmarkDocument = validateDocumentSnapshot({
-    ...emptyDocumentSnapshot({ id: "texttext.bookmark", version: 1 }),
-    content: {
-      ...emptyDocumentSnapshot({ id: "texttext.bookmark", version: 1 }).content,
-      title: STARTER_BOOKMARK.title,
-      fields: {
-        sourceUrl: bookmarkUrl,
-        sourceLabel: bookmarkLabel,
-      },
-    },
-  });
+  // A new workspace is empty on purpose. The first visit to the editor
+  // creates one untitled draft and opens it, so the first thing a person
+  // sees is their own document rather than an explanation of the product.
+  void blogFolderId;
+  void notesFolderId;
+  void bookmarksFolderId;
 
-  await db!
-    .insert(posts)
-    .values([
-      {
-        blogId,
-        folderId: blogFolderId,
-        representation: DEFAULT_FILE_REPRESENTATION,
-        document: articleDocument,
-        visibility: "private",
-        templateId: "texttext.article",
-        templateVersion: 1,
-        type: "article",
-        slug: STARTER_BLOG_POST.slug,
-        title: STARTER_BLOG_POST.title,
-        body: STARTER_BLOG_POST.body,
-        wordCount: wordCountForMarkdown(STARTER_BLOG_POST.body),
-        status: "draft",
-      },
-      {
-        blogId,
-        folderId: notesFolderId,
-        representation: DEFAULT_FILE_REPRESENTATION,
-        document: noteDocument,
-        visibility: "private",
-        templateId: "texttext.note",
-        templateVersion: 1,
-        type: "note",
-        slug: STARTER_NOTE.slug,
-        title: STARTER_NOTE.title,
-        body: STARTER_NOTE.body,
-        wordCount: wordCountForMarkdown(STARTER_NOTE.body),
-        status: "draft",
-      },
-      {
-        blogId,
-        folderId: bookmarksFolderId,
-        representation: DEFAULT_FILE_REPRESENTATION,
-        document: bookmarkDocument,
-        visibility: "private",
-        templateId: "texttext.bookmark",
-        templateVersion: 1,
-        type: "bookmark",
-        slug: STARTER_BOOKMARK.slug,
-        title: STARTER_BOOKMARK.title,
-        links: [{ label: bookmarkLabel, href: bookmarkUrl }],
-        captureStatus: "pending",
-        capture: { url: bookmarkUrl },
-        body: "",
-        wordCount: 0,
-        status: "draft",
-      },
-      ...starterAgentGuideValues(blogId, notesFolderId),
-    ])
-    .onConflictDoNothing({
-      target: [posts.blogId, posts.slug],
-      where: sql`${posts.deletedAt} is null`,
-    });
   // Provisioning is a mutation like any other; without this row the starter
   // posts are the only content that appears with no audit trail.
   await recordAction({
@@ -2160,7 +2042,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
     actionName: "provision_workspace_defaults",
     targetType: "workspace",
     targetId: blogId,
-    inputSummary: "starter article, notes, bookmark, and AI guides",
+    inputSummary: "workspace folders",
   });
 }
 
