@@ -969,16 +969,32 @@ export class CollabProvider implements CollaborationTransport {
           }
         }
         const staleAwarenessIds: number[] = [];
+        // An agent mints a fresh Yjs client id on every publish, so without
+        // this the same agent accumulates one ghost collaborator per write.
+        // The stable session id inside the blob is what identifies it; keep
+        // the newest numeric entry per session and retire the rest.
+        const newestBySession = new Map<string, { id: number; at: number }>();
         for (const [clientId, state] of awareness.getStates()) {
           if (clientId === awareness.clientID) continue;
           const sessionClientId =
             typeof state.user === "object" && state.user
               ? (state.user as { clientId?: unknown }).clientId
               : null;
-          if (
-            typeof sessionClientId === "string" &&
-            !activeClientIds.has(sessionClientId)
-          ) {
+          if (typeof sessionClientId !== "string") continue;
+          if (!activeClientIds.has(sessionClientId)) {
+            staleAwarenessIds.push(clientId);
+            continue;
+          }
+          const at = awareness.meta.get(clientId)?.lastUpdated ?? 0;
+          const held = newestBySession.get(sessionClientId);
+          if (!held) {
+            newestBySession.set(sessionClientId, { id: clientId, at });
+            continue;
+          }
+          if (at > held.at) {
+            staleAwarenessIds.push(held.id);
+            newestBySession.set(sessionClientId, { id: clientId, at });
+          } else {
             staleAwarenessIds.push(clientId);
           }
         }

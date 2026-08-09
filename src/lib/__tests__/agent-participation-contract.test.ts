@@ -69,7 +69,9 @@ describe("agents participate the way people do", () => {
   it("gives a working agent a caret, not only an avatar", () => {
     // Presence carries a selection, which is what paints a cursor in the text.
     expect(presenceRouteSource).toContain("agentSelectionAtEnd");
-    expect(presenceRouteSource).toMatch(/selection:\s*await agentSelectionAtEnd/);
+    // And it sits where the work is when the agent names a section, rather
+    // than parking every agent at the end of the document.
+    expect(presenceRouteSource).toContain("agentSelectionAtSection");
     // And it is removed rather than blanked, so an agent does not linger with
     // a cursor after its command finished.
     expect(presenceRouteSource).toContain("removePresence");

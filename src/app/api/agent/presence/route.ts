@@ -17,6 +17,7 @@
 
 import {
   agentSelectionAtEnd,
+  agentSelectionAtSection,
   removePresence,
   upsertPresence,
 } from "@/lib/collab";
@@ -62,11 +63,19 @@ export async function POST(request: Request) {
 
   // One construction site for agent presence across every transport, so a CLI
   // agent renders as the same collaborator MCP produces.
+  // The CLI already reports which section it is working in. Using it puts the
+  // agent's caret where the work is happening instead of parking every agent
+  // at the end of the document.
+  const section = typeof body.section === "string" ? body.section.trim() : "";
   const presence = buildAgentPresence(
     { userId, connectionName: agent },
     active
       ? {
-          selection: await agentSelectionAtEnd(itemId, "body").catch(() => null),
+          selection:
+            (section
+              ? await agentSelectionAtSection(itemId, section).catch(() => null)
+              : null) ??
+            (await agentSelectionAtEnd(itemId, "body").catch(() => null)),
         }
       : {},
   );

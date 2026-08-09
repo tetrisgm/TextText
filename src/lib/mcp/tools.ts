@@ -1365,7 +1365,7 @@ export async function executeMcpTool(
       );
       const useLiveDocument =
         contentFields.length > 0 &&
-        Boolean(post.id && (await hasActiveCoEditors(post.id)));
+        Boolean(post.id && (await hasActiveCoEditors(post.id, agentPresence(extra)?.clientId)));
       if (fieldsChanged && useLiveDocument) {
         return errorResult(
           "Someone is editing this document right now; field values cannot change mid-session. Retry when the session ends.",
@@ -1492,7 +1492,7 @@ export async function executeMcpTool(
         post.title,
       );
       const useLiveDocument = Boolean(
-        post.id && (await hasActiveCoEditors(post.id)),
+        post.id && (await hasActiveCoEditors(post.id, agentPresence(extra)?.clientId)),
       );
       try {
         const saved = useLiveDocument

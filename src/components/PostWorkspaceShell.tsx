@@ -29,6 +29,7 @@ import {
   toggleEditablePostStarredAction,
   trashFolderAction,
 } from "@/app/editor/actions";
+import { usePresence } from "@/lib/collab/usePresence";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
@@ -3605,6 +3606,7 @@ function WorkspacePostReader({
     postId: poolPost.id,
     query: "",
   });
+  const readerPeers = usePresence(poolPost.id);
   const findQuery = findState.postId === poolPost.id ? findState.query : "";
   const setFindQuery = useCallback(
     (query: string) => setFindState({ postId: poolPost.id, query }),
@@ -3655,6 +3657,7 @@ function WorkspacePostReader({
         owner
         blog={blog}
         post={post}
+        presencePeers={readerPeers}
         adjacent={adjacentPublishedPostsForPool(pool, post.slug)}
         homePath={sectionPath}
         postPath={blogPostPath(blog, post)}
