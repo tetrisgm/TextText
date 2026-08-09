@@ -214,6 +214,63 @@ Three things made a dev launch look like a broken app:
    copies `TextTextApp` into that name, so `CFBundleExecutable` and everything
    about a release build are unchanged.
 
+### The looks answer to a named reference now
+
+The owner named five: Apple Notes, Notion, Medium, and the case-study and
+video views from ramine.net. Every look was measured against its reference
+before anything changed, and the result was one systemic fault rather than
+eight styling ones: **every title rendered between 1.6x and 2.1x its
+reference** (article 89.6px against Medium's 42, note 53.6 against Notes' 34,
+talk 41.6 against a YouTube title's 20). A single base clamp,
+`clamp(2.5rem,6vw,5.5rem)`, was doing it. All eight now land within about a
+pixel of their reference.
+
+Three more faults the measurements or the captures turned up:
+
+- **Tinted paper stopped mid-window.** `.tt-document` is `min-height:100%`
+  against a parent with no definite height, so a short document painted its
+  paper to the last line and let the app's background show under it. Visible
+  on exactly the two looks whose paper is not white. A fixed layer behind the
+  content fills the window at any length; `data-preview` keeps gallery
+  miniatures out of it.
+- **`alignment: "start"` only reached mastheads.** Note declares it and puts
+  its title straight in the stack, so the rule never applied.
+- **The editor's focus ring was a panel.** A 7% accent tint sized to the field
+  was a hint on a one-line title and a coloured box around the whole document
+  on a body. Gone; the caret is the indicator, as it is in every editor people
+  like. Forced-colors still gets a real outline.
+- **44px of nothing between title and body while writing.** A look spaces its
+  masthead for a byline and a date, which edit mode hides. Edit mode uses the
+  look's own `--tt-gap-md` instead.
+
+Per look, against its reference: Note is white paper with the date centred
+above the title, not cream with it below. Article is a centred serif display
+title over a sans body, closed by a hairline, with centred serif section
+headings. Project drew borders around blocks that Notion does not draw at all.
+Video's title sits under the video at reading weight rather than over it as a
+headline. **Case study is new**: a horizontal stack with the argument at
+34rem on the left and its evidence sticky on the right, collapsing to one
+column below 900px.
+
+Names stay neutral. `builtin-templates.test.ts` fails if a built-in name or
+description ever matches a competitor, and that test was left in force.
+
+Newsletter was retired from the catalogue at the owner's request. It moved to
+`legacyDefinitions` rather than being deleted, so a document already pinned to
+it still renders. Retiring a look must never break a document that chose it.
+
+The catalogue is now Article, Note, Bookmark, Gallery, Talk, Case study,
+Checklist, Project.
+
+Two things worth knowing for whoever picks this up:
+
+- `.tt-document-editor` is on the **same element** as `.tt-document`, not an
+  ancestor. A descendant selector against it silently matches nothing. Two
+  rebuilds were spent before the ancestor chain was dumped instead of guessed
+  at.
+- `.tt-badge` is the row of tags; `.tt-pill` is each tag. Styling the row as a
+  pill draws one rectangle around the whole set.
+
 ## Open
 
 Nothing from today's list. Two notes for whoever picks this up:

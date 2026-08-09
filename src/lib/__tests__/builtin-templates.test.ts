@@ -53,9 +53,9 @@ describe("built-in templates", () => {
       "Bookmark",
       "Gallery",
       "Talk",
+      "Case study",
       "Checklist",
       "Project",
-      "Newsletter",
     ]);
     // A look is named for the document it makes, never for another product.
     const borrowed =

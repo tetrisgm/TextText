@@ -1123,11 +1123,15 @@ export function DocumentRenderer({
   const theme = { ...template.theme, ...document.presentation.theme };
   const accent = theme.accent;
   const style = accent ? ({ "--tt-accent": accent } as CSSProperties) : undefined;
+  // A miniature in the look gallery is the same document drawn at card size.
+  // It must not behave like a page: only a real page paints its paper across
+  // the window.
   return (
     <article
       id={scopeId}
       className={["tt-document", className].filter(Boolean).join(" ")}
       data-template={template.id}
+      data-preview={preview ? "true" : undefined}
       data-typography={theme.typography ?? "system"}
       data-density={theme.density ?? "comfortable"}
       data-measure={theme.measure ?? "reading"}

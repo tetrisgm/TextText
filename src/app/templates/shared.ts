@@ -33,7 +33,7 @@ function exampleDocument(template: TemplateDefinition): DocumentSnapshot {
       title: exemplar?.title ?? template.name,
       body: exemplar?.body ?? "",
       fields: exemplar?.fields ?? {},
-      tags: [],
+      tags: exemplar?.tags ?? [],
       assets: exemplar?.assets ?? [],
     },
     presentation: {

@@ -939,7 +939,14 @@ export function UnifiedDocumentEditor({
         @media(max-width:700px){.tt-document-editor{padding-top:56px}.tt-look-name{display:none}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
-        .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:auto}.tt-document-editor .tt-collaborative-field:focus-within{position:relative}.tt-document-editor .tt-collaborative-field:focus-within::before{content:"";position:absolute;z-index:0;inset:-6px -10px;border-radius:6px;background:color-mix(in srgb,var(--tt-accent,#0071e3) 7%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tt-accent,#0071e3) 26%,transparent);pointer-events:none}@media(forced-colors:active){.tt-document-editor .tt-collaborative-field:focus-within::before{box-shadow:inset 0 0 0 2px Highlight}}
+        .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:visible}
+        /* Nothing is drawn around the writing. The caret is the focus
+           indicator, the way it is in every editor people actually like. A
+           tinted field turns a document into a form, and at body height that
+           tint was a coloured panel behind the whole page. High contrast is
+           the exception: there a caret is easy to lose, so it gets a real
+           outline. */
+        @media(forced-colors:active){.tt-document-editor .tt-collaborative-field:focus-within::before{content:"";position:absolute;inset:-4px -8px;outline:2px solid Highlight;pointer-events:none}}
         .tt-document-editor .tt-collaborative-mirror{position:absolute;z-index:1;inset:0;pointer-events:none;overflow:hidden;color:transparent}
         .tt-document-editor .tt-collaborative-mirror mark{background:color-mix(in srgb,var(--tt-peer) 28%,transparent);color:transparent;border-radius:2px}
         .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-1px;color:transparent}
@@ -948,6 +955,12 @@ export function UnifiedDocumentEditor({
         /* The writing surface renders the source itself, styled, so what you
            type looks like what a reader gets without the document stopping
            being Markdown. */
+        /* A look spaces its masthead for what it publishes: a byline, a date,
+           a cover. Edit mode hides those, so the published gap became a hole
+           between the title and the first line you write - 44px of nothing on
+           Article. Fall back to the look's own comfortable gap, which still
+           varies with its density, so looks stay distinct while writing. */
+        .tt-document.tt-document-editor[data-template]:not(.tt-collection-item)>.tt-stack{gap:var(--tt-gap-md)}
         .tt-md-surface{min-height:36vh;outline:0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:start;caret-color:var(--tt-accent,#0071e3)}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
         .tt-md-marker{color:color-mix(in srgb,currentColor 32%,transparent);font-weight:400}

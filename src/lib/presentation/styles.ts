@@ -8,9 +8,28 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-stack,.tt-group,.tt-masthead{display:flex;box-sizing:border-box}.tt-stack[data-direction="vertical"],.tt-group,.tt-masthead{flex-direction:column}.tt-stack[data-direction="horizontal"]{flex-direction:row}.tt-stack,.tt-group{align-items:stretch}.tt-masthead{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;text-align:center;align-items:center}
 .tt-gap-none{gap:var(--tt-gap-none)}.tt-gap-xs{gap:var(--tt-gap-xs)}.tt-gap-sm{gap:var(--tt-gap-sm)}.tt-gap-md{gap:var(--tt-gap-md)}.tt-gap-lg{gap:var(--tt-gap-lg)}.tt-gap-xl{gap:var(--tt-gap-xl)}
 .tt-align-start{align-items:flex-start}.tt-align-center{align-items:center}.tt-align-end{align-items:flex-end}.tt-align-stretch{align-items:stretch}
-.tt-text{margin:0;overflow-wrap:anywhere}.tt-text-eyebrow,.tt-text-meta{font-size:.75rem;font-weight:600;color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f));text-transform:uppercase}.tt-text-title{font-size:clamp(2.5rem,6vw,5.5rem);line-height:.95;font-weight:750}.tt-text-subtitle{font-size:clamp(1.1rem,2.2vw,1.55rem);line-height:1.35;color:var(--muted,#6e6e73)}.tt-text-heading{font-size:1.45rem;line-height:1.15;font-weight:700}.tt-text-body{font-size:1rem;line-height:1.6}.tt-text-caption,.tt-metadata{font-size:.85rem;line-height:1.45;color:var(--muted,#6e6e73)}
-.tt-document[data-title-scale="compact"] .tt-text-title{font-size:clamp(2rem,4vw,3.75rem)}.tt-document[data-title-scale="large"] .tt-text-title{font-size:clamp(3rem,8vw,7rem)}
+.tt-text{margin:0;overflow-wrap:anywhere}.tt-text-eyebrow,.tt-text-meta{font-size:.75rem;font-weight:600;color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f));text-transform:uppercase}
+/* A title is the name of a document, not a billboard. Measured against the
+   things these looks stand next to: Notion 40px, Apple Notes 34px, Medium
+   42px, Substack 44px, a YouTube title 20px. Every look here used to render
+   between 1.6x and 2.1x its reference, which is most of why they all read as
+   one page in different fonts. Tracking tightens as the size grows. */
+.tt-text-title{font-size:clamp(1.75rem,2.8vw,2.25rem);line-height:1.12;font-weight:700;letter-spacing:-.019em}.tt-text-subtitle{font-size:clamp(1.1rem,2.2vw,1.55rem);line-height:1.35;color:var(--muted,#6e6e73)}.tt-text-heading{font-size:1.45rem;line-height:1.15;font-weight:700}.tt-text-body{font-size:1rem;line-height:1.6}.tt-text-caption,.tt-metadata{font-size:.85rem;line-height:1.45;color:var(--muted,#6e6e73)}
+.tt-document[data-title-scale="compact"] .tt-text-title{font-size:clamp(1.3rem,1.75vw,1.5rem);line-height:1.25;letter-spacing:-.011em}.tt-document[data-title-scale="large"] .tt-text-title{font-size:clamp(2rem,3.45vw,2.75rem);line-height:1.08;letter-spacing:-.023em}
 .tt-document[data-alignment="start"] .tt-masthead{text-align:left;align-items:flex-start}.tt-document[data-alignment="start"] .tt-byline,.tt-document[data-alignment="start"] .tt-metadata{justify-content:flex-start}
+/* A look that asks for start alignment means the whole document, not only the
+   parts that happen to sit in a masthead. Note asks for start alignment and
+   puts its title straight in the stack, so the rule above never reached it. */
+.tt-document[data-alignment="start"]>.tt-stack>.tt-text{text-align:left}
+/* The paper is the page, not a panel. A min-height of 100% resolves against a
+   parent with no definite height, so a short document painted its paper down
+   to the last line and let the app's own background show underneath. It was
+   visible on exactly the two looks whose paper is not white. A fixed layer
+   behind the content fills the window at any document length and costs no
+   layout. Miniatures and collection rows are not pages, so they keep painting
+   only themselves. */
+.tt-document:not(.tt-collection-item):not([data-preview]){position:relative;z-index:0}
+.tt-document:not(.tt-collection-item):not([data-preview])::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--paper,#fff);pointer-events:none}
 .tt-prose{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.06rem;line-height:1.7}.tt-prose>*:first-child{margin-top:0}.tt-prose h1,.tt-prose h2,.tt-prose h3{line-height:1.15;margin:2em 0 .65em}.tt-prose img,.tt-prose video{display:block;max-width:100%;height:auto;margin:1.75rem auto}.tt-prose a{color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f));text-underline-offset:.18em}.tt-prose pre{overflow:auto;white-space:pre-wrap;overflow-wrap:break-word;padding:1rem;background:color-mix(in srgb,var(--ink,#1d1d1f) 7%,transparent)}
 .tt-cover,.tt-image,.tt-video{position:relative;overflow:hidden;width:100%;background:color-mix(in srgb,var(--ink,#1d1d1f) 5%,transparent)}.tt-cover img,.tt-cover video,.tt-image img,.tt-video video,.tt-video iframe{display:block;width:100%;height:100%;border:0;object-fit:var(--tt-media-fit,cover)}.tt-height-compact{height:14rem}.tt-height-medium{height:26rem}.tt-height-large{height:min(56vh,42rem)}.tt-height-viewport{height:calc(100vh - 3rem)}
 .tt-document[data-media="contained"] .tt-cover,.tt-document[data-media="contained"] .tt-image,.tt-document[data-media="contained"] .tt-video{width:min(64rem,calc(100% - 2rem));margin-inline:auto;border-radius:.5rem}.tt-document[data-media="bleed"] .tt-cover,.tt-document[data-media="bleed"] .tt-image,.tt-document[data-media="bleed"] .tt-video{width:100vw;margin-left:calc(50% - 50vw)}
@@ -98,32 +117,70 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-quote-attribution{margin-top:.5rem;font-size:.85rem;font-weight:600;color:var(--muted,#6e6e73)}
 .tt-document.tt-collection-item{padding-bottom:0}
 
-/* Article */
-.tt-document[data-template="texttext.article"]{--tt-accent:#1a8917;--tt-measure:42.5rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.article"]>.tt-stack{gap:2.75rem;padding:clamp(2.5rem,7vw,6rem) 0 5rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead{gap:1rem}
-.tt-document[data-template="texttext.article"] .tt-text-title{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:clamp(3rem,7vw,5.75rem);font-weight:700;line-height:.96;letter-spacing:-.025em}
-.tt-document[data-template="texttext.article"] .tt-text-subtitle{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:clamp(1.25rem,2vw,1.55rem);line-height:1.35}
-.tt-document[data-template="texttext.article"] .tt-prose{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:1.22rem;line-height:1.78}
-.tt-document[data-template="texttext.article"] .tt-cover{width:min(72rem,calc(100% - 2rem));height:auto;aspect-ratio:16/9;border-radius:0}
+/* Article - the reading view an article gets when it is published, and the
+   look whose editor should feel like a blank page and nothing else. The
+   masthead is centred and the body is not; the display face is a serif and
+   the body is the system sans, which is the combination the reference uses
+   and the reason it reads as an article rather than a blog post. */
+.tt-document[data-template="texttext.article"]{--tt-accent:#1a8917;--tt-measure:44rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.article"]>.tt-stack{gap:2.25rem;padding:clamp(2.5rem,7vw,5rem) 0 5rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead{gap:.85rem}
+.tt-document[data-template="texttext.article"] .tt-text-title{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:clamp(2.1rem,3.6vw,3rem);font-weight:700;line-height:1.08;letter-spacing:-.022em;text-wrap:balance}
+.tt-document[data-template="texttext.article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.02rem;line-height:1.45;color:var(--muted,#6e6e73)}
+/* A hairline closes the masthead, the way a rule separates the title block
+   from the story in the reference. It is drawn on the masthead so it only
+   exists where there is a masthead to close. */
+.tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead::after{content:"";width:min(26rem,58%);height:1px;margin:1.1rem auto 0;background:color-mix(in srgb,var(--ink,#1d1d1f) 17%,transparent)}
+.tt-document[data-template="texttext.article"] .tt-prose{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.15rem;line-height:1.62}
+/* Section headings are centred serif, which is what makes a long piece feel
+   set rather than typed. */
+.tt-document[data-template="texttext.article"] .tt-prose h2,.tt-document[data-template="texttext.article"] .tt-prose h3{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;text-align:center;font-size:1.32rem;letter-spacing:-.008em;margin:2.4em 0 .8em}
+.tt-document[data-template="texttext.article"] .tt-cover{width:min(52rem,calc(100% - 2rem));height:auto;aspect-ratio:16/10;border-radius:.85rem}
 .tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-title{font-size:1.55rem;line-height:1.12;letter-spacing:-.01em}
 .tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.94rem;line-height:1.45}
 
 /* Note */
-.tt-document[data-template="texttext.note"]{--tt-accent:#ffb900;--paper:#fffef8;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:44rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.note"]>.tt-stack{gap:1.15rem;padding:clamp(2.25rem,7vw,5.25rem) 0}
-.tt-document[data-template="texttext.note"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2rem,4.5vw,3.35rem);font-weight:700;line-height:1.08;letter-spacing:0}
+/* Apple Notes is white paper. The yellow lives in the app's chrome, never
+   behind the words; a cream page is a sticky note, which is a different and
+   much noisier idea. */
+.tt-document[data-template="texttext.note"]{--tt-accent:#ffb900;--paper:#fff;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:50rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.note"]>.tt-stack{gap:.9rem;padding:clamp(1.5rem,4vw,2.75rem) 0 4rem}
+.tt-document[data-template="texttext.note"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.6rem,2.6vw,2.1rem);font-weight:700;line-height:1.16;letter-spacing:-.017em}
 .tt-document[data-template="texttext.note"] .tt-metadata{justify-content:center;font-size:.78rem;color:var(--muted)}
-.tt-document[data-template="texttext.note"] .tt-prose{font-size:1.08rem;line-height:1.62}
+.tt-document[data-template="texttext.note"] .tt-prose{font-size:1.15rem;line-height:1.5}
 .tt-document[data-template="texttext.note"] .tt-prose a{color:#c78800}
 .tt-document.tt-collection-item[data-template="texttext.note"]{background:#fffef8}
 .tt-document.tt-collection-item[data-template="texttext.note"] .tt-text-title{font-size:1.3rem}
 .tt-document.tt-collection-item[data-template="texttext.note"] .tt-metadata{justify-content:flex-start}
 
+/* Case study - argument on the left, evidence on the right. The reading
+   column is fixed at a comfortable measure rather than a percentage, so the
+   line length stays right and the evidence takes whatever is left. */
+.tt-document[data-template="texttext.casestudy"]{--tt-accent:#1d1d1f;--tt-measure:none}
+.tt-document:not(.tt-collection-item)[data-template="texttext.casestudy"]>.tt-stack{gap:clamp(2rem,4vw,3.5rem);padding:clamp(2rem,5vw,3.5rem) clamp(1rem,4vw,3rem) 5rem;align-items:flex-start}
+.tt-document[data-template="texttext.casestudy"] [data-tt-node="case-copy"]{flex:0 1 34rem;min-width:0}
+.tt-document[data-template="texttext.casestudy"] [data-tt-node="case-evidence"]{flex:1 1 30rem;min-width:0;position:sticky;top:2rem}
+.tt-document[data-template="texttext.casestudy"] .tt-masthead{width:100%;margin-inline:0;text-align:left;align-items:flex-start}
+.tt-document[data-template="texttext.casestudy"] .tt-prose{width:100%;margin-inline:0;font-size:1.12rem;line-height:1.6}
+.tt-document[data-template="texttext.casestudy"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.9rem,3.1vw,2.5rem);font-weight:700;line-height:1.1;letter-spacing:-.021em}
+/* The role sits under the tags as a quiet italic line, the way a dek does. */
+.tt-document[data-template="texttext.casestudy"] .tt-text-caption{font-style:italic;font-size:1.05rem;line-height:1.5;text-transform:none;letter-spacing:0}
+/* .tt-badge is the row; .tt-pill is each tag. Styling the row as if it were a
+   pill drew one rectangle around the whole set. */
+.tt-document[data-template="texttext.casestudy"] .tt-badge{gap:.45rem}
+.tt-document[data-template="texttext.casestudy"] .tt-pill{border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 24%,transparent);background:transparent;color:var(--muted,#6e6e73);text-transform:uppercase;letter-spacing:.07em;font-size:.68rem;font-weight:700;padding:.28rem .7rem}
+.tt-document[data-template="texttext.casestudy"] .tt-cover,.tt-document[data-template="texttext.casestudy"] .tt-video{width:100%;height:auto;aspect-ratio:16/10;border-radius:.75rem}
+.tt-document[data-template="texttext.casestudy"] [data-tt-node="case-evidence"] .tt-text-caption{font-style:normal;text-align:center;font-size:.95rem;color:var(--muted,#6e6e73)}
+.tt-document[data-template="texttext.casestudy"] .tt-prose h2{font-size:1.2rem;margin:1.9em 0 .5em}
+@media(max-width:900px){
+  .tt-document:not(.tt-collection-item)[data-template="texttext.casestudy"]>.tt-stack{flex-direction:column}
+  .tt-document[data-template="texttext.casestudy"] [data-tt-node="case-copy"],.tt-document[data-template="texttext.casestudy"] [data-tt-node="case-evidence"]{flex:1 1 auto;width:100%;position:static}
+}
+
 /* Bookmark */
 .tt-document[data-template="texttext.bookmark"]{--tt-accent:#835f42;--paper:#f6f1e7;--ink:#26231f;--muted:#7a7167;--tt-measure:39rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.bookmark"]>.tt-stack{gap:2.1rem;padding:clamp(2.75rem,8vw,6.5rem) 0 5rem}
-.tt-document[data-template="texttext.bookmark"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(2.7rem,6vw,4.8rem);font-weight:700;line-height:1.02;letter-spacing:-.015em}
+.tt-document[data-template="texttext.bookmark"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(1.75rem,2.8vw,2.25rem);font-weight:700;line-height:1.14;letter-spacing:-.018em}
 .tt-document[data-template="texttext.bookmark"] .tt-text-subtitle{font-family:Georgia,"Iowan Old Style",serif;font-size:1.18rem}
 .tt-document[data-template="texttext.bookmark"] .tt-text-caption{text-transform:uppercase;letter-spacing:.06em;font-size:.7rem;font-weight:700}
 .tt-document[data-template="texttext.bookmark"] .tt-cover{width:min(52rem,calc(100% - 2rem));height:auto;aspect-ratio:3/2;border-radius:0}
@@ -135,7 +192,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.gallery"]{--tt-accent:#e60023;--tt-measure:78rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.gallery"]>.tt-stack{gap:2.5rem;padding:clamp(2rem,6vw,5rem) clamp(1rem,4vw,3.5rem) 5rem}
 .tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-copy"]{text-align:center;align-items:center}
-.tt-document[data-template="texttext.gallery"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2.6rem,6vw,5rem);font-weight:750;line-height:1;letter-spacing:0}
+.tt-document[data-template="texttext.gallery"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.75rem,2.8vw,2.25rem);font-weight:700;line-height:1.14;letter-spacing:-.018em}
 .tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(auto-fill,minmax(12rem,1fr));gap:1rem;width:min(78rem,100%);margin-inline:auto}
 .tt-document[data-template="texttext.gallery"] .tt-gallery figure{break-inside:avoid}
 .tt-document[data-template="texttext.gallery"] .tt-gallery img,.tt-document[data-template="texttext.gallery"] .tt-gallery video{aspect-ratio:4/5;border-radius:.5rem}
@@ -145,20 +202,23 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.gallery"] .tt-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem}
 .tt-document.tt-collection-item[data-template="texttext.gallery"] .tt-gallery img,.tt-document.tt-collection-item[data-template="texttext.gallery"] .tt-gallery video{border-radius:.35rem}
 
-/* Talk */
-.tt-document[data-template="texttext.talk"]{--tt-accent:#ff0033;--tt-measure:68rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.talk"]>.tt-stack{gap:1.4rem;padding:clamp(1.5rem,4vw,3rem) 0 5rem}
-.tt-document[data-template="texttext.talk"] .tt-video{width:min(76rem,calc(100% - 2rem));height:auto;aspect-ratio:16/9;border-radius:.5rem;background:#000}
-.tt-document[data-template="texttext.talk"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:clamp(1.8rem,3.5vw,2.6rem);font-weight:700;line-height:1.12;letter-spacing:0}
-.tt-document[data-template="texttext.talk"] .tt-masthead{gap:.55rem}
-.tt-document[data-template="texttext.talk"] .tt-byline{margin-top:.35rem}
-.tt-document[data-template="texttext.talk"] .tt-prose{font-size:1rem;line-height:1.65}
+/* Video - the recording leads, then its name, then who and how long, then the
+   writing. The title sits under the video at reading weight, not over it as a
+   headline: by the time you read it you have already seen the thing. */
+.tt-document[data-template="texttext.talk"]{--tt-accent:#ff0033;--tt-measure:56rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.talk"]>.tt-stack{gap:1.5rem;padding:clamp(1.5rem,4vw,3rem) 0 5rem}
+.tt-document[data-template="texttext.talk"] .tt-video,.tt-document[data-template="texttext.talk"] .tt-cover{width:min(56rem,calc(100% - 2rem));height:auto;aspect-ratio:16/9;border-radius:.75rem;background:#000}
+.tt-document[data-template="texttext.talk"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.6rem,2.6vw,2.1rem);font-weight:700;line-height:1.16;letter-spacing:-.017em}
+.tt-document[data-template="texttext.talk"] .tt-masthead{gap:.4rem}
+.tt-document[data-template="texttext.talk"] .tt-byline,.tt-document[data-template="texttext.talk"] .tt-metadata{margin-top:.1rem;font-size:.95rem}
+.tt-document[data-template="texttext.talk"] .tt-text-subtitle{font-size:1.05rem}
+.tt-document[data-template="texttext.talk"] .tt-prose{font-size:1.15rem;line-height:1.55}
 .tt-document.tt-collection-item[data-template="texttext.talk"] .tt-text-title{font-size:1.3rem}
 
 /* Checklist */
 .tt-document[data-template="texttext.todo"]{--tt-accent:#0a84ff;--paper:#f2f2f7;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.todo"]>.tt-stack{gap:1.25rem;padding:clamp(2rem,6vw,4.5rem) 0 5rem}
-.tt-document[data-template="texttext.todo"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2.4rem,5vw,4.1rem);font-weight:750;line-height:1;letter-spacing:0;color:#0a84ff}
+.tt-document[data-template="texttext.todo"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.6rem,2.6vw,2.1rem);font-weight:700;line-height:1.16;letter-spacing:-.017em;color:#0a84ff}
 .tt-document[data-template="texttext.todo"] .tt-checklist{padding:.25rem 1rem;background:#fff;border-radius:.5rem}
 .tt-document[data-template="texttext.todo"] .tt-checklist-items{gap:0}
 .tt-document[data-template="texttext.todo"] .tt-checklist-item{min-height:2.9rem;padding:.55rem 0;border-bottom:1px solid #e5e5ea;flex-wrap:nowrap}
@@ -167,14 +227,20 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.todo"] .tt-text-title{font-size:1.45rem;color:#0a84ff}
 .tt-document.tt-collection-item[data-template="texttext.todo"] .tt-checklist{padding:.15rem .75rem}
 
-/* Project */
-.tt-document[data-template="texttext.project"]{--tt-accent:#2383e2;--tt-measure:52rem}
-.tt-document:not(.tt-collection-item)[data-template="texttext.project"]>.tt-stack{gap:1.35rem;padding:clamp(3rem,8vw,7rem) 0 5rem}
-.tt-document[data-template="texttext.project"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2.6rem,5vw,4.6rem);font-weight:700;line-height:1.05;letter-spacing:-.015em}
+/* Project - a page in the Notion sense: one left edge for everything, a
+   restrained title, and no boxes. The reference draws no border around any
+   block; hierarchy comes from weight and space alone, which is why it stays
+   calm as a page grows. */
+.tt-document[data-template="texttext.project"]{--tt-accent:#2383e2;--tt-measure:44rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.project"]>.tt-stack{gap:1.15rem;padding:clamp(1.75rem,4vw,3rem) 0 5rem}
+.tt-document[data-template="texttext.project"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.9rem,3.1vw,2.5rem);font-weight:700;line-height:1.12;letter-spacing:-.021em}
 .tt-document[data-template="texttext.project"] .tt-masthead{gap:.7rem}
-.tt-document[data-template="texttext.project"] .tt-facts-table{padding:.85rem 0;border-top:1px solid color-mix(in srgb,var(--ink) 12%,transparent);border-bottom:1px solid color-mix(in srgb,var(--ink) 12%,transparent)}
-.tt-document[data-template="texttext.project"] .tt-prose{font-size:1rem;line-height:1.65}
-.tt-document[data-template="texttext.project"] .tt-checklist,.tt-document[data-template="texttext.project"] .tt-rows{padding:.9rem 1rem;border:1px solid color-mix(in srgb,var(--ink) 12%,transparent);border-radius:.35rem}
+.tt-document[data-template="texttext.project"] .tt-facts-table{padding:.15rem 0;border:0}
+.tt-document[data-template="texttext.project"] .tt-facts-key{color:var(--muted,#6e6e73);font-size:.9rem;font-weight:400}
+.tt-document[data-template="texttext.project"] .tt-prose{font-size:1rem;line-height:1.5}
+.tt-document[data-template="texttext.project"] .tt-prose p{margin:.55em 0}
+.tt-document[data-template="texttext.project"] .tt-prose h1,.tt-document[data-template="texttext.project"] .tt-prose h2,.tt-document[data-template="texttext.project"] .tt-prose h3{margin:1.5em 0 .3em;letter-spacing:-.014em}
+.tt-document[data-template="texttext.project"] .tt-checklist,.tt-document[data-template="texttext.project"] .tt-rows{padding:0;border:0;border-radius:0}
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-text-title{font-size:1.45rem}
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-facts{font-size:.8rem}
 
@@ -182,7 +248,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.newsletter"]{--tt-accent:#ff6719;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.newsletter"]>.tt-stack{gap:2rem;padding:clamp(2.5rem,7vw,6rem) 0 5rem}
 .tt-document[data-template="texttext.newsletter"] .tt-masthead{text-align:center;align-items:center}
-.tt-document[data-template="texttext.newsletter"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(2.8rem,6vw,5rem);font-weight:700;line-height:1;letter-spacing:-.015em}
+.tt-document[data-template="texttext.newsletter"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(2.05rem,3.45vw,2.75rem);font-weight:700;line-height:1.08;letter-spacing:-.023em}
 .tt-document[data-template="texttext.newsletter"] .tt-text-subtitle{font-family:Georgia,"Iowan Old Style",serif;font-size:1.2rem}
 .tt-document[data-template="texttext.newsletter"] .tt-cover{width:min(52rem,calc(100% - 2rem));height:auto;aspect-ratio:16/9;border-radius:0}
 .tt-document[data-template="texttext.newsletter"] .tt-prose{font-family:Georgia,"Iowan Old Style",serif;font-size:1.16rem;line-height:1.78}

@@ -13,7 +13,10 @@ const article = {
   theme: {
     typography: "editorial",
     measure: "reading",
-    alignment: "start",
+    // The masthead is centred and the body is not. Centring is declared here
+    // rather than forced in the stylesheet, so the template still describes
+    // itself.
+    alignment: "center",
     media: "contained",
   },
   item: {
@@ -92,15 +95,18 @@ const note = {
   theme: { typography: "system", measure: "reading", alignment: "start" },
   item: {
     type: "stack",
-    gap: "md",
+    gap: "sm",
     children: [
+      // The date sits above the title, centred, the way it does in the app
+      // this look is answering to. Below the title it reads as a byline on
+      // something published; above it, it is just when you wrote this.
+      { type: "metadata" },
       {
         type: "text",
         bind: "content.title",
         role: "title",
         fallback: "Untitled",
       },
-      { type: "metadata" },
       {
         type: "text",
         bind: "content.subtitle",
@@ -308,6 +314,125 @@ const talk = {
     ],
   },
   collection: article.collection,
+} as const;
+
+// A piece of work, argued in a column with its evidence beside it. The
+// reference splits the page: what happened on the left at reading width, the
+// artefact that proves it on the right. Below 900px the two columns become
+// one, because a 38% reading column on a phone is a gutter.
+const casestudy = {
+  schemaVersion: 1,
+  engineVersion: 1,
+  id: "texttext.casestudy",
+  version: 1,
+  name: "Case study",
+  description: "The work on the left, the proof of it on the right.",
+  fields: [
+    { id: "cover", label: "Evidence", type: "image" },
+    { id: "videoUrl", label: "Video", type: "url" },
+    { id: "caption", label: "Caption", type: "text" },
+    { id: "role", label: "Role", type: "text" },
+  ],
+  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
+  theme: {
+    typography: "system",
+    measure: "full",
+    alignment: "start",
+    media: "contained",
+  },
+  item: {
+    type: "stack",
+    direction: "horizontal",
+    gap: "xl",
+    align: "start",
+    children: [
+      {
+        type: "stack",
+        id: "case-copy",
+        gap: "md",
+        children: [
+          {
+            type: "masthead",
+            gap: "sm",
+            children: [
+              {
+                type: "text",
+                bind: "content.title",
+                role: "title",
+                fallback: "Untitled",
+              },
+              { type: "badge", bind: "content.tags" },
+              {
+                type: "text",
+                bind: "content.fields.role",
+                role: "caption",
+                showWhen: "content.fields.role",
+              },
+            ],
+          },
+          { type: "prose", bind: "content.body" },
+        ],
+      },
+      {
+        type: "stack",
+        id: "case-evidence",
+        gap: "sm",
+        children: [
+          {
+            type: "video",
+            bind: "content.fields.videoUrl",
+            alt: "content.title",
+            height: "medium",
+            showWhen: "content.fields.videoUrl",
+          },
+          {
+            type: "cover",
+            bind: "content.fields.cover",
+            alt: "content.title",
+            height: "medium",
+            showWhen: "content.fields.cover",
+          },
+          {
+            type: "text",
+            bind: "content.fields.caption",
+            role: "caption",
+            showWhen: "content.fields.caption",
+          },
+        ],
+      },
+    ],
+  },
+  collection: {
+    layout: "cards",
+    columns: 2,
+    gap: "md",
+    sort: [{ field: "updatedAt", direction: "desc" }],
+    item: {
+      type: "stack",
+      gap: "xs",
+      children: [
+        {
+          type: "cover",
+          bind: "content.fields.cover",
+          alt: "content.title",
+          height: "compact",
+          showWhen: "content.fields.cover",
+        },
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled",
+        },
+        {
+          type: "text",
+          bind: "content.fields.role",
+          role: "caption",
+          showWhen: "content.fields.role",
+        },
+      ],
+    },
+  },
 } as const;
 
 const todo = {
@@ -3122,12 +3247,18 @@ const activeDefinitions = [
   bookmark,
   gallery,
   talk,
+  // Anything new goes after the original five, which stay first and
+  // byte-compatible; presentation-schema.test.ts pins that.
+  casestudy,
   todo,
   project,
-  newsletter,
 ].map((entry) => validateTemplateDefinition(entry));
 
 const legacyDefinitions = [
+  // Retired from the catalogue at the owner's request. Kept resolvable so any
+  // document already pinned to it still renders; retiring a look must never
+  // break a document that chose it.
+  newsletter,
   meeting,
   journal,
   bookshelf,
@@ -3193,10 +3324,10 @@ export const TEMPLATE_CATALOG: readonly {
 }[] = Object.freeze([
   { id: "texttext.article", category: "Text" },
   { id: "texttext.note", category: "Text" },
+  { id: "texttext.casestudy", category: "Publish" },
   { id: "texttext.todo", category: "Plan" },
   { id: "texttext.project", category: "Plan" },
   { id: "texttext.bookmark", category: "Collect" },
   { id: "texttext.gallery", category: "Collect" },
   { id: "texttext.talk", category: "Publish" },
-  { id: "texttext.newsletter", category: "Publish" },
 ]);

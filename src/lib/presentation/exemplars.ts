@@ -18,6 +18,8 @@ export type Exemplar = {
   title: string;
   body: string;
   fields: Record<string, unknown>;
+  /** Looks that show tags need an example carrying some. */
+  tags?: string[];
   assets?: DocumentAsset[];
 };
 
@@ -33,6 +35,20 @@ export const EXEMPLARS: Exemplar[] = [
     title: "Things I keep relearning",
     body: `- The bug is always in the code you were most sure about\n- Writing the summary first makes the meeting shorter\n- If a file needs a comment to explain its name, rename the file\n- Coffee after 3pm is a loan against tomorrow`,
     fields: {},
+  },
+  {
+    template: "texttext.casestudy",
+    title: "Rebuilding a studio around live service",
+    body: `A premium studio ships a title, sells it, moves on, and lets the back catalogue quietly die. That model was already failing when I took over the product function, and the catalogue was the asset nobody was managing.\n\n## What changed\n\nI rebuilt the operating model around live service: the roles, the instrumentation, the review cadence. Releases moved from yearly to a biweekly themed cadence, and update pipelines made that cadence sustainable rather than heroic.\n\n## What it produced\n\nThe sharpest proof was a four-year-old title most studios would have sunset. It went back into the top 20 of the US App Store, paid and free. The playbook was repeatable, which is the only reason it counts as a result rather than a story.`,
+    tags: ["Studio", "Product", "Live service"],
+    fields: {
+      role: "Chief Product Officer, after first leading R&D",
+      // The caption describes the photograph, because a caption that claims
+      // the picture is something it is not is the same lie as invented alt
+      // text.
+      caption: "A window in a building nobody was maintaining.",
+      cover: "/covers/cover-201.jpg",
+    },
   },
   {
     template: "texttext.bookmark",
