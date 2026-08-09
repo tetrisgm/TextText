@@ -7,8 +7,8 @@ Two branches are open off `main`, both pushed, neither merged.
 1. **`simplify-core-ux`**: the UX simplification pass. Its audit and open items
    are in that branch's copy of this file.
 2. **`live-collab-proof`** (this branch): proof, in real browsers, that an agent
-   participates in a document the way a second person does. Plus two fixes the
-   proof forced, and one defect it found and did not fix.
+   participates in a document the way a second person does, plus the two fixes
+   that proof forced.
 
 ## The evaluation
 
@@ -35,7 +35,7 @@ The other collaboration checks drive Yjs clients in process and ask whether
 state converges. This one asks whether a person can SEE the other participant,
 which is a different question and the one that was never covered.
 
-**22 of 23 checks pass.** The one failure is real and is described below.
+**All 24 checks pass.**
 
 - **Two people, live.** Ada's typing reaches Grace and Grace's reaches Ada with
   no reload. Grace's browser paints Ada's selection labelled "Ada". Ada's
@@ -69,49 +69,31 @@ who have browser presence of their own, and
 `runWorkspaceToolForSession` supplies `connectionName: "Assistant"`. The check
 was written first, watched fail, then watched pass.
 
-**Presence was write-only.** `/api/collab/{postId}/presence` had only a POST, so
-a browser learned where everyone's cursor was solely from the response to its
-own heartbeat. Someone who is only watching never changes their own awareness,
-so their heartbeat stayed on the slow interval. The route now also answers GET,
-and the provider polls it on its own 1200 ms timer
-(`PRESENCE_POLL_MS` in `src/lib/collab/provider.ts`). This is correct on its own
-merits, and it did not fix the defect below.
+## The defect this found, and the trap it nearly set
 
-## The defect this found and did not fix
+**A watcher's view did not follow a colleague's caret.** Presence was
+write-only: `/api/collab/{postId}/presence` had only a POST, so a browser
+learned where everyone's cursor was solely from the response to its own
+heartbeat. Someone who is only watching never changes their own awareness, so
+their heartbeat stayed on the slow 8 second interval and the caret they saw was
+up to that far behind. Watching a colleague write is the common case, so this
+was the wrong shape.
 
-**A watcher's view does not follow a colleague's caret.** With Grace idle and
-Ada moving her cursor from the end of the body to the start, the remote
-selection layer in Grace's browser (`.tt-collaborative-mirror` in the body
-field) does not change within a 20 second observation window. It holds the
-content it had, so Grace keeps seeing where Ada's cursor USED to be.
+The route answers GET now, and the provider polls it on its own 1200 ms timer
+(`PRESENCE_POLL_MS` in `src/lib/collab/provider.ts`). Measured after the change:
+an idle watcher sees the writer's caret move after **1218 ms**, which is the
+poll interval, so the transport is now the whole cost.
 
-This is the `idle-caret-latency` check, and it is left failing on purpose. The
-evaluation reports the product's actual state; deleting the check to make the
-run green would hide the one thing it found.
+**The trap.** The first three runs reported that the caret never moved for a
+watcher, even after the fix. It would have been easy to write that up as a
+deeper product defect. Instrumenting instead of concluding showed the stored
+awareness blob was byte-identical before and after, which isolated it to the
+writer, and then that Ada's insertion point was 40 before AND after the
+keypress: `Home` does not move a textarea's insertion point on macOS. The probe
+had been measuring nothing.
 
-Ruled out while investigating:
-
-- Not the initial render. The `human-caret` check passes moments earlier: Grace
-  paints Ada's range selection, labelled "Ada", from the same mechanism.
-- Not presence expiry. Both rows stay fresh; both participants remain listed.
-- Not the transport read path alone. Adding the presence GET poll (above)
-  changed nothing, so a slow read is not the whole story.
-- Not `updateSelection` guarding itself off:
-  `src/components/document/UnifiedDocumentEditor.tsx` encodes a relative
-  position on every selection event once `ready`.
-
-Not yet checked, in the order worth checking:
-
-1. Whether Ada's stored awareness blob in `collab_presence` actually changes
-   between caret moves, or whether the debounced heartbeat coalesces them away
-   (`onAwarenessUpdate`, 75 ms, in `src/lib/collab/provider.ts`).
-2. Whether `applyAwarenessUpdate` on Grace's side accepts the newer clock and
-   emits `change`, and therefore whether `remoteRevision` bumps at all.
-3. Whether a COLLAPSED remote selection renders differently from a range:
-   `SelectionMirror` emits `.tt-remote-caret` when `from === to` and a `<mark>`
-   otherwise, and only the range case is known to work.
-
-Hypothesis three is the cheapest to falsify and the most likely.
+The run now asserts `caret-actually-moved` before it asserts any latency, so a
+future change to the harness cannot quietly go back to measuring nothing.
 
 ## Also open
 
@@ -147,13 +129,10 @@ production Neon, no deploy, no release, no scheduled anything.
 - `npx tsc --noEmit` clean.
 - `npx vitest run`: 104 files, 747 tests, all passing.
 - `npm run build` succeeds.
-- `npm run eval:collaboration:browser`: 22/23, with `idle-caret-latency`
-  failing as described.
+- `npm run eval:collaboration:browser`: 24/24.
 
 ## Next concrete step
 
-Falsify hypothesis three above: check whether a collapsed remote selection
-renders and updates at all. If it does not, that is a small fix in
-`SelectionMirror` and it closes the last leg of this goal. Then land both
-branches with `merge-gate` from the worktree
-(`~/dev/stack/runbooks/workflow.md`).
+Review both branches and land them with `merge-gate` from the worktree
+(`~/dev/stack/runbooks/workflow.md`). They touch different files and are
+independent.

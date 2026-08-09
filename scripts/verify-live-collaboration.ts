@@ -344,19 +344,49 @@ async function main(): Promise<void> {
         .catch(() => "");
 
     await bodyField(ada).click();
-    await ada.keyboard.press("End");
+    await ada.keyboard.press("ArrowRight");
     await grace.waitForTimeout(6000); // let the collapsed caret settle for Grace
     const before = await mirrorHtml(grace);
     note(`  watcher mirror before: ${before.length} chars`);
 
-    await ada.keyboard.press("Home");
+    // If Ada's caret is not in the body, this measures the harness, not the app.
+    const focusInfo = await ada.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const ta = el instanceof HTMLTextAreaElement ? el : null;
+      return {
+        tag: el?.tagName ?? "none",
+        label: el?.getAttribute("aria-label") ?? "",
+        start: ta?.selectionStart ?? -1,
+        end: ta?.selectionEnd ?? -1,
+      };
+    });
+    note(`  Ada focus: ${JSON.stringify(focusInfo)}`);
+
+    // Move the caret with arrows, not Home: on macOS Home scrolls the field
+    // without moving the insertion point, so it would measure nothing.
     const moveStart = Date.now();
+    for (let i = 0; i < 12; i += 1) await ada.keyboard.press("ArrowLeft");
     const moved = await until("Ada's caret to move for an idle Grace", 20000, async () => {
       const now = await mirrorHtml(grace);
       return now && now !== before ? now : null;
     });
     const idleLatencyMs = Date.now() - moveStart;
     note(`  idle watcher saw the caret move after ${idleLatencyMs}ms`);
+    const focusAfter = await ada.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const ta = el instanceof HTMLTextAreaElement ? el : null;
+      return { start: ta?.selectionStart ?? -1 };
+    });
+    note(`  Ada insertion point after: ${focusAfter.start}`);
+    const movedInField = focusInfo.start !== focusAfter.start;
+    record(
+      "caret-actually-moved",
+      "The writer's caret really moved, so the measurement means something",
+      movedInField,
+      movedInField
+        ? `Ada's insertion point went ${focusInfo.start} -> ${focusAfter.start}`
+        : `Ada's insertion point never moved (${focusInfo.start}); the probe would measure nothing`,
+    );
     record(
       "idle-caret-latency",
       "A watcher who is not typing sees the caret move within 3s",
