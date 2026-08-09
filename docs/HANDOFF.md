@@ -79,6 +79,24 @@ no duplicated item count, no type badge repeating the icon, no "No preview"
 where a document simply has no text yet, no drag-to-resize corner on the capture
 field.
 
+**Craft fixes the critique confirmed.** The composer's submit button had lost
+its accent fill to `apple.css`, which loads after `broadsheet.css` and
+neutralises `.ac-icon-btn`, so creating an item was not the visually dominant
+action anywhere on the page; it is now the only filled control on the Library.
+"Stop editing" carried `ac-btn-blue`, a class that exists in no stylesheet.
+Escape inside the look gallery closed the gallery and then reached the editor's
+own Escape layer, throwing the writer out of the document in one keystroke.
+Opening a look preview auto-scrolled to the document's footer. The gallery never
+marked the look already applied. The three writing fields removed their focus
+ring and put nothing back. Save feedback rendered success as an empty string, so
+the only save message anyone saw was the red one, and that red had no dark
+variant. The landing header and hero showed the same pill, same label, same
+href, inside the first viewport; the header is now a quiet "Sign in" and the
+narrow-viewport rule that hides the left nav items was scoped so it no longer
+takes sign-in with it. The "Familiar looks" demo rendered a 680px reading
+measure inside a 1903px canvas scaled to 0.62, leaving about 380px blank on each
+side; it now shows the measure at true size.
+
 **Removed:** the dead `WorkspaceTemplateStrip` and its CSS, the sidebar row that
 navigated out of the workspace into the public catalog, four competing calls to
 action on the landing page, a heading level in each landing card, three cards
@@ -124,9 +142,32 @@ Across both commits: 660 lines removed, 366 added.
 5. **Two stylesheets style the same components.** `workspace.css` loads after
    `broadsheet.css` and overrides it for the workspace surfaces. Several rules
    in `broadsheet.css` are now dead for those components. Worth collapsing.
-6. **A multi-lens visual critique workflow was still running when this was
-   written.** It reads the round-1 screenshots and adversarially verifies each
-   finding. Its results were not folded in.
+6. **The critique's remaining findings.** A 54-agent multi-lens critique read
+   the round-1 screenshots and adversarially verified every claim: 48 confirmed,
+   0 refuted. Most are fixed here. Still open, in its ranking:
+   - The public catalog at `/templates` crops each preview to 16:10 after
+     rendering at ~1490px, so six of eight cards paint under 6% of their area,
+     and at 390px the body text lands around 6px. The in-app gallery was fixed
+     the same way this needs fixing.
+   - The catalog's name pill is positioned on top of the live preview and
+     covers words underneath it, and three cards show a hard seam where the
+     document's paper stops and the card's paper takes over.
+   - `--bg-soft` is `#f5f5f7` in light and `#000000` in dark
+     (`src/styles/tokens.css`), so every gentle tint becomes a black hole in
+     dark mode. Left alone because the token has wide blast radius.
+   - The Note and Checklist looks set `--muted: #8e8e93`, which clears AA on
+     their dark papers and fails it on their light ones.
+   - At 390px the floating history chrome paints over the editor's Look
+     button and swallows taps, the look detail bar wraps mid-phrase on all
+     four controls, and the document title clears the toolbar by 4px.
+   - The gallery's last row is sliced mid-card, and clicking a card opens a
+     second screen rather than choosing, with no way to step to the next look
+     from inside the preview.
+   - The hero mockup is not the product: different sidebar items, different
+     structure, different visual language from the real app.
+   Full ranked list with per-finding evidence and fixes:
+   `/private/tmp/claude-501/.../tasks/wlcuwzimn.output` for this session, and
+   the per-agent journal under `subagents/workflows/wf_aea78981-840/`.
 
 ## Deliberately not touched
 

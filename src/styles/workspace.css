@@ -193,6 +193,24 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
+/* Creating is the dominant action, so the control that does it is the only
+   filled control on the page. Stated here because apple.css loads after
+   broadsheet.css and neutralises .ac-icon-btn. */
+.universal-item-composer .universal-item-create {
+  width: 32px;
+  height: 32px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.universal-item-composer .universal-item-create:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.universal-item-composer .universal-item-create:disabled {
+  opacity: 0.45;
+}
+
 .workspace-library-toolbar {
   min-height: 42px;
   margin: 0 0 14px;

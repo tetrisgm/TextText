@@ -22,14 +22,15 @@ export function LandingHeader({
       <div className="texttext-landing-nav-actions">
         {signedIn ? (
           <>
-            <Link className="texttext-landing-button" href="/start?to=home">
-              Open TextText
+            <Link className="texttext-landing-signin" href="/start?to=home">
+              Open your workspace
             </Link>
             <SignOutButton className="texttext-landing-link" redirectTo="/" />
           </>
         ) : (
-          <Link className="texttext-landing-button" href="/start">
-            Get started
+          // The hero owns the one pill on the page; the header stays quiet.
+          <Link className="texttext-landing-signin" href="/start">
+            Sign in
           </Link>
         )}
       </div>

@@ -52,6 +52,9 @@ export function TemplateGallery({
   onApply: (template: TemplateDefinition) => void;
   onClose: () => void;
 }) {
+  const applied = document.presentation.template;
+  const isApplied = (template: TemplateDefinition) =>
+    template.id === applied.id && template.version === applied.version;
   const [preview, setPreview] = useState<TemplateDefinition | null>(null);
   const blank = isBlank(document);
   const shown = (template: TemplateDefinition) =>
@@ -62,8 +65,13 @@ export function TemplateGallery({
   const continueRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (preview) continueRef.current?.focus();
-    else cardRefs.current[focusIndex]?.focus();
+    if (preview) {
+      // Judge a look from its masthead down, not from its footer up.
+      continueRef.current?.focus({ preventScroll: true });
+      window.scrollTo({ top: 0 });
+    } else {
+      cardRefs.current[focusIndex]?.focus({ preventScroll: true });
+    }
   }, [focusIndex, preview]);
 
   const back = useCallback(() => {
@@ -80,6 +88,7 @@ export function TemplateGallery({
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, [contenteditable=true]")) return;
       event.preventDefault();
+      event.stopPropagation();
       back();
     };
     window.addEventListener("keydown", handle, true);
@@ -164,10 +173,15 @@ export function TemplateGallery({
               key={`${template.id}@${template.version}`}
               ref={(node) => { cardRefs.current[index] = node; }}
               type="button"
-              className={styles.card}
+              className={`${styles.card}${isApplied(template) ? ` ${styles.cardApplied}` : ""}`}
+              aria-current={isApplied(template) ? "true" : undefined}
               onFocus={() => setFocusIndex(index)}
               onClick={() => setPreview(template)}
-              aria-label={template.name}
+              aria-label={
+                isApplied(template)
+                  ? `${template.name}, current look`
+                  : template.name
+              }
             >
               <div className={styles.cardPreview} aria-hidden="true">
                 <div className={styles.cardPreviewInner}>
@@ -178,7 +192,12 @@ export function TemplateGallery({
                   />
                 </div>
               </div>
-              <span className={styles.cardName}>{template.name}</span>
+              <span className={styles.cardName}>
+                {template.name}
+                {isApplied(template) && (
+                  <span className={styles.cardCurrent}>Current</span>
+                )}
+              </span>
             </button>
           ))}
         </div>

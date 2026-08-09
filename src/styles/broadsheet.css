@@ -1386,7 +1386,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .texttext-landing-copy {
   display: grid;
   gap: 22px;
-  max-width: 610px;
 }
 .texttext-landing-kicker {
   margin: 0;
@@ -1760,19 +1759,17 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .texttext-doc-demo {
   position: relative;
-  height: 430px;
+  width: min(100%, 780px);
+  height: 520px;
   overflow: hidden;
   border: 1px solid var(--hairline);
   border-radius: 18px;
   background: var(--bg);
   box-shadow: 0 34px 80px -58px rgba(0, 0, 0, 0.45);
   pointer-events: none;
-  container-type: inline-size;
 }
 .texttext-doc-demo-inner {
-  width: calc(100cqw / 0.62);
-  transform: scale(0.62);
-  transform-origin: top left;
+  width: 100%;
   padding-top: 34px;
 }
 .texttext-doc-demo::after {
@@ -1790,11 +1787,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 @media (max-width: 860px) {
   .texttext-doc-demo {
-    height: 340px;
-  }
-  .texttext-doc-demo-inner {
-    width: calc(100cqw / 0.5);
-    transform: scale(0.5);
+    height: 420px;
   }
 }
 .texttext-landing-split {
@@ -1841,8 +1834,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .texttext-landing-nav-item:focus-visible {
   color: var(--ink);
 }
+.texttext-landing-signin {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.texttext-landing-signin:hover,
+.texttext-landing-signin:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 @media (max-width: 640px) {
-  .texttext-landing-nav-item {
+  .texttext-landing-nav-left .texttext-landing-nav-item {
     display: none;
   }
 }

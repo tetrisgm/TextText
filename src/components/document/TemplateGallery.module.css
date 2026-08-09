@@ -95,6 +95,19 @@
   transform-origin: top left;
 }
 
+.cardApplied {
+  border-color: color-mix(in srgb, currentColor 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.cardCurrent {
+  margin-left: 7px;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  color: color-mix(in srgb, currentColor 62%, transparent);
+  font-weight: 500;
+}
+
 .cardName {
   position: absolute;
   right: 10px;
