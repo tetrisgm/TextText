@@ -143,27 +143,51 @@ removed; the one using `!important` was left alone.
 
 ## Open
 
-**The body is a plain textarea over Markdown.** You type `##` and see `##` while
-the reader sees a heading. This is the one item on today's list that was not
-fixed, and it is not a cleanup. Three routes were considered:
+**The body is a plain textarea over Markdown.** You type `##` and see `##`
+while the reader sees a heading. This is the one item on today's list that is
+not fixed. It was attempted and backed out, and the attempt is worth reading
+before the next one.
 
-1. **Tiptap over a `Y.XmlFragment`.** The extensions are all still in the repo
-   (`SlashCommand.ts`, `WikiLink.ts`, `tiptap-suggestion.ts`,
-   `@tiptap/extension-collaboration-cursor`), so this is the intended
-   destination. It changes the collaborative shape of the body, which every
-   consumer of `documentText(doc, "body")` depends on: materialization, the
-   agent caret helpers, the sync projection, and every stored `collab_state`
-   baseline. It needs a migration and its own tests.
-2. **Tiptap as a view over the existing `Y.Text`.** Keeps the data model, but
-   remote carets are rendered from `Y.Text` relative positions and there is no
-   cheap mapping to ProseMirror positions. It trades the caret feature, just
-   proved working, for formatting.
-3. **Style the mirror and make the textarea transparent.** Metric-safe only for
-   colour, so headings could not be larger, and a transparent textarea hides IME
-   composition, which breaks input for CJK writers.
+What was built: `MarkdownSurface`, a `contentEditable="plaintext-only"` surface
+rendering the source itself as styled inline spans, with newlines as literal
+characters so `textContent` stayed byte-for-byte the source. That last decision
+matters and should be kept: rendering one block element per line makes
+`textContent` silently drop every newline, and puts remote-caret offsets out by
+one per line. Only the body changed; title and subtitle kept the textarea they
+were proved on.
 
-Route 1 is right, and it is a project rather than a session. Nothing here blocks
-it.
+It worked for content. Every content check stayed green: typing propagated both
+ways, an agent's writes still landed live, the three-way merge still lost
+nothing. The Markdown genuinely rendered: headings at heading size with the
+`##` receded, emphasis as emphasis.
+
+It was backed out for selection. React owns the styled markup, so the caret has
+to be restored after every re-render, and the restore collapses a range to a
+single point. The presence poll re-renders roughly every 1.2 s, so a colleague's
+caret arriving would wipe whatever the local writer had selected, mid-drag. The
+live run caught it: `Ada insertion point after: -1`, and the two caret checks
+went red while the content checks stayed green.
+
+What the next attempt needs, in order:
+
+1. Restore selection only when `value` actually changed, not on every render,
+   and store anchor AND head so a range survives.
+2. Keep local edits out of the render path entirely during composition and
+   during an active drag, so the browser owns the DOM while a gesture is in
+   flight.
+3. Then decide whether this is still the right shape at all, or whether Tiptap
+   over a `Y.XmlFragment` is, which is the larger migration described below.
+
+The `Y.XmlFragment` route remains the other option: the extensions are all still
+in the repo (`SlashCommand.ts`, `WikiLink.ts`, `tiptap-suggestion.ts`,
+`@tiptap/extension-collaboration-cursor`). It changes the collaborative shape of
+the body, which every consumer of `documentText(doc, "body")` depends on:
+materialization, the agent caret helpers, the sync projection, and every stored
+`collab_state` baseline. It needs a migration and its own tests.
+
+Either way, the rule the live run enforces is the useful one: content checks and
+caret checks must BOTH stay green. A writing surface that keeps the words and
+loses the cursor is not an improvement.
 
 Everything else on today's list is fixed. The two assistant items were the last
 of it: the composer now carries the open item's title, the exact selection and a
