@@ -36,6 +36,7 @@ import {
   resolveWorkspaceItemTextEdit,
   resolveWorkspaceItemTextSelection,
   type WorkspaceItemTextEdit,
+  type WorkspaceItemTextSelection,
   type WorkspaceItemTextPatch,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
@@ -225,6 +226,87 @@ function setThreadCloudProvider(
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/**
+ * Turn a quick action's answer into something the writer can apply and undo,
+ * rather than text they have to copy by hand.
+ *
+ * Summarize is deliberately excluded: a summary is a thing to read, and
+ * applying it over the text it summarises would delete the document.
+ */
+function quickActionProposal({
+  action,
+  actionLabel,
+  item,
+  itemId,
+  selection,
+  text,
+}: {
+  action: string;
+  actionLabel: string;
+  item: WorkspaceItemTextSnapshot;
+  itemId: string;
+  selection: WorkspaceItemTextSelection | null;
+  text: string;
+}): AssistantProposal | undefined {
+  const after = text.trim();
+  if (!after) return undefined;
+
+  if (action === "tags") {
+    const beforeTags = normalizeTags(item.tags ?? []);
+    const suggested = normalizeTags(
+      after
+        .split(/[\n,]/)
+        .map((entry) => entry.replace(/^[-*\s#]+/, "").trim())
+        .filter(Boolean),
+    );
+    const afterTags = normalizeTags([...beforeTags, ...suggested]);
+    const addedTags = afterTags.filter((tag) => !beforeTags.includes(tag));
+    if (addedTags.length === 0) return undefined;
+    return {
+      itemId,
+      label: actionLabel,
+      canApply: true,
+      status: "pending",
+      kind: "tags",
+      beforeTags,
+      afterTags,
+      addedTags,
+    };
+  }
+
+  const field: NativeQuickActionField | null =
+    action === "title"
+      ? "title"
+      : action === "excerpt"
+        ? "excerpt"
+        : action === "rewrite"
+          ? (selection?.field ?? "body")
+          : null;
+  if (!field) return undefined;
+
+  const source = item[field] ?? "";
+  const range =
+    selection && selection.field === field
+      ? { start: selection.start, end: selection.end }
+      : { start: 0, end: source.length };
+  const before = source.slice(range.start, range.end);
+  if (before === after) return undefined;
+
+  return {
+    itemId,
+    label: actionLabel,
+    canApply: true,
+    status: "pending",
+    kind: "text",
+    field,
+    before,
+    after,
+    source,
+    range,
+    scope: selection && selection.field === field ? "selection" : "field",
+  };
 }
 
 function proposalEdit(
@@ -463,7 +545,14 @@ export function useNativeAssistant({
           thread,
           "assistant",
           result.text || "Done.",
-          undefined,
+          quickActionProposal({
+            action,
+            actionLabel,
+            item,
+            itemId: view.postId,
+            selection: selection && selectionAction ? selection : null,
+            text: result.text ?? "",
+          }),
           result.provider,
         );
       } catch (error) {

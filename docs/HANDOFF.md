@@ -165,17 +165,14 @@ fixed, and it is not a cleanup. Three routes were considered:
 Route 1 is right, and it is a project rather than a session. Nothing here blocks
 it.
 
-One smaller item, with evidence in the workflow journals under
-`~/.claude/projects/.../subagents/workflows/`: the quick-action proposal
-producer was deleted while its consumer stayed fully wired, so
-`NativeQuickActionResult`, `kind: "proposal"` and the preview/apply/undo path in
-`useNativeAssistant` are reachable code with nothing producing them. Restoring
-it is one function; nothing downstream needs to change.
-
-(The composer sending the open document's snapshot was the other half of that
-finding and is fixed: it now carries the item's title, the exact selection, and
-a bounded opening of the body, the way the quick actions already did. A request
-about "this document" used to reach the provider as an id with no text.)
+Everything else on today's list is fixed. The two assistant items were the last
+of it: the composer now carries the open item's title, the exact selection and a
+bounded opening of the body, so a request about "this document" no longer
+reaches the provider as an id with no text; and the quick-action proposal
+producer is restored, so Title, Excerpt, Rewrite and Tags come back as something
+you can apply and undo rather than text to copy by hand. Summarize deliberately
+produces no proposal, because applying a summary over the text it summarises
+would delete the document.
 
 ## Verification
 
