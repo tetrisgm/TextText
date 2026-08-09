@@ -435,12 +435,100 @@ const casestudy = {
   },
 } as const;
 
+// A page, in the sense the reference means it: a cover, an icon, a name, a
+// short list of properties, and then nothing but what you write. No progress
+// bar, no timeline, no callout furniture. Everything shares one left edge.
+// The restraint is the design; a page that arrives full of widgets is a
+// dashboard, and a dashboard is a different product.
+const page = {
+  schemaVersion: 1,
+  engineVersion: 1,
+  id: "texttext.page",
+  version: 1,
+  name: "Page",
+  description: "A plain page: a cover, an icon, and what you write.",
+  fields: [
+    { id: "cover", label: "Cover", type: "image" },
+    { id: "icon", label: "Icon", type: "text", help: "One emoji." },
+  ],
+  capabilities: ["assets", "collaboration", "comments", "publish", "search"],
+  theme: {
+    typography: "system",
+    measure: "reading",
+    alignment: "start",
+    media: "bleed",
+  },
+  item: {
+    type: "stack",
+    gap: "none",
+    children: [
+      {
+        type: "cover",
+        bind: "content.fields.cover",
+        alt: "content.title",
+        height: "compact",
+        showWhen: "content.fields.cover",
+      },
+      {
+        type: "text",
+        id: "page-icon",
+        bind: "content.fields.icon",
+        role: "heading",
+        showWhen: "content.fields.icon",
+      },
+      {
+        type: "masthead",
+        gap: "xs",
+        children: [
+          {
+            type: "text",
+            bind: "content.title",
+            role: "title",
+            fallback: "Untitled",
+          },
+          {
+            type: "text",
+            bind: "content.subtitle",
+            role: "subtitle",
+            showWhen: "content.subtitle",
+          },
+        ],
+      },
+      { type: "prose", bind: "content.body" },
+    ],
+  },
+  collection: {
+    layout: "list",
+    columns: 1,
+    gap: "sm",
+    sort: [{ field: "updatedAt", direction: "desc" }],
+    item: {
+      type: "stack",
+      gap: "xs",
+      children: [
+        {
+          type: "text",
+          bind: "content.title",
+          role: "heading",
+          fallback: "Untitled",
+        },
+        {
+          type: "text",
+          bind: "content.subtitle",
+          role: "caption",
+          showWhen: "content.subtitle",
+        },
+      ],
+    },
+  },
+} as const;
+
 const todo = {
   schemaVersion: 1,
   engineVersion: 1,
   id: "texttext.todo",
   version: 1,
-  name: "Checklist",
+  name: "Tasks",
   description: "A focused list of things to finish.",
   fields: [
     {
@@ -505,12 +593,10 @@ const todo = {
         showWhen: "content.fields.area",
       },
       { type: "prose", bind: "content.body", showWhen: "content.body" },
-      {
-        type: "progress",
-        variant: "bar",
-        source: { checklistBind: "content.fields.items", doneBind: "row.done" },
-        showWhen: "content.fields.items",
-      },
+      // No progress element. A bar, a percentage and the checklist's own
+      // "2 of 6" rollup all stated the same fact, and between them they
+      // pushed the first task below the fold. The rollup carries it alone,
+      // which is what the reference does.
       {
         type: "checklist",
         bind: "content.fields.items",
@@ -2030,16 +2116,15 @@ const project = {
             role: "subtitle",
             showWhen: "content.subtitle",
           },
-          {
-            type: "badge",
-            bind: "content.fields.status",
-            variant: "pill",
-            showWhen: "content.fields.status",
-          },
+          // Properties are a key/value list, the way the reference shows
+          // them: one label column, one value column, every row on the
+          // document's left edge. Status was a floating pill above a
+          // dot-separated strip, which is two vocabularies for one idea.
           {
             type: "facts",
-            variant: "strip",
+            variant: "table",
             entries: [
+              { bind: "content.fields.status", label: "Status" },
               { bind: "content.fields.lead", label: "Lead" },
               { bind: "content.fields.due", label: "Due", format: "countdown" },
             ],
@@ -3250,6 +3335,7 @@ const activeDefinitions = [
   // Anything new goes after the original five, which stay first and
   // byte-compatible; presentation-schema.test.ts pins that.
   casestudy,
+  page,
   todo,
   project,
 ].map((entry) => validateTemplateDefinition(entry));
@@ -3324,6 +3410,7 @@ export const TEMPLATE_CATALOG: readonly {
 }[] = Object.freeze([
   { id: "texttext.article", category: "Text" },
   { id: "texttext.note", category: "Text" },
+  { id: "texttext.page", category: "Text" },
   { id: "texttext.casestudy", category: "Publish" },
   { id: "texttext.todo", category: "Plan" },
   { id: "texttext.project", category: "Plan" },

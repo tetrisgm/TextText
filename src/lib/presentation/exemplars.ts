@@ -51,9 +51,18 @@ export const EXEMPLARS: Exemplar[] = [
     },
   },
   {
+    template: "texttext.page",
+    title: "How we decide what to build",
+    body: `We ship what we can explain to one real person in two sentences. Everything else waits, and most of it never comes back.\n\n## The two sentences\n\nWho is stuck, and what stops being true after we ship. If the second sentence needs a diagram, the idea is not ready.\n\n## What we stopped doing\n\nRoadmap decks. They made us defend last quarter's guesses instead of this week's evidence.\n\n## What replaced them\n\nA page per decision, written before the work starts and edited when it turns out we were wrong.`,
+    fields: {
+      icon: "🧭",
+      cover: "/covers/cover-118.jpg",
+    },
+  },
+  {
     template: "texttext.bookmark",
-    title: "How Figma's multiplayer technology works",
-    body: `Figma's engineering deep-dive on their multiplayer sync: client-side prediction, server-authoritative conflict resolution, and why they chose properties-last-writer-wins over OT. The section on undo in a multiplayer world is the best writing on the topic anywhere.`,
+    title: "How Figma’s multiplayer technology works",
+    body: `Figma’s engineering deep-dive on their multiplayer sync: client-side prediction, server-authoritative conflict resolution, and why they chose properties-last-writer-wins over OT. The section on undo in a multiplayer world is the best writing on the topic anywhere.`,
     fields: {
       sourceUrl:
         "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/",
@@ -575,7 +584,7 @@ export const EXEMPLARS: Exemplar[] = [
             "The writing worth reading in five years is the writing someone sat on for five weeks.",
         },
         {
-          title: "How Figma's multiplayer works",
+          title: "How Figma’s multiplayer works",
           url: "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/",
           blurb: "Still the best public writeup of real-world sync.",
         },

@@ -46,7 +46,7 @@ describe("built-in templates", () => {
   });
 
   it("offers only the focused catalog at version 1", () => {
-    expect(BUILTIN_TEMPLATES).toHaveLength(8);
+    expect(BUILTIN_TEMPLATES).toHaveLength(9);
     expect(BUILTIN_TEMPLATES.map((template) => template.name)).toEqual([
       "Article",
       "Note",
@@ -54,7 +54,8 @@ describe("built-in templates", () => {
       "Gallery",
       "Talk",
       "Case study",
-      "Checklist",
+      "Page",
+      "Tasks",
       "Project",
     ]);
     // A look is named for the document it makes, never for another product.

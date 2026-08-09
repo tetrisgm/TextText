@@ -129,7 +129,14 @@ export function applyTemplateOperations(
         throw new Error(`unsupported template operation ${JSON.stringify(unreachable)}`);
       }
     }
-    next = validateTemplateDefinition(next);
   }
-  return next;
+  // Validated once, at the end. A batch is the unit of change: re-skinning a
+  // look means swapping its fields and the layout that reads them together,
+  // and if every intermediate state had to be valid there would be no legal
+  // order to do it in - dropping a field breaks the layout still bound to it,
+  // and installing the layout first binds fields not yet declared. The
+  // rebuild still validates the whole artifact before anything can render,
+  // and operations are capped, so nothing is loosened by moving this out of
+  // the loop.
+  return validateTemplateDefinition(next);
 }

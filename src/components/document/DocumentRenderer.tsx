@@ -742,11 +742,24 @@ function RowsNode({
 
   if (variant === "timeline") {
     const dateColumn = columns.find((column) => column.definition?.type === "date");
-    const bodyColumns = columns.filter((column) => column !== dateColumn);
+    // A "reached" flag is the state of the entry, not another line in it.
+    // Rendered as a body column it printed a bare tick on its own row under
+    // the milestone it belonged to.
+    const doneColumn = columns.find(
+      (column) => column.definition?.type === "boolean",
+    );
+    const bodyColumns = columns.filter(
+      (column) => column !== dateColumn && column !== doneColumn,
+    );
     return (
       <ol {...attrs} className="tt-rows tt-rows-timeline">
         {ordered.map((record, index) => (
-          <li key={index}>
+          <li
+            key={index}
+            data-reached={
+              doneColumn && record[doneColumn.id] === true ? "true" : undefined
+            }
+          >
             {dateColumn && hasValue(record[dateColumn.id]) ? (
               <div className="tt-rows-timeline-date">
                 {formatDatedValue(record[dateColumn.id], "date")}

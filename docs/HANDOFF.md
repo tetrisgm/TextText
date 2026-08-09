@@ -315,6 +315,43 @@ Still open from that pass, none of them verified fixed:
   decorative there.
 - Bookmark's exemplar title carries a typewriter apostrophe.
 
+### Page is the Notion look. Project never was.
+
+Project was mapped to "the Notion look" and retuned. That was wrong, and no
+amount of CSS was going to fix it: Project is a dashboard - a progress bar, a
+dotted timeline, a callout box - and the reference is a cover, an icon, a
+name, and then nothing but what you wrote. The structure was the mismatch, not
+the styling.
+
+`texttext.page` is built from the reference: full-bleed cover, an emoji icon
+half over its bottom edge, a 40px left-aligned title, 16px/1.5 body, and one
+left edge shared by the icon, the title and every block. No rules, no boxes,
+no widgets. Project stays in the catalogue as the dashboard it actually is.
+
+Checklist is **Tasks** now, and lost its progress bar: a bar, a percentage and
+the checklist's own "2 of 6" rollup all stated one fact and pushed the first
+task below the fold.
+
+### An agent really can author a look, and could not before
+
+`customize_document_template` and the per-workspace `documentTemplates` table
+already existed. Writing `ai-authored-looks.test.ts` against them found that
+they did not work for the case that matters.
+
+`applyTemplateOperations` revalidated the whole template **after every single
+operation**. Re-skinning a look means swapping its fields and the layout that
+reads them, and no ordering of that is legal under per-step validation:
+dropping a field breaks the layout still bound to it, and installing the
+layout first binds fields not yet declared. Validation now runs once at the
+end of the batch. Nothing is loosened - the rebuild still validates the entire
+artifact before it can render, and operations are still capped at 32.
+
+The test proves the whole path: an agent's operations derive a Todoist-shaped
+board from Tasks, the base is left untouched, the result renders as a real
+document, markup/CSS/script are refused by the schema, a binding to an
+undeclared field is refused by the rebuild, and a workspace template cannot
+squat on a reserved `texttext.` id.
+
 ## Open
 
 Nothing from today's list. Two notes for whoever picks this up:

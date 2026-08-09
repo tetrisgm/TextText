@@ -91,7 +91,11 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-rows-timeline{list-style:none;margin-block:0;padding:0 0 0 1.1rem;border-left:2px solid color-mix(in srgb,var(--ink,#1d1d1f) 14%,transparent);display:flex;flex-direction:column;gap:1rem}
 .tt-rows-timeline li{position:relative}
 .tt-rows-timeline li::before{content:"";position:absolute;left:-1.42rem;top:.35rem;width:.55rem;height:.55rem;border-radius:50%;background:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f))}
-.tt-rows-timeline-date{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f))}
+.tt-rows-timeline-date{font-size:.8rem;font-weight:500;color:var(--muted,#6e6e73)}
+/* A reached milestone fills its own dot. That is the whole statement, and it
+   replaces the bare tick that used to sit on a line of its own. */
+.tt-rows-timeline li[data-reached]::before{background:var(--tt-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--tt-accent) 18%,transparent)}
+.tt-rows-timeline li[data-reached] .tt-rows-step-lead{color:var(--muted,#6e6e73)}
 .tt-rows-timeline-body{display:flex;flex-direction:column;gap:.15rem}
 .tt-rows-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:var(--tt-gap-sm)}
 .tt-rows-tile{padding:.9rem 1rem;border-radius:.6rem;background:color-mix(in srgb,var(--ink,#1d1d1f) 5%,transparent);display:flex;flex-direction:column;gap:.2rem}
@@ -238,25 +242,58 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.talk"] .tt-prose{font-size:1.15rem;line-height:1.55}
 .tt-document.tt-collection-item[data-template="texttext.talk"] .tt-text-title{font-size:1.3rem}
 
-/* Checklist */
-.tt-document[data-template="texttext.todo"]{--tt-accent:#0a84ff;--paper:#f2f2f7;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:42rem}
+/* Tasks - a list on a tinted page, in white cards. The accent is a variable
+   so a look can be recoloured; it used to be hardcoded into the title, which
+   made --tt-accent decorative here. #007aff is the light-mode system blue
+   (#0a84ff is the dark-mode one, and was being used in both). */
+.tt-document[data-template="texttext.todo"]{--tt-accent:#007aff;--paper:#f2f2f7;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.todo"]>.tt-stack{gap:1.25rem;padding:clamp(2rem,6vw,4.5rem) 0 5rem}
-.tt-document[data-template="texttext.todo"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.6rem,2.6vw,2.1rem);font-weight:700;line-height:1.16;letter-spacing:-.017em;color:#0a84ff}
-.tt-document[data-template="texttext.todo"] .tt-checklist{padding:.25rem 1rem;background:#fff;border-radius:.5rem}
+.tt-document[data-template="texttext.todo"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.6rem,2.6vw,2.1rem);font-weight:700;line-height:1.16;letter-spacing:-.017em;color:var(--tt-accent)}
+/* The card holds no horizontal padding; each row does. That is what lets a
+   separator start under the task text and run to the card's right edge,
+   instead of floating inset on both sides. */
+.tt-document[data-template="texttext.todo"] .tt-checklist{padding:.25rem 0;background:#fff;border-radius:.5rem}
 .tt-document[data-template="texttext.todo"] .tt-checklist-items{gap:0}
-.tt-document[data-template="texttext.todo"] .tt-checklist-item{min-height:2.9rem;padding:.55rem 0;border-bottom:1px solid #e5e5ea;flex-wrap:nowrap}
-.tt-document[data-template="texttext.todo"] .tt-checklist-item:last-child{border-bottom:0}
-.tt-document[data-template="texttext.todo"] .tt-checkbox{width:1.35rem;height:1.35rem;border-radius:50%;border-color:#0a84ff}
+.tt-document[data-template="texttext.todo"] .tt-checklist-item{position:relative;min-height:2.9rem;padding:.55rem 1rem;flex-wrap:nowrap}
+.tt-document[data-template="texttext.todo"] .tt-checklist-item::after{content:"";position:absolute;left:2.95rem;right:0;bottom:0;height:1px;background:#e5e5ea}
+.tt-document[data-template="texttext.todo"] .tt-checklist-item:last-child::after{display:none}
+.tt-document[data-template="texttext.todo"] .tt-checkbox{width:1.35rem;height:1.35rem;border-radius:50%;border-color:var(--tt-accent)}
 /* A due date is small grey text and a priority is coloured text. Rendering
    them as filled capsules turns a reminders list into a database table, which
    is a different product's vocabulary. */
 .tt-document[data-template="texttext.todo"] .tt-checklist-item .tt-pill{padding:0;border:0;border-radius:0;background:none;font-size:.8125rem;font-weight:400;line-height:1.3;color:var(--muted,#6e6e73)}
 .tt-document[data-template="texttext.todo"] .tt-checklist-item .tt-pill-icon{display:none}
 .tt-document[data-template="texttext.todo"] .tt-checklist-item .tt-tone-danger{color:var(--tt-tone-danger);font-weight:600}
-.tt-document.tt-collection-item[data-template="texttext.todo"] .tt-text-title{font-size:1.45rem;color:#0a84ff}
-.tt-document.tt-collection-item[data-template="texttext.todo"] .tt-checklist{padding:.15rem .75rem}
+/* A finished task recedes whole. Striking the label while its date and
+   priority stayed at full strength left the loudest part of a completed row
+   louder than the task still to do above it. */
+.tt-document[data-template="texttext.todo"] .tt-checklist-item[data-done] .tt-pill,.tt-document[data-template="texttext.todo"] .tt-checklist-item[data-done] .tt-tone-danger{color:color-mix(in srgb,var(--muted,#6e6e73) 70%,transparent);font-weight:400}
+.tt-document.tt-collection-item[data-template="texttext.todo"] .tt-text-title{font-size:1.45rem;color:var(--tt-accent)}
+.tt-document.tt-collection-item[data-template="texttext.todo"] .tt-checklist{padding:.15rem 0}
 
-/* Project - a page in the Notion sense: one left edge for everything, a
+/* Page - a cover, an icon that sits half over it, a name, and what you wrote.
+   Everything below the cover shares one left edge, including the icon. The
+   restraint is the whole design: no rules, no boxes, no widgets. */
+.tt-document[data-template="texttext.page"]{--tt-accent:#2383e2;--tt-measure:46rem}
+.tt-document:not(.tt-collection-item)[data-template="texttext.page"]>.tt-stack{gap:0;padding:0 0 6rem}
+.tt-document[data-template="texttext.page"] .tt-cover{height:clamp(9rem,22vh,14rem);border-radius:0}
+/* position/z-index so the icon sits over the cover rather than behind it. */
+.tt-document[data-template="texttext.page"] [data-tt-node="page-icon"]{position:relative;z-index:1;width:min(var(--tt-measure),calc(100% - 2rem));margin:0 auto;font-size:4.5rem;line-height:1;letter-spacing:0}
+/* Half over the cover when there is one, and simply near the top when there
+   is not. */
+.tt-document[data-template="texttext.page"] .tt-cover+[data-tt-node="page-icon"]{margin-top:-2.4rem}
+.tt-document[data-template="texttext.page"]>.tt-stack>[data-tt-node="page-icon"]:first-child{margin-top:clamp(2rem,5vw,3.5rem)}
+.tt-document[data-template="texttext.page"] .tt-masthead{margin-top:.65rem}
+.tt-document[data-template="texttext.page"]>.tt-stack>.tt-masthead:first-child{margin-top:clamp(2.5rem,6vw,4.5rem)}
+.tt-document[data-template="texttext.page"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.9rem,3.1vw,2.5rem);font-weight:700;line-height:1.12;letter-spacing:-.021em}
+.tt-document[data-template="texttext.page"] .tt-text-subtitle{font-size:1rem;line-height:1.5}
+.tt-document[data-template="texttext.page"] .tt-prose{margin-top:1.1rem;font-size:1rem;line-height:1.5}
+.tt-document[data-template="texttext.page"] .tt-prose p{margin:.5em 0}
+.tt-document[data-template="texttext.page"] .tt-prose h1,.tt-document[data-template="texttext.page"] .tt-prose h2,.tt-document[data-template="texttext.page"] .tt-prose h3{margin:1.6em 0 .25em;letter-spacing:-.014em}
+.tt-document.tt-collection-item[data-template="texttext.page"] .tt-text-title{font-size:1.35rem}
+
+/* Project - a project dashboard, not a page. Its own thing: one left edge, a
+   restrained title, and no boxes drawn around blocks; but it carries a
    restrained title, and no boxes. The reference draws no border around any
    block; hierarchy comes from weight and space alone, which is why it stays
    calm as a page grows. */
@@ -264,12 +301,16 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document:not(.tt-collection-item)[data-template="texttext.project"]>.tt-stack{gap:1.15rem;padding:clamp(1.75rem,4vw,3rem) 0 5rem}
 .tt-document[data-template="texttext.project"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.9rem,3.1vw,2.5rem);font-weight:700;line-height:1.12;letter-spacing:-.021em}
 .tt-document[data-template="texttext.project"] .tt-masthead{gap:.7rem}
-.tt-document[data-template="texttext.project"] .tt-facts-table{padding:.15rem 0;border:0}
-.tt-document[data-template="texttext.project"] .tt-facts-key{color:var(--muted,#6e6e73);font-size:.9rem;font-weight:400}
+.tt-document[data-template="texttext.project"] .tt-facts{font-size:.9rem}
+.tt-document[data-template="texttext.project"] .tt-facts-table{padding:.15rem 0;border:0;gap:.35rem 1.5rem;grid-template-columns:minmax(5.5rem,auto) 1fr}
+.tt-document[data-template="texttext.project"] .tt-facts-table dt{color:var(--muted,#6e6e73);font-weight:400}
 .tt-document[data-template="texttext.project"] .tt-prose{font-size:1rem;line-height:1.5}
 .tt-document[data-template="texttext.project"] .tt-prose p{margin:.55em 0}
 .tt-document[data-template="texttext.project"] .tt-prose h1,.tt-document[data-template="texttext.project"] .tt-prose h2,.tt-document[data-template="texttext.project"] .tt-prose h3{margin:1.5em 0 .3em;letter-spacing:-.014em}
 .tt-document[data-template="texttext.project"] .tt-checklist,.tt-document[data-template="texttext.project"] .tt-rows{padding:0;border:0;border-radius:0}
+/* No boxes means no boxes: an owner and a due date on a task row are plain
+   supporting text, not filled capsules. */
+.tt-document[data-template="texttext.project"] .tt-checklist-item .tt-pill{padding:0;border:0;border-radius:0;background:none;font-size:.8125rem;font-weight:400;color:var(--muted,#6e6e73)}
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-text-title{font-size:1.45rem}
 .tt-document.tt-collection-item[data-template="texttext.project"] .tt-facts{font-size:.8rem}
 
@@ -293,7 +334,9 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
      The yellow belongs in the accent, never behind the words. */
   .tt-document[data-template="texttext.note"]{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#98989d}.tt-document.tt-collection-item[data-template="texttext.note"]{background:#1c1c1e}
   .tt-document[data-template="texttext.bookmark"]{--paper:#211f1a;--ink:#f3eee4;--muted:#aaa094}
-  .tt-document[data-template="texttext.todo"]{--paper:#141416;--ink:#f5f5f7;--muted:#9b9ba1}.tt-document[data-template="texttext.todo"] .tt-checklist{background:#1c1c1e}.tt-document[data-template="texttext.todo"] .tt-checklist-item{border-color:#38383a}
+  /* The dark accent is the dark-mode system blue, and the separator now lives
+     on the row's ::after rather than a border. */
+  .tt-document[data-template="texttext.todo"]{--tt-accent:#0a84ff;--paper:#141416;--ink:#f5f5f7;--muted:#9b9ba1}.tt-document[data-template="texttext.todo"] .tt-checklist{background:#1c1c1e}.tt-document[data-template="texttext.todo"] .tt-checklist-item::after{background:#38383a}
 }
 @media(prefers-reduced-motion:reduce){.tt-document *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 
