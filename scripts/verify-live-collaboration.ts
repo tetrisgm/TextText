@@ -33,6 +33,10 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.LIVE_COLLAB_SHOTS ?? "/tmp/live-collab";
 const HEADED = process.env.LIVE_COLLAB_HEADED === "1";
 
+// A per-run stamp, so no assertion can ever pass on text a previous run left
+// in the same document. Without it a check can go green while the editor it is
+// supposed to exercise does nothing at all.
+const RUN = process.env.LIVE_COLLAB_RUN ?? String(process.pid);
 const ADA = { email: "ada.live-collab@example.test", name: "Ada" };
 const GRACE = { email: "grace.live-collab@example.test", name: "Grace" };
 
@@ -108,9 +112,24 @@ async function devSignIn(page: Page, who: { email: string; name: string }) {
   note(`  ${who.name} signed in, landed on ${page.url()}`);
 }
 
-/** The body textarea the writer actually types into. */
+/** The body field the writer actually types into. */
 function bodyField(page: Page) {
   return page.locator(".tt-document-editor .tt-field-body textarea").first();
+}
+
+/** The body source, exactly as the document stores it. */
+async function bodyText(page: Page): Promise<string> {
+  return bodyField(page)
+    .inputValue()
+    .catch(() => "");
+}
+
+/** The local insertion point as a character offset into the body source. */
+async function caretOffset(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const el = document.activeElement;
+    return el instanceof HTMLTextAreaElement ? (el.selectionStart ?? -1) : -1;
+  });
 }
 
 function titleField(page: Page) {
@@ -270,13 +289,13 @@ async function main(): Promise<void> {
     }
 
     // --- 1. human -> human content ---------------------------------------
-    const adaLine = "Ada wrote this line.";
+    const adaLine = `Ada wrote this line. [${RUN}]`;
     await bodyField(ada).click();
     await bodyField(ada).fill(adaLine);
     await ada.waitForTimeout(600);
 
     const sawAda = await until("Grace to receive Ada's text", 25000, async () => {
-      const value = await bodyField(grace).inputValue();
+      const value = await bodyText(grace);
       return value.includes(adaLine) ? value : null;
     });
     record(
@@ -287,13 +306,13 @@ async function main(): Promise<void> {
     );
 
     // --- 2. human -> human, the other direction ---------------------------
-    const graceLine = "Grace replied here.";
+    const graceLine = `Grace replied here. [${RUN}]`;
     await bodyField(grace).click();
     await grace.keyboard.press("End");
     await grace.keyboard.type(` ${graceLine}`);
     await grace.waitForTimeout(900);
     const sawGrace = await until("Ada to receive Grace's text", 25000, async () => {
-      const value = await bodyField(ada).inputValue();
+      const value = await bodyText(ada);
       return value.includes(graceLine) ? value : null;
     });
     record(
@@ -304,6 +323,7 @@ async function main(): Promise<void> {
     );
 
     // --- 3. human caret ----------------------------------------------------
+    await ada.bringToFront();
     await bodyField(ada).click();
     await ada.keyboard.press("Home");
     await ada.keyboard.down("Shift");
@@ -343,6 +363,7 @@ async function main(): Promise<void> {
         .innerHTML()
         .catch(() => "");
 
+    await ada.bringToFront();
     await bodyField(ada).click();
     await ada.keyboard.press("ArrowRight");
     await grace.waitForTimeout(6000); // let the collapsed caret settle for Grace
@@ -350,16 +371,7 @@ async function main(): Promise<void> {
     note(`  watcher mirror before: ${before.length} chars`);
 
     // If Ada's caret is not in the body, this measures the harness, not the app.
-    const focusInfo = await ada.evaluate(() => {
-      const el = document.activeElement as HTMLElement | null;
-      const ta = el instanceof HTMLTextAreaElement ? el : null;
-      return {
-        tag: el?.tagName ?? "none",
-        label: el?.getAttribute("aria-label") ?? "",
-        start: ta?.selectionStart ?? -1,
-        end: ta?.selectionEnd ?? -1,
-      };
-    });
+    const focusInfo = { start: await caretOffset(ada) };
     note(`  Ada focus: ${JSON.stringify(focusInfo)}`);
 
     // Move the caret with arrows, not Home: on macOS Home scrolls the field
@@ -372,11 +384,7 @@ async function main(): Promise<void> {
     });
     const idleLatencyMs = Date.now() - moveStart;
     note(`  idle watcher saw the caret move after ${idleLatencyMs}ms`);
-    const focusAfter = await ada.evaluate(() => {
-      const el = document.activeElement as HTMLElement | null;
-      const ta = el instanceof HTMLTextAreaElement ? el : null;
-      return { start: ta?.selectionStart ?? -1 };
-    });
+    const focusAfter = { start: await caretOffset(ada) };
     note(`  Ada insertion point after: ${focusAfter.start}`);
     const movedInField = focusInfo.start !== focusAfter.start;
     record(
@@ -450,7 +458,7 @@ async function main(): Promise<void> {
     );
 
     // --- 5. the agent writes, with the editor open -------------------------
-    const agentLine = "Codex appended this paragraph.";
+    const agentLine = `Codex appended this paragraph. [${RUN}]`;
     // The same envelope a hosted client sends: protocol version in the body
     // meta and echoed in the headers, plus the method and tool name headers.
     const mcpRes = await fetch(`${BASE}/api/mcp`, {
@@ -494,7 +502,7 @@ async function main(): Promise<void> {
     );
 
     const liveInAda = await until("Ada's open editor to show the agent's text", 30000, async () => {
-      const value = await bodyField(ada).inputValue();
+      const value = await bodyText(ada);
       return value.includes(agentLine) ? value : null;
     });
     await shot(ada, "05-ada-after-agent-write");
@@ -515,7 +523,7 @@ async function main(): Promise<void> {
     const reread = await grace.goto(itemUrl, { waitUntil: "domcontentloaded" });
     void reread;
     await grace.waitForTimeout(3000);
-    const survivedValue = await bodyField(grace).inputValue().catch(() => "");
+    const survivedValue = await bodyText(grace);
     const survived = survivedValue.includes(agentLine);
     record(
       "agent-write-survives",
@@ -563,7 +571,7 @@ async function main(): Promise<void> {
 
     // --- 8. the U in CRUD, live -------------------------------------------
     await agentPresence(token, itemId, "Codex", true);
-    const newTitle = `Launch plan, revised by Codex`;
+    const newTitle = `Launch plan, revised by Codex [${RUN}]`;
     const update = await agentTool(token, "Codex", "update_item", {
       id: itemId,
       title: newTitle,
@@ -576,7 +584,7 @@ async function main(): Promise<void> {
     );
     const titleLive = await until("the new title to reach Ada", 30000, async () => {
       const value = await titleField(ada).inputValue().catch(() => "");
-      return value.includes("revised by Codex") ? value : null;
+      return value.includes(`revised by Codex [${RUN}]`) ? value : null;
     });
     record(
       "agent-update-visible",
@@ -596,7 +604,7 @@ async function main(): Promise<void> {
     await grace.keyboard.type(" Grace is still here.");
     await ada.waitForTimeout(1200);
 
-    const contendedLine = "Codex wrote while both humans were editing.";
+    const contendedLine = `Codex wrote while both humans were editing. [${RUN}]`;
     const contended = await agentTool(token, "Codex", "append_to_item", {
       id: itemId,
       markdown_fragment: contendedLine,
@@ -605,8 +613,8 @@ async function main(): Promise<void> {
       "the contended agent write to reach both humans",
       40000,
       async () => {
-        const a = await bodyField(ada).inputValue().catch(() => "");
-        const g = await bodyField(grace).inputValue().catch(() => "");
+        const a = await bodyText(ada);
+        const g = await bodyText(grace);
         return a.includes(contendedLine) && g.includes(contendedLine) ? { a, g } : null;
       },
     );
@@ -622,7 +630,7 @@ async function main(): Promise<void> {
     );
 
     // Nobody's words were lost in the three-way merge.
-    const finalAda = await bodyField(ada).inputValue().catch(() => "");
+    const finalAda = await bodyText(ada);
     const allPresent =
       finalAda.includes("Ada is still here.") &&
       finalAda.includes("Grace is still here.") &&
@@ -649,7 +657,7 @@ async function main(): Promise<void> {
       (await ada.locator(".tt-agent-presence").count()) === 0 ? true : null,
     );
     note(`  agent presence drained before the assistant leg: ${Boolean(drained)}`);
-    const assistantLine = "The assistant added this section.";
+    const assistantLine = `The assistant added this section. [${RUN}]`;
     const assistantResult = await ada.evaluate(
       async ([h, id, text]) => {
         const res = await fetch("/api/ai/tools", {
@@ -679,8 +687,8 @@ async function main(): Promise<void> {
       "the assistant's text to reach both humans",
       40000,
       async () => {
-        const a = await bodyField(ada).inputValue().catch(() => "");
-        const g = await bodyField(grace).inputValue().catch(() => "");
+        const a = await bodyText(ada);
+        const g = await bodyText(grace);
         return a.includes(assistantLine) && g.includes(assistantLine) ? true : null;
       },
     );

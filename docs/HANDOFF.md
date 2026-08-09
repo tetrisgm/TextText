@@ -168,15 +168,42 @@ caret arriving would wipe whatever the local writer had selected, mid-drag. The
 live run caught it: `Ada insertion point after: -1`, and the two caret checks
 went red while the content checks stayed green.
 
-What the next attempt needs, in order:
+A second attempt fixed the selection-collapse (restore only when the text
+changed, keep anchor AND head, key segments by source offset so an unchanged
+text reconciles without replacing the nodes the selection lives in, and skip
+restoration during composition and during a pointer drag). It still did not
+pass. The caret probe read `-1` on every run: no DOM Selection inside the
+surface at all, while typing appeared to work.
 
-1. Restore selection only when `value` actually changed, not on every render,
-   and store anchor AND head so a range survives.
-2. Keep local edits out of the render path entirely during composition and
-   during an active drag, so the browser owns the DOM while a gesture is in
-   flight.
-3. Then decide whether this is still the right shape at all, or whether Tiptap
-   over a `Y.XmlFragment` is, which is the larger migration described below.
+That is where it was left, and the honest position is that the cause is not
+established. Two candidates, in order of likelihood:
+
+1. `contentEditable="plaintext-only"` may not be honoured in the harness's
+   Chromium build, leaving the element neither editable nor focusable. This is
+   testable in one line: assert `document.activeElement` is the surface right
+   after a click.
+2. A DOM Selection only exists while the document has focus, unlike a
+   textarea's `selectionStart`, which survives losing it. `page.bringToFront()`
+   did not change the reading, so this is the weaker candidate, but it is not
+   ruled out.
+
+What the second attempt DID establish, and what was kept:
+
+The run could pass on text a PREVIOUS run left in the same document. It reuses
+its two dev-login accounts and reopens the same draft, and every assertion used
+a fixed string, so a check could go green while the editor it was meant to
+exercise did nothing. Every assertion is stamped per run now
+(`LIVE_COLLAB_RUN`, defaulting to the pid). The 24/24 that follows is therefore
+a real 24/24, and this class of false pass cannot recur. Establishing that was
+worth the attempt on its own.
+
+What a third attempt needs, in order:
+
+1. Assert the surface is focusable and focused before anything else. That
+   single check separates candidate 1 from candidate 2 and was the missing
+   rung both times.
+2. Only then judge the selection work, which is already written down above and
+   believed correct.
 
 The `Y.XmlFragment` route remains the other option: the extensions are all still
 in the repo (`SlashCommand.ts`, `WikiLink.ts`, `tiptap-suggestion.ts`,
