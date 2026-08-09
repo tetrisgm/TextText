@@ -19,13 +19,18 @@ import type { PresencePeer } from "@/lib/collab/provider";
 const POLL_MS = 4000;
 
 export function usePresence(postId: string | null | undefined): PresencePeer[] {
-  const [peers, setPeers] = useState<PresencePeer[]>([]);
+  const [state, setState] = useState<{ postId: string | null; peers: PresencePeer[] }>({
+    postId: postId ?? null,
+    peers: [],
+  });
+  const setPeers = (peers: PresencePeer[]) =>
+    setState({ postId: postId ?? null, peers });
+  // Peers belong to an item: switching items shows an empty row immediately
+  // rather than the previous item's collaborators until the next poll.
+  const peers = state.postId === (postId ?? null) ? state.peers : [];
 
   useEffect(() => {
-    if (!postId) {
-      setPeers([]);
-      return;
-    }
+    if (!postId) return;
     let cancelled = false;
     const abort = new AbortController();
 
