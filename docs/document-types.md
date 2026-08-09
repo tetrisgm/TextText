@@ -286,7 +286,7 @@ Template definitions sync as immutable workspace records, not character-level
 CRDT state. A document pins `{id, version}`, so concurrently created later
 versions do not mutate an open document.
 
-Collaboration has two app-owned evaluators:
+Collaboration has three app-owned evaluators:
 
 - `scripts/verify-collaboration.ts` is the fast deterministic release check. It
   makes browser, native Mac, agent, and delayed offline clients edit one
@@ -298,9 +298,22 @@ Collaboration has two app-owned evaluators:
   revision fence, store boundary, and audit log. It removes every scratch row
   in a `finally` block and reports content-blind counts and timings only.
 
+- `npm run eval:collaboration:browser` is the live participation proof. It
+  starts the built server, signs in two dev-login accounts as two real people,
+  shares one item between them, and drives two Chromium browsers plus a real
+  agent. It asserts what a person can SEE rather than what converges: that each
+  human's caret paints in the other's browser under their own name, that an
+  agent joins the same presence row as a named collaborator with a caret of its
+  own, that an agent's create, update, and append land in an already-open
+  editor with no reload, that an agent write reaches BOTH humans while they are
+  both typing without losing anyone's words, and that a right-sidebar assistant
+  edit is indistinguishable from a human's. It kills its server in a finally
+  block and writes screenshots for the record.
+
 The release check catches deterministic merge regressions without network or
 database variability. The local soak proves the full persistence path when
-collaboration or sync code changes.
+collaboration or sync code changes. The browser proof is what catches a
+regression that converges correctly and still shows a person nothing.
 
 ## Performance contract
 

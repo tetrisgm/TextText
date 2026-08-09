@@ -19,6 +19,8 @@ const PUSH_DEBOUNCE_MS = 250;
 const PUSH_RETRY_MS = 1500;
 const PUSH_MAX_RETRY_MS = 30_000;
 const POLL_RETRY_MS = 2000;
+/** How often a watcher re-reads where everyone's cursor is. */
+const PRESENCE_POLL_MS = 1200;
 const POLL_MAX_RETRY_MS = 30_000;
 const MAX_PUSH_BATCH = 64;
 
@@ -409,6 +411,7 @@ export class CollabProvider implements CollaborationTransport {
   private startPromise: Promise<CollabStartResult> | null = null;
   private capturedLocalUpdate = false;
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
+  private presencePollTimer: ReturnType<typeof setInterval> | null = null;
   private awarenessTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly base: string;
   private readonly outboxSubscriber = Symbol("collab-provider");
@@ -603,6 +606,10 @@ export class CollabProvider implements CollaborationTransport {
       clearInterval(this.presenceTimer);
       this.presenceTimer = null;
     }
+    if (this.presencePollTimer) {
+      clearInterval(this.presencePollTimer);
+      this.presencePollTimer = null;
+    }
     if (this.outbox) {
       this.outbox.subscribers.delete(this.outboxSubscriber);
       releaseOutbox(this.opts.postId, this.outbox);
@@ -668,6 +675,11 @@ export class CollabProvider implements CollaborationTransport {
     void this.pollLoop();
     void this.heartbeat();
     this.presenceTimer = setInterval(() => void this.heartbeat(), 8000);
+    void this.pollPresence();
+    this.presencePollTimer = setInterval(
+      () => void this.pollPresence(),
+      PRESENCE_POLL_MS,
+    );
     return result;
   }
 
@@ -904,6 +916,42 @@ export class CollabProvider implements CollaborationTransport {
       }
       if (!res.ok) return;
       const data = (await res.json()) as { presence: PresencePeer[] };
+      this.applyPresence(data.presence);
+    } catch {
+      // presence is best-effort (an aborted heartbeat on teardown is expected)
+    }
+  }
+
+  /**
+   * Someone who is only watching never changes their own awareness, so the
+   * write-plus-read heartbeat would show them a colleague's cursor only on its
+   * slow interval. This read runs on its own quick timer so a caret follows the
+   * writer for the people watching, not just for the people typing.
+   */
+  private async pollPresence() {
+    try {
+      const res = await fetch(`${this.base}/presence`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: this.abort.signal,
+      });
+      if (isAccessLoss(res.status)) {
+        this.opts.onError?.("You no longer have access to this item.");
+        this.stop();
+        return;
+      }
+      if (!res.ok) return;
+      const data = (await res.json()) as { presence: PresencePeer[] };
+      this.applyPresence(data.presence);
+    } catch {
+      // best-effort, exactly like the heartbeat
+    }
+  }
+
+  private applyPresence(presence: PresencePeer[]) {
+    const awareness = this.opts.awareness;
+    {
+      const data = { presence };
       if (awareness) {
         const activeClientIds = new Set(
           data.presence.map((peer) => peer.clientId),
@@ -943,8 +991,6 @@ export class CollabProvider implements CollaborationTransport {
         }
       }
       this.opts.onPresence?.(data.presence);
-    } catch {
-      // presence is best-effort (an aborted heartbeat on teardown is expected)
     }
   }
 }
