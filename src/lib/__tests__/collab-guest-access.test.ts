@@ -95,6 +95,28 @@ describe("guest workspace collaboration access", () => {
     expect(getBlogEditAccess).not.toHaveBeenCalled();
   });
 
+  it("says an item was trashed rather than forbidden", async () => {
+    // getPostStoreContext excludes trashed rows, so a refused caller plus a
+    // missing live row is the trashed case, not the never-existed one.
+    getPostStoreContext.mockResolvedValue(null);
+    const { getCollabRequestAccess } = await import("@/lib/collab/access.server");
+    const access = await getCollabRequestAccess(
+      new Request("https://texttext.example/api/collab/x"),
+      POST,
+    );
+    expect(access.role).toBeNull();
+    expect(access.trashed).toBe(true);
+  });
+
+  it("does not call an accessible item trashed", async () => {
+    const { getCollabRequestAccess } = await import("@/lib/collab/access.server");
+    const access = await getCollabRequestAccess(
+      new Request("https://texttext.example/api/collab/x"),
+      POST,
+    );
+    expect(access.trashed).toBe(false);
+  });
+
   it("leaves an existing grant alone", async () => {
     collabAccess.mockResolvedValue("viewer");
     expect((await resolve()).role).toBe("viewer");

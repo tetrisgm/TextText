@@ -24,6 +24,12 @@ export async function POST(
   const access = await getCollabRequestAccess(request, postId);
   const role = access.role;
   if (!role) {
+    if (access.trashed) {
+      return Response.json(
+        { error: "This item was moved to Trash", reason: "trashed" },
+        { status: 410 },
+      );
+    }
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
 

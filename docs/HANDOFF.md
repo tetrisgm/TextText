@@ -140,6 +140,13 @@ not sign its readers up for anything.
 **The hero mockup promised a different app.** Its sidebar named places the real
 workspace does not have. It mirrors the real one now.
 
+**A trashed item said "no access".** All three collab routes answered 403
+whether a person had lost access or the item had simply been moved to Trash, so
+someone holding it open was told the wrong thing. `getCollabRequestAccess` now
+reports `trashed` (the item row is gone from the live lookup while the caller
+was refused), the routes answer 410 with `reason: "trashed"`, and the provider
+stops with "This item was moved to Trash." rather than the access message.
+
 ## Open, and worth doing next
 
 1. **The body is a plain textarea over Markdown.** A heading is `## Create` while
@@ -160,7 +167,7 @@ workspace does not have. It mirrors the real one now.
    template, and asset mutations are not in the live vocabulary, so an agent
    cannot change them in an open document; `delete_item` has no live path, so a
    human with the item open is told "no access" rather than "this was trashed";
-   the assistant composer does not send the open document's snapshot; the
+   the assistant composer does not send the open document's snapshot; and the
    quick-action proposal producer was deleted while its consumer stayed wired.
    Evidence and a proposed smallest fix for each are in the journal under
    `~/.claude/projects/.../subagents/workflows/wf_edb77668-835/`.

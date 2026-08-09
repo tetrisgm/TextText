@@ -61,8 +61,15 @@ export async function POST(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const { role } = await getCollabRequestAccess(request, postId);
+  const access = await getCollabRequestAccess(request, postId);
+  const { role } = access;
   if (role !== "editor") {
+    if (access.trashed) {
+      return Response.json(
+        { error: "This item was moved to Trash", reason: "trashed" },
+        { status: 410 },
+      );
+    }
     return Response.json({ error: "Not an editor of this post" }, { status: 403 });
   }
 
@@ -114,8 +121,15 @@ export async function GET(
   ctx: { params: Promise<{ postId: string }> },
 ) {
   const { postId } = await ctx.params;
-  const { role } = await getCollabRequestAccess(request, postId);
+  const access = await getCollabRequestAccess(request, postId);
+  const { role } = access;
   if (!role) {
+    if (access.trashed) {
+      return Response.json(
+        { error: "This item was moved to Trash", reason: "trashed" },
+        { status: 410 },
+      );
+    }
     return Response.json({ error: "No access to this post" }, { status: 403 });
   }
 

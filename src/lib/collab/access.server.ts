@@ -14,6 +14,8 @@ import {
 
 export type CollabRequestAccess = {
   role: CollabRole | null;
+  /** The item exists but is in Trash: a different answer from "no access". */
+  trashed: boolean;
   user: CurrentUser | null;
   capability: ResolvedDocumentCapability | null;
   userName: string;
@@ -45,13 +47,16 @@ export async function getCollabRequestAccess(
   // authority the write actions do not already grant: the token must own the
   // very workspace that holds this post, and a claimed workspace never reaches
   // the token branch inside getBlogEditAccess.
-  if (!role && !user && !capability) {
-    const context = await getPostStoreContext(postId);
-    if (context) {
-      const guest = await getBlogEditAccess(context.handle);
-      if (guest.isUnclaimed && guest.isTokenEditor) role = "editor";
-    }
+  // getPostStoreContext excludes trashed rows, so a lookup that misses while
+  // the caller was refused means the item is in Trash rather than forbidden.
+  // Telling someone holding it open the wrong one leaves them wondering what
+  // they did.
+  const live = role ? null : await getPostStoreContext(postId);
+  if (!role && !user && !capability && live) {
+    const guest = await getBlogEditAccess(live.handle);
+    if (guest.isUnclaimed && guest.isTokenEditor) role = "editor";
   }
+  const trashed = !role && !live;
 
   const userName =
     user?.name?.trim() ||
@@ -62,6 +67,7 @@ export async function getCollabRequestAccess(
     user?.sub || user?.userId || capability?.id || `guest:${postId}`;
   return {
     role,
+    trashed,
     user,
     capability,
     userName,

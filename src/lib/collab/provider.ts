@@ -25,7 +25,15 @@ const MAX_PUSH_BATCH = 64;
 /** 401/403: this session no longer has access to the post. Retrying is futile
  * and just hammers the server, so every collab loop must stop hard. */
 function isAccessLoss(status: number): boolean {
-  return status === 401 || status === 403;
+  // 410 is "this item was moved to Trash": also fatal for the session, but a
+  // different thing to say to the person holding it open.
+  return status === 401 || status === 403 || status === 410;
+}
+
+function accessLossMessage(status: number): string {
+  return status === 410
+    ? "This item was moved to Trash."
+    : "You no longer have access to this item.";
 }
 
 /** A payload the server will never accept (malformed / too large / not an
@@ -736,7 +744,7 @@ export class CollabProvider implements CollaborationTransport {
           signal: this.abort.signal,
         });
         if (isAccessLoss(res.status)) {
-          this.opts.onError?.("You no longer have access to this item.");
+          this.opts.onError?.(accessLossMessage(res.status));
           this.stop();
           return { authoritative: false, remoteEmpty: false };
         }
@@ -823,7 +831,7 @@ export class CollabProvider implements CollaborationTransport {
           signal: this.abort.signal,
         });
         if (isAccessLoss(res.status)) {
-          this.opts.onError?.("You no longer have access to this item.");
+          this.opts.onError?.(accessLossMessage(res.status));
           this.stop();
           return;
         }
@@ -898,7 +906,7 @@ export class CollabProvider implements CollaborationTransport {
         signal: this.abort.signal,
       });
       if (isAccessLoss(res.status)) {
-        this.opts.onError?.("You no longer have access to this item.");
+        this.opts.onError?.(accessLossMessage(res.status));
         this.stop();
         return;
       }
