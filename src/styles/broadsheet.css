@@ -1574,7 +1574,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin: 0 auto;
 }
 .texttext-landing-folder-card {
-  min-height: 210px;
+  min-height: 176px;
   padding: 24px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
@@ -1590,7 +1590,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   text-transform: uppercase;
 }
 .texttext-landing-folder-card h3,
-.texttext-landing-folder-card h4,
 .texttext-landing-folder-card p {
   margin: 0;
 }
@@ -1599,13 +1598,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-size: 24px;
   font-weight: 700;
   line-height: 1.08;
-}
-.texttext-landing-folder-card h4 {
-  margin-top: 10px;
-  color: var(--ink-2);
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.25;
 }
 .texttext-landing-folder-card p {
   margin-top: 10px;
@@ -1784,37 +1776,13 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   height: 72px;
   background: linear-gradient(transparent, var(--bg));
 }
-.texttext-chapter-claims {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 36px;
-}
-.texttext-chapter-claims article {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  padding-top: 18px;
-  border-top: 1px solid var(--hairline);
-}
-.texttext-chapter-claims h3 {
+.texttext-chapter-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
   margin: 0;
-  color: var(--ink);
-  font-size: 19px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-.texttext-chapter-claims p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 550;
-  line-height: 1.45;
 }
 @media (max-width: 860px) {
-  .texttext-chapter-claims {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
   .texttext-doc-demo {
     height: 340px;
   }
@@ -2490,17 +2458,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   min-height: 100dvh;
   color: var(--ink);
   background: var(--bg);
-}
-.post-folder-empty-state {
-  display: grid;
-  justify-items: center;
-  gap: 16px;
-  width: min(100%, 420px);
-  margin: 0 auto;
-  text-align: center;
-}
-.post-folder-empty-create {
-  min-width: 164px;
 }
 .post-editor-sidebar {
   position: fixed;
@@ -3612,27 +3569,16 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-recent-empty {
   display: grid;
-  gap: 5px;
+  justify-items: start;
+  gap: 12px;
   border-top: 1px solid var(--hairline);
   padding-top: 14px;
 }
-.workspace-recent-empty span,
-.post-folder-empty-shortcut {
+.workspace-recent-empty p {
+  margin: 0;
   color: var(--muted);
-  font: 600 13px/1.4 var(--font-body);
+  font: 600 15px/1.4 var(--font-body);
   letter-spacing: 0;
-}
-.workspace-recent-empty kbd,
-.post-folder-empty-shortcut kbd {
-  min-width: 22px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--hairline);
-  border-radius: 5px;
-  padding: 3px 5px;
-  background: var(--bg-soft);
-  color: var(--ink);
-  font: 700 11px/1 var(--font-body);
 }
 .workspace-search-results button:focus-visible,
 .workspace-recent-list button:focus-visible,
@@ -3863,94 +3809,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(100%, 1120px);
   margin-inline: auto;
 }
-/* The in-app template chooser strip: live miniatures where items get made. */
-.workspace-template-strip {
-  width: min(100%, 1120px);
-  margin: 8px auto 0;
-  display: grid;
-  gap: 10px;
-}
-.workspace-template-strip > header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-.workspace-template-strip h2 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted, #6e6e73);
-}
-.workspace-template-strip > header a {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--ink);
-  text-decoration: none;
-}
-.workspace-template-strip > header a:hover {
-  text-decoration: underline;
-}
-.workspace-template-strip-cards {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  scroll-snap-type: x proximity;
-}
-.workspace-template-card {
-  position: relative;
-  flex: 0 0 148px;
-  display: grid;
-  gap: 7px;
-  color: var(--ink);
-  scroll-snap-align: start;
-}
-.workspace-template-card .workspace-template-name {
-  color: inherit;
-  text-decoration: none;
-}
-.workspace-template-card .workspace-template-name::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-.workspace-template-thumb {
-  display: block;
-  position: relative;
-  height: 108px;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--bg);
-  pointer-events: none;
-  container-type: inline-size;
-  transition: border-color 0.15s ease;
-}
-.workspace-template-card:hover .workspace-template-thumb {
-  border-color: color-mix(in srgb, var(--ink, #1d1d1f) 35%, transparent);
-}
-.workspace-template-thumb-inner {
-  display: block;
-  width: calc(100cqw / 0.2);
-  transform: scale(0.2);
-  transform-origin: top left;
-  padding-top: 14px;
-}
-.workspace-template-thumb::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 30px;
-  background: linear-gradient(transparent, var(--bg));
-}
-.workspace-template-name {
-  font-size: 12.5px;
-  font-weight: 650;
-  line-height: 1.25;
-}
-
 /* Heatmap layout: a trailing year of activity, one cell per day. */
 .universal-item-heatmap {
   width: min(100%, 1120px);
@@ -4288,9 +4146,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font-size: 17px;
   font-weight: 600;
   line-height: 1.42;
-}
-.post-folder-page-card .post-folder-empty-shortcut {
-  font-size: 13px;
 }
 /* Folder item lists (Notes, Bookmarks): the quiet blog-index rhythm, with
    every color read from the workspace tokens so both themes hold. */
@@ -7128,20 +6983,12 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: min(100%, 1240px);
   gap: 18px;
 }
+/* One ruled row on the library: the title floats above the composer and the
+   list toolbar carries the only hairline. */
 .workspace-library-header {
-  min-height: 54px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--hairline);
+  align-items: baseline;
 }
-.workspace-library-header > div {
-  display: grid;
-  gap: 7px;
-}
-.workspace-library-header p,
 .post-folder-page-count {
   margin: 0;
   color: var(--muted);
@@ -7833,7 +7680,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     padding-right: 18px;
     padding-left: 18px;
   }
-  .workspace-library-header,
   .post-folder-page-header {
     align-items: flex-start;
     flex-direction: column;

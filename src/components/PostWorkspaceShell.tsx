@@ -39,8 +39,10 @@ import {
   useWorkspaceCommandSurface,
 } from "@/components/keyboard/CommandLayer";
 import {
+  CREATE_FOLDER_ITEM_EVENT,
   FolderPage,
   UniversalItemComposer,
+  dispatchFolderUiEvent,
   type FolderCaptureResolved,
   type FolderCreateItem,
   type FolderDeleteItem,
@@ -944,17 +946,6 @@ function SharedIcon() {
   );
 }
 
-function TemplatesIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <rect x="3" y="3" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
-      <rect x="11" y="3" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
-      <rect x="3" y="11" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
-      <rect x="11" y="11" width="6" height="6" rx="1.4" stroke="currentColor" strokeWidth="1.45" />
-    </svg>
-  );
-}
-
 function StarredIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1810,18 +1801,6 @@ export function PostFolderSidebar({
                 {sharedCount}
               </span>
             )}
-          </div>
-          <div className="post-editor-folder-row post-editor-special-row">
-            <a
-              className="post-editor-folder-main post-editor-special-main"
-              href="/templates"
-              title={collapsed ? "Templates" : undefined}
-            >
-              <span className="post-editor-folder-icon" aria-hidden="true">
-                <TemplatesIcon />
-              </span>
-              <span className="post-editor-folder-name">Templates</span>
-            </a>
           </div>
           <div
             className={`post-editor-folder-row post-editor-special-row${
@@ -2878,13 +2857,7 @@ function WorkspaceRootLanding({
         ) : (
           <>
             <header className="workspace-library-header">
-              <div>
-                <h1 id="workspace-root-title">Library</h1>
-                <p>
-                  {pool.posts.length}{" "}
-                  {pool.posts.length === 1 ? "item" : "items"}
-                </p>
-              </div>
+              <h1 id="workspace-root-title">Library</h1>
             </header>
             {canManageItems && creationFolder ? (
               <section
@@ -2966,7 +2939,35 @@ function WorkspaceRootLanding({
               </header>
               {recent.length === 0 ? (
                 <div className="workspace-recent-empty">
-                  <p>Create your first item above.</p>
+                  <p>
+                    {itemFilter === "all"
+                      ? "Nothing here yet."
+                      : "Nothing here with that filter."}
+                  </p>
+                  {itemFilter === "all" ? (
+                    canManageItems && creationFolder ? (
+                      <button
+                        type="button"
+                        className="ac-btn ac-btn-filled"
+                        onClick={() =>
+                          dispatchFolderUiEvent(
+                            CREATE_FOLDER_ITEM_EVENT,
+                            creationFolder.id,
+                          )
+                        }
+                      >
+                        Create an item
+                      </button>
+                    ) : null
+                  ) : (
+                    <button
+                      type="button"
+                      className="ac-btn ac-btn-gray"
+                      onClick={() => setItemFilter("all")}
+                    >
+                      Show all items
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="workspace-recent-list" role="listbox">

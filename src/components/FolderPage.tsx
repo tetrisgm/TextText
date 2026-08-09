@@ -105,11 +105,11 @@ export type FolderCaptureResolved = (post: Post) => void;
 export type FolderViewMode = WorkspaceViewMode;
 export type FolderDeleteFolder = (folder: Folder) => Promise<void> | void;
 
-const CREATE_FOLDER_ITEM_EVENT = "texttext:create-folder-item";
+export const CREATE_FOLDER_ITEM_EVENT = "texttext:create-folder-item";
 const EDIT_FOLDER_TITLE_EVENT = "texttext:edit-folder-title";
 type FolderUiEventDetail = { folderId: string };
 
-function dispatchFolderUiEvent(type: string, folderId: string) {
+export function dispatchFolderUiEvent(type: string, folderId: string) {
   window.dispatchEvent(
     new CustomEvent<FolderUiEventDetail>(type, { detail: { folderId } }),
   );
@@ -273,35 +273,27 @@ function optimisticBookmarkPost({
   };
 }
 
+// One empty state shape: a plain sentence and, when the reader may write
+// here, the single action that starts an item.
 function FolderEmptyCard({
   actionLabel,
-  busy = false,
   children,
   onAction,
-  shortcutHint,
 }: {
   actionLabel?: ReactNode;
-  busy?: boolean;
   children: string;
   onAction?: () => void;
-  shortcutHint?: string;
 }) {
   return (
     <article className="post-folder-page-card">
       <p>{children}</p>
-      {shortcutHint && (
-        <p className="post-folder-empty-shortcut">
-          Press <kbd>C</kbd> {shortcutHint}
-        </p>
-      )}
       {actionLabel && onAction && (
         <button
           type="button"
           className="post-folder-create ac-btn ac-btn-filled"
-          disabled={busy}
           onClick={onAction}
         >
-          {busy ? "Creating" : actionLabel}
+          {actionLabel}
         </button>
       )}
     </article>
@@ -998,8 +990,16 @@ function UniversalFolderContents({
       )}
       <section className="post-folder-page-items" aria-label="Folder items">
         {sorted.length === 0 ? (
-          <FolderEmptyCard>
-            Type a title or paste a link to create the first item.
+          <FolderEmptyCard
+            actionLabel={canCreateItems ? "Create an item" : undefined}
+            onAction={
+              canCreateItems
+                ? () =>
+                    dispatchFolderUiEvent(CREATE_FOLDER_ITEM_EVENT, folder.id)
+                : undefined
+            }
+          >
+            Nothing here yet.
           </FolderEmptyCard>
         ) : folder.mode === "bookmarks" ? (
           <div

@@ -1,6 +1,6 @@
-// One template, full size: the complete example item rendered by the same
-// engine that renders published pages, with the template's name, group, and
-// a path into using it.
+// One look, full size: the complete example item rendered by the same engine
+// that renders published pages, with its name, group, and a path into using
+// it. The product word is "look"; "template" stays an engine word.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,9 +19,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { template } = await params;
   const example = templateExample(template);
-  if (!example) return { title: "Templates · TextText" };
+  if (!example) return { title: "Choose a look · TextText" };
   return {
-    title: `${example.template.name} template · TextText`,
+    title: `${example.template.name} · TextText`,
     description: example.template.description,
   };
 }
@@ -49,7 +49,7 @@ export default async function TemplateDetailPage({
     <main>
       <style>{DETAIL_CSS}</style>
       <div className="tpl-detail-bar">
-        <Link href="/templates">&larr; All templates</Link>
+        <Link href="/templates">&larr; All looks</Link>
         <span className="tpl-detail-name">
           <strong>{example.template.name}</strong>
           <span>{example.category}</span>
@@ -58,12 +58,12 @@ export default async function TemplateDetailPage({
           href={`/start?template=${example.slug}&seed=1`}
           className="tpl-detail-use"
         >
-          Use this template
+          Use this look
         </Link>
       </div>
       <p className="tpl-detail-note">
-        {example.template.description} Below is a complete example item rendered
-        by the engine, exactly as it publishes.
+        {example.template.description} This is a complete example item, rendered
+        exactly as it publishes.
       </p>
       <DocumentRenderer
         document={example.document}

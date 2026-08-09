@@ -85,7 +85,7 @@ export function TemplateGallery({
             className={`${styles.backButton} ${styles.previewBack}`}
             onClick={() => setPreview(null)}
           >
-            Try another theme
+            Choose another look
           </button>
           <div className={styles.previewDocument}>
             <DocumentRenderer document={document} template={preview} documentId="template-preview" />
@@ -102,7 +102,7 @@ export function TemplateGallery({
               }
             }}
           >
-            Continue
+            Use this look
           </button>
         </section>
       </div>

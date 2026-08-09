@@ -27,19 +27,16 @@ const productSteps = [
   {
     name: "Create",
     meta: "Start instantly",
-    title: "Begin with whatever you have",
-    body: "Type a thought, paste a URL, or bring in a useful answer from ChatGPT, Claude, or Codex.",
+    body: "Type a thought, paste a link, or bring in an answer from ChatGPT, Claude, or Codex. The item appears right away.",
   },
   {
     name: "Shape",
     meta: "Pick a look",
-    title: "Make one item take any form",
-    body: "Choose a template or ask the assistant to reshape the same content as a note, article, collection, or reader page.",
+    body: "Choose a template, or ask the assistant to reshape the same content as a note, an article, or a collection.",
   },
   {
     name: "Share",
-    meta: "Publish or collaborate",
-    title: "Send a link when it is ready",
+    meta: "Publish or invite",
     body: "Publish openly, keep it reachable only by link, or invite people to edit and comment with you.",
   },
 ];
@@ -57,6 +54,7 @@ const previewFiles = [
 ];
 
 const actionHref = "/start";
+const tryHref = "/try";
 const demoHref = "/@demo";
 
 function PrimaryAction({ signedIn }: { signedIn: boolean }) {
@@ -70,10 +68,12 @@ function PrimaryAction({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-function DemoAction() {
+// The one secondary action: the sandbox workspace that needs no account.
+// Signing in later claims it, so nothing written there is lost.
+function TryAction() {
   return (
-    <Link className="texttext-landing-secondary" href={demoHref}>
-      See a live blog
+    <Link className="texttext-landing-secondary" href={tryHref}>
+      Try it without an account
     </Link>
   );
 }
@@ -100,11 +100,11 @@ function ProductPreview() {
           <span>Create an item</span>
           <span>Saved locally</span>
         </div>
-        <p className="texttext-landing-document-eyebrow">Your next item</p>
-        <h2>Start with words, a URL, or a conversation</h2>
+        <p className="texttext-landing-document-eyebrow">New item</p>
+        <h2>Start with a title, some text, or a link</h2>
         <p>
-          The item appears immediately. Pick a look, work with the assistant,
-          and share only when you decide it is ready.
+          It saves as you type. Choose a look and decide who can see it
+          whenever you are ready.
         </p>
         <dl className="texttext-landing-file-list">
           {previewFiles.map((file) => (
@@ -168,7 +168,6 @@ function FolderCards() {
         <article key={folder.name} className="texttext-landing-folder-card">
           <span>{folder.meta}</span>
           <h3>{folder.name}</h3>
-          <h4>{folder.title}</h4>
           <p>{folder.body}</p>
         </article>
       ))}
@@ -210,9 +209,6 @@ function LandingDownload() {
         <Link className="texttext-landing-primary" href="/download">
           Download for Mac
         </Link>
-        <Link className="texttext-landing-secondary" href="/connect">
-          Connect an agent
-        </Link>
         <p className="texttext-landing-download-note">
           Windows and Linux are on the way.
         </p>
@@ -230,8 +226,8 @@ function LandingSections() {
       >
         <SectionHeading
           kicker="One item, any shape"
-          title="Create first. Decide the format later."
-          body="Every item uses the same durable content model. Its template controls how it looks, while access controls who can see or change it."
+          title="Create first. Choose the look later."
+          body="Every item uses the same durable content model. Its look controls how it reads, while access controls who can see or change it."
         />
         <FolderCards />
       </section>
@@ -239,37 +235,17 @@ function LandingSections() {
       <section className="texttext-chapter" aria-label="Familiar document looks">
         <header className="texttext-chapter-head">
           <p className="texttext-landing-kicker">Familiar looks</p>
-          <h2>Make it feel like the right place to write.</h2>
+          <h2>Every item can take a familiar shape.</h2>
           <p>
-            Start with a proven reading experience, then change it without
+            Start from a proven reading layout and change it later, without
             moving your content into another tool.
           </p>
         </header>
         <DocumentDemo slug="article" />
-        <div className="texttext-chapter-claims">
-          <article>
-            <h3>Medium article</h3>
-            <p>
-              A focused reading column, clear type hierarchy, and an author
-              line that stays out of the way.
-            </p>
-          </article>
-          <article>
-            <h3>Apple Notes</h3>
-            <p>
-              Immediate editing, quiet controls, and a compact place for ideas
-              that do not need ceremony.
-            </p>
-          </article>
-          <article>
-            <h3>Instapaper reader</h3>
-            <p>
-              Saved articles with local images and a calm, durable reading
-              view.
-            </p>
-          </article>
-        </div>
-        <TextLink href="/templates">Browse familiar looks</TextLink>
+        <p className="texttext-chapter-links">
+          <TextLink href="/templates">Browse the looks</TextLink>
+          <TextLink href={demoHref}>See a published blog</TextLink>
+        </p>
       </section>
 
       <section className="texttext-landing-portability" aria-label="Portability">
@@ -328,16 +304,14 @@ export default async function Home() {
 
       <section className="texttext-landing-hero">
         <div className="texttext-landing-copy">
-          <p className="texttext-landing-kicker">Draft first. Shape it later.</p>
-          <h1>Create the item. Make it yours.</h1>
+          <h1>Your notes, articles, and saved links in one place.</h1>
           <p>
-            Type a thought, paste a link or conversation, or choose a template.
-            Then write, reshape it with AI, collaborate live, and publish it
-            with a link.
+            Create an item, give it a look, work on it with other people or
+            your AI, and publish it with a link when it is ready.
           </p>
           <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />
-            <DemoAction />
+            {user ? null : <TryAction />}
           </div>
         </div>
 

@@ -28,14 +28,9 @@ export function LandingHeader({
             <SignOutButton className="texttext-landing-link" redirectTo="/" />
           </>
         ) : (
-          <>
-            <Link className="texttext-landing-link" href="/try">
-              Start writing
-            </Link>
-            <Link className="texttext-landing-button" href="/start">
-              Get started
-            </Link>
-          </>
+          <Link className="texttext-landing-button" href="/start">
+            Get started
+          </Link>
         )}
       </div>
     </nav>
