@@ -298,7 +298,10 @@ export function isYouTube(url: string | undefined): boolean {
 export function youtubeEmbedUrl(url: string): string | undefined {
   const id = youtubeVideoId(url);
   if (!id) return undefined;
-  return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
+  // youtube-nocookie is YouTube's privacy-enhanced host: it sets no tracking
+  // cookie until the viewer actually presses play. A document someone embedded
+  // a video into should not sign its readers up for anything.
+  return `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1`;
 }
 
 export function youtubeThumb(url: string | undefined): string | undefined {

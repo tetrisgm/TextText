@@ -8,19 +8,14 @@ import {
 } from "@/components/document/DocumentRenderer";
 import { templateExample } from "./templates/shared";
 
+// The real sidebar, so the preview promises the workspace people actually
+// open rather than a different one invented for the picture.
 const workspacePlaces = [
-  {
-    name: "Home",
-    meta: "Create",
-  },
-  {
-    name: "Writing",
-    meta: "12",
-  },
-  {
-    name: "Read later",
-    meta: "8",
-  },
+  { name: "Home", meta: "" },
+  { name: "Starred", meta: "" },
+  { name: "Blog", meta: "12" },
+  { name: "Notes", meta: "8" },
+  { name: "Bookmarks", meta: "5" },
 ];
 
 const productSteps = [
@@ -88,7 +83,7 @@ function ProductPreview() {
             }`}
           >
             <span>{folder.name}</span>
-            <small>{folder.meta}</small>
+            {folder.meta ? <small>{folder.meta}</small> : null}
           </div>
         ))}
       </div>

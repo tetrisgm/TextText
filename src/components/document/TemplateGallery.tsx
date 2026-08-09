@@ -122,8 +122,34 @@ export function TemplateGallery({
   };
 
   if (preview) {
+    const at = templates.findIndex(
+      (t) => t.id === preview.id && t.version === preview.version,
+    );
+    const step = (delta: number) => {
+      const next = templates[(at + delta + templates.length) % templates.length];
+      if (next) {
+        setPreview(next);
+        setFocusIndex(templates.indexOf(next));
+      }
+    };
     return (
-      <div className={styles.backdrop} role="dialog" aria-modal="true" aria-label="Preview look">
+      <div
+        className={styles.backdrop}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Preview look"
+        onKeyDown={(event) => {
+          // Comparing looks means moving between them without going back to
+          // the grid each time.
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            step(1);
+          } else if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            step(-1);
+          }
+        }}
+      >
         <section className={styles.preview}>
           <button
             ref={backRef}
@@ -131,8 +157,21 @@ export function TemplateGallery({
             className={`${styles.backButton} ${styles.previewBack}`}
             onClick={() => setPreview(null)}
           >
-            Choose another look
+            All looks
           </button>
+          <div className={styles.previewStep}>
+            <button
+              type="button"
+              aria-label="Previous look"
+              onClick={() => step(-1)}
+            >
+              &#8249;
+            </button>
+            <span>{preview.name}</span>
+            <button type="button" aria-label="Next look" onClick={() => step(1)}>
+              &#8250;
+            </button>
+          </div>
           <div className={styles.previewDocument}>
             <DocumentRenderer document={shown(preview)} template={preview} documentId="template-preview" />
           </div>

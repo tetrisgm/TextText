@@ -106,52 +106,64 @@ width tested.
 
 Across both commits: 660 lines removed, 366 added.
 
+## Fixed after the critique
+
+**The demo told everyone it was broken.** `/api/collab/{postId}/materialize`
+returned 403 for a `/try` workspace, so "Document could not be saved" sat in red
+on the first screen a new person ever sees, while the item was in fact saving
+through the editor's server actions. Cause: `getCollabRequestAccess` resolved a
+signed-in user or a document capability token and nothing else, so the
+`blog-edit-auth` token that OWNS an unclaimed workspace resolved to no role. It
+now falls back to `getBlogEditAccess`, which is the same authority the editor's
+own write actions already grant, and only when there is no user and no
+capability, only for an unclaimed workspace, and only for the workspace that
+holds that post. `src/lib/__tests__/collab-guest-access.test.ts` pins all four
+conditions, including that it never widens an account or capability decision.
+The editor now reads "Saved".
+
+**Dark mode had a hole where a soft surface should be.** `--bg-soft` was
+`#f5f5f7` in light, a gentle step from a white base, and `#000000` in dark
+against a `#1d1d1f` base. It steps the same distance the other way now
+(`#262629` / `#2e2e32`), so tinted panels read as surfaces rather than voids.
+
+**A person writing alone saw an avatar of themselves.** The presence response
+handed the caller its own row back. The provider filters it.
+
+**You could not compare looks.** Clicking a look opened a preview with no way to
+reach the next one without going back to the grid. The preview has a stepper and
+answers the arrow keys, and the back control says "All looks".
+
+**Embeds set a tracking cookie before anyone pressed play.** `youtubeEmbedUrl`
+now uses `youtube-nocookie.com`. A document someone embedded a video into should
+not sign its readers up for anything.
+
+**The hero mockup promised a different app.** Its sidebar named places the real
+workspace does not have. It mirrors the real one now.
+
 ## Open, and worth doing next
 
-Two projects and a short tail. Everything the critique ranked HIGH is closed
-except the two below, both of which were left alone on purpose.
-
-1. **The body is a plain textarea over Markdown.** A heading is `## Create`
-   while you write and a heading while you read, so the look the editor
-   promises is not the look you are typing into. This is the largest remaining
-   distance from Notion and it is not a cleanup: the deps already carry Tiptap
-   plus `SlashCommand.ts`, `WikiLink.ts`, and `tiptap-suggestion.ts`, which
-   suggests a rich editor existed before the unified rewrite. Its own project.
-2. **The guest workspace cannot materialize, and says so in red.**
-   `/api/collab/{postId}/materialize` returns 403 for a `/try` workspace, so
-   "Document could not be saved" sits in the corner of the first screen a new
-   person sees. Cause: `getCollabRequestAccess`
-   (`src/lib/collab/access.server.ts`) resolves a signed-in user or a document
-   capability token and nothing else, so the `blog-edit-auth` guest cookie that
-   owns the workspace resolves to no role. Content is not lost: the editor's
-   own autosave writes through the server actions, which do understand guest
-   ownership. **Pre-existing and untouched by this branch** (neither file
-   appears in the diff). Left alone deliberately, because widening an auth
-   boundary as a side effect of a design pass is the wrong way to do it. Fix it
-   on its own branch with its own test.
-
-The tail, all confirmed by the critique and all MEDIUM:
-
-- **The hero mockup is not the product.** Its sidebar items, structure, and
-  visual language differ from the real app, so the first impression promises a
-  different thing than the one that opens.
-- **Clicking a look opens a preview rather than choosing it,** and there is no
-  way to step to the next look from inside that preview. Changing it is a
-  product decision about what a card click means.
-- **Two stylesheets style the same components.** `workspace.css` loads after
-  `broadsheet.css` and overrides it; several `broadsheet.css` rules are now
-  dead for the workspace surfaces. Worth collapsing.
-- **The Talk exemplar still points at a real conference talk on YouTube.**
-  Nothing third-party loads any more, because miniatures render a still, but
-  the full-size page will embed the player. Replacing it needs owned media.
-- **`--bg-soft` is `#f5f5f7` in light and `#000000` in dark**
-  (`src/styles/tokens.css`). Every gentle tint becomes a black hole in dark.
-  Left alone because the token has wide blast radius; the per-look papers it
-  affected were fixed directly instead.
-
-Full ranked list with per-finding evidence, including the ones already closed:
-the workflow journal under
-`~/.claude/projects/.../subagents/workflows/wf_aea78981-840/`.
+1. **The body is a plain textarea over Markdown.** A heading is `## Create` while
+   you write and a heading while you read. This is the largest remaining
+   distance from Notion and it is a rebuild of the text-editing layer, not a
+   cleanup: the deps already carry Tiptap plus `SlashCommand.ts`, `WikiLink.ts`,
+   and `tiptap-suggestion.ts`, so a rich editor existed before the unified
+   rewrite. Its own project, with its own design and tests.
+2. **Two stylesheets style the same components.** `workspace.css` loads after
+   `broadsheet.css` and overrides it; several `broadsheet.css` rules are now
+   dead for the workspace surfaces. Worth collapsing, and it caused at least one
+   fix in this pass to land in the wrong file before being moved.
+3. **The Talk exemplar still points at a real conference talk.** Nothing
+   third-party loads in a miniature any more, and the full-size embed no longer
+   sets a cookie, but the example is still someone else's video. Replacing it
+   needs owned media.
+4. **The remaining collaboration gaps** from the 34-agent mapping pass: field,
+   template, and asset mutations are not in the live vocabulary, so an agent
+   cannot change them in an open document; `delete_item` has no live path, so a
+   human with the item open is told "no access" rather than "this was trashed";
+   the assistant composer does not send the open document's snapshot; the
+   quick-action proposal producer was deleted while its consumer stayed wired.
+   Evidence and a proposed smallest fix for each are in the journal under
+   `~/.claude/projects/.../subagents/workflows/wf_edb77668-835/`.
 
 ## Deliberately not touched
 

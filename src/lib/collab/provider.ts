@@ -942,7 +942,9 @@ export class CollabProvider implements CollaborationTransport {
           );
         }
       }
-      this.opts.onPresence?.(data.presence);
+      this.opts.onPresence?.(
+        data.presence.filter((peer) => peer.clientId !== this.clientId),
+      );
     } catch {
       // presence is best-effort (an aborted heartbeat on teardown is expected)
     }

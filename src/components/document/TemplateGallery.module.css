@@ -137,6 +137,43 @@
   left: 18px;
 }
 
+.previewStep {
+  position: fixed;
+  z-index: 3;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font: 600 13px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+}
+
+.previewStep > span {
+  min-width: 7rem;
+  padding: 0 6px;
+  text-align: center;
+}
+
+.previewStep button {
+  min-width: 34px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.previewStep button:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
 .previewDocument {
   width: min(1280px, 100%);
   margin: 0 auto;

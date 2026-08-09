@@ -50,8 +50,8 @@
   --hairline: #2c2c2e;
   --hairline-2: #1d1d1f;
   --bg: #1d1d1f;
-  --bg-soft: #000000;
-  --bg-soft-2: #0a0a0a;
+  --bg-soft: #262629;
+  --bg-soft-2: #2e2e32;
   --accent: #0a84ff;
   --accent-pressed: #409cff;
   --destructive: #ff453a;
@@ -74,8 +74,8 @@
     --hairline: #2c2c2e;
     --hairline-2: #1d1d1f;
     --bg: #1d1d1f;
-    --bg-soft: #000000;
-    --bg-soft-2: #0a0a0a;
+    --bg-soft: #262629;
+    --bg-soft-2: #2e2e32;
     --accent: #0a84ff;
     --accent-pressed: #409cff;
     --destructive: #ff453a;

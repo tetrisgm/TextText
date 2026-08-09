@@ -54,8 +54,11 @@ describe("workspace simplification contract", () => {
 
   it("calls a template a look everywhere the reader sees one", () => {
     expect(gallerySource).toContain("Choose a look");
-    expect(gallerySource).toContain("Choose another look");
+    expect(gallerySource).toContain("All looks");
     expect(gallerySource).toContain("Use this look");
+    // Comparing looks means stepping between them, not returning to the grid.
+    expect(gallerySource).toContain('aria-label="Next look"');
+    expect(gallerySource).toContain('aria-label="Previous look"');
     expect(gallerySource).not.toContain("theme<");
     expect(gallerySource).not.toContain("Continue");
   });
