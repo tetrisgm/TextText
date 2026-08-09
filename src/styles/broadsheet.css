@@ -1557,7 +1557,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin: 0;
   font-family: var(--font-display), var(--font-newsroom-display);
   color: var(--ink);
-  font-size: 38px;
+  font-size: 40px;
   font-weight: 600;
   line-height: 1.06;
   letter-spacing: 0;
@@ -1577,20 +1577,10 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin: 0 auto;
 }
 .texttext-landing-folder-card {
-  min-height: 176px;
-  padding: 24px;
+  padding: 22px 24px 24px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--landing-panel);
-}
-.texttext-landing-folder-card span {
-  display: block;
-  margin-bottom: 28px;
-  color: color-mix(in srgb, var(--accent) 62%, var(--ink));
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  text-transform: uppercase;
 }
 .texttext-landing-folder-card h3,
 .texttext-landing-folder-card p {
@@ -1633,7 +1623,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   text-wrap: balance;
   margin: 8px 0 0;
   color: var(--ink);
-  font-size: 44px;
+  font-size: 40px;
   font-weight: 600;
   line-height: 1.04;
 }
@@ -1745,7 +1735,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin: 0;
   color: var(--ink);
   font-family: var(--font-display), var(--font-newsroom-display);
-  font-size: clamp(34px, 5vw, 52px);
+  font-size: 40px;
   font-weight: 600;
   line-height: 1.02;
 }
@@ -1807,9 +1797,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .texttext-landing-split h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 600;
-  line-height: 1.08;
+  line-height: 1.12;
 }
 .texttext-landing-split code,
 .texttext-legal-article code {
@@ -1868,7 +1858,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .texttext-landing-download-copy h2 {
   margin: 8px 0 10px;
-  font-size: 34px;
+  font-size: 40px;
   font-weight: 600;
   letter-spacing: 0;
   color: var(--ink);

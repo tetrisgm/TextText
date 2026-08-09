@@ -108,66 +108,50 @@ Across both commits: 660 lines removed, 366 added.
 
 ## Open, and worth doing next
 
-1. **The guest workspace cannot materialize, and says so in red.**
+Two projects and a short tail. Everything the critique ranked HIGH is closed
+except the two below, both of which were left alone on purpose.
+
+1. **The body is a plain textarea over Markdown.** A heading is `## Create`
+   while you write and a heading while you read, so the look the editor
+   promises is not the look you are typing into. This is the largest remaining
+   distance from Notion and it is not a cleanup: the deps already carry Tiptap
+   plus `SlashCommand.ts`, `WikiLink.ts`, and `tiptap-suggestion.ts`, which
+   suggests a rich editor existed before the unified rewrite. Its own project.
+2. **The guest workspace cannot materialize, and says so in red.**
    `/api/collab/{postId}/materialize` returns 403 for a `/try` workspace, so
-   "Document could not be saved" sits in the bottom right of the first screen a
-   new person sees. Cause: `getCollabRequestAccess`
+   "Document could not be saved" sits in the corner of the first screen a new
+   person sees. Cause: `getCollabRequestAccess`
    (`src/lib/collab/access.server.ts`) resolves a signed-in user or a document
    capability token and nothing else, so the `blog-edit-auth` guest cookie that
-   owns the workspace resolves to no role. Content is not actually lost, because
-   the editor's own autosave writes through the server actions, which do
-   understand guest ownership. **This is pre-existing and untouched by this
-   branch** (neither file appears in the diff). It was left alone deliberately:
-   it is a permission-resolver change, and widening an auth boundary as a side
-   effect of a design pass is the wrong way to do it. Fix it on its own branch
-   with its own test.
-2. **The gallery exemplar's alt text does not describe its images.**
-   `exemplars.ts` gives `texttext.gallery` the title "Fog season, Ocean Beach"
-   with alt text like "Morning light crossing a coastal dune", but
-   `/covers/cover-002.jpg` is a stock photo of someone typing on a MacBook at a
-   cafe table (verified by opening it). Six near-identical laptop photos are
-   also the weakest visual in both the public catalog and the in-app gallery.
-   This is an accessibility defect as well as a design one. Needs images and
-   captions that match, which needs someone who can see all six.
-3. **The Talk exemplar embeds a YouTube player**, complete with the YouTube
-   logo, "Watch on YouTube", and a real conference talk. The Bookmark exemplar
-   points at a figma.com URL, which is defensible for a bookmark, but the Talk
-   one ships another company's player chrome inside the product's own chooser.
-   Replacing it needs owned media, so it was flagged rather than faked.
-4. **The body is a plain textarea over Markdown**, so a heading is `## Create`
-   while writing and a heading while reading. That is the largest remaining gap
-   with Notion, and it is not a cleanup: the deps already carry Tiptap plus
-   `SlashCommand.ts`, `WikiLink.ts`, and `tiptap-suggestion.ts`, which suggests a
-   rich editor existed before the unified rewrite. Treat it as its own project.
-5. **Two stylesheets style the same components.** `workspace.css` loads after
-   `broadsheet.css` and overrides it for the workspace surfaces. Several rules
-   in `broadsheet.css` are now dead for those components. Worth collapsing.
-6. **The critique's remaining findings.** A 54-agent multi-lens critique read
-   the round-1 screenshots and adversarially verified every claim: 48 confirmed,
-   0 refuted. Most are fixed here. Still open, in its ranking:
-   - The public catalog at `/templates` crops each preview to 16:10 after
-     rendering at ~1490px, so six of eight cards paint under 6% of their area,
-     and at 390px the body text lands around 6px. The in-app gallery was fixed
-     the same way this needs fixing.
-   - The catalog's name pill is positioned on top of the live preview and
-     covers words underneath it, and three cards show a hard seam where the
-     document's paper stops and the card's paper takes over.
-   - `--bg-soft` is `#f5f5f7` in light and `#000000` in dark
-     (`src/styles/tokens.css`), so every gentle tint becomes a black hole in
-     dark mode. Left alone because the token has wide blast radius.
-   - The Note and Checklist looks set `--muted: #8e8e93`, which clears AA on
-     their dark papers and fails it on their light ones.
-   - At 390px the floating history chrome paints over the editor's Look
-     button and swallows taps, the look detail bar wraps mid-phrase on all
-     four controls, and the document title clears the toolbar by 4px.
-   - The gallery's last row is sliced mid-card, and clicking a card opens a
-     second screen rather than choosing, with no way to step to the next look
-     from inside the preview.
-   - The hero mockup is not the product: different sidebar items, different
-     structure, different visual language from the real app.
-   Full ranked list with per-finding evidence and fixes:
-   `/private/tmp/claude-501/.../tasks/wlcuwzimn.output` for this session, and
-   the per-agent journal under `subagents/workflows/wf_aea78981-840/`.
+   owns the workspace resolves to no role. Content is not lost: the editor's
+   own autosave writes through the server actions, which do understand guest
+   ownership. **Pre-existing and untouched by this branch** (neither file
+   appears in the diff). Left alone deliberately, because widening an auth
+   boundary as a side effect of a design pass is the wrong way to do it. Fix it
+   on its own branch with its own test.
+
+The tail, all confirmed by the critique and all MEDIUM:
+
+- **The hero mockup is not the product.** Its sidebar items, structure, and
+  visual language differ from the real app, so the first impression promises a
+  different thing than the one that opens.
+- **Clicking a look opens a preview rather than choosing it,** and there is no
+  way to step to the next look from inside that preview. Changing it is a
+  product decision about what a card click means.
+- **Two stylesheets style the same components.** `workspace.css` loads after
+  `broadsheet.css` and overrides it; several `broadsheet.css` rules are now
+  dead for the workspace surfaces. Worth collapsing.
+- **The Talk exemplar still points at a real conference talk on YouTube.**
+  Nothing third-party loads any more, because miniatures render a still, but
+  the full-size page will embed the player. Replacing it needs owned media.
+- **`--bg-soft` is `#f5f5f7` in light and `#000000` in dark**
+  (`src/styles/tokens.css`). Every gentle tint becomes a black hole in dark.
+  Left alone because the token has wide blast radius; the per-look papers it
+  affected were fixed directly instead.
+
+Full ranked list with per-finding evidence, including the ones already closed:
+the workflow journal under
+`~/.claude/projects/.../subagents/workflows/wf_aea78981-840/`.
 
 ## Deliberately not touched
 

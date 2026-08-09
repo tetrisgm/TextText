@@ -26,17 +26,14 @@ const workspacePlaces = [
 const productSteps = [
   {
     name: "Create",
-    meta: "Start instantly",
     body: "Type a thought, paste a link, or bring in an answer from ChatGPT, Claude, or Codex. The item appears right away.",
   },
   {
     name: "Shape",
-    meta: "Pick a look",
     body: "Choose a template, or ask the assistant to reshape the same content as a note, an article, or a collection.",
   },
   {
     name: "Share",
-    meta: "Publish or invite",
     body: "Publish openly, keep it reachable only by link, or invite people to edit and comment with you.",
   },
 ];
@@ -166,7 +163,6 @@ function FolderCards() {
     <div className="texttext-landing-folders">
       {productSteps.map((folder) => (
         <article key={folder.name} className="texttext-landing-folder-card">
-          <span>{folder.meta}</span>
           <h3>{folder.name}</h3>
           <p>{folder.body}</p>
         </article>
@@ -271,9 +267,8 @@ function LandingSections() {
           <p className="texttext-landing-kicker">Work together</p>
           <h2>Share a document, not a new workflow</h2>
           <p>
-            Invite people to edit or comment, publish openly, or keep a page
-            reachable only by its link. Live cursors show who is working and
-            where.
+            Live cursors show who is reading and where they are typing, and
+            every change stays attributed to the person who made it.
           </p>
         </article>
         <article>
