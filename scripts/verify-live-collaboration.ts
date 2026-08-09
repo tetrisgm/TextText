@@ -112,23 +112,35 @@ async function devSignIn(page: Page, who: { email: string; name: string }) {
   note(`  ${who.name} signed in, landed on ${page.url()}`);
 }
 
-/** The body field the writer actually types into. */
+/** The body surface the writer actually types into. */
 function bodyField(page: Page) {
-  return page.locator(".tt-document-editor .tt-field-body textarea").first();
+  return page.locator(".tt-document-editor .tt-md-surface").first();
 }
 
 /** The body source, exactly as the document stores it. */
 async function bodyText(page: Page): Promise<string> {
   return bodyField(page)
-    .inputValue()
+    .evaluate((el) => el.textContent ?? "")
     .catch(() => "");
 }
 
 /** The local insertion point as a character offset into the body source. */
 async function caretOffset(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const el = document.activeElement;
-    return el instanceof HTMLTextAreaElement ? (el.selectionStart ?? -1) : -1;
+    const root = document.activeElement as HTMLElement | null;
+    const selection = window.getSelection();
+    if (!root?.classList.contains("tt-md-surface")) return -1;
+    if (!selection || selection.rangeCount === 0) return -1;
+    const range = selection.getRangeAt(0);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let total = 0;
+    let node = walker.nextNode();
+    while (node) {
+      if (node === range.startContainer) return total + range.startOffset;
+      total += node.textContent?.length ?? 0;
+      node = walker.nextNode();
+    }
+    return total;
   });
 }
 
@@ -291,7 +303,7 @@ async function main(): Promise<void> {
     // --- 1. human -> human content ---------------------------------------
     const adaLine = `Ada wrote this line. [${RUN}]`;
     await bodyField(ada).click();
-    await bodyField(ada).fill(adaLine);
+    await ada.keyboard.type(adaLine);
     await ada.waitForTimeout(600);
 
     const sawAda = await until("Grace to receive Ada's text", 25000, async () => {
@@ -332,12 +344,12 @@ async function main(): Promise<void> {
     await ada.waitForTimeout(1500);
 
     const caret = await until("Ada's caret to paint in Grace's browser", 25000, async () => {
-      const count = await grace.locator(".tt-remote-caret, .tt-collaborative-mirror mark").count();
+      const count = await grace.locator(".tt-md-surface .tt-remote-caret, .tt-md-surface .tt-md-peer").count();
       if (!count) return null;
       const label = await grace
-        .locator(".tt-remote-caret > span")
+        .locator(".tt-md-surface .tt-remote-caret")
         .first()
-        .innerText()
+        .getAttribute("data-name")
         .catch(() => "");
       return { count, label };
     });
@@ -358,7 +370,7 @@ async function main(): Promise<void> {
     // depend on whether the peer's selection happens to be collapsed.
     const mirrorHtml = async (page: Page) =>
       page
-        .locator(".tt-document-editor .tt-field-body .tt-collaborative-mirror")
+        .locator(".tt-document-editor .tt-md-surface")
         .first()
         .innerHTML()
         .catch(() => "");

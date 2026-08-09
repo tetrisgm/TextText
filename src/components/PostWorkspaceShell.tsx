@@ -6244,7 +6244,11 @@ function LocalWorkspaceShell({
         target instanceof Element &&
         Boolean(
           target.closest(
-            '.reader, .reader-prose, [data-static-prose], [role="option"], a, button, input, select, textarea, [contenteditable="true"], [role="menu"], [role="dialog"]',
+            // Any editable host, not only contenteditable="true": a
+            // plaintext-only surface is just as interactive, and leaving it out
+            // meant the background-selection handler swallowed its clicks and
+            // focused the scroll container instead of the writer's field.
+            '.reader, .reader-prose, [data-static-prose], [role="option"], a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="menu"], [role="dialog"]',
           ),
         );
       if (

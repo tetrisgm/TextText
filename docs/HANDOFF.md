@@ -141,89 +141,56 @@ this pass landed in the wrong one before it was noticed. Fifteen rules in
 `broadsheet.css` set nothing `workspace.css` had not already reset and were
 removed; the one using `!important` was left alone.
 
+### The editor shows the document, not its source
+
+`## Create` used to be `## Create` while writing and a heading while reading.
+It is a heading in both now. `MarkdownSurface` renders the Markdown source
+itself, styled: headings at heading size with the hashes receded, emphasis as
+emphasis, code in monospace, quotes quiet and italic, list markers receded.
+
+The body is still Markdown. `content.body` is still a string, the Y document
+still holds it as a `Y.Text`, and materialization, sync, the agent caret
+helpers and every stored baseline are untouched. Nothing migrated.
+
+Three decisions are load-bearing:
+
+1. **One `white-space: pre-wrap` element, inline children, newlines as literal
+   characters.** `textContent` is then exactly the source. One block element
+   per line makes `textContent` silently drop every newline and puts
+   remote-caret offsets out by one per line.
+2. **React does not own the children.** The browser inserts text nodes as the
+   writer types, React does not know about them, and reconciling against its
+   own tree leaves both copies in the DOM: the text appears twice. The subtree
+   is built imperatively, only when the content or the peer selections actually
+   changed, with the local selection preserved across the rebuild.
+3. **Remote carets carry no text node.** The label comes from CSS `content`, so
+   splicing a colleague's cursor into the middle of a line never shifts a
+   source offset. Segments split at caret offsets so a cursor sits at the exact
+   character rather than snapping to the nearest style boundary.
+
+It took three attempts and the first two failed for the same reason, which is
+worth knowing: `beginBackgroundSelection` in `PostWorkspaceShell` treated
+`[contenteditable="true"]` as interactive but not `plaintext-only`, so the
+marquee handler swallowed every click on the surface and focused the scroll
+container instead. The symptom was a caret probe reading `-1` forever while
+typing appeared to work. The allowlist now matches any editable host. A
+five-line probe (`document.activeElement` right after a click) would have found
+it in minutes; two attempts were spent theorising instead.
+
+The live run proves it end to end: 24/24, with the writer's insertion point
+moving 594 to 582 and an idle watcher seeing a colleague's caret move after
+1239 ms, on a body whose every line carries that run's stamp.
+
 ## Open
 
-**The body is a plain textarea over Markdown.** You type `##` and see `##`
-while the reader sees a heading. This is the one item on today's list that is
-not fixed. It was attempted and backed out, and the attempt is worth reading
-before the next one.
+Nothing from today's list. Two notes for whoever picks this up:
 
-What was built: `MarkdownSurface`, a `contentEditable="plaintext-only"` surface
-rendering the source itself as styled inline spans, with newlines as literal
-characters so `textContent` stayed byte-for-byte the source. That last decision
-matters and should be kept: rendering one block element per line makes
-`textContent` silently drop every newline, and puts remote-caret offsets out by
-one per line. Only the body changed; title and subtitle kept the textarea they
-were proved on.
-
-It worked for content. Every content check stayed green: typing propagated both
-ways, an agent's writes still landed live, the three-way merge still lost
-nothing. The Markdown genuinely rendered: headings at heading size with the
-`##` receded, emphasis as emphasis.
-
-It was backed out for selection. React owns the styled markup, so the caret has
-to be restored after every re-render, and the restore collapses a range to a
-single point. The presence poll re-renders roughly every 1.2 s, so a colleague's
-caret arriving would wipe whatever the local writer had selected, mid-drag. The
-live run caught it: `Ada insertion point after: -1`, and the two caret checks
-went red while the content checks stayed green.
-
-A second attempt fixed the selection-collapse (restore only when the text
-changed, keep anchor AND head, key segments by source offset so an unchanged
-text reconciles without replacing the nodes the selection lives in, and skip
-restoration during composition and during a pointer drag). It still did not
-pass. The caret probe read `-1` on every run: no DOM Selection inside the
-surface at all, while typing appeared to work.
-
-That is where it was left, and the honest position is that the cause is not
-established. Two candidates, in order of likelihood:
-
-1. `contentEditable="plaintext-only"` may not be honoured in the harness's
-   Chromium build, leaving the element neither editable nor focusable. This is
-   testable in one line: assert `document.activeElement` is the surface right
-   after a click.
-2. A DOM Selection only exists while the document has focus, unlike a
-   textarea's `selectionStart`, which survives losing it. `page.bringToFront()`
-   did not change the reading, so this is the weaker candidate, but it is not
-   ruled out.
-
-What the second attempt DID establish, and what was kept:
-
-The run could pass on text a PREVIOUS run left in the same document. It reuses
-its two dev-login accounts and reopens the same draft, and every assertion used
-a fixed string, so a check could go green while the editor it was meant to
-exercise did nothing. Every assertion is stamped per run now
-(`LIVE_COLLAB_RUN`, defaulting to the pid). The 24/24 that follows is therefore
-a real 24/24, and this class of false pass cannot recur. Establishing that was
-worth the attempt on its own.
-
-What a third attempt needs, in order:
-
-1. Assert the surface is focusable and focused before anything else. That
-   single check separates candidate 1 from candidate 2 and was the missing
-   rung both times.
-2. Only then judge the selection work, which is already written down above and
-   believed correct.
-
-The `Y.XmlFragment` route remains the other option: the extensions are all still
-in the repo (`SlashCommand.ts`, `WikiLink.ts`, `tiptap-suggestion.ts`,
-`@tiptap/extension-collaboration-cursor`). It changes the collaborative shape of
-the body, which every consumer of `documentText(doc, "body")` depends on:
-materialization, the agent caret helpers, the sync projection, and every stored
-`collab_state` baseline. It needs a migration and its own tests.
-
-Either way, the rule the live run enforces is the useful one: content checks and
-caret checks must BOTH stay green. A writing surface that keeps the words and
-loses the cursor is not an improvement.
-
-Everything else on today's list is fixed. The two assistant items were the last
-of it: the composer now carries the open item's title, the exact selection and a
-bounded opening of the body, so a request about "this document" no longer
-reaches the provider as an id with no text; and the quick-action proposal
-producer is restored, so Title, Excerpt, Rewrite and Tags come back as something
-you can apply and undo rather than text to copy by hand. Summarize deliberately
-produces no proposal, because applying a summary over the text it summarises
-would delete the document.
+- The editor's focus ring tints the whole field with the look's accent at 7%,
+  which is heavier over a tall body than it was over a one-line title. It is
+  the accessibility affordance working as designed, but it is worth a look.
+- `MarkdownSurface` adds two React Compiler "memoization could not be
+  preserved" lint errors, inherent to building DOM imperatively in an effect.
+  `npx eslint src` reports 26 against `main`'s 27.
 
 ## Verification
 
@@ -234,7 +201,7 @@ scheduled anything.
 - `npx vitest run`: 763 tests passing.
 - `npm run build` succeeds.
 - `npm run eval:collaboration:browser`: 24/24.
-- `npx eslint src`: 24 errors, all pre-existing. `main` has 27.
+- `npx eslint src`: 26, against `main`'s 27.
 
 ## Next concrete step
 

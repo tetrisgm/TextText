@@ -33,6 +33,7 @@ import {
 } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
+import { MarkdownSurface } from "./MarkdownSurface";
 import { TemplateGallery } from "./TemplateGallery";
 import { FieldInput, collectBoundFields } from "./FieldInput";
 import type { DocumentFieldValue } from "@/lib/documents/model";
@@ -421,7 +422,7 @@ export function UnifiedDocumentEditor({
   const materializeQueueRef = useRef(Promise.resolve());
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const subtitleRef = useRef<HTMLTextAreaElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodySurfaceRef = useRef<HTMLDivElement>(null);
   const localOrigin = useRef(Symbol("unified-document-editor"));
   const networkEnabled = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     collab.postId,
@@ -776,17 +777,19 @@ export function UnifiedDocumentEditor({
             }
           : {}),
         "content.body": (
-          <CollaborativeTextarea
-            field="body"
-            label="Document body"
-            placeholder="Start writing"
-            value={document.content.body}
-            selections={remoteSelections.body}
-            onChange={(value) => updateText("body", value)}
-            onSelection={updateSelection}
-            inputRef={bodyRef}
-            rows={18}
-          />
+          <div className="tt-collaborative-field tt-field-body">
+            <MarkdownSurface
+              label="Document body"
+              placeholder="Start writing"
+              value={document.content.body}
+              selections={remoteSelections.body}
+              onChange={(value) => updateText("body", value)}
+              onSelection={(anchor, head) =>
+                updateSelection("body", anchor, head)
+              }
+              surfaceRef={bodySurfaceRef}
+            />
+          </div>
         ),
         ...Object.fromEntries(
           activeTemplate.fields.map((field) => [
@@ -942,6 +945,24 @@ export function UnifiedDocumentEditor({
         .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-1px;color:transparent}
         .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:36vh;text-align:start}
+        /* The writing surface renders the source itself, styled, so what you
+           type looks like what a reader gets without the document stopping
+           being Markdown. */
+        .tt-md-surface{min-height:36vh;outline:0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:start;caret-color:var(--tt-accent,#0071e3)}
+        .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
+        .tt-md-marker{color:color-mix(in srgb,currentColor 32%,transparent);font-weight:400}
+        .tt-md-strong{font-weight:700}
+        .tt-md-em{font-style:italic}
+        .tt-md-code{font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:.94em}
+        .tt-md-h1{font-size:1.85em;font-weight:700;line-height:1.2}
+        .tt-md-h2{font-size:1.45em;font-weight:700;line-height:1.25}
+        .tt-md-h3{font-size:1.2em;font-weight:700;line-height:1.3}
+        .tt-md-h4{font-size:1.05em;font-weight:700}
+        .tt-md-quote{color:color-mix(in srgb,currentColor 76%,transparent);font-style:italic}
+        .tt-md-peer{background:color-mix(in srgb,var(--tt-peer) 26%,transparent);border-radius:2px}
+        .tt-md-remote-caret{display:inline;position:relative;pointer-events:none;user-select:none}
+        .tt-md-remote-caret::after{content:attr(data-name);position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
+        @media(forced-colors:active){.tt-md-marker{color:GrayText}}
         .tt-document-editor .tt-field-body textarea{resize:none}
         .tt-unified-presence{display:flex;align-items:center;gap:4px;padding-inline:3px}
         .tt-person-presence,.tt-agent-avatar{display:grid;place-items:center;width:25px;height:25px;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:10px;font-weight:700}
