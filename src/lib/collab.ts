@@ -578,6 +578,74 @@ export async function agentSelectionAtEnd(
   }
 }
 
+/**
+ * The caret for an agent that named the section it is working in.
+ *
+ * An agent that always parks its cursor at the end of the body tells a reader
+ * nothing about where it is working. When the agent says which heading it is
+ * editing, the caret selects that section, so a person watching sees the same
+ * thing they would see if a colleague had scrolled there and selected it.
+ *
+ * Heading matching mirrors the rule the Mac side already settled on: the exact
+ * markdown heading, the bare title, or a case-insensitive match. A heading that
+ * cannot be found returns null so the caller falls back to the end of the body.
+ */
+export async function agentSelectionAtSection(
+  postId: string,
+  section: string,
+): Promise<AgentSelectionState | null> {
+  if (!db) return null;
+  const wanted = section.trim().replace(/^#+\s*/, "").toLowerCase();
+  if (!wanted) return null;
+  const loaded = await loadCurrentCollabDocument(postId);
+  if (!loaded) return null;
+  try {
+    const target = documentText(loaded.document, "body");
+    const body = target.toString();
+    const lines = body.split("\n");
+
+    let startOffset = -1;
+    let startDepth = 0;
+    let cursor = 0;
+    let endOffset = body.length;
+    for (const line of lines) {
+      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (heading) {
+        const depth = heading[1].length;
+        const title = heading[2].trim().toLowerCase();
+        if (startOffset < 0 && title === wanted) {
+          startOffset = cursor;
+          startDepth = depth;
+        } else if (startOffset >= 0 && depth <= startDepth) {
+          // The section ends where the next heading of the same or shallower
+          // level begins.
+          endOffset = cursor;
+          break;
+        }
+      }
+      cursor += line.length + 1;
+    }
+    if (startOffset < 0) return null;
+
+    const encode = (index: number) =>
+      Buffer.from(
+        Y.encodeRelativePosition(
+          Y.createRelativePositionFromTypeIndex(
+            target,
+            Math.max(0, Math.min(index, target.length)),
+          ),
+        ),
+      ).toString("base64");
+    return {
+      field: "body",
+      anchor: encode(startOffset),
+      head: encode(Math.min(endOffset, body.length)),
+    };
+  } finally {
+    loaded.document.destroy();
+  }
+}
+
 export async function activeAgentFocus(
   targetUserId: string,
   workspaceHandle?: string,
@@ -687,9 +755,16 @@ export async function upsertPresence(
  * heartbeat within the stale window). Callers use this to route content
  * mutations through applyLiveDocumentMutation instead of writing around Yjs.
  */
-export async function hasActiveCoEditors(postId: string): Promise<boolean> {
+export async function hasActiveCoEditors(
+  postId: string,
+  exceptClientId?: string,
+): Promise<boolean> {
   if (!db) return false;
-  return (await activePresence(postId)).length > 0;
+  const present = await activePresence(postId);
+  // "Is anyone ELSE live here." A caller that publishes its own presence
+  // before it writes must not count itself, or every agent write looks
+  // contended with itself.
+  return present.some((entry) => entry.clientId !== exceptClientId);
 }
 
 export async function activePresence(postId: string): Promise<PresenceEntry[]> {

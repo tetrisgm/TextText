@@ -157,7 +157,9 @@ function selectionForField(
   awareness: Awareness,
   doc: Y.Doc,
   field: EditableField,
+  peers: readonly PresencePeer[] = [],
 ): RemoteSelection[] {
+  const bySessionId = new Map(peers.map((peer) => [peer.clientId, peer]));
   const selections: RemoteSelection[] = [];
   for (const [clientId, state] of awareness.getStates()) {
     if (clientId === awareness.clientID || !state) continue;
@@ -176,14 +178,22 @@ function selectionForField(
         doc,
       );
       if (!anchor || !head || anchor.type !== head.type) continue;
+      // The stable session id inside the blob is the same key the presence
+      // sweep prunes on, so it is what ties a caret to its server-resolved row.
+      const peer =
+        typeof user?.clientId === "string"
+          ? bySessionId.get(user.clientId)
+          : undefined;
       selections.push({
         clientId,
         userName:
-          typeof user?.name === "string" && user.name.trim()
+          peer?.userName?.trim() ||
+          (typeof user?.name === "string" && user.name.trim()
             ? user.name.trim()
-            : "Someone",
+            : "Someone"),
         color:
-          typeof user?.color === "string" ? user.color : "#0071e3",
+          peer?.color ||
+          (typeof user?.color === "string" ? user.color : "#0071e3"),
         field,
         from: Math.min(anchor.index, head.index),
         to: Math.max(anchor.index, head.index),
@@ -700,11 +710,11 @@ export function UnifiedDocumentEditor({
 
   const remoteSelections = useMemo(
     () => ({
-      title: selectionForField(awareness, doc, "title"),
-      subtitle: selectionForField(awareness, doc, "subtitle"),
-      body: selectionForField(awareness, doc, "body"),
+      title: selectionForField(awareness, doc, "title", peers),
+      subtitle: selectionForField(awareness, doc, "subtitle", peers),
+      body: selectionForField(awareness, doc, "body", peers),
     }),
-    [awareness, doc, remoteRevision],
+    [awareness, doc, peers, remoteRevision],
   );
 
   const stopEditing = useCallback(async () => {

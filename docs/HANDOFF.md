@@ -2,212 +2,187 @@
 
 ## Current position
 
-Branch `simplify-core-ux` (worktree `~/dev/TextText--work`), two commits, pushed.
-A UX simplification pass driven by screenshots of the built app rather than by
-reading source. No engine change: `DocumentSnapshot`, `DocumentRenderer`,
-`store.ts`, the validated template path, visibility, and audit are untouched.
+One branch off `main`: **`simplify-core-ux`**, with `live-collab-proof` merged
+into it. It carries a UX simplification pass, a live browser proof that agents
+participate the way people do, and the fixes both of those turned up.
 
-## How this was verified
+Everything below was found by looking at the built app in a real browser, or by
+adversarially verifying a claim against the source. Not by reading alone.
 
-`.texttext/shoot.mjs` (gitignored) is a single foreground run: it starts
-`next start`, drives headless Chromium across every surface in light and dark
-at 1440px plus a 390px pass, writes PNGs, and kills the server. Nothing is left
-running. Reproduce with:
+## How to see it
 
 ```bash
-cd ~/dev/TextText--work && npm run build && node .texttext/shoot.mjs /tmp/shots 3111
+npm run build
+node .texttext/shoot.mjs /tmp/shots 3111
+npm run eval:collaboration:browser
 ```
 
-It creates a real guest workspace through `/try`, opens the look gallery, types
-into the capture field, presses Enter, and photographs the result, so the
-create path is exercised end to end rather than asserted.
-
-Six capture rounds informed the work. The first round is what turned this from
-a copy-editing pass into a real one.
-
-## What the screenshots showed that reading the code did not
-
-1. **Every look was named after another company's product.** Medium article,
-   Apple Notes, Instapaper reader, Pinterest board, YouTube video, Apple
-   Reminders, Notion project, Substack newsletter. All eight, in the composer,
-   the editor toolbar, the public catalog, and the gallery, with descriptions
-   that said "inspired by <brand>". The engine stylesheet shipped the same names
-   as CSS comments and asked for Roboto on the talk look.
-2. **The in-app look gallery did not scale its previews.** Each card rendered
-   the document at full width, so all eight cards showed the same top-left
-   fragment. The one surface whose entire job is telling looks apart could not.
-3. **Creating an item was a form.** Folder select, look select, text field,
-   button. Two decisions before typing was possible.
-4. **A new workspace was a manual.** Provisioning inserted five documents
-   explaining the product. The first thing anyone saw was `## Create / Press C
-   anywhere in the workspace`, rendered as raw Markdown in the body textarea.
-5. **The editor showed reader chrome while writing:** an avatar, the workspace
-   name, "1 min read", and a date, above a description field that stood between
-   the title and the first sentence.
+The first captures every surface in light and dark at 1440 and 390. The second
+drives two real people and an agent through 24 checks. `.texttext/shoot.mjs` is
+gitignored because it is a session tool; `scripts/verify-live-collaboration.ts`
+is committed because it is a contract.
 
 ## What changed
 
-**Creating is one action.** The capture row is a text field. Enter creates and
-opens; Shift+Enter is a newline. The destination follows from what you typed, so
-a pasted link lands with the links you save wherever you typed it, and the look
-follows from the folder. Both stay changeable afterwards, in the editor, where
-you can see what they do.
+### Creating is one action
 
-**A new workspace is empty.** `provisionWorkspaceDefaults` creates the folders
-and nothing else; `ensureFirstArticleDraftPath` already created a draft on
-demand, so the first visit opens one untitled document. `WORKSPACE_STARTER_POST_SLUGS`
-still names the old seeded slugs so existing workspaces keep them out of the
-try-before-signup item cap.
+The capture row was a folder select, a look select, a text field and a button.
+It is a text field. Enter creates and opens, the destination follows from what
+you typed, and the look follows from the folder. Both stay changeable
+afterwards, in the editor, where you can see what they do.
 
-**The editor is a document.** No byline, reading time, or date in edit mode. The
-description appears once it has content or once you pick "Add a description"
-from the overflow menu. Declared fields a look does not place sit in a closed
-disclosure instead of an always-open "Details" form.
+A new workspace is empty. It used to be provisioned with five documents
+explaining the product, so the first thing anyone saw was a manual rendered as
+raw Markdown. The first visit creates one untitled draft and opens it.
 
-**The looks are named for the documents they make:** Article, Note, Bookmark,
-Gallery, Talk, Checklist, Project, Newsletter. Ids and versions are untouched,
-so every pinned document still resolves. `builtin-templates.test.ts` now fails
-if any built-in name or description matches a competitor brand.
+The capture button had lost its accent fill to `apple.css`, which loads after
+`broadsheet.css` and neutralises `.ac-icon-btn`, so the action the page exists
+for was a grey glyph. It is the only filled control on the Library.
 
-**The look gallery works.** Cards scale like the public catalog, and a document
-with nothing in it previews the template's own validated exemplar, with one line
-saying so. "Try another theme" and "Continue" became "Choose another look" and
-"Use this look", so the product has one word for the concept.
+### The editor is a document, not a form
 
-**The library reads as a list.** Default view is rows, not cards. One hairline,
-no duplicated item count, no type badge repeating the icon, no "No preview"
-where a document simply has no text yet, no drag-to-resize corner on the capture
-field.
+No byline, reading time or date while writing. The description appears when it
+has content or when you ask for it. Fields a look declares but does not place
+sit in a closed disclosure. The exit control is quiet rather than a browser
+default. Focus rings are back on the three writing fields. Save feedback says
+"Saved" instead of only ever speaking to report a failure.
 
-**Craft fixes the critique confirmed.** The composer's submit button had lost
-its accent fill to `apple.css`, which loads after `broadsheet.css` and
-neutralises `.ac-icon-btn`, so creating an item was not the visually dominant
-action anywhere on the page; it is now the only filled control on the Library.
-"Stop editing" carried `ac-btn-blue`, a class that exists in no stylesheet.
-Escape inside the look gallery closed the gallery and then reached the editor's
-own Escape layer, throwing the writer out of the document in one keystroke.
-Opening a look preview auto-scrolled to the document's footer. The gallery never
-marked the look already applied. The three writing fields removed their focus
-ring and put nothing back. Save feedback rendered success as an empty string, so
-the only save message anyone saw was the red one, and that red had no dark
-variant. The landing header and hero showed the same pill, same label, same
-href, inside the first viewport; the header is now a quiet "Sign in" and the
-narrow-viewport rule that hides the left nav items was scoped so it no longer
-takes sign-in with it. The "Familiar looks" demo rendered a 680px reading
-measure inside a 1903px canvas scaled to 0.62, leaving about 380px blank on each
-side; it now shows the measure at true size.
+### Looks are looks, not other people's products
 
-**Removed:** the dead `WorkspaceTemplateStrip` and its CSS, the sidebar row that
-navigated out of the workspace into the public catalog, four competing calls to
-action on the landing page, a heading level in each landing card, three cards
-naming other products, and the landing hero kicker. Display headings use
-`text-wrap: balance`, which fixes the one-word orphan the hero had at every
-width tested.
+All eight were named after competitors, with descriptions saying "inspired by".
+They are Article, Note, Bookmark, Gallery, Talk, Checklist, Project and
+Newsletter, and a test fails if a built-in name or description ever matches a
+competitor again. Ids and versions are untouched, so pinned documents resolve.
 
-Across both commits: 660 lines removed, 366 added.
+The gallery rendered each card at full width, so all eight showed the same
+top-left fragment. Cards scale, an empty document previews the template's own
+example, the name sits under the preview rather than on the words it labels, the
+document paints its paper to the card edges, eight looks divide into four
+columns, the applied look is marked, and you can step between looks.
 
-## Fixed after the critique
+Miniatures never load a player: `DocumentRenderer` takes a `preview` flag and
+draws a still, which removed a live `www.youtube.com` iframe from a public page.
+Other embeds use `youtube-nocookie`. The Talk example borrows nobody's video:
+`videoUrl` is optional, because a talk page exists before the recording does.
 
-**The demo told everyone it was broken.** `/api/collab/{postId}/materialize`
-returned 403 for a `/try` workspace, so "Document could not be saved" sat in red
-on the first screen a new person ever sees, while the item was in fact saving
-through the editor's server actions. Cause: `getCollabRequestAccess` resolved a
-signed-in user or a document capability token and nothing else, so the
-`blog-edit-auth` token that OWNS an unclaimed workspace resolved to no role. It
-now falls back to `getBlogEditAccess`, which is the same authority the editor's
-own write actions already grant, and only when there is no user and no
-capability, only for an unclaimed workspace, and only for the workspace that
-holds that post. `src/lib/__tests__/collab-guest-access.test.ts` pins all four
-conditions, including that it never widens an account or capability decision.
-The editor now reads "Saved".
+The gallery example used to lie. Six near-identical frames of one stock laptop
+photo were captioned as coastal fog, with alt text like "Morning light crossing
+a coastal dune". Four images were opened, described from what is in them, and
+given a matching title. A test requires real alt text.
 
-**Dark mode had a hole where a soft surface should be.** `--bg-soft` was
-`#f5f5f7` in light, a gentle step from a white base, and `#000000` in dark
-against a `#1d1d1f` base. It steps the same distance the other way now
-(`#262629` / `#2e2e32`), so tinted panels read as surfaces rather than voids.
+### Agents participate the way people do
 
-**A person writing alone saw an avatar of themselves.** The presence response
-handed the caller its own row back. The provider filters it.
+`scripts/verify-live-collaboration.ts` starts the built server, signs in two
+dev-login accounts as two people, shares an item through the real share dialog,
+and drives two Chromium browsers plus an agent over the two transports a hosted
+client uses. 24 checks, all passing.
 
-**You could not compare looks.** Clicking a look opened a preview with no way to
-reach the next one without going back to the grid. The preview has a stepper and
-answers the arrow keys, and the back control says "All looks".
+It proves each human's caret paints in the other's browser under their own name;
+a watcher who is not typing sees the caret move in about 1.2 s; an agent joins
+the same presence row with a caret of its own; ChatGPT, Claude, Cursor and Codex
+each render as themselves; an agent's append and update land in an open editor
+with no reload and survive the human's next save; an agent writing while both
+humans type reaches both and loses nobody's words; and a sidebar-assistant edit
+is indistinguishable from a human's.
 
-**Embeds set a tracking cookie before anyone pressed play.** `youtubeEmbedUrl`
-now uses `youtube-nocookie.com`. A document someone embedded a video into should
-not sign its readers up for anything.
+Fixes it forced, or that the mapping pass found:
 
-**The hero mockup promised a different app.** Its sidebar named places the real
-workspace does not have. It mirrors the real one now.
+- The sidebar assistant published no presence, so its edits arrived with nobody
+  attached. The gate excludes only human actors now.
+- Presence was write-only, so a watcher learned where a cursor was only from
+  their own slow heartbeat. The route answers GET and the provider polls it.
+- `hasActiveCoEditors` counted the caller, so an agent routed its own write down
+  the contended path on the strength of itself.
+- The caret read the peer's unverified self-declaration while the avatar was
+  server-resolved, so one person could be two colours and any name.
+- An agent minted a fresh Yjs client id per publish, accumulating a ghost
+  collaborator per write.
+- An agent's caret parked at the end of the body; it selects the named section.
+- A reader could not see that anyone was in the document at all.
+- A person writing alone saw an avatar of themselves.
+- Field values were the one thing an agent could not change mid-session, because
+  the live vocabulary did not carry them. It carries fields, assets and the
+  pinned template now, and the refusal is gone.
+- A trashed item answered 403, so someone holding it open was told they had lost
+  access. The routes answer 410 and the provider says it was moved to Trash.
+- The co-editing relay had no test at all. Eight now cover it.
 
-**A trashed item said "no access".** All three collab routes answered 403
-whether a person had lost access or the item had simply been moved to Trash, so
-someone holding it open was told the wrong thing. `getCollabRequestAccess` now
-reports `trashed` (the item row is gone from the live lookup while the caller
-was refused), the routes answer 410 with `reason: "trashed"`, and the provider
-stops with "This item was moved to Trash." rather than the access message.
+### The demo told everyone it was broken
 
-## Open, and worth doing next
+`materialize` returned 403 for a `/try` workspace, so a red "Document could not
+be saved" sat on the first screen a new person ever sees, while the item saved
+fine through the editor's server actions. `getCollabRequestAccess` knew about
+accounts and capability links but not about the token that owns an unclaimed
+workspace. It falls back to `getBlogEditAccess`, the same authority the write
+actions already grant, and only when there is no user, no capability, an
+unclaimed workspace, and the workspace holding that post. Eight tests pin those
+conditions, including that it never widens an account decision.
 
-1. **The body is a plain textarea over Markdown.** A heading is `## Create` while
-   you write and a heading while you read. This is the largest remaining
-   distance from Notion and it is a rebuild of the text-editing layer, not a
-   cleanup: the deps already carry Tiptap plus `SlashCommand.ts`, `WikiLink.ts`,
-   and `tiptap-suggestion.ts`, so a rich editor existed before the unified
-   rewrite. Its own project, with its own design and tests.
-2. **Two stylesheets style the same components.** `workspace.css` loads after
-   `broadsheet.css` and overrides it; several `broadsheet.css` rules are now
-   dead for the workspace surfaces. Worth collapsing, and it caused at least one
-   fix in this pass to land in the wrong file before being moved.
-3. **The Talk exemplar still points at a real conference talk.** Nothing
-   third-party loads in a miniature any more, and the full-size embed no longer
-   sets a cookie, but the example is still someone else's video. Replacing it
-   needs owned media.
-4. **The remaining collaboration gaps** from the 34-agent mapping pass: field,
-   template, and asset mutations are not in the live vocabulary, so an agent
-   cannot change them in an open document; `delete_item` has no live path, so a
-   human with the item open is told "no access" rather than "this was trashed";
-   the assistant composer does not send the open document's snapshot; and the
-   quick-action proposal producer was deleted while its consumer stayed wired.
-   Evidence and a proposed smallest fix for each are in the journal under
-   `~/.claude/projects/.../subagents/workflows/wf_edb77668-835/`.
+### Both themes, and the small print
 
-## Deliberately not touched
+`--bg-soft` was a gentle step from white in light and pure black in dark, so
+every tinted surface was a hole. Note and Checklist lost their paper entirely in
+dark and set a `--muted` measuring about 3:1 against their light papers. Display
+headings use `text-wrap: balance`. At 390 px the history chrome painted over the
+editor toolbar and swallowed taps, the title cleared the toolbar by 4 px, the
+save chip sat translucent on the reading column, and the look detail bar wrapped
+mid-phrase on all four controls.
 
-- **The eight-entry catalog size.** Already trimmed from 25 to 8. Cutting
-  further would drop one of the five documented built-ins.
-- **The accent colors baked into the engine stylesheet**, which are the exact
-  brand values of the products the looks were named after (`#1a8917`,
-  `#e60023`, `#ff0033`, `#0a84ff`, and the Instapaper and Notes paper tones).
-  Renaming was safe; restyling changes how existing pinned documents render, so
-  it is an owner decision. Roboto was dropped from the talk look because it was
-  pure imitation and inert on macOS anyway.
-- **The sidebar activity calendar.** A working feature, collapsed by default.
-- **"Turn into" in the edit action bar.** It collides with "Look" on the word
-  "Article", but it changes the compatibility `type`, which drives privacy and
-  folder behavior. Renaming it is a product decision.
-- **`/start` staying sign-in first**, per the documented decision in
-  `src/app/start/route.ts`. `/try` became the visible secondary action instead.
+The landing had four calls to action competing for the same first click, five
+heading sizes across peer sections, an eyebrow on every card restating the title
+beneath it, one sentence printed twice, a document demo that was 65% empty
+surface, and a mockup naming places the real workspace does not have.
+
+### Stylesheet layering
+
+`workspace.css` is imported after `broadsheet.css` and is the last word on the
+workspace surfaces. That is written at the top of the file now, because a fix in
+this pass landed in the wrong one before it was noticed. Fifteen rules in
+`broadsheet.css` set nothing `workspace.css` had not already reset and were
+removed; the one using `!important` was left alone.
+
+## Open
+
+**The body is a plain textarea over Markdown.** You type `##` and see `##` while
+the reader sees a heading. This is the one item on today's list that was not
+fixed, and it is not a cleanup. Three routes were considered:
+
+1. **Tiptap over a `Y.XmlFragment`.** The extensions are all still in the repo
+   (`SlashCommand.ts`, `WikiLink.ts`, `tiptap-suggestion.ts`,
+   `@tiptap/extension-collaboration-cursor`), so this is the intended
+   destination. It changes the collaborative shape of the body, which every
+   consumer of `documentText(doc, "body")` depends on: materialization, the
+   agent caret helpers, the sync projection, and every stored `collab_state`
+   baseline. It needs a migration and its own tests.
+2. **Tiptap as a view over the existing `Y.Text`.** Keeps the data model, but
+   remote carets are rendered from `Y.Text` relative positions and there is no
+   cheap mapping to ProseMirror positions. It trades the caret feature, just
+   proved working, for formatting.
+3. **Style the mirror and make the textarea transparent.** Metric-safe only for
+   colour, so headings could not be larger, and a transparent textarea hides IME
+   composition, which breaks input for CJK writers.
+
+Route 1 is right, and it is a project rather than a session. Nothing here blocks
+it.
+
+Smaller, all with evidence in the workflow journals under
+`~/.claude/projects/.../subagents/workflows/`: the assistant composer does not
+send the open document's snapshot, and the quick-action proposal producer was
+deleted while its consumer stayed wired.
 
 ## Verification
 
-Run from `~/dev/TextText--work` against local Postgres (`texttext_dev`). No
-production Neon, no deploy, no release, no scheduled anything.
+Local Postgres (`texttext_dev`). No production Neon, no deploy, no release, no
+scheduled anything.
 
 - `npx tsc --noEmit` clean.
-- `npx vitest run`: 104 files, 746 tests, all passing.
+- `npx vitest run`: 763 tests passing.
 - `npm run build` succeeds.
-- `npx eslint src`: 24 errors, all pre-existing `set-state-in-effect` and
-  memoization warnings. `main` has 27.
-- Every surface photographed in light and dark. No new color was introduced;
-  changed rules are layout or reuse existing tokens.
-
-The worktree needs its own installed `node_modules`: symlinking the canonical
-tree's copy makes Turbopack fail with "Symlink [project]/node_modules is
-invalid".
+- `npm run eval:collaboration:browser`: 24/24.
+- `npx eslint src`: 24 errors, all pre-existing. `main` has 27.
 
 ## Next concrete step
 
-Review the branch against the screenshots, then land it with `merge-gate` from
-the worktree (`~/dev/stack/runbooks/workflow.md`). Then take item 1 above on its
-own branch.
+Review against the screenshots and land with `merge-gate` from the worktree
+(`~/dev/stack/runbooks/workflow.md`). Then take the editor migration on its own
+branch.

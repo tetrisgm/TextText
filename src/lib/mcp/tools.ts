@@ -200,6 +200,9 @@ function accessUser(extra: ToolContext): AccessUser {
 // external_agent; the in-app assistant (a session actor via
 // runWorkspaceToolForSession) passes actorType "ai", so its mutations are
 // labelled correctly in action_audit rather than looking like an outside agent.
+/** How the in-app assistant identifies itself as a collaborator. */
+export const ASSISTANT_CONNECTION_NAME = "Assistant";
+
 function mcpActorType(extra: ToolContext): AuditActorType {
   const value = extra.authInfo?.extra?.actorType;
   return value === "ai" || value === "human" ? value : "external_agent";
@@ -212,7 +215,12 @@ function agentPresence(
     focus?: AgentFocusEvent | null;
   } = {},
 ) {
-  if (mcpActorType(extra) !== "external_agent") return null;
+  // A human actor already has presence of their own, published by their
+  // browser. Every non-human actor needs presence built for it, or its edit
+  // arrives in an open document with nobody attached to it, which is exactly
+  // what a human edit never looks like. That includes the in-app assistant,
+  // which is actorType "ai" rather than "external_agent".
+  if (mcpActorType(extra) === "human") return null;
   const userId = extra.authInfo?.extra?.userId;
   if (typeof userId !== "string" || !userId) return null;
   return buildAgentPresence(
@@ -1357,7 +1365,10 @@ export async function executeMcpTool(
       );
       const useLiveDocument =
         contentFields.length > 0 &&
-        Boolean(post.id && (await hasActiveCoEditors(post.id)));
+        Boolean(
+          post.id &&
+            (await hasActiveCoEditors(post.id, agentPresence(extra)?.clientId)),
+        );
       try {
         const saved = useLiveDocument
           ? await saveLiveContentMutation({
@@ -1480,7 +1491,7 @@ export async function executeMcpTool(
         post.title,
       );
       const useLiveDocument = Boolean(
-        post.id && (await hasActiveCoEditors(post.id)),
+        post.id && (await hasActiveCoEditors(post.id, agentPresence(extra)?.clientId)),
       );
       try {
         const saved = useLiveDocument
@@ -2013,6 +2024,10 @@ export async function runWorkspaceToolForSession(
         userId: actor.userId,
         actorType: "ai",
         workspaceHandle: actor.handle,
+        // The name the assistant renders under in the presence row. It is the
+        // workspace's own assistant, not a connected outside client, so it is
+        // deliberately not named after whichever provider is configured.
+        connectionName: ASSISTANT_CONNECTION_NAME,
       },
     },
   };
