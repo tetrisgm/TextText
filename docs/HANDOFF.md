@@ -271,6 +271,50 @@ Two things worth knowing for whoever picks this up:
 - `.tt-badge` is the row of tags; `.tt-pill` is each tag. Styling the row as a
   pill draws one rectangle around the whole set.
 
+### What a 56-agent visual critique found on top
+
+One agent per look read its own light and dark captures against a written
+spec of the product it answers to, then an adversarial verifier tried to
+refute each finding against the source. 48 raised, 17 survived, 4 blocking.
+Two of the seventeen were against Newsletter and died with it.
+
+Acted on, each re-verified against a fresh capture or measurement:
+
+- **Lists lost the document's left edge.** The agent scoped this to Note; it
+  is not. The browser indents a list by 40px, so the first list anyone writes
+  in any look breaks the one trait both reference apps have. Fixed at the base
+  `.tt-prose`: marker on the shared edge, words after it, wrapped lines
+  aligned to the words. Measured 40px off, now 0 at the marker.
+- **Article's byline was body copy** - editorial serif at body size, reading
+  as the first line of the story rather than metadata.
+- **Note's dark paper was warm brown**, a darkened cream: the same sticky-note
+  warmth the look's own comment says to keep off the page. Now neutral. Its
+  collection card was still cream in light mode too.
+- **Bookmark set two serifs**: Georgia named on the title and prose, Iowan Old
+  Style inherited by the caption and date from `data-typography="editorial"`.
+  One `--tt-font` on the template now covers every child.
+- **Three gallery rules were dead.** The template declares
+  `data-tt-node="gallery-media"` but `Gallery` never spread `attrs`, so gutter,
+  column and width rules - including the mobile one - never applied. The
+  wrapper takes `attrs` now.
+- **Gallery's prose ran the full 78rem grid at full ink** under a centred
+  title, on a look whose brief is that the pictures lead.
+- **Checklist rendered due dates and priorities as filled capsules**, which is
+  database vocabulary; the reference uses small grey text and coloured text.
+
+Still open from that pass, none of them verified fixed:
+
+- **Project's properties are a coloured pill plus a dot-separated strip, not a
+  key/value list** (blocking). This is a template-structure change, not CSS.
+- Project shows an orphan checkmark under the first milestone, and its
+  milestone dates are uppercase, letterspaced, bold and navy.
+- Checklist: separators are inset on both sides rather than starting under the
+  text; completion is stated three times (bar, percentage, "2 of 6");
+  completed rows keep full-strength colour chips; light mode uses Apple's
+  dark-mode blue and the title colour is hardcoded so `--tt-accent` is
+  decorative there.
+- Bookmark's exemplar title carries a typewriter apostrophe.
+
 ## Open
 
 Nothing from today's list. Two notes for whoever picks this up:

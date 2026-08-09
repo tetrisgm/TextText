@@ -339,10 +339,21 @@ function BoundMedia({
   );
 }
 
-function Gallery({ assets, columns }: { assets: DocumentAsset[]; columns: number }) {
+// The node's own attributes have to reach the element, or a template that
+// names a node cannot style it: three [data-tt-node="gallery-media"] rules
+// were dead because this wrapper dropped them.
+function Gallery({
+  assets,
+  columns,
+  attrs,
+}: {
+  assets: DocumentAsset[];
+  columns: number;
+  attrs?: NodeAttrs;
+}) {
   if (assets.length === 0) return null;
   return (
-    <div className="tt-gallery" style={{ "--tt-gallery-columns": columns } as CSSProperties}>
+    <div {...attrs} className="tt-gallery" style={{ "--tt-gallery-columns": columns } as CSSProperties}>
       {assets.map((asset) => {
         const src = safeMediaSource(asset.src);
         if (!src) return null;
@@ -1021,6 +1032,7 @@ function NodeRenderer({
                 )
               : []
           }
+          attrs={attrs}
           columns={node.columns ?? 3}
         />
       );

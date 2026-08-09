@@ -30,7 +30,21 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    only themselves. */
 .tt-document:not(.tt-collection-item):not([data-preview]){position:relative;z-index:0}
 .tt-document:not(.tt-collection-item):not([data-preview])::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--paper,#fff);pointer-events:none}
-.tt-prose{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.06rem;line-height:1.7}.tt-prose>*:first-child{margin-top:0}.tt-prose h1,.tt-prose h2,.tt-prose h3{line-height:1.15;margin:2em 0 .65em}.tt-prose img,.tt-prose video{display:block;max-width:100%;height:auto;margin:1.75rem auto}.tt-prose a{color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f));text-underline-offset:.18em}.tt-prose pre{overflow:auto;white-space:pre-wrap;overflow-wrap:break-word;padding:1rem;background:color-mix(in srgb,var(--ink,#1d1d1f) 7%,transparent)}
+.tt-prose{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.06rem;line-height:1.7}.tt-prose>*:first-child{margin-top:0}
+/* Lists keep the document's left edge. The browser indents a list by 40px,
+   which pushed every bullet off the edge the title sets - measured at exactly
+   40px on Note. Both references this engine answers to put the marker ON the
+   shared edge with the words flowing after it, and wrapped lines lining up
+   with the words rather than the marker. */
+.tt-prose :is(ul,ol){list-style:none;padding-inline-start:0;margin-block:.7em}
+.tt-prose :is(ul,ol)>li{position:relative;padding-inline-start:1.5em}
+.tt-prose :is(ul,ol)>li+li{margin-top:.3em}
+.tt-prose ul>li::before{content:"\2022";position:absolute;inset-inline-start:.15em;color:color-mix(in srgb,currentColor 55%,transparent)}
+.tt-prose ol{counter-reset:tt-ol}
+.tt-prose ol>li{counter-increment:tt-ol}
+.tt-prose ol>li::before{content:counter(tt-ol) ".";position:absolute;inset-inline-start:0;color:color-mix(in srgb,currentColor 55%,transparent);font-variant-numeric:tabular-nums}
+/* A task list already carries its own marker, so it must not get a second. */
+.tt-prose li:has(>input[type="checkbox"])::before{content:none}.tt-prose h1,.tt-prose h2,.tt-prose h3{line-height:1.15;margin:2em 0 .65em}.tt-prose img,.tt-prose video{display:block;max-width:100%;height:auto;margin:1.75rem auto}.tt-prose a{color:color-mix(in srgb,var(--tt-accent) 60%,var(--ink,#1d1d1f));text-underline-offset:.18em}.tt-prose pre{overflow:auto;white-space:pre-wrap;overflow-wrap:break-word;padding:1rem;background:color-mix(in srgb,var(--ink,#1d1d1f) 7%,transparent)}
 .tt-cover,.tt-image,.tt-video{position:relative;overflow:hidden;width:100%;background:color-mix(in srgb,var(--ink,#1d1d1f) 5%,transparent)}.tt-cover img,.tt-cover video,.tt-image img,.tt-video video,.tt-video iframe{display:block;width:100%;height:100%;border:0;object-fit:var(--tt-media-fit,cover)}.tt-height-compact{height:14rem}.tt-height-medium{height:26rem}.tt-height-large{height:min(56vh,42rem)}.tt-height-viewport{height:calc(100vh - 3rem)}
 .tt-document[data-media="contained"] .tt-cover,.tt-document[data-media="contained"] .tt-image,.tt-document[data-media="contained"] .tt-video{width:min(64rem,calc(100% - 2rem));margin-inline:auto;border-radius:.5rem}.tt-document[data-media="bleed"] .tt-cover,.tt-document[data-media="bleed"] .tt-image,.tt-document[data-media="bleed"] .tt-video{width:100vw;margin-left:calc(50% - 50vw)}
 .tt-byline,.tt-metadata{display:flex;align-items:center;justify-content:center;gap:.5rem;flex-wrap:wrap}.tt-byline-avatar{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;background:var(--ink,#1d1d1f);color:var(--paper,#fff);font-size:.75rem;font-weight:700}.tt-byline-separator{color:var(--muted,#6e6e73)}
@@ -132,6 +146,9 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    exists where there is a masthead to close. */
 .tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead::after{content:"";width:min(26rem,58%);height:1px;margin:1.1rem auto 0;background:color-mix(in srgb,var(--ink,#1d1d1f) 17%,transparent)}
 .tt-document[data-template="texttext.article"] .tt-prose{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.15rem;line-height:1.62}
+/* The byline is metadata, not the first line of the story. Left in the
+   editorial serif at body size it read as an opening sentence. */
+.tt-document[data-template="texttext.article"] .tt-byline{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.875rem;line-height:1.45;letter-spacing:0;color:var(--muted,#6e6e73)}
 /* Section headings are centred serif, which is what makes a long piece feel
    set rather than typed. */
 .tt-document[data-template="texttext.article"] .tt-prose h2,.tt-document[data-template="texttext.article"] .tt-prose h3{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;text-align:center;font-size:1.32rem;letter-spacing:-.008em;margin:2.4em 0 .8em}
@@ -149,7 +166,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.note"] .tt-metadata{justify-content:center;font-size:.78rem;color:var(--muted)}
 .tt-document[data-template="texttext.note"] .tt-prose{font-size:1.15rem;line-height:1.5}
 .tt-document[data-template="texttext.note"] .tt-prose a{color:#c78800}
-.tt-document.tt-collection-item[data-template="texttext.note"]{background:#fffef8}
+.tt-document.tt-collection-item[data-template="texttext.note"]{background:#fff}
 .tt-document.tt-collection-item[data-template="texttext.note"] .tt-text-title{font-size:1.3rem}
 .tt-document.tt-collection-item[data-template="texttext.note"] .tt-metadata{justify-content:flex-start}
 
@@ -178,7 +195,10 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 }
 
 /* Bookmark */
-.tt-document[data-template="texttext.bookmark"]{--tt-accent:#835f42;--paper:#f6f1e7;--ink:#26231f;--muted:#7a7167;--tt-measure:39rem}
+/* One serif for the whole document. The title and prose named Georgia while
+   the caption and date inherited Iowan Old Style from the editorial default,
+   so the source line was set in a different face from the words beside it. */
+.tt-document[data-template="texttext.bookmark"]{--tt-accent:#835f42;--paper:#f6f1e7;--ink:#26231f;--muted:#7a7167;--tt-measure:39rem;--tt-font:Georgia,"Iowan Old Style","Palatino Linotype",serif}
 .tt-document:not(.tt-collection-item)[data-template="texttext.bookmark"]>.tt-stack{gap:2.1rem;padding:clamp(2.75rem,8vw,6.5rem) 0 5rem}
 .tt-document[data-template="texttext.bookmark"] .tt-text-title{font-family:Georgia,"Iowan Old Style",serif;font-size:clamp(1.75rem,2.8vw,2.25rem);font-weight:700;line-height:1.14;letter-spacing:-.018em}
 .tt-document[data-template="texttext.bookmark"] .tt-text-subtitle{font-family:Georgia,"Iowan Old Style",serif;font-size:1.18rem}
@@ -192,6 +212,9 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.gallery"]{--tt-accent:#e60023;--tt-measure:78rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.gallery"]>.tt-stack{gap:2.5rem;padding:clamp(2rem,6vw,5rem) clamp(1rem,4vw,3.5rem) 5rem}
 .tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-copy"]{text-align:center;align-items:center}
+/* The pictures lead, so the words do not run the full 78rem grid width at
+   full ink. A short centred measure under a centred title. */
+.tt-document[data-template="texttext.gallery"] .tt-prose{width:min(34rem,calc(100% - 2rem));margin-inline:auto;text-align:center;font-size:.98rem;line-height:1.6;color:var(--muted,#6e6e73)}
 .tt-document[data-template="texttext.gallery"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(1.75rem,2.8vw,2.25rem);font-weight:700;line-height:1.14;letter-spacing:-.018em}
 .tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(auto-fill,minmax(12rem,1fr));gap:1rem;width:min(78rem,100%);margin-inline:auto}
 .tt-document[data-template="texttext.gallery"] .tt-gallery figure{break-inside:avoid}
@@ -224,6 +247,12 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.todo"] .tt-checklist-item{min-height:2.9rem;padding:.55rem 0;border-bottom:1px solid #e5e5ea;flex-wrap:nowrap}
 .tt-document[data-template="texttext.todo"] .tt-checklist-item:last-child{border-bottom:0}
 .tt-document[data-template="texttext.todo"] .tt-checkbox{width:1.35rem;height:1.35rem;border-radius:50%;border-color:#0a84ff}
+/* A due date is small grey text and a priority is coloured text. Rendering
+   them as filled capsules turns a reminders list into a database table, which
+   is a different product's vocabulary. */
+.tt-document[data-template="texttext.todo"] .tt-checklist-item .tt-pill{padding:0;border:0;border-radius:0;background:none;font-size:.8125rem;font-weight:400;line-height:1.3;color:var(--muted,#6e6e73)}
+.tt-document[data-template="texttext.todo"] .tt-checklist-item .tt-pill-icon{display:none}
+.tt-document[data-template="texttext.todo"] .tt-checklist-item .tt-tone-danger{color:var(--tt-tone-danger);font-weight:600}
 .tt-document.tt-collection-item[data-template="texttext.todo"] .tt-text-title{font-size:1.45rem;color:#0a84ff}
 .tt-document.tt-collection-item[data-template="texttext.todo"] .tt-checklist{padding:.15rem .75rem}
 
@@ -260,7 +289,9 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 @media(max-width:720px){.tt-stack[data-direction="horizontal"]{flex-direction:column}.tt-text-title{font-size:clamp(2.3rem,13vw,4rem)}.tt-height-large{height:38vh}.tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-document[data-template="texttext.article"] .tt-prose,.tt-document[data-template="texttext.bookmark"] .tt-prose,.tt-document[data-template="texttext.newsletter"] .tt-prose{font-size:1.08rem}.tt-document[data-template="texttext.todo"] .tt-checklist{border-radius:0}}
 @media(prefers-color-scheme:dark){
   .tt-document{--ink:#f5f5f7;--paper:#1c1c1e;--muted:#a1a1a6;--tt-tone-neutral:#98989d;--tt-tone-info:#409cff;--tt-tone-success:#30d158;--tt-tone-warning:#ffd60a;--tt-tone-danger:#ff453a}
-  .tt-document[data-template="texttext.note"]{--paper:#1f1e19;--ink:#f5f5f7;--muted:#a9a49a}.tt-document.tt-collection-item[data-template="texttext.note"]{background:#1f1e19}
+  /* Neutral, not the warm brown a cream paper turns into when it is darkened.
+     The yellow belongs in the accent, never behind the words. */
+  .tt-document[data-template="texttext.note"]{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#98989d}.tt-document.tt-collection-item[data-template="texttext.note"]{background:#1c1c1e}
   .tt-document[data-template="texttext.bookmark"]{--paper:#211f1a;--ink:#f3eee4;--muted:#aaa094}
   .tt-document[data-template="texttext.todo"]{--paper:#141416;--ink:#f5f5f7;--muted:#9b9ba1}.tt-document[data-template="texttext.todo"] .tt-checklist{background:#1c1c1e}.tt-document[data-template="texttext.todo"] .tt-checklist-item{border-color:#38383a}
 }
