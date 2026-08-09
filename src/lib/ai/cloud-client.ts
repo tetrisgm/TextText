@@ -7,6 +7,12 @@ export type CloudAssistantContext = {
   level?: string;
   folderPath?: string;
   postId?: string;
+  /** The open item's title, so a request about "this" has a subject. */
+  itemTitle?: string;
+  /** Exactly what the writer selected, when they selected something. */
+  selection?: string;
+  /** The opening of the body, bounded. The model can read the rest. */
+  itemPreview?: string;
 };
 
 export type CloudAssistantStatus = {

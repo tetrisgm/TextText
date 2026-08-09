@@ -82,6 +82,9 @@ function buildSystem(context: unknown): string {
     level?: unknown;
     folderPath?: unknown;
     postId?: unknown;
+    itemTitle?: unknown;
+    selection?: unknown;
+    itemPreview?: unknown;
   };
   const bits: string[] = [];
   if (typeof view.level === "string") bits.push(`level ${view.level}`);
@@ -91,7 +94,29 @@ function buildSystem(context: unknown): string {
   if (typeof view.postId === "string" && view.postId) {
     bits.push(`current item id ${view.postId}`);
   }
-  return bits.length ? `${SYSTEM}\n\nCurrent view: ${bits.join(", ")}.` : SYSTEM;
+  if (typeof view.itemTitle === "string" && view.itemTitle.trim()) {
+    bits.push(
+      `current item title ${JSON.stringify(view.itemTitle.slice(0, 200))}`,
+    );
+  }
+  const head = bits.length
+    ? `${SYSTEM}\n\nCurrent view: ${bits.join(", ")}.`
+    : SYSTEM;
+  // The text itself goes after the view line, bounded, so a request about
+  // "this document" is answerable without a round trip and a long document
+  // never dominates the prompt.
+  const parts = [head];
+  if (typeof view.selection === "string" && view.selection.trim()) {
+    parts.push(
+      `The writer has this selected:\n"""\n${view.selection.slice(0, 4000)}\n"""`,
+    );
+  }
+  if (typeof view.itemPreview === "string" && view.itemPreview.trim()) {
+    parts.push(
+      `The current item begins:\n"""\n${view.itemPreview.slice(0, 4000)}\n"""\nUse read_item for the rest.`,
+    );
+  }
+  return parts.join(`\n\n`);
 }
 
 export async function GET() {

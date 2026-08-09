@@ -368,10 +368,22 @@ export function useNativeAssistant({
       });
       try {
         updateAssistantJob(jobId, { activity: "Contacting your AI provider" });
+        // Hand over what the writer is looking at, the way the quick actions
+        // already do. Without it a request about "this document" arrives as an
+        // id with no text behind it.
+        const open = submittedView.postId
+          ? await readItemTextRef.current(submittedView.postId).catch(() => null)
+          : null;
+        const openSelection = open
+          ? resolveWorkspaceItemTextSelection(open)
+          : null;
         const result = await cloudAssistantTurn(prompt, {
           level: submittedView.level,
           folderPath: submittedView.folderPath,
           postId: submittedView.postId,
+          itemTitle: open?.title,
+          selection: openSelection?.text,
+          itemPreview: open?.body?.slice(0, 4000),
         });
         if ("disabled" in result) {
           appendToThread(
