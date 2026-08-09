@@ -50,7 +50,7 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   width: min(1380px, 100%);
   margin: 0 auto;
@@ -58,12 +58,13 @@
 
 .card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  aspect-ratio: 16 / 10;
   padding: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 10px;
   background: var(--paper, #fff);
   color: inherit;
   box-shadow: none;
@@ -83,7 +84,7 @@
    inside it, scaled down. Same recipe as the public catalog. */
 .cardPreview {
   position: relative;
-  height: 100%;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   pointer-events: none;
   container-type: inline-size;
@@ -93,6 +94,12 @@
   width: calc(100cqw / 0.3);
   transform: scale(0.3);
   transform-origin: top left;
+}
+
+/* The document paints its own paper to the card edges, so a short document
+   never draws a seam where the card's background takes over. */
+.cardPreviewInner :global(.tt-document) {
+  min-height: 1400px;
 }
 
 .cardApplied {
@@ -108,17 +115,15 @@
   font-weight: 500;
 }
 
+/* The name sits under the preview, never on top of the words it labels. */
 .cardName {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  padding: 6px 9px;
-  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--paper, #fff) 90%, transparent);
+  display: flex;
+  align-items: center;
+  padding: 9px 11px;
+  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  background: var(--paper, #fff);
   color: var(--ink, #1d1d1f);
-  font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  backdrop-filter: blur(16px) saturate(1.4);
+  font: 650 13px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 }
 
 .preview {
@@ -156,7 +161,7 @@
   outline-offset: 3px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

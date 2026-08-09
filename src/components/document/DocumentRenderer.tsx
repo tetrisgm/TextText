@@ -44,6 +44,8 @@ type RendererProps = {
   slots?: DocumentRenderSlots;
   className?: string;
   wikiLinkTargets?: WikiLinkRenderTargets;
+  /** Miniature context: render media as a still, never a live embed. */
+  preview?: boolean;
 };
 
 type CollectionRendererProps = Omit<RendererProps, "className"> & {
@@ -301,9 +303,11 @@ function Markdown({
 function BoundMedia({
   node,
   document,
+  preview,
 }: {
   node: Extract<RenderNode, { type: "cover" | "image" | "video" }>;
   document: DocumentSnapshot;
+  preview?: boolean;
 }) {
   const src = safeMediaSource(scalarText(resolveDocumentBinding(document, node.bind)));
   if (!src) return null;
@@ -311,6 +315,13 @@ function BoundMedia({
   const style = { "--tt-media-fit": node.fit } as CSSProperties;
   const className = `tt-${node.type} tt-height-${node.height}`;
   if (node.type === "video") {
+    if (preview) {
+      return (
+        <div className={`${className} tt-media-still`} style={style}>
+          <span aria-hidden="true" />
+        </div>
+      );
+    }
     if (isYouTube(src)) {
       return (
         <div className={className} style={style}>
@@ -910,6 +921,7 @@ function NodeRenderer({
   fields,
   documentId,
   wikiLinkTargets,
+  preview,
 }: {
   node: RenderNode;
   path: string;
@@ -919,6 +931,7 @@ function NodeRenderer({
   fields: FieldDefinitionMap;
   documentId?: string;
   wikiLinkTargets?: WikiLinkRenderTargets;
+  preview?: boolean;
 }): ReactNode {
   const nodeSlot = node.id ? slots?.nodes?.[node.id] : undefined;
   if (nodeSlot !== undefined) return nodeSlot;
@@ -937,7 +950,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-stack tt-gap-${node.gap} tt-align-${node.align}`} data-direction={node.direction}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} preview={preview} />
           ))}
         </div>
       );
@@ -946,7 +959,7 @@ function NodeRenderer({
       return (
         <div {...attrs} className={`tt-${node.type} tt-gap-${node.gap}`}>
           {node.children.map((child, index) => (
-            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
+            <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} preview={preview} />
           ))}
         </div>
       );
@@ -988,7 +1001,11 @@ function NodeRenderer({
     case "image":
     case "video": {
       const slot = slots?.bindings?.[node.bind];
-      return slot !== undefined ? slot : <BoundMedia node={node} document={document} />;
+      return slot !== undefined ? (
+        slot
+      ) : (
+        <BoundMedia node={node} document={document} preview={preview} />
+      );
     }
     case "gallery": {
       const slot = slots?.bindings?.[node.bind];
@@ -1063,7 +1080,7 @@ function NodeRenderer({
           ) : null}
           <div className="tt-callout-body">
             {node.children.map((child, index) => (
-              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
+              <NodeRenderer key={`${path}.${index}`} node={child} path={`${path}.${index}`} document={document} metadata={metadata} slots={slots} fields={fields} documentId={documentId} wikiLinkTargets={wikiLinkTargets} preview={preview} />
             ))}
           </div>
         </aside>
@@ -1100,6 +1117,7 @@ export function DocumentRenderer({
   slots,
   className,
   wikiLinkTargets,
+  preview,
 }: RendererProps) {
   const scopeId = `tt-${documentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "document"}`;
   const theme = { ...template.theme, ...document.presentation.theme };
@@ -1121,7 +1139,7 @@ export function DocumentRenderer({
       style={style}
     >
       <DocumentEngineStyles />
-      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} documentId={documentId} wikiLinkTargets={wikiLinkTargets} />
+      <NodeRenderer node={template.item} path="item" document={document} metadata={metadata} slots={slots} fields={templateFieldMap(template)} documentId={documentId} wikiLinkTargets={wikiLinkTargets} preview={preview} />
     </article>
   );
 }

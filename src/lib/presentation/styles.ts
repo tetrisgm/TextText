@@ -110,10 +110,10 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.94rem;line-height:1.45}
 
 /* Note */
-.tt-document[data-template="texttext.note"]{--tt-accent:#ffb900;--paper:#fffef8;--ink:#1c1c1e;--muted:#8e8e93;--tt-measure:44rem}
+.tt-document[data-template="texttext.note"]{--tt-accent:#ffb900;--paper:#fffef8;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:44rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.note"]>.tt-stack{gap:1.15rem;padding:clamp(2.25rem,7vw,5.25rem) 0}
 .tt-document[data-template="texttext.note"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2rem,4.5vw,3.35rem);font-weight:700;line-height:1.08;letter-spacing:0}
-.tt-document[data-template="texttext.note"] .tt-metadata{justify-content:center;font-size:.78rem;color:#8e8e93}
+.tt-document[data-template="texttext.note"] .tt-metadata{justify-content:center;font-size:.78rem;color:var(--muted)}
 .tt-document[data-template="texttext.note"] .tt-prose{font-size:1.08rem;line-height:1.62}
 .tt-document[data-template="texttext.note"] .tt-prose a{color:#c78800}
 .tt-document.tt-collection-item[data-template="texttext.note"]{background:#fffef8}
@@ -156,7 +156,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item[data-template="texttext.talk"] .tt-text-title{font-size:1.3rem}
 
 /* Checklist */
-.tt-document[data-template="texttext.todo"]{--tt-accent:#0a84ff;--paper:#f2f2f7;--ink:#1c1c1e;--muted:#8e8e93;--tt-measure:42rem}
+.tt-document[data-template="texttext.todo"]{--tt-accent:#0a84ff;--paper:#f2f2f7;--ink:#1c1c1e;--muted:#6b6b70;--tt-measure:42rem}
 .tt-document:not(.tt-collection-item)[data-template="texttext.todo"]>.tt-stack{gap:1.25rem;padding:clamp(2rem,6vw,4.5rem) 0 5rem}
 .tt-document[data-template="texttext.todo"] .tt-text-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;font-size:clamp(2.4rem,5vw,4.1rem);font-weight:750;line-height:1;letter-spacing:0;color:#0a84ff}
 .tt-document[data-template="texttext.todo"] .tt-checklist{padding:.25rem 1rem;background:#fff;border-radius:.5rem}
@@ -194,9 +194,13 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 @media(max-width:720px){.tt-stack[data-direction="horizontal"]{flex-direction:column}.tt-text-title{font-size:clamp(2.3rem,13vw,4rem)}.tt-height-large{height:38vh}.tt-document[data-template="texttext.gallery"] [data-tt-node="gallery-media"]{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-document[data-template="texttext.article"] .tt-prose,.tt-document[data-template="texttext.bookmark"] .tt-prose,.tt-document[data-template="texttext.newsletter"] .tt-prose{font-size:1.08rem}.tt-document[data-template="texttext.todo"] .tt-checklist{border-radius:0}}
 @media(prefers-color-scheme:dark){
   .tt-document{--ink:#f5f5f7;--paper:#1c1c1e;--muted:#a1a1a6;--tt-tone-neutral:#98989d;--tt-tone-info:#409cff;--tt-tone-success:#30d158;--tt-tone-warning:#ffd60a;--tt-tone-danger:#ff453a}
-  .tt-document[data-template="texttext.note"]{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#98989d}.tt-document.tt-collection-item[data-template="texttext.note"]{background:#1c1c1e}
+  .tt-document[data-template="texttext.note"]{--paper:#1f1e19;--ink:#f5f5f7;--muted:#a9a49a}.tt-document.tt-collection-item[data-template="texttext.note"]{background:#1f1e19}
   .tt-document[data-template="texttext.bookmark"]{--paper:#211f1a;--ink:#f3eee4;--muted:#aaa094}
-  .tt-document[data-template="texttext.todo"]{--paper:#000;--ink:#f5f5f7;--muted:#8e8e93}.tt-document[data-template="texttext.todo"] .tt-checklist{background:#1c1c1e}.tt-document[data-template="texttext.todo"] .tt-checklist-item{border-color:#38383a}
+  .tt-document[data-template="texttext.todo"]{--paper:#141416;--ink:#f5f5f7;--muted:#9b9ba1}.tt-document[data-template="texttext.todo"] .tt-checklist{background:#1c1c1e}.tt-document[data-template="texttext.todo"] .tt-checklist-item{border-color:#38383a}
 }
 @media(prefers-reduced-motion:reduce){.tt-document *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
+
+/* A miniature never loads a player: media renders as a still stand-in. */
+.tt-document .tt-video.tt-media-still,.tt-document .tt-cover.tt-media-still,.tt-document .tt-image.tt-media-still{display:grid;place-items:center;background:color-mix(in srgb,var(--ink,#1d1d1f) 9%,var(--paper,#fff))}
+.tt-document .tt-media-still>span{width:2.5rem;height:2.5rem;background:color-mix(in srgb,var(--ink,#1d1d1f) 26%,transparent);clip-path:polygon(30% 16%,30% 84%,84% 50%)}
 `;

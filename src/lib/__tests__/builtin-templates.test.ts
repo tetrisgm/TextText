@@ -85,10 +85,14 @@ describe("built-in templates", () => {
   it("keeps media in the gallery exemplar", () => {
     const exemplar = exemplarFor("texttext.gallery");
 
-    expect(exemplar?.assets).toHaveLength(6);
+    expect(exemplar?.assets).toHaveLength(4);
     expect(exemplar?.assets?.every((asset) => asset.kind === "image")).toBe(
       true,
     );
+    // Alt text describes the file, so every asset must carry a real one.
+    expect(
+      exemplar?.assets?.every((asset) => (asset.alt ?? "").length > 12),
+    ).toBe(true);
   });
 
   it("catalogs every template exactly once with a known category", () => {

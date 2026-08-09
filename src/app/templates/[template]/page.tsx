@@ -34,6 +34,7 @@ const DETAIL_CSS = `
 .tpl-detail-bar .tpl-detail-name span{font-size:.78rem;color:var(--muted,#6e6e73)}
 .tpl-detail-use{padding:.4rem 1rem;border-radius:999px;background:var(--ink,#1d1d1f);color:var(--paper,#fff)!important;font-size:.85rem}
 .tpl-detail-note{max-width:46rem;margin:0 auto;padding:1.5rem 1rem 0;font-size:.85rem;color:var(--muted,#6e6e73);text-align:center}
+@media(max-width:620px){.tpl-detail-bar{flex-wrap:wrap;gap:.5rem .75rem;padding:.6rem .9rem}.tpl-detail-bar a,.tpl-detail-bar .tpl-detail-name strong,.tpl-detail-bar .tpl-detail-name span{white-space:nowrap}.tpl-detail-bar .tpl-detail-name{order:3;width:100%;margin-right:0}}
 @media(prefers-color-scheme:dark){.tpl-detail-bar{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tpl-detail-note{color:#a1a1a6}}
 `;
 

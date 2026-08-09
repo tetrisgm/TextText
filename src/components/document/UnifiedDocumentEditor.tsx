@@ -870,7 +870,7 @@ export function UnifiedDocumentEditor({
             </div>
           </details>
           )}
-          <button type="button" className="ac-btn ac-btn-filled" onClick={() => void stopEditing()}>
+          <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
             Stop editing
           </button>
         </div>
@@ -923,6 +923,7 @@ export function UnifiedDocumentEditor({
       <style>{`
         .tt-unified-editor{min-height:100%;background:var(--paper,#fff)}
         .tt-document-editor{min-height:100vh;padding-bottom:3rem}
+        @media(max-width:700px){.tt-document-editor{padding-top:56px}.tt-look-name{display:none}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
         .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:auto}.tt-document-editor .tt-collaborative-field:focus-within{position:relative}.tt-document-editor .tt-collaborative-field:focus-within::before{content:"";position:absolute;z-index:0;inset:-6px -10px;border-radius:6px;background:color-mix(in srgb,var(--tt-accent,#0071e3) 7%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tt-accent,#0071e3) 26%,transparent);pointer-events:none}@media(forced-colors:active){.tt-document-editor .tt-collaborative-field:focus-within::before{box-shadow:inset 0 0 0 2px Highlight}}
@@ -931,7 +932,7 @@ export function UnifiedDocumentEditor({
         .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-1px;color:transparent}
         .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:2px 5px;background:var(--tt-peer);color:#fff;font:600 10px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:36vh;text-align:start}
-        .tt-document-editor .tt-field-body textarea{resize:vertical}
+        .tt-document-editor .tt-field-body textarea{resize:none}
         .tt-unified-presence{display:flex;align-items:center;gap:4px;padding-inline:3px}
         .tt-person-presence,.tt-agent-avatar{display:grid;place-items:center;width:25px;height:25px;border:2px solid var(--ac-material,#fff);border-radius:50%;color:#fff;font-size:10px;font-weight:700}
         .tt-person-presence+.tt-person-presence{margin-inline-start:-9px}
@@ -940,7 +941,7 @@ export function UnifiedDocumentEditor({
         .tt-agent-avatar>span{display:contents}
         .tt-agent-avatar svg{width:13px;height:13px;fill:currentColor}
         .tt-agent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .tt-save-state{position:fixed;right:12px;bottom:12px;z-index:220;min-height:1rem;padding:5px 8px;border-radius:6px;background:color-mix(in srgb,var(--paper,#fff) 90%,transparent);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
+        .tt-save-state{position:fixed;right:12px;bottom:12px;z-index:220;min-height:1rem;padding:5px 9px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 12%,transparent);border-radius:6px;background:var(--paper,#fff);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}@media(prefers-color-scheme:dark){.tt-save-state.is-error{color:#ff8a80}}
         .tt-look-button{display:inline-flex;align-items:center;gap:5px}.tt-look-name{max-width:9rem;overflow:hidden;color:var(--muted,#6e6e73);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
         .tt-editor-more{position:relative}.tt-editor-more>summary{display:grid;place-items:center;box-sizing:border-box;min-width:30px;height:30px;padding:0 8px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.12));color:var(--ink,#1d1d1f);font:700 11px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:1px;cursor:pointer;list-style:none}.tt-editor-more>summary::-webkit-details-marker{display:none}.tt-editor-more[open]>summary{background:var(--ac-fill-3,rgba(118,118,128,.2))}

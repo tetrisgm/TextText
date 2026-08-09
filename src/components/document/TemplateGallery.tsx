@@ -98,9 +98,9 @@ export function TemplateGallery({
   const handleGridKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const columns = window.matchMedia("(max-width: 620px)").matches
       ? 1
-      : window.matchMedia("(max-width: 900px)").matches
+      : window.matchMedia("(max-width: 1180px)").matches
         ? 2
-        : 3;
+        : 4;
     let next = focusIndex;
     if (event.key === "ArrowRight") next += 1;
     else if (event.key === "ArrowLeft") next -= 1;
@@ -189,6 +189,7 @@ export function TemplateGallery({
                     document={shown(template)}
                     template={template}
                     documentId={`template-${index}`}
+                    preview
                   />
                 </div>
               </div>

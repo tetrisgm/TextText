@@ -3034,6 +3034,21 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   }
 }
 
+@media (max-width: 700px) {
+  /* The toolbar keeps clear of the fixed history chrome instead of sliding
+     under it, and wins the stack if the two ever meet. */
+  .post-top-action-bar {
+    z-index: 210;
+    max-width: calc(100vw - 116px);
+  }
+  .post-editor-shell.has-sidebar .post-top-action-bar.is-edit,
+  .post-editor-shell.has-sidebar.is-sidebar-collapsed
+    .post-top-action-bar.is-edit {
+    right: 8px;
+    max-width: calc(100vw - 116px);
+  }
+}
+
 @media (max-width: 1024px) {
   .workspace-sidebar-reveal-chrome.is-mobile-only {
     display: flex;
