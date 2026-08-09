@@ -2,133 +2,168 @@
 
 ## Current position
 
-Branch `simplify-core-ux` (worktree `~/dev/TextText--work`) carries a bounded
-UX simplification pass over the home, workspace, create, and template surfaces.
-No engine change: `DocumentSnapshot`, `DocumentRenderer`, `store.ts`, and the
-validated template path are untouched, and no mutation path moved.
+Branch `simplify-core-ux` (worktree `~/dev/TextText--work`), two commits, pushed.
+A UX simplification pass driven by screenshots of the built app rather than by
+reading source. No engine change: `DocumentSnapshot`, `DocumentRenderer`,
+`store.ts`, the validated template path, visibility, and audit are untouched.
 
-## UX audit (2026-08-08)
+## How this was verified
 
-### Top five sources of complexity
+`.texttext/shoot.mjs` (gitignored) is a single foreground run: it starts
+`next start`, drives headless Chromium across every surface in light and dark
+at 1440px plus a 390px pass, writes PNGs, and kills the server. Nothing is left
+running. Reproduce with:
 
-1. **Two template surfaces, one of them dead.** The sidebar carried a
-   `Templates` row that navigated out of the workspace into the public
-   `/templates` catalog, sitting among Starred, Shared with me, and Trash,
-   which are workspace places. A second surface, `WorkspaceTemplateStrip`, was
-   fully built with about 90 lines of CSS and rendered nowhere.
-2. **Two words for one thing.** The composer, the editor toolbar, and the
-   gallery say "look". The template detail page said "template", and the
-   gallery preview said "theme". Three words, one concept.
-3. **The library said the same number twice and drew two rules.** The header
-   printed "N items" directly above a filter row whose "All" chip printed the
-   same number, and both the header and the toolbar carried a hairline, so the
-   page read as three stacked boxes rather than one list.
-4. **Empty states pointed at the interface instead of offering an action.**
-   "Create your first item above." and "Type a title or paste a link to create
-   the first item." both restated the composer placeholder and neither did
-   anything.
-5. **The landing repeated itself.** Four calls to action above the fold
-   competing for the same first click (`Start writing` and `Get started` in the
-   nav, `Get started` and `See a live blog` in the hero), a kicker plus a
-   headline plus a paragraph all saying the same sentence, four text levels
-   inside each step card, and a three-card block naming other products.
+```bash
+cd ~/dev/TextText--work && npm run build && node .texttext/shoot.mjs /tmp/shots 3111
+```
 
-### What was simplified
+It creates a real guest workspace through `/try`, opens the look gallery, types
+into the capture field, presses Enter, and photographs the result, so the
+create path is exercised end to end rather than asserted.
 
-- **Removed the dead template strip.** `WorkspaceTemplateStrip.tsx` and its
-  CSS block are gone.
-- **Removed the sidebar `Templates` row** (and its icon). Choosing a look now
-  happens where the work is: the "Look" select in the composer, and the "Look"
-  button in the editor, which previews the real document through the engine.
-  `/templates` stays as the public catalog, reached from the landing.
-- **One word: "look".** The template detail page now says "All looks" and
-  "Use this look"; the gallery preview says "Choose another look" and
-  "Use this look" instead of "Try another theme" and "Continue". "Template"
-  stays an engine word in code and docs.
-- **Library reads as one list.** The duplicate item count is gone and the title
-  no longer draws its own rule, so the filter row carries the only hairline.
-- **Empty states do something.** The library and folder empty states are a
-  plain sentence plus one button. "Create an item" focuses the composer through
-  the existing `texttext:create-folder-item` event; a filtered-empty library
-  offers "Show all items" instead of pretending nothing exists.
-- **Landing: one primary action per surface.** The nav keeps only
-  "Get started"; the hero is "Get started" plus "Try it without an account",
-  which surfaces `/try` honestly instead of hiding it in the nav. The hero
-  kicker is gone, the step cards dropped a heading level, the three
-  product-name claim cards are gone, and the download block lost its second
-  call to action. `/@demo` moved to a text link beside "Browse the looks".
-- **Copy.** Sentence case, no em dashes, no exclamation marks. The hero now
-  states what the product is ("Your notes, articles, and saved links in one
-  place.") rather than an abstraction.
+Six capture rounds informed the work. The first round is what turned this from
+a copy-editing pass into a real one.
 
-Net effect on the diff: 283 lines removed against 99 added, most of it CSS.
+## What the screenshots showed that reading the code did not
 
-### What was deliberately not touched
+1. **Every look was named after another company's product.** Medium article,
+   Apple Notes, Instapaper reader, Pinterest board, YouTube video, Apple
+   Reminders, Notion project, Substack newsletter. All eight, in the composer,
+   the editor toolbar, the public catalog, and the gallery, with descriptions
+   that said "inspired by <brand>". The engine stylesheet shipped the same names
+   as CSS comments and asked for Roboto on the talk look.
+2. **The in-app look gallery did not scale its previews.** Each card rendered
+   the document at full width, so all eight cards showed the same top-left
+   fragment. The one surface whose entire job is telling looks apart could not.
+3. **Creating an item was a form.** Folder select, look select, text field,
+   button. Two decisions before typing was possible.
+4. **A new workspace was a manual.** Provisioning inserted five documents
+   explaining the product. The first thing anyone saw was `## Create / Press C
+   anywhere in the workspace`, rendered as raw Markdown in the body textarea.
+5. **The editor showed reader chrome while writing:** an avatar, the workspace
+   name, "1 min read", and a date, above a description field that stood between
+   the title and the first sentence.
 
-- **The 8-entry template catalog.** `TEMPLATE_CATALOG` was already trimmed from
-  25 built-ins to 8 across four categories. Cutting further would drop one of
-  the five documented built-ins (article, note, bookmark, gallery, talk) from
-  the composer and folder defaults, which is a product decision with migration
-  weight, not a presentation cleanup.
-- **The sidebar activity calendar** (`SidebarActivity`). It is a real feature
-  with a working destination (the date activity view) and it is collapsed by
-  default, so it costs one quiet row. Removing it is a feature decision.
-- **"Turn into" in the edit action bar.** It sits next to "Look" and both offer
-  the word "Article", which is a genuine model collision. It was left alone
-  because "Turn into" changes the compatibility `type`, which drives privacy
-  and folder behavior, while "Look" is presentation only. They also do not
-  currently appear in the same toolbar on the workspace edit path. Renaming it
-  needs an owner decision, not a refactor.
-- **`/start` staying sign-in first.** `src/app/start/route.ts` documents that
-  the classic service shape is sign in, then write. The hero primary action
-  still goes there; `/try` became the visible secondary rather than replacing
-  it.
-- **The `/templates` page's inline stylesheet.** It is self-contained, handles
-  both themes, and is not part of the app chrome.
-- **Everything below the UI layer.** No change to store, visibility, audit,
-  collaboration, sync, or the renderer.
+## What changed
+
+**Creating is one action.** The capture row is a text field. Enter creates and
+opens; Shift+Enter is a newline. The destination follows from what you typed, so
+a pasted link lands with the links you save wherever you typed it, and the look
+follows from the folder. Both stay changeable afterwards, in the editor, where
+you can see what they do.
+
+**A new workspace is empty.** `provisionWorkspaceDefaults` creates the folders
+and nothing else; `ensureFirstArticleDraftPath` already created a draft on
+demand, so the first visit opens one untitled document. `WORKSPACE_STARTER_POST_SLUGS`
+still names the old seeded slugs so existing workspaces keep them out of the
+try-before-signup item cap.
+
+**The editor is a document.** No byline, reading time, or date in edit mode. The
+description appears once it has content or once you pick "Add a description"
+from the overflow menu. Declared fields a look does not place sit in a closed
+disclosure instead of an always-open "Details" form.
+
+**The looks are named for the documents they make:** Article, Note, Bookmark,
+Gallery, Talk, Checklist, Project, Newsletter. Ids and versions are untouched,
+so every pinned document still resolves. `builtin-templates.test.ts` now fails
+if any built-in name or description matches a competitor brand.
+
+**The look gallery works.** Cards scale like the public catalog, and a document
+with nothing in it previews the template's own validated exemplar, with one line
+saying so. "Try another theme" and "Continue" became "Choose another look" and
+"Use this look", so the product has one word for the concept.
+
+**The library reads as a list.** Default view is rows, not cards. One hairline,
+no duplicated item count, no type badge repeating the icon, no "No preview"
+where a document simply has no text yet, no drag-to-resize corner on the capture
+field.
+
+**Removed:** the dead `WorkspaceTemplateStrip` and its CSS, the sidebar row that
+navigated out of the workspace into the public catalog, four competing calls to
+action on the landing page, a heading level in each landing card, three cards
+naming other products, and the landing hero kicker. Display headings use
+`text-wrap: balance`, which fixes the one-word orphan the hero had at every
+width tested.
+
+Across both commits: 660 lines removed, 366 added.
+
+## Open, and worth doing next
+
+1. **The guest workspace cannot materialize, and says so in red.**
+   `/api/collab/{postId}/materialize` returns 403 for a `/try` workspace, so
+   "Document could not be saved" sits in the bottom right of the first screen a
+   new person sees. Cause: `getCollabRequestAccess`
+   (`src/lib/collab/access.server.ts`) resolves a signed-in user or a document
+   capability token and nothing else, so the `blog-edit-auth` guest cookie that
+   owns the workspace resolves to no role. Content is not actually lost, because
+   the editor's own autosave writes through the server actions, which do
+   understand guest ownership. **This is pre-existing and untouched by this
+   branch** (neither file appears in the diff). It was left alone deliberately:
+   it is a permission-resolver change, and widening an auth boundary as a side
+   effect of a design pass is the wrong way to do it. Fix it on its own branch
+   with its own test.
+2. **The gallery exemplar's alt text does not describe its images.**
+   `exemplars.ts` gives `texttext.gallery` the title "Fog season, Ocean Beach"
+   with alt text like "Morning light crossing a coastal dune", but
+   `/covers/cover-002.jpg` is a stock photo of someone typing on a MacBook at a
+   cafe table (verified by opening it). Six near-identical laptop photos are
+   also the weakest visual in both the public catalog and the in-app gallery.
+   This is an accessibility defect as well as a design one. Needs images and
+   captions that match, which needs someone who can see all six.
+3. **The Talk exemplar embeds a YouTube player**, complete with the YouTube
+   logo, "Watch on YouTube", and a real conference talk. The Bookmark exemplar
+   points at a figma.com URL, which is defensible for a bookmark, but the Talk
+   one ships another company's player chrome inside the product's own chooser.
+   Replacing it needs owned media, so it was flagged rather than faked.
+4. **The body is a plain textarea over Markdown**, so a heading is `## Create`
+   while writing and a heading while reading. That is the largest remaining gap
+   with Notion, and it is not a cleanup: the deps already carry Tiptap plus
+   `SlashCommand.ts`, `WikiLink.ts`, and `tiptap-suggestion.ts`, which suggests a
+   rich editor existed before the unified rewrite. Treat it as its own project.
+5. **Two stylesheets style the same components.** `workspace.css` loads after
+   `broadsheet.css` and overrides it for the workspace surfaces. Several rules
+   in `broadsheet.css` are now dead for those components. Worth collapsing.
+6. **A multi-lens visual critique workflow was still running when this was
+   written.** It reads the round-1 screenshots and adversarially verifies each
+   finding. Its results were not folded in.
+
+## Deliberately not touched
+
+- **The eight-entry catalog size.** Already trimmed from 25 to 8. Cutting
+  further would drop one of the five documented built-ins.
+- **The accent colors baked into the engine stylesheet**, which are the exact
+  brand values of the products the looks were named after (`#1a8917`,
+  `#e60023`, `#ff0033`, `#0a84ff`, and the Instapaper and Notes paper tones).
+  Renaming was safe; restyling changes how existing pinned documents render, so
+  it is an owner decision. Roboto was dropped from the talk look because it was
+  pure imitation and inert on macOS anyway.
+- **The sidebar activity calendar.** A working feature, collapsed by default.
+- **"Turn into" in the edit action bar.** It collides with "Look" on the word
+  "Article", but it changes the compatibility `type`, which drives privacy and
+  folder behavior. Renaming it is a product decision.
+- **`/start` staying sign-in first**, per the documented decision in
+  `src/app/start/route.ts`. `/try` became the visible secondary action instead.
 
 ## Verification
 
-Run from `~/dev/TextText--work` against local Postgres (`texttext_dev`); no
-production Neon, no deploy, no release.
+Run from `~/dev/TextText--work` against local Postgres (`texttext_dev`). No
+production Neon, no deploy, no release, no scheduled anything.
 
 - `npx tsc --noEmit` clean.
-- `npx vitest run`: 104 files, 746 tests, all passing (was 103/740; the new
-  file is `src/components/workspace/__tests__/simplification-contract.test.ts`,
-  which pins the removals so they cannot creep back).
-- `npm run build` succeeds, all routes generated including the eight
-  `/templates/[template]` pages.
-- `npx eslint` on the changed files reports the same pre-existing
-  `set-state-in-effect` errors as `main` and no new problems.
+- `npx vitest run`: 104 files, 746 tests, all passing.
+- `npm run build` succeeds.
+- `npx eslint src`: 24 errors, all pre-existing `set-state-in-effect` and
+  memoization warnings. `main` has 27.
+- Every surface photographed in light and dark. No new color was introduced;
+  changed rules are layout or reuse existing tokens.
 
-Colors: no new color was introduced. Every changed CSS rule is layout or reuses
-existing tokens (`--muted`, `--hairline`, `--ink`), and the two new buttons use
-`ac-btn ac-btn-filled` / `ac-btn ac-btn-gray` inside the existing `.applecms`
-scope, which already resolves light and dark.
-
-No screenshots: `preview_start` was denied by the permission classifier in this
-session, so the pass was verified by build, tests, and reading the token usage
-of every changed rule rather than by looking at a running page. A reviewer
-should open the home library, an empty folder, the editor "Look" gallery, and
-the landing page in both themes before landing.
+The worktree needs its own installed `node_modules`: symlinking the canonical
+tree's copy makes Turbopack fail with "Symlink [project]/node_modules is
+invalid".
 
 ## Next concrete step
 
-Review the branch, then land it with `merge-gate` from the worktree
-(`~/dev/stack/runbooks/workflow.md`). The worktree has its own installed
-`node_modules` (a symlink to the canonical tree's copy breaks Turbopack with
-"Symlink [project]/node_modules is invalid").
-
-## Blockers
-
-None. `preview_start` is unavailable in this session, so visual confirmation is
-open, not blocked.
-
-## Ruled out
-
-- Symlinking `node_modules` into the worktree: Turbopack rejects it outright,
-  so `npm ci` in the worktree is the only way to build there.
-- Trimming the template catalog below 8: would drop a documented built-in.
-- Making `/try` the landing's primary action: contradicts the documented
-  sign-in-first decision in `src/app/start/route.ts`.
+Review the branch against the screenshots, then land it with `merge-gate` from
+the worktree (`~/dev/stack/runbooks/workflow.md`). Then take item 1 above on its
+own branch.
