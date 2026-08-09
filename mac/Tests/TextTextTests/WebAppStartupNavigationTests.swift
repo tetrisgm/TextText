@@ -1,5 +1,5 @@
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 
 final class WebAppStartupNavigationTests: XCTestCase {
     func testFinderItemReplacesWorkspaceRootBeforeColdLaunchNavigationStarts() {

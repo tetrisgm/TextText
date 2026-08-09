@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 import TextTextFileProviderKit
 
 final class QuickCaptureTests: XCTestCase {

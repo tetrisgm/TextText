@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 import TextTextWorkspaceCore
-@testable import TextText
+@testable import TextTextApp
 
 final class SyncEngineEpochTests: XCTestCase {
     func testSignOutInvalidatesBlockedWorkspaceBeforeCacheOrServerMutation() throws {

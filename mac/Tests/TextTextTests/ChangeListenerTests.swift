@@ -1,5 +1,5 @@
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 
 final class ChangeListenerBackoffTests: XCTestCase {
     func testDelayUsesBoundedExponentialCeilingAndEqualJitter() {

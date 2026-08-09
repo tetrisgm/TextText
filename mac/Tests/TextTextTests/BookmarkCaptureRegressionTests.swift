@@ -1,6 +1,6 @@
 import WebKit
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 
 private struct CaptureExtractionResult: Decodable {
     struct Block: Decodable {

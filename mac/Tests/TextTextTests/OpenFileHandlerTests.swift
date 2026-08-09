@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 import TextTextWorkspaceCore
 import TextTextFileProviderKit
-@testable import TextText
+@testable import TextTextApp
 
 final class OpenFileHandlerTests: XCTestCase {
     func testLegacyItemLinkPreservesExistingOpenBehavior() {

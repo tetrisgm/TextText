@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 
 final class AppHealthReporterTests: XCTestCase {
     func testReleaseCheckUsesRuntimeChecksAndStoresOnlyContentBlindData() throws {

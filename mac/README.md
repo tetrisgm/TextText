@@ -28,7 +28,7 @@ broken app.
 The long form, if you want the flags in front of you:
 
     TEXTTEXT_SERVER=http://localhost:3000 TEXTTEXT_DEV_NO_MOVE=1 \
-      swift run --package-path mac TextText
+      swift run --package-path mac TextTextApp
 
 A build with no release plist (anything from `swift run`) now defaults to
 `http://localhost:3000` rather than the product origin, and every run prints
@@ -47,20 +47,17 @@ workspace silently, which looks exactly like the app being broken.
 
 Type-check/build only: `swift build --package-path mac`.
 
-### One binary, two products
+### Two executables, two names
 
-`TextText` (the app) and `texttext` (the CLI) differ only in case, and a stock
-Mac volume is case-insensitive, so both land on the same path in
-`.build/debug/`. Whichever product linked last wins it. `swift build` then
-`./.build/debug/TextText` can therefore run the CLI and look like the app
-failing to launch.
+The app target is `TextTextApp` and the CLI product is `texttext`. They used to
+be `TextText` and `texttext`, which are the SAME path on a stock
+case-insensitive Mac volume: both landed on `.build/debug/TextText` and
+whichever linked last won, so `swift build` followed by `./.build/debug/TextText`
+could run the CLI and look like the app failing to launch.
 
-Always go through the product name, which rebuilds it first:
-
-    swift run --package-path mac TextText
-
-`npm run mac:dev` does that. Renaming one product would remove the hazard
-outright and is worth doing.
+The shipped bundle binary is still `TextText.app/Contents/MacOS/TextText`;
+`build-app.sh` copies `TextTextApp` into that name, so `CFBundleExecutable` is
+unchanged and nothing about a release build moves.
 
 ### Headless verify mode (CI, agents)
 

@@ -1,6 +1,6 @@
 import FileProvider
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 
 final class FileProviderStatusMonitorTests: XCTestCase {
     func testFileProviderSchemaRepairOnlyRunsForOlderSchemas() {

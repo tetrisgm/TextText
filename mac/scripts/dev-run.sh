@@ -16,7 +16,7 @@ for _ in $(seq 1 60); do
   if curl -fsS -o /dev/null --max-time 2 "$ORIGIN" 2>/dev/null; then
     printf '\nserver is up\n'
     TEXTTEXT_SERVER="$ORIGIN" TEXTTEXT_DEV_NO_MOVE=1 \
-      exec swift run --package-path "$ROOT/mac" TextText
+      exec swift run --package-path "$ROOT/mac" TextTextApp
   fi
   printf '.'
   sleep 1

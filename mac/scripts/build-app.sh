@@ -63,7 +63,9 @@ BIN="$(swift build -c release --triple arm64-apple-macosx14.0 \
 echo ">> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
-cp "$BIN/TextText" "$APP/Contents/MacOS/TextText"
+# The product is TextTextApp; the bundle binary keeps the CFBundleExecutable
+# name TextText.
+cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"
 # The agent CLI ships beside the app binary so it is present wherever TextText
 # is installed, and so one implementation owns the .textpack format.
 cp "$BIN/texttext" "$APP/Contents/MacOS/texttext"

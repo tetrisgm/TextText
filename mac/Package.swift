@@ -100,8 +100,12 @@ let package = Package(
             path: "Extensions/TextTextFileProviderExtension",
             exclude: ["Info.plist", "TextTextFileProviderExtension.entitlements.template"]
         ),
+        // NOT "TextText": the CLI product is `texttext`, and a stock Mac volume
+        // is case-insensitive, so both executables landed on one path in
+        // .build and whichever linked last won. The bundle binary is still
+        // named TextText (build-app.sh copies it into place).
         .executableTarget(
-            name: "TextText",
+            name: "TextTextApp",
             dependencies: [
                 "TextTextShareCore",
                 "TextTextWorkspaceCore",
@@ -148,7 +152,7 @@ let package = Package(
         .testTarget(
             name: "TextTextShareCoreTests",
             dependencies: [
-                "TextText",
+                "TextTextApp",
                 "TextTextShareCore",
                 "TextTextShareExtensionCore",
                 "TextTextQuickLookCore",
@@ -158,7 +162,7 @@ let package = Package(
         .testTarget(
             name: "TextTextTests",
             dependencies: [
-                "TextText",
+                "TextTextApp",
                 "TextTextFileProviderExtensionCore",
                 "TextTextFileProviderBridge",
                 "TextTextFileProviderKit",

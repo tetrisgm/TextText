@@ -205,13 +205,14 @@ Three things made a dev launch look like a broken app:
    rather than a mystery. `npm run mac:build` and `npm run mac:test` are there
    too.
 
-Latent hazard, documented but not fixed: the `TextText` app product and the
-`texttext` CLI product differ only in case, so on a stock case-insensitive Mac
-volume they share one path in `.build/debug/` and whichever linked last wins.
-Running `./.build/debug/TextText` straight after `swift test` runs the CLI and
-looks like the app failing to launch. Going through `swift run --package-path
-mac TextText` rebuilds the right one first. Renaming one product would remove
-it outright.
+4. **Two executables shared one filename.** The app target `TextText` and the
+   CLI product `texttext` are the same path on a stock case-insensitive Mac
+   volume, so whichever linked last won `.build/debug/TextText`. Running the
+   binary straight after `swift test` ran the CLI and looked like the app
+   failing to launch. The app target is `TextTextApp` now. The shipped bundle
+   binary is still `TextText.app/Contents/MacOS/TextText`: `build-app.sh`
+   copies `TextTextApp` into that name, so `CFBundleExecutable` and everything
+   about a release build are unchanged.
 
 ## Open
 

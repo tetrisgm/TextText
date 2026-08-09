@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import TextText
+@testable import TextTextApp
 
 final class WorkspaceIntentServerBackedTests: XCTestCase {
     func testManifestDecodesCanonicalURL() throws {
