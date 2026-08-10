@@ -47,7 +47,15 @@ describe("covers are never invented", () => {
     const bookmark = {
       ...article,
       type: "bookmark" as const,
-      capture: { assets: [{ url: "https://example.com/real-image.jpg" }] },
+      capture: {
+        url: "https://example.com/article",
+        assets: [
+          {
+            url: "https://example.com/real-image.jpg",
+            originalUrl: "https://example.com/real-image.jpg",
+          },
+        ],
+      },
     };
     expect(resolveCover(bookmark)).toBe("https://example.com/real-image.jpg");
   });

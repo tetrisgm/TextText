@@ -8,6 +8,7 @@ import Nodemailer from "next-auth/providers/nodemailer";
 import { eq } from "drizzle-orm";
 import { createAuthAdapter, sendTextTextVerificationRequest } from "@/lib/auth-email";
 import { db } from "@/lib/db/client";
+import { isLoopbackHost } from "@/lib/loopback-host";
 import { users } from "@/lib/db/schema";
 
 import { resolveAppleClientSecret } from "@/lib/apple-secret";
@@ -42,24 +43,52 @@ const adapter =
   emailServer && emailFrom ? createAuthAdapter() : undefined;
 export const hasEmailProvider = Boolean(adapter);
 
-// A dev-only email login for exercising the authenticated flow without the
-// Apple Developer portal. Double-guarded: inert unless AUTH_DEV_LOGIN=1 AND we
-// are not in Vercel Production. That allows local dev and Vercel Preview (a
-// shareable test setup) while it can never run on the production deployment.
+/**
+ * A dev-only email login for exercising the authenticated flow without the
+ * Apple Developer portal.
+ *
+ * The real ways in are Apple, Google and an emailed link. This is not one of
+ * them and must never appear beside them, so it is guarded three ways: it is
+ * inert unless AUTH_DEV_LOGIN=1, it is off in Vercel Production, and it is
+ * refused for any request that did not arrive on a loopback host.
+ *
+ * The last guard is the one that does not depend on where this is deployed.
+ * The first two are configuration, and configuration is a habit; a dev login
+ * is for local development, so serving anything other than localhost is
+ * enough on its own to disqualify it.
+ */
+export { isLoopbackHost };
+
 export const devLoginEnabled =
   process.env.AUTH_DEV_LOGIN === "1" &&
   process.env.VERCEL_ENV !== "production";
+
 
 export const isAuthConfigured =
   (hasAppleProvider || hasGoogleProvider || hasEmailProvider ||
     devLoginEnabled) &&
   Boolean(authSecret);
 
+function safeHost(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 const devProvider = Credentials({
   id: "dev-login",
   name: "Developer login",
   credentials: { email: {}, name: {} },
-  authorize: (credentials) => {
+  authorize: (credentials, request) => {
+    // Refuse anywhere that is not the developer's own machine, whatever the
+    // environment variables say.
+    const host =
+      request?.headers?.get?.("x-forwarded-host") ??
+      request?.headers?.get?.("host") ??
+      (request?.url ? safeHost(request.url) : null);
+    if (!isLoopbackHost(host)) return null;
     const email =
       typeof credentials?.email === "string"
         ? credentials.email.trim().toLowerCase()
