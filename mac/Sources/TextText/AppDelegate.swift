@@ -789,10 +789,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func watchForShareContainerCreation() {
         guard shareContainerAppearanceWatcher == nil else { return }
-        let groupsRoot = Self.groupContainersRoot()
-        guard FileManager.default.fileExists(atPath: groupsRoot.path) else { return }
+        // Watching Group Containers itself is the same privacy problem as
+        // listing it. Watch our own container when it exists; when it does not,
+        // there is nothing of ours to watch yet and configureShareInbox retries
+        // when the extension next runs.
+        guard let groupIdentifier = Self.shareInboxGroupIdentifier(),
+              let ours = Self.shareInboxCandidates(for: groupIdentifier)
+                  .first(where: { FileManager.default.fileExists(atPath: $0.path) })
+        else { return }
         shareContainerAppearanceWatcher = WorkspaceFolderWatcher(
-            path: groupsRoot.path,
+            path: ours.path,
             queue: shareInboxQueue,
             includeUbiquitousItems: false
         ) { [weak self] in
@@ -806,7 +812,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func shareInboxContainerURL() -> URL? {
+    /// The configured app-group id, or nil when the placeholder was never
+    /// substituted (a development build).
+    private static func shareInboxGroupIdentifier() -> String? {
         let envGroup = ProcessInfo.processInfo.environment["TEXTTEXT_APP_GROUP"]
         guard let groupIdentifier = envGroup
             ?? Bundle.main.object(forInfoDictionaryKey: "TextTextAppGroupIdentifier") as? String,
@@ -814,24 +822,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               groupIdentifier != "TEXTTEXT_APP_GROUP" else {
             return nil
         }
+        return groupIdentifier
+    }
+
+    private func shareInboxContainerURL() -> URL? {
+        guard let groupIdentifier = Self.shareInboxGroupIdentifier() else {
+            return nil
+        }
         // The app ships non-sandboxed and without the app-group entitlement, so
         // FileManager.containerURL(forSecurityApplicationGroupIdentifier:) is no
         // help here: on a non-entitled process it returns a naive
         // "<home>/Library/Group Containers/<group id>" path, but the sandboxed
         // Share extension actually creates a TEAM-PREFIXED container
-        // ("<team>.<group id>"). A non-sandboxed app running as the same user can
-        // read that directory directly, so locate it by scanning and matching
-        // the id as either the bare name or a ".<group id>" suffix.
-        let groupsRoot = Self.groupContainersRoot()
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: groupsRoot, includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]) else {
-            return nil
+        // ("<team>.<group id>").
+        //
+        // This used to find it by listing Group Containers and matching the
+        // suffix. That directory is other apps' data: macOS blocks the read and
+        // tells the person "TextText tried to access your data from other apps
+        // and was blocked". Only two paths can ever be ours, so test those two
+        // and touch nothing else.
+        return Self.shareInboxCandidates(for: groupIdentifier)
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// The only two places this app's group container can be, most specific
+    /// first. Reading these does not enumerate anybody else's container.
+    private static func shareInboxCandidates(for groupIdentifier: String) -> [URL] {
+        let root = groupContainersRoot()
+        var candidates: [URL] = []
+        if let team = teamIdentifier(), !team.isEmpty {
+            candidates.append(root.appendingPathComponent("\(team).\(groupIdentifier)", isDirectory: true))
         }
-        return entries.first { entry in
-            let name = entry.lastPathComponent
-            return name == groupIdentifier || name.hasSuffix(".\(groupIdentifier)")
-        }
+        candidates.append(root.appendingPathComponent(groupIdentifier, isDirectory: true))
+        return candidates
+    }
+
+    /// This app's own Team ID, read from its signature, so the team-prefixed
+    /// container can be addressed directly instead of discovered by scanning.
+    private static func teamIdentifier() -> String? {
+        var selfCode: SecCode?
+        guard SecCodeCopySelf(SecCSFlags(), &selfCode) == errSecSuccess,
+              let selfCode else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(selfCode, SecCSFlags(), &staticCode) == errSecSuccess,
+              let staticCode else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info
+        ) == errSecSuccess,
+            let dictionary = info as? [String: Any] else { return nil }
+        return dictionary[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
     private func scheduleShareInboxDrain(containerURL: URL, delay: TimeInterval = 0.5) {
