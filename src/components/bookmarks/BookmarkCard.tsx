@@ -114,6 +114,24 @@ function ThumbnailFallback({ host, title }: { host: string; title: string }) {
   );
 }
 
+/**
+ * How long a capture may claim to be in progress.
+ *
+ * The full capture is done by an agent (the Mac app) claiming pending work. If
+ * no agent ever claims it - none running, or it never gets to this one - the
+ * chip spun on "capturing" forever, which reads as the app being stuck rather
+ * than as nothing listening. After this the bookmark is simply itself: it
+ * still has the title, description and link the server fetched.
+ */
+const CAPTURE_STALE_AFTER_MS = 10 * 60 * 1000;
+
+function stillCapturing(post: Pick<Post, "captureStatus" | "updatedAt" | "date">): boolean {
+  if (post.captureStatus !== "pending") return false;
+  const started = Date.parse(post.updatedAt ?? post.date ?? "");
+  if (!Number.isFinite(started)) return true;
+  return Date.now() - started < CAPTURE_STALE_AFTER_MS;
+}
+
 function StatusChip({ status }: { status: Post["captureStatus"] }) {
   if (status === "pending") {
     return (
@@ -250,7 +268,14 @@ export function BookmarkCard({
     <span className={styles.content}>
       <span className={styles.titleRow}>
         <span className={styles.title}>{title}</span>
-        <StatusChip status={captureStatus} />
+        {/* A capture nobody ever claimed stops claiming to be in progress. */}
+        <StatusChip
+          status={
+            captureStatus === "pending" && !stillCapturing(post)
+              ? undefined
+              : captureStatus
+          }
+        />
       </span>
       {host && (
         <span className={styles.metaRow}>

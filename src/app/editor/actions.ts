@@ -63,6 +63,7 @@ import {
   resolveItemAccess,
   resolveWorkspaceAccess,
 } from "@/lib/permissions";
+import { after } from "next/server";
 import { lightCaptureBookmark } from "@/lib/bookmark-fetch";
 import {
   deleteAnonymousEditCookie,
@@ -857,9 +858,19 @@ export async function createFolderItemAction(
   // light fetch fills title/description meanwhile without settling the state.
   if (placed.id) {
     await markCapturePending(handle, placed.id, url.toString());
-    void lightCaptureBookmark(handle, placed.id, url.toString()).catch(
-      (error) => console.warn("bookmark light capture failed", error),
-    );
+    // `after`, not a floating promise. A serverless instance can be frozen the
+    // moment the response is returned, so fire-and-forget work never finishes
+    // there - the bookmark kept its hostname title forever while the same code
+    // filled the title in correctly against a long-lived local server. `after`
+    // is the platform's own contract for work that outlives the response.
+    const capture = { id: placed.id, url: url.toString() };
+    after(async () => {
+      try {
+        await lightCaptureBookmark(handle, capture.id, capture.url);
+      } catch (error) {
+        console.warn("bookmark light capture failed", error);
+      }
+    });
   }
   await auditEdit(access, "create_bookmark", "item", placed.id, url.toString());
   await revalidateBlog(handle, [placed.slug]);
