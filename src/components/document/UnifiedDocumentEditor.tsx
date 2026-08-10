@@ -915,7 +915,11 @@ export function UnifiedDocumentEditor({
       {unboundFields.length > 0 && (
         // Fields the look declares but does not place stay one level down, so
         // the writing surface is a document rather than a form.
-        <details className="tt-field-details">
+        // Open. These are fields the look declared and did not place, and a
+        // closed drawer over a task's due date means the thing cannot be used
+        // without hunting for it. A look that places its fields never gets
+        // here at all, so this only ever shows what would otherwise be lost.
+        <details className="tt-field-details" open>
           <summary className="tt-field-details-title">
             Details
             <span className="tt-field-details-count" aria-hidden="true">

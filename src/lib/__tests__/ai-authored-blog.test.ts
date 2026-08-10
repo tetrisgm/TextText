@@ -260,3 +260,25 @@ describe("a look asked for in words reaches both surfaces", () => {
     expect(template.collection.groupBy).toBe("content.fields.area");
   });
 });
+
+describe("a look never empties the collection it is applied to", () => {
+  it("counts an unset boolean as false", async () => {
+    // Applying a to-do look to notes that predate it added a "done = false"
+    // filter, and every existing note failed it: the folder header counted
+    // three items above a page that said "Nothing here yet."
+    const { matchesFilter } = await import("@/lib/documents/collection-query");
+    const untouched = { fields: {} };
+    const ticked = { fields: { done: true } };
+    const open = { fields: { done: false } };
+    const stillOpen = { field: "content.fields.done", op: "eq", value: false } as const;
+
+    expect(matchesFilter(untouched, stillOpen)).toBe(true);
+    expect(matchesFilter(open, stillOpen)).toBe(true);
+    expect(matchesFilter(ticked, stillOpen)).toBe(false);
+
+    // A true test still needs a real value: absence is not truth.
+    const done = { field: "content.fields.done", op: "eq", value: true } as const;
+    expect(matchesFilter(untouched, done)).toBe(false);
+    expect(matchesFilter(ticked, done)).toBe(true);
+  });
+});

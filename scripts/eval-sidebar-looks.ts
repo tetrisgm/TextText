@@ -47,27 +47,34 @@ const BRIEFS = [
     key: "medium-blog",
     ask: "Make my blog look like Medium.",
     reference:
-      "A Medium article index and article page: a serif display title, a byline with avatar and read time, an index of single-column rows showing title, one-line description and a small thumbnail. The index must not print the body.",
+      "Index: single-column rows, title, one-line description, small thumbnail, no body. Item: serif display title, byline with read time. Editor: title, description, body. No extra fields.",
   },
   {
     key: "apple-notes",
     ask: "Turn my Notes into something that looks like Apple Notes.",
     folder: "notes",
     reference:
-      "Apple Notes: white paper, the date small and grey ABOVE a left-aligned ~34px bold title, body around 17px with generous leading, and nothing else on the page. The index is a plain list of note titles with a date and a one-line preview.",
+      "Index: plain list of titles with a date and one-line preview. Item: white, date, ~34px left title, 17px body, nothing else. Editor: title and body only.",
   },
   {
     key: "notion-page",
     ask: "I want pages that look like Notion.",
     reference:
-      "A Notion page: a full-bleed cover strip, a large emoji icon overlapping its bottom edge, a 40px left-aligned title, and body blocks at 16px. Everything shares one left edge. No rules, no boxes, no widgets. The index is a quiet list of page titles.",
+      "Index: quiet list of page titles. Item: full-bleed cover strip, emoji icon over its edge, 40px left title, 16px blocks, one left edge. Editor: cover and icon reachable.",
   },
   {
-    key: "reading-list",
-    ask: "Make me a reading list of things I want to read later, with the source and how long it is.",
+    key: "todo-list",
+    ask: "Make this a to-do list like Todoist: each task has a checkbox, a due date and a priority, and I want to see what is still open.",
+    folder: "notes",
+    reference:
+      "A DIFFERENT KIND OF THING, not restyled prose. The item needs real fields: done (boolean), due (date), priority (enum). Index: rows that read as tasks. Editor: those three fields present and editable, not buried in a disclosure.",
+  },
+  {
+    key: "raindrop-bookmarks",
+    ask: "Make my bookmarks work like Raindrop: I paste a link and I get a card with the site, the title and a picture, and I can read it later.",
     folder: "bookmarks",
     reference:
-      "A read-later list: each row shows the title, the source domain small and quiet, and an estimated reading time. Opening one gives a calm reading view. This one names no product, so the test is whether the assistant invents something coherent rather than copying.",
+      "Raindrop: index of cards, each with a thumbnail, the title, and the source domain small and quiet. Item: a calm reading view with the source and a link out. Editor: the URL is the primary field.",
   },
 ] as const;
 
@@ -265,6 +272,26 @@ const MEASURE_INDEX = `(() => {
     titleSize: title ? Math.round(parseFloat(cs(title).fontSize)) : null,
     paintedBackground: painted,
     dumpsBody: /no business printing in full/.test(card.textContent || ""),
+  };
+})()`;
+
+const MEASURE_EDITOR = `(() => {
+  const root = document.querySelector(".tt-unified-editor");
+  if (!root) return { error: "not in the editor" };
+  const label = (el) => (el.querySelector(".tt-field-label")?.textContent || "").trim();
+  const kind = (el) => (el.className.match(/is-([a-z]+)/) || [])[1] || "?";
+  const all = Array.from(root.querySelectorAll(".tt-field-row"));
+  const details = root.querySelector(".tt-field-details");
+  const buried = details ? Array.from(details.querySelectorAll(".tt-field-row")) : [];
+  const buriedSet = new Set(buried);
+  return {
+    // Fields a person meets without opening anything.
+    inline: all.filter((el) => !buriedSet.has(el)).map((el) => label(el) + ":" + kind(el)),
+    // Fields the look declared but did not place, hidden behind a disclosure.
+    buried: buried.map((el) => label(el) + ":" + kind(el)),
+    disclosureOpen: details ? details.hasAttribute("open") : null,
+    hasTitle: !!root.querySelector(".tt-field-title, .tt-collaborative-field"),
+    hasBody: !!root.querySelector(".tt-md-surface"),
   };
 })()`;
 
@@ -491,11 +518,40 @@ async function main(): Promise<void> {
       await page.screenshot({ path: `${OUT}/${brief.key}-3-item.png` });
       const itemMeasure = await page.evaluate(MEASURE_ITEM);
       note(`  item:   ${JSON.stringify(itemMeasure)}`);
-      const edit = page.getByRole("link", { name: /^Edit$/ }).first();
-      if (await edit.count()) {
-        await edit.click({ force: true }).catch(() => undefined);
-        await page.waitForTimeout(2600);
+      // The third surface: creating or editing one of these things.
+      //
+      // Two routes, because neither works for every kind: a note opens
+      // straight into the editor through client routing without the URL
+      // changing, while a blog post needs the edit flag. Try the flag, and if
+      // the editor is not there, use whatever Edit control the item offers.
+      const editor = page.locator(".tt-unified-editor");
+      if (!(await editor.count())) {
+        const itemUrl = page.url();
+        if (!/[?&]edit=1/.test(itemUrl)) {
+          await page
+            .goto(`${itemUrl}${itemUrl.includes("?") ? "&" : "?"}edit=1`, {
+              waitUntil: "domcontentloaded",
+            })
+            .catch(() => undefined);
+          await editor.first().waitFor({ timeout: 12000 }).catch(() => undefined);
+        }
+      }
+      if (!(await editor.count())) {
+        const control = page
+          .getByRole("link", { name: /^Edit$/ })
+          .or(page.getByRole("button", { name: /^Edit$/ }))
+          .first();
+        if (await control.count()) {
+          await control.click({ force: true }).catch(() => undefined);
+          await editor.first().waitFor({ timeout: 12000 }).catch(() => undefined);
+        }
+      }
+      await page.waitForTimeout(1500);
+      if (await page.locator(".tt-unified-editor").count()) {
         await page.screenshot({ path: `${OUT}/${brief.key}-4-editor.png` });
+        note(`  editor: ${JSON.stringify(await page.evaluate(MEASURE_EDITOR))}`);
+      } else {
+        note("  editor: could not reach it");
       }
     }
 

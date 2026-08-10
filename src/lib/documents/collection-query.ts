@@ -43,6 +43,13 @@ function filterCondition(filter: CollectionFilter): SQL {
   const id = fieldId(filter.field);
   switch (filter.op) {
     case "eq":
+      // An unset boolean is false, matching the in-memory rule: a row that has
+      // never carried the flag satisfies "flag = false". Kept in step with
+      // matchesFilter, or the same collection answers differently depending on
+      // whether it was filtered in Postgres or in the browser.
+      if (filter.value === false) {
+        return sql`(${FIELDS} @> ${JSON.stringify({ [id]: false })}::jsonb OR NOT (${FIELDS} ? ${id}) OR ${FIELDS} -> ${id} = 'null'::jsonb)`;
+      }
       return sql`${FIELDS} @> ${JSON.stringify({ [id]: filter.value })}::jsonb`;
     case "neq":
       return sql`(NOT (${FIELDS} @> ${JSON.stringify({ [id]: filter.value })}::jsonb) AND ${FIELDS} ? ${id})`;
@@ -104,7 +111,14 @@ export function matchesFilter(
   filter: CollectionFilter,
 ): boolean {
   const id = fieldId(filter.field);
-  const value = fieldValue(item, id);
+  const raw = fieldValue(item, id);
+  // An unset boolean is false. A task nobody has ticked is not done, and a
+  // flag nobody has set is off. Without this, the moment a look introduces a
+  // boolean field, every item that predates it fails "done = false" and the
+  // collection renders empty while its own header still counts the items -
+  // which is exactly what applying a to-do look to existing notes did.
+  const value =
+    raw === null && typeof filter.value === "boolean" ? false : raw;
   switch (filter.op) {
     case "eq":
       return value === filter.value;
