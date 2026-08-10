@@ -1013,7 +1013,7 @@ function UniversalFolderContents({
           >
             Nothing here yet.
           </FolderEmptyCard>
-        ) : folder.mode === "bookmarks" ? (
+        ) : folder.mode === "bookmarks" && usesBuiltInLook ? (
           <div
             className={`bookmark-folder-collection is-${viewMode}`}
             role="listbox"
@@ -1270,7 +1270,9 @@ function UniversalFolderContents({
                 (selectedPostIds?.has(post.id) ??
                   post.id === selectedPostId),
             );
-            const isNote = folder.mode === "notes";
+            // A note card is hand-made chrome for the built-in Note look.
+            // Once the folder carries an authored look, the template draws the row.
+            const isNote = folder.mode === "notes" && usesBuiltInLook;
             const document = post.document ?? documentFromLegacyPost(post);
             const reference = post.template ?? document.presentation.template;
             const definition =
