@@ -10,8 +10,10 @@
 # committed mac/Info.plist keeps its neutral placeholders:
 #   TEXTTEXT_BUNDLE_ID          -> CFBundleIdentifier
 #   TEXTTEXT_PRODUCT_ORIGIN=https://TextText.app
-#                            -> SUFeedURL = <origin>/appcast.xml (the app also
-#                               derives its default server origin from SUFeedURL)
+#                            -> TextTextServerOrigin (where the app talks) AND
+#                               SUFeedURL = <origin>/appcast.xml (where it looks
+#                               for updates). Two keys, because a build without
+#                               an updater still has a server.
 #   TEXTTEXT_SPARKLE_PUBLIC_KEY -> SUPublicEDKey
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -113,6 +115,13 @@ rm -f "$CONSTVALS"
 
 STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $TEXTTEXT_BUNDLE_ID" "$STAGED"
+# The server origin is its own key. It used to be inferred from SUFeedURL,
+# which silently tied "where this app talks" to "does this build self-update":
+# a bundle without a feed fell through to http://localhost:3000. Any build that
+# drops Sparkle - a Mac App Store build, for instance - would have shipped
+# pointing at localhost.
+"$PB" -c "Add :TextTextServerOrigin string ${TEXTTEXT_PRODUCT_ORIGIN%/}" "$STAGED" 2>/dev/null \
+  || "$PB" -c "Set :TextTextServerOrigin ${TEXTTEXT_PRODUCT_ORIGIN%/}" "$STAGED"
 "$PB" -c "Set :SUFeedURL ${TEXTTEXT_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
 "$PB" -c "Set :SUPublicEDKey $TEXTTEXT_SPARKLE_PUBLIC_KEY" "$STAGED"
 # The app locates the share inbox by this group id (scan-based; the app itself

@@ -36,6 +36,12 @@ func resolveServerOrigin(credentials: Credentials?) -> URL {
     if let credentials, let url = URL(string: credentials.serverOrigin), url.host != nil {
         return logOriginOnce(url, "linked credential")
     }
+    // The origin this build was stamped with. Checked before SUFeedURL so that
+    // a bundle without an updater - a store build - still knows its server.
+    if let stamped = Bundle.main.object(forInfoDictionaryKey: "TextTextServerOrigin") as? String,
+       let url = URL(string: stamped), url.host != nil {
+        return logOriginOnce(url, "product origin")
+    }
     let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
     if let feed, let feedURL = URL(string: feed), let scheme = feedURL.scheme,
        let host = feedURL.host {
