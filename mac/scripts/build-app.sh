@@ -141,6 +141,7 @@ if [ "$STORE" != "1" ]; then
   cp "$BIN/texttext" "$APP/Contents/Helpers/texttext"
 fi
 cp "$MAC/Info.plist" "$APP/Contents/Info.plist"
+cp "$MAC/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 if [ -f "$MAC/AppIcon.icns" ]; then
   cp "$MAC/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 else
@@ -177,6 +178,34 @@ rm -f "$CONSTVALS"
 
 STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $TEXTTEXT_BUNDLE_ID" "$STAGED"
+
+# Build provenance. Xcode stamps these into every bundle it produces; this app
+# is assembled by hand from a SwiftPM build, so nothing stamps them and the
+# bundle arrives at App Store Connect looking like it was built by no known
+# toolchain. Read them from the active toolchain rather than hardcoding, so they
+# describe the build that actually happened.
+stamp() { # $1=key $2=type $3=value
+  [ -z "$3" ] && return 0
+  "$PB" -c "Set :$1 $3" "$STAGED" 2>/dev/null || "$PB" -c "Add :$1 $2 $3" "$STAGED"
+}
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)"
+XCODE_VERSION="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode //p' | head -1)"
+# Xcode's own encoding: 26.6 becomes 2660, major*100 + minor*10 + patch.
+DT_XCODE=""
+if [ -n "$XCODE_VERSION" ]; then
+  DT_XCODE="$(printf '%s' "$XCODE_VERSION" | awk -F. '{printf "%d%d%d", $1, ($2==""?0:$2), ($3==""?0:$3)}')"
+fi
+stamp DTPlatformName string "macosx"
+stamp DTPlatformVersion string "$SDK_VERSION"
+stamp DTSDKName string "macosx$SDK_VERSION"
+stamp DTSDKBuild string "$(xcrun --sdk macosx --show-sdk-build-version 2>/dev/null || true)"
+stamp DTXcode string "$DT_XCODE"
+stamp DTXcodeBuild string "$(xcodebuild -version 2>/dev/null | sed -n 's/^Build version //p' | head -1)"
+stamp DTCompiler string "com.apple.compilers.llvm.clang.1_0"
+stamp BuildMachineOSBuild string "$(sw_vers -buildVersion 2>/dev/null || true)"
+"$PB" -c "Delete :CFBundleSupportedPlatforms" "$STAGED" 2>/dev/null || true
+"$PB" -c "Add :CFBundleSupportedPlatforms array" "$STAGED"
+"$PB" -c "Add :CFBundleSupportedPlatforms:0 string MacOSX" "$STAGED"
 # The server origin is its own key. It used to be inferred from SUFeedURL,
 # which silently tied "where this app talks" to "does this build self-update":
 # a bundle without a feed fell through to http://localhost:3000. Any build that

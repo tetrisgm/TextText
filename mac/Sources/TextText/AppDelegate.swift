@@ -12,7 +12,6 @@ import TextTextWorkspaceCore
 /// partyparty shape; SwiftUI MenuBarExtra is deliberately avoided). The app
 /// keeps the File Provider workspace and web app available from one process.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private static let loginItemAppliedKey = "TextTextLoginItemDefaultApplied"
     private static let productionBundleIdentifier = "app.texttext.mac"
     private static let moveToApplicationsRelaunchArgument = "--texttext-moved-to-applications"
     private static let duplicateInstanceRecheckDelay: TimeInterval = 0.5
@@ -150,7 +149,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             updater = Updater(isBusy: { [weak self] in
                 self?.fileProviderStatusMonitor.snapshot.severity == .working })
         }
-        registerLoginItemByDefault()
         NSApp.mainMenu = buildMainMenu()
 
         linkController = LinkController(store: store)
@@ -2172,26 +2170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// A sync agent should just BE there after a restart: enroll
     /// start-at-login once, by default (no password, no dialog; it shows in
-    /// System Settings > General > Login Items). The menu toggle is the
-    /// opt-out, and because this runs only once, off STAYS off.
-    private func registerLoginItemByDefault() {
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: Self.loginItemAppliedKey) else { return }
-        // Only from an installed home; a dev build in ~/dev must not enroll.
-        guard isInstalled else { return }
-        if SMAppService.mainApp.status == .enabled {
-            defaults.set(true, forKey: Self.loginItemAppliedKey)
-            return
-        }
-        do {
-            try SMAppService.mainApp.register()
-            defaults.set(true, forKey: Self.loginItemAppliedKey) // only after SUCCESS,
-            // so a transient failure retries next launch instead of losing the default
-        } catch {
-            NSLog("TextText: login-item default enroll failed (will retry next launch): \(error)")
-        }
-    }
-
+    /// Opening at login is opt-in, through the menu toggle. The app used to
+    /// enrol itself on first launch from an installed location and leave the
+    /// toggle as the opt-out, which meant it added itself to System Settings >
+    /// General > Login Items without ever asking.
     private var loginItemEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
     @objc private func toggleLoginItem() {
@@ -2204,7 +2186,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             appendActivity("Login item change failed: \(error.localizedDescription)")
         }
-        UserDefaults.standard.set(true, forKey: Self.loginItemAppliedKey) // an explicit choice sticks
     }
 
     // MARK: Status item + menu

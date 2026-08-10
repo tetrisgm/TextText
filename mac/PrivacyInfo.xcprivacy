@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Required-reason API declarations. Every entry below is one the code actually
+  makes; nothing is declared defensively, because a false reason is a worse
+  answer than a missing one.
+
+  The app statically links ZIPFoundation, which carries its own manifest in
+  source form. Static linking drops it, so its file-timestamp use is covered by
+  the same declaration as ours rather than by a bundle of its own.
+
+  NSPrivacyCollectedDataTypes is deliberately empty here: this app collects
+  through its server, not through the client, and the App Privacy questionnaire
+  on the App Store Connect record is what describes that. The manifest covers
+  the code.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<!-- The File Provider, the sync engine and the share inbox all read and
+			     write modification dates to decide what changed. C617.1 covers the
+			     app group container, 0A2A.1 the files a person hands us. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+				<string>0A2A.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- ProcessInfo.systemUptime, used as a monotonic clock to throttle
+			     background sync recovery. Time between events inside the app, which
+			     is what 35F9.1 describes. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- UserDefaults, read and written only by this app for its own settings. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
