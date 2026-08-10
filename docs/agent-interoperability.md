@@ -17,7 +17,7 @@ and the whole local-trust problem.
 
 An agent with a shell should edit files, not drive a protocol. The CLI ships
 inside the app bundle (`mac/Sources/TextTextCLI`, copied to
-`TextText.app/Contents/MacOS/texttext` and signed with the app), so it is present
+`TextText.app/Contents/Helpers/texttext` and signed with the app), so it is present
 whenever the app is, and it runs as the user.
 
 ```text

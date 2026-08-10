@@ -68,7 +68,14 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Framewor
 cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"
 # The agent CLI ships beside the app binary so it is present wherever TextText
 # is installed, and so one implementation owns the .textpack format.
-cp "$BIN/texttext" "$APP/Contents/MacOS/texttext"
+# The CLI lives in Helpers, not MacOS. "TextText" and "texttext" are the same
+# path on a stock case-insensitive Mac volume, so shipping both in MacOS meant
+# the CLI overwrote the app and the bundle's main executable WAS the CLI - it
+# printed usage and exited instead of opening a window. Latent until the
+# product was renamed from Write to TextText, which is when the two names
+# collided.
+mkdir -p "$APP/Contents/Helpers"
+cp "$BIN/texttext" "$APP/Contents/Helpers/texttext"
 cp "$MAC/Info.plist" "$APP/Contents/Info.plist"
 if [ -f "$MAC/AppIcon.icns" ]; then
   cp "$MAC/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
@@ -90,7 +97,11 @@ echo ">> App Intents metadata (xcodebuild const-values pass)"
 # binary stays the SwiftPM one above. The derived-data cache makes this fast
 # after the first release. Metadata failure fails the build: the intents
 # would silently be invisible to Shortcuts otherwise.
-xcodebuild build -scheme TextText -destination 'platform=macOS,arch=arm64' \
+# Scheme name follows the SwiftPM target, which is TextTextApp: the app target
+# and the `texttext` CLI product cannot both be called TextText on a
+# case-insensitive volume. A stale name here fails only in the release path,
+# where the metadata pass runs.
+xcodebuild build -scheme TextTextApp -destination 'platform=macOS,arch=arm64' \
   -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
   SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
 CONSTVALS="$MAC/build/appintents-constvals.txt"
@@ -146,7 +157,7 @@ else
   exit 1
 fi
 chmod +x "$APP/Contents/MacOS/TextText"
-chmod +x "$APP/Contents/MacOS/texttext"
+chmod +x "$APP/Contents/Helpers/texttext"
 
 codesign_one() { # $1=path  $2=entitlements (optional)
   local path="$1" ent="${2:-}"
@@ -200,7 +211,7 @@ else
   done
   codesign_one "$SPK"
 fi
-codesign_one "$APP/Contents/MacOS/texttext"
+codesign_one "$APP/Contents/Helpers/texttext"
 codesign_one "$APP/Contents/MacOS/TextText" "$MAIN_ENT"
 # Extensions are assembled and signed here, inside-out, so the main app's
 # signature (next line) seals them. No-op unless mac/profiles/ holds the

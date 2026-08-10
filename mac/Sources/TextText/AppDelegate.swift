@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func linkAgentCLIIfNeeded() {
         let fileManager = FileManager.default
         let source = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/MacOS/texttext")
+            .appendingPathComponent("Contents/Helpers/texttext")
         guard fileManager.isExecutableFile(atPath: source.path) else { return }
 
         let binDirectory = fileManager.homeDirectoryForCurrentUser
