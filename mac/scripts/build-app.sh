@@ -49,7 +49,13 @@ fi
 # identity, else fall back to ad-hoc.
 SIGN_ID="${TEXTTEXT_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
-  SIGN_ID="$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+  if [ "$STORE" = "1" ]; then
+    # A Store build is signed Apple Distribution; Developer ID is the other
+    # lane's identity and Apple rejects a package signed with it.
+    SIGN_ID="$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Apple Distribution/{print $2; exit}')"
+  else
+    SIGN_ID="$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+  fi
   [ -z "$SIGN_ID" ] && SIGN_ID="-"
 fi
 
@@ -212,7 +218,13 @@ codesign_one() { # $1=path  $2=entitlements (optional)
 # real identity + TEXTTEXT_APP_GROUP), sign with the app-group entitlement; without
 # it, sign with empty entitlements so dev/ad-hoc builds still succeed (the File
 # Provider just cannot authenticate).
-APP_PROFILE="$MAC/profiles/TextText_App_Developer_ID.provisionprofile"
+# Each edition embeds its own profile. A Developer ID profile in a Store build
+# (or the reverse) is a signing failure at best and a rejected binary at worst.
+if [ "$STORE" = "1" ]; then
+  APP_PROFILE="$MAC/profiles/TextText_App_AppStore.provisionprofile"
+else
+  APP_PROFILE="$MAC/profiles/TextText_App_Developer_ID.provisionprofile"
+fi
 MAIN_ENT="$(mktemp -t texttext-main-ent)"
 if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
   cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
