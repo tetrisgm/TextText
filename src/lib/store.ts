@@ -49,18 +49,30 @@ import {
 import { getBlogCore, getBlogCoreByUsername } from "./blog-core";
 import { db } from "./db/client";
 import {
+  actionAudit,
+  apiTokens,
+  appHealthReports,
   blogs,
   collabPresence,
   collabState,
   collabUpdates,
+  collaborators,
+  deletedAccounts,
+  deviceLinks,
   documentCapabilityLinks,
+  documentResponses,
   documentTemplates,
   folders,
   idempotencyKeys,
   itemComments,
+  oauthAuthorizationCodes,
+  oauthRefreshTokenFamilies,
   posts,
   users,
+  verificationTokens,
+  workspaceAiConfigs,
 } from "./db/schema";
+import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import { rootDomainUrl } from "./site-url";
@@ -4437,7 +4449,15 @@ async function uniqueHandle(seed: string): Promise<string> {
       .from(blogs)
       .where(eq(blogs.handle, candidate))
       .limit(1);
-    if (!taken[0]) return candidate;
+    // A deleted account's handle stays held. Other people linked to
+    // /t/<handle>, and handing it to the next signup would quietly point their
+    // readers at a stranger.
+    const held = await db!
+      .select({ id: deletedAccounts.id })
+      .from(deletedAccounts)
+      .where(eq(deletedAccounts.handle, candidate))
+      .limit(1);
+    if (!taken[0] && !held[0]) return candidate;
   }
   // Fallback: keep it inside the 32-char tenant-handle limit (tenants.ts regex).
   const suffix = Date.now().toString(36);
@@ -4484,6 +4504,14 @@ export async function getUserIdBySub(sub: string): Promise<string | null> {
 async function upsertUser(
   user: StoreUser,
 ): Promise<{ id: string; name: string | null; username: string | null }> {
+  // The resurrection fence. Sessions are JWTs with no server-side session
+  // table, so a cookie minted before a deletion still verifies afterwards, and
+  // this onConflictDoUpdate would insert the users row straight back on the
+  // next authenticated request. Signing in again on purpose clears the
+  // tombstone first (src/auth.ts); anything else stops here.
+  if (await findAccountTombstone(user.sub)) {
+    throw new AccountDeletedError();
+  }
   await db!
     .insert(users)
     .values({
@@ -4533,7 +4561,14 @@ async function uniqueUsername(seed: string, ownerId: string): Promise<string> {
       .from(users)
       .where(and(eq(users.username, candidate), ne(users.id, ownerId)))
       .limit(1);
-    if (!taken[0]) return candidate;
+    // Held for the same reason as a handle: /@username is an address other
+    // people have linked to.
+    const held = await db!
+      .select({ id: deletedAccounts.id })
+      .from(deletedAccounts)
+      .where(eq(deletedAccounts.username, candidate))
+      .limit(1);
+    if (!taken[0] && !held[0]) return candidate;
   }
 
   const suffix = Date.now().toString(36);
@@ -4915,4 +4950,308 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
   const created = await getOwnedBlog(user.sub);
   if (!created) throw new Error("failed to provision a blog");
   return { ...created, username: created.username ?? username };
+}
+
+// ---------------------------------------------------------------------------
+// Account deletion
+//
+// The primitives only. src/lib/account-deletion.ts owns the order they run in
+// and is the only place that knows the whole sequence. Everything here takes a
+// blogId rather than a handle on purpose: CLOSE stamps blogs.deleted_at first,
+// and every handle-based read in this file resolves through getBlogCore, which
+// filters deleted workspaces out and is React-cache()d. After CLOSE the handle
+// no longer resolves, so a handle-taking purge helper would throw.
+// ---------------------------------------------------------------------------
+
+/** Thrown when a session belongs to an account that was deleted. */
+export class AccountDeletedError extends Error {
+  constructor() {
+    super("This account was deleted");
+    this.name = "AccountDeletedError";
+  }
+}
+
+/** One-way. The tombstone recognises a returning identity without recording it. */
+export function hashAccountSub(sub: string): string {
+  return createHash("sha256").update(sub).digest("hex");
+}
+
+export type AccountTombstone = {
+  subHash: string;
+  userId: string | null;
+  blogId: string | null;
+  username: string | null;
+  handle: string | null;
+  completedAt: Date | null;
+};
+
+export async function findAccountTombstone(
+  sub: string,
+): Promise<AccountTombstone | null> {
+  if (!db) return null;
+  const rows = await db
+    .select({
+      subHash: deletedAccounts.subHash,
+      userId: deletedAccounts.userId,
+      blogId: deletedAccounts.blogId,
+      username: deletedAccounts.username,
+      handle: deletedAccounts.handle,
+      completedAt: deletedAccounts.completedAt,
+    })
+    .from(deletedAccounts)
+    .where(eq(deletedAccounts.subHash, hashAccountSub(sub)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** Every tombstone whose purge never finished, for the operator recovery command. */
+export async function listPendingAccountTombstones(): Promise<AccountTombstone[]> {
+  if (!db) return [];
+  return db
+    .select({
+      subHash: deletedAccounts.subHash,
+      userId: deletedAccounts.userId,
+      blogId: deletedAccounts.blogId,
+      username: deletedAccounts.username,
+      handle: deletedAccounts.handle,
+      completedAt: deletedAccounts.completedAt,
+    })
+    .from(deletedAccounts)
+    .where(isNull(deletedAccounts.completedAt));
+}
+
+export async function completeAccountTombstone(subHash: string): Promise<void> {
+  if (!db) return;
+  await db
+    .update(deletedAccounts)
+    .set({ completedAt: new Date() })
+    .where(eq(deletedAccounts.subHash, subHash));
+}
+
+/**
+ * Lets an identity be used again. Only ever called when someone signs in
+ * deliberately after deleting, and only once any owed purge has finished.
+ */
+export async function clearAccountTombstone(sub: string): Promise<void> {
+  if (!db) return;
+  await db
+    .delete(deletedAccounts)
+    .where(eq(deletedAccounts.subHash, hashAccountSub(sub)));
+}
+
+export type AccountDeletionSummary = {
+  userId: string;
+  sub: string;
+  email: string | null;
+  username: string | null;
+  blogId: string;
+  handle: string;
+  workspaceName: string;
+  documents: number;
+  publishedDocuments: number;
+  collaborators: number;
+  apiTokens: number;
+  hasCloudAiKey: boolean;
+};
+
+/**
+ * What the person is about to lose, for the confirmation copy. Counts every
+ * document including trashed ones, because Trash goes too.
+ */
+export async function getAccountDeletionSummary(
+  sub: string,
+): Promise<AccountDeletionSummary | null> {
+  if (!db) return null;
+  const owner = (
+    await db
+      .select({ id: users.id, email: users.email, username: users.username })
+      .from(users)
+      .where(eq(users.appleSub, sub))
+      .limit(1)
+  )[0];
+  if (!owner) return null;
+  const blog = (
+    await db
+      .select({ id: blogs.id, handle: blogs.handle, name: blogs.name })
+      .from(blogs)
+      .where(and(eq(blogs.ownerId, owner.id), isNull(blogs.deletedAt)))
+      .limit(1)
+  )[0];
+  if (!blog) return null;
+
+  const counted = await db
+    .select({
+      documents: sql<number>`count(*)::int`,
+      published: sql<number>`count(*) filter (where ${posts.publishedAt} is not null)::int`,
+    })
+    .from(posts)
+    .where(eq(posts.blogId, blog.id));
+  // Collaborators are scoped, not owned: a workspace grant is scopeType
+  // "workspace" with the blog id as scopeId. Revoked grants do not count.
+  const shared = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(collaborators)
+    .where(
+      and(
+        eq(collaborators.scopeType, "workspace"),
+        eq(collaborators.scopeId, blog.id),
+        isNull(collaborators.revokedAt),
+      ),
+    );
+  const tokens = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(apiTokens)
+    .where(and(eq(apiTokens.userId, owner.id), isNull(apiTokens.revokedAt)));
+  const aiKey = await db
+    .select({ id: workspaceAiConfigs.blogId })
+    .from(workspaceAiConfigs)
+    .where(eq(workspaceAiConfigs.blogId, blog.id))
+    .limit(1);
+
+  return {
+    userId: owner.id,
+    sub,
+    email: owner.email,
+    username: owner.username,
+    blogId: blog.id,
+    handle: blog.handle,
+    workspaceName: blog.name,
+    documents: counted[0]?.documents ?? 0,
+    publishedDocuments: counted[0]?.published ?? 0,
+    collaborators: shared[0]?.n ?? 0,
+    apiTokens: tokens[0]?.n ?? 0,
+    hasCloudAiKey: Boolean(aiKey[0]),
+  };
+}
+
+/**
+ * Every blob URL reachable from a row in this workspace. Collected BEFORE any
+ * row is deleted, because the rows carry the only addresses these files have.
+ */
+export async function listWorkspaceAssetUrls(blogId: string): Promise<string[]> {
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(posts)
+    .where(eq(posts.blogId, blogId));
+  const urls = new Set<string>();
+  for (const row of rows) {
+    for (const ref of listItemAssetReferences(row as never)) {
+      if (ref.url) urls.add(ref.url);
+      // The pre-capture original, when a bookmark rehosted what it grabbed.
+      if (ref.originalUrl) urls.add(ref.originalUrl);
+    }
+  }
+  return [...urls];
+}
+
+/**
+ * Documents and their dependents. emptyTrash widened from the trashed rows to
+ * all of them. item_comments, document_capability_links and document_responses
+ * cascade off posts and need no statement here.
+ */
+export async function purgeWorkspaceContent(blogId: string): Promise<number> {
+  if (!db) throw new Error("purgeWorkspaceContent requires DATABASE_URL");
+  const ids = (
+    await db.select({ id: posts.id }).from(posts).where(eq(posts.blogId, blogId))
+  ).map((row) => row.id);
+  // Collab rows first: collab_state holds a post foreign key, so a document
+  // that ever joined an epoch cannot be deleted while its state row lives.
+  await deleteCollabDataForPostIds(ids);
+  await db.delete(posts).where(eq(posts.blogId, blogId));
+  await db.delete(folders).where(eq(folders.blogId, blogId));
+  await db.delete(idempotencyKeys).where(eq(idempotencyKeys.blogId, blogId));
+  return ids.length;
+}
+
+/** The workspace row. Cascades workspace_ai_config and document_templates. */
+export async function deleteWorkspaceRow(blogId: string): Promise<void> {
+  if (!db) throw new Error("deleteWorkspaceRow requires DATABASE_URL");
+  await db.delete(blogs).where(eq(blogs.id, blogId));
+}
+
+/**
+ * The user-level rows that block DELETE FROM users, in the order each unblocks
+ * the next, followed by the identity residue that has no foreign key at all and
+ * so would otherwise be left behind by any cascade-shaped design.
+ */
+export async function purgeUserIdentityRows(
+  userId: string,
+  sub: string,
+  email: string | null,
+): Promise<void> {
+  if (!db) throw new Error("purgeUserIdentityRows requires DATABASE_URL");
+  // Families first: they cascade access and refresh tokens.
+  await db
+    .delete(oauthRefreshTokenFamilies)
+    .where(eq(oauthRefreshTokenFamilies.userId, userId));
+  await db.delete(apiTokens).where(eq(apiTokens.userId, userId));
+  await db
+    .delete(oauthAuthorizationCodes)
+    .where(eq(oauthAuthorizationCodes.userId, userId));
+  await db.delete(appHealthReports).where(eq(appHealthReports.userId, userId));
+  await db
+    .delete(deviceLinks)
+    .where(eq(deviceLinks.approvedByUserId, userId));
+  await db
+    .delete(collaborators)
+    .where(
+      or(
+        eq(collaborators.userId, userId),
+        eq(collaborators.invitedById, userId),
+      ),
+    );
+  // No foreign key reaches these, so nothing above removed them.
+  if (email) {
+    await db
+      .delete(verificationTokens)
+      .where(eq(verificationTokens.identifier, email));
+    // Invitations addressed TO this person by other people, in their workspaces.
+    await db
+      .delete(collaborators)
+      .where(sql`lower(${collaborators.invitedEmail}) = lower(${email})`);
+  }
+  // Poll votes cast on OTHER people's documents. Both key shapes exist in the
+  // wild: the responder key is written as `user:${userId ?? sub}`.
+  await db
+    .delete(documentResponses)
+    .where(
+      inArray(documentResponses.responderKey, [`user:${userId}`, `user:${sub}`]),
+    );
+}
+
+/**
+ * Severs the identity on the audit history without destroying it. Chunked
+ * because every save writes an audit row, so an active account can hold six
+ * figures of them and one statement would risk the function budget.
+ *
+ * Never a DELETE. These rows are the accountability record for every mutation,
+ * including ones made by AI and by external agents.
+ */
+export async function anonymizeAuditActor(
+  userId: string,
+  batchSize = 5000,
+): Promise<number> {
+  if (!db) throw new Error("anonymizeAuditActor requires DATABASE_URL");
+  let total = 0;
+  for (let pass = 0; pass < 1000; pass += 1) {
+    const batch = await db
+      .select({ id: actionAudit.id })
+      .from(actionAudit)
+      .where(eq(actionAudit.actorUserId, userId))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    await db
+      .update(actionAudit)
+      .set({ actorUserId: null })
+      .where(inArray(actionAudit.id, batch.map((row) => row.id)));
+    total += batch.length;
+  }
+  return total;
+}
+
+/** The users row. Last, once every reference above is gone. */
+export async function deleteUserRow(userId: string): Promise<void> {
+  if (!db) throw new Error("deleteUserRow requires DATABASE_URL");
+  await db.delete(users).where(eq(users.id, userId));
 }

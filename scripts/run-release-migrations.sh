@@ -33,6 +33,7 @@ migrations=(
   scripts/migrate-drop-rename-revert-guard.mjs
   scripts/migrate-add-document-fields-index.mjs
   scripts/migrate-add-document-responses.mjs
+  scripts/migrate-add-deleted-accounts.mjs
 )
 
 missing=()

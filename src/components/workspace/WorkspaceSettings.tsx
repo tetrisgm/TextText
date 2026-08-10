@@ -17,6 +17,10 @@ import {
 } from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
 import { AgentIntegrationHome } from "./AgentIntegrationHome";
+import DeleteAccountDialog, {
+  type AccountOverview,
+  type DeleteAccountStage,
+} from "./DeleteAccountDialog";
 import { ShareDialog } from "./ShareDialog";
 import styles from "./WorkspaceSettings.module.css";
 
@@ -43,6 +47,11 @@ export function WorkspaceSettings({
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [account, setAccount] = useState<AccountOverview | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteStage, setDeleteStage] = useState<DeleteAccountStage>("idle");
+
   const [installValue, setInstallValue] = useState("");
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -55,6 +64,75 @@ export function WorkspaceSettings({
   const [aiEditing, setAiEditing] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Self-contained fetch, like WorkspaceMenuMount does. A 404 is the normal
+  // answer for a collaborator, a guest workspace or demo mode, and leaving
+  // account null is what makes the section fail closed.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/account", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as AccountOverview;
+        if (!cancelled) setAccount(data);
+      } catch {
+        // Offline or signed out. The section simply does not appear.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Deliberately does NOT dismiss before the request, which is what the Trash
+  // call sites do. There is no optimistic update here and no page to return to,
+  // so the dialog stays open and pending until the server answers, then the
+  // whole window navigates away.
+  const confirmDeleteAccount = async (confirmation: string) => {
+    setDeletePending(true);
+    setDeleteStage("idle");
+    try {
+      const response = await fetch("/api/account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operation: "delete-account", confirmation }),
+      });
+      if (response.status === 404 || response.status === 401) {
+        setDeleteStage("signedOut");
+        return;
+      }
+      if (!response.ok) {
+        setDeleteStage("failed");
+        return;
+      }
+      const result = (await response.json()) as {
+        ok: boolean;
+        complete: boolean;
+      };
+      if (!result.ok) {
+        setDeleteStage("failed");
+        return;
+      }
+      if (!result.complete) {
+        setDeleteStage("incomplete");
+        return;
+      }
+      // Local copies go too. Leaving the drafts and the offline pool behind
+      // would keep the documents on a shared machine after the account is gone.
+      try {
+        const { clearWorkspaceStorage } = await import("@/lib/pool/storage");
+        await clearWorkspaceStorage();
+      } catch {
+        // Best effort; the account is already gone server side.
+      }
+      window.location.replace("/goodbye");
+    } catch {
+      setDeleteStage("failed");
+    } finally {
+      setDeletePending(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -422,7 +500,55 @@ export function WorkspaceSettings({
         <section className={styles.section} aria-label="AI connections">
           <AgentIntegrationHome compact />
         </section>
+
+        {/* Only when the viewer owns an account. A collaborator, a guest
+            workspace, demo mode and a failed fetch all render nothing, and this
+            describes the VIEWER's own account rather than the blog prop, since
+            a collaborator can open Settings on a workspace they do not own. */}
+        {account && (
+          <section
+            className={styles.section}
+            id="account"
+            aria-labelledby="settings-account"
+          >
+            <h2 id="settings-account">Account</h2>
+            <p>
+              {account.email
+                ? `Signed in as ${account.email}.`
+                : "Signed in with Apple."}
+            </p>
+            <div className={styles.dangerBlock}>
+              <strong>Delete account</strong>
+              <p>
+                Deleting removes your account, the workspace {account.workspaceName},
+                and everything in it. This cannot be undone.
+              </p>
+              <button
+                type="button"
+                className="ac-btn ac-btn-plain ac-danger"
+                onClick={() => {
+                  setDeleteStage("idle");
+                  setDeleteOpen(true);
+                }}
+              >
+                Delete account
+              </button>
+            </div>
+          </section>
+        )}
       </div>
+      {/* Mounted only while open, so the confirmation field starts empty on
+          every open without an effect resetting it. */}
+      {account && deleteOpen && (
+        <DeleteAccountDialog
+          open
+          account={account}
+          pending={deletePending}
+          stage={deleteStage}
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={confirmDeleteAccount}
+        />
+      )}
       {canManageSharing && (
         <ShareDialog
           handle={blog.handle}

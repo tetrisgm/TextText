@@ -62,6 +62,36 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
 
+// What is left after an account is deleted. NOT an account record and NOT
+// content: the users row, the workspace and every document are gone by the time
+// a row here is completed.
+//
+// It exists for two things that still have to hold afterwards. A session is a
+// JWT with no server-side session table, so a cookie minted before the deletion
+// still verifies after it, and upsertUser would insert the users row straight
+// back; the sub hash is what refuses that. And a handle and a username are
+// addresses other people linked to, so they stay held rather than being handed
+// to the next signup.
+//
+// subHash is a one-way SHA-256 of the sign-in subject, never the subject: enough
+// to recognise the same identity returning, useless as a record of who it was.
+//
+// No .references() on any column, deliberately. userId and blogId name rows that
+// are about to be deleted, and nine NO ACTION references into users already
+// block that delete. A tenth here would make the tombstone the thing preventing
+// the deletion it exists to record.
+export const deletedAccounts = pgTable("deleted_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  subHash: text("sub_hash").notNull().unique(),
+  userId: uuid("user_id"),
+  blogId: uuid("blog_id"),
+  username: text("username"),
+  handle: text("handle"),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  /** null while the purge is still owed; scripts/finish-pending-account-deletions.ts finds these */
+  completedAt: timestamp("completed_at"),
+});
+
 // Collaboration seed: a person granted a role on a workspace, folder, or a
 // single item. Realtime editing arrives later; the permission shape lands
 // now so no new surface hardcodes owner-only access.
@@ -170,6 +200,12 @@ export const workspaceAiConfigs = pgTable(
 // Every mutation through the action layer records who did what to what,
 // so AI/agent edits stay auditable and reversible-by-inspection. actorType
 // distinguishes a human in the UI from the AI sidecar from an external agent.
+//
+// Deleting an account NULLs actorUserId on these rows and never deletes them.
+// The history is the accountability record for every mutation, including ones
+// made by AI and by external agents, and it has to survive the person leaving;
+// nulling the actor severs the identity while keeping what happened. This is
+// also why actorUserId is nullable rather than notNull.
 export const actionAudit = pgTable("action_audit", {
   id: uuid("id").defaultRandom().primaryKey(),
   actorUserId: uuid("actor_user_id").references(() => users.id),

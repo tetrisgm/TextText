@@ -324,3 +324,56 @@ export async function movePersistedWorkspaceDraft(
   });
   await deletePersistedWorkspaceDraft(blogId, previousPostId, current.key);
 }
+
+/**
+ * Wipes every local copy of the workspace: the IndexedDB pool, the cached
+ * bodies, and the drafts held in localStorage.
+ *
+ * Called when an account is deleted. Without it the person's documents and
+ * unsaved drafts stay readable on the device after the account is gone, which
+ * is both a broken promise and a real problem on a shared machine.
+ */
+export async function clearWorkspaceStorage(): Promise<void> {
+  if (typeof window === "undefined") return;
+  // Drop the cached handle first: deleteDatabase blocks while a connection is
+  // still open, and would otherwise wait for this tab to go away.
+  try {
+    const existing = await poolDbPromise;
+    existing?.close();
+  } catch {
+    // Never opened, or already closed.
+  }
+  poolDbPromise = null;
+
+  if (typeof indexedDB !== "undefined") {
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      try {
+        const request = indexedDB.deleteDatabase(DB_NAME);
+        request.onsuccess = finish;
+        request.onerror = finish;
+        // Another tab still holds it. Local data is best effort here; the
+        // server side is already gone.
+        request.onblocked = finish;
+      } catch {
+        finish();
+      }
+    });
+  }
+
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(DRAFT_LOCAL_PREFIX)) doomed.push(key);
+    }
+    for (const key of doomed) window.localStorage.removeItem(key);
+  } catch {
+    // Storage disabled or full; nothing further to do.
+  }
+}

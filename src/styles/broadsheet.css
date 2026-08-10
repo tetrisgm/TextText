@@ -947,6 +947,52 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   font: 500 var(--ac-fs-subheadline)/1.35 var(--ac-font-text);
   letter-spacing: 0;
 }
+/* Delete-account dialog. Inside the confirmation-dialog block so it inherits
+   the same material, radius, blur, z-index and reduced-motion gate. */
+.confirmation-dialog-list {
+  margin: 2px 0 0;
+  padding-inline-start: 1.1em;
+  display: grid;
+  gap: 4px;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-subheadline)/1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.confirmation-dialog-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-subheadline)/1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+.confirmation-dialog-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-field);
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-subheadline)/1.35 var(--ac-font-text);
+}
+.confirmation-dialog-field input:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+.confirmation-dialog-hint {
+  margin: 0;
+  color: var(--ac-label-3);
+  font: 500 var(--ac-fs-caption1)/1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
+/* Mixed 60% toward ink, not raw --ac-red, so it clears the contrast floor on
+   the dialog material in both themes. */
+.confirmation-dialog-error {
+  margin: 0;
+  color: color-mix(in srgb, var(--ac-red) 60%, var(--ac-label));
+  font: 600 var(--ac-fs-caption1)/1.35 var(--ac-font-text);
+  letter-spacing: 0;
+}
 .confirmation-dialog-shortcuts {
   margin: 2px 0 0;
   color: var(--ac-label-3);

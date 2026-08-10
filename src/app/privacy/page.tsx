@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <article className="texttext-legal-article">
         <p className="texttext-landing-kicker">Privacy</p>
         <h1>Privacy during the TextText beta</h1>
-        <p className="texttext-legal-updated">Effective July 8, 2026</p>
+        <p className="texttext-legal-updated">Effective August 10, 2026</p>
 
         <section>
           <h2>What TextText collects</h2>
@@ -68,8 +68,23 @@ export default function PrivacyPage() {
         <section>
           <h2>Export and deletion</h2>
           <p>
-            Every post is a portable Markdown file you can export. To request
-            account deletion or a data question during beta, email{" "}
+            Every post is a portable Markdown file you can export. You can delete
+            your account at any time in Settings, inside the app.
+          </p>
+          <p>
+            Deleting removes your account, your workspace, your documents, their
+            images and files, your API tokens, and your app connections, and your
+            published pages stop resolving. Comments other people left on your
+            documents are removed with them.
+          </p>
+          <p>
+            Your workspace address stays reserved so nobody else can publish at
+            your old links, and TextText keeps a one way hash of your sign-in
+            identifier so a signed-out device cannot recreate the account.
+            Records of changes are kept in the action log with no link to you.
+          </p>
+          <p>
+            For a data question, email{" "}
             <a href="mailto:security@TextText.app">security@TextText.app</a>.
           </p>
         </section>

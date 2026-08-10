@@ -23,6 +23,7 @@ const BASE_RESERVED_NAMES = [
   "download",
   "editor",
   "feeds",
+  "goodbye",
   "groups",
   "help",
   "login",

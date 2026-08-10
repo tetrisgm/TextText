@@ -230,6 +230,11 @@
     grid-template-columns: 1fr;
   }
 
+  /* The button drops under its copy at the widths a Mac app window reaches. */
+  .dangerBlock {
+    justify-items: stretch;
+  }
+
   .aiActions {
     justify-content: flex-start;
   }
@@ -246,9 +251,37 @@
     grid-template-columns: 1fr;
   }
 
+  /* The button drops under its copy at the widths a Mac app window reaches. */
+  .dangerBlock {
+    justify-items: stretch;
+  }
+
   .sectionHeader,
   .aiStatus {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+/* The red-container recipe from apple.css, used verbatim rather than
+   reinvented. The 60%-toward-ink colour mix is the contrast floor applied to
+   red, and is why raw --ac-red must never be body text here. No new custom
+   property is introduced, so dark mode is correct by construction. */
+.dangerBlock {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--ac-red) 30%, transparent);
+  background: color-mix(in srgb, var(--ac-red) 12%, transparent);
+  border-radius: var(--ac-radius-field);
+}
+
+.dangerBlock strong {
+  color: color-mix(in srgb, var(--ac-red) 60%, var(--ac-label));
+}
+
+.dangerBlock p {
+  margin: 0;
+  color: var(--ac-label-2);
 }

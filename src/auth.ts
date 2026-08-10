@@ -221,6 +221,37 @@ export const authConfig = {
       }
       if (account) {
         await rememberLastUsedProvider(account.provider);
+        // Deliberately returning after deleting. This branch runs only when a
+        // genuine interactive sign-in produced an account object, which is
+        // exactly the signal the fence needs; a stale cookie never reaches it.
+        //
+        // Order matters. If the previous purge never finished, finish it FIRST
+        // and only release the identity once it has, or signing in again would
+        // strand the leftover rows forever with nothing left pointing at them.
+        if (token.sub) {
+          const identity = token.sub;
+          try {
+            const { findAccountTombstone, clearAccountTombstone } = await import(
+              "@/lib/store"
+            );
+            const tombstone = await findAccountTombstone(identity);
+            if (tombstone) {
+              if (!tombstone.completedAt) {
+                const { resumeAccountDeletion } = await import(
+                  "@/lib/account-deletion"
+                );
+                if (!(await resumeAccountDeletion(identity))) {
+                  throw new Error("previous deletion is still incomplete");
+                }
+              }
+              await clearAccountTombstone(identity);
+            }
+          } catch (error) {
+            // Never block a sign-in on this. The worst case is that the person
+            // sees the deleted state once more and tries again.
+            console.warn("account tombstone check failed", error);
+          }
+        }
       }
       if (account && profile && account.type !== "email") {
         // With the adapter attached, OAuth tokens seed from adapter rows or
