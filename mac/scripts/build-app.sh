@@ -59,9 +59,47 @@ if [ -z "$SIGN_ID" ]; then
   [ -z "$SIGN_ID" ] && SIGN_ID="-"
 fi
 
-if [ -n "${TEXTTEXT_APP_GROUP:-}" ] && ! [[ "$TEXTTEXT_APP_GROUP" =~ ^group\.[A-Za-z0-9.-]+$ ]]; then
+# macOS wants the group team-prefixed. A Store profile grants
+# "<team>.*", so an unprefixed "group.x" is outside what the profile allows:
+# codesign still signs it and the app then fails to spawn, which reads as a
+# mysterious launch failure rather than the entitlement mismatch it is.
+# Developer ID has shipped unprefixed for a while, so accept either shape and
+# require the prefix only where it is actually enforced.
+if [ -n "${TEXTTEXT_APP_GROUP:-}" ] \
+  && ! [[ "$TEXTTEXT_APP_GROUP" =~ ^([A-Z0-9]{10}\.)?group\.[A-Za-z0-9.-]+$ ]]; then
   echo "Refusing: TEXTTEXT_APP_GROUP is not a valid application group: $TEXTTEXT_APP_GROUP" >&2
   exit 1
+fi
+# Derived here rather than at first use: a Store build has to prefix the app
+# group with it, and the group is stamped into Info.plist further down.
+#
+# The profile is the authority, not the identity name. The parenthetical in
+# "Apple Distribution: Name (52WM463HR2)" is the team, but in
+# "Apple Development: Created via API (PNPRMWUDTD)" it is not, and prefixing an
+# app group with that produces a group no profile grants and an app macOS
+# refuses to spawn.
+if [ "$STORE" = "1" ]; then
+  TEAM_PROFILE="$MAC/profiles/TextText_App_${TEXTTEXT_STORE_PROFILE_SUFFIX:-AppStore}.provisionprofile"
+else
+  TEAM_PROFILE="$MAC/profiles/TextText_App_Developer_ID.provisionprofile"
+fi
+TEAM=""
+if [ -f "$TEAM_PROFILE" ]; then
+  TEAM="$(security cms -D -i "$TEAM_PROFILE" 2>/dev/null \
+    | plutil -extract Entitlements.com\\.apple\\.developer\\.team-identifier raw -o - - 2>/dev/null || true)"
+fi
+if [ -z "$TEAM" ]; then
+  TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
+fi
+if [ "$STORE" = "1" ] && [ -n "${TEXTTEXT_APP_GROUP:-}" ] \
+  && ! [[ "$TEXTTEXT_APP_GROUP" =~ ^[A-Z0-9]{10}\.group\. ]]; then
+  if [ -z "$TEAM" ]; then
+    echo "Refusing: a Store build needs a team-prefixed app group and the team could not be read from: $SIGN_ID" >&2
+    exit 1
+  fi
+  TEXTTEXT_APP_GROUP="$TEAM.$TEXTTEXT_APP_GROUP"
+  export TEXTTEXT_APP_GROUP
+  echo ">> Store edition: app group prefixed for the profile -> $TEXTTEXT_APP_GROUP"
 fi
 
 # A signed release with extension profiles but no group produces an appex that
@@ -161,7 +199,6 @@ fi
 # is sandbox-gated), but the keychain is not. The group is
 # <TeamID>.app.texttext.fp; stamp the resolved value so both bundles read
 # the same string at runtime (Info.plist TextTextKeychainAccessGroup).
-TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
 if [ -n "$TEAM" ]; then
   KC_GROUP="$TEAM.app.texttext.fp"
   "$PB" -c "Set :TextTextKeychainAccessGroup $KC_GROUP" "$STAGED" 2>/dev/null \
@@ -221,7 +258,7 @@ codesign_one() { # $1=path  $2=entitlements (optional)
 # Each edition embeds its own profile. A Developer ID profile in a Store build
 # (or the reverse) is a signing failure at best and a rejected binary at worst.
 if [ "$STORE" = "1" ]; then
-  APP_PROFILE="$MAC/profiles/TextText_App_AppStore.provisionprofile"
+  APP_PROFILE="$MAC/profiles/TextText_App_${TEXTTEXT_STORE_PROFILE_SUFFIX:-AppStore}.provisionprofile"
 else
   APP_PROFILE="$MAC/profiles/TextText_App_Developer_ID.provisionprofile"
 fi

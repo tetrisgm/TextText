@@ -22,9 +22,12 @@ APP="$1"; SIGN_ID="$2"; APP_GROUP="$3"; BUNDLE_ID="$4"; VERSION="$5"; BUILD="$6"
 TEAM="$(printf '%s' "$SIGN_ID" | sed -n 's/.*(\([A-Z0-9]\{8,\}\))$/\1/p')"
 KEYCHAIN_GROUP="${TEAM:+$TEAM.app.texttext.fp}"
 
-SHARE_PROFILE="$MAC/profiles/TextText_Share_Developer_ID.provisionprofile"
-QL_PROFILE="$MAC/profiles/TextText_QuickLook_Developer_ID.provisionprofile"
-FP_PROFILE="$MAC/profiles/TextText_FileProvider_Developer_ID.provisionprofile"
+# Developer ID by default; a Store build passes AppStore (upload) or Dev (the
+# same sandboxed shape signed to run on this Mac) via the suffix.
+PROFILE_SUFFIX="${TEXTTEXT_STORE_PROFILE_SUFFIX:-Developer_ID}"
+SHARE_PROFILE="$MAC/profiles/TextText_Share_${PROFILE_SUFFIX}.provisionprofile"
+QL_PROFILE="$MAC/profiles/TextText_QuickLook_${PROFILE_SUFFIX}.provisionprofile"
+FP_PROFILE="$MAC/profiles/TextText_FileProvider_${PROFILE_SUFFIX}.provisionprofile"
 if [ ! -f "$SHARE_PROFILE" ] || [ ! -f "$QL_PROFILE" ] || [ ! -f "$FP_PROFILE" ]; then
   echo ">> extensions: no provisioning profiles in mac/profiles; skipping embed"
   exit 0
@@ -37,7 +40,9 @@ if [ -z "$APP_GROUP" ]; then
   echo "Refusing: a signed extension build requires a non-empty app group." >&2
   exit 1
 fi
-if ! [[ "$APP_GROUP" =~ ^group\.[A-Za-z0-9.-]+$ ]]; then
+# Either shape: "group.x" (Developer ID) or "<team>.group.x" (Store, where the
+# provisioning profile only grants "<team>.*").
+if ! [[ "$APP_GROUP" =~ ^([A-Z0-9]{10}\.)?group\.[A-Za-z0-9.-]+$ ]]; then
   echo "Refusing: invalid extension app group: $APP_GROUP" >&2
   exit 1
 fi
