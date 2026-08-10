@@ -862,10 +862,19 @@ function UniversalFolderContents({
     () => resolveTemplate(defaultTemplateForFolder(folder)),
     [folder, resolveTemplate],
   );
-  const usesStockArticleLook = useMemo(() => {
-    const reference = defaultTemplateForFolder(folder);
-    return reference.id === "texttext.article" && reference.version === 1;
-  }, [folder]);
+  /**
+   * Does this folder still wear a look that ships with the app?
+   *
+   * The hand-made row renderers below - the blog feed and the list rows - were
+   * drawn for the built-ins and ignore a template entirely. They stay the fast
+   * path for a folder that has not been restyled. The moment a folder carries
+   * a look someone authored, the template renders the index, or the look
+   * reaches the item pages and stops at its own folder.
+   */
+  const usesBuiltInLook = useMemo(
+    () => defaultTemplateForFolder(folder).id.startsWith("texttext."),
+    [folder],
+  );
   const collectionSpec = useMemo(() => {
     if (!collectionDefinition) return null;
     const { sort, filters } = collectionDefinition.collection;
@@ -1042,7 +1051,7 @@ function UniversalFolderContents({
               );
             })}
           </div>
-        ) : folder.mode === "blog" && usesStockArticleLook ? (
+        ) : folder.mode === "blog" && usesBuiltInLook ? (
           // The stock blog feed is hardcoded markup that predates the document
           // engine, so it renders the same whatever look the folder carries.
           // It stays as the fast path for a folder still on the built-in
@@ -1163,7 +1172,7 @@ function UniversalFolderContents({
               );
             })}
           </div>
-        ) : viewMode === "list" ? (
+        ) : viewMode === "list" && usesBuiltInLook ? (
           <div
             className="post-folder-list"
             role="listbox"

@@ -213,6 +213,64 @@ async function seed(actor: Actor, folderPath: string): Promise<void> {
   }
 }
 
+
+/**
+ * What the look actually became on screen. Screenshots say something is wrong;
+ * these say which declaration was dropped and by how much.
+ */
+// Passed to the browser as source, not as a function reference: tsx compiles
+// arrow functions with an esbuild `__name` helper that does not exist in the
+// page, and page.evaluate(fn) serializes the body only.
+const MEASURE_INDEX = `(() => {
+  const card = document.querySelector(".tt-document.tt-collection-item");
+  const cs = (el) => getComputedStyle(el);
+  const fam = (el) => cs(el).fontFamily.split(",")[0].replace(/["']/g, "");
+  if (!card) {
+    return {
+      error: "no collection item on the page",
+      containers: Array.from(document.querySelectorAll(".universal-item-collection, .blog-folder-feed, .post-folder-list")).map((el) => el.className),
+      rows: Array.from(document.querySelectorAll("[data-workspace-post-id]")).slice(0, 2).map((el) => el.className),
+    };
+  }
+  const title = card.querySelector(".tt-text-heading, .tt-text-title, .tt-text");
+  let painted = "rgba(0, 0, 0, 0)";
+  for (let el = card; el; el = el.parentElement) {
+    const bg = cs(el).backgroundColor;
+    if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") { painted = bg; break; }
+  }
+  return {
+    typography: card.getAttribute("data-typography"),
+    surface: card.getAttribute("data-surface"),
+    declaredFont: cs(card).getPropertyValue("--tt-font").trim().split(",")[0],
+    cardFont: fam(card),
+    titleFont: title ? fam(title) : null,
+    titleSize: title ? Math.round(parseFloat(cs(title).fontSize)) : null,
+    paintedBackground: painted,
+    dumpsBody: /no business printing in full/.test(card.textContent || ""),
+  };
+})()`;
+
+const MEASURE_ITEM = `(() => {
+  const doc = document.querySelector(".tt-document:not(.tt-collection-item)");
+  if (!doc) return { error: "no document on the page" };
+  const cs = (el) => getComputedStyle(el);
+  const fam = (el) => cs(el).fontFamily.split(",")[0].replace(/["']/g, "");
+  const title = doc.querySelector(".tt-text-title");
+  const prose = doc.querySelector(".tt-prose");
+  return {
+    typography: doc.getAttribute("data-typography"),
+    surface: doc.getAttribute("data-surface"),
+    alignment: doc.getAttribute("data-alignment"),
+    paper: cs(doc).backgroundColor,
+    titleFont: title ? fam(title) : null,
+    titleSize: title ? Math.round(parseFloat(cs(title).fontSize)) : null,
+    titleAlign: title ? cs(title).textAlign : null,
+    titleTop: title ? Math.round(title.getBoundingClientRect().top) : null,
+    proseSize: prose ? Math.round(parseFloat(cs(prose).fontSize)) : null,
+    proseWidth: prose ? Math.round(prose.getBoundingClientRect().width) : null,
+  };
+})()`;
+
 // ------------------------------------------------------------- the agent loop
 
 function toolCatalogue(): string {
@@ -393,6 +451,8 @@ async function main(): Promise<void> {
     await page.goto(folderUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2800);
     await page.screenshot({ path: `${OUT}/${brief.key}-2-index.png` });
+    const indexMeasure = await page.evaluate(MEASURE_INDEX);
+    note(`  index:  ${JSON.stringify(indexMeasure)}`);
 
     const firstCard = page
       .locator("[data-workspace-post-id] a, .universal-item-card a, .blog-folder-feed-link")
@@ -401,6 +461,8 @@ async function main(): Promise<void> {
       await firstCard.click({ force: true }).catch(() => undefined);
       await page.waitForTimeout(2800);
       await page.screenshot({ path: `${OUT}/${brief.key}-3-item.png` });
+      const itemMeasure = await page.evaluate(MEASURE_ITEM);
+      note(`  item:   ${JSON.stringify(itemMeasure)}`);
       const edit = page.getByRole("link", { name: /^Edit$/ }).first();
       if (await edit.count()) {
         await edit.click({ force: true }).catch(() => undefined);

@@ -1163,6 +1163,7 @@ export function DocumentRenderer({
       data-corners={theme.corners ?? "subtle"}
       data-surface={theme.surface ?? "system"}
       data-title-scale={theme.titleScale ?? "standard"}
+      data-body-scale={theme.bodyScale ?? "standard"}
       data-alignment={theme.alignment ?? "center"}
       data-media={theme.media ?? "full"}
       style={style}
@@ -1200,6 +1201,7 @@ export function DocumentCollectionRenderer({
       data-corners={theme.corners ?? "subtle"}
       data-surface={theme.surface ?? "system"}
       data-title-scale="compact"
+      data-body-scale={theme.bodyScale ?? "standard"}
       data-alignment="start"
       data-media={theme.media ?? "full"}
       style={style}

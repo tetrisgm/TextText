@@ -23,6 +23,11 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    one page in different fonts. Tracking tightens as the size grows. */
 .tt-text-title{font-size:clamp(1.75rem,2.8vw,2.25rem);line-height:1.12;font-weight:700;letter-spacing:-.019em}.tt-text-subtitle{font-size:clamp(1.1rem,2.2vw,1.55rem);line-height:1.35;color:var(--muted,#6e6e73)}.tt-text-heading{font-size:1.45rem;line-height:1.15;font-weight:700}.tt-text-body{font-size:1rem;line-height:1.6}.tt-text-caption,.tt-metadata{font-size:.85rem;line-height:1.45;color:var(--muted,#6e6e73)}
 .tt-document[data-title-scale="compact"] .tt-text-title{font-size:clamp(1.3rem,1.75vw,1.5rem);line-height:1.25;letter-spacing:-.011em}.tt-document[data-title-scale="large"] .tt-text-title{font-size:clamp(2rem,3.45vw,2.75rem);line-height:1.08;letter-spacing:-.023em}
+/* Body scale. A reading-first look sets larger, looser text - the thing that
+   makes a long piece feel like something to sit with rather than something to
+   scan. Applies to the prose and to body-role text so a look moves together. */
+.tt-document[data-body-scale="compact"] .tt-prose,.tt-document[data-body-scale="compact"] .tt-text-body{font-size:.95rem;line-height:1.55}
+.tt-document[data-body-scale="relaxed"] .tt-prose,.tt-document[data-body-scale="relaxed"] .tt-text-body{font-size:1.3rem;line-height:1.68}
 .tt-document[data-alignment="start"] .tt-masthead{text-align:left;align-items:flex-start}.tt-document[data-alignment="start"] .tt-byline,.tt-document[data-alignment="start"] .tt-metadata{justify-content:flex-start}
 /* A look that asks for start alignment means the whole document, not only the
    parts that happen to sit in a masthead. Note asks for start alignment and

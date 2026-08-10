@@ -164,6 +164,13 @@ export const themeTokensSchema = z
     corners: z.enum(["square", "subtle", "rounded"]).optional(),
     surface: z.enum(["system", "paper", "soft", "ink"]).optional(),
     titleScale: z.enum(["compact", "standard", "large"]).optional(),
+    /**
+     * How big the body sets. A look could say how large its TITLE was and not
+     * how large its text was, so a reading-first look - the whole point of
+     * something like Medium - could not be expressed: every look got 17px
+     * whatever it asked for.
+     */
+    bodyScale: z.enum(["compact", "standard", "relaxed"]).optional(),
     alignment: z.enum(["start", "center"]).optional(),
     media: z.enum(["full", "contained", "bleed"]).optional(),
   })
