@@ -17,6 +17,7 @@ import type {
 } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
+import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
 import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
@@ -743,6 +744,12 @@ export function UnifiedDocumentEditor({
     [flushMaterialization, stopEditing],
   );
 
+  // When this was written. A look that declares a metadata node is asking for
+  // it, and the note-taking apps this engine answers to show it while typing.
+  const editorDate = useMemo(
+    () => formatArticleDate(post.updatedAt ?? post.date, { style: "short" }),
+    [post.date, post.updatedAt],
+  );
   const slots = useMemo(
     () => ({
       bindings: {
@@ -888,13 +895,20 @@ export function UnifiedDocumentEditor({
           </button>
         </div>
       </div>
-      {/* No byline while writing: the author, reading time, and date are
-          reader chrome, and showing them here turns the page into a preview
-          of itself instead of the thing being written. */}
+      {/* No byline while writing: an author and a reading time are reader
+          chrome, and showing them here turns the page into a preview of
+          itself instead of the thing being written.
+
+          The DATE is different. It is when you wrote this, a look that
+          declares a metadata node is asking for it as part of its design, and
+          the note-taking apps this engine answers to all show it while you
+          type. Withholding it meant a look could ask for a date line and get
+          nothing in the one place its author was looking. */}
       <DocumentRenderer
         document={document}
         documentId={post.id ?? post.slug}
         template={activeTemplate}
+        metadata={{ date: editorDate }}
         slots={slots}
         className="tt-document-editor"
       />

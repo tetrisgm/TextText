@@ -199,6 +199,13 @@ async function callTool(
  * same path an agent uses.
  */
 async function seed(actor: Actor, folderPath: string): Promise<void> {
+  const covers = [
+    "/covers/cover-118.jpg",
+    "/covers/cover-119.jpg",
+    "/covers/cover-120.jpg",
+  ];
+  const icons = ["\u{1F9ED}", "\u{1F4DD}", "\u{1F4A1}"];
+  let i = 0;
   for (const [title, subtitle] of SEED[folderPath] ?? SEED.blog) {
     const body = `${subtitle}. The opening paragraph, which an index has no business printing in full.`;
     const created = await callTool(actor, "create_item", {
@@ -210,6 +217,17 @@ async function seed(actor: Actor, folderPath: string): Promise<void> {
     if (!created.ok) {
       throw new Error(`seeding ${folderPath} failed: ${created.text.slice(0, 300)}`);
     }
+    // The reference screenshots have covers and icons, so the items must too.
+    // Without a value a correctly authored cover node is hidden by its own
+    // showWhen, and the look gets blamed for the seed data being bare.
+    const id = created.text.match(/"id"\s*:\s*"([^"]+)"/)?.[1];
+    if (id) {
+      await callTool(actor, "update_item", {
+        id,
+        fields: { cover: covers[i % covers.length], icon: icons[i % icons.length] },
+      });
+    }
+    i += 1;
   }
 }
 
@@ -268,6 +286,16 @@ const MEASURE_ITEM = `(() => {
     titleTop: title ? Math.round(title.getBoundingClientRect().top) : null,
     proseSize: prose ? Math.round(parseFloat(cs(prose).fontSize)) : null,
     proseWidth: prose ? Math.round(prose.getBoundingClientRect().width) : null,
+    // Which structural elements the look actually reached for. A page can hit
+    // every type measurement and still be missing the thing that makes the
+    // reference recognisable - a date line, a cover, an icon.
+    has: {
+      metadata: !!doc.querySelector(".tt-metadata"),
+      byline: !!doc.querySelector(".tt-byline"),
+      cover: !!doc.querySelector(".tt-cover"),
+      icon: !!doc.querySelector(".tt-text-icon"),
+      eyebrow: !!doc.querySelector(".tt-text-eyebrow"),
+    },
   };
 })()`;
 

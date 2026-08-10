@@ -22,6 +22,16 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    between 1.6x and 2.1x its reference, which is most of why they all read as
    one page in different fonts. Tracking tightens as the size grows. */
 .tt-text-title{font-size:clamp(1.75rem,2.8vw,2.25rem);line-height:1.12;font-weight:700;letter-spacing:-.019em}.tt-text-subtitle{font-size:clamp(1.1rem,2.2vw,1.55rem);line-height:1.35;color:var(--muted,#6e6e73)}.tt-text-heading{font-size:1.45rem;line-height:1.15;font-weight:700}.tt-text-body{font-size:1rem;line-height:1.6}.tt-text-caption,.tt-metadata{font-size:.85rem;line-height:1.45;color:var(--muted,#6e6e73)}
+/* A page icon. Large, and it sits half over the cover directly above it when
+   a look pairs the two, which is the arrangement the reference uses. */
+.tt-text-icon{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-size:4rem;line-height:1;letter-spacing:0}
+/* The icon overlaps the cover above it whether it sits directly after it or
+   leads the masthead that follows, because a look expresses that block either
+   way and the arrangement should not depend on which. */
+.tt-cover+.tt-text-icon,.tt-image+.tt-text-icon,
+.tt-cover+.tt-masthead>.tt-text-icon:first-child,
+.tt-image+.tt-masthead>.tt-text-icon:first-child{position:relative;z-index:1;margin-top:-2.1rem}
+.tt-collection-item .tt-text-icon{width:auto;margin-inline:0;font-size:1.5rem}
 .tt-document[data-title-scale="compact"] .tt-text-title{font-size:clamp(1.3rem,1.75vw,1.5rem);line-height:1.25;letter-spacing:-.011em}.tt-document[data-title-scale="large"] .tt-text-title{font-size:clamp(2rem,3.45vw,2.75rem);line-height:1.08;letter-spacing:-.023em}
 /* Body scale. A reading-first look sets larger, looser text - the thing that
    makes a long piece feel like something to sit with rather than something to

@@ -12,6 +12,14 @@ export const TEXT_ROLES = [
   "body",
   "caption",
   "meta",
+  /**
+   * A page icon: one emoji, set large, sitting over the cover above it when
+   * there is one. The built-in Page look drew this with per-template CSS keyed
+   * to a node id, which an authored look has no way to reach - so a look could
+   * not express an icon at all, and every request for a Notion-shaped page
+   * came back without one.
+   */
+  "icon",
 ] as const;
 export const CAPABILITIES = [
   "assets",
