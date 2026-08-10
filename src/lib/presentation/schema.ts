@@ -684,6 +684,22 @@ function bindingKind(
   return fields.get(binding.slice("content.fields.".length))?.type ?? null;
 }
 
+/**
+ * What a caller could have written instead. These messages are the only
+ * feedback an agent authoring a look ever gets, and "references undeclared
+ * field x" leaves it guessing at the vocabulary; naming what IS available
+ * turns a retry into a correction.
+ */
+function bindingVocabulary(
+  fields: ReadonlyMap<string, DocumentFieldDefinition>,
+): string {
+  const declared = [...fields.keys()].map((id) => `content.fields.${id}`);
+  const available = [...Object.keys(CORE_BINDINGS), ...declared];
+  return available.length
+    ? ` Available bindings: ${available.join(", ")}.`
+    : " This template declares no fields, so only the core bindings exist.";
+}
+
 function checkBinding(
   binding: string,
   fields: ReadonlyMap<string, DocumentFieldDefinition>,
@@ -691,9 +707,15 @@ function checkBinding(
   context: string,
 ): void {
   const kind = bindingKind(binding, fields);
-  if (!kind) throw new Error(`${context} references undeclared field ${binding}`);
+  if (!kind) {
+    throw new Error(
+      `${context} references undeclared field ${binding}.${bindingVocabulary(fields)}`,
+    );
+  }
   if (!allowed.includes(kind)) {
-    throw new Error(`${context} cannot consume ${kind} binding ${binding}`);
+    throw new Error(
+      `${context} cannot consume ${kind} binding ${binding}. It accepts: ${allowed.join(", ")}.`,
+    );
   }
 }
 
