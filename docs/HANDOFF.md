@@ -402,11 +402,25 @@ spent. `claude` was expired on this machine; codex was used.
 `src/lib/__tests__/ai-authored-blog.test.ts` pins the same path deterministically
 in milliseconds, including that the index does not dump the body.
 
-Not done: an end-to-end visual proof (author a look, apply it to a folder,
-screenshot the folder before and after). The harness for it fought the
-`/try` workspace being browser-local rather than in Postgres, and was
-abandoned rather than left half-working. The eval and the render assertions
-are the evidence that exists.
+**And proved in pixels.** `.texttext/prove-ai-look.mjs` signs in to a real
+workspace, writes three posts, screenshots the folder, authors a Magazine look
+through the same operations path the tool uses, applies it with
+`setFolderTemplate`, and screenshots again plus an opened post. It asserts a
+new item is born with the folder's look and fails if it is not.
+
+Two things that harness found, which nothing else would have:
+
+- **`collection.layout` still did not reach the container.** The look declared
+  `list`, `columns` and `gap` were honoured, and the container class still came
+  from the view toggle alone - so the index rendered as a one-column grid of
+  500px-tall empty cards. It read exactly like the look had not applied. The
+  look now sets the default view mode and the reader's toggle overrides it.
+- Running the harness against `127.0.0.1` while next-auth redirects to
+  `localhost` silently drops the session cookie: the callback returns 200 and
+  the page still renders the sign-in screen. Use one host.
+
+Shots in `/tmp/ailook2`: `1-before.png` (stock feed), `2-after.png` (the
+authored index), `3-item.png` (an opened post in the authored look).
 
 ## Open
 

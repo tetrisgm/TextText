@@ -1647,8 +1647,28 @@ export function FolderPage({
   onDeleteFolder?: FolderDeleteFolder;
   canShareFolders?: boolean;
 }) {
+  // A look says what shape its index is; the view control is the reader's
+  // override on top of that. Without this, a look declaring `list` still got
+  // a grid, because the container class came from the toggle alone - it read
+  // as the look not having applied at all.
+  const lookLayout = (
+    availableTemplates?.find((entry) => {
+      const reference = defaultTemplateForFolder(folder);
+      return entry.id === reference.id && entry.version === reference.version;
+    }) ??
+    getBuiltinTemplate(
+      defaultTemplateForFolder(folder).id,
+      defaultTemplateForFolder(folder).version,
+    )
+  )?.collection.layout;
   const defaultViewMode: FolderViewMode =
-    folder.mode === "notes" || folder.mode === "bookmarks" ? "list" : "grid";
+    lookLayout === "list" || lookLayout === "index" || lookLayout === "timeline"
+      ? "list"
+      : lookLayout === "cards"
+        ? "grid"
+        : folder.mode === "notes" || folder.mode === "bookmarks"
+          ? "list"
+          : "grid";
   const [viewMode, changeView] = useWorkspaceViewMode(
     `folder:v3:${folder.id}`,
     defaultViewMode,
