@@ -22,20 +22,30 @@
 	<string>1</string>
 	<key>NSExtension</key>
 	<dict>
-		<key>NSExtensionActivationRule</key>
+		<!-- The activation rule has to live inside NSExtensionAttributes. As a
+		     direct child of NSExtension it is simply not read, the extension ends
+		     up with no rule at all, and it never appears in a share sheet. That is
+		     where it used to be, which is why sharing into TextText did nothing.
+
+		     No NSExtensionActivationSupportsWebPageWithMaxCount here: declaring it
+		     obliges the extension to ship an NSExtensionJavaScriptPreprocessingFile
+		     to scrape the page, and there is none. WebURL already hands over the
+		     address of the page being shared, which is what the extension uses. -->
+		<key>NSExtensionAttributes</key>
 		<dict>
-			<key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key>
-			<integer>10</integer>
-			<key>NSExtensionActivationSupportsFileWithMaxCount</key>
-			<integer>10</integer>
-			<key>NSExtensionActivationSupportsImageWithMaxCount</key>
-			<integer>10</integer>
-			<key>NSExtensionActivationSupportsText</key>
-			<true/>
-			<key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
-			<integer>1</integer>
-			<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
-			<integer>1</integer>
+			<key>NSExtensionActivationRule</key>
+			<dict>
+				<key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsText</key>
+				<true/>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+			</dict>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.share-services</string>

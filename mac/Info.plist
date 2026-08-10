@@ -78,6 +78,11 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>174</string>
+	<!-- Required for any Mac App Store upload: without it the product archive is
+	     rejected at validation, before review. Must stay in step with the primary
+	     category set on the App Store Connect record. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

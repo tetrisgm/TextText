@@ -22,15 +22,27 @@
 	<string>1</string>
 	<key>NSExtension</key>
 	<dict>
+		<!-- Quick Look reads these from NSExtensionAttributes. Sitting directly
+		     under NSExtension they were ignored, so the provider claimed no content
+		     types and was never asked to draw anything.
+
+		     QLIsDataBasedPreview says the provider is handed the file's data rather
+		     than a URL, which is what PreviewProvider implements and what a
+		     sandboxed extension can actually use. -->
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>QLIsDataBasedPreview</key>
+			<true/>
+			<key>QLSupportedContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+				<string>public.plain-text</string>
+			</array>
+		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.quicklook.preview</string>
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).PreviewProvider</string>
-		<key>QLSupportedContentTypes</key>
-		<array>
-			<string>net.daringfireball.markdown</string>
-			<string>public.plain-text</string>
-		</array>
 	</dict>
 </dict>
 </plist>

@@ -130,8 +130,16 @@ cp "$BIN/TextTextApp" "$APP/Contents/MacOS/TextText"
 # printed usage and exited instead of opening a window. Latent until the
 # product was renamed from Write to TextText, which is when the two names
 # collided.
-mkdir -p "$APP/Contents/Helpers"
-cp "$BIN/texttext" "$APP/Contents/Helpers/texttext"
+# The CLI ships in the standalone edition only. The Store rules require every
+# nested executable to be sandboxed, and a sandboxed CLI is pointless anyway:
+# it would run in its own container rather than the app's, and the symlink that
+# puts it on PATH lands inside the container where no shell will find it. So the
+# Store edition would be shipping an executable that cannot work, at the cost of
+# an upload rejection (ITMS-90296) if it were signed unsandboxed.
+if [ "$STORE" != "1" ]; then
+  mkdir -p "$APP/Contents/Helpers"
+  cp "$BIN/texttext" "$APP/Contents/Helpers/texttext"
+fi
 cp "$MAC/Info.plist" "$APP/Contents/Info.plist"
 if [ -f "$MAC/AppIcon.icns" ]; then
   cp "$MAC/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
@@ -233,7 +241,7 @@ else
   exit 1
 fi
 chmod +x "$APP/Contents/MacOS/TextText"
-chmod +x "$APP/Contents/Helpers/texttext"
+[ -f "$APP/Contents/Helpers/texttext" ] && chmod +x "$APP/Contents/Helpers/texttext"
 
 codesign_one() { # $1=path  $2=entitlements (optional)
   local path="$1" ent="${2:-}"
@@ -305,7 +313,7 @@ else
   done
   codesign_one "$SPK"
 fi
-codesign_one "$APP/Contents/Helpers/texttext"
+[ -f "$APP/Contents/Helpers/texttext" ] && codesign_one "$APP/Contents/Helpers/texttext"
 codesign_one "$APP/Contents/MacOS/TextText" "$MAIN_ENT"
 # Extensions are assembled and signed here, inside-out, so the main app's
 # signature (next line) seals them. No-op unless mac/profiles/ holds the
