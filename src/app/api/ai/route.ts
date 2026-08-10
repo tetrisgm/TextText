@@ -10,6 +10,7 @@ import type { ModelMessage } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { getCurrentUser } from "@/lib/session";
+import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import { getOwnedBlog, getUserIdBySub } from "@/lib/store";
 import { cloudAssistantTools } from "@/lib/ai/cloud-tools";
 import {
@@ -48,15 +49,7 @@ function rateLimited(sub: string): boolean {
   return recent.length > RATE_MAX_PER_WINDOW;
 }
 
-const SYSTEM =
-  "You are the assistant inside TextText, an app for blogs, notes, and bookmarks. " +
-  "The Blog folder holds public blog posts; Notes are private working notes; " +
-  "Bookmarks are saved links. Notes and bookmarks are always unlisted. Use the " +
-  "workspace tools to read and edit the user's items, and refer to items by their " +
-  "id, which stays stable across renames and moves. Be concise and concrete. You " +
-  "are running on the web, where destructive actions (trash, delete, sharing, " +
-  "publishing) are not available to you; if the user asks for one, say they can do " +
-  "it from the app's own controls.";
+const SYSTEM = ASSISTANT_SYSTEM_PROMPT;
 
 function coerceMessages(value: unknown): ModelMessage[] {
   if (!Array.isArray(value)) return [];

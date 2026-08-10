@@ -470,6 +470,12 @@ function folderSummary(folder: Folder, count?: number) {
     path: folder.path,
     mode: folder.mode,
     parentId: folder.parentId ?? null,
+    // The folder's look: what its index renders from and what new items in it
+    // are created with. It was omitted, so an agent could set a folder's look
+    // with set_folder_template and never read one back - unable to tell
+    // whether its own change landed, or to answer what a folder looks like
+    // today.
+    defaultTemplate: folder.defaultTemplate ?? null,
     ...(count === undefined ? {} : { itemCount: count }),
   };
 }
