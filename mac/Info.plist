@@ -58,6 +58,13 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.169</string>
+	<!-- Export compliance. The app encrypts only by using HTTPS and the system
+	     Keychain, which is the standard-encryption exemption, so this is false.
+	     Without the key every TestFlight upload stops and waits for a human to
+	     answer the same question by hand. Revisit if the app ever ships its own
+	     cryptography rather than the system's. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
