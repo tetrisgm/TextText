@@ -7,6 +7,27 @@ import PackageDescription
 //   swift build --package-path mac
 // The .app bundle is assembled by mac/scripts/build-app.sh. Sparkle is the
 // app dependencies are vendored or statically linked where required.
+/// The Store edition links no updater.
+///
+/// Sparkle cannot be excluded by the bundle assembler alone: the executable
+/// links @rpath/Sparkle.framework, so a bundle without the framework dies at
+/// launch with a dyld error. The dependency has to be absent from the LINK,
+/// which means the manifest has to know which edition is being built.
+///
+/// TEXTTEXT_STORE=1 selects it, the same variable mac/scripts/build-app.sh
+/// reads, so one switch drives the manifest and the bundle.
+let storeEdition = Context.environment["TEXTTEXT_STORE"] == "1"
+
+let updaterDependencies: [Target.Dependency] =
+    storeEdition ? [] : [.product(name: "Sparkle", package: "Sparkle")]
+
+let updaterPackages: [Package.Dependency] =
+    storeEdition ? [] : [.package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")]
+
+/// `#if TEXTTEXT_STORE` guards every line that touches Sparkle.
+let editionSwiftSettings: [SwiftSetting] =
+    storeEdition ? [.define("TEXTTEXT_STORE")] : []
+
 let package = Package(
     name: "TextText",
     platforms: [.macOS(.v14)],
@@ -25,10 +46,10 @@ let package = Package(
         .executable(name: "texttext", targets: ["TextTextCLI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        // Sparkle is appended below, and only for the non-Store edition.
         .package(url: "https://github.com/SDWebImage/libwebp-Xcode", from: "1.3.2"),
         .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.19")
-    ],
+    ] + updaterPackages,
     targets: [
         .target(
             name: "TextTextWorkspaceCore",
@@ -112,10 +133,10 @@ let package = Package(
                 "TextTextAppIntents",
                 "TextTextSpotlight",
                 "TextTextFileProviderKit",
-                .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "libwebp", package: "libwebp-Xcode")
-            ],
-            path: "Sources/TextText"
+            ] + updaterDependencies,
+            path: "Sources/TextText",
+            swiftSettings: editionSwiftSettings
         ),
         .executableTarget(
             // Depends only on the standalone spec module so a manifest edit

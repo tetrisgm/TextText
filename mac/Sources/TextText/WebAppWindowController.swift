@@ -359,7 +359,15 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
            isAuthenticationHost(url) {
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in
-                self?.onSystemSignInRequested()
+                guard let self else { return }
+                self.onSystemSignInRequested()
+                // Cancelling leaves the page exactly as it was, which means the
+                // button the person just pressed stays in its pending state -
+                // "Continuing with Apple" forever. Nothing tells the page the
+                // navigation was taken away from it, so from the outside the
+                // button simply does nothing, whether or not the browser
+                // opened behind the window. Reload so the form returns to rest.
+                self.webView.reload()
             }
             return
         }

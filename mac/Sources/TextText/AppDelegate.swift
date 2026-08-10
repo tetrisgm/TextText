@@ -841,6 +841,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // tells the person "TextText tried to access your data from other apps
         // and was blocked". Only two paths can ever be ours, so test those two
         // and touch nothing else.
+        // Sandboxed (the Store edition): the system hands back the one true
+        // container, the same team-prefixed directory the sandboxed extensions
+        // write to. This is the whole reason sandboxing fixes the split below.
+        if let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: groupIdentifier
+        ), FileManager.default.fileExists(atPath: container.path) {
+            return container
+        }
+        // Not sandboxed (the Developer ID edition): the same call returns a
+        // naive <home>/Library/Group Containers/<group id> that the extensions
+        // never write to, so the two candidate paths have to be tried.
         return Self.shareInboxCandidates(for: groupIdentifier)
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }

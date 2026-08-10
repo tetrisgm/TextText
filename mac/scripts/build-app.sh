@@ -19,7 +19,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 MAC="$(pwd)"
 APP="$MAC/build/TextText.app"
-ENT="$MAC/texttext.entitlements"
+# Two editions, two entitlement files, never mixed: the Store edition is
+# sandboxed and carries no updater; the standalone edition is Developer ID with
+# Sparkle. TEXTTEXT_STORE=1 selects the first.
+STORE="${TEXTTEXT_STORE:-0}"
+if [ "$STORE" = "1" ]; then
+  ENT="$MAC/texttext-app-store.entitlements"
+else
+  ENT="$MAC/texttext.entitlements"
+fi
 PB=/usr/libexec/PlistBuddy
 
 require_release_env() {
@@ -32,7 +40,9 @@ require_release_env() {
 
 require_release_env TEXTTEXT_BUNDLE_ID
 require_release_env TEXTTEXT_PRODUCT_ORIGIN
-require_release_env TEXTTEXT_SPARKLE_PUBLIC_KEY
+if [ "${TEXTTEXT_STORE:-0}" != "1" ]; then
+  require_release_env TEXTTEXT_SPARKLE_PUBLIC_KEY
+fi
 
 # Stable signing keeps macOS trust anchored across rebuilds. Prefer an
 # explicit TEXTTEXT_SIGN_ID, else auto-detect a local Developer ID Application
@@ -122,11 +132,20 @@ STAGED="$APP/Contents/Info.plist"
 # pointing at localhost.
 "$PB" -c "Add :TextTextServerOrigin string ${TEXTTEXT_PRODUCT_ORIGIN%/}" "$STAGED" 2>/dev/null \
   || "$PB" -c "Set :TextTextServerOrigin ${TEXTTEXT_PRODUCT_ORIGIN%/}" "$STAGED"
-"$PB" -c "Set :SUFeedURL ${TEXTTEXT_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
-"$PB" -c "Set :SUPublicEDKey $TEXTTEXT_SPARKLE_PUBLIC_KEY" "$STAGED"
-# The app locates the share inbox by this group id (scan-based; the app itself
-# needs no app-group entitlement). Empty leaves the TEXTTEXT_APP_GROUP placeholder,
-# which the resolver ignores.
+if [ "$STORE" = "1" ]; then
+  # No updater keys in a Store bundle: the store does the updating, and their
+  # presence alone invites a rejection.
+  for k in SUFeedURL SUPublicEDKey SUAutomaticallyUpdate SUEnableAutomaticChecks SUScheduledCheckInterval; do
+    "$PB" -c "Delete :$k" "$STAGED" 2>/dev/null || true
+  done
+else
+  "$PB" -c "Set :SUFeedURL ${TEXTTEXT_PRODUCT_ORIGIN%/}/appcast.xml" "$STAGED"
+  "$PB" -c "Set :SUPublicEDKey $TEXTTEXT_SPARKLE_PUBLIC_KEY" "$STAGED"
+fi
+# The app locates the share inbox by this group id. Sandboxed, it asks the
+# system and gets the one true container; unsandboxed, it tries the two paths
+# the group can live at. Empty leaves the TEXTTEXT_APP_GROUP placeholder, which
+# the resolver ignores.
 if [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
   "$PB" -c "Set :TextTextAppGroupIdentifier $TEXTTEXT_APP_GROUP" "$STAGED" 2>/dev/null \
     || "$PB" -c "Add :TextTextAppGroupIdentifier string $TEXTTEXT_APP_GROUP" "$STAGED"
@@ -158,7 +177,12 @@ if [ -n "${APP_BUILD_NUMBER:-}" ]; then
 fi
 
 # Sparkle framework (auto-update): embed + make it discoverable via rpath.
-if [ -d "$BIN/Sparkle.framework" ]; then
+# Never in the Store edition - App Review rejects a bundle that carries a
+# self-updater whether or not the code runs, and Sparkle's Autoupdate and
+# Installer.xpc are not sandboxed, which the store also forbids.
+if [ "$STORE" = "1" ]; then
+  echo ">> Store edition: no Sparkle"
+elif [ -d "$BIN/Sparkle.framework" ]; then
   cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/TextText" 2>/dev/null || true
 else
@@ -199,6 +223,16 @@ if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:
     -e "s/TEXTTEXT_KEYCHAIN_GROUP/${KC_GROUP:-}/g" \
     "$ENT" > "$MAIN_ENT"
   echo ">> main app: app-group + keychain entitlement + embedded profile"
+elif [ "$STORE" = "1" ]; then
+  # The Store edition must be sandboxed even when no profile is around, or a
+  # local test build silently proves nothing: the whole point of this edition
+  # is that it runs under the sandbox. The app group and keychain group ARE
+  # restricted and need a profile, so they are dropped rather than faked; the
+  # File Provider handoff simply cannot authenticate in that state.
+  cp "$ENT" "$MAIN_ENT"
+  "$PB" -c "Delete :com.apple.security.application-groups" "$MAIN_ENT" 2>/dev/null || true
+  "$PB" -c "Delete :keychain-access-groups" "$MAIN_ENT" 2>/dev/null || true
+  echo ">> main app: sandboxed, no profile so no app-group or keychain group"
 else
   printf '%s\n' \
     '<?xml version="1.0" encoding="UTF-8"?>' \
@@ -209,7 +243,9 @@ fi
 
 echo ">> codesigning inside-out ($SIGN_ID)"
 SPK="$APP/Contents/Frameworks/Sparkle.framework"
-if [ "$SIGN_ID" = "-" ]; then
+if [ "$STORE" = "1" ]; then
+  : # Store edition ships no Sparkle, so there is nothing to sign here.
+elif [ "$SIGN_ID" = "-" ]; then
   codesign --force --deep --sign - "$SPK"   # ad-hoc: deep is fine for local dev
 else
   # Developer ID: Sparkle's nested helpers first, then the framework. Never

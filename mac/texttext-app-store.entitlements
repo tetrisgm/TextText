@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The Store edition. Sandboxed, which the Mac App Store requires of the main
+	  executable and of every executable inside the bundle.
+
+	  Kept apart from texttext.entitlements on purpose: the standalone edition
+	  is Developer ID with Sparkle, and mixing the two is how a Store build ends
+	  up carrying an updater it is not allowed to have.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Talks to the workspace server. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- Opening and saving documents the person picks themselves. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- Shared with the Share, Quick Look and File Provider extensions. Under
+	     the sandbox this is what makes containerURL(forSecurityApplicationGroup
+	     Identifier:) return the same directory the extensions write to. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>TEXTTEXT_APP_GROUP</string>
+	</array>
+
+	<key>keychain-access-groups</key>
+	<array>
+		<string>TEXTTEXT_KEYCHAIN_GROUP</string>
+	</array>
+</dict>
+</plist>

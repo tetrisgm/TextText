@@ -1,3 +1,22 @@
+#if TEXTTEXT_STORE
+
+import Foundation
+
+/// The Store edition has no updater: the App Store does the updating, and a
+/// bundled self-updater is grounds for rejection on its own. This stub keeps
+/// the call sites in AppDelegate identical between editions - `isConfigured`
+/// is false, so the app never constructs one and the Check for Updates menu
+/// item stays hidden.
+final class Updater {
+    static var isConfigured: Bool { false }
+    init(isBusy: @escaping () -> Bool) {}
+    func checkForUpdates() {}
+    func checkNow() {}
+    func busyDidEnd() {}
+}
+
+#else
+
 import AppKit
 import Foundation
 import Sparkle
@@ -109,3 +128,5 @@ final class Updater: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate
         _ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState
     ) {}
 }
+
+#endif
