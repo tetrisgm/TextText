@@ -1,5 +1,4 @@
 import type { Post } from "@/lib/content";
-import { COVER_PILE } from "@/lib/cover-pile";
 
 type CoverPost = Pick<
   Post,
@@ -33,11 +32,15 @@ export function resolveCoverSource(post: CoverPost): CoverSource {
   const captureCover = bookmarkCaptureCover(post);
   if (captureCover) return captureCover;
 
-  if (post.type === "bookmark") return { kind: "none", src: "" };
-
-  const fallback =
-    COVER_PILE[stableHash(coverHashBasis(post)) % COVER_PILE.length];
-  return { kind: "fallback", src: fallback ?? COVER_PILE[0] ?? "" };
+  // A document with no picture has no picture.
+  //
+  // This used to hand any post without a cover a stock photograph from a pile,
+  // chosen by hashing the post - so an article about a handheld console led
+  // with a picture of a road. It is decoration presented as content: the index
+  // shows a cover the post does not have, and opening it finds nothing of the
+  // kind. Nothing a look does can correct for it, because the look is being
+  // handed an image that was invented for it.
+  return { kind: "none", src: "" };
 }
 
 export function resolveCover(post: CoverPost): string {
@@ -89,9 +92,6 @@ export function coverMimeType(src: string): string {
   return "image/jpeg";
 }
 
-function coverHashBasis(post: CoverPost): string {
-  return post.id?.trim() || post.slug.trim() || post.title.trim() || "untitled";
-}
 
 function bookmarkCaptureCover(post: CoverPost): CoverSource | null {
   if (post.type !== "bookmark") return null;
@@ -131,11 +131,3 @@ function isHttpUrl(value: string | undefined): value is string {
   }
 }
 
-function stableHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
