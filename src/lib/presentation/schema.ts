@@ -264,6 +264,14 @@ type RenderNodeInput =
       showIcon?: boolean;
     }
   | {
+      type: "toggle";
+      id?: string;
+      showWhen?: string;
+      bind: string;
+      labelBind?: string;
+      variant?: "circle" | "square";
+    }
+  | {
       type: "facts";
       id?: string;
       showWhen?: string;
@@ -373,6 +381,10 @@ export type RenderNode =
       bind: ContentBinding | string;
       showWhen?: ContentBinding;
     })
+  | (Omit<Extract<RenderNodeInput, { type: "toggle" }>, "bind" | "showWhen"> & {
+      bind: ContentBinding | string;
+      showWhen?: ContentBinding;
+    })
   | (Omit<Extract<RenderNodeInput, { type: "facts" }>, "showWhen"> & {
       showWhen?: ContentBinding;
     })
@@ -457,6 +469,19 @@ export const renderNodeSchema: z.ZodType<RenderNodeInput> = z.lazy(() =>
       bind: z.union([bindingSchema, rowBindingSchema]),
       variant: z.enum(["pill", "chips", "glyph"]).default("pill"),
       showIcon: z.boolean().default(true),
+    }).strict(),
+    // toggle: one boolean, drawn as the mark a person recognises - a filled
+    // circle when it is on, an empty one when it is not. `checklist` covers a
+    // rows field, so a single flag had no visual form at all: a task list's
+    // defining element could not be put on a row, and every to-do collection
+    // came back as a list of titles.
+    z.object({
+      ...sharedNode,
+      type: z.literal("toggle"),
+      bind: z.union([bindingSchema, rowBindingSchema]),
+      /** Text beside the mark. Usually the thing being ticked off. */
+      labelBind: z.union([bindingSchema, rowBindingSchema]).optional(),
+      variant: z.enum(["circle", "square"]).default("circle"),
     }).strict(),
     // facts: the labeled metadata header. table | strip | pills; empty
     // entries are skipped so heavy optional schemas stay light. An entry may
@@ -770,6 +795,18 @@ function validateTreeBindings(
           fields,
           ["enum", "boolean", "reference", "tags", "text"],
           "badge",
+        );
+      }
+    } else if (node.type === "toggle") {
+      if (!node.bind.startsWith("row.")) {
+        checkBinding(node.bind, fields, ["boolean"], "toggle");
+      }
+      if (node.labelBind && !node.labelBind.startsWith("row.")) {
+        checkBinding(
+          node.labelBind,
+          fields,
+          ["text", "enum", "url", "date", "number"],
+          "toggle label",
         );
       }
     } else if (node.type === "facts") {

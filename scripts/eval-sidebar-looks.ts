@@ -257,7 +257,10 @@ const MEASURE_INDEX = `(() => {
       rows: Array.from(document.querySelectorAll("[data-workspace-post-id]")).slice(0, 2).map((el) => el.className),
     };
   }
-  const title = card.querySelector(".tt-text-heading, .tt-text-title, .tt-text");
+  // A toggle's label IS the row's title on a task list, so it counts.
+  const title = card.querySelector(
+    ".tt-text-heading, .tt-text-title, .tt-toggle-label, .tt-text",
+  );
   let painted = "rgba(0, 0, 0, 0)";
   for (let el = card; el; el = el.parentElement) {
     const bg = cs(el).backgroundColor;
@@ -272,6 +275,17 @@ const MEASURE_INDEX = `(() => {
     titleSize: title ? Math.round(parseFloat(cs(title).fontSize)) : null,
     paintedBackground: painted,
     dumpsBody: /no business printing in full/.test(card.textContent || ""),
+    // How tall a row is, and what it actually shows. An index that scans well
+    // is the difference between a collection and a list of links.
+    rowHeight: Math.round(card.getBoundingClientRect().height),
+    shows: {
+      checkbox: !!card.querySelector(".tt-toggle, .tt-checkbox, input[type=checkbox]"),
+      cover: !!card.querySelector(".tt-cover, .tt-image"),
+      badge: !!card.querySelector(".tt-badge, .tt-pill"),
+      facts: !!card.querySelector(".tt-facts"),
+      metadata: !!card.querySelector(".tt-metadata"),
+      caption: !!card.querySelector(".tt-text-caption, .tt-text-meta"),
+    },
   };
 })()`;
 

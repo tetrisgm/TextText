@@ -916,3 +916,23 @@
   );
   gap: var(--collection-gap, 22px);
 }
+
+/* An index row is as tall as what it contains.
+
+   A fixed 250px (320 in column view) was written for cards that lead with a
+   cover, and it is right for those. For a look whose index row is a task with
+   a checkbox and a due date, or a note with a title and a date, it turns every
+   row into a mostly empty box - which is what an AI-authored collection looked
+   like, because most of them are text. The floor now applies only when the row
+   actually carries media. */
+.universal-item-card .tt-collection-item,
+.universal-item-collection.is-column .tt-collection-item {
+  min-height: 0;
+}
+.universal-item-card .tt-collection-item:has(.tt-cover, .tt-image, .tt-gallery, .tt-video) {
+  min-height: 250px;
+}
+.universal-item-collection.is-column
+  .tt-collection-item:has(.tt-cover, .tt-image, .tt-gallery, .tt-video) {
+  min-height: 320px;
+}

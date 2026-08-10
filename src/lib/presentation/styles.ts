@@ -150,6 +150,16 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-callout-title{display:flex;align-items:center;gap:.5rem;font-weight:700;color:color-mix(in srgb,var(--tt-tone) 60%,var(--ink,#1d1d1f))}
 .tt-callout-icon{line-height:1}
 .tt-callout-body{display:flex;flex-direction:column;gap:.5rem}
+/* One boolean, drawn as the mark a person recognises. A ticked thing recedes:
+   the label greys and strikes, the way a finished task does everywhere. */
+.tt-toggle{display:inline-flex;align-items:center;gap:.6rem;min-width:0}
+.tt-toggle-mark{flex:none;display:grid;place-items:center;width:1.3rem;height:1.3rem;border:1.5px solid color-mix(in srgb,var(--tt-accent) 70%,transparent);border-radius:50%}
+.tt-toggle[data-variant="square"] .tt-toggle-mark{border-radius:.3rem}
+.tt-toggle[data-on] .tt-toggle-mark{background:var(--tt-accent);border-color:var(--tt-accent)}
+.tt-toggle[data-on] .tt-toggle-mark::after{content:"";width:.42rem;height:.72rem;margin-top:-.14rem;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.tt-toggle-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tt-toggle[data-on] .tt-toggle-label{color:var(--muted,#6e6e73);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--ink,#1d1d1f) 30%,transparent)}
+.tt-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .tt-quote{margin-block:0;overflow-wrap:anywhere}
 .tt-quote p{margin:0}
 .tt-quote[data-variant="block"],.tt-quote[data-variant="attributed"]{border-left:3px solid color-mix(in srgb,var(--ink,#1d1d1f) 18%,transparent);padding-left:1rem;font-size:1.02rem;line-height:1.6;color:color-mix(in srgb,var(--ink,#1d1d1f) 78%,transparent)}

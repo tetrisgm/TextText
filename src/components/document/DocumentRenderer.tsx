@@ -1063,6 +1063,29 @@ function NodeRenderer({
       if (slot !== undefined) return slot;
       return <BadgeNode node={node} document={document} fields={fields} attrs={attrs} />;
     }
+    case "toggle": {
+      const slot = slots?.bindings?.[node.bind];
+      if (slot !== undefined) return slot;
+      const on = resolveDocumentBinding(document, node.bind) === true;
+      const label = node.labelBind
+        ? formatFieldValue(
+            resolveDocumentBinding(document, node.labelBind),
+            resolveFieldDefinition(node.labelBind, fields),
+          )
+        : "";
+      return (
+        <span
+          {...attrs}
+          className="tt-toggle"
+          data-variant={node.variant}
+          data-on={on ? "true" : undefined}
+        >
+          <span className="tt-toggle-mark" aria-hidden="true" />
+          <span className="tt-visually-hidden">{on ? "Done" : "Not done"}</span>
+          {label ? <span className="tt-toggle-label">{label}</span> : null}
+        </span>
+      );
+    }
     case "facts":
       return <FactsNode node={node} document={document} fields={fields} attrs={attrs} />;
     case "checklist": {
