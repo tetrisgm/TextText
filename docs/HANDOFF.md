@@ -422,6 +422,62 @@ Two things that harness found, which nothing else would have:
 Shots in `/tmp/ailook2`: `1-before.png` (stock feed), `2-after.png` (the
 authored index), `3-item.png` (an opened post in the authored look).
 
+### Asking for a kind of collection, and getting one
+
+`npm run eval:sidebar -- all codex` drives the REAL assistant path - the same
+system prompt the route sends (`ASSISTANT_SYSTEM_PROMPT`, lifted out of the
+route so a harness cannot measure a copy that drifted), the same tool set the
+web assistant gets, the same executor those calls run through. Only the model
+provider is a local CLI, because TextText never spends a shared key. It scores
+nothing: it screenshots the three surfaces of a collection and measures them.
+
+Five briefs, each a different kind of thing:
+
+| brief | index row | editor fields |
+| --- | --- | --- |
+| Medium blog | serif, cover, date | Cover |
+| Apple Notes | title, date, preview | none - correct |
+| Notion page | title, date, preview | Cover, Icon |
+| Todoist list | **checkbox**, task, priority, due | Done, Priority, Due |
+| Raindrop | **thumbnail, source, read toggle, saved** | Link, Site, Status, Saved |
+
+What the loop found, none of which was the model's judgement:
+
+- **Four template-blind index renderers.** The blog feed, the list rows, the
+  bookmark cards and the note cards each ignored the folder's look entirely.
+  All are now gated on the folder still wearing a built-in look.
+- **A 250px floor on every index row**, written for cover-led cards. Most
+  authored looks are text, so a task row was a mostly empty box. To-do rows
+  went from ~500px to 61.
+- **A single boolean had no visual form.** `checklist` covers a rows field, so
+  the circle you tick could not be put on a row and every to-do collection came
+  back as a list of titles. `toggle` is a render node now.
+- **A look could size its title but not its text.** `bodyScale` is a token.
+- **An icon was inexpressible**; the built-in Page drew Notion's emoji with
+  per-template CSS an authored look cannot reach. It is a text role.
+- **Applying a look emptied the folder.** A "done = false" filter excluded
+  every item that had never carried the flag, so the page said "Nothing here
+  yet" under a header counting three items. An unset boolean is false, in the
+  in-memory filter and the SQL one.
+- **A declared-but-unplaced field fell into a closed drawer**, putting a task's
+  due date two clicks away. The drawer opens.
+- **The editor showed no date**, so a look declaring `metadata` rendered
+  nothing where its author was looking.
+- **An authored look had no page padding** and ran under the toolbar.
+
+Traps the harness itself hit, worth knowing before touching it:
+
+- Point it at `127.0.0.1` while next-auth redirects to `localhost` and the
+  session cookie is silently dropped: the callback answers 200 and the page
+  still renders the sign-in screen.
+- `getFolders` memoises with React `cache`, which outside a request holds its
+  first answer for the life of the process. Seed through the tools instead.
+- `page.evaluate(fn)` fails under tsx with "__name is not defined"; pass the
+  probe as a source string.
+- The assistant invents its own field names, so the harness fills each item
+  from the look's OWN declared fields. Seeding fixed names tests an empty
+  collection and blames the look for it.
+
 ## Open
 
 Nothing blocking. What is genuinely left, in the order it is worth doing:

@@ -205,13 +205,14 @@ async function callTool(
  * Going through create_item sidesteps the folder id entirely and exercises the
  * same path an agent uses.
  */
-async function seed(actor: Actor, folderPath: string): Promise<void> {
+async function seed(actor: Actor, folderPath: string): Promise<string[]> {
   const covers = [
     "/covers/cover-118.jpg",
     "/covers/cover-119.jpg",
     "/covers/cover-120.jpg",
   ];
   const icons = ["\u{1F9ED}", "\u{1F4DD}", "\u{1F4A1}"];
+  const ids: string[] = [];
   let i = 0;
   for (const [title, subtitle] of SEED[folderPath] ?? SEED.blog) {
     const body = `${subtitle}. The opening paragraph, which an index has no business printing in full.`;
@@ -234,8 +235,86 @@ async function seed(actor: Actor, folderPath: string): Promise<void> {
         fields: { cover: covers[i % covers.length], icon: icons[i % icons.length] },
       });
     }
+    if (id) ids.push(id);
     i += 1;
   }
+  return ids;
+}
+
+/**
+ * Fill every item with values for the fields the LOOK declares.
+ *
+ * The assistant invents its own field names - a bookmark look asks for
+ * `picture` and `site`, not the `cover` this harness seeded - so without this
+ * a correctly authored row hides its own thumbnail behind showWhen and the
+ * look gets blamed for an empty collection. A real workspace has content in
+ * the shape of its look; the test should too.
+ */
+function sampleValue(
+  field: { id: string; type: string; options?: Array<{ value: string }>; fields?: Array<{ id: string; type: string }> },
+  index: number,
+  subtitle: string,
+): unknown {
+  switch (field.type) {
+    case "image":
+      return ["/covers/cover-118.jpg", "/covers/cover-119.jpg", "/covers/cover-120.jpg"][index % 3];
+    case "url":
+      return ["https://www.figma.com/blog/how-figmas-multiplayer-technology-works/", "https://idlewords.com/talks/website_obesity.htm", "https://dl.acm.org/doi/10.1145/358198.358210"][index % 3];
+    case "date":
+      return ["2026-08-12", "2026-08-14", "2026-08-19"][index % 3];
+    case "boolean":
+      // One ticked, so a finished state is visible next to unfinished ones.
+      return index === 2;
+    case "enum":
+      return field.options?.[index % Math.max(1, field.options.length)]?.value ?? null;
+    case "number":
+      return [8, 12, 5][index % 3];
+    case "richtext":
+      return subtitle;
+    case "rows":
+      return (field.fields ?? []).length
+        ? [1, 2].map((n) =>
+            Object.fromEntries(
+              (field.fields ?? []).map((sub) => [
+                sub.id,
+                sub.type === "boolean" ? n === 1 : sub.type === "date" ? "2026-08-15" : `${sub.id} ${n}`,
+              ]),
+            ),
+          )
+        : null;
+    default:
+      return subtitle;
+  }
+}
+
+async function fillDeclaredFields(
+  actor: Actor,
+  folderPath: string,
+  ids: string[],
+): Promise<string[]> {
+  const folders = await callTool(actor, "list_folders", {});
+  const reference = JSON.parse(folders.text).folders.find(
+    (f: { path: string }) => f.path === folderPath,
+  )?.defaultTemplate;
+  if (!reference || reference.id.startsWith("texttext.")) return [];
+  const listed = await callTool(actor, "list_document_templates", {});
+  const template = JSON.parse(listed.text).templates.find(
+    (t: { id: string; version: number }) =>
+      t.id === reference.id && t.version === reference.version,
+  );
+  if (!template) return [];
+  const seedRows = SEED[folderPath] ?? SEED.blog;
+  for (const [index, id] of ids.entries()) {
+    const values: Record<string, unknown> = {};
+    for (const field of template.fields ?? []) {
+      const value = sampleValue(field, index, seedRows[index]?.[1] ?? "");
+      if (value !== null && value !== undefined) values[field.id] = value;
+    }
+    if (Object.keys(values).length) {
+      await callTool(actor, "update_item", { id, fields: values });
+    }
+  }
+  return (template.fields ?? []).map((f: { id: string }) => f.id);
 }
 
 
@@ -504,7 +583,7 @@ async function main(): Promise<void> {
     await page.goto(folderUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
 
-    await seed({ sub, userId: userId ?? null, handle }, folderPath);
+    const seededIds = await seed({ sub, userId: userId ?? null, handle }, folderPath);
     await page.goto(folderUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2400);
     await page.screenshot({ path: `${OUT}/${brief.key}-1-before.png` });
@@ -515,6 +594,14 @@ async function main(): Promise<void> {
       brief,
       folderPath,
     );
+
+    // Give the items the shape the look expects before looking at it.
+    const filled = await fillDeclaredFields(
+      { sub, userId: userId ?? null, handle },
+      folderPath,
+      seededIds,
+    );
+    if (filled.length) note(`  filled fields: ${filled.join(", ")}`);
 
     // What a person sees afterwards: the index, an opened item, the editor.
     await page.goto(folderUrl, { waitUntil: "domcontentloaded" });
