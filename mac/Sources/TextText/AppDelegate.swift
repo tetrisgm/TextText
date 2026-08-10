@@ -135,7 +135,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Before ANYTHING: offer to relocate to /Applications. Running from
         // ~/Downloads breaks Sparkle updates and triggers Gatekeeper
         // app-translocation; one click here fixes both (the LetsMove pattern).
+        //
+        // Not in the Store edition. The store installs to /Applications itself,
+        // so the prompt can never be right, and the move copies the bundle and
+        // spawns /usr/bin/xattr to strip com.apple.quarantine: two things a
+        // sandboxed app cannot do and a reviewer should never be shown.
+        #if !TEXTTEXT_STORE
         if moveToApplicationsIfNeeded() { return } // relaunching from the new home
+        #endif
 
         if terminateIfAnotherInstanceIsAlreadyRunning() { return }
 
@@ -2098,6 +2105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return path.hasPrefix("/Applications/") || path.hasPrefix(home + "/Applications/")
     }
 
+    // Compiled out of the Store edition entirely, not merely left uncalled: the
+    // copy and the /usr/bin/xattr spawn that strips com.apple.quarantine should
+    // not be present in a sandboxed bundle at all.
+    #if !TEXTTEXT_STORE
     /// Returns true when a move+relaunch is underway and this instance should
     /// do nothing further. `interactive` = invoked from a menu action (always
     /// prompt); otherwise it is the launch check (skippable only in dev).
@@ -2165,11 +2176,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return false
         }
     }
+    #endif
 
     // MARK: Login item
 
-    /// A sync agent should just BE there after a restart: enroll
-    /// start-at-login once, by default (no password, no dialog; it shows in
     /// Opening at login is opt-in, through the menu toggle. The app used to
     /// enrol itself on first launch from an installed location and leave the
     /// toggle as the opt-out, which meant it added itself to System Settings >
@@ -2401,9 +2411,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Sparkle can't update an app running from Downloads or a
         // translocated mount; offer the move first, it relaunches from
         // /Applications where the update just works.
+        #if !TEXTTEXT_STORE
         if !isInstalled && Bundle.main.bundleURL.path.hasSuffix(".app") {
             if moveToApplicationsIfNeeded(interactive: true) { return } // relaunching
         }
+        #endif
         updater.checkForUpdates()
     }
 
