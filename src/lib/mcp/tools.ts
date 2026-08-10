@@ -88,6 +88,7 @@ import {
   restorePost,
   savePost,
   savePostContentPatch,
+  retemplateFolderItems,
   setFolderTemplate,
   setItemCommentResolved,
   signalWorkspaceChange,
@@ -791,27 +792,41 @@ export async function executeMcpTool(
       );
       if (!folder) return errorResult("Folder not found.");
       try {
+        const reference = {
+          id: input.template_id,
+          version: input.template_version,
+        };
         const updated = await setFolderTemplate(
           resolved.blog.handle,
           folder.id,
-          { id: input.template_id, version: input.template_version },
+          reference,
         );
+        // Everything already in the folder moves too, unless the caller asked
+        // otherwise. A folder whose index changed while every item in it kept
+        // the old look reads as the request not having worked.
+        const restyled =
+          input.apply_to_existing === false
+            ? { changed: 0, remaining: 0 }
+            : await retemplateFolderItems(
+                resolved.blog.handle,
+                folder.id,
+                reference,
+              );
         await recordAction(
           mcpAuditEntry(
             extra,
             "mcp.set_folder_template",
             "folder",
             folder.id,
-            `${input.template_id}@${input.template_version}`,
+            `${input.template_id}@${input.template_version} (+${restyled.changed} items)`,
           ),
         );
         revalidateBlogPaths(resolved.blog, []);
         return jsonResult({
           folder: updated,
-          template: await getDocumentTemplate(resolved.access.blogId, {
-            id: input.template_id,
-            version: input.template_version,
-          }),
+          restyledItems: restyled.changed,
+          itemsLeftUnchanged: restyled.remaining,
+          template: await getDocumentTemplate(resolved.access.blogId, reference),
         });
       } catch (error) {
         return errorResult(

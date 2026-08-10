@@ -445,7 +445,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   set_folder_template: defineTool("set_folder_template", {
     title: "Set folder look",
     description:
-      "Give a folder a look. The template becomes what new items in the folder are created with AND what the folder's index page renders from, so this is how a request like 'make this folder a magazine' is actually applied. Existing items keep the template they were made with.",
+      "Give a folder a look, and by default restyle everything already in it. The template becomes what the folder's index page renders from, what new items are created with, and what the items already there use. This is how a request like 'make this folder a magazine' actually lands. Pass apply_to_existing false only if the person asked for the change to affect new items alone: leaving old items behind means the index changes and not one article does, which reads as nothing having happened.",
     inputSchema: z
       .object({
         folder_path: z
@@ -456,6 +456,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
           .describe('Folder path inside the workspace, e.g. "blog" or "blog/ideas".'),
         template_id: templateId,
         template_version: templateVersion,
+        apply_to_existing: z
+          .boolean()
+          .optional()
+          .describe(
+            "Restyle the items already in the folder. Defaults to true, which is what someone asking to change how a folder looks almost always means. Content is never touched.",
+          ),
       })
       .strict(),
     mutability: "write",

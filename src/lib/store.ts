@@ -1142,6 +1142,61 @@ export async function setFolderTemplate(
 }
 
 /**
+ * Give every item already in a folder the folder's look.
+ *
+ * "Make my blog look like Medium" means the blog, not the posts written after
+ * today. Setting only the folder's default left every existing post rendering
+ * exactly as before, which reads as the request having done nothing: the index
+ * changed and not one article did.
+ *
+ * Content is untouched. Only `presentation.template` moves.
+ */
+export async function retemplateFolderItems(
+  handle: string,
+  folderId: string,
+  reference: TemplateReference,
+  options: { limit?: number } = {},
+): Promise<{ changed: number; remaining: number }> {
+  if (!db) throw new Error("Retemplating needs a database.");
+  const blogId = await blogIdFor(handle);
+  const limit = options.limit ?? 500;
+  const rows = await db
+    .select()
+    .from(posts)
+    .where(
+      and(
+        eq(posts.blogId, blogId),
+        eq(posts.folderId, folderId),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .orderBy(asc(posts.createdAt));
+
+  let changed = 0;
+  for (const row of rows.slice(0, limit)) {
+    const post = mapPost(row);
+    const current = post.document;
+    if (!current) continue;
+    if (
+      current.presentation.template.id === reference.id &&
+      current.presentation.template.version === reference.version
+    ) {
+      continue;
+    }
+    await savePost(handle, {
+      ...post,
+      document: {
+        ...current,
+        presentation: { ...current.presentation, template: reference },
+      },
+      template: reference,
+    });
+    changed += 1;
+  }
+  return { changed, remaining: Math.max(0, rows.length - limit) };
+}
+
+/**
  * Bookmarks waiting for a capture agent (normally the Mac app). Each entry
  * carries the URL to capture: the first link's href, set at creation.
  */

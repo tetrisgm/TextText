@@ -3,6 +3,13 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-typography="editorial"]{--tt-font:Iowan Old Style,Palatino Linotype,Book Antiqua,Palatino,serif}
 .tt-document[data-typography="mono"]{--tt-font:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
 .tt-document[data-surface="paper"]{--paper:#fffdf8;--ink:#201f1c;--muted:#6d6a62}.tt-document[data-surface="soft"]{--paper:#f5f5f7}.tt-document[data-surface="ink"]{--paper:#1d1d1f;--ink:#f5f5f7;--muted:#a1a1a6}
+/* Every look gets a page to sit on. Each built-in declares its own padding in
+   the sections below, so this was never missed - but a look an agent authors
+   has no such section, and started at y=0 with its title running under the
+   app's toolbar. A default here is what makes an authored look land as a page
+   rather than as content pressed against the chrome. Built-ins still win: they
+   set the same property with a heavier per-template selector. */
+.tt-document:not(.tt-collection-item):not([data-preview])>.tt-stack{padding:clamp(2rem,5vw,3.5rem) 0 5rem}
 .tt-document[data-measure="narrow"]{--tt-measure:36rem}.tt-document[data-measure="wide"]{--tt-measure:64rem}.tt-document[data-measure="full"]{--tt-measure:none}
 .tt-document[data-density="compact"]{--tt-gap-sm:.5rem;--tt-gap-md:.85rem;--tt-gap-lg:1.35rem;--tt-gap-xl:2rem}.tt-document[data-density="spacious"]{--tt-gap-sm:1rem;--tt-gap-md:1.75rem;--tt-gap-lg:3rem;--tt-gap-xl:5rem}
 .tt-stack,.tt-group,.tt-masthead{display:flex;box-sizing:border-box}.tt-stack[data-direction="vertical"],.tt-group,.tt-masthead{flex-direction:column}.tt-stack[data-direction="horizontal"]{flex-direction:row}.tt-stack,.tt-group{align-items:stretch}.tt-masthead{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;text-align:center;align-items:center}
