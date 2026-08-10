@@ -424,14 +424,35 @@ authored index), `3-item.png` (an opened post in the authored look).
 
 ## Open
 
-Nothing from today's list. Two notes for whoever picks this up:
+Nothing blocking. What is genuinely left, in the order it is worth doing:
 
-- The editor's focus ring tints the whole field with the look's accent at 7%,
-  which is heavier over a tall body than it was over a one-line title. It is
-  the accessibility affordance working as designed, but it is worth a look.
+- **The stock blog feed is still hardcoded markup.** `blog-folder-feed` in
+  `FolderPage.tsx` is the fast path for a folder still on built-in Article;
+  every other look drives the index. Expressing that feed as
+  `article.collection` deletes the branch and makes the architecture true
+  rather than nearly true.
+- **No UI writer for a folder's look.** `set_folder_template` is reachable
+  from the assistant and MCP; the folder menu offers rename / new subfolder /
+  trash and no way to choose a look. A person can only get one by asking.
+- **Eight findings from the 56-agent visual critique** are still open, listed
+  above under that pass. One is Project's orphan-checkmark neighbours; the
+  rest are Checklist and Bookmark polish.
+- `listDocumentTemplates` returns every version of every workspace look, so a
+  second `customize` of the same id shows two identically-named cards in the
+  gallery with no version affordance and no way to retire one.
+- `set-collection-layout` still cannot express `index`, `timeline` or
+  `single` on the folder page: only `list`, `cards`, `board`, `calendar` and
+  `heatmap` have readers.
 - `MarkdownSurface` adds two React Compiler "memoization could not be
   preserved" lint errors, inherent to building DOM imperatively in an effect.
   `npx eslint src` reports 26 against `main`'s 27.
+
+### Trying it by hand
+
+The in-app assistant needs a provider connected first: **Workspace Settings →
+AI**. TextText never spends a shared key, so without that the sidebar answers
+"Connect an AI provider in Workspace Settings" and no amount of asking will
+author a look. The MCP and CLI paths do not need it.
 
 ## Verification
 
