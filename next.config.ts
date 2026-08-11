@@ -34,6 +34,24 @@ const nextConfig: NextConfig = {
     ];
   },
   experimental: {
+    // Bake the deployment id into the build instead of reading it back from the
+    // environment at request time.
+    //
+    // This is not a preference. Next auto-enables runtimeServerDeploymentId
+    // during a production build whenever NEXT_DEPLOYMENT_ID is set and the
+    // build targets Vercel (server/config.js), and the server then THROWS on
+    // every request if that variable is absent at runtime
+    // (server/base-server.js, error E970). release/ship.sh sets the variable to
+    // stamp the build, `vercel deploy --prebuilt` ships the output, and nothing
+    // puts the variable in the runtime environment, so 0.170 deployed a site
+    // where every dynamic route answered 500: sign-in, the demo, every tenant
+    // page, the appcast, and the Mac app's version endpoint. Static pages kept
+    // serving, which is what made it look healthy from the front page.
+    //
+    // Setting it false explicitly keeps the auto-enable from firing. Version
+    // skew protection is unaffected: the id is still stamped per build, it is
+    // just inlined rather than looked up.
+    runtimeServerDeploymentId: false,
     proxyClientMaxBodySize: "55mb",
     optimizePackageImports: [
       "@tiptap/core",
