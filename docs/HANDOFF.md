@@ -556,3 +556,49 @@ production (1 row) on 2026-08-10; both audits pass, 534 and 755 documents.
 Reach for it whenever the gate reports "search projection differs". Run it
 without `--apply` first and read what it plans to change, because it rewrites
 the canonical content model.
+
+## Merging two accounts into one (2026-08-11)
+
+One person could end up with several accounts. Identity used to be a single
+column, `users.apple_sub`, holding the Apple subject or `google:<sub>` or the
+row's own id for an emailed link, so a user WAS a sign-in method: signing in a
+different way than last time made a new workspace rather than opening the
+existing one, which from the inside looks exactly like losing everything. The
+owner hit this and it is what `user_identities` now prevents.
+
+`scripts/merge-accounts.ts` repairs accounts that were split before that.
+
+```
+npx tsx scripts/merge-accounts.ts --from @source --into @target
+npx tsx scripts/merge-accounts.ts --from @source --into @target --apply
+```
+
+It REPORTS by default and the report is the plan; read it before adding
+`--apply`. A person runs it, deliberately. It must never be scheduled.
+
+What it knows that a naive re-point does not:
+
+- `folders_blog_path_idx` is unique on `(blog_id, path)` and every workspace
+  carries the same standard folders, so folders cannot simply change owner.
+  Each source folder is matched to the target's folder of the same path and its
+  documents move into it; only a path the target lacks moves wholesale.
+- `posts_blog_slug_idx` is unique on `(blog_id, slug)` but only for live rows,
+  so a slug used by a trashed document in the target is not a conflict. A live
+  clash renames the arriving document, before the move, while the source blog
+  still scopes uniqueness. The dry run names each rename.
+- Audit rows are REASSIGNED, not nulled. A merge keeps the thread; only a
+  deletion severs it.
+- The tombstone it writes uses a synthetic hash, never the source's subject.
+  A tombstone both holds released names and refuses a subject, and only the
+  first applies here: the source's subjects are alive and now belong to the
+  target, so hashing one would make `upsertUser` throw `AccountDeletedError`
+  the next time that provider signed in and lock the person out of the account
+  everything was just merged into.
+- Before deleting the source user it counts every table that can reference it
+  and aborts on any non-zero count. That check exists because an edit once
+  removed the block that moves identities and tokens, and the merge moved
+  documents, deleted the workspace and stopped, leaving the source alive
+  holding the identity the merge existed to move.
+
+It is resumable: every statement is idempotent, so an interrupted run is
+finished by running it again rather than unpicked.
