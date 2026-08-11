@@ -355,7 +355,7 @@ const localWorkspaceDraftRevisions = new Map<string, number>();
 const localWorkspaceServerRevisions = new Map<string, string>();
 const WORKSPACE_ASSISTANT_STATE_KEY = "texttext:workspace-assistant-state";
 const WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY =
-  "texttext:workspace-assistant-state:v4";
+  "texttext:workspace-assistant-state:v5";
 /// Below this the document column cannot give up the room, so the rail stays a
 /// thing you summon rather than a thing that is open.
 const ASSISTANT_PINNED_MIN_WIDTH = 1100;
@@ -744,35 +744,40 @@ function useWorkspaceSidebarWidth() {
 /// The assistant is a place, not a thing you summon.
 ///
 /// It used to default to hidden, and v3 actively closed it once, which left a
-/// wide empty column beside the document and no reason to ever look right. An
-/// assistant that has to be opened before it can be useful is one that never
-/// gets used, so on a window with the room it starts pinned: docked, reflowing
-/// the document column rather than covering it.
+/// wide empty column beside the document and no reason to ever look right. On a
+/// window with the room it now starts pinned: docked, reflowing the document
+/// column rather than covering it.
 ///
-/// A choice made afterwards still wins. v4 runs once, and only over the state
-/// v3 forced; anyone who has since pinned or hidden it deliberately keeps that.
+/// The width-derived answer is deliberately NOT written down. Persisting it was
+/// a bug: the Mac app opens a window narrower than this, so the first read
+/// recorded "hidden" forever and maximising afterwards could not bring the rail
+/// back. A window size is a fact about right now, not a decision, so it is
+/// recomputed on every read and only an explicit choice is stored.
+///
+/// v4 therefore clears what v3 forced rather than replacing it with another
+/// forced value.
 function readAssistantState(): AssistantSidebarState {
-  if (assistantStateMemory) return assistantStateMemory;
   if (typeof window === "undefined") return "hidden";
   const roomToPin =
     typeof window.innerWidth !== "number" ||
     window.innerWidth >= ASSISTANT_PINNED_MIN_WIDTH;
   const preferred: AssistantSidebarState = roomToPin ? "pinned" : "hidden";
+  let saved: string | null = null;
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
-      window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_KEY, preferred);
+      window.localStorage.removeItem(WORKSPACE_ASSISTANT_STATE_KEY);
       window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY, "1");
     }
+    saved = window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_KEY);
   } catch {
-    assistantStateMemory = preferred;
-    return assistantStateMemory;
+    return preferred;
   }
-  const saved = window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_KEY);
-  assistantStateMemory =
-    saved === "open" || saved === "pinned" || saved === "hidden"
-      ? (saved as AssistantSidebarState)
-      : preferred;
-  return assistantStateMemory;
+  if (saved === "open" || saved === "pinned" || saved === "hidden") {
+    assistantStateMemory = saved;
+    return saved;
+  }
+  // No choice on record: follow the window, and do not write that down.
+  return preferred;
 }
 
 function readAssistantWidth(): number {
