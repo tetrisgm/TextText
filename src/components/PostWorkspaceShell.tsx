@@ -353,7 +353,10 @@ const localWorkspaceDraftRevisions = new Map<string, number>();
 const localWorkspaceServerRevisions = new Map<string, string>();
 const WORKSPACE_ASSISTANT_STATE_KEY = "texttext:workspace-assistant-state";
 const WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY =
-  "texttext:workspace-assistant-state:v3";
+  "texttext:workspace-assistant-state:v4";
+/// Below this the document column cannot give up the room, so the rail stays a
+/// thing you summon rather than a thing that is open.
+const ASSISTANT_PINNED_MIN_WIDTH = 1100;
 const WORKSPACE_ASSISTANT_WIDTH_KEY = "texttext:workspace-assistant-width";
 let assistantStateMemory: AssistantSidebarState | null = null;
 let assistantWidthMemory: number | null = null;
@@ -736,24 +739,37 @@ function useWorkspaceSidebarWidth() {
   return { width, setWidth: setWorkspaceSidebarWidth };
 }
 
+/// The assistant is a place, not a thing you summon.
+///
+/// It used to default to hidden, and v3 actively closed it once, which left a
+/// wide empty column beside the document and no reason to ever look right. An
+/// assistant that has to be opened before it can be useful is one that never
+/// gets used, so on a window with the room it starts pinned: docked, reflowing
+/// the document column rather than covering it.
+///
+/// A choice made afterwards still wins. v4 runs once, and only over the state
+/// v3 forced; anyone who has since pinned or hidden it deliberately keeps that.
 function readAssistantState(): AssistantSidebarState {
   if (assistantStateMemory) return assistantStateMemory;
   if (typeof window === "undefined") return "hidden";
+  const roomToPin =
+    typeof window.innerWidth !== "number" ||
+    window.innerWidth >= ASSISTANT_PINNED_MIN_WIDTH;
+  const preferred: AssistantSidebarState = roomToPin ? "pinned" : "hidden";
   try {
     if (!window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY)) {
-      window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_KEY, "hidden");
+      window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_KEY, preferred);
       window.localStorage.setItem(WORKSPACE_ASSISTANT_STATE_MIGRATION_KEY, "1");
     }
   } catch {
-    assistantStateMemory = "hidden";
+    assistantStateMemory = preferred;
     return assistantStateMemory;
   }
   const saved = window.localStorage.getItem(WORKSPACE_ASSISTANT_STATE_KEY);
-  // The v3 migration closes the inspector once. Choices made afterward persist.
   assistantStateMemory =
     saved === "open" || saved === "pinned" || saved === "hidden"
       ? (saved as AssistantSidebarState)
-      : "hidden";
+      : preferred;
   return assistantStateMemory;
 }
 
