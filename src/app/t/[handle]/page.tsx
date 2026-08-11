@@ -291,15 +291,22 @@ function BlogSingleHome({
   );
 }
 
+/**
+ * The empty state a VISITOR sees. The call site renders this only when the
+ * viewer cannot edit, so it is never the owner reading it, and the copy used to
+ * address the owner anyway: it told a stranger to add the first item to a
+ * collection that is not theirs. It also read as though the workspace were
+ * empty, when the ordinary cause is simply that nothing here is published.
+ */
 function BlogEmptyState({ layout }: { layout: Blog["homeLayout"] }) {
   if (layout === "timeline") return null;
 
   const copy =
     layout === "single"
-      ? "Start writing. Save to get a link."
+      ? "Nothing published here yet."
       : layout === "index"
-        ? "Create the first page in this index."
-        : "Add the first item to your collection.";
+        ? "No pages published in this index yet."
+        : "Nothing published in this collection yet.";
 
   return <p className="blog-home-empty">{copy}</p>;
 }

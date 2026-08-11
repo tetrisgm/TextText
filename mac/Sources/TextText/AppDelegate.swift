@@ -1469,6 +1469,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.clearIndex()
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
+        // Take the window somewhere that says what happened. Clearing the
+        // credential used to leave the web view sitting on the workspace URL,
+        // which without a session renders the PUBLIC page for that workspace:
+        // a person who had just pressed Sign out was shown their own blog with
+        // nothing in it, because nothing of theirs is published. It reads
+        // exactly like the account being emptied.
+        webWindow?.load(path: "/signin")
         refreshUI()
     }
 
