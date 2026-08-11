@@ -625,3 +625,24 @@ in the portal, changing nothing in the form, flipped it from "write app" to
 So if a portal-backed name ever disagrees with what Apple serves again: open
 the identifier in the portal, press Save. The owner has to do it, since the
 portal needs their Apple ID sign-in (a passkey works, no password typed).
+
+## The two Mac update lanes, and why Sparkle stays (2026-08-11)
+
+TextText ships two Mac editions from one tree, and they update by different
+means, matching partyparty:
+
+- Standalone (Developer ID, Sparkle) is the current live channel. 0.173 went
+  out through it, so Macs in the wild carry it and check the appcast.
+- Store (sandboxed, no Sparkle) updates through TestFlight and, later, the Mac
+  App Store.
+
+The standalone Sparkle channel is DORMANT, not retired. release/ship.sh, the
+signed appcast, and the versioned blob downloads stay intact and served, on
+purpose: a Mac already carrying a standalone build would otherwise be stranded
+on its version with no sign anything was wrong. Do not delete them and do not
+run them unasked. Sparkle is kept out of the Store edition by conditional
+linkage in mac/Package.swift, not by deleting files, so the two never mix.
+
+Decision confirmed 2026-08-11: "sparkle: same as partyparty", i.e. keep the
+standalone channel dormant and intact rather than retiring it. This is the
+owner's standing intent recorded as a fact; it is not a new contract rule.
