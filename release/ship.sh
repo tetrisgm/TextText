@@ -464,6 +464,23 @@ if [ "$INSTALL_WAS_RUNNING" = "1" ]; then
   launch_installed_texttext || fail_installed_texttext "Installed TextText app did not launch after bounded retries."
 fi
 rm -rf "$INSTALL_OLD" "$LEGACY_OLD"
+
+# One machine, one TextText. The App Store installer refuses to overwrite an app
+# it does not own, so installing the TestFlight build over a Developer ID one
+# leaves a second bundle beside it named "TextText 2.app". Both then claim
+# app.texttext.mac, the same app group, and the same File Provider domain, which
+# is worse than untidy. The install above has just taken the canonical path, so
+# any numbered sibling here is a leftover of that collision and is removed.
+for duplicate in "$INSTALL_PARENT"/TextText\ [0-9]*.app; do
+  [ -e "$duplicate" ] || continue
+  [ "$duplicate" = "$INSTALL_PATH" ] && continue
+  duplicate_id="$("$PB" -c 'Print :CFBundleIdentifier' "$duplicate/Contents/Info.plist" 2>/dev/null || true)"
+  [ "$duplicate_id" = "app.texttext.mac" ] || continue
+  echo "   removing duplicate install: $duplicate"
+  rm -rf "$duplicate"
+done
+"$LSREGISTER" -f "$INSTALL_PATH" </dev/null >/dev/null 2>&1 || true
+
 echo "   installed: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 
 if [ "$INSTALL_WAS_RUNNING" = "1" ]; then

@@ -673,3 +673,21 @@ App Store Connect API credentials for `altool` are in the login Keychain under
 service `asc` as a JSON blob with `key_id` and `issuer_id`; the .p8 is at
 `~/.appstoreconnect/private_keys/`. `asc auth status` does not expose the
 issuer id.
+
+## Only one TextText may be installed
+
+Observed 2026-08-11. Installing the TestFlight build while the Developer ID
+build sat at `/Applications/TextText.app` did not replace it: the App Store
+installer put its copy beside it as `TextText 2.app`. Both bundles then claim
+`app.texttext.mac`, the same app group, and the same File Provider domain.
+
+The two editions are the same app from two channels, so only one can be
+installed at a time.
+
+- The dev direction is handled: `ship.sh` moves the existing app aside and takes
+  the canonical path, whatever signed it, and now also removes any numbered
+  `TextText <n>.app` sibling carrying our bundle id.
+- The TestFlight direction cannot be fixed from here; it is the installer's
+  behaviour. If a Developer ID build has been shipped since the last TestFlight
+  install, remove it first, otherwise a numbered copy appears again:
+  `rm -rf /Applications/TextText.app` before pressing Install in TestFlight.
