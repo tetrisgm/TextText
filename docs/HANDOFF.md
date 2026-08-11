@@ -603,23 +603,25 @@ What it knows that a naive re-point does not:
 It is resumable: every statement is idempotent, so an interrupted run is
 finished by running it again rather than unpicked.
 
-## Why the Apple consent screen says "write app" (2026-08-11)
+## Why the Apple consent screen said "write app" (2026-08-11, RESOLVED)
 
-"Use your Apple Account to sign in to write app" comes from the Sign in with
-Apple client registration in the Developer portal, specifically the Services
-ID's Description field, set when the product was still called Write. Proven by
-reading the authorize page's embedded config: it serves
-`"client":{"name":"write app",...}` for client_id `net.writeapp.write.web`.
+"Use your Apple Account to sign in to write app" came from the Sign in with
+Apple client registration, and the mechanism is worth recording precisely
+because both obvious theories were wrong.
 
-Renaming the Services ID through the App Store Connect API does NOT fix it and
-never will. The API's bundleIds resource is a separate mirror: after renaming
-it to "TextText" (resource DKS27GG49B), the API durably reports the new name
-while the consent screen durably serves the old one. They are two stores, and
-neither the official API nor asc's web-session commands can write the one the
-consent screen reads (`asc web bundle-ids` only syncs capabilities).
+Not propagation: the identity service and the App Store Connect API disagreed
+stably for hours. And not a field the API cannot reach: renaming the Services
+ID through the API (bundleIds resource DKS27GG49B) DID update the Developer
+portal record, whose Description read "TextText" when opened in the portal UI.
 
-The only fix is the portal UI, by the owner: developer.apple.com → Identifiers
-→ switch the filter to Services IDs → net.writeapp.write.web → edit
-Description → save. The identifier itself stays, so the OAuth client_id and
-every existing sign-in are unaffected, and the change is immediate rather than
-propagated.
+The real mechanism: appleid.apple.com keeps its own copy of the client
+registration, and only the portal's Save action syncs to it. An API write
+updates the record without triggering that sync, so the authorize page kept
+serving the old name from its own store. Proven by reading the authorize
+page's embedded config ("client":{"name":...}) before and after: pressing Save
+in the portal, changing nothing in the form, flipped it from "write app" to
+"TextText" immediately.
+
+So if a portal-backed name ever disagrees with what Apple serves again: open
+the identifier in the portal, press Save. The owner has to do it, since the
+portal needs their Apple ID sign-in (a passkey works, no password typed).
