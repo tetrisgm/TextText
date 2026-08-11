@@ -62,6 +62,40 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
 
+// One person, several ways to sign in.
+//
+// users.appleSub holds exactly one subject, so before this a user WAS a
+// sign-in method: signing in a different way than last time did not reach your
+// workspace, it made a second account, and that looked exactly like losing
+// everything. Each row here is one way in; a user can carry all three.
+//
+// subject keeps the format the app already used: the raw Apple subject,
+// "google:<sub>", or the user row's own id for an emailed link. Sessions carry
+// that string, so nothing about a session had to change.
+//
+// The unique index on subject is the point: it makes "one human, two accounts"
+// impossible rather than merely unlikely. Deleting a user cascades their
+// identities, which is what lets an account be deleted and the person come
+// back later as somebody new.
+export const userIdentities = pgTable(
+  "user_identities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** "apple" | "google" | "email" */
+    provider: text("provider").notNull(),
+    subject: text("subject").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("user_identities_subject_idx").on(t.subject),
+    uniqueIndex("user_identities_user_provider_idx").on(t.userId, t.provider),
+    index("user_identities_user_idx").on(t.userId),
+  ],
+);
+
 // What is left after an account is deleted. NOT an account record and NOT
 // content: the users row, the workspace and every document are gone by the time
 // a row here is completed.

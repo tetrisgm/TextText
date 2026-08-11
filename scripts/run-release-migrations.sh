@@ -34,6 +34,7 @@ migrations=(
   scripts/migrate-add-document-fields-index.mjs
   scripts/migrate-add-document-responses.mjs
   scripts/migrate-add-deleted-accounts.mjs
+  scripts/migrate-add-user-identities.mjs
 )
 
 missing=()

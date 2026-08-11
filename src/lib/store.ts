@@ -68,6 +68,7 @@ import {
   oauthAuthorizationCodes,
   oauthRefreshTokenFamilies,
   posts,
+  userIdentities,
   users,
   verificationTokens,
   workspaceAiConfigs,
@@ -4510,14 +4511,77 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
 }
 
 // The users row id for an Apple sub (api_tokens hangs off users.id), or null.
+/**
+ * The person a session's subject belongs to.
+ *
+ * Identities first, because that table is the one that can hold more than one
+ * way in. users.appleSub is still consulted as a fallback so a session minted
+ * before the identities backfill keeps working; every row is backfilled, so in
+ * practice this second query only runs for a subject that belongs to nobody.
+ */
 export async function getUserIdBySub(sub: string): Promise<string | null> {
   if (!db) return null;
+  const linked = await db
+    .select({ id: userIdentities.userId })
+    .from(userIdentities)
+    .where(eq(userIdentities.subject, sub))
+    .limit(1);
+  if (linked[0]) return linked[0].id;
   const rows = await db
     .select({ id: users.id })
     .from(users)
     .where(eq(users.appleSub, sub))
     .limit(1);
   return rows[0]?.id ?? null;
+}
+
+/** Which providers this person can sign in with, for the settings UI. */
+export async function listUserIdentities(
+  userId: string,
+): Promise<{ provider: string; createdAt: Date }[]> {
+  if (!db) return [];
+  return db
+    .select({
+      provider: userIdentities.provider,
+      createdAt: userIdentities.createdAt,
+    })
+    .from(userIdentities)
+    .where(eq(userIdentities.userId, userId));
+}
+
+export function providerForSubject(sub: string, userId: string): string {
+  if (sub.startsWith("google:")) return "google";
+  if (sub === userId) return "email";
+  return "apple";
+}
+
+/**
+ * Attaches a way of signing in to an existing person.
+ *
+ * Returns "linked" when it is now theirs, "already-yours" when it already was,
+ * and "taken" when that subject belongs to somebody else. Taken must never
+ * become a silent move: a subject reaching two accounts is the bug this table
+ * exists to make impossible.
+ */
+export async function linkIdentityToUser(
+  userId: string,
+  sub: string,
+): Promise<"linked" | "already-yours" | "taken"> {
+  if (!db) throw new Error("linkIdentityToUser requires DATABASE_URL");
+  const existing = await db
+    .select({ userId: userIdentities.userId })
+    .from(userIdentities)
+    .where(eq(userIdentities.subject, sub))
+    .limit(1);
+  if (existing[0]) {
+    return existing[0].userId === userId ? "already-yours" : "taken";
+  }
+  await db.insert(userIdentities).values({
+    userId,
+    provider: providerForSubject(sub, userId),
+    subject: sub,
+  });
+  return "linked";
 }
 
 async function upsertUser(
@@ -4531,6 +4595,27 @@ async function upsertUser(
   if (await findAccountTombstone(user.sub)) {
     throw new AccountDeletedError();
   }
+
+  // An identity already pointing at somebody means this subject is theirs, and
+  // the users row below must not be touched: the insert would be a no-op but
+  // the onConflictDoUpdate would rewrite another person's name and email from
+  // whatever profile just signed in.
+  const linked = await db!
+    .select({ id: userIdentities.userId })
+    .from(userIdentities)
+    .where(eq(userIdentities.subject, user.sub))
+    .limit(1);
+  if (linked[0]) {
+    const owner = (
+      await db!
+        .select({ id: users.id, name: users.name, username: users.username })
+        .from(users)
+        .where(eq(users.id, linked[0].id))
+        .limit(1)
+    )[0];
+    if (owner) return owner;
+  }
+
   await db!
     .insert(users)
     .values({
@@ -4554,6 +4639,19 @@ async function upsertUser(
       .limit(1)
   )[0];
   if (!row) throw new Error("failed to resolve user");
+
+  // Record how they got in. Without this a brand new account would have no
+  // identity row and would depend on the appleSub fallback forever, which is
+  // the thing this table exists to retire.
+  await db!
+    .insert(userIdentities)
+    .values({
+      userId: row.id,
+      provider: providerForSubject(user.sub, row.id),
+      subject: user.sub,
+    })
+    .onConflictDoNothing();
+
   return row;
 }
 
