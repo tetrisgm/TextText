@@ -285,3 +285,29 @@
   margin: 0;
   color: var(--ac-label-2);
 }
+
+/* Ways to sign in: one line per provider, states not buttons where possible. */
+.identityRow {
+  display: grid;
+  gap: 8px;
+}
+.identityRow ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.identityRow li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.identityOn {
+  color: var(--ac-green, #34c759);
+  font-weight: 600;
+}
+.identityOff {
+  color: var(--ac-label-3);
+}

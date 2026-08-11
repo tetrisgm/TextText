@@ -16,6 +16,7 @@ import {
   executeAccountDeletion,
   getAccountDeletionSummary,
 } from "@/lib/account-deletion";
+import { getUserIdBySub, listUserIdentities } from "@/lib/store";
 import { appSessionCookieName } from "@/lib/app-session";
 import { NextResponse } from "next/server";
 
@@ -47,8 +48,13 @@ export async function GET(): Promise<NextResponse> {
   if (!sub) return jsonError("Not found", 404);
   const summary = await getAccountDeletionSummary(sub);
   if (!summary) return jsonError("Not found", 404);
+  const userId = await getUserIdBySub(sub);
+  const identities = userId
+    ? (await listUserIdentities(userId)).map((entry) => entry.provider)
+    : [];
   return NextResponse.json(
     {
+      identities,
       email: summary.email,
       username: summary.username,
       handle: summary.handle,

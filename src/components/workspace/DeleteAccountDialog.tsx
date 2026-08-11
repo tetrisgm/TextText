@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 
 export type AccountOverview = {
+  identities: string[];
   email: string | null;
   username: string | null;
   handle: string;

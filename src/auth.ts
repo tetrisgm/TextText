@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig, Profile } from "next-auth";
 import { cookies } from "next/headers";
+import { LINK_INTENT_COOKIE, verifyLinkIntent } from "@/lib/link-intent";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -9,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { createAuthAdapter, sendTextTextVerificationRequest } from "@/lib/auth-email";
 import { db } from "@/lib/db/client";
 import { isLoopbackHost } from "@/lib/loopback-host";
-import { users } from "@/lib/db/schema";
+import { userIdentities, users } from "@/lib/db/schema";
 
 import { resolveAppleClientSecret } from "@/lib/apple-secret";
 
@@ -150,6 +151,16 @@ function profileDisplayName(
 
 async function userIdForSessionSub(sub: string): Promise<string | null> {
   if (!db) return null;
+  // Identities first: a subject linked to an account resolves through
+  // user_identities, and for any identity other than the original one there is
+  // no users.appleSub row at all. The fallback keeps sessions minted before
+  // the identities backfill working.
+  const linked = await db
+    .select({ id: userIdentities.userId })
+    .from(userIdentities)
+    .where(eq(userIdentities.subject, sub))
+    .limit(1);
+  if (linked[0]) return linked[0].id;
   const rows = await db
     .select({ id: users.id })
     .from(users)
@@ -212,6 +223,51 @@ export const authConfig = {
     //   email  -> "email:<lowercased address>" (the adapter user id)
     //   dev    -> "dev:<email>" (default token sub from authorize())
     async jwt({ token, user, account, profile }) {
+      // Connecting a second provider, not signing in as somebody else. The two
+      // are byte-identical on the wire, so the difference is established by
+      // BOTH halves at once: the signed link-intent cookie a server action
+      // minted for the live session, and the surviving session token naming
+      // the same user. A cookie alone must never link (a shared machine could
+      // carry a stale one into a stranger's sign-in, and after a sign-out
+      // there is no token to match); a session alone must never link (that is
+      // just someone switching accounts). This runs BEFORE the sub overwrite
+      // below, and on success returns the ORIGINAL token: the person stays who
+      // they were, with one more way to be them.
+      if (account && account.type !== "email" && profile?.sub) {
+        try {
+          const secret =
+            process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+          const jar = await cookies();
+          const intentUserId = secret
+            ? verifyLinkIntent(jar.get(LINK_INTENT_COOKIE)?.value, secret)
+            : null;
+          if (
+            intentUserId &&
+            typeof token.userId === "string" &&
+            token.userId === intentUserId
+          ) {
+            const incoming =
+              account.provider === "google"
+                ? `google:${profile.sub}`
+                : profile.sub;
+            const { linkIdentityToUser } = await import("@/lib/store");
+            const outcome = await linkIdentityToUser(intentUserId, incoming);
+            jar.delete(LINK_INTENT_COOKIE);
+            if (outcome === "taken") {
+              // That provider already belongs to another account. Refusing is
+              // the only safe answer: linking would merge strangers, and
+              // switching would silently sign the person out of the account
+              // they pressed Connect from.
+              console.warn("connect refused: subject belongs to another account");
+            }
+            await rememberLastUsedProvider(account.provider);
+            return token;
+          }
+        } catch (error) {
+          // Fall through to a plain sign-in; never break auth over linking.
+          console.warn("link intent check failed", error);
+        }
+      }
       if (account?.type === "email") {
         if (user?.id) token.sub = user.id;
       } else if (account?.provider === "google") {

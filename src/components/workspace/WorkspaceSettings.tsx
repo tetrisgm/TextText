@@ -17,6 +17,7 @@ import {
 } from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
 import { AgentIntegrationHome } from "./AgentIntegrationHome";
+import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
   type AccountOverview,
   type DeleteAccountStage,
@@ -517,6 +518,45 @@ export function WorkspaceSettings({
                 ? `Signed in as ${account.email}.`
                 : "Signed in with Apple."}
             </p>
+            {/* One account, several ways in. Each Connect button starts an
+                ordinary provider sign-in carrying a signed link intent, so the
+                new provider attaches to THIS account instead of minting a
+                second one. That second-account trap is exactly what split the
+                owner's own writing across two workspaces. */}
+            <div className={styles.identityRow}>
+              <strong>Ways to sign in</strong>
+              <ul>
+                {["apple", "google", "email"].map((provider) => {
+                  const connected = account.identities.includes(provider);
+                  const label =
+                    provider === "apple"
+                      ? "Apple"
+                      : provider === "google"
+                        ? "Google"
+                        : "Email link";
+                  return (
+                    <li key={provider}>
+                      <span>{label}</span>
+                      {connected ? (
+                        <span className={styles.identityOn}>Connected</span>
+                      ) : provider === "email" ? (
+                        <span className={styles.identityOff}>
+                          Sign in once with an emailed link to connect it
+                        </span>
+                      ) : (
+                        <form
+                          action={provider === "apple" ? connectApple : connectGoogle}
+                        >
+                          <button type="submit" className="ac-btn ac-btn-plain">
+                            Connect {label}
+                          </button>
+                        </form>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
             <div className={styles.dangerBlock}>
               <strong>Delete account</strong>
               <p>
