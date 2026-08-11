@@ -147,6 +147,29 @@ if [ -f "$MAC/AppIcon.icns" ]; then
 else
   echo "   (no AppIcon.icns yet; run mac/scripts/make-icon.sh)"
 fi
+
+# The App Store requires a compiled asset catalog carrying the icon, not just
+# the .icns (error ITMS-90546). actool writes Assets.car and reports the icon
+# keys it wants in Info.plist; CFBundleIconName is the one the store looks for.
+if [ -d "$MAC/Assets.xcassets" ]; then
+  icon_plist="$MAC/build/actool-partial.plist"
+  min_macos="$($PB -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
+  xcrun actool "$MAC/Assets.xcassets" \
+    --compile "$APP/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target "$min_macos" \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$icon_plist" >/dev/null
+  icon_name="$($PB -c 'Print :CFBundleIconName' "$icon_plist" 2>/dev/null || true)"
+  if [ -n "$icon_name" ]; then
+    "$PB" -c "Add :CFBundleIconName string $icon_name" "$APP/Contents/Info.plist" 2>/dev/null \
+      || "$PB" -c "Set :CFBundleIconName $icon_name" "$APP/Contents/Info.plist"
+  fi
+  [ -f "$APP/Contents/Resources/Assets.car" ] || {
+    echo "actool ran but produced no Assets.car" >&2
+    exit 1
+  }
+fi
 if [ -n "${TEXTTEXT_BUILD_ATTESTATION:-}" ]; then
   [ -f "$TEXTTEXT_BUILD_ATTESTATION" ] || {
     echo "TEXTTEXT_BUILD_ATTESTATION does not exist: $TEXTTEXT_BUILD_ATTESTATION" >&2
