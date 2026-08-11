@@ -6503,6 +6503,8 @@ function LocalWorkspaceShell({
         onToggleStar={toggleStarSelected}
       />
       <AssistantSidebar
+        onNewConversation={assistant.startNewConversation}
+        hasConversation={assistant.messages.length > 0}
         className="workspace-assistant-shell"
         state={assistantState}
         edgePeeking={rightEdgePeeking}

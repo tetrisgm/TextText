@@ -171,6 +171,26 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Start over in this context without leaving it.
+ *
+ * A transcript is keyed to where the person is, so before this the only way to
+ * get a clean one was to navigate somewhere else and come back. That makes the
+ * rail feel like it is holding onto an argument you already finished.
+ *
+ * The stored copy goes too, otherwise the old transcript reappears on the next
+ * render from session storage.
+ */
+function clearThread(threadKey: string) {
+  transcripts.set(threadKey, []);
+  try {
+    sessionStorage.removeItem(storageKey(threadKey));
+  } catch {
+    // Session storage is best effort; the in-memory clear is what matters.
+  }
+  notify();
+}
+
 function appendToThread(
   threadKey: string,
   role: AssistantMessageRole,
@@ -784,6 +804,7 @@ export function useNativeAssistant({
   return {
     addSkill,
     activeCloudProvider,
+    startNewConversation: () => clearThread(threadKey),
     attachmentAccept: "",
     attachmentsAvailable,
     attachmentTitle,

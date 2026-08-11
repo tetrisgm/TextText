@@ -265,3 +265,48 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain('aria-keyshortcuts="Enter"');
   });
 });
+
+describe("starting a new chat", () => {
+  it("offers New chat only when there is a transcript to clear", () => {
+    const base = {
+      state: "open" as const,
+      onStateChange: () => {},
+      width: 360,
+      onWidthChange: () => {},
+      composerValue: "",
+      onComposerChange: () => {},
+      onSubmit: () => {},
+      onFilesSelected: () => {},
+      onRemoveAttachment: () => {},
+      onNewConversation: () => {},
+      children: null,
+    };
+    const withTranscript = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, { ...base, hasConversation: true }),
+    );
+    const empty = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, { ...base, hasConversation: false }),
+    );
+    expect(withTranscript).toContain('aria-label="New chat"');
+    expect(empty).not.toContain('aria-label="New chat"');
+  });
+
+  it("shows nothing when the caller cannot clear a conversation", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantSidebar, {
+        state: "open",
+        onStateChange: () => {},
+        width: 360,
+        onWidthChange: () => {},
+        composerValue: "",
+        onComposerChange: () => {},
+        onSubmit: () => {},
+        onFilesSelected: () => {},
+        onRemoveAttachment: () => {},
+        hasConversation: true,
+        children: null,
+      }),
+    );
+    expect(html).not.toContain('aria-label="New chat"');
+  });
+});

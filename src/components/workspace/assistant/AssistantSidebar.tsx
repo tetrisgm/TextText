@@ -41,6 +41,10 @@ export type AssistantComposerSubmission = {
 export type AssistantSidebarProps = {
   state: AssistantSidebarState;
   onStateChange: (state: AssistantSidebarState) => void;
+  /** Clears the transcript for where the person is, without moving them. */
+  onNewConversation?: () => void;
+  /** Whether there is anything to clear. */
+  hasConversation?: boolean;
   width: number;
   onWidthChange: (width: number) => void;
   composerValue: string;
@@ -186,6 +190,8 @@ function formatFileSize(value: number | undefined): string | null {
 export function AssistantSidebar({
   state,
   onStateChange,
+  onNewConversation,
+  hasConversation = false,
   width,
   onWidthChange,
   composerValue,
@@ -571,6 +577,21 @@ export function AssistantSidebar({
               {title}
             </h2>
             <div className={styles.headerActions}>
+              {/* A transcript is keyed to where you are, so without this the
+                  only way to get a clean one was to navigate away and come
+                  back. Hidden when there is nothing to clear, so it never
+                  offers to do nothing. */}
+              {onNewConversation && hasConversation ? (
+                <button
+                  className={styles.iconButton}
+                  type="button"
+                  aria-label="New chat"
+                  title="New chat"
+                  onClick={onNewConversation}
+                >
+                  <NewChatIcon />
+                </button>
+              ) : null}
               <button
                 className={styles.iconButton}
                 type="button"
@@ -759,6 +780,30 @@ function SidebarIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+/** A page with a pen: start again on what you are looking at. */
+function NewChatIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+      <path
+        d="M8.5 2H4a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5V8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.3 2.2a1.1 1.1 0 0 1 1.6 1.6l-4 4-2.1.5.5-2.1z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
