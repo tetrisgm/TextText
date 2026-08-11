@@ -40,6 +40,7 @@ const BASE_RESERVED_NAMES = [
   "start",
   "static",
   "status",
+  "support",
   "t",
   "terms",
   "try",

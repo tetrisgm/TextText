@@ -4,6 +4,7 @@ const footerColumns = [
   {
     title: "Company",
     links: [
+      { href: "/support", label: "Support" },
       { href: "/security", label: "Security" },
       { href: "/terms", label: "Terms" },
       { href: "/privacy", label: "Privacy" },
