@@ -57,14 +57,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.169</string>
-	<!-- Export compliance. The app encrypts only by using HTTPS and the system
-	     Keychain, which is the standard-encryption exemption, so this is false.
-	     Without the key every TestFlight upload stops and waits for a human to
-	     answer the same question by hand. Revisit if the app ever ships its own
-	     cryptography rather than the system's. -->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
+	<string>0.171</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -77,10 +70,9 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>174</string>
-	<!-- Required for any Mac App Store upload: without it the product archive is
-	     rejected at validation, before review. Must stay in step with the primary
-	     category set on the App Store Connect record. -->
+	<string>175</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
@@ -97,6 +89,8 @@
 	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>3600</integer>
+	<key>TextTextAppGroupIdentifier</key>
+	<string>TEXTTEXT_APP_GROUP</string>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -164,7 +158,5 @@
 			</dict>
 		</dict>
 	</array>
-	<key>TextTextAppGroupIdentifier</key>
-	<string>TEXTTEXT_APP_GROUP</string>
 </dict>
 </plist>

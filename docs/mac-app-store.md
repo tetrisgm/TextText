@@ -62,6 +62,16 @@ everything it produces; this app is assembled by hand from a SwiftPM build, so
 nothing wrote them and the bundle arrived at App Store Connect looking like it
 came from no known toolchain.
 
+`mac/Info.plist` carries no XML comments, and cannot. Every release rewrites it
+through PlistBuddy to stamp the version, and PlistBuddy drops comments on any
+write, including `Set`. So the reasoning behind its less obvious keys lives
+here rather than beside them: `ITSAppUsesNonExemptEncryption` is false because
+the app encrypts only by using HTTPS and the system Keychain, which is the
+standard-encryption exemption, and without the key every TestFlight upload stops
+to ask a human the same question. `LSApplicationCategoryType` must match the
+primary category on the store record, and without it the product archive is
+rejected at upload.
+
 `mac/PrivacyInfo.xcprivacy` declares the three required-reason APIs the code
 actually uses: file timestamps, `ProcessInfo.systemUptime` as a monotonic clock,
 and `UserDefaults`. ZIPFoundation is linked statically, which drops its own
