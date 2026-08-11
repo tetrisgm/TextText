@@ -70,5 +70,11 @@ done
 echo ">> backfill content: AI guide notes"
 npx tsx scripts/migrate-agent-guide-notes.ts
 
+# /@demo is the zero-setup demo, and a database that has never been seeded
+# answers 404 for it. Local development had the seed and production did not, so
+# the demo the docs promise did not exist for anyone who was not the developer.
+echo ">> seed content: demo workspace"
+npx tsx scripts/seed-demo-workspace.ts
+
 echo ">> audit database: canonical documents"
 npx tsx scripts/audit-canonical-documents.ts
