@@ -94,13 +94,43 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Folders cannot simply be re-pointed: folders_blog_path_idx is unique on
+  // (blog_id, path) for live rows, and both workspaces carry the same standard
+  // set. Each source folder is matched to the target's folder of the same path
+  // and its documents move there; only a path the target lacks moves wholesale.
+  const folderPlan = await c.query(
+    `SELECT s.id AS src_id, s.path, t.id AS tgt_id
+       FROM folders s
+       LEFT JOIN folders t ON t.blog_id = $1 AND t.path = s.path AND t.deleted_at IS NULL
+      WHERE s.blog_id = $2 AND s.deleted_at IS NULL`,
+    [into.blog_id, from.blog_id],
+  );
+  const remapped = folderPlan.rows.filter((r) => r.tgt_id);
+  const moved = folderPlan.rows.filter((r) => !r.tgt_id);
+
+  // posts_blog_slug_idx is unique on (blog_id, slug) for LIVE rows only, so a
+  // slug already used by a trashed document in the target is not a conflict.
+  // A live one is, and the arriving document is the one renamed: the source's
+  // public addresses are about to stop resolving anyway.
+  const conflicts = await c.query(
+    `SELECT s.id, s.slug FROM posts s
+      WHERE s.blog_id = $1 AND s.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM posts t
+                     WHERE t.blog_id = $2 AND t.slug = s.slug AND t.deleted_at IS NULL)`,
+    [from.blog_id, into.blog_id],
+  );
+
   console.log("\nPLAN");
-  console.log(`  1. move ${from.docs ?? 0} documents and their folders to ${into.handle}`);
-  console.log(`  2. move ${fromIdentities.length} identity row(s), so those providers sign in to @${intoName}`);
-  console.log(`  3. move API tokens and OAuth grants`);
-  console.log(`  4. reassign the source's audit rows to @${intoName}, keeping the history`);
-  console.log(`  5. hold @${fromName} and /t/${from.handle} with a tombstone so nobody can take them`);
-  console.log(`  6. delete the emptied source workspace and user`);
+  console.log(`  1. ${remapped.length} folder(s) already exist in the target; their documents move into them: ${remapped.map((r) => r.path).join(", ") || "none"}`);
+  console.log(`  2. ${moved.length} folder(s) move wholesale: ${moved.map((r) => r.path).join(", ") || "none"}`);
+  console.log(`  3. ${conflicts.rowCount} document(s) renamed to avoid a live slug clash:`);
+  for (const r of conflicts.rows) console.log(`       ${r.slug} -> ${r.slug}-2`);
+  console.log(`  4. move ${from.docs ?? 0} documents to ${into.handle}`);
+  console.log(`  5. move ${fromIdentities.length} identity row(s), so those providers sign in to @${intoName}`);
+  console.log(`  6. move API tokens and OAuth grants`);
+  console.log(`  7. reassign the source's audit rows to @${intoName}, keeping the history`);
+  console.log(`  8. hold @${fromName} and /t/${from.handle} with a tombstone so nobody can take them`);
+  console.log(`  9. delete the emptied source workspace and user`);
 
   if (!apply) {
     console.log("\nNothing written. Re-run with --apply to perform it.\n");
@@ -108,11 +138,36 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Folders first: posts reference them, and both tables are keyed by blog.
-  await c.query(`UPDATE folders SET blog_id = $1 WHERE blog_id = $2`, [into.blog_id, from.blog_id]);
+  // Rename before moving, while the source blog still scopes the uniqueness.
+  for (const row of conflicts.rows) {
+    let candidate = `${row.slug}-2`;
+    for (let n = 2; n < 50; n += 1) {
+      const taken = await c.query(
+        `SELECT 1 FROM posts WHERE blog_id = $1 AND slug = $2 AND deleted_at IS NULL`,
+        [into.blog_id, candidate],
+      );
+      if (taken.rowCount === 0) break;
+      candidate = `${row.slug}-${n + 1}`;
+    }
+    await c.query(`UPDATE posts SET slug = $1 WHERE id = $2`, [candidate, row.id]);
+    console.log(`  renamed ${row.slug} -> ${candidate}`);
+  }
+
+  // Documents into the matching target folder, then the emptied source folder
+  // goes. Folder ids are global, so this is a straight re-point.
+  for (const row of remapped) {
+    await c.query(`UPDATE posts SET folder_id = $1 WHERE folder_id = $2`, [row.tgt_id, row.src_id]);
+  }
+  for (const row of moved) {
+    await c.query(`UPDATE folders SET blog_id = $1 WHERE id = $2`, [into.blog_id, row.src_id]);
+  }
   await c.query(`UPDATE posts SET blog_id = $1 WHERE blog_id = $2`, [into.blog_id, from.blog_id]);
+  // Anything still pointing at the source blog is a folder we remapped past.
+  await c.query(`DELETE FROM folders WHERE blog_id = $1`, [from.blog_id]);
   await c.query(`UPDATE idempotency_keys SET blog_id = $1 WHERE blog_id = $2`, [into.blog_id, from.blog_id]);
-  // The identities are the point of the whole exercise.
+
+  // The identities are the point of the whole exercise: after this, the
+  // source's providers sign in to the target.
   await c.query(`UPDATE user_identities SET user_id = $1 WHERE user_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE api_tokens SET user_id = $1 WHERE user_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE oauth_refresh_token_families SET user_id = $1 WHERE user_id = $2`, [into.id, from.id]);
@@ -120,12 +175,32 @@ async function main(): Promise<void> {
   await c.query(`UPDATE app_health_reports SET user_id = $1 WHERE user_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE device_links SET approved_by_user_id = $1 WHERE approved_by_user_id = $2`, [into.id, from.id]);
   // Reassigned rather than nulled: this is the same person, so the history is
-  // still theirs. A deletion nulls; a merge keeps the thread.
+  // still theirs. A deletion severs the thread; a merge keeps it.
   await c.query(`UPDATE action_audit SET actor_user_id = $1 WHERE actor_user_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE collaborators SET user_id = $1 WHERE user_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE collaborators SET invited_by_id = $1 WHERE invited_by_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE document_capability_links SET created_by_id = $1 WHERE created_by_id = $2`, [into.id, from.id]);
   await c.query(`UPDATE document_templates SET created_by_id = $1 WHERE created_by_id = $2`, [into.id, from.id]);
+
+  // Nothing may still point at the source before its row goes. This is the
+  // check that would have caught the edit that silently dropped the block
+  // above, which left a merge that moved documents and stopped there.
+  for (const [table, column] of [
+    ["user_identities", "user_id"], ["api_tokens", "user_id"],
+    ["oauth_refresh_token_families", "user_id"], ["oauth_authorization_codes", "user_id"],
+    ["app_health_reports", "user_id"], ["device_links", "approved_by_user_id"],
+    ["action_audit", "actor_user_id"], ["collaborators", "user_id"],
+    ["collaborators", "invited_by_id"], ["document_capability_links", "created_by_id"],
+    ["document_templates", "created_by_id"],
+  ] as const) {
+    const { rows } = await c.query(
+      `SELECT count(*)::int AS n FROM ${table} WHERE ${column} = $1`, [from.id]);
+    if (rows[0].n > 0) {
+      throw new Error(
+        `Refusing to delete @${fromName}: ${rows[0].n} row(s) in ${table}.${column} still reference it. ` +
+        `The merge is resumable, so re-run it once that is moved.`);
+    }
+  }
 
   const { createHash } = await import("node:crypto");
   // A synthetic hash, NOT the source's subject.
