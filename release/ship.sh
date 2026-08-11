@@ -432,8 +432,18 @@ if [ "$LEGACY_INSTALL_PATH" != "$INSTALL_PATH" ] && [ -e "$LEGACY_INSTALL_PATH" 
   mv "$LEGACY_INSTALL_PATH" "$LEGACY_OLD"
 fi
 mv "$INSTALL_NEW" "$INSTALL_PATH"
-defaults write app.texttext.mac SUEnableAutomaticChecks -bool true
-defaults write app.texttext.mac SUAutomaticallyUpdate -bool true
+# Write the plist by path, not by domain. `defaults write <domain>` redirects
+# into ~/Library/Containers/<domain>/ the moment a sandbox container exists for
+# that bundle id, and one appears as soon as anyone launches a sandboxed build
+# of this app, such as the Mac App Store edition. The release then failed here
+# with "Could not write domain", after everything real had already shipped.
+#
+# The path form is also the correct target regardless: the Developer ID app is
+# not sandboxed, so it reads ~/Library/Preferences, which is exactly where the
+# domain form was NOT writing once a container existed.
+TEXTTEXT_PREFS="$HOME/Library/Preferences/app.texttext.mac.plist"
+defaults write "$TEXTTEXT_PREFS" SUEnableAutomaticChecks -bool true
+defaults write "$TEXTTEXT_PREFS" SUAutomaticallyUpdate -bool true
 INSTALLED_VERSION="$("$PB" -c 'Print :CFBundleShortVersionString' "$INSTALL_PATH/Contents/Info.plist")"
 INSTALLED_BUILD="$("$PB" -c 'Print :CFBundleVersion' "$INSTALL_PATH/Contents/Info.plist")"
 [ "$INSTALLED_VERSION" = "$VERSION" ] || fail_installed_texttext "Installed app version is $INSTALLED_VERSION, expected $VERSION."
