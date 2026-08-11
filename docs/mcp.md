@@ -12,7 +12,7 @@ instead, and does not need a token, a port, or OAuth. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 31 tool
+`src/lib/ai/tools.ts` is the source of truth for the 33 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -126,8 +126,8 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 <!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the 10 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
-| `sync` | Call all 31 tools, including the 21 that mutate content or read administration data. It also grants every `read` operation. |
+| `read` | Call the 11 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `preview_document_template`. |
+| `sync` | Call all 33 tools, including the 22 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -157,7 +157,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (31)
+## Tools (33)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -172,7 +172,9 @@ or workspace selector that could cross that boundary.
 | `list_responses` | `read` or `sync` | List reader responses to one item's poll nodes: per-option tallies plus individual responses. Responder identity is a name only when the reader was signed in. |
 | `list_access` | `sync` | List who can access the workspace, one folder, or one item, and their role. |
 | `list_document_templates` | `read` or `sync` | List the immutable built-in and workspace templates available for shaping documents. |
-| `customize_document_template` | `sync` | Create the next immutable workspace template version by applying constrained operations to an existing valid template. Templates are data only and cannot contain HTML, CSS, or JavaScript. |
+| `customize_document_template` | `sync` | Create an immutable workspace template (a 'look') by applying operations to an existing one. A look is data only: it can never contain HTML, CSS, or JavaScript, and anything that tries is rejected. A look controls BOTH surfaces: `item` is how one document renders when opened, and `collection` is how the folder's index renders. Set both, or the folder page will not match the item pages. The sequence that works, for a request like 'make my blog look like Medium': 1. list_document_templates - see what exists and pick the closest base. 2. preview_document_template - dry-run your operations; nothing is saved and a rejection is free. 3. customize_document_template - write the version once the preview is clean. 4. set_folder_template - point the folder at it. WITHOUT THIS STEP NOTHING THE PERSON CAN SEE HAS CHANGED: new items get the look and the folder index renders from it only once the folder carries it. Rules that cause most rejections: every binding must name a field declared by `set-fields` (bindings look like `content.fields.<id>`, plus `content.title`, `content.subtitle`, `content.body`, `content.tags`); if you replace the fields you must also replace `item` AND `collection.item` in the same call, because the whole template is revalidated together; a `board` layout also needs `groupBy` and a `calendar` layout needs `dateBy`. |
+| `preview_document_template` | `read` or `sync` | Dry-run template operations and return the resulting template, or the reason it was rejected, WITHOUT saving anything. Use this to check a look before customize_document_template writes a version: a rejected batch here costs nothing, while a rejected write costs a round trip and leaves the workspace unchanged anyway. |
+| `set_folder_template` | `sync` | Give a folder a look, and by default restyle everything already in it. The template becomes what the folder's index page renders from, what new items are created with, and what the items already there use. This is how a request like 'make this folder a magazine' actually lands. Pass apply_to_existing false only if the person asked for the change to affect new items alone: leaving old items behind means the index changes and not one article does, which reads as nothing having happened. |
 | `set_item_template` | `sync` | Apply one immutable document template version to an item without changing its content or audience. |
 | `create_item` | `sync` | Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates. |
 | `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. Full markdown may update the same fields. Cannot publish, unpublish, or move an item. |

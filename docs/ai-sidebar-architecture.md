@@ -29,9 +29,9 @@ agents. The web product does not call its own MCP server.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 31-tool contract
+## Shared 33-tool contract
 
-The 10 read-scope tools are:
+The 11 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -43,30 +43,32 @@ The 10 read-scope tools are:
 8. `list_comments`
 9. `list_responses`
 10. `list_document_templates`
+11. `preview_document_template`
 
-The 21 sync-scope tools are:
+The 22 sync-scope tools are:
 
 1. `list_access`
 2. `customize_document_template`
-3. `set_item_template`
-4. `create_item`
-5. `update_item`
-6. `append_to_item`
-7. `set_item_status`
-8. `move_item`
-9. `delete_item`
-10. `restore_item`
-11. `add_item_asset`
-12. `remove_item_asset`
-13. `recapture_bookmark`
-14. `add_comment`
-15. `set_comment_resolved`
-16. `create_folder`
-17. `rename_folder`
-18. `delete_folder`
-19. `restore_folder`
-20. `set_access`
-21. `revoke_access`
+3. `set_folder_template`
+4. `set_item_template`
+5. `create_item`
+6. `update_item`
+7. `append_to_item`
+8. `set_item_status`
+9. `move_item`
+10. `delete_item`
+11. `restore_item`
+12. `add_item_asset`
+13. `remove_item_asset`
+14. `recapture_bookmark`
+15. `add_comment`
+16. `set_comment_resolved`
+17. `create_folder`
+18. `rename_folder`
+19. `delete_folder`
+20. `restore_folder`
+21. `set_access`
+22. `revoke_access`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
