@@ -138,6 +138,7 @@ import {
   resolveWorkspaceAssistantContext,
 } from "@/components/workspace/assistant/context";
 import { starterContextFromChip } from "@/components/workspace/assistant/starters";
+import { SelectionActions } from "@/components/workspace/assistant/SelectionActions";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
@@ -6502,6 +6503,17 @@ function LocalWorkspaceShell({
         onMove={moveSelectedPosts}
         onToggleStar={toggleStarSelected}
       />
+      {/* AI at the point of writing. Runs the same quick actions the
+          rail runs, against the same selection it already reads, and the
+          result arrives as a proposal to accept or undo. */}
+      <SelectionActions
+        enabled={assistantTarget.view.level === "edit"}
+        onRunAction={(id) => {
+          if (assistantState === "hidden") changeAssistantState("pinned");
+          void assistant.runQuickAction(id);
+        }}
+      />
+
       <AssistantSidebar
         onNewConversation={assistant.startNewConversation}
         hasConversation={assistant.messages.length > 0}
