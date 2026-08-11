@@ -46,10 +46,6 @@ export default function SupportPage() {
             request another rather than reusing the old message. Links open the
             most recent workspace you signed into.
           </p>
-          <p>
-            You can try the product without an account at{" "}
-            <Link href="/@demo">the live demo</Link>.
-          </p>
         </section>
 
         <section>

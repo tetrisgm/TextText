@@ -22,10 +22,6 @@ const footerColumns = [
       { href: "/connect", label: "Connect" },
     ],
   },
-  {
-    title: "Resources",
-    links: [{ href: "/@demo", label: "Live demo" }],
-  },
 ];
 
 export function LandingFooter() {

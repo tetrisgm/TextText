@@ -71,12 +71,17 @@ describe("workspace simplification contract", () => {
     expect(shellSource).toContain("Show all items");
   });
 
-  it("offers one primary action per landing surface", () => {
-    // The nav no longer competes with the hero for the same first click.
+  it("offers exactly one action on the landing surface", () => {
+    // There is one way in and it is signing in. The secondary action used to
+    // be "Try it without an account", a throwaway guest workspace; it and the
+    // seeded /@demo blog were removed, so the hero has no competing click and
+    // the nav has nothing to compete with.
     expect(headerSource).not.toContain('href="/try"');
     expect(landingSource).toContain("texttext-landing-primary");
     expect(landingSource.match(/texttext-landing-secondary/g) ?? []).toHaveLength(
-      1,
+      0,
     );
+    expect(landingSource).not.toContain('"/try"');
+    expect(landingSource).not.toContain("/@demo");
   });
 });

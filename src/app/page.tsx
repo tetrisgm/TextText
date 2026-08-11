@@ -46,8 +46,6 @@ const previewFiles = [
 ];
 
 const actionHref = "/start";
-const tryHref = "/try";
-const demoHref = "/@demo";
 
 function PrimaryAction({ signedIn }: { signedIn: boolean }) {
   return (
@@ -56,16 +54,6 @@ function PrimaryAction({ signedIn }: { signedIn: boolean }) {
       href={signedIn ? "/start?to=home" : actionHref}
     >
       {signedIn ? "Open your workspace" : "Get started"}
-    </Link>
-  );
-}
-
-// The one secondary action: the sandbox workspace that needs no account.
-// Signing in later claims it, so nothing written there is lost.
-function TryAction() {
-  return (
-    <Link className="texttext-landing-secondary" href={tryHref}>
-      Try it without an account
     </Link>
   );
 }
@@ -235,7 +223,6 @@ function LandingSections() {
         <DocumentDemo slug="article" />
         <p className="texttext-chapter-links">
           <TextLink href="/templates">Browse the looks</TextLink>
-          <TextLink href={demoHref}>See a published blog</TextLink>
         </p>
       </section>
 
@@ -302,7 +289,6 @@ export default async function Home() {
           </p>
           <div className="texttext-landing-actions">
             <PrimaryAction signedIn={Boolean(user)} />
-            {user ? null : <TryAction />}
           </div>
         </div>
 

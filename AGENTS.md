@@ -25,7 +25,6 @@ This version has breaking changes. Read the relevant guide under
   the app never calls its own MCP endpoint.
 - External agents use hosted `/api/mcp`. Agents on this Mac use the `texttext`
   CLI and do not restore a loopback server.
-- The zero-setup demo is `/@demo`; `/t/demo` redirects there.
 - Full AI architecture is in `docs/ai-sidebar-architecture.md`.
 
 ## Releases
