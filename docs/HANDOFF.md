@@ -710,3 +710,27 @@ directory. No entitlement change was needed.
 overwrites state already in the container. Only the non-sandboxed edition can
 read the legacy directory, so the Store edition has to be signed in once by hand
 the first time; after that either edition sees the same bytes.
+
+## Signing in from the Mac app uses a system auth sheet
+
+Changed 2026-08-11. The Sign In button used to start a device-code link: an
+external browser opened and asked "link this Mac to your account?". On a Mac
+that question has no good answer, because the app and the browser are the same
+device.
+
+It now opens an ASWebAuthenticationSession against `/connect/app/native`. That
+is a system browser sheet, not an embedded web view, which matters: Google
+refuses OAuth in an embedded view (`disallowed_useragent`) and Apple restricts
+it, which is almost certainly why the device-code path was made primary in the
+first place. The sheet also shares Safari's session, so it is usually one tap.
+
+`LinkController` and `/connect/link` stay exactly as they were, for the CLI and
+anything headless. The consent page belongs there: a typed code cannot tell the
+browser which device asked.
+
+The sheet path skips that confirmation safely because the secret is never shown
+to a person. The callback scheme is hard-coded in the route (**never** read a
+`redirect_uri` from the request), macOS delivers `texttext-app://` only to the
+installed app, and the app rejects any callback whose `state` it did not issue.
+No new storage: the route creates an already-approved `deviceLinks` row and the
+app claims it through the existing `/api/link/poll`, which already mints once.

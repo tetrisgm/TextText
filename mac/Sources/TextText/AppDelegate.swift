@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var changeListener: ChangeListener!
     private var captureAgent: CaptureAgent!
     private var linkController: LinkController!
+    private var authSession: AuthSessionController!
     private var updater: Updater?          // created AFTER the move check; Sparkle must
                                            // never download into a translocated/Downloads copy
     private var statusItem: NSStatusItem!
@@ -170,21 +171,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         linkController.onChange = { [weak self] in self?.refreshUI() }
         linkController.onActivity = { [weak self] message in self?.appendActivity(message) }
         linkController.onLinked = { [weak self] credentials in
-            guard let self else { return }
-            self.webWindow?.establishSession(token: credentials.token)
-            // Fetch+cache the workspace, then register the File Provider domain
-            // (never a mirror pass). seedCachedWorkspaceIfNeeded calls
-            // syncFileProviderDomain() once account.json is cached.
-            self.seedCachedWorkspaceIfNeeded()
-            self.healthReporter?.flushAsync()
-            // Shared items filed while signed out could not reach the server;
-            // drain them now that credentials exist.
-            self.retryShareInboxDrain()
-            self.retryQuickCaptureDrain()
-            self.refreshUI()
-            // Linking configures folder sync; bring the workspace forward.
-            NSApp.activate(ignoringOtherApps: true)
-            self.showMainWindow()
+            self?.handleSignedIn(credentials)
+        }
+
+        // The sheet is how a person signs in; LinkController stays for the CLI
+        // and anything headless, where a device code is the right answer.
+        authSession = AuthSessionController(store: store)
+        authSession.onChange = { [weak self] in self?.refreshUI() }
+        authSession.onActivity = { [weak self] message in self?.appendActivity(message) }
+        authSession.onLinked = { [weak self] credentials in
+            self?.handleSignedIn(credentials)
         }
 
         // Present the workspace before starting sync, indexing, capture, and
@@ -1381,15 +1377,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Account
 
+    /// Everything that has to happen once credentials exist, whichever way they
+    /// arrived: the sheet, or a device link from the CLI.
+    private func handleSignedIn(_ credentials: Credentials) {
+        webWindow?.establishSession(token: credentials.token)
+        // Fetch+cache the workspace, then register the File Provider domain
+        // (never a mirror pass). seedCachedWorkspaceIfNeeded calls
+        // syncFileProviderDomain() once account.json is cached.
+        seedCachedWorkspaceIfNeeded()
+        healthReporter?.flushAsync()
+        // Shared items filed while signed out could not reach the server;
+        // drain them now that credentials exist.
+        retryShareInboxDrain()
+        retryQuickCaptureDrain()
+        refreshUI()
+        // Signing in configures folder sync; bring the workspace forward.
+        NSApp.activate(ignoringOtherApps: true)
+        showMainWindow()
+    }
+
     private func signIn() {
-        // A pending code means a live approval page: reopen THAT page rather
-        // than minting a second code the first tab could wrongly approve.
+        // A device link already in flight belongs to whoever started it (the
+        // CLI): reopen THAT approval page rather than minting a second code the
+        // first tab could wrongly approve.
         if case .waiting = linkController.state {
             linkController.reopenApproval()
             return
         }
-        guard !linkController.isLinking else { return }
-        linkController.begin(serverOrigin: resolveServerOrigin(credentials: nil))
+        guard !linkController.isLinking, !authSession.isPresenting else { return }
+        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil))
     }
 
     private func signOut() {
