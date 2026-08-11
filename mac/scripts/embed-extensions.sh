@@ -105,6 +105,16 @@ embed_appex() { # returns nonzero on failure
   "$PB" -c "Set :CFBundleShortVersionString $VERSION" "$plist"
   "$PB" -c "Set :CFBundleVersion $BUILD" "$plist"
 
+  # App Store validation requires LSMinimumSystemVersion in every bundle it
+  # sees, extensions included (error 90360). It is taken from the container app
+  # rather than declared per extension so the two can never disagree.
+  local min_system
+  min_system="$($PB -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+  if [ -n "$min_system" ]; then
+    "$PB" -c "Add :LSMinimumSystemVersion string $min_system" "$plist" 2>/dev/null \
+      || "$PB" -c "Set :LSMinimumSystemVersion $min_system" "$plist"
+  fi
+
   # Embedded provisioning profile authorizes the app-group entitlement.
   cp "$profile" "$appex/Contents/embedded.provisionprofile"
 
@@ -115,6 +125,20 @@ embed_appex() { # returns nonzero on failure
     -e "s/TEXTTEXT_APP_GROUP/$APP_GROUP/g" \
     -e "s/TEXTTEXT_KEYCHAIN_GROUP/$KEYCHAIN_GROUP/g" \
     "$MAC/Extensions/$srcdir/$ent_tmpl" > "$ent"
+
+  # TestFlight rejects a bundle signed without an application identifier when
+  # its embedded profile carries one (error 90886); they have to agree. Each
+  # extension's identifier is the container app's plus its own suffix, and it
+  # is team-prefixed, so it is injected here rather than checked in. Only the
+  # Store edition has profiles that assert one.
+  local appex_bundle_id
+  appex_bundle_id="$($PB -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null || true)"
+  if [ "${TEXTTEXT_STORE:-0}" = "1" ] && [ -n "$TEAM" ] && [ -n "$appex_bundle_id" ]; then
+    "$PB" -c "Add :com.apple.application-identifier string $TEAM.$appex_bundle_id" "$ent" 2>/dev/null \
+      || "$PB" -c "Set :com.apple.application-identifier $TEAM.$appex_bundle_id" "$ent"
+    "$PB" -c "Add :com.apple.developer.team-identifier string $TEAM" "$ent" 2>/dev/null \
+      || "$PB" -c "Set :com.apple.developer.team-identifier $TEAM" "$ent"
+  fi
 
   echo "   signing $name"
   codesign --force --options runtime --timestamp \

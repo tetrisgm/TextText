@@ -308,6 +308,17 @@ if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:
     -e "s/TEXTTEXT_APP_GROUP/${TEXTTEXT_APP_GROUP}/g" \
     -e "s/TEXTTEXT_KEYCHAIN_GROUP/${KC_GROUP:-}/g" \
     "$ENT" > "$MAIN_ENT"
+  # TestFlight refuses a bundle whose signature omits the application
+  # identifier while its embedded profile carries one (error 90886): the two
+  # must agree. It cannot live in the checked-in entitlements because it is
+  # team-prefixed, so it is injected here from the resolved team, exactly like
+  # the app group and the keychain group above.
+  if [ "$STORE" = "1" ] && [ -n "${TEAM:-}" ]; then
+    "$PB" -c "Add :com.apple.application-identifier string $TEAM.$TEXTTEXT_BUNDLE_ID" "$MAIN_ENT" 2>/dev/null \
+      || "$PB" -c "Set :com.apple.application-identifier $TEAM.$TEXTTEXT_BUNDLE_ID" "$MAIN_ENT"
+    "$PB" -c "Add :com.apple.developer.team-identifier string $TEAM" "$MAIN_ENT" 2>/dev/null \
+      || "$PB" -c "Set :com.apple.developer.team-identifier $TEAM" "$MAIN_ENT"
+  fi
   echo ">> main app: app-group + keychain entitlement + embedded profile"
 elif [ "$STORE" = "1" ]; then
   # The Store edition must be sandboxed even when no profile is around, or a

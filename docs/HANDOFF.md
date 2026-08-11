@@ -646,3 +646,30 @@ linkage in mac/Package.swift, not by deleting files, so the two never mix.
 Decision confirmed 2026-08-11: "sparkle: same as partyparty", i.e. keep the
 standalone channel dormant and intact rather than retiring it. This is the
 owner's standing intent recorded as a fact; it is not a new contract rule.
+
+## Mac App Store: what a Store build must carry
+
+Verified 2026-08-11, build 0.174 (178) accepted by TestFlight.
+
+Two Info.plist/entitlement facts the notarized (non-Store) path never needed,
+both discovered as altool validation failures:
+
+- **`com.apple.application-identifier` (error 90886).** Every bundle whose
+  embedded provisioning profile asserts an application identifier must have the
+  same identifier signed into it. It is team-prefixed, so it cannot live in the
+  checked-in entitlements files; `build-app.sh` injects it for the app and
+  `embed-extensions.sh` for each extension, from the team resolved out of the
+  signing identity. Store edition only.
+- **`LSMinimumSystemVersion` (error 90360).** Required in extension
+  Info.plists, not just the app's. `embed-extensions.sh` copies it from the
+  container app so the two cannot disagree.
+
+Provisioning profiles live in `mac/profiles/` and are gitignored, so
+`build-store.sh` only produces a complete bundle in the canonical checkout. A
+worktree silently skips extension embedding and prints "no provisioning
+profiles in mac/profiles; skipping embed".
+
+App Store Connect API credentials for `altool` are in the login Keychain under
+service `asc` as a JSON blob with `key_id` and `issuer_id`; the .p8 is at
+`~/.appstoreconnect/private_keys/`. `asc auth status` does not expose the
+issuer id.
