@@ -528,3 +528,40 @@ else
     echo "  appcast:  $ORIGIN/appcast.xml"
   fi
 fi
+
+# Stamping the version dirties the checkout, and this script deliberately does
+# not commit it: recording a release is a decision, and a script that commits
+# on the owner's behalf mid-release is the kind of automation this project does
+# not want. But leaving it silent is worse than it sounds. The next ship refuses
+# to start on a dirty tree, so every successful release quietly sabotages the
+# following one until a human happens to notice, which took three releases to
+# spot. So say it, loudly, at the end, where it cannot be missed.
+#
+# This runs LAST and changes nothing. Everything above has already shipped.
+RECORD_PATHS=""
+for candidate in mac/Info.plist src/generated/app-release.ts; do
+  if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no -- "$candidate")" ]; then
+    RECORD_PATHS="$RECORD_PATHS $candidate"
+  fi
+done
+if [ -n "$RECORD_PATHS" ]; then
+  echo
+  echo "=============================================================="
+  echo " THE RELEASE SHIPPED. THE REPOSITORY DOES NOT SAY SO YET."
+  echo "=============================================================="
+  echo
+  echo " Stamping $VERSION left these modified and uncommitted:"
+  for path in $RECORD_PATHS; do echo "   $path"; done
+  echo
+  echo " Nothing is wrong with the release. This is bookkeeping, and the"
+  echo " next ship will refuse to start until it is done, because it will"
+  echo " not run on a dirty tree."
+  echo
+  echo " Record it from a worktree, the way any other change lands:"
+  echo "   git worktree add -b release-${VERSION//./-} ../$(basename "$ROOT")--rel"
+  echo "   # copy the two files across, commit, then: merge-gate"
+  echo
+  echo " Exiting non-zero so this is not mistaken for a clean finish."
+  echo
+  exit 1
+fi
