@@ -7623,3 +7623,65 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     flex-direction: column;
   }
 }
+
+/* ---- Content reporting ---- */
+/* Quiet by design: present on every public document, prominent on none. */
+.public-report-footer {
+  max-width: 44rem;
+  margin: 3rem auto 2rem;
+  padding: 0 1.25rem;
+  text-align: center;
+}
+.public-report-footer a {
+  color: var(--ac-label-3, #8a8a8e);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+.public-report-footer a:hover {
+  text-decoration: underline;
+}
+
+.texttext-report-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.texttext-report-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+.texttext-report-form label span {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+.texttext-report-form input,
+.texttext-report-form textarea {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--tt-border, #d2d2d7);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+}
+.texttext-report-form button {
+  justify-self: start;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: #0071e3;
+  color: #fff;
+  cursor: pointer;
+}
+.texttext-report-form button:disabled {
+  opacity: 0.5;
+}
+/* The trap is for the bots that fill every field; people never see it. */
+.texttext-report-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

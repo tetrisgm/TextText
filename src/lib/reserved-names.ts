@@ -33,6 +33,7 @@ const BASE_RESERVED_NAMES = [
   "notes",
   "pricing",
   "privacy",
+  "report",
   "settings",
   "sign-in",
   "sign-up",

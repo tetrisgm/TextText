@@ -450,6 +450,16 @@ export async function PostPageForHandle({
             canCommentPost={canCommentPost}
           />
           {reader}
+          {/* Guideline 1.2 and plain decency: anyone who can read a published
+              page can say it should not be here, without an account. */}
+          <footer className="public-report-footer">
+            <a
+              href={`/report?path=${encodeURIComponent(currentPostPath)}${post.id ? `&doc=${post.id}` : ""}`}
+              rel="nofollow"
+            >
+              Report this page
+            </a>
+          </footer>
           {publicBacklinks.length > 0 ? (
             <aside className="backlinks-panel is-public" aria-label="Linked from">
               <h2>Linked from</h2>

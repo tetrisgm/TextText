@@ -55,6 +55,11 @@ export default function TermsPage() {
             may remove content or restrict access when needed to protect the
             service, users, or legal obligations.
           </p>
+          <p>
+            Every published page carries a Report link, and reports go to a
+            person. Content that crosses these rules is removed once a report
+            is confirmed, and repeat publication of it can end the account.
+          </p>
         </section>
 
         <section>

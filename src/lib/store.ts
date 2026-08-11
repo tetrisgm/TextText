@@ -57,6 +57,7 @@ import {
   collabState,
   collabUpdates,
   collaborators,
+  contentReports,
   deletedAccounts,
   deviceLinks,
   documentCapabilityLinks,
@@ -5371,4 +5372,56 @@ export async function anonymizeAuditActor(
 export async function deleteUserRow(userId: string): Promise<void> {
   if (!db) throw new Error("deleteUserRow requires DATABASE_URL");
   await db.delete(users).where(eq(users.id, userId));
+}
+
+// ---------------------------------------------------------------------------
+// Content reports
+// ---------------------------------------------------------------------------
+
+const REPORT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A reader reporting a published page. Filed without an account, which is the
+ * point: public pages are readable by anyone, so anyone must be able to say
+ * something should not be there. Review is a human reading the open rows.
+ */
+export async function fileContentReport(input: {
+  path: string;
+  postId?: string;
+  reason: string;
+  reporterEmail?: string;
+}): Promise<{ id: string } | null> {
+  if (!db) return null;
+  // The post reference is best effort: a wrong or stale id must not turn a
+  // report into an error, so it is only kept when it names a real post.
+  let postId: string | null = null;
+  if (input.postId && REPORT_UUID_RE.test(input.postId)) {
+    const exists = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(eq(posts.id, input.postId))
+      .limit(1);
+    if (exists[0]) postId = exists[0].id;
+  }
+  const inserted = await db
+    .insert(contentReports)
+    .values({
+      path: input.path.slice(0, 512),
+      postId,
+      reason: input.reason.slice(0, 2000),
+      reporterEmail: input.reporterEmail?.slice(0, 320) ?? null,
+    })
+    .returning({ id: contentReports.id });
+  const row = inserted[0];
+  if (!row) return null;
+  await recordAction({
+    actorUserId: null,
+    actorType: "human",
+    actionName: "report_content",
+    targetType: "item",
+    targetId: postId,
+    inputSummary: input.path,
+  });
+  return { id: row.id };
 }
