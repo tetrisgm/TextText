@@ -1349,6 +1349,24 @@ export async function saveBookmarkCapture(
     clean(row.title) === `www.${urlHost}`;
   if (capturedTitle && isHostPlaceholder) title = capturedTitle;
 
+  // The snapshot is the content model and title/body are projections of it, so
+  // the two have to move together. This path used to write the columns alone,
+  // which left a captured bookmark claiming a title of "gamedeveloper.com" in
+  // its document while the column held the real headline. Nothing reads the
+  // drift day to day, which is exactly why it survived: the canonical audit in
+  // the release gate is what finds it.
+  const canonical = requireDocumentSnapshot(
+    row.document,
+    `Persisted item ${row.id}`,
+  );
+  const document =
+    canonical.content.title === title && canonical.content.body === body
+      ? canonical
+      : {
+          ...canonical,
+          content: { ...canonical.content, title, body },
+        };
+
   const updated = await db
     .update(posts)
     .set({
@@ -1357,6 +1375,7 @@ export async function saveBookmarkCapture(
         : opts.replaceCapture
           ? merged
           : retainCaptureGeneration(merged, row.capture),
+      document,
       title,
       captureStatus: opts.keepPending
         ? "pending"
