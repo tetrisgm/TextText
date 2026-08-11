@@ -106,3 +106,43 @@ final class StateStoreLocationTests: XCTestCase {
         XCTAssertEqual(mode?.int16Value, 0o600)
     }
 }
+
+/// The container choice is what actually decides whether the two editions share
+/// state, and the failure is silent: each edition works fine on its own while
+/// pointing at a different directory.
+final class AppGroupContainerChoiceTests: XCTestCase {
+    private let team = URL(fileURLWithPath: "/g/52WM463HR2.group.app.texttext", isDirectory: true)
+    private let naive = URL(fileURLWithPath: "/g/group.app.texttext", isDirectory: true)
+
+    func testSandboxedTrustsTheSystemContainer() {
+        let chosen = AppGroupContainer.choose(
+            systemContainer: team, isSandboxed: true,
+            candidates: [team, naive], exists: { _ in true })
+        XCTAssertEqual(chosen, team)
+    }
+
+    /// The regression this exists for: outside the sandbox the system hands back
+    /// the naive path, and an empty leftover directory made it look real.
+    func testUnsandboxedIgnoresTheNaiveSystemAnswer() {
+        let chosen = AppGroupContainer.choose(
+            systemContainer: naive, isSandboxed: false,
+            candidates: [team, naive], exists: { _ in true })
+        XCTAssertEqual(chosen, team, "both editions must land on the team-prefixed container")
+    }
+
+    func testUnsandboxedFallsBackWhenOnlyTheNaiveOneExists() {
+        let chosen = AppGroupContainer.choose(
+            systemContainer: naive, isSandboxed: false,
+            candidates: [team, naive], exists: { $0 == self.naive })
+        XCTAssertEqual(chosen, naive)
+    }
+
+    func testNoContainerAtAll() {
+        XCTAssertNil(AppGroupContainer.choose(
+            systemContainer: naive, isSandboxed: false,
+            candidates: [team, naive], exists: { _ in false }))
+        XCTAssertNil(AppGroupContainer.choose(
+            systemContainer: nil, isSandboxed: true,
+            candidates: [], exists: { _ in true }))
+    }
+}

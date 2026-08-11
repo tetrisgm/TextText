@@ -64,13 +64,38 @@ enum AppGroupContainer {
     /// makes the two editions land on the same bytes.
     static func resolve(fileManager: FileManager = .default) -> URL? {
         guard let groupIdentifier = identifier() else { return nil }
-        if let container = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: groupIdentifier
-        ), fileManager.fileExists(atPath: container.path) {
-            return container
+        return choose(
+            systemContainer: fileManager.containerURL(
+                forSecurityApplicationGroupIdentifier: groupIdentifier),
+            isSandboxed: isSandboxed,
+            candidates: candidates(for: groupIdentifier),
+            exists: { fileManager.fileExists(atPath: $0.path) })
+    }
+
+    /// True only inside the sandboxed (Store) edition. The system sets this for
+    /// every sandboxed process; the Developer ID build never sees it.
+    static var isSandboxed: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+    }
+
+    /// Split out from `resolve` because the interesting case has no home
+    /// directory to stand in for it.
+    ///
+    /// The system's answer is only trustworthy inside the sandbox. Outside it,
+    /// `containerURL(forSecurityApplicationGroupIdentifier:)` does not consult
+    /// anything: it hands back a naive <home>/Library/Group Containers/<group
+    /// id>. If that directory happens to exist — and on a machine that has run
+    /// an older build, it does, empty — trusting it puts the Developer ID
+    /// edition's state somewhere the Store edition will never look, which is
+    /// the exact split this whole type exists to close. So outside the sandbox
+    /// the candidates decide, team-prefixed first, because that is the
+    /// directory the sandboxed edition and the extensions actually use.
+    static func choose(systemContainer: URL?, isSandboxed: Bool,
+                       candidates: [URL], exists: (URL) -> Bool) -> URL? {
+        if isSandboxed, let systemContainer, exists(systemContainer) {
+            return systemContainer
         }
-        return candidates(for: groupIdentifier)
-            .first { fileManager.fileExists(atPath: $0.path) }
+        return candidates.first(where: exists)
     }
 
     /// This app's own Team ID, read from its signature, so the team-prefixed

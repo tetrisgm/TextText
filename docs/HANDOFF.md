@@ -706,6 +706,14 @@ has: the sandboxed build gets the real container from `containerURL(...)`, and
 the non-sandboxed build tries the team-prefixed path first, which is the same
 directory. No entitlement change was needed.
 
+Outside the sandbox, `containerURL(forSecurityApplicationGroupIdentifier:)`
+does not consult anything: it returns a naive
+`<home>/Library/Group Containers/<group id>`. On a machine that has run an older
+build that directory exists, empty, so trusting it sends the Developer ID
+edition's state somewhere the Store edition never looks. `AppGroupContainer`
+therefore trusts the system answer only when `APP_SANDBOX_CONTAINER_ID` is set,
+and otherwise takes the team-prefixed candidate.
+
 `StateStore` carries the old location forward once, by copy, and never
 overwrites state already in the container. Only the non-sandboxed edition can
 read the legacy directory, so the Store edition has to be signed in once by hand
