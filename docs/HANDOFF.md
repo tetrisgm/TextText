@@ -602,3 +602,24 @@ What it knows that a naive re-point does not:
 
 It is resumable: every statement is idempotent, so an interrupted run is
 finished by running it again rather than unpicked.
+
+## Why the Apple consent screen says "write app" (2026-08-11)
+
+"Use your Apple Account to sign in to write app" comes from the Sign in with
+Apple client registration in the Developer portal, specifically the Services
+ID's Description field, set when the product was still called Write. Proven by
+reading the authorize page's embedded config: it serves
+`"client":{"name":"write app",...}` for client_id `net.writeapp.write.web`.
+
+Renaming the Services ID through the App Store Connect API does NOT fix it and
+never will. The API's bundleIds resource is a separate mirror: after renaming
+it to "TextText" (resource DKS27GG49B), the API durably reports the new name
+while the consent screen durably serves the old one. They are two stores, and
+neither the official API nor asc's web-session commands can write the one the
+consent screen reads (`asc web bundle-ids` only syncs capabilities).
+
+The only fix is the portal UI, by the owner: developer.apple.com → Identifiers
+→ switch the filter to Services IDs → net.writeapp.write.web → edit
+Description → save. The identifier itself stays, so the OAuth client_id and
+every existing sign-in are unaffected, and the change is immediate rather than
+propagated.
