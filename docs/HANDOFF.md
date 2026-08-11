@@ -691,3 +691,22 @@ installed at a time.
   behaviour. If a Developer ID build has been shipped since the last TestFlight
   install, remove it first, otherwise a numbered copy appears again:
   `rm -rf /Applications/TextText.app` before pressing Install in TestFlight.
+
+## The two editions share one state directory
+
+Before 2026-08-11 they did not, and switching editions signed you out and showed
+an empty library. The Developer ID build is not sandboxed and wrote
+`~/Library/Application Support/TextText`; the Store build is sandboxed and got a
+redirected copy of that path inside its own container. Neither could read the
+other, and the session token is a file (`credentials.json`), not a Keychain item.
+
+State now lives in `<app group container>/TextText`, which is the one directory
+both can reach. `AppGroupContainer` resolves it the way the share inbox always
+has: the sandboxed build gets the real container from `containerURL(...)`, and
+the non-sandboxed build tries the team-prefixed path first, which is the same
+directory. No entitlement change was needed.
+
+`StateStore` carries the old location forward once, by copy, and never
+overwrites state already in the container. Only the non-sandboxed edition can
+read the legacy directory, so the Store edition has to be signed in once by hand
+the first time; after that either edition sees the same bytes.
