@@ -284,27 +284,30 @@ if [ -n "$ORIGIN" ]; then
   curl -fsSI "$ORIGIN/download/TextText.zip" >/dev/null
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
-  GUEST_SMOKE_DIR="$(mktemp -d)"
-  GUEST_SMOKE_COOKIES="$GUEST_SMOKE_DIR/cookies"
-  GUEST_SMOKE_RESULT="$(
+  # The way in is signing in. This used to smoke-test /try, the guest sandbox,
+  # which was removed from the product along with the seeded /@demo blog: both
+  # were pretence, and a release must not verify a route it no longer serves.
+  SIGNIN_SMOKE_DIR="$(mktemp -d)"
+  SIGNIN_SMOKE_COOKIES="$SIGNIN_SMOKE_DIR/cookies"
+  SIGNIN_SMOKE_RESULT="$(
     curl -sS -L \
-      -c "$GUEST_SMOKE_COOKIES" \
-      -b "$GUEST_SMOKE_COOKIES" \
+      -c "$SIGNIN_SMOKE_COOKIES" \
+      -b "$SIGNIN_SMOKE_COOKIES" \
       -o /dev/null \
       -w '%{http_code} %{url_effective}' \
-      "$ORIGIN/try?ship_verify=$VERIFY_QUERY"
+      "$ORIGIN/signin?ship_verify=$VERIFY_QUERY"
   )"
-  rm -rf "$GUEST_SMOKE_DIR"
-  GUEST_SMOKE_STATUS="${GUEST_SMOKE_RESULT%% *}"
-  GUEST_SMOKE_URL="${GUEST_SMOKE_RESULT#* }"
+  rm -rf "$SIGNIN_SMOKE_DIR"
+  GUEST_SMOKE_STATUS="${SIGNIN_SMOKE_RESULT%% *}"
+  GUEST_SMOKE_URL="${SIGNIN_SMOKE_RESULT#* }"
   [ "$GUEST_SMOKE_STATUS" = "200" ] || {
-    echo "Guest start flow returned $GUEST_SMOKE_STATUS at $GUEST_SMOKE_URL." >&2
+    echo "Sign-in page returned $GUEST_SMOKE_STATUS at $GUEST_SMOKE_URL." >&2
     exit 1
   }
   echo "   appcast:  $PUBLIC_VERSION ($PUBLIC_BUILD, $PUBLIC_HARDWARE_REQUIREMENTS)"
   echo "   zip:      $PUBLIC_ZIP_URL"
   echo "   version:  $API_VERSION ($API_BUILD)"
-  echo "   guest:    $GUEST_SMOKE_URL"
+  echo "   sign-in:  $GUEST_SMOKE_URL"
 
   # Live-execute the shared workspace workflows against the just-deployed prod
   # (an isolated scratch workspace, torn down in the script's finally), asserting
