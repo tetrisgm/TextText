@@ -204,7 +204,10 @@ export function AssistantSidebar({
   ariaLabel,
   contentLabel,
   composerLabel = "Message assistant",
-  composerPlaceholder = "Ask about this page",
+  // "Ask about this page" describes a chat box. The assistant edits, drafts,
+  // finds, and files; the placeholder should say the bigger thing so people try
+  // it, and the context chip above already says which page.
+  composerPlaceholder = "Do anything with AI",
   accept,
   attachmentDisabled = false,
   attachmentTitle = "Add attachment",

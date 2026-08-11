@@ -75,3 +75,26 @@ describe("starters", () => {
     expect(first.label).toBe("What is in Bookmarks?");
   });
 });
+
+describe("mapping the composer's context chip", () => {
+  it("treats an item as an item and keeps its title", async () => {
+    const { starterContextFromChip } = await import("../starters");
+    expect(starterContextFromChip({ kind: "item", label: "Super Metroid" })).toEqual({
+      level: "item",
+      label: "Super Metroid",
+    });
+  });
+
+  it("does not offer to sharpen the writing in Trash", async () => {
+    const { starterContextFromChip } = await import("../starters");
+    expect(starterContextFromChip({ kind: "folder", label: "Trash" })).toEqual({ level: "trash" });
+    expect(starterContextFromChip({ kind: "folder", label: "Shared with me" })).toEqual({
+      level: "shared",
+    });
+  });
+
+  it("falls back to the workspace when the chip says nothing", async () => {
+    const { starterContextFromChip } = await import("../starters");
+    expect(starterContextFromChip({}).level).toBe("root");
+  });
+});

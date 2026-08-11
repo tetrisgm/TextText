@@ -137,6 +137,7 @@ import {
   assistantContextChipWithSelection,
   resolveWorkspaceAssistantContext,
 } from "@/components/workspace/assistant/context";
+import { starterContextFromChip } from "@/components/workspace/assistant/starters";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
 import {
@@ -6541,6 +6542,8 @@ function LocalWorkspaceShell({
           cloudProvider={assistant.cloudProvider}
           jobs={assistant.jobs}
           messages={assistant.messages}
+          starterContext={starterContextFromChip(assistantContext)}
+          viewerName={blog.author}
           quickActions={assistant.quickActions}
           submitting={assistant.submitting}
           onApplyProposal={assistant.applyProposal}

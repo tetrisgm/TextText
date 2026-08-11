@@ -17,6 +17,30 @@ export type StarterContext = {
   label?: string | null;
 };
 
+/**
+ * The rail already resolves a context chip for the composer; this reuses it
+ * rather than resolving the view a second time and risking the two disagreeing
+ * about where the person is.
+ */
+export function starterContextFromChip(chip: {
+  kind?: "workspace" | "folder" | "item";
+  label?: string;
+}): StarterContext {
+  const label = chip.label ?? null;
+  switch (chip.kind) {
+    case "item":
+      return { level: "item", label };
+    case "folder":
+      // Trash and Shared with me arrive as folders but read as places, and
+      // asking to "sharpen your writing" in Trash is nonsense.
+      if (label === "Trash") return { level: "trash" };
+      if (label === "Shared with me") return { level: "shared" };
+      return { level: "folder", label };
+    default:
+      return { level: "root", label };
+  }
+}
+
 export type Starter = {
   label: string;
   prompt: string;

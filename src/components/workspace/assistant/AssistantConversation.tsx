@@ -5,13 +5,10 @@ import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
+import { greeting, startersFor, type StarterContext } from "./starters";
 import styles from "./AssistantConversation.module.css";
 
-const PROMPT_STARTERS = [
-  { label: "Improve title", prompt: "Give this page a better title" },
-  { label: "Summarize page", prompt: "Summarize this page" },
-  { label: "Draft follow-ups", prompt: "Draft three related posts" },
-] as const;
+const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
 
 function displayedMessageText(message: AssistantMessage): string {
   return message.text;
@@ -25,6 +22,8 @@ export function AssistantConversation({
   cloudProvider,
   jobs,
   messages,
+  starterContext,
+  viewerName,
   quickActions,
   submitting,
   onApplyProposal,
@@ -37,6 +36,9 @@ export function AssistantConversation({
   cloudProvider?: CloudAssistantProviderLabel | null;
   jobs?: AssistantJob[];
   messages: AssistantMessage[];
+  /** Where the person is, so the starters can name it. */
+  starterContext?: StarterContext;
+  viewerName?: string | null;
   quickActions?: ReadonlyArray<{
     id: NativeQuickActionId;
     label: string;
@@ -107,17 +109,21 @@ export function AssistantConversation({
       <div className={styles.empty}>
         {jobsStrip}
         {quickActionBar}
+        {/* A greeting and starters that name the current item, rather than
+            which provider is wired up. Which provider is connected only earns
+            the lead when there is none, because then it is the thing standing
+            in the way. */}
         <p className={styles.emptyTitle}>
-          {cloudProvider ? `Using ${cloudProvider}` : "Connect an AI provider"}
+          {cloudProvider ? greeting(viewerName, new Date()) : "Connect an AI provider"}
         </p>
         <p className={styles.emptyBody}>
           {cloudProvider
-            ? `TextText sends requests to the ${cloudProvider} connection saved for this workspace.`
+            ? "Ask about what you are looking at, or start with one of these."
             : "Add an Anthropic or OpenAI API key in Workspace Settings. To use an existing ChatGPT or Claude subscription, connect TextText from that app through MCP."}
         </p>
         {onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">
-            {PROMPT_STARTERS.map((starter) => (
+            {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
               <button
                 key={starter.label}
                 type="button"

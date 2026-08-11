@@ -199,21 +199,40 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("off this Mac");
   });
 
-  it("offers concise prompt starters that fill the composer", () => {
+  it("greets the reader and offers starters that name the open item", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
         cloudProvider: "Anthropic",
         messages: [],
         submitting: false,
         onUsePrompt: () => {},
+        viewerName: "Ramine Darabiha",
+        starterContext: { level: "item", label: "The Invisible Hand of Super Metroid" },
       }),
     );
 
     expect(html).toContain('aria-label="Prompt starters"');
-    expect(html).toContain("Using Anthropic");
-    expect(html).toContain("Improve title");
-    expect(html).toContain("Summarize page");
-    expect(html).toContain("Draft follow-ups");
+    // The greeting leads, not which provider happens to be wired up.
+    expect(html).toMatch(/Good (morning|afternoon|evening), Ramine/);
+    expect(html).not.toContain("Using Anthropic");
+    // Naming the item is the whole point of the starters.
+    expect(html).toContain("Super Metroid");
+    expect(html).toContain("Challenge my thinking");
+  });
+
+  it("still leads with the provider when there is none to use", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        cloudProvider: null,
+        messages: [],
+        submitting: false,
+        onUsePrompt: () => {},
+        viewerName: "Ramine",
+      }),
+    );
+
+    expect(html).toContain("Connect an AI provider");
+    expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
   });
 
   it("explains selected-text context and unavailable attachments", () => {
