@@ -4,8 +4,9 @@ import Foundation
 /// The device-link client (a simplified RFC 8628 flow; the server half lives
 /// in the TextText repo's /api/link/*):
 ///   1. POST link/start, show the human code IN THE APP.
-///   2. Validate verifyUrl (host must EXACTLY match the configured server;
-///      https required unless the host is localhost), then open the browser.
+///   2. Validate verifyUrl (host must match the configured server, comparing
+///      case-insensitively as DNS does, and the port must match; https required
+///      unless the host is localhost), then open the browser.
 ///   3. Poll link/poll every `interval` seconds until approved or expired.
 ///   4. Persist the credential, cache the workspace.
 /// The app is never walled behind sign-in; this is a banner, not a gate.
@@ -170,12 +171,22 @@ final class LinkController {
     }
 
     /// partyparty's StartInstallLink rule, mapped to the device flow: the URL
-    /// must have a non-empty host EXACTLY equal to the configured server's
-    /// (and the same port), and must be https unless the host is localhost.
+    /// must have a non-empty host equal to the configured server's, compared
+    /// the way DNS compares them, and the same port, and must be https unless
+    /// the host is localhost.
     static func validatedVerifyURL(_ raw: String, serverOrigin: URL) -> URL? {
+        // Hosts compare case-insensitively, because DNS is case-insensitive and
+        // these two spellings come from different places: the configured origin
+        // is written by hand in the release script as https://TextText.app,
+        // while the server returns its own canonical https://texttext.app. A
+        // case-sensitive == rejected the app's own server, and the failure was
+        // silent from the outside: the link row had already been created
+        // server-side, so the only visible effect of pressing a sign-in button
+        // was the page reloading. That is what "Sign in with Apple does
+        // nothing" was.
         guard let url = URL(string: raw),
-              let host = url.host, !host.isEmpty,
-              let serverHost = serverOrigin.host,
+              let host = url.host?.lowercased(), !host.isEmpty,
+              let serverHost = serverOrigin.host?.lowercased(),
               host == serverHost,
               url.port == serverOrigin.port else {
             return nil

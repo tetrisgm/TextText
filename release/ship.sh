@@ -60,7 +60,11 @@ export TEXTTEXT_NOTARY_PROFILE="${TEXTTEXT_NOTARY_PROFILE:-texttext-notary}"
 . "$ROOT/release/secrets.sh"
 export TEXTTEXT_BUNDLE_ID="${TEXTTEXT_BUNDLE_ID:-app.texttext.mac}"
 export TEXTTEXT_APP_GROUP="${TEXTTEXT_APP_GROUP:-group.app.texttext}"
-export TEXTTEXT_PRODUCT_ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-https://TextText.app}"
+# Lowercase, matching what the server actually answers with. The app compares
+# this against URLs the server returns, and a mixed-case spelling here once made
+# the Mac app reject its own server's sign-in URL. The comparison is
+# case-insensitive now, so this is belt and braces rather than the fix.
+export TEXTTEXT_PRODUCT_ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-https://texttext.app}"
 export TEXTTEXT_SPARKLE_PUBLIC_KEY="${TEXTTEXT_SPARKLE_PUBLIC_KEY:-qFmaq5ijn3m2sbiadmkBVvGIjz8v9+piqE/T+YZ1/u0=}"
 
 VERSION=""
