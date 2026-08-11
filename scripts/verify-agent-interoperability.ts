@@ -129,10 +129,25 @@ assert(
   packageManifest.includes('.executable(name: "texttext"'),
   "The texttext CLI must be a product of the Swift package",
 );
+// Contents/Helpers, not Contents/MacOS. On a stock case-insensitive volume
+// "texttext" and the app's own "TextText" are the same path, so shipping both
+// in MacOS meant the CLI overwrote the app and the bundle's main executable WAS
+// the CLI: it printed usage and exited instead of opening a window.
 assert(
-  buildApp.includes('cp "$BIN/texttext" "$APP/Contents/MacOS/texttext"') &&
-    buildApp.includes('codesign_one "$APP/Contents/MacOS/texttext"'),
-  "The texttext CLI must be copied into the app bundle and signed",
+  buildApp.includes('cp "$BIN/texttext" "$APP/Contents/Helpers/texttext"') &&
+    buildApp.includes('codesign_one "$APP/Contents/Helpers/texttext"'),
+  "The texttext CLI must be copied into Contents/Helpers and signed",
+);
+// The Store edition ships without it, deliberately. Every nested executable in
+// a Mac App Store bundle has to be sandboxed, and a sandboxed CLI runs in its
+// own container rather than the app's, with its PATH symlink landing inside
+// that container where no shell can reach it. Shipping it there would mean
+// shipping something that cannot work, at the cost of a rejected upload.
+assert(
+  /if \[ "\$STORE" != "1" \]; then\s*\n\s*mkdir -p "\$APP\/Contents\/Helpers"/.test(
+    buildApp,
+  ),
+  "The Store edition must not ship the texttext CLI",
 );
 assert(
   cliStore.includes("TextTextTextBundlePackage") &&

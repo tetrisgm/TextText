@@ -531,3 +531,28 @@ scheduled anything.
 Review against the screenshots and land with `merge-gate` from the worktree
 (`~/dev/stack/runbooks/workflow.md`). Then take the editor migration on its own
 branch.
+
+## Canonical documents and their search projections (2026-08-10)
+
+`posts.title`, `posts.body` and `posts.tags` are projections of the document
+snapshot in `posts.document`. Whatever writes one has to write the other, and
+`scripts/audit-canonical-documents.ts` in the release gate is the only thing
+that checks. That is why drift survives: nothing reads it day to day.
+
+It caught a real one. `saveBookmarkCapture` promotes a fetched article title
+over the host placeholder and rewrites the body from the captured readable, but
+wrote both to the columns alone. A production bookmark's snapshot claimed a
+title of "gamedeveloper.com" while every list, search result and file name
+showed "The Invisible Hand of Super Metroid". Fixed at the source; the snapshot
+now moves with the columns.
+
+`scripts/repair-canonical-projections.mjs` fixes rows written before that. It
+reports by default and writes only with `--apply`, and the COLUMN wins: it holds
+what the capture actually fetched and what the owner has been reading, while the
+snapshot holds the pre-capture placeholder. Copying the other way would rename
+people's bookmarks back to bare hostnames. Run against local (2 rows) and
+production (1 row) on 2026-08-10; both audits pass, 534 and 755 documents.
+
+Reach for it whenever the gate reports "search projection differs". Run it
+without `--apply` first and read what it plans to change, because it rewrites
+the canonical content model.
