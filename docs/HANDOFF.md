@@ -742,3 +742,51 @@ to a person. The callback scheme is hard-coded in the route (**never** read a
 installed app, and the app rejects any callback whose `state` it did not issue.
 No new storage: the route creates an already-approved `deviceLinks` row and the
 app claims it through the existing `/api/link/poll`, which already mints once.
+
+## Public URLs: what the owner asked for (2026-08-11)
+
+Every item gets a link automatically, and the link has to be readable: it should
+name the folder the item is in and its slug. Today `/t/[handle]/[slug]` does
+neither well - `t` means nothing to a reader, and the folder is flattened out of
+the path entirely, so the current scheme cannot express the request whatever we
+do about the prefix.
+
+The namespace is the **workspace**, not the person. A workspace can have several
+people in it, so `ramine.texttext.app` is the wrong shape even though it reads
+nicely.
+
+Target, in the owner's order of preference:
+
+1. `<workspace>.texttext.app/<folder>/<slug>` - the Notion Sites shape. Each
+   workspace owns its namespace, so slugs stay clean with no prefix and no
+   reserved-word list.
+2. `texttext.app/<workspace>/<folder>/<slug>` - acceptable fallback if the
+   subdomain work is disproportionate.
+
+Decisions that have to be made before writing any code:
+
+- **Slug uniqueness scope.** `posts_blog_slug_idx` is a partial index over live
+  slugs per blog. Putting the folder in the path allows per-folder uniqueness
+  instead, which is friendlier (two folders can each have `index`), but it is a
+  schema change and it changes what a rename can collide with. Decide before
+  migrating, not after.
+- **Cookie scope, if subdomains.** Session cookies scoped to `texttext.app` do
+  not automatically apply to a workspace subdomain. Sign-in, the Mac app's web
+  view, and the auth sheet all need deliberate handling. See the open bug below;
+  understand that first, because moving to subdomains without knowing the cause
+  would multiply it rather than reveal it.
+- **Redirects.** Every `/t/` URL that exists has to keep working, with canonical
+  tags and the sitemap updated. `release/app-store-listing.md` also cites
+  `texttext.app` URLs.
+
+## Open bug: the owner is served the stranger's view of their own blog
+
+`src/app/t/[handle]/page.tsx:560` renders the visitor empty state only when
+`!canEdit`. The owner reported seeing it, twice, which means `canEdit` was false
+for them on their own blog: on that route the web view is not recognised as the
+signed-in owner.
+
+This is the layer every previous fix missed. Pointing sign-out at `/signin`
+treated the symptom, and the dead end came back through a different door (the
+workspace title in the Mac app navigates there). Start at `access.canEdit`
+around line 387 and at whether the session cookie is sent on `/t/[handle]`.
