@@ -67,6 +67,12 @@
   gap: 5px;
 }
 
+.subsectionTitle {
+  margin: 18px 0 0;
+  color: var(--ac-label);
+  font: 650 var(--ac-fs-subheadline) / 1.25 var(--ac-font-text);
+}
+
 .section h2 {
   color: var(--ac-label);
   font: 650 17px/1.2 var(--ac-font-text);

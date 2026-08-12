@@ -17,6 +17,7 @@ import {
 } from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
 import { AgentIntegrationHome } from "./AgentIntegrationHome";
+import { AiConnectionSettings } from "./AiConnectionSettings";
 import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
   type AccountOverview,
@@ -283,14 +284,17 @@ export function WorkspaceSettings({
           <section className={styles.section} aria-labelledby="settings-ai">
             <div className={styles.sectionHeader}>
               <div>
-                <h2 id="settings-ai">In-app assistant</h2>
+                <h2 id="settings-ai">AI</h2>
                 <p>
-                  Connect your own provider API account and choose the model
-                  TextText uses. Keys are encrypted and scoped to this
-                  workspace.
+                  Choose how an agent works with your TextText workspace.
                 </p>
               </div>
             </div>
+            <AiConnectionSettings />
+            <h3 className={styles.subsectionTitle}>API key connections</h3>
+            <p className={styles.aiNotConfigured}>
+              These advanced connections use your provider API account. Keys are encrypted and scoped to this workspace.
+            </p>
             {aiSettings.configured && !aiEditing ? (
               <div className={styles.aiStatus}>
                 <span>
