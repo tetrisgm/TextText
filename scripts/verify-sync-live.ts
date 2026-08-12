@@ -26,6 +26,8 @@ import {
 } from "@/lib/db/schema";
 import { ensureWorkspaceFolders } from "@/lib/store";
 import { generateApiToken, hashApiToken } from "@/lib/api-tokens";
+import { workspacePublicPostUrl } from "@/lib/public-paths";
+import { requestPublicLiveUrl } from "./public-live-request";
 
 const ORIGIN = process.env.TEXTTEXT_ORIGIN ?? "http://127.0.0.1:3000";
 const STAMP = Date.now().toString(36);
@@ -153,7 +155,7 @@ async function main() {
     const metadataCreate = await api("/api/sync/v1/files", {
       method: "POST",
       headers: { "Content-Type": "text/markdown" },
-      body: "---\ntype: article\nslug: first-slug\ntitle: Question??\n---\n\nportable title",
+      body: "---\ntype: article\nslug: first-slug\ntitle: Question??\nstatus: published\n---\n\nportable title",
     });
     const metadataCreated = await metadataCreate.json();
     const metadataId = metadataCreated?.item?.id;
@@ -162,17 +164,34 @@ async function main() {
         `metadata fixture create failed (${metadataCreate.status}): ${JSON.stringify(metadataCreated)}`,
       );
     }
+    const metadataDraft = await api(`/api/sync/v1/files/${metadataId}`);
+    const metadataDraftHash = metadataDraft.headers.get("etag") || "";
+    const initialPublish = await api(`/api/sync/v1/files/${metadataId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "text/markdown",
+        "If-Match": metadataDraftHash,
+      },
+      body: "---\ntype: article\nslug: first-slug\ntitle: Question??\nstatus: published\n---\n\nportable title",
+    });
+    const initialPublished = await responseJson(
+      initialPublish,
+      "initial public-slug publish",
+    ) as { item?: { hash?: string } };
+    check(
+      "initial public slug is published through audited sync PUT",
+      initialPublish.status === 200,
+      `status ${initialPublish.status}`,
+    );
     const metadataBase = await api(`/api/sync/v1/files/${metadataId}`);
     const metadataGetEtag = metadataBase.headers.get("etag") || "";
-    const metadataCreatedHash = metadataCreated?.item?.hash || "";
-    const metadataBaseHash = metadataCreatedHash
-      ? `"${metadataCreatedHash}"`
-      : metadataGetEtag;
+    const metadataPublishedHash = initialPublished.item?.hash || "";
+    const metadataBaseHash = metadataGetEtag;
     check(
       "GET and manifest identify the same metadata base",
-      metadataCreatedHash.length > 0
-        && metadataGetEtag.replace(/^W\//, "").replaceAll('"', "") === metadataCreatedHash,
-      `${metadataGetEtag} / ${metadataCreatedHash}`,
+      metadataPublishedHash.length > 0
+        && metadataGetEtag.replace(/^W\//, "").replaceAll('"', "") === metadataPublishedHash,
+      `${metadataGetEtag} / ${metadataPublishedHash}`,
     );
     const folderCreate = await api("/api/sync/v1/folders", {
       method: "POST",
@@ -184,7 +203,8 @@ async function main() {
     });
     const folderCreated = await folderCreate.json();
     const targetFolderId = folderCreated?.folder?.id;
-    if (!targetFolderId) {
+    const targetFolderPath = folderCreated?.folder?.path;
+    if (!targetFolderId || !targetFolderPath) {
       throw new Error(
         `folder fixture create failed (${folderCreate.status}): ${JSON.stringify(folderCreated)}`,
       );
@@ -291,13 +311,20 @@ async function main() {
         && renamedRow.slugHistory.includes("first-slug"),
       `${renamedRow?.slug ?? "missing"} / ${renamedRow?.slugHistory.join(",") ?? "missing"}`,
     );
-    const historical = await fetch(`${ORIGIN}/t/${HANDLE}/first-slug`, {
-      redirect: "manual",
-    });
+    const historicalUrl = workspacePublicPostUrl(HANDLE, "blog", "first-slug");
+    const canonicalUrl = workspacePublicPostUrl(
+      HANDLE,
+      targetFolderPath,
+      "question",
+    );
+    if (!historicalUrl || !canonicalUrl) {
+      throw new Error("could not construct the historical public URLs");
+    }
+    const historical = await requestPublicLiveUrl(historicalUrl, ORIGIN);
     check(
-      "old visible slug redirects 307 to the canonical safe slug",
+      "old visible workspace path redirects 307 to the canonical safe path",
       historical.status === 307
-        && historical.headers.get("location")?.endsWith(`/@${HANDLE}/question`) === true,
+        && historical.headers.get("location") === canonicalUrl,
       `status ${historical.status}, location ${historical.headers.get("location")}`,
     );
 

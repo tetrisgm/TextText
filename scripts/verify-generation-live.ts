@@ -19,8 +19,8 @@
 //   node --env-file=.env.local --import tsx scripts/verify-generation-live.ts
 
 import { TextTextClient } from "./texttext-live-client";
+import { requestPublicLiveUrl } from "./public-live-request";
 import { workspacePublicPostUrl } from "@/lib/public-paths";
-import { request as httpRequest } from "node:http";
 
 const ORIGIN = process.env.TEXTTEXT_ORIGIN ?? "http://localhost:3000";
 const ITEM_TITLE = "Chateau Musar 2017";
@@ -153,46 +153,6 @@ const FIELD_VALUES = {
   aromas: ["cherry", "oak", "spice"],
 };
 
-type PublicPageResponse = Pick<Response, "ok" | "status" | "text">;
-
-async function fetchPublicPage(pageUrl: string): Promise<PublicPageResponse> {
-  const publicUrl = new URL(pageUrl);
-  if (!publicUrl.hostname.endsWith(".localhost")) {
-    return fetch(publicUrl);
-  }
-
-  // Node does not consistently resolve wildcard localhost names, while the
-  // browser and Next proxy do. Reach the same local server directly and retain
-  // the workspace host so this still exercises tenant routing.
-  const localOrigin = new URL(ORIGIN);
-  return new Promise((resolve, reject) => {
-    const request = httpRequest(
-      {
-        hostname: "127.0.0.1",
-        port: localOrigin.port,
-        path: `${publicUrl.pathname}${publicUrl.search}`,
-        headers: { host: publicUrl.host },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-        response.on("error", reject);
-        response.on("end", () => {
-          const status = response.statusCode ?? 0;
-          const body = Buffer.concat(chunks).toString("utf8");
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            text: async () => body,
-          });
-        });
-      },
-    );
-    request.on("error", reject);
-    request.end();
-  });
-}
-
 function assertContains(haystack: string, needle: string, label: string) {
   if (!haystack.includes(needle)) {
     throw new Error(`Public page is missing ${label}: expected "${needle}".`);
@@ -271,7 +231,7 @@ async function main() {
     item.slug,
   );
   if (!pageUrl) throw new Error("could not construct the public page URL");
-  const page = await fetchPublicPage(pageUrl);
+  const page = await requestPublicLiveUrl(pageUrl, ORIGIN);
   if (!page.ok) throw new Error(`public page ${pageUrl} returned ${page.status}`);
   const html = await page.text();
   assertContains(html, "Cellar it", "the verdict pill");

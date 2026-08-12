@@ -989,3 +989,13 @@ the composed public reader at
 `http://generation.localhost:<port>/blog/chateau-musar-2017`. The focused live
 proof passes with the tenant article at 200, while cross-workspace and direct
 legacy probes remain 404. Production was still untouched when this was found.
+
+The next release-gate pass exposed the same stale assumption in the sync live
+proof. It expected a newly created item's retired flat `/t/<handle>/<slug>`
+address to redirect even though only pre-migration flat links are preserved.
+The proof now publishes the first slug through the audited sync PUT, moves and
+renames that already-public item, then requests its old folder-qualified URL on
+the workspace host. It verifies a 307 to the new folder-qualified canonical
+URL. The shared local request helper preserves the workspace Host header for
+both generation and sync proofs without depending on wildcard-localhost DNS.
+The corrected sync proof passes 17 checks and tears its scratch workspace down.
