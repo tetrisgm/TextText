@@ -574,7 +574,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             let params = message.rawParams ?? [:]
             let callId = (params["callId"] as? String) ?? (params["id"] as? String) ?? UUID().uuidString
             if let requestId = message.id { codexPendingToolCalls[callId] = requestId }
-            emitCodexEvent(["type": "tool-call", "callId": callId, "tool": params["name"] as? String ?? "", "arguments": params["arguments"] ?? [:]])
+            let toolName = (params["tool"] as? String) ?? (params["name"] as? String) ?? ""
+            emitCodexEvent(["type": "tool-call", "callId": callId, "tool": toolName, "arguments": params["arguments"] ?? [:]])
             return
         }
         if message.method == "turn/completed" {

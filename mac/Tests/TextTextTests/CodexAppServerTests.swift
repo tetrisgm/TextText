@@ -15,6 +15,13 @@ final class CodexAppServerTests: XCTestCase {
         }
     }
 
+    func testPreservesDynamicToolCallNameAndArguments() throws {
+        let message = try CodexAppServerMessage(data: Data(#"{"id":0,"method":"item/tool/call","params":{"callId":"exec-1","tool":"qa_echo","arguments":{"text":"hello"}}}"#.utf8))
+        XCTAssertEqual(message.method, "item/tool/call")
+        XCTAssertEqual(message.rawParams?["tool"] as? String, "qa_echo")
+        XCTAssertEqual((message.rawParams?["arguments"] as? [String: Any])?["text"] as? String, "hello")
+    }
+
     func testRuntimeLocatorFindsOnlyExecutableCandidates() throws {
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-codex-runtime-(UUID().uuidString)", isDirectory: true)
