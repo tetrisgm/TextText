@@ -60,6 +60,7 @@ export function AiConnectionSettings() {
         <summary>Advanced: use an API key</summary>
         <p>API usage is billed separately by the provider. Configure a key below when you want TextText to call Anthropic or OpenAI directly.</p>
       </details>
+      <a className={styles.secondary} href="/docs">Read the AI documentation</a>
     </div>
   );
 }

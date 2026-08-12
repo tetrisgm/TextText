@@ -40,6 +40,7 @@ export function AiGettingStartedCard({
         ) : null}
         <a href="/connect" className={styles.secondary}>Connect another AI app</a>
         <a href={settingsHref} className={styles.secondary}>AI settings</a>
+        <a href="/docs" className={styles.secondary}>Read AI documentation</a>
       </div>
       <div className={styles.prompts} aria-label="Prompt starters">
         <span>Try asking</span>
