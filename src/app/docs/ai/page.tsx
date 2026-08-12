@@ -90,6 +90,28 @@ export default function AiDocsPage() {
           publishing tools.
         </p>
 
+        <section className="connect-section" id="embedded-agent">
+          <h2 className="connect-section-title">Use an agent inside TextText</h2>
+          <p className="connect-body">
+            In the TextText Mac app, Continue with ChatGPT starts a Codex-powered
+            agent directly in the assistant sidebar. Your existing eligible
+            ChatGPT or Codex plan supplies the model, so TextText does not ask
+            you for API credits. The conversation, approvals, and document work
+            stay in TextText.
+          </p>
+          <ol className="connect-steps">
+            <li>Open TextText on your Mac and open a workspace.</li>
+            <li>Choose Continue with ChatGPT in the Library card, Assistant, or AI Settings.</li>
+            <li>Complete the browser sign-in if TextText asks you to connect.</li>
+            <li>Wait for the account and tool check to show Connected.</li>
+            <li>Ask: <em>&quot;What folders are in my TextText workspace?&quot;</em></li>
+          </ol>
+          <p className="connect-body">
+            The embedded connection is Mac-only. In a browser, use an external
+            MCP connection or the advanced API-key path below.
+          </p>
+        </section>
+
         <section className="connect-section">
           <h2 className="connect-section-title">Choose your AI</h2>
           <div className="connect-integration-grid">
@@ -159,7 +181,7 @@ export default function AiDocsPage() {
           </p>
         </section>
 
-        <section className="connect-section">
+        <section className="connect-section" id="chatgpt-external">
           <h2 className="connect-section-title">ChatGPT</h2>
           <ol className="connect-steps">
             <li>Open ChatGPT Settings or Workspace Settings.</li>
@@ -176,6 +198,16 @@ export default function AiDocsPage() {
           <p className="connect-body">
             ChatGPT supplies the model and billing. TextText never needs your
             ChatGPT password or API key.
+          </p>
+        </section>
+
+        <section className="connect-section" id="api-key">
+          <h2 className="connect-section-title">Use an API key</h2>
+          <p className="connect-body">
+            API keys are an advanced fallback for users who want TextText to
+            call Anthropic or OpenAI directly. Provider API usage is billed
+            separately from ChatGPT and Claude subscriptions. Add or remove a
+            key in Workspace Settings. TextText never displays a saved key.
           </p>
         </section>
 

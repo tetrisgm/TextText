@@ -34,11 +34,17 @@ export default async function ConnectPage() {
       <div className="applecms connect-shell">
         <main className="connect-main">
           <p className="connect-provider-kicker">Agents and integrations</p>
-          <h1 className="connect-title">Add TextText to your AI</h1>
+          <h1 className="connect-title">Choose how AI works with TextText</h1>
           <p className="connect-lede">
-            Install TextText in Claude or Codex, connect it to ChatGPT, or use
-            any MCP client. Your AI keeps its account and model while TextText
-            becomes its durable document workspace.
+            Use an agent inside the TextText Mac app, or connect TextText to
+            Claude, Codex, ChatGPT, or another MCP client. Your AI keeps its
+            account and model while TextText becomes its durable document
+            workspace.
+          </p>
+          <p className="connect-sub">
+            <Link href="/docs/ai#embedded-agent">Read the embedded agent setup</Link>
+            {" · "}
+            <Link href="/docs/ai#api-key">Read about API keys</Link>
           </p>
           <div className="connect-integration-grid">
             {AGENT_INTEGRATIONS.map((integration) => (
@@ -112,8 +118,9 @@ export default async function ConnectPage() {
       <main className="connect-main">
         <h1 className="connect-title">Connect</h1>
         <p className="connect-lede">
-          Use Claude, Codex, or ChatGPT to create, edit, organize, publish, and
-          collaborate on TextText documents.{" "}
+          Use the TextText Agent inside the Mac app, or use Claude, Codex, or
+          ChatGPT to create, edit, organize, publish, and collaborate on
+          TextText documents.{" "}
           <Link href="/docs/ai">Open the complete setup guide</Link>.
         </p>
         <ConnectPanel
