@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SignInButton } from "@/components/SignInButton";
 import { DevSignIn } from "@/components/editor/DevSignIn";
-import { devLoginEnabled, hasAppleProvider } from "@/auth";
+import { devLoginEnabled, hasAppleProvider, hasGoogleProvider } from "@/auth";
 
 // Shown at /editor when auth is configured but no one is signed in. Keeps the
 // Apple editor chrome so the sign-in is part of the same surface, not a detour.
@@ -27,6 +27,13 @@ export function SignInScreen() {
           {hasAppleProvider && (
             <SignInButton
               className="ac-btn ac-btn-filled ac-signin-btn"
+              redirectTo="/editor"
+            />
+          )}
+          {hasGoogleProvider && (
+            <SignInButton
+              className={`ac-btn ac-signin-btn ${hasAppleProvider ? "ac-btn-gray" : "ac-btn-filled"}`}
+              provider="google"
               redirectTo="/editor"
             />
           )}

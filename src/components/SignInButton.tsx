@@ -8,18 +8,19 @@ type SignInButtonProps = Omit<
   "children" | "onClick" | "type"
 > & {
   redirectTo?: string;
+  provider?: "apple" | "google";
 };
 
-export function SignInButton({ redirectTo, ...props }: SignInButtonProps) {
+export function SignInButton({ redirectTo, provider = "apple", ...props }: SignInButtonProps) {
   return (
     <button
       {...props}
       type="button"
       onClick={() => {
-        void signIn("apple", redirectTo ? { redirectTo } : undefined);
+        void signIn(provider, redirectTo ? { redirectTo } : undefined);
       }}
     >
-      Sign in with Apple
+      Sign in with {provider === "apple" ? "Apple" : "Google"}
     </button>
   );
 }
