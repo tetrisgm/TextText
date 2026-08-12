@@ -52,6 +52,14 @@ final class CodexAppServerController {
         input.fileHandleForWriting.write(Data([0x0a]))
     }
 
+    func notify(method: String, params: [String: Any] = [:]) throws {
+        guard isRunning else { throw CodexAppServerError.notRunning }
+        let object: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
+        let data = try JSONSerialization.data(withJSONObject: object)
+        input.fileHandleForWriting.write(data)
+        input.fileHandleForWriting.write(Data([0x0a]))
+    }
+
     private func consume(_ data: Data) {
         guard !data.isEmpty else { return }
         pending.append(data)

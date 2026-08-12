@@ -20,13 +20,20 @@ export function nativeAssistantAvailable(): boolean {
   return current.__TEXTTEXT_APP__ === true && Boolean(current.webkit?.messageHandlers?.textTextApp);
 }
 
-export function requestNativeAssistant(action: "assistantStatus" | "assistantConnect") {
+export function requestNativeAssistant(
+  action: "assistantStatus" | "assistantConnect" | "assistantTurn",
+  prompt?: string,
+) {
   if (typeof window === "undefined") return false;
   const current = window as NativeWindow;
   const handler = current.webkit?.messageHandlers?.textTextApp;
   if (!current.__TEXTTEXT_APP__ || !handler) return false;
-  handler.postMessage({ action });
+  handler.postMessage(prompt === undefined ? { action } : { action, prompt });
   return true;
+}
+
+export function submitNativeAssistantTurn(prompt: string): boolean {
+  return requestNativeAssistant("assistantTurn", prompt);
 }
 
 export function subscribeNativeAssistant(

@@ -53,6 +53,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private let ocrBridge = NativeOCRBridge()
     private var codexServer: CodexAppServerController?
     private var codexRequestCounter = 0
+    private var codexThreadID: String?
 
     static let cacheWebView = true
 
@@ -502,17 +503,47 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         #endif
     }
 
+    private func sendCodexTurn(_ prompt: String) {
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let threadID = codexThreadID else {
+            emitCodexEvent(["type": "error", "message": "Connect the TextText Agent before sending a message."])
+            return
+        }
+        do {
+            try codexServer?.send(
+                id: nextCodexRequestID(),
+                method: "turn/start",
+                params: [
+                    "threadId": threadID,
+                    "input": [["type": "text", "text": prompt]],
+                    "approvalPolicy": "never",
+                ])
+            emitCodexEvent(["type": "turn-started"])
+        } catch {
+            emitCodexEvent(["type": "error", "message": "The TextText Agent could not start that turn."])
+        }
+    }
+
     private func handleCodexMessage(_ message: CodexAppServerMessage) {
         if message.method == "remoteControl/status/changed" {
             return
         }
         if message.id != nil, message.result != nil, message.method == nil {
             if let result = message.result, result["userAgent"] != nil {
-                try? codexServer?.send(id: nextCodexRequestID(), method: "initialized", params: [:])
+                try? codexServer?.notify(method: "initialized")
                 try? codexServer?.send(id: nextCodexRequestID(), method: "account/read", params: [:])
                 return
             }
             if let result = message.result, result["account"] != nil {
+                try? codexServer?.send(
+                    id: nextCodexRequestID(),
+                    method: "thread/start",
+                    params: [
+                        "approvalPolicy": "never",
+                        "sandboxPolicy": ["type": "readOnly"],
+                        "ephemeral": true,
+                        "dynamicTools": [],
+                    ])
                 emitCodexEvent([
                     "type": "status",
                     "state": "ready",
@@ -521,6 +552,22 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 ])
                 return
             }
+        }
+        if message.method == "thread/started",
+           let thread = message.params?["thread"] as? [String: AnyHashable],
+           let threadID = thread["id"] as? String {
+            codexThreadID = threadID
+            emitCodexEvent(["type": "status", "state": "ready", "embeddedChatSupported": true, "providerLabel": "Codex with ChatGPT"])
+            return
+        }
+        if message.method == "item/agentMessage/delta",
+           let delta = message.params?["delta"] as? String {
+            emitCodexEvent(["type": "text-delta", "text": delta])
+            return
+        }
+        if message.method == "turn/completed" {
+            emitCodexEvent(["type": "turn-completed"])
+            return
         }
         if message.errorMessage != nil {
             emitCodexEvent(["type": "status", "state": "failed", "embeddedChatSupported": false, "recoveryAction": "retry"])
@@ -557,6 +604,11 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if body["action"] as? String == "assistantConnect" {
             connectCodex()
+            return
+        }
+        if body["action"] as? String == "assistantTurn",
+           let prompt = body["prompt"] as? String {
+            sendCodexTurn(prompt)
             return
         }
         guard body["action"] as? String == "linked",

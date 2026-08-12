@@ -66,6 +66,7 @@ import {
   nativeAssistantAvailable,
   requestNativeAssistant,
   subscribeNativeAssistant,
+  submitNativeAssistantTurn,
 } from "@/lib/ai/native-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 
@@ -424,19 +425,22 @@ export function useNativeAssistant({
 
   useEffect(() => {
     const unsubscribe = subscribeNativeAssistant((event) => {
-      if (event.type !== "status") return;
-      setNativeConnection((current) => ({
-        state: event.state ?? current?.state ?? "unavailable",
-        kind: event.kind ?? current?.kind ?? "native-codex",
-        providerLabel: event.providerLabel ?? current?.providerLabel ?? "Codex with ChatGPT",
-        accountEmail: event.accountEmail ?? current?.accountEmail ?? null,
-        planLabel: event.planLabel ?? current?.planLabel ?? null,
-        runtimeVersion: event.runtimeVersion ?? current?.runtimeVersion ?? null,
-        rateLimitResetAt: event.rateLimitResetAt ?? current?.rateLimitResetAt ?? null,
-        lastHealthCheckAt: event.lastHealthCheckAt ?? current?.lastHealthCheckAt ?? null,
-        embeddedChatSupported: event.embeddedChatSupported ?? current?.embeddedChatSupported ?? false,
-        recoveryAction: event.recoveryAction ?? current?.recoveryAction ?? null,
-      }));
+      if (event.type === "status") {
+        setNativeConnection((current) => ({
+          state: event.state ?? current?.state ?? "unavailable",
+          kind: event.kind ?? current?.kind ?? "native-codex",
+          providerLabel: event.providerLabel ?? current?.providerLabel ?? "Codex with ChatGPT",
+          accountEmail: event.accountEmail ?? current?.accountEmail ?? null,
+          planLabel: event.planLabel ?? current?.planLabel ?? null,
+          runtimeVersion: event.runtimeVersion ?? current?.runtimeVersion ?? null,
+          rateLimitResetAt: event.rateLimitResetAt ?? current?.rateLimitResetAt ?? null,
+          lastHealthCheckAt: event.lastHealthCheckAt ?? current?.lastHealthCheckAt ?? null,
+          embeddedChatSupported: event.embeddedChatSupported ?? current?.embeddedChatSupported ?? false,
+          recoveryAction: event.recoveryAction ?? current?.recoveryAction ?? null,
+        }));
+      } else if (event.type === "text-delta") {
+        appendToThread(threadKey, "assistant", event.text, undefined, "OpenAI");
+      }
     });
     if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
     return unsubscribe;
@@ -497,6 +501,10 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
+        if (nativeConnection?.state === "ready" && submitNativeAssistantTurn(prompt)) {
+          appendToThread(thread, "progress", "Working with the TextText Agent");
+          return;
+        }
         updateAssistantJob(jobId, { activity: "Contacting your AI provider" });
         // Hand over what the writer is looking at, the way the quick actions
         // already do. Without it a request about "this document" arrives as an
@@ -545,6 +553,7 @@ export function useNativeAssistant({
     [
       contextKey,
       contextLabel,
+      nativeConnection,
       threadKey,
     ],
   );
