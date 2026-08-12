@@ -772,10 +772,6 @@
   width: 44px !important;
 }
 
-.post-editor-shell.has-assistant-pinned .post-editor-content {
-  margin-right: 0;
-}
-
 .post-editor-shell.has-sidebar.has-assistant-pinned
   :where(
     .post-top-action-bar,

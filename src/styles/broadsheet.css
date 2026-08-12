@@ -2438,15 +2438,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     margin-left 0.18s var(--ease),
     margin-right 0.18s var(--ease);
 }
+.post-editor-shell {
+  position: relative;
+  min-height: 100dvh;
+}
 .post-editor-content:focus {
   outline: none;
 }
 .workspace-assistant-shell {
-  position: fixed !important;
+  position: absolute !important;
   inset: 0 0 0 auto !important;
-  z-index: 205 !important;
+  z-index: 8 !important;
   width: min(var(--workspace-assistant-width, 360px), 100vw) !important;
-  height: 100dvh !important;
+  height: 100% !important;
 }
 .workspace-assistant-shell[data-state="hidden"] {
   width: 52px !important;
