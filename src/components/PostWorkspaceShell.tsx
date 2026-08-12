@@ -75,6 +75,8 @@ import {
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
 import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
+import { AiGettingStartedCard } from "@/components/workspace/AiGettingStartedCard";
+import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 
 type TrashApiOperation =
   | "empty"
@@ -2475,6 +2477,10 @@ function WorkspaceRootLanding({
   selectedPostId,
   selectedPostIds,
   selectedSectionPath,
+  assistantConnection,
+  onConnectAssistant,
+  onOpenAssistant,
+  settingsHref,
 }: {
   canManageItems: boolean;
   focusRequestKey: number;
@@ -2496,6 +2502,10 @@ function WorkspaceRootLanding({
   selectedPostId: string | null;
   selectedPostIds: ReadonlySet<string>;
   selectedSectionPath: string | null;
+  assistantConnection: AiConnectionSnapshot | null;
+  onConnectAssistant?: () => void;
+  onOpenAssistant: () => void;
+  settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const requestedBodiesRef = useRef(new Set<string>());
@@ -2896,6 +2906,12 @@ function WorkspaceRootLanding({
             <header className="workspace-library-header">
               <h1 id="workspace-root-title">Library</h1>
             </header>
+            <AiGettingStartedCard
+              connection={assistantConnection}
+              settingsHref={settingsHref}
+              onConnect={onConnectAssistant}
+              onOpenAssistant={onOpenAssistant}
+            />
             {canManageItems && creationFolder ? (
               <section
                 className="workspace-root-create"
@@ -3907,6 +3923,9 @@ function LocalWorkspaceContent({
   onInstallSkill,
   onRemoveSkill,
   onToggleSkill,
+  assistantConnection,
+  onConnectAssistant,
+  onOpenAssistant,
 }: {
   blog: Blog;
   canCommentPost: boolean;
@@ -3950,6 +3969,9 @@ function LocalWorkspaceContent({
   onInstallSkill?: (reference: string) => Promise<unknown>;
   onRemoveSkill?: (skillId: string) => void;
   onToggleSkill?: (skillId: string, enabled: boolean) => void;
+  assistantConnection: AiConnectionSnapshot | null;
+  onConnectAssistant?: () => void;
+  onOpenAssistant: () => void;
 }) {
   let page: ReactNode;
   let activePost: WorkspacePoolPost | null = null;
@@ -3972,6 +3994,10 @@ function LocalWorkspaceContent({
       selectedPostId={selectedPostId}
       selectedPostIds={selectedPostIds}
       selectedSectionPath={selectedSectionPath}
+      assistantConnection={assistantConnection}
+      onConnectAssistant={onConnectAssistant}
+      onOpenAssistant={onOpenAssistant}
+      settingsHref={workspaceSettingsHref(homePath)}
     />
   );
 
@@ -6466,6 +6492,9 @@ function LocalWorkspaceShell({
       onInstallSkill={assistant.addSkill}
       onRemoveSkill={assistant.deleteSkill}
       onToggleSkill={assistant.toggleSkill}
+      assistantConnection={assistant.nativeConnection}
+      onConnectAssistant={assistant.connectNativeAssistant}
+      onOpenAssistant={() => changeAssistantState("open")}
     />
   );
 
