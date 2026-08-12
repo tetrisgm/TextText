@@ -6519,6 +6519,8 @@ function LocalWorkspaceShell({
         marqueeRectangle ? " is-marquee-dragging" : ""
       } assistant-is-${assistantState}${
         assistantState === "pinned" ? " has-assistant-pinned" : ""
+      }${
+        assistantState !== "hidden" ? " has-assistant-open" : ""
       }`}
       style={
         {

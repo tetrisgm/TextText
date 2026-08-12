@@ -772,7 +772,7 @@
   width: 44px !important;
 }
 
-.post-editor-shell.has-sidebar.has-assistant-pinned
+.post-editor-shell.has-sidebar.has-assistant-open
   :where(
     .post-top-action-bar,
     .post-top-action-bar.is-edit,

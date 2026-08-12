@@ -2465,7 +2465,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   pointer-events: none;
 }
 @media (min-width: 1281px) {
-  .post-editor-shell.has-assistant-pinned .post-editor-content {
+  .post-editor-shell.has-assistant-open .post-editor-content {
     margin-right: var(--workspace-assistant-width, 360px);
   }
 .post-editor-shell.has-sidebar.has-assistant-pinned .post-top-action-bar,
