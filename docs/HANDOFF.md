@@ -694,7 +694,8 @@ installed at a time.
   TextText's standalone and numbered bundles to Trash, and opens TestFlight.
   State in the shared app-group container is not touched. If TestFlight already
   owns the canonical app, the command leaves it in place so TestFlight updates
-  it normally.
+  it normally. Regression coverage for this preparation command lives in
+  `release/test-prepare-testflight-install.sh`.
 
 ## The two editions share one state directory
 
