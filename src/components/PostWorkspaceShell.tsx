@@ -33,6 +33,7 @@ import { usePresence } from "@/lib/collab/usePresence";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
+import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import {
@@ -3795,6 +3796,8 @@ function LocalUnifiedWorkspacePostEditor({
   pool,
   poolPost,
   returnToSearch,
+  assistantConnection,
+  onOpenAssistant,
 }: {
   active: boolean;
   blog: Blog;
@@ -3805,7 +3808,12 @@ function LocalUnifiedWorkspacePostEditor({
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
+  assistantConnection?: AiConnectionSnapshot | null;
+  onOpenAssistant?: () => void;
 }) {
+  const activeAgent: AssistantAgentIdentity | null = assistantConnection?.state === "ready"
+    ? { name: assistantConnection.providerLabel?.includes("Claude") ? "Claude" : "Codex", provider: assistantConnection.providerLabel?.includes("Claude") ? "claude" : "codex", color: collaboratorColor(assistantConnection.providerLabel ?? "agent"), status: "connected" }
+    : null;
   const template = templateForPoolPost(pool, poolPost);
   const post = postFromPoolPost(
     poolPost,
@@ -3863,6 +3871,8 @@ function LocalUnifiedWorkspacePostEditor({
       post={post}
       template={template}
       availableTemplates={pool.templates}
+      activeAgent={activeAgent}
+      onOpenAgent={onOpenAssistant}
       collab={{
         postId: poolPost.id,
         userName: blog.author || "You",
@@ -4138,6 +4148,8 @@ function LocalWorkspaceContent({
                 ? view.returnToSearch
                 : undefined
             }
+            assistantConnection={assistantConnection}
+            onOpenAssistant={onOpenAssistant}
           />
         </div>
       )}
@@ -6609,6 +6621,11 @@ function LocalWorkspaceShell({
       />
 
       <AssistantSidebar
+        agent={assistant.nativeConnection?.state === "ready"
+          ? { name: assistant.nativeConnection.providerLabel?.includes("Claude") ? "Claude" : "Codex", provider: assistant.nativeConnection.providerLabel?.includes("Claude") ? "claude" : "codex", color: collaboratorColor(assistant.nativeConnection.providerLabel ?? "agent"), status: assistant.runningJobs > 0 ? "working" : "connected" }
+          : assistant.cloudProvider
+            ? { name: assistant.cloudProvider.includes("Anthropic") ? "Claude" : "OpenAI", provider: assistant.cloudProvider.includes("Anthropic") ? "claude" : "chatgpt", color: collaboratorColor(assistant.cloudProvider), status: assistant.runningJobs > 0 ? "working" : "connected" }
+            : null}
         onNewConversation={assistant.startNewConversation}
         hasConversation={assistant.messages.length > 0}
         className="workspace-assistant-shell"

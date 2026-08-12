@@ -21,6 +21,7 @@ import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
 import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
+import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import {
   applyDocumentBaseline,
   applyDocumentSnapshot,
@@ -65,6 +66,8 @@ type RelativeSelectionState = {
 };
 
 export type UnifiedDocumentEditorProps = {
+  activeAgent?: AssistantAgentIdentity | null;
+  onOpenAgent?: () => void;
   active?: boolean;
   blog: Blog;
   post: Post;
@@ -332,15 +335,20 @@ function CollaborativeTextarea({
   );
 }
 
-function Presence({ peers }: { peers: PresencePeer[] }) {
-  if (peers.length === 0) return null;
+function Presence({ peers, activeAgent, onOpenAgent }: { peers: PresencePeer[]; activeAgent?: AssistantAgentIdentity | null; onOpenAgent?: () => void }) {
+  const visiblePeers = activeAgent && !peers.some((peer) => peer.userName === activeAgent.name)
+    ? [{ clientId: `selected-agent:${activeAgent.name}`, userName: activeAgent.name, color: activeAgent.color, awareness: null, participantType: "agent" as const, provider: activeAgent.provider }, ...peers]
+    : peers;
+  if (visiblePeers.length === 0) return null;
   return (
     <div className="tt-unified-presence" aria-label="Collaborators in this document">
-      {peers.slice(0, 5).map((peer) => (
+      {visiblePeers.slice(0, 5).map((peer) => (
         peer.participantType === "agent" ? (
-          <span
+          <button
             key={peer.clientId}
             className="tt-agent-presence"
+            type="button"
+            onClick={onOpenAgent}
             title={`${peer.userName} is collaborating through MCP`}
           >
             <span
@@ -350,7 +358,7 @@ function Presence({ peers }: { peers: PresencePeer[] }) {
               <CollaboratorMark provider={peer.provider} name={peer.userName} />
             </span>
             <span className="tt-agent-name">{peer.userName}</span>
-          </span>
+          </button>
         ) : (
           <span
             key={peer.clientId}
@@ -379,6 +387,8 @@ export function UnifiedDocumentEditor({
   onDelete,
   onChooseTemplate,
   leadingControls,
+  activeAgent,
+  onOpenAgent,
 }: UnifiedDocumentEditorProps) {
   const initialDocument = useMemo(
     () =>
@@ -845,7 +855,7 @@ export function UnifiedDocumentEditor({
       <div className="post-top-action-bar applecms is-edit" aria-label="Document controls">
         <div className="post-action-toolbar ac-chrome">
           {leadingControls}
-          <Presence peers={peers} />
+        <Presence peers={peers} activeAgent={activeAgent} onOpenAgent={onOpenAgent} />
           {(onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
               type="button"

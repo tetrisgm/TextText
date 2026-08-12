@@ -14,6 +14,8 @@ import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { ShortcutTooltip } from "@/components/keyboard/ShortcutTooltip";
 import type { AssistantContext } from "./context";
 import styles from "./AssistantSidebar.module.css";
+import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
+import type { AssistantAgentIdentity } from "./agent-identity";
 
 export type { AssistantContext } from "./context";
 
@@ -39,6 +41,7 @@ export type AssistantComposerSubmission = {
 };
 
 export type AssistantSidebarProps = {
+  agent?: AssistantAgentIdentity | null;
   state: AssistantSidebarState;
   onStateChange: (state: AssistantSidebarState) => void;
   /** Clears the transcript for where the person is, without moving them. */
@@ -188,6 +191,7 @@ function formatFileSize(value: number | undefined): string | null {
 }
 
 export function AssistantSidebar({
+  agent,
   state,
   onStateChange,
   onNewConversation,
@@ -515,7 +519,7 @@ export function AssistantSidebar({
       {state === "hidden" && (
         <ShortcutTooltip
           className={styles.launcherWrap}
-          label={launcherBusy ? "Assistant is working" : "Open assistant"}
+          label={launcherBusy ? "Assistant is working" : agent ? `Chat with ${agent.name}` : "Open assistant"}
           keys="⌘⇧A"
           placement="bottom"
         >
@@ -527,11 +531,11 @@ export function AssistantSidebar({
             aria-expanded="false"
             aria-keyshortcuts="Meta+Shift+A Control+Shift+A"
             aria-label={
-              launcherBusy ? "Open assistant (working)" : "Open assistant"
+              launcherBusy ? "Open assistant (working)" : agent ? `Chat with ${agent.name}` : "Open assistant"
             }
             onClick={showAssistant}
           >
-            <SidebarIcon />
+            {agent ? <span className={styles.launcherAvatar} style={{ backgroundColor: agent.color }}><CollaboratorMark provider={agent.provider} name={agent.name} /></span> : <SidebarIcon />}
             {launcherBusy && (
               <span className={styles.launcherBusy} aria-hidden="true" />
             )}
@@ -573,8 +577,9 @@ export function AssistantSidebar({
 
         <header className={styles.header}>
           <div className={styles.titleRow}>
+            {agent && <span className={styles.agentAvatar} style={{ backgroundColor: agent.color }}><CollaboratorMark provider={agent.provider} name={agent.name} /></span>}
             <h2 id={titleId} className={styles.title}>
-              {title}
+              {agent ? `Chat with ${agent.name}` : title}
             </h2>
             <div className={styles.headerActions}>
               {/* A transcript is keyed to where you are, so without this the
