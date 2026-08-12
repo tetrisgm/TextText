@@ -99,6 +99,7 @@ export function PostCard({
   post,
   owner,
   categoryLabel,
+  tagBasePath,
   showTypeChip = false,
   variant = "card",
 }: {
@@ -112,6 +113,8 @@ export function PostCard({
   owner: boolean;
   /** name of the subfolder this post lives in, shown as a quiet chip */
   categoryLabel?: string | null;
+  /** Relative tag index on a sessionless public origin. */
+  tagBasePath?: string;
   showTypeChip?: boolean;
   variant?: "card" | "expanded";
 }) {
@@ -373,6 +376,11 @@ export function PostCard({
       <TagChips
         blog={blog}
         className="tvcard-tags"
+        hrefForTag={
+          tagBasePath
+            ? (tag) => `${tagBasePath}/${encodeURIComponent(tag)}`
+            : undefined
+        }
         onOpenTag={onOpenTag}
         tags={post.tags}
       />

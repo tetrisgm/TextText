@@ -15,17 +15,19 @@ import {
   getAllPostFiles,
   getBlog,
   getFolderCounts,
+  getFolderById,
   getFolders,
   getTrashedFolders,
   getTrashedPosts,
-  getPost,
   getPosts,
   getPostById,
+  getPostByFolderPath,
   getPostStoreContext,
   getPostSlugAliases,
   getDocumentTemplate,
   listDocumentTemplates,
   resolveDocumentCapability,
+  resolveLegacyPublicSlug,
   resolvePostSlug,
 } from "@/lib/store";
 import type { Blog, Post } from "@/lib/content";
@@ -41,6 +43,9 @@ import {
   blogHomePath,
   blogPostEditPath,
   blogPostPath,
+  blogWorkspacePostEditPath,
+  blogWorkspacePostPath,
+  workspacePublicPostUrl,
 } from "@/lib/public-paths";
 import {
   workspacePoolFromParts,
@@ -77,7 +82,11 @@ function postPathForRequest(
   blog: Blog,
   post: Pick<Post, "slug">,
   tenantHandle: string | null,
+  folderPath?: string,
 ): string {
+  if (folderPath && tenantHandle !== blog.handle) {
+    return blogWorkspacePostPath(blog, folderPath, post);
+  }
   return tenantHandle === blog.handle
     ? `/${encodeURIComponent(post.slug)}`
     : blogPostPath(blog, post);
@@ -87,7 +96,11 @@ function postEditPathForRequest(
   blog: Blog,
   post: Pick<Post, "id" | "slug">,
   tenantHandle: string | null,
+  folderPath?: string,
 ): string {
+  if (folderPath && tenantHandle !== blog.handle) {
+    return blogWorkspacePostEditPath(blog, folderPath, post);
+  }
   if (tenantHandle !== blog.handle) return blogPostEditPath(blog, post);
   const params = new URLSearchParams({ edit: "1" });
   if (post.id) params.set("id", post.id);
@@ -108,17 +121,23 @@ function isEmptyOwnedPost(post: Post): boolean {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle, slug } = await params;
-  const [blog, post] = await Promise.all([
+  const [blog, resolution] = await Promise.all([
     getBlog(handle),
-    getPost(handle, slug),
+    resolveLegacyPublicSlug(handle, slug),
   ]);
-  if (!blog || !post) return {};
-  if (post.visibility !== "public") return {};
+  if (!blog || resolution.kind !== "redirect") return {};
+  const post = resolution.post;
+  const canonical = workspacePublicPostUrl(
+    handle,
+    resolution.folderPath,
+    post.slug,
+  );
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
       postSubtitle(post) || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
     alternates: {
+      canonical: canonical ?? undefined,
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
@@ -130,20 +149,38 @@ export async function PostPageForHandle({
   redirectClaimed = true,
   searchParams,
   slug,
+  folderPath,
 }: {
   handle: string;
   redirectClaimed?: boolean;
   searchParams?: Promise<PostPageQuery>;
   slug: string;
+  folderPath?: string;
 }) {
   const queryPromise: Promise<PostPageQuery> =
     searchParams ?? Promise.resolve({});
-  const [blog, slugResolution, access, query, cookieStore, headerStore] =
+  const query = await queryPromise;
+  const legacyPublicRequest = !folderPath && queryValue(query.edit) !== "1";
+  if (legacyPublicRequest) {
+    const legacy = await resolveLegacyPublicSlug(handle, slug);
+    if (legacy.kind === "redirect") {
+      const destination = workspacePublicPostUrl(
+        handle,
+        legacy.folderPath,
+        legacy.post.slug,
+      );
+      if (destination) redirect(destination);
+    }
+  }
+  const [blog, slugResolution, access, cookieStore, headerStore] =
     await Promise.all([
       getBlog(handle),
-      resolvePostSlug(handle, slug),
+      folderPath
+        ? getPostByFolderPath(handle, folderPath, slug).then((post) =>
+            post ? ({ kind: "exact", post } as const) : ({ kind: "missing" } as const),
+          )
+        : resolvePostSlug(handle, slug),
       getBlogEditAccess(handle),
-      queryPromise,
       cookies(),
       headers(),
     ]);
@@ -159,10 +196,27 @@ export async function PostPageForHandle({
     slugResolution.kind === "exact" || slugResolution.kind === "history"
       ? slugResolution.post
       : null;
+  let activeFolderPath = folderPath;
 
-  if (!post && canEdit && editRequested && editId) {
-    post = await getPostById(handle, editId);
-    if (post) redirect(postEditPathForRequest(blog, post, tenantHandle));
+  if (canEdit && editRequested && editId) {
+    const postById = await getPostById(handle, editId);
+    if (postById) {
+      post = postById;
+      const actualFolder = post.folderId
+        ? await getFolderById(handle, post.folderId)
+        : null;
+      activeFolderPath = actualFolder?.path ?? activeFolderPath;
+      if (post.slug !== slug || activeFolderPath !== folderPath) {
+        redirect(
+          postEditPathForRequest(
+            blog,
+            post,
+            tenantHandle,
+            activeFolderPath,
+          ),
+        );
+      }
+    }
   }
 
   if (!post) notFound();
@@ -179,6 +233,14 @@ export async function PostPageForHandle({
     !canEdit && post.id && viewer
       ? await resolveItemAccess({ handle, postId: post.id, user: viewer })
       : null;
+  if (
+    legacyPublicRequest &&
+    !canEdit &&
+    !itemAccess?.canView &&
+    !capabilityAccess
+  ) {
+    notFound();
+  }
   const isPrivatePost = post.visibility === "private";
   if (
     isPrivatePost &&
@@ -202,10 +264,10 @@ export async function PostPageForHandle({
     post = { ...post, starred: undefined };
   }
   if (slugResolution.kind === "history") {
-    const path = postPathForRequest(blog, post, tenantHandle);
+    const path = postPathForRequest(blog, post, tenantHandle, activeFolderPath);
     redirect(
       editMode
-        ? postEditPathForRequest(blog, post, tenantHandle)
+        ? postEditPathForRequest(blog, post, tenantHandle, activeFolderPath)
         : editRequested
           ? `${path}?edit=1`
           : path,
@@ -222,20 +284,25 @@ export async function PostPageForHandle({
     );
   }
 
-  const currentPostPath = postPathForRequest(blog, post, tenantHandle);
+  const currentPostPath = postPathForRequest(
+    blog,
+    post,
+    tenantHandle,
+    activeFolderPath,
+  );
   const homePath = tenantHandle === blog.handle ? "/" : blogHomePath(blog);
   const showGuestSignIn =
     canEdit && access.isUnclaimed && access.isTokenEditor && isAuthConfigured;
 
   if (editMode && post.id && editId !== post.id) {
-    redirect(postEditPathForRequest(blog, post, tenantHandle));
+    redirect(postEditPathForRequest(blog, post, tenantHandle, activeFolderPath));
   }
 
   if (canEdit && !editMode && isEmptyOwnedPost(post)) {
-    redirect(postEditPathForRequest(blog, post, tenantHandle));
+    redirect(postEditPathForRequest(blog, post, tenantHandle, activeFolderPath));
   }
 
-  const adjacentPromise = getAdjacentPublishedPosts(handle, post.slug);
+  const adjacentPromise = getAdjacentPublishedPosts(handle, post.id ?? post.slug);
   let allPosts: Post[];
   let folders: Awaited<ReturnType<typeof getFolders>>;
   let counts: Record<string, number>;

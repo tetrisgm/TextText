@@ -875,3 +875,44 @@ surface. The owner rates a content leak as fatal to the product.
    published folder 404s while its published sibling 200s; the sitemap and
    pool payload contain no unpublished titles; a tombstone redirect dies the
    moment its target is moved private.
+
+## Public URL migration implementation (2026-08-11)
+
+Implemented in source, not deployed. Workspace publication now uses the
+existing wildcard host as a sessionless origin:
+`<handle>.texttext.app/<folder path>/<slug>`. The proxy removes Cookie and
+Authorization before rewriting a tenant request and marks it as public. It
+also preflights article locations through the store so drafts, private items,
+dead tombstones, nonexistent paths, and nonexistent workspace hosts return the
+same constant `404 Not found` bytes before Next can embed the requested path in
+an error payload. The private root origin keeps folder-qualified workspace
+paths such as `/@writer/blog/research/index` and retains authentication,
+editing, shares, and collaboration there.
+
+`posts.folder_id` is now required and the live uniqueness index is
+`(folder_id, slug)`. `migrate-add-slug-history.mjs` runs before Drizzle push,
+ensures the system folders, backfills legacy folder IDs, replaces the old
+per-workspace index, and creates `public_url_tombstones`. Database triggers
+reserve every public path before a rename, move, unpublish, trash, account
+merge, or delete. A tombstone follows its original item only while the current
+target remains a published public document; otherwise it resolves to the same
+generic 404. Advisory transaction locks serialize the old and new path checks
+so a concurrent move cannot let a different item capture an exposed URL.
+
+Home, tag, and public category pages, articles, Markdown representations,
+OpenGraph images, RSS, Atom, JSON Feed, sitemap, `posts.json`, `folder.json`,
+`llms.txt`, sync canonicals, and workspace copy-link actions now emit the
+workspace origin and folder path. Empty unpublished categories do not resolve
+on the public origin.
+Old flat `/t/<handle>/<slug>` and `/@username/<slug>` pages resolve through
+frozen legacy tombstones and redirect only while the original item is public.
+Publishing UI states the folder-qualified destination.
+
+Verification on the Mac: 125 test files / 863 tests pass, TypeScript passes,
+and the Next 16 production build passes. A production-mode local server was
+inspected at `demo.localhost`: public home and article rendering worked at
+`/blog/<slug>`, Markdown and OG representations returned the right content,
+and private, missing, and unknown-workspace requests returned byte-identical
+constant 404 bodies. The schema migration has not been applied to a real
+database in this session, production has not been deployed, and existing
+public links have not yet been exercised against migrated production rows.

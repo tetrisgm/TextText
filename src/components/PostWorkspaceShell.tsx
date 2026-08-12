@@ -208,7 +208,12 @@ import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
-import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
+import {
+  blogPostPath,
+  blogWorkspacePostEditPath,
+  blogWorkspacePostPath,
+  workspacePublicPostUrl,
+} from "@/lib/public-paths";
 import {
   initialDraft,
   isPlaceholderSlug,
@@ -2355,6 +2360,7 @@ function WorkspaceRootSearchActionBar({
 function WorkspacePostOption({
   active,
   blog,
+  folderPath,
   handle,
   onDeletePost,
   onItemClick,
@@ -2368,6 +2374,7 @@ function WorkspacePostOption({
 }: {
   active: boolean;
   blog: Blog;
+  folderPath: string;
   handle: string;
   onDeletePost?: FolderDeleteItem;
   onItemClick: (
@@ -2441,7 +2448,7 @@ function WorkspacePostOption({
       <WorkspaceItemActions
         blog={blog}
         handle={handle}
-        href={blogPostPath(blog, post)}
+        href={blogWorkspacePostPath(blog, folderPath, post)}
         onDeletePost={onDeletePost}
         owner={owner}
         post={postFromPoolPost(post)}
@@ -2729,6 +2736,7 @@ function WorkspaceRootLanding({
                     active={selectedPostId === post.id}
                     key={post.id}
                     blog={pool.blog}
+                    folderPath={folderPathForPoolPost(pool, post)}
                     handle={pool.blog.handle}
                     post={post}
                     selected={selectedPostIds.has(post.id)}
@@ -2769,6 +2777,7 @@ function WorkspaceRootLanding({
                           active={selectedPostId === post.id}
                           key={post.id}
                           blog={pool.blog}
+                          folderPath={folderPathForPoolPost(pool, post)}
                           handle={pool.blog.handle}
                           post={post}
                           selected={selectedPostIds.has(post.id)}
@@ -2792,6 +2801,7 @@ function WorkspaceRootLanding({
                           active={selectedPostId === post.id}
                           key={post.id}
                           blog={pool.blog}
+                          folderPath={folderPathForPoolPost(pool, post)}
                           handle={pool.blog.handle}
                           post={post}
                           selected={selectedPostIds.has(post.id)}
@@ -2831,6 +2841,7 @@ function WorkspaceRootLanding({
                         active={selectedPostId === post.id}
                         key={result.id}
                         blog={pool.blog}
+                        folderPath={folderPathForPoolPost(pool, post)}
                         handle={pool.blog.handle}
                         post={post}
                         selected={selectedPostIds.has(post.id)}
@@ -2985,6 +2996,7 @@ function WorkspaceRootLanding({
                       active={selectedPostId === post.id}
                       key={post.id}
                       blog={pool.blog}
+                      folderPath={folderPathForPoolPost(pool, post)}
                       handle={pool.blog.handle}
                       post={post}
                       selected={selectedPostIds.has(post.id)}
@@ -3295,6 +3307,7 @@ function StarredPage({
               active={selectedPostId === post.id}
               key={post.id}
               blog={pool.blog}
+              folderPath={folderPathForPoolPost(pool, post)}
               handle={pool.blog.handle}
               post={post}
               selected={selectedPostIds.has(post.id)}
@@ -3345,9 +3358,16 @@ function WorkspaceSelectionToolbar({
   const allStarred = posts.every((post) => Boolean(post.starred));
 
   const share = () => {
-    const urls = posts.map((post) =>
-      new URL(blogPostPath(blog, post), window.location.origin).toString(),
-    );
+    const folderPathById = new Map(folders.map((folder) => [folder.id, folder.path]));
+    const urls = posts.map((post) => {
+      const folderPath = post.folderId
+        ? folderPathById.get(post.folderId)
+        : undefined;
+      const path = folderPath
+        ? blogWorkspacePostPath(blog, folderPath, post)
+        : blogPostPath(blog, post);
+      return new URL(path, window.location.origin).toString();
+    });
     void navigator.clipboard.writeText(urls.join("\n")).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
@@ -3655,6 +3675,17 @@ function WorkspacePostReader({
   );
   const backlinks = backlinksForPost(pool, poolPost);
   const template = templateForPoolPost(pool, poolPost);
+  const adjacent = adjacentPublishedPostsForPool(pool, post.id ?? post.slug);
+  const adjacentPath = (link: NonNullable<typeof adjacent.previous>) => {
+    const adjacentPost = link.id ? findPoolPostById(pool, link.id) : null;
+    return adjacentPost
+      ? blogWorkspacePostPath(
+          blog,
+          folderPathForPoolPost(pool, adjacentPost),
+          adjacentPost,
+        )
+      : undefined;
+  };
   const sectionPath = returnToSearch
     ? workspaceSearchHref(homePath, returnToSearch)
     : folderWorkspaceHref(homePath, folderPathForPoolPost(pool, poolPost));
@@ -3667,9 +3698,22 @@ function WorkspacePostReader({
         blog={blog}
         post={post}
         presencePeers={readerPeers}
-        adjacent={adjacentPublishedPostsForPool(pool, post.slug)}
+        adjacent={adjacent}
+        previousPath={adjacent.previous ? adjacentPath(adjacent.previous) : undefined}
+        nextPath={adjacent.next ? adjacentPath(adjacent.next) : undefined}
         homePath={sectionPath}
-        postPath={blogPostPath(blog, post)}
+        postPath={blogWorkspacePostPath(
+          blog,
+          folderPathForPoolPost(pool, poolPost),
+          post,
+        )}
+        publishedUrl={
+          workspacePublicPostUrl(
+            blog.handle,
+            folderPathForPoolPost(pool, poolPost),
+            post.slug,
+          ) ?? undefined
+        }
         bookmarkContentMode={bookmarkContentMode}
         canCommentPost={canCommentPost}
         canEditPost
@@ -3818,7 +3862,7 @@ function LocalUnifiedWorkspacePostEditor({
         onNavigate(
           template.id === "texttext.note"
             ? containingFolderHref
-            : blogPostPath(blog, post),
+            : blogWorkspacePostPath(blog, containingFolderPath, post),
         )
       }
     />
@@ -4628,8 +4672,8 @@ function LocalWorkspaceShell({
           optimisticEdit
             ? folderWorkspaceHref(homePath, nextFolderPath)
             : nextMode === "edit"
-              ? blogPostEditPath(currentPool.blog, post)
-              : blogPostPath(currentPool.blog, post),
+              ? blogWorkspacePostEditPath(currentPool.blog, nextFolderPath, post)
+              : blogWorkspacePostPath(currentPool.blog, nextFolderPath, post),
           returnToSearch,
         ),
       );
@@ -4692,18 +4736,30 @@ function LocalWorkspaceShell({
       ) {
         return;
       }
+      const nextFolderPath = folderPathForPoolPost(
+        displayPoolRef.current,
+        savedPost,
+      );
       const nextView: LocalWorkspaceView = {
         level: current.level,
         postId: savedPost.id,
-        folderPath: folderPathForPoolPost(displayPoolRef.current, savedPost),
+        folderPath: nextFolderPath,
         openedFrom: current.openedFrom,
         returnToSearch: current.returnToSearch,
       };
       replaceWithView(
         nextView,
         current.level === "edit"
-          ? blogPostEditPath(displayPoolRef.current.blog, savedPost)
-          : blogPostPath(displayPoolRef.current.blog, savedPost),
+          ? blogWorkspacePostEditPath(
+              displayPoolRef.current.blog,
+              nextFolderPath,
+              savedPost,
+            )
+          : blogWorkspacePostPath(
+              displayPoolRef.current.blog,
+              nextFolderPath,
+              savedPost,
+            ),
         { selectedPostId: savedPost.id },
       );
     },
@@ -5912,7 +5968,11 @@ function LocalWorkspaceShell({
         returnToSearch: current.returnToSearch,
       },
       workspaceHrefWithSearchReturn(
-        blogPostPath(displayPoolRef.current.blog, post),
+        blogWorkspacePostPath(
+          displayPoolRef.current.blog,
+          current.folderPath,
+          post,
+        ),
         current.returnToSearch,
       ),
       { selectedPostId: post.id },

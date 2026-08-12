@@ -18,7 +18,7 @@ import {
   categoryBreadcrumbs,
   categoryChipForPost,
 } from "@/lib/categories";
-import { blogPostPath } from "@/lib/public-paths";
+import { blogPostPath, workspacePublicPostPath } from "@/lib/public-paths";
 import { postSubtitle } from "@/lib/markdown-subtitle";
 
 function blogStyle(blog: Blog): CSSProperties | undefined {
@@ -91,11 +91,15 @@ function timelineImageSrc(src: string): string {
 function CategoryTimeline({
   blog,
   folders,
+  folderPath,
   posts,
+  publicOrigin,
 }: {
   blog: Blog;
   folders: Folder[];
+  folderPath: string;
   posts: Post[];
+  publicOrigin: boolean;
 }) {
   return (
     <div className="blog-timeline" aria-label="Posts">
@@ -105,7 +109,9 @@ function CategoryTimeline({
         const meta = timelineMeta(post);
         const excerpt = timelineExcerpt(post);
         const thumbnail = cover ? timelineImageSrc(cover) : "";
-        const category = categoryChipForPost(blog, post, folders);
+        const category = categoryChipForPost(blog, post, folders, {
+          publicOrigin,
+        });
 
         return (
           <article
@@ -117,7 +123,11 @@ function CategoryTimeline({
           >
             <Link
               className={styles.rowLink}
-              href={blogPostPath(blog, post)}
+              href={
+                publicOrigin
+                  ? workspacePublicPostPath(folderPath, post.slug) ?? "/"
+                  : blogPostPath(blog, post)
+              }
               prefetch={true}
               aria-label={title}
             >
@@ -180,17 +190,23 @@ function CategoryTimeline({
 function CategoryIndex({
   blog,
   folders,
+  folderPath,
   posts,
+  publicOrigin,
 }: {
   blog: Blog;
   folders: Folder[];
+  folderPath: string;
   posts: Post[];
+  publicOrigin: boolean;
 }) {
   return (
     <div className="blog-index-list" aria-label="Posts">
       {posts.map((post) => {
         const title = postTitle(post);
-        const category = categoryChipForPost(blog, post, folders);
+        const category = categoryChipForPost(blog, post, folders, {
+          publicOrigin,
+        });
         return (
           <article
             key={post.slug}
@@ -199,7 +215,11 @@ function CategoryIndex({
           >
             <Link
               className={styles.rowLink}
-              href={blogPostPath(blog, post)}
+              href={
+                publicOrigin
+                  ? workspacePublicPostPath(folderPath, post.slug) ?? "/"
+                  : blogPostPath(blog, post)
+              }
               prefetch={true}
               aria-label={title}
             >
@@ -231,13 +251,17 @@ function CategoryIndex({
 function CategoryGrid({
   blog,
   folders,
+  folderPath,
   handle,
   posts,
+  publicOrigin,
 }: {
   blog: Blog;
   folders: Folder[];
+  folderPath: string;
   handle: string;
   posts: Post[];
+  publicOrigin: boolean;
 }) {
   // The grid reuses the shared PostCard as-is; its card is a single link, so
   // a category chip cannot nest inside without restructuring that component
@@ -252,9 +276,15 @@ function CategoryGrid({
           key={post.slug}
           blog={blog}
           handle={handle}
+          href={
+            publicOrigin
+              ? workspacePublicPostPath(folderPath, post.slug) ?? "/"
+              : blogPostPath(blog, post)
+          }
           post={post}
           owner={false}
           showTypeChip={false}
+          tagBasePath={publicOrigin ? "/tags" : undefined}
         />
       ))}
     </div>
@@ -264,26 +294,48 @@ function CategoryGrid({
 function CategoryPosts({
   blog,
   folders,
+  folderPath,
   handle,
   posts,
+  publicOrigin,
 }: {
   blog: Blog;
   folders: Folder[];
+  folderPath: string;
   handle: string;
   posts: Post[];
+  publicOrigin: boolean;
 }) {
   if (blog.homeLayout === "timeline") {
-    return <CategoryTimeline blog={blog} folders={folders} posts={posts} />;
+    return (
+      <CategoryTimeline
+        blog={blog}
+        folders={folders}
+        folderPath={folderPath}
+        posts={posts}
+        publicOrigin={publicOrigin}
+      />
+    );
   }
   if (blog.homeLayout === "index") {
-    return <CategoryIndex blog={blog} folders={folders} posts={posts} />;
+    return (
+      <CategoryIndex
+        blog={blog}
+        folders={folders}
+        folderPath={folderPath}
+        posts={posts}
+        publicOrigin={publicOrigin}
+      />
+    );
   }
   return (
     <CategoryGrid
       blog={blog}
       folders={folders}
+      folderPath={folderPath}
       handle={handle}
       posts={posts}
+      publicOrigin={publicOrigin}
     />
   );
 }
@@ -294,14 +346,16 @@ export function CategoryListing({
   folders,
   handle,
   posts,
+  publicOrigin = false,
 }: {
   blog: Blog;
   folder: Folder;
   folders: Folder[];
   handle: string;
   posts: Post[];
+  publicOrigin?: boolean;
 }) {
-  const crumbs = categoryBreadcrumbs(blog, folder, folders);
+  const crumbs = categoryBreadcrumbs(blog, folder, folders, { publicOrigin });
 
   return (
     <main className={`blog-home ${styles.root}`} style={blogStyle(blog)}>
@@ -334,8 +388,10 @@ export function CategoryListing({
         <CategoryPosts
           blog={blog}
           folders={folders}
+          folderPath={folder.path}
           handle={handle}
           posts={posts}
+          publicOrigin={publicOrigin}
         />
       )}
     </main>

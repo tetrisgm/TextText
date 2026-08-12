@@ -1,7 +1,8 @@
-import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
+import { blogBaseUrl, locatedPostUrl, notFound } from "@/lib/agent-surface";
 import { postBodyPreview, type Post } from "@/lib/content";
 import { resolveCoverUrl } from "@/lib/cover";
-import { getBlog, getPosts } from "@/lib/store";
+import { getBlog, getPublicPostLocations } from "@/lib/store";
+import type { PublicPostLocation } from "@/lib/store";
 import { postSubtitle } from "@/lib/markdown-subtitle";
 
 interface Props {
@@ -15,7 +16,8 @@ export async function GET(_request: Request, { params }: Props) {
   const blog = await getBlog(handle);
   if (!blog) return notFound();
 
-  const posts = newestFirst(await getPosts(handle));
+  const locations = newestFirst(await getPublicPostLocations(handle));
+  const posts = locations.map((location) => location.post);
   const baseUrl = blogBaseUrl(blog);
   const feed = {
     version: "https://jsonfeed.org/version/1.1",
@@ -25,8 +27,8 @@ export async function GET(_request: Request, { params }: Props) {
     description: blog.tagline || undefined,
     authors: [{ name: blog.author }],
     language: "en",
-    items: posts.map((post) => {
-      const url = postUrl(baseUrl, post.slug);
+    items: posts.map((post, index) => {
+      const url = locatedPostUrl(baseUrl, locations[index]!);
       const summary = postSubtitle(post) || plainTextSummary(postBodyPreview(post));
       const image = resolveCoverUrl(post, baseUrl);
 
@@ -50,10 +52,10 @@ export async function GET(_request: Request, { params }: Props) {
   });
 }
 
-function newestFirst(posts: Post[]): Post[] {
-  return [...posts].sort((a, b) => {
-    const byDate = postDate(b).getTime() - postDate(a).getTime();
-    return byDate || a.slug.localeCompare(b.slug);
+function newestFirst(locations: PublicPostLocation[]): PublicPostLocation[] {
+  return [...locations].sort((a, b) => {
+    const byDate = postDate(b.post).getTime() - postDate(a.post).getTime();
+    return byDate || a.post.slug.localeCompare(b.post.slug);
   });
 }
 

@@ -1,6 +1,9 @@
 import type { Blog, Post } from "@/lib/content";
-import { blogHomePath } from "@/lib/public-paths";
-import { rootDomainUrl } from "@/lib/site-url";
+import {
+  workspacePublicBaseUrl,
+  workspacePublicPostPath,
+} from "@/lib/public-paths";
+import type { PublicPostLocation } from "@/lib/store";
 
 export function publishedNewestFirst(posts: Post[]): Post[] {
   return posts
@@ -16,15 +19,29 @@ export function publishedNewestFirst(posts: Post[]): Post[] {
 }
 
 export function blogBaseUrl(blog: Pick<Blog, "handle" | "username">): string {
-  const url = rootDomainUrl();
-  url.pathname = blogHomePath(blog);
-  url.search = "";
-  url.hash = "";
-  return url.toString().replace(/\/$/, "");
+  return workspacePublicBaseUrl(blog.handle);
+}
+
+export function locatedPostUrl(
+  baseUrl: string,
+  location: Pick<PublicPostLocation, "folderPath" | "post">,
+): string {
+  const path = workspacePublicPostPath(
+    location.folderPath,
+    location.post.slug,
+  );
+  return path ? `${baseUrl}${path}` : baseUrl;
+}
+
+export function locatedPostMarkdownUrl(
+  baseUrl: string,
+  location: Pick<PublicPostLocation, "folderPath" | "post">,
+): string {
+  return `${locatedPostUrl(baseUrl, location)}/index.md`;
 }
 
 export function postUrl(baseUrl: string, slug: string): string {
-  return `${baseUrl}/${encodeURIComponent(slug)}`;
+  return `${baseUrl}/blog/${encodeURIComponent(slug)}`;
 }
 
 export function postMarkdownUrl(baseUrl: string, slug: string): string {

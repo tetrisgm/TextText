@@ -1,6 +1,7 @@
-import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
+import { blogBaseUrl, locatedPostUrl, notFound } from "@/lib/agent-surface";
 import type { Post } from "@/lib/content";
-import { getBlog, getPosts } from "@/lib/store";
+import { getBlog, getPublicPostLocations } from "@/lib/store";
+import type { PublicPostLocation } from "@/lib/store";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -13,21 +14,22 @@ export async function GET(_request: Request, { params }: Props) {
   const blog = await getBlog(handle);
   if (!blog) return notFound();
 
-  const posts = newestFirst(await getPosts(handle));
+  const locations = newestFirst(await getPublicPostLocations(handle));
   const baseUrl = blogBaseUrl(blog);
 
-  return new Response(renderSitemap(posts, baseUrl), {
+  return new Response(renderSitemap(locations, baseUrl), {
     headers: {
       "Content-Type": "application/xml; charset=utf-8",
     },
   });
 }
 
-function renderSitemap(posts: Post[], baseUrl: string): string {
+function renderSitemap(locations: PublicPostLocation[], baseUrl: string): string {
+  const posts = locations.map((location) => location.post);
   const homeLastModified = feedDate(posts).toISOString();
   const postEntries = posts
-    .map((post) => {
-      const url = postUrl(baseUrl, post.slug);
+    .map((post, index) => {
+      const url = locatedPostUrl(baseUrl, locations[index]!);
       const lastModified = postDate(post).toISOString();
 
       return [
@@ -56,10 +58,10 @@ function renderSitemap(posts: Post[], baseUrl: string): string {
   ].join("\n");
 }
 
-function newestFirst(posts: Post[]): Post[] {
-  return [...posts].sort((a, b) => {
-    const byDate = postDate(b).getTime() - postDate(a).getTime();
-    return byDate || a.slug.localeCompare(b.slug);
+function newestFirst(locations: PublicPostLocation[]): PublicPostLocation[] {
+  return [...locations].sort((a, b) => {
+    const byDate = postDate(b.post).getTime() - postDate(a.post).getTime();
+    return byDate || a.post.slug.localeCompare(b.post.slug);
   });
 }
 

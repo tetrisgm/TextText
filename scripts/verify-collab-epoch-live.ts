@@ -43,7 +43,9 @@ async function main() {
       .insert(blogs)
       .values({ handle: HANDLE, name: "Epoch Verify", ownerId: userId })
       .returning({ id: blogs.id });
-    await ensureWorkspaceFolders(b.id);
+    const workspaceFolders = await ensureWorkspaceFolders(b.id);
+    const blogFolder = workspaceFolders.find((folder) => folder.path === "blog");
+    if (!blogFolder) throw new Error("scratch workspace is missing its blog folder");
     const initialDocument = {
       ...emptyDocumentSnapshot(),
       content: {
@@ -56,6 +58,7 @@ async function main() {
       .insert(posts)
       .values({
         blogId: b.id,
+        folderId: blogFolder.id,
         document: initialDocument,
         type: "article",
         title: "T",

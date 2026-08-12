@@ -3,17 +3,25 @@ import Link from "next/link";
 import { PostCard } from "@/components/PostCard";
 import styles from "@/components/CategoryListing.module.css";
 import type { Blog, Post } from "@/lib/content";
-import { blogHomePath } from "@/lib/public-paths";
+import {
+  blogHomePath,
+  blogPostPath,
+  workspacePublicPostPath,
+} from "@/lib/public-paths";
+
+type TagLocation = { folderPath: string; post: Post };
 
 export function TagListing({
   blog,
   handle,
-  posts,
+  locations,
+  publicOrigin = false,
   tag,
 }: {
   blog: Blog;
   handle: string;
-  posts: Post[];
+  locations: TagLocation[];
+  publicOrigin?: boolean;
   tag: string;
 }) {
   const style = blog.accent
@@ -23,7 +31,10 @@ export function TagListing({
     <main className={`blog-home ${styles.root}`} style={style}>
       <header className={`blog-home-header ${styles.header}`}>
         <nav className={styles.breadcrumbs} aria-label="Tag breadcrumb">
-          <Link className={styles.breadcrumbLink} href={blogHomePath(blog)}>
+          <Link
+            className={styles.breadcrumbLink}
+            href={publicOrigin ? "/" : blogHomePath(blog)}
+          >
             {blog.name}
           </Link>
           <span className={styles.separator}>/</span>
@@ -35,17 +46,23 @@ export function TagListing({
           </div>
         </div>
       </header>
-      {posts.length === 0 ? (
+      {locations.length === 0 ? (
         <p className={`blog-home-empty ${styles.empty}`}>Nothing here yet</p>
       ) : (
         <div className="tv-grid">
-          {posts.map((post) => (
+          {locations.map(({ folderPath, post }) => (
             <PostCard
-              key={post.slug}
+              key={post.id ?? `${folderPath}/${post.slug}`}
               blog={blog}
               handle={handle}
+              href={
+                publicOrigin
+                  ? workspacePublicPostPath(folderPath, post.slug) ?? "/"
+                  : blogPostPath(blog, post)
+              }
               post={post}
               owner={false}
+              tagBasePath={publicOrigin ? "/tags" : undefined}
             />
           ))}
         </div>

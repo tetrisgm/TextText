@@ -33,7 +33,7 @@
     "eval:collaboration:browser": "node --env-file=.env.local --import tsx scripts/verify-live-collaboration.ts",
     "test": "vitest run",
     "db:cleanup-bookmark-html": "node scripts/cleanup-bookmark-html.mjs",
-    "db:push": "node scripts/migrate-unified-documents.mjs && node scripts/migrate-enforce-canonical-documents.mjs && drizzle-kit push && node scripts/migrate-add-file-representation.mjs && node scripts/migrate-add-slug-history.mjs && node scripts/migrate-add-tags.mjs && node scripts/migrate-add-app-health.mjs && node scripts/migrate-add-oauth-token-lifecycle.mjs && node scripts/migrate-add-item-comments.mjs && node scripts/migrate-add-workspace-ai-config.mjs && node scripts/migrate-unified-documents.mjs && node scripts/migrate-enforce-canonical-documents.mjs && npx tsx scripts/audit-canonical-documents.ts",
+    "db:push": "node scripts/migrate-unified-documents.mjs && node scripts/migrate-enforce-canonical-documents.mjs && node scripts/migrate-add-slug-history.mjs && drizzle-kit push && node scripts/migrate-add-file-representation.mjs && node scripts/migrate-add-tags.mjs && node scripts/migrate-add-app-health.mjs && node scripts/migrate-add-oauth-token-lifecycle.mjs && node scripts/migrate-add-item-comments.mjs && node scripts/migrate-add-workspace-ai-config.mjs && node scripts/migrate-unified-documents.mjs && node scripts/migrate-enforce-canonical-documents.mjs && npx tsx scripts/audit-canonical-documents.ts",
     "db:seed": "tsx src/lib/db/seed.ts",
     "eval:looks": "node --import tsx scripts/eval-look-authoring.ts",
     "eval:sidebar": "node --env-file=.env.local --import tsx scripts/eval-sidebar-looks.ts",

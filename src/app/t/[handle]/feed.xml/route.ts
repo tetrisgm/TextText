@@ -1,8 +1,9 @@
-import { blogBaseUrl, notFound, postUrl } from "@/lib/agent-surface";
+import { blogBaseUrl, locatedPostUrl, notFound } from "@/lib/agent-surface";
 import type { Blog, Post } from "@/lib/content";
 import { postBodyPreview } from "@/lib/content";
 import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
-import { getBlog, getPosts } from "@/lib/store";
+import { getBlog, getPublicPostLocations } from "@/lib/store";
+import type { PublicPostLocation } from "@/lib/store";
 import { postSubtitle } from "@/lib/markdown-subtitle";
 
 interface Props {
@@ -16,11 +17,12 @@ export async function GET(_request: Request, { params }: Props) {
   const blog = await getBlog(handle);
   if (!blog) return notFound();
 
-  const posts = newestFirst(await getPosts(handle));
+  const locations = newestFirst(await getPublicPostLocations(handle));
+  const posts = locations.map((location) => location.post);
   const baseUrl = blogBaseUrl(blog);
   const feedUrl = `${baseUrl}/feed.xml`;
 
-  return new Response(renderRss(blog, posts, baseUrl, feedUrl), {
+  return new Response(renderRss(blog, posts, locations, baseUrl, feedUrl), {
     headers: {
       "Content-Type": "application/rss+xml; charset=utf-8",
     },
@@ -30,14 +32,15 @@ export async function GET(_request: Request, { params }: Props) {
 function renderRss(
   blog: Blog,
   posts: Post[],
+  locations: PublicPostLocation[],
   baseUrl: string,
   feedUrl: string,
 ): string {
   const description = blog.tagline || blog.name;
   const lastBuildDate = feedDate(posts).toUTCString();
   const items = posts
-    .map((post) => {
-      const url = postUrl(baseUrl, post.slug);
+    .map((post, index) => {
+      const url = locatedPostUrl(baseUrl, locations[index]!);
       const published = postDate(post).toUTCString();
       const summary = postSubtitle(post) || plainTextSummary(postBodyPreview(post));
       const imageUrl = resolveCoverUrl(post, baseUrl);
@@ -80,10 +83,10 @@ function renderRss(
   ].join("\n");
 }
 
-function newestFirst(posts: Post[]): Post[] {
-  return [...posts].sort((a, b) => {
-    const byDate = postDate(b).getTime() - postDate(a).getTime();
-    return byDate || a.slug.localeCompare(b.slug);
+function newestFirst(locations: PublicPostLocation[]): PublicPostLocation[] {
+  return [...locations].sort((a, b) => {
+    const byDate = postDate(b.post).getTime() - postDate(a.post).getTime();
+    return byDate || a.post.slug.localeCompare(b.post.slug);
   });
 }
 

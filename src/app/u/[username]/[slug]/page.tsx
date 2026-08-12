@@ -2,8 +2,11 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { PostPageForHandle } from "@/app/t/[handle]/[slug]/page";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
-import { usernamePostPath } from "@/lib/public-paths";
-import { getBlogByUsername, getPost } from "@/lib/store";
+import {
+  usernamePostPath,
+  workspacePublicPostUrl,
+} from "@/lib/public-paths";
+import { getBlogByUsername, resolveLegacyPublicSlug } from "@/lib/store";
 import { redirectDirectUsernameHit } from "@/lib/username-routes";
 import { postSubtitle } from "@/lib/markdown-subtitle";
 
@@ -28,24 +31,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username, slug } = await params;
   const blog = await resolveBlog(username);
   if (!blog) return {};
-  const post = await getPost(blog.handle, slug);
-  if (!post) return {};
-  // Never describe a private post (an unlisted note or bookmark, or any
-  // unpublished draft) in page metadata; the page itself 404s for anyone who
-  // is not the owner or an invited collaborator (same rule as the /t mirror).
-  if (
-    post.type === "note" ||
-    post.type === "bookmark" ||
-    post.status !== "published"
-  ) {
-    return {};
-  }
+  const resolution = await resolveLegacyPublicSlug(blog.handle, slug);
+  if (resolution.kind !== "redirect") return {};
+  const post = resolution.post;
   const metadata: Metadata = {
     title: `${postTitle(post.title)} · ${blog.name}`,
     description:
       postSubtitle(post) || post.body.split(/\n{2,}/)[0]?.slice(0, 160),
     alternates: {
-      canonical: usernamePostPath(blog.username ?? username, post.slug),
+      canonical:
+        workspacePublicPostUrl(
+          blog.handle,
+          resolution.folderPath,
+          post.slug,
+        ) ?? undefined,
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };

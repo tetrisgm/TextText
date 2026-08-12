@@ -1,17 +1,10 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
-// Not-found pages get no route params, so the blog home link is derived from
-// the URL. Path-based access (/t/{handle}/...) links back to /t/{handle};
-// host-based tenants ({handle}.domain) live at the root, so "/" is home.
+// One static response for every unavailable public path. Do not derive copy or
+// links from the requested URL: doing so turns the 404 itself into a structure
+// oracle for private folders and legacy route shapes.
 export default function TenantNotFound() {
-  const pathname = usePathname() ?? "";
-  const match = pathname.match(/^\/t\/([^/]+)/);
-  const homeHref = match ? `/t/${match[1]}` : "/";
-
   return (
     <main className="not-found-page">
       <Image
@@ -24,7 +17,7 @@ export default function TenantNotFound() {
         unoptimized
       />
       <h1 className="not-found-title">This page does not exist.</h1>
-      <Link className="not-found-home-link" href={homeHref}>
+      <Link className="not-found-home-link" href="/">
         Back to the blog
       </Link>
     </main>

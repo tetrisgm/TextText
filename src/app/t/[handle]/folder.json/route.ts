@@ -1,13 +1,13 @@
 import {
   blogBaseUrl,
+  locatedPostMarkdownUrl,
+  locatedPostUrl,
   notFound,
-  postMarkdownUrl,
-  postUrl,
   publishedNewestFirst,
 } from "@/lib/agent-surface";
 import { markdownFileHash } from "@/lib/content-hash";
 import { renderFolderManifest } from "@/lib/markdown-files";
-import { getBlog, getFolders, getPublishedPostFiles } from "@/lib/store";
+import { getBlog, getFolders, getPublicPostLocations } from "@/lib/store";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -17,20 +17,23 @@ const CACHE_CONTROL = "public, max-age=0, must-revalidate";
 
 export async function GET(request: Request, { params }: Props) {
   const { handle } = await params;
-  const [blog, posts] = await Promise.all([
+  const [blog, locations] = await Promise.all([
     getBlog(handle),
-    getPublishedPostFiles(handle),
+    getPublicPostLocations(handle),
   ]);
   if (!blog) return notFound();
 
   const folders = await getFolders(handle);
   const folder = folders.find((entry) => entry.path === "blog");
   const baseUrl = blogBaseUrl(blog);
-  const manifest = renderFolderManifest(blog, publishedNewestFirst(posts), {
+  const posts = publishedNewestFirst(locations.map((location) => location.post));
+  const locationFor = (post: (typeof posts)[number]) =>
+    locations.find((candidate) => candidate.post.id === post.id)!;
+  const manifest = renderFolderManifest(blog, posts, {
     folder,
-    fileUrlFor: (post) => postMarkdownUrl(baseUrl, post.slug),
+    fileUrlFor: (post) => locatedPostMarkdownUrl(baseUrl, locationFor(post)),
     includePersonalMetadata: false,
-    postUrlFor: (post) => postUrl(baseUrl, post.slug),
+    postUrlFor: (post) => locatedPostUrl(baseUrl, locationFor(post)),
   });
 
   const json = JSON.stringify(manifest, null, 2);

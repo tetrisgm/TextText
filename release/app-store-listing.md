@@ -53,9 +53,10 @@ draft, reshape, and edit alongside you. TextText does not sell AI usage or mark
 it up; you use your own account, billed by your provider, and nothing is sent
 anywhere until you ask.
 
-Publish when you are ready. Any item can become a public page at its own link,
-and everything else stays private by default - notes and bookmarks are never
-listed. Share a document for editing, or keep it to yourself.
+Publish when you are ready. Published pages get readable workspace links that
+include their folder and title slug. Everything else stays private by default:
+notes and bookmarks are never listed. Share a document for editing, or keep it
+to yourself.
 
 Your writing stays yours. Every document is portable Markdown you can export at
 any time. The Mac app keeps your documents in Finder as real files through a

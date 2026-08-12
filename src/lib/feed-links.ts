@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { Blog } from "@/lib/content";
 import { rootDomainUrl } from "@/lib/site-url";
+import { workspacePublicBaseUrl } from "@/lib/public-paths";
 
 type AlternateTypes = NonNullable<
   NonNullable<Metadata["alternates"]>["types"]
@@ -48,11 +49,10 @@ export function blogFeedAlternateTypes(
 
 function blogPath(target: BlogPathTarget): string {
   if (typeof target === "string") return `/t/${encodeURIComponent(target)}`;
-  return target.username
-    ? `/@${encodeURIComponent(target.username)}`
-    : `/t/${encodeURIComponent(target.handle)}`;
+  return workspacePublicBaseUrl(target.handle);
 }
 
 function absoluteUrl(path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
   return new URL(path, rootDomainUrl()).toString();
 }

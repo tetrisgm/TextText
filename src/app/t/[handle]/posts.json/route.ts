@@ -1,18 +1,18 @@
 import {
   blogBaseUrl,
   folderJsonUrl,
+  locatedPostMarkdownUrl,
+  locatedPostUrl,
   llmsTxtUrl,
   notFound,
   postIsoDate,
-  postMarkdownUrl,
-  postUrl,
   publishedNewestFirst,
 } from "@/lib/agent-surface";
 import {
   itemKindForPostType,
   markdownFilePathForPost,
 } from "@/lib/markdown-files";
-import { getBlog, getPosts } from "@/lib/store";
+import { getBlog, getPublicPostLocations } from "@/lib/store";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -20,7 +20,10 @@ interface Props {
 
 export async function GET(_request: Request, { params }: Props) {
   const { handle } = await params;
-  const [blog, posts] = await Promise.all([getBlog(handle), getPosts(handle)]);
+  const [blog, locations] = await Promise.all([
+    getBlog(handle),
+    getPublicPostLocations(handle),
+  ]);
   if (!blog) return notFound();
 
   const baseUrl = blogBaseUrl(blog);
@@ -34,7 +37,8 @@ export async function GET(_request: Request, { params }: Props) {
       folder_json_url: folderJsonUrl(baseUrl),
       llms_txt_url: llmsTxtUrl(baseUrl),
     },
-    posts: publishedNewestFirst(posts).map((post) => {
+    posts: publishedNewestFirst(locations.map((location) => location.post)).map((post) => {
+      const location = locations.find((candidate) => candidate.post.id === post.id)!;
       const date = postIsoDate(post);
       return {
         slug: post.slug,
@@ -43,8 +47,8 @@ export async function GET(_request: Request, { params }: Props) {
         title: post.title,
         excerpt: post.excerpt ?? null,
         ...(date ? { date } : {}),
-        canonical_url: postUrl(baseUrl, post.slug),
-        markdown_url: postMarkdownUrl(baseUrl, post.slug),
+        canonical_url: locatedPostUrl(baseUrl, location),
+        markdown_url: locatedPostMarkdownUrl(baseUrl, location),
       };
     }),
   };

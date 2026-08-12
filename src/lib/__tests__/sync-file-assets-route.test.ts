@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getFolderById: vi.fn(),
   getPostById: vi.fn(),
   put: vi.fn(),
   recordAction: vi.fn(),
@@ -13,7 +14,10 @@ vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/permissions", () => ({
   resolveItemAccess: mocks.resolveItemAccess,
 }));
-vi.mock("@/lib/store", () => ({ getPostById: mocks.getPostById }));
+vi.mock("@/lib/store", () => ({
+  getFolderById: mocks.getFolderById,
+  getPostById: mocks.getPostById,
+}));
 vi.mock("@/app/api/sync/v1/auth", () => ({
   resolveSyncWorkspace: mocks.resolveSyncWorkspace,
 }));
@@ -28,6 +32,7 @@ import type { Blog, Post } from "@/lib/content";
 import { documentFromLegacyPost } from "@/lib/documents/legacy";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
+const folderId = "beec8d18-b602-4cd3-bc2b-640e067c01c8";
 const blobHost = "store.public.blob.vercel-storage.com";
 const blog: Blog = {
   handle: "demo",
@@ -38,6 +43,7 @@ const blog: Blog = {
 };
 const legacyBasePost: Post = {
   id: postId,
+  folderId,
   type: "article",
   slug: "generic-assets",
   title: "Generic assets",
@@ -63,6 +69,7 @@ beforeEach(() => {
     canEditContent: true,
   });
   mocks.getPostById.mockResolvedValue(basePost);
+  mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
   mocks.recordAction.mockResolvedValue(undefined);
 });
 

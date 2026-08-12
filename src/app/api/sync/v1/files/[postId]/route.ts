@@ -53,6 +53,7 @@ type WorkspacePost = {
   postId: string;
   userId: string;
   access: EffectiveAccess;
+  folderPath: string;
 };
 
 // Auth, then the post, scoped to the token owner's blog: a foreign id can
@@ -67,24 +68,35 @@ async function resolveWorkspacePost(
   if (!isUuid(postId)) return syncError(404, "Post not found");
   const post = await getPostById(workspace.blog.handle, postId);
   if (!post) return syncError(404, "Post not found");
+  const folder = post.folderId
+    ? await getFolderById(workspace.blog.handle, post.folderId)
+    : null;
+  if (!folder) return syncError(404, "Post not found");
   const access = await resolveItemAccess({
     handle: workspace.blog.handle,
     postId,
     user: workspace,
   });
   if (!access.canView) return syncError(404, "Post not found");
-  return { blog: workspace.blog, post, postId, userId: workspace.userId, access };
+  return {
+    blog: workspace.blog,
+    post,
+    postId,
+    userId: workspace.userId,
+    access,
+    folderPath: folder.path,
+  };
 }
 
 export async function GET(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post } = resolved;
+  const { blog, post, folderPath } = resolved;
 
   const structured = requestAcceptsSyncDocument(request);
   const file = structured
-    ? renderSyncDocumentFile(blog, post)
-    : renderSyncFile(blog, post);
+    ? renderSyncDocumentFile(blog, post, folderPath)
+    : renderSyncFile(blog, post, folderPath);
   const etag = `"${file.hash}"`;
   const headers: Record<string, string> = { ETag: etag };
   if (post.updatedAt) {
@@ -109,7 +121,7 @@ export async function GET(request: Request, { params }: Props) {
 export async function PUT(request: Request, { params }: Props) {
   const resolved = await resolveWorkspacePost(request, params);
   if (resolved instanceof Response) return resolved;
-  const { blog, post, userId, access } = resolved;
+  const { blog, post, userId, access, folderPath } = resolved;
   if (!access.canEditContent) {
     return syncError(403, "You cannot edit this file");
   }
@@ -124,8 +136,8 @@ export async function PUT(request: Request, { params }: Props) {
   }
   const structured = requestUsesSyncDocument(request);
   const current = structured
-    ? renderSyncDocumentFile(blog, post)
-    : renderSyncFile(blog, post);
+    ? renderSyncDocumentFile(blog, post, folderPath)
+    : renderSyncFile(blog, post, folderPath);
   if (!ifMatchSatisfied(ifMatch, `"${current.hash}"`)) {
     return syncError(412, "The post changed since this file was fetched");
   }

@@ -108,15 +108,22 @@ async function main(): Promise<void> {
   const remapped = folderPlan.rows.filter((r) => r.tgt_id);
   const moved = folderPlan.rows.filter((r) => !r.tgt_id);
 
-  // posts_blog_slug_idx is unique on (blog_id, slug) for LIVE rows only, so a
-  // slug already used by a trashed document in the target is not a conflict.
-  // A live one is, and the arriving document is the one renamed: the source's
-  // public addresses are about to stop resolving anyway.
+  // Live slugs are unique inside their folder. Only a target document in the
+  // folder path this source document will land in is a collision; another
+  // folder may deliberately carry the same slug.
   const conflicts = await c.query(
     `SELECT s.id, s.slug FROM posts s
+       JOIN folders sf ON sf.id = s.folder_id
       WHERE s.blog_id = $1 AND s.deleted_at IS NULL
-        AND EXISTS (SELECT 1 FROM posts t
-                     WHERE t.blog_id = $2 AND t.slug = s.slug AND t.deleted_at IS NULL)`,
+        AND EXISTS (
+          SELECT 1 FROM folders tf
+          JOIN posts t ON t.folder_id = tf.id
+          WHERE tf.blog_id = $2
+            AND tf.path = sf.path
+            AND tf.deleted_at IS NULL
+            AND t.slug = s.slug
+            AND t.deleted_at IS NULL
+        )`,
     [from.blog_id, into.blog_id],
   );
 
@@ -154,9 +161,14 @@ async function main(): Promise<void> {
   }
 
   // Documents into the matching target folder, then the emptied source folder
-  // goes. Folder ids are global, so this is a straight re-point.
+  // goes. Change folder and workspace in one statement so the public-URL
+  // triggers preserve the source path and guard the destination namespace as
+  // one atomic move.
   for (const row of remapped) {
-    await c.query(`UPDATE posts SET folder_id = $1 WHERE folder_id = $2`, [row.tgt_id, row.src_id]);
+    await c.query(
+      `UPDATE posts SET folder_id = $1, blog_id = $2 WHERE folder_id = $3`,
+      [row.tgt_id, into.blog_id, row.src_id],
+    );
   }
   for (const row of moved) {
     await c.query(`UPDATE folders SET blog_id = $1 WHERE id = $2`, [into.blog_id, row.src_id]);

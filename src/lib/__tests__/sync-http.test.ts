@@ -319,7 +319,7 @@ describe("syncManifestItem", () => {
     expect(item.url).toBe(syncFileUrl(post.id ?? ""));
     expect(item.url).toBe(`/api/sync/v1/files/${post.id}`);
     expect(item.canonicalUrl).toBe(
-      "https://texttext.example/t/demo/hello-sync",
+      "https://demo.texttext.example/blog/hello-sync",
     );
     expect(item.hash).toBe(renderSyncFile(blog, post).hash);
     expect(item.id).toBe(post.id);

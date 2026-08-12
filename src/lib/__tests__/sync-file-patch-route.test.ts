@@ -65,6 +65,7 @@ vi.mock("@/lib/revalidate-blog", () => ({
 import { DELETE, GET, PATCH, PUT } from "@/app/api/sync/v1/files/[postId]/route";
 
 const postId = "0b4f6a52-8c1d-4e3a-9b7f-2d5e8a1c3f60";
+const folderId = "beec8d18-b602-4cd3-bc2b-640e067c01c8";
 const blog: Blog = {
   handle: "sync-test",
   name: "Sync test",
@@ -74,6 +75,7 @@ const blog: Blog = {
 };
 const legacyPost: Post = {
   id: postId,
+  folderId,
   type: "article",
   slug: "stable-url",
   title: "Question??",
@@ -151,6 +153,7 @@ describe("sync file PATCH", () => {
     vi.clearAllMocks();
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(post);
+    mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
     mocks.resolveItemAccess.mockResolvedValue({
       canView: true,
       canEditContent: true,
@@ -331,6 +334,7 @@ describe("sync file DELETE", () => {
     vi.clearAllMocks();
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(post);
+    mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
     mocks.resolveItemAccess.mockResolvedValue({
       canView: true,
       canEditContent: true,
@@ -397,6 +401,7 @@ describe("sync file PUT during a live co-editing session", () => {
     vi.clearAllMocks();
     mocks.resolveSyncWorkspace.mockResolvedValue({ blog, userId: "owner-id" });
     mocks.getPostById.mockResolvedValue(post);
+    mocks.getFolderById.mockResolvedValue({ id: folderId, path: "blog" });
     mocks.resolveItemAccess.mockResolvedValue({
       canView: true,
       canEditContent: true,

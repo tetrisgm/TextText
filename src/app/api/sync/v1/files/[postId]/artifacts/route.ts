@@ -1,7 +1,7 @@
 import type { Post } from "@/lib/content";
 import { remoteMarkdownImageUrls } from "@/lib/markdown-images";
 import { resolveItemAccess } from "@/lib/permissions";
-import { getPostById } from "@/lib/store";
+import { getFolderById, getPostById } from "@/lib/store";
 import { resolveSyncWorkspace } from "../../../auth";
 import {
   isUuid,
@@ -41,6 +41,10 @@ export async function GET(request: Request, { params }: Props) {
   if (!isUuid(postId)) return syncError(404, "Post not found");
   const post = await getPostById(workspace.blog.handle, postId);
   if (!post) return syncError(404, "Post not found");
+  const folder = post.folderId
+    ? await getFolderById(workspace.blog.handle, post.folderId)
+    : null;
+  if (!folder) return syncError(404, "Post not found");
   const access = await resolveItemAccess({
     handle: workspace.blog.handle,
     postId,
@@ -52,8 +56,8 @@ export async function GET(request: Request, { params }: Props) {
     {
       postId,
       slug: post.slug,
-      fileHash: renderSyncFile(workspace.blog, post).hash,
-      documentHash: renderSyncDocumentFile(workspace.blog, post).hash,
+      fileHash: renderSyncFile(workspace.blog, post, folder.path).hash,
+      documentHash: renderSyncDocumentFile(workspace.blog, post, folder.path).hash,
       artifacts: inlineArtifacts(post, workspace.blog.handle, postId),
     },
     { headers: { "Cache-Control": "private, no-store" } },

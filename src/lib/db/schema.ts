@@ -452,8 +452,10 @@ export const posts = pgTable(
     blogId: uuid("blog_id")
       .notNull()
       .references(() => blogs.id),
-    /** owning folder; null only until the backfill/lazy-ensure touches it */
-    folderId: uuid("folder_id").references(() => folders.id),
+    /** owning folder; public URLs and slug uniqueness are scoped through it */
+    folderId: uuid("folder_id")
+      .notNull()
+      .references(() => folders.id),
     /**
      * Local file representation selected when the post is created. Defaults to a
      * `.textpack` (a single zipped textbundle) - one inode, so name and content
@@ -538,8 +540,8 @@ export const posts = pgTable(
     // Partial: a soft-deleted (trashed) post releases its slug, so writing a
     // new post with the same URL never collides with, or resurrects, a
     // trashed row.
-    uniqueIndex("posts_blog_slug_idx")
-      .on(t.blogId, t.slug)
+    uniqueIndex("posts_folder_slug_idx")
+      .on(t.folderId, t.slug)
       .where(sql`${t.deletedAt} is null`),
     index("posts_folder_id_idx")
       .on(t.folderId)
@@ -584,6 +586,26 @@ export const posts = pgTable(
       ), false)`,
     ),
   ],
+);
+
+// An exposed URL remains owned by the item that first published there. The
+// target is nullable so deleting the item keeps the path reserved while making
+// it resolve to the same generic 404 as every other unavailable page.
+export const publicUrlTombstones = pgTable(
+  "public_url_tombstones",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    postId: uuid("post_id").references(() => posts.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("public_url_tombstones_blog_path_idx").on(t.blogId, t.path)],
 );
 
 // Immutable workspace template versions. Built-ins ship in code; only

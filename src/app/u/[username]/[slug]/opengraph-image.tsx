@@ -1,5 +1,5 @@
 import { OG_IMAGE_CONTENT_TYPE, OG_IMAGE_SIZE, postOgImage } from "@/lib/og-image";
-import { getBlogByUsername, getPost } from "@/lib/store";
+import { getBlogByUsername, resolveLegacyPublicSlug } from "@/lib/store";
 
 interface Props {
   params: Promise<{ username: string; slug: string }>;
@@ -14,18 +14,10 @@ export default async function Image({ params }: Props) {
   const blog = await getBlogByUsername(username).catch(() => null);
   if (!blog) return new Response("Not found", { status: 404 });
 
-  const post = await getPost(blog.handle, slug);
-  // Private posts (unpublished drafts, and notes/bookmarks which are unlisted
-  // forever) 404 for anyone who cannot edit, so their title, excerpt, and
-  // cover must not leak through a publicly rendered OG image either.
-  if (
-    !post ||
-    post.status !== "published" ||
-    post.type === "note" ||
-    post.type === "bookmark"
-  ) {
+  const resolution = await resolveLegacyPublicSlug(blog.handle, slug);
+  if (resolution.kind !== "redirect") {
     return new Response("Not found", { status: 404 });
   }
 
-  return postOgImage(blog, post);
+  return postOgImage(blog, resolution.post);
 }

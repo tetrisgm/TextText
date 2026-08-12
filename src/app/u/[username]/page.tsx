@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { BlogHomeForHandle } from "@/app/t/[handle]/page";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
-import { usernameHomePath } from "@/lib/public-paths";
+import { usernameHomePath, workspacePublicBaseUrl } from "@/lib/public-paths";
 import { getBlogByUsername } from "@/lib/store";
 import { redirectDirectUsernameHit } from "@/lib/username-routes";
 
@@ -35,7 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: blog.name,
     description: blog.tagline,
     alternates: {
-      canonical: usernameHomePath(blog.username ?? username),
+      canonical: workspacePublicBaseUrl(blog.handle),
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };

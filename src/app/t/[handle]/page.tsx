@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import {
@@ -41,6 +41,8 @@ import {
   getTrashedPosts,
   getPost,
   getPostSlugAliases,
+  getPostStoreContext,
+  getPublicPostLocations,
   listDocumentTemplates,
 } from "@/lib/store";
 import { workspaceWikiLinkMetadata } from "@/lib/pool/server";
@@ -58,7 +60,13 @@ import { legacyTemplateId } from "@/lib/documents/legacy";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { resolveCover } from "@/lib/cover";
-import { blogHomePath, blogPostPath } from "@/lib/public-paths";
+import {
+  blogHomePath,
+  blogPostPath,
+  workspacePublicBaseUrl,
+  workspacePublicPostPath,
+} from "@/lib/public-paths";
+import { isPublicOriginRequest } from "@/lib/public-origin";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
@@ -181,9 +189,11 @@ function postStyle(blog: Blog, post: Post): CSSProperties | undefined {
 
 function BlogTimeline({
   blog,
+  hrefFor,
   posts,
 }: {
   blog: Blog;
+  hrefFor?: (post: Post) => string;
   posts: Post[];
 }) {
   return (
@@ -199,7 +209,7 @@ function BlogTimeline({
           <Link
             key={post.slug}
             className={`blog-timeline-row${thumbnail ? "" : " is-no-thumb"}`}
-            href={blogPostPath(blog, post)}
+            href={hrefFor ? hrefFor(post) : blogPostPath(blog, post)}
             prefetch={true}
             style={postStyle(blog, post)}
           >
@@ -247,9 +257,11 @@ function BlogTimeline({
 
 function BlogIndex({
   blog,
+  hrefFor,
   posts,
 }: {
   blog: Blog;
+  hrefFor?: (post: Post) => string;
   posts: Post[];
 }) {
   return (
@@ -259,7 +271,7 @@ function BlogIndex({
           <Link
             key={post.slug}
             className="blog-index-row"
-            href={blogPostPath(blog, post)}
+            href={hrefFor ? hrefFor(post) : blogPostPath(blog, post)}
             prefetch={true}
             style={postStyle(blog, post)}
           >
@@ -323,6 +335,100 @@ function WorkspaceRootLanding({ blog }: { blog: Blog }) {
   );
 }
 
+async function PublicBlogHome({ blog }: { blog: Blog }) {
+  const locations = await getPublicPostLocations(blog.handle);
+  const posts = locations.map((location) => location.post);
+  const pathByPost = new Map(
+    locations.map((location) => [
+      location.post,
+      workspacePublicPostPath(location.folderPath, location.post.slug),
+    ]),
+  );
+  const hrefFor = (post: Post): string =>
+    pathByPost.get(post) ?? "/";
+  const singlePost = posts[0];
+  const singleContext = singlePost?.id
+    ? await getPostStoreContext(singlePost.id)
+    : null;
+  const singleReference = singlePost
+    ? singlePost.template ??
+      singlePost.document?.presentation.template ?? {
+        id: legacyTemplateId(singlePost.type),
+        version: 1,
+      }
+    : null;
+  const singleTemplate = singlePost
+    ? (singleContext && singleReference
+        ? await getDocumentTemplate(singleContext.blogId, singleReference)
+        : null) ?? requireBuiltinTemplate(legacyTemplateId(singlePost.type))
+    : null;
+  const feedLinks = [
+    { href: "/feed.xml", label: "RSS" },
+    { href: "/atom.xml", label: "Atom" },
+    { href: "/feed.json", label: "JSON Feed" },
+  ];
+
+  return (
+    <BlogHomeShell
+      handle={blog.handle}
+      blogName={blog.name}
+      initialName={blog.name}
+      tagline={blog.tagline}
+      canEdit={false}
+      isGuestWorkspace={false}
+      authConfigured={false}
+      publicPath="/"
+      initialCardStyle={blog.cardStyle}
+      initialHomeLayout={blog.homeLayout}
+      initialNamingCeremony={false}
+      style={blogStyle(blog)}
+    >
+      {posts.length === 0 ? <BlogEmptyState layout={blog.homeLayout} /> : null}
+      {singlePost && singleTemplate && blog.homeLayout === "single" ? (
+        <BlogSingleHome blog={blog} post={singlePost} template={singleTemplate} />
+      ) : null}
+      {posts.length > 0 && blog.homeLayout === "timeline" ? (
+        <BlogTimeline blog={blog} posts={posts} hrefFor={hrefFor} />
+      ) : null}
+      {posts.length > 0 && blog.homeLayout === "grid" ? (
+        <div className="tv-grid">
+          {locations.map(({ folderPath, post }) => (
+            <PostCard
+              key={post.id ?? `${folderPath}/${post.slug}`}
+              blog={blog}
+              handle={blog.handle}
+              href={hrefFor(post)}
+              post={post}
+              owner={false}
+              categoryLabel={folderPath.split("/").at(-1) ?? null}
+              tagBasePath="/tags"
+              showTypeChip={false}
+            />
+          ))}
+        </div>
+      ) : null}
+      {posts.length > 0 && blog.homeLayout === "index" ? (
+        <BlogIndex blog={blog} posts={posts} hrefFor={hrefFor} />
+      ) : null}
+      {posts.length > 0 ? (
+        <footer className="blog-home-footer" aria-label="Feeds">
+          <span className="blog-home-footer-label">Feeds</span>
+          {feedLinks.map((feed) => (
+            <Link
+              key={feed.href}
+              className="blog-home-footer-link"
+              href={feed.href}
+              aria-label={`${blog.name} ${feed.label} feed`}
+            >
+              {feed.label}
+            </Link>
+          ))}
+        </footer>
+      ) : null}
+    </BlogHomeShell>
+  );
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
   const blog = await getBlog(handle);
@@ -331,6 +437,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: blog.name,
     description: blog.tagline,
     alternates: {
+      canonical: workspacePublicBaseUrl(handle),
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
@@ -358,6 +465,9 @@ export async function BlogHomeForHandle({
   const workspaceAccess = viewer
     ? await resolveWorkspaceAccess({ handle, user: viewer })
     : null;
+  if (!access.canEdit && !workspaceAccess?.canView) {
+    redirect(workspacePublicBaseUrl(handle));
+  }
   // The desktop app tags its web view with this cookie (set natively before
   // the first request). It drops you straight into the workspace, so the
   // folder sidebar starts OPEN there unless you've explicitly collapsed it,
@@ -669,5 +779,11 @@ export async function BlogHomeForHandle({
 
 export default async function BlogHome({ params, searchParams }: Props) {
   const { handle } = await params;
+  const headerStore = await headers();
+  if (isPublicOriginRequest(headerStore)) {
+    const blog = await getBlog(handle);
+    if (!blog) notFound();
+    return <PublicBlogHome blog={blog} />;
+  }
   return <BlogHomeForHandle handle={handle} searchParams={searchParams} />;
 }

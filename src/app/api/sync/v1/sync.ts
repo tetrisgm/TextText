@@ -2,8 +2,9 @@
 // matchers, and manifest item building. Nothing here touches the database, so
 // all of it is unit-testable; the auth/workspace glue lives in ./auth.ts.
 
-import { blogBaseUrl, postUrl } from "@/lib/agent-surface";
+import { blogBaseUrl, locatedPostUrl } from "@/lib/agent-surface";
 import {
+  BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
   isFileRepresentation,
 } from "@/lib/content";
@@ -188,10 +189,11 @@ export function syncFilePath(
 export function renderSyncFile(
   blog: Blog,
   post: Post,
+  folderPath = BLOG_FOLDER_PATH,
 ): { text: string; hash: string } {
   const text = renderPostMarkdownFile({
     blog,
-    canonicalUrl: postUrl(blogBaseUrl(blog), post.slug),
+    canonicalUrl: locatedPostUrl(blogBaseUrl(blog), { folderPath, post }),
     post,
     syncRevision: post.revision,
   });
@@ -206,8 +208,9 @@ export function renderSyncFile(
 export function renderSyncDocumentFile(
   blog: Blog,
   post: Post,
+  folderPath = BLOG_FOLDER_PATH,
 ): { text: string; hash: string } {
-  const markdown = renderSyncFile(blog, post).text;
+  const markdown = renderSyncFile(blog, post, folderPath).text;
   const text = serializeSyncDocumentEnvelope(
     renderSyncDocumentEnvelope({ markdown, post }),
   );
@@ -235,8 +238,13 @@ export function syncManifestOptions(
   return {
     folder,
     fileUrlFor: (post) => syncFileUrl(post.id ?? post.slug),
-    postUrlFor: (post) => postUrl(baseUrl, post.slug),
-    renderFileFor: (post) => renderSyncFile(blog, post).text,
+    postUrlFor: (post) =>
+      locatedPostUrl(baseUrl, {
+        folderPath: folder?.path ?? BLOG_FOLDER_PATH,
+        post,
+      }),
+    renderFileFor: (post) =>
+      renderSyncFile(blog, post, folder?.path ?? BLOG_FOLDER_PATH).text,
   };
 }
 
@@ -266,7 +274,11 @@ export function renderSyncFolderManifest(
     ...manifest,
     items: manifest.items.map((item, index): SyncManifestItem => {
       const post = posts[index];
-      const document = renderSyncDocumentFile(blog, post);
+      const document = renderSyncDocumentFile(
+        blog,
+        post,
+        folder?.path ?? BLOG_FOLDER_PATH,
+      );
       return {
         ...item,
         file: syncFilePath(post),

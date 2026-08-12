@@ -43,6 +43,9 @@ type CommonProps = {
   adjacent: AdjacentPosts;
   homePath: string;
   postPath: string;
+  publishedUrl?: string;
+  previousPath?: string;
+  nextPath?: string;
   owner: boolean;
   canEditPost?: boolean;
   canManagePost?: boolean;
@@ -622,18 +625,28 @@ export function PostActionBar(props: Props) {
   const activeDraft = props.mode === "edit" ? props.draft : readDraft;
   const unlistedItem = isUnlistedPostType(activeDraft.type);
   const activeSlug = slugify(activeDraft.slug, props.post.slug);
-  const publicPath = postPathFor(props.blog.handle, activeSlug);
-  const publicUrl = origin ? `${origin}${publicPath}` : publicPath;
+  const publicPath = props.postPath.replace(
+    /\/[^/?]+(?=\?|$)/,
+    `/${encodeURIComponent(activeSlug)}`,
+  );
+  const publicUrl = props.publishedUrl ?? (origin ? `${origin}${publicPath}` : publicPath);
+  const publicDisplayPath = (() => {
+    try {
+      return new URL(publicUrl, "https://texttext.invalid").pathname;
+    } catch {
+      return publicPath;
+    }
+  })();
   const visibility =
     activeDraft.status === "published"
       ? {
           label: "Everyone (published)",
-          detail: "Visible on the blog and feeds",
+          detail: `Visible at ${publicDisplayPath}`,
           next: "draft" as const,
         }
       : {
           label: "Only people with the link (unlisted)",
-          detail: "Hidden from public lists",
+          detail: `Publish at ${publicDisplayPath}`,
           next: "published" as const,
         };
 
@@ -690,9 +703,14 @@ export function PostActionBar(props: Props) {
         });
 
         if (saved.slug !== props.post.slug) {
-          router.replace(postPathFor(props.blog.handle, saved.slug), {
+          router.replace(
+            props.postPath.replace(
+              /\/[^/?]+(?=\?|$)/,
+              `/${encodeURIComponent(saved.slug)}`,
+            ), {
             scroll: false,
-          });
+            },
+          );
         }
       } catch (saveError) {
         if (readSaveSequenceRef.current !== sequence) return;
@@ -707,7 +725,7 @@ export function PostActionBar(props: Props) {
         }));
       }
     },
-    [incomingSourceVersion, props.blog.handle, props.post, router],
+    [incomingSourceVersion, props.blog.handle, props.post, props.postPath, router],
   );
 
   const updateSlugInput = useCallback(
@@ -878,12 +896,16 @@ export function PostActionBar(props: Props) {
       </span>
     ) : null;
 
-  const previousPath = props.adjacent.previous
-    ? postPathFor(props.blog.handle, props.adjacent.previous.slug)
-    : undefined;
-  const nextPath = props.adjacent.next
-    ? postPathFor(props.blog.handle, props.adjacent.next.slug)
-    : undefined;
+  const previousPath =
+    props.previousPath ??
+    (props.adjacent.previous
+      ? postPathFor(props.blog.handle, props.adjacent.previous.slug)
+      : undefined);
+  const nextPath =
+    props.nextPath ??
+    (props.adjacent.next
+      ? postPathFor(props.blog.handle, props.adjacent.next.slug)
+      : undefined);
   const showPostNav = props.mode === "read" && Boolean(previousPath || nextPath);
   const bookmarkMode =
     props.mode === "read" ? (props.bookmarkContentMode ?? "readable") : "readable";

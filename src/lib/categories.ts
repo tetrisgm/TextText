@@ -1,5 +1,9 @@
 import type { Blog, Folder, Post } from "@/lib/content";
-import { getFolderPosts, getFolders } from "@/lib/store";
+import {
+  getFolderPosts,
+  getFolders,
+  getPublicPostLocations,
+} from "@/lib/store";
 import {
   blogHomePath,
   tenantHomePath,
@@ -93,9 +97,17 @@ export function blogCategoryPath(
   return `${blogHomePath(blog)}/c/${encodePath(categoryPath)}`;
 }
 
+export function workspaceCategoryPath(
+  path: Folder | string | readonly string[],
+): string {
+  const categoryPath = categoryPathInput(path);
+  return categoryPath ? `/c/${encodePath(categoryPath)}` : "/";
+}
+
 export async function resolveCategory(
   handle: string,
   path: readonly string[],
+  options: { publicOnly?: boolean } = {},
 ): Promise<ResolvedCategory | null> {
   const folderPath = categorySegmentsToFolderPath(path);
   if (!folderPath) return null;
@@ -105,9 +117,12 @@ export async function resolveCategory(
   if (!folder || folder.mode !== "blog") return null;
   if (!categoryPathFromFolderPath(folder.path)) return null;
 
-  const posts = await getFolderPosts(handle, folder.path, {
-    publishedOnly: true,
-  });
+  const posts = options.publicOnly
+    ? (await getPublicPostLocations(handle))
+        .filter((location) => location.folderPath === folder.path)
+        .map((location) => location.post)
+    : await getFolderPosts(handle, folder.path, { publishedOnly: true });
+  if (options.publicOnly && posts.length === 0) return null;
   return { folder, folders, posts };
 }
 
@@ -115,11 +130,12 @@ export function categoryBreadcrumbs(
   blog: Pick<Blog, "handle" | "name" | "username">,
   folder: Folder,
   folders: Folder[],
+  options: { publicOrigin?: boolean } = {},
 ): CategoryBreadcrumb[] {
   const byPath = new Map(folders.map((entry) => [entry.path, entry]));
   const crumbs: CategoryBreadcrumb[] = [
     {
-      href: blogHomePath(blog),
+      href: options.publicOrigin ? "/" : blogHomePath(blog),
       label: blog.name.trim() || "Blog",
     },
   ];
@@ -134,7 +150,9 @@ export function categoryBreadcrumbs(
       href:
         crumbFolder.path === folder.path
           ? null
-          : blogCategoryPath(blog, crumbFolder),
+          : options.publicOrigin
+            ? workspaceCategoryPath(crumbFolder)
+            : blogCategoryPath(blog, crumbFolder),
       label: crumbFolder.name,
     });
   }
@@ -146,13 +164,16 @@ export function categoryChipForPost(
   blog: Pick<Blog, "handle" | "username">,
   post: Post,
   folders: Folder[],
+  options: { publicOrigin?: boolean } = {},
 ): CategoryChip | null {
   if (post.status !== "published" || !post.folderId) return null;
   const folder = folders.find((entry) => entry.id === post.folderId) ?? null;
   if (!folder || folder.mode !== "blog") return null;
   if (!categoryPathFromFolderPath(folder.path)) return null;
   return {
-    href: blogCategoryPath(blog, folder),
+    href: options.publicOrigin
+      ? workspaceCategoryPath(folder)
+      : blogCategoryPath(blog, folder),
     label: folder.name,
   };
 }

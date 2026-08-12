@@ -69,6 +69,7 @@ import {
   oauthAuthorizationCodes,
   oauthRefreshTokenFamilies,
   posts,
+  publicUrlTombstones,
   userIdentities,
   users,
   verificationTokens,
@@ -203,7 +204,7 @@ export type BlogPatch = {
   homeLayout?: BlogHomeLayout;
   username?: string;
 };
-export type AdjacentPostLink = Pick<Post, "slug" | "title">;
+export type AdjacentPostLink = Pick<Post, "id" | "folderId" | "slug" | "title">;
 export type AdjacentPublishedPosts = {
   previous: AdjacentPostLink | null;
   next: AdjacentPostLink | null;
@@ -613,6 +614,57 @@ export async function getPosts(handle: string): Promise<Post[]> {
   return getPostsCached(handle);
 }
 
+export type PublicPostLocation = {
+  folderPath: string;
+  post: Post;
+};
+
+async function getPublicPostLocationsUncached(
+  handle: string,
+): Promise<PublicPostLocation[]> {
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle) return [];
+    return DEMO_POSTS.filter(isPublicDocument).map((post) => ({
+      folderPath: BLOG_FOLDER_PATH,
+      post: withoutPersonalWorkspaceMetadata(post),
+    }));
+  }
+  const rows = await db
+    .select({ folderPath: folders.path, post: posts })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .innerJoin(folders, eq(posts.folderId, folders.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        eq(posts.visibility, "public"),
+        ne(posts.type, "note"),
+        ne(posts.type, "bookmark"),
+        isNull(blogs.deletedAt),
+        isNull(posts.deletedAt),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .orderBy(
+      desc(posts.pinned),
+      desc(posts.publishedAt),
+      desc(posts.createdAt),
+    );
+  return rows.map((row) => ({
+    folderPath: row.folderPath,
+    post: withoutPersonalWorkspaceMetadata(mapPost(row.post)),
+  }));
+}
+
+const getPublicPostLocationsCached = cache(getPublicPostLocationsUncached);
+
+/** The one leak-safe source for public pages and every public side channel. */
+export async function getPublicPostLocations(
+  handle: string,
+): Promise<PublicPostLocation[]> {
+  return getPublicPostLocationsCached(handle);
+}
+
 async function getPostsForTagUncached(
   handle: string,
   tagInput: string,
@@ -698,19 +750,28 @@ export async function countAllPosts(handle: string): Promise<number> {
 
 export async function getAdjacentPublishedPosts(
   handle: string,
-  slug: string,
+  postKey: string,
 ): Promise<AdjacentPublishedPosts> {
   const published = await getPosts(handle);
-  const index = published.findIndex((post) => post.slug === slug);
+  const index = published.findIndex(
+    (post) => post.id === postKey || post.slug === postKey,
+  );
   if (index < 0) return { previous: null, next: null };
 
   const previous = published[index - 1];
   const next = published[index + 1];
   return {
     previous: previous
-      ? { slug: previous.slug, title: previous.title }
+      ? {
+          id: previous.id,
+          folderId: previous.folderId,
+          slug: previous.slug,
+          title: previous.title,
+        }
       : null,
-    next: next ? { slug: next.slug, title: next.title } : null,
+    next: next
+      ? { id: next.id, folderId: next.folderId, slug: next.slug, title: next.title }
+      : null,
   };
 }
 
@@ -748,10 +809,182 @@ export async function getPost(
   return getPostCached(handle, slug);
 }
 
+/** One live item at its folder-qualified workspace location, regardless of visibility. */
+export async function getPostByFolderPath(
+  handle: string,
+  folderPath: string,
+  slug: string,
+): Promise<Post | null> {
+  if (!isSafePostSlug(slug)) return null;
+  if (!db) {
+    if (handle !== DEMO_BLOG.handle || folderPath !== BLOG_FOLDER_PATH) return null;
+    return DEMO_POSTS.find((post) => post.slug === slug) ?? null;
+  }
+  const [row] = await db
+    .select({ post: posts })
+    .from(posts)
+    .innerJoin(blogs, eq(posts.blogId, blogs.id))
+    .innerJoin(folders, eq(posts.folderId, folders.id))
+    .where(
+      and(
+        eq(blogs.handle, handle),
+        eq(folders.path, folderPath),
+        eq(posts.slug, slug),
+        isNull(blogs.deletedAt),
+        isNull(folders.deletedAt),
+        isNull(posts.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ? mapPost(row.post) : null;
+}
+
 export type PostSlugResolution =
   | { kind: "exact"; post: Post }
   | { kind: "history"; post: Post }
   | { kind: "tombstone" | "ambiguous" | "missing" };
+
+export type PublicPostPathResolution =
+  | { kind: "exact"; folderPath: string; post: Post }
+  | { kind: "redirect"; folderPath: string; post: Post }
+  | { kind: "missing" };
+
+function publicPathFor(folderPath: string, slug: string): string {
+  return `${folderPath}/${slug}`;
+}
+
+async function publicPostLocationById(
+  blogId: string,
+  postId: string,
+): Promise<{ folderPath: string; post: Post } | null> {
+  const [row] = await db!
+    .select({ folderPath: folders.path, post: posts })
+    .from(posts)
+    .innerJoin(folders, eq(posts.folderId, folders.id))
+    .where(
+      and(
+        eq(posts.blogId, blogId),
+        eq(posts.id, postId),
+        isNull(posts.deletedAt),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row || !isPublicDocument(mapPost(row.post))) return null;
+  return { folderPath: row.folderPath, post: withoutPersonalWorkspaceMetadata(mapPost(row.post)) };
+}
+
+/**
+ * Resolve one folder-qualified public path. Private, draft, deleted, unknown,
+ * and dead-tombstone paths deliberately collapse to the same `missing` result.
+ */
+export async function resolvePublicPostPath(
+  handle: string,
+  folderPath: string,
+  slug: string,
+): Promise<PublicPostPathResolution> {
+  if (!isSafePostSlug(slug)) return { kind: "missing" };
+  if (!db) {
+    const post =
+      handle === DEMO_BLOG.handle && folderPath === BLOG_FOLDER_PATH
+        ? DEMO_POSTS.find(
+            (candidate) => candidate.slug === slug && isPublicDocument(candidate),
+          )
+        : undefined;
+    return post
+      ? { kind: "exact", folderPath, post: withoutPersonalWorkspaceMetadata(post) }
+      : { kind: "missing" };
+  }
+
+  const blog = await getBlogCore(handle);
+  if (!blog) return { kind: "missing" };
+  const path = publicPathFor(folderPath, slug);
+  const [exact, tombstone] = await Promise.all([
+    db
+      .select({ folderPath: folders.path, post: posts })
+      .from(posts)
+      .innerJoin(folders, eq(posts.folderId, folders.id))
+      .where(
+        and(
+          eq(posts.blogId, blog.id),
+          eq(folders.path, folderPath),
+          eq(posts.slug, slug),
+          isNull(posts.deletedAt),
+          isNull(folders.deletedAt),
+        ),
+      )
+      .limit(1),
+    db
+      .select({ postId: publicUrlTombstones.postId })
+      .from(publicUrlTombstones)
+      .where(
+        and(
+          eq(publicUrlTombstones.blogId, blog.id),
+          eq(publicUrlTombstones.path, path),
+        ),
+      )
+      .limit(1),
+  ]);
+
+  const exactRow = exact[0];
+  const reservedFor = tombstone[0]?.postId;
+  if (exactRow) {
+    const post = mapPost(exactRow.post);
+    if (
+      !isPublicDocument(post) ||
+      (tombstone.length > 0 && reservedFor !== post.id)
+    ) {
+      return { kind: "missing" };
+    }
+    return {
+      kind: "exact",
+      folderPath: exactRow.folderPath,
+      post: withoutPersonalWorkspaceMetadata(post),
+    };
+  }
+
+  if (!reservedFor) return { kind: "missing" };
+  const target = await publicPostLocationById(blog.id, reservedFor);
+  return target ? { kind: "redirect", ...target } : { kind: "missing" };
+}
+
+/** A pre-migration flat URL resolves only through its frozen original owner. */
+export async function resolveLegacyPublicSlug(
+  handle: string,
+  slug: string,
+): Promise<PublicPostPathResolution> {
+  if (!isSafePostSlug(slug)) return { kind: "missing" };
+  if (!db) {
+    const post =
+      handle === DEMO_BLOG.handle
+        ? DEMO_POSTS.find(
+            (candidate) => candidate.slug === slug && isPublicDocument(candidate),
+          )
+        : undefined;
+    return post
+      ? {
+          kind: "redirect",
+          folderPath: BLOG_FOLDER_PATH,
+          post: withoutPersonalWorkspaceMetadata(post),
+        }
+      : { kind: "missing" };
+  }
+  const blog = await getBlogCore(handle);
+  if (!blog) return { kind: "missing" };
+  const [legacy] = await db
+    .select({ postId: publicUrlTombstones.postId })
+    .from(publicUrlTombstones)
+    .where(
+      and(
+        eq(publicUrlTombstones.blogId, blog.id),
+        eq(publicUrlTombstones.path, `@legacy/${slug}`),
+      ),
+    )
+    .limit(1);
+  if (!legacy?.postId) return { kind: "missing" };
+  const target = await publicPostLocationById(blog.id, legacy.postId);
+  return target ? { kind: "redirect", ...target } : { kind: "missing" };
+}
 
 /**
  * Resolve a current slug or historical alias from one tenant-scoped database
@@ -1796,11 +2029,20 @@ export async function setPostFolder(
     .limit(1);
   const row = existing[0];
   if (!row) throw new Error("Post not found");
-  const updated = await db
-    .update(posts)
-    .set({ folderId: folder.id, updatedAt: new Date() })
-    .where(eq(posts.id, row.id))
-    .returning();
+  if (row.visibility === "public" && row.folderId !== folder.id) {
+    await assertPublicPathAvailable(blogId, folder.path, row.slug, row.id);
+  }
+  let updated: PostRow[];
+  try {
+    updated = await db
+      .update(posts)
+      .set({ folderId: folder.id, updatedAt: new Date() })
+      .where(eq(posts.id, row.id))
+      .returning();
+  } catch (error) {
+    if (isPostsSlugConflict(error)) throw new Error("That URL is already used");
+    throw error;
+  }
   if (!updated[0]) return null;
   await recordAction({
     actorType: "human",
@@ -1863,6 +2105,7 @@ export async function movePostFile(
   } = {
     updatedAt: new Date(),
   };
+  let destinationFolderPath: string | undefined;
 
   if (changes.folderId !== undefined) {
     const target = await db
@@ -1882,6 +2125,7 @@ export async function movePostFile(
     // would still run the update and bump the revision, making a same-folder
     // PATCH look like a change to every client.
     if (folder.id !== row.folderId) set.folderId = folder.id;
+    destinationFolderPath = folder.path;
   }
 
   if (changes.slug !== undefined) {
@@ -1913,6 +2157,22 @@ export async function movePostFile(
     set.title === undefined
   ) {
     return { post: mapPost(row), changed: false, previousSlug: row.slug };
+  }
+
+  if (row.visibility === "public" && (set.folderId || set.slug)) {
+    if (!destinationFolderPath) {
+      const currentFolder = row.folderId
+        ? await getFolderById(handle, row.folderId)
+        : await getFolderByPath(handle, BLOG_FOLDER_PATH);
+      destinationFolderPath = currentFolder?.path;
+    }
+    if (!destinationFolderPath) throw new Error("Folder not found");
+    await assertPublicPathAvailable(
+      blogId,
+      destinationFolderPath,
+      set.slug ?? row.slug,
+      row.id,
+    );
   }
 
   // The revision guard makes the move atomic: if a concurrent writer committed
@@ -1969,7 +2229,7 @@ export async function movePostFile(
     if (changes.expectedRevision !== undefined) throw new PostConflictError();
     return null;
   } catch (error) {
-    if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
+    if (isPostsSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
   }
 }
@@ -2202,7 +2462,7 @@ export async function backfillWorkspaceAgentGuides(): Promise<{
       .insert(posts)
       .values(starterAgentGuideValues(workspace.id, notesFolder.id))
       .onConflictDoNothing({
-        target: [posts.blogId, posts.slug],
+        target: [posts.folderId, posts.slug],
         where: sql`${posts.deletedAt} is null`,
       })
       .returning({ id: posts.id });
@@ -3980,7 +4240,7 @@ export async function setPostCreatedAt(
   return mapPost(updated[0]);
 }
 
-function isPostsBlogSlugConflict(error: unknown): boolean {
+function isPostsSlugConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as {
     code?: unknown;
@@ -3994,8 +4254,40 @@ function isPostsBlogSlugConflict(error: unknown): boolean {
   const message =
     typeof candidate.message === "string" ? candidate.message : "";
   const detail = typeof candidate.detail === "string" ? candidate.detail : "";
-  if (constraint === "posts_blog_slug_idx") return true;
-  return code === "23505" && (message + detail).includes("posts_blog_slug_idx");
+  if (
+    constraint === "posts_folder_slug_idx" ||
+    constraint === "posts_blog_slug_idx" ||
+    constraint === "public_url_tombstones_blog_path_idx"
+  ) {
+    return true;
+  }
+  return (
+    code === "23505" &&
+    /(?:posts_(?:folder|blog)_slug_idx|public_url_tombstones_blog_path_idx)/.test(
+      message + detail,
+    )
+  );
+}
+
+async function assertPublicPathAvailable(
+  blogId: string,
+  folderPath: string,
+  slug: string,
+  postId?: string,
+): Promise<void> {
+  const [reserved] = await db!
+    .select({ postId: publicUrlTombstones.postId })
+    .from(publicUrlTombstones)
+    .where(
+      and(
+        eq(publicUrlTombstones.blogId, blogId),
+        eq(publicUrlTombstones.path, publicPathFor(folderPath, slug)),
+      ),
+    )
+    .limit(1);
+  if (reserved && reserved.postId !== postId) {
+    throw new Error("That URL is already used");
+  }
 }
 
 export type PostContentPatch = Partial<
@@ -4236,6 +4528,13 @@ export async function savePost(
     ? await getFolderById(handle, post.folderId)
     : await folderForPostType(blogId, compatibilityType);
   if (!insertFolder) throw new Error("Folder not found");
+  const saveFolder = existingRow?.folderId
+    ? await getFolderById(handle, existingRow.folderId)
+    : insertFolder;
+  if (!saveFolder) throw new Error("Folder not found");
+  if (status === "published") {
+    await assertPublicPathAvailable(blogId, saveFolder.path, slug, post.id);
+  }
   const base = {
     document,
     visibility,
@@ -4323,14 +4622,14 @@ export async function savePost(
       // The unique index is partial (deleted_at is null), so the conflict
       // target must match it; trashed rows never absorb a new post's save.
       .onConflictDoUpdate({
-        target: [posts.blogId, posts.slug],
+        target: [posts.folderId, posts.slug],
         targetWhere: sql`${posts.deletedAt} is null`,
         set,
       })
       .returning();
     return recordPostSave(mapPost(inserted[0]), options.audit);
   } catch (error) {
-    if (isPostsBlogSlugConflict(error)) throw new Error("That URL is already used");
+    if (isPostsSlugConflict(error)) throw new Error("That URL is already used");
     throw error;
   }
 }

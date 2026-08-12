@@ -1,5 +1,6 @@
 import type { Blog, Post } from "@/lib/content";
 import { RESERVED_USERNAMES } from "@/lib/reserved-names";
+import { rootDomainUrl } from "@/lib/site-url";
 
 export { RESERVED_USERNAMES };
 
@@ -54,6 +55,49 @@ export function tenantTagPath(handle: string, tag: string): string {
   return `${tenantHomePath(handle)}/tags/${encodeURIComponent(tag)}`;
 }
 
+const PUBLIC_FOLDER_SEGMENT_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** Stored folder paths are already URL-safe; reject drift instead of encoding it. */
+export function publicFolderPath(folderPath: string): string | null {
+  const segments = folderPath.split("/");
+  if (
+    segments.length === 0 ||
+    segments.some((segment) => !PUBLIC_FOLDER_SEGMENT_RE.test(segment))
+  ) {
+    return null;
+  }
+  return segments.map(encodeURIComponent).join("/");
+}
+
+/** Folder-in-path location on a workspace's sessionless public origin. */
+export function workspacePublicPostPath(
+  folderPath: string,
+  slug: string,
+): string | null {
+  const folder = publicFolderPath(folderPath);
+  if (!folder || !slug) return null;
+  return `/${folder}/${encodeURIComponent(slug)}`;
+}
+
+/** Absolute origin owned by the workspace namespace, never by a person. */
+export function workspacePublicBaseUrl(handle: string): string {
+  const url = rootDomainUrl();
+  url.hostname = `${handle.toLowerCase()}.${url.hostname}`;
+  url.pathname = "/";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
+export function workspacePublicPostUrl(
+  handle: string,
+  folderPath: string,
+  slug: string,
+): string | null {
+  const path = workspacePublicPostPath(folderPath, slug);
+  return path ? `${workspacePublicBaseUrl(handle)}${path}` : null;
+}
+
 export function blogHomePath(blog: Pick<Blog, "handle" | "username">): string {
   return blog.username ? usernameHomePath(blog.username) : tenantHomePath(blog.handle);
 }
@@ -65,6 +109,26 @@ export function blogPostPath(
   return blog.username
     ? usernamePostPath(blog.username, post.slug)
     : tenantPostPath(blog.handle, post.slug);
+}
+
+export function blogWorkspacePostPath(
+  blog: Pick<Blog, "handle" | "username">,
+  folderPath: string,
+  post: Pick<Post, "slug">,
+): string {
+  const folder = publicFolderPath(folderPath);
+  if (!folder) return blogPostPath(blog, post);
+  return `${blogHomePath(blog)}/${folder}/${encodeURIComponent(post.slug)}`;
+}
+
+export function blogWorkspacePostEditPath(
+  blog: Pick<Blog, "handle" | "username">,
+  folderPath: string,
+  post: Pick<Post, "id" | "slug">,
+): string {
+  const params = new URLSearchParams({ edit: "1" });
+  if (post.id) params.set("id", post.id);
+  return `${blogWorkspacePostPath(blog, folderPath, post)}?${params}`;
 }
 
 export function blogTagPath(

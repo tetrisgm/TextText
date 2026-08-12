@@ -4,18 +4,19 @@ import {
   blogBaseUrl,
   folderJsonUrl,
   llmsTxtUrl,
+  locatedPostMarkdownUrl,
+  locatedPostUrl,
   markdownLinkText,
   notFound,
   oneLine,
   pipeDelimitedValue,
   plainTextSummary,
   postIsoDate,
-  postMarkdownUrl,
-  postUrl,
   postsJsonUrl,
   publishedNewestFirst,
 } from "@/lib/agent-surface";
-import { getBlog, getPosts } from "@/lib/store";
+import { getBlog, getPublicPostLocations } from "@/lib/store";
+import type { PublicPostLocation } from "@/lib/store";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -23,19 +24,31 @@ interface Props {
 
 export async function GET(_request: Request, { params }: Props) {
   const { handle } = await params;
-  const [blog, posts] = await Promise.all([getBlog(handle), getPosts(handle)]);
+  const [blog, locations] = await Promise.all([
+    getBlog(handle),
+    getPublicPostLocations(handle),
+  ]);
   if (!blog) return notFound();
 
   const baseUrl = blogBaseUrl(blog);
 
-  return new Response(renderLlmsTxt(blog, publishedNewestFirst(posts), baseUrl), {
+  const posts = publishedNewestFirst(locations.map((location) => location.post));
+  const orderedLocations = posts.map(
+    (post) => locations.find((candidate) => candidate.post.id === post.id)!,
+  );
+  return new Response(renderLlmsTxt(blog, posts, orderedLocations, baseUrl), {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
     },
   });
 }
 
-function renderLlmsTxt(blog: Blog, posts: Post[], baseUrl: string): string {
+function renderLlmsTxt(
+  blog: Blog,
+  posts: Post[],
+  locations: PublicPostLocation[],
+  baseUrl: string,
+): string {
   const lines = [
     `# ${oneLine(blog.name)}`,
     "",
@@ -57,14 +70,15 @@ function renderLlmsTxt(blog: Blog, posts: Post[], baseUrl: string): string {
   if (posts.length === 0) {
     lines.push("No published posts.");
   } else {
-    for (const post of posts) {
+    for (const [index, post] of posts.entries()) {
+      const location = locations[index]!;
       const date = postIsoDate(post);
       const fields = [
-        `- [${pipeDelimitedValue(markdownLinkText(post.title))}](${postMarkdownUrl(baseUrl, post.slug)})`,
+        `- [${pipeDelimitedValue(markdownLinkText(post.title))}](${locatedPostMarkdownUrl(baseUrl, location)})`,
       ];
       if (date) fields.push(`Date: ${date}`);
       fields.push(
-        `Canonical: ${postUrl(baseUrl, post.slug)}`,
+        `Canonical: ${locatedPostUrl(baseUrl, location)}`,
         `Summary: ${pipeDelimitedValue(plainTextSummary(postBodyPreview(post)))}`,
       );
       lines.push(fields.join(" | "));

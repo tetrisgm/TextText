@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { CategoryListing } from "@/components/CategoryListing";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
 import {
   blogCategoryPath,
   resolveCategory,
+  workspaceCategoryPath,
 } from "@/lib/categories";
+import { workspacePublicBaseUrl } from "@/lib/public-paths";
+import { isPublicOriginRequest } from "@/lib/public-origin";
 import { getBlog } from "@/lib/store";
 
 interface Props {
@@ -20,12 +24,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle, path } = await params;
   const blog = await getBlog(handle);
   if (!blog) return {};
-  const category = await resolveCategory(handle, path);
+  const category = await resolveCategory(handle, path, { publicOnly: true });
   if (!category) return {};
   return {
     title: `${categoryTitle(category.folder.name)} · ${blog.name}`,
     description: `Published posts in ${category.folder.name}.`,
     alternates: {
+      canonical: `${workspacePublicBaseUrl(handle)}${workspaceCategoryPath(path)}`,
       types: blogFeedAlternateTypes(blog, blog.name),
     },
   };
@@ -42,11 +47,12 @@ export async function CategoryPageForHandle({
 }) {
   const blog = await getBlog(handle);
   if (!blog) notFound();
-  if (redirectClaimed && blog.username) {
+  const publicOrigin = isPublicOriginRequest(await headers());
+  if (!publicOrigin && redirectClaimed && blog.username) {
     redirect(blogCategoryPath(blog, path));
   }
 
-  const category = await resolveCategory(handle, path);
+  const category = await resolveCategory(handle, path, { publicOnly: publicOrigin });
   if (!category) notFound();
 
   return (
@@ -56,6 +62,7 @@ export async function CategoryPageForHandle({
       folders={category.folders}
       handle={handle}
       posts={category.posts}
+      publicOrigin={publicOrigin}
     />
   );
 }

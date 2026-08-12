@@ -312,7 +312,7 @@ function timestampForAdjacent(post: WorkspacePoolPost): string {
 
 export function adjacentPublishedPostsForPool(
   pool: WorkspacePoolPayload,
-  slug: string,
+  postKey: string,
 ): AdjacentPublishedPosts {
   const published = pool.posts
     .filter((post) => post.visibility === "public")
@@ -323,14 +323,23 @@ export function adjacentPublishedPostsForPool(
       }
       return timestampForAdjacent(b).localeCompare(timestampForAdjacent(a));
     });
-  const index = published.findIndex((post) => post.slug === slug);
+  const index = published.findIndex(
+    (post) => post.id === postKey || post.slug === postKey,
+  );
   if (index < 0) return { previous: null, next: null };
   const previous = published[index - 1];
   const next = published[index + 1];
   return {
     previous: previous
-      ? { slug: previous.slug, title: previous.title }
+      ? {
+          id: previous.id,
+          folderId: previous.folderId,
+          slug: previous.slug,
+          title: previous.title,
+        }
       : null,
-    next: next ? { slug: next.slug, title: next.title } : null,
+    next: next
+      ? { id: next.id, folderId: next.folderId, slug: next.slug, title: next.title }
+      : null,
   };
 }

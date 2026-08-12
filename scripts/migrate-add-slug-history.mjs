@@ -74,6 +74,168 @@ async function main() {
       ON posts USING gin (slug_history)
   `;
 
+  console.log("Scoping live slugs to their folders...");
+  await sql`
+    INSERT INTO folders (blog_id, name, path, mode, position)
+    SELECT b.id, seed.name, seed.path, seed.mode, seed.position
+    FROM blogs AS b
+    CROSS JOIN (VALUES
+      ('Blog', 'blog', 'blog', 0),
+      ('Notes', 'notes', 'notes', 1),
+      ('Bookmarks', 'bookmarks', 'bookmarks', 2)
+    ) AS seed(name, path, mode, position)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM folders AS f
+        WHERE f.blog_id = b.id
+          AND f.path = seed.path
+          AND f.deleted_at IS NULL
+      )
+  `;
+  await sql`
+    UPDATE posts AS p
+    SET folder_id = f.id
+    FROM folders AS f
+    WHERE p.folder_id IS NULL
+      AND f.blog_id = p.blog_id
+      AND f.path = CASE
+        WHEN p.type = 'note' THEN 'notes'
+        WHEN p.type = 'bookmark' THEN 'bookmarks'
+        ELSE 'blog'
+      END
+      AND f.deleted_at IS NULL
+  `;
+  await sql`ALTER TABLE posts ALTER COLUMN folder_id SET NOT NULL`;
+  await sql`DROP INDEX IF EXISTS posts_blog_slug_idx`;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS posts_folder_slug_idx
+      ON posts (folder_id, slug)
+      WHERE deleted_at IS NULL
+  `;
+
+  console.log("Installing durable public-URL tombstones...");
+  await sql`
+    CREATE TABLE IF NOT EXISTS public_url_tombstones (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      blog_id uuid NOT NULL REFERENCES blogs(id) ON DELETE CASCADE,
+      path text NOT NULL,
+      post_id uuid REFERENCES posts(id) ON DELETE SET NULL,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS public_url_tombstones_blog_path_idx
+      ON public_url_tombstones (blog_id, path)
+  `;
+  // Freeze the owner of every URL that existed before folder-qualified public
+  // routes. New per-folder duplicates must never capture one of those links.
+  await sql`
+    INSERT INTO public_url_tombstones (blog_id, path, post_id)
+    SELECT blog_id, '@legacy/' || slug, id
+    FROM posts
+    WHERE deleted_at IS NULL
+      AND visibility = 'public'
+      AND type NOT IN ('note', 'bookmark')
+    ON CONFLICT (blog_id, path) DO NOTHING
+  `;
+  await sql`
+    WITH aliases AS (
+      SELECT blog_id, unnest(slug_history) AS slug, id AS post_id
+      FROM posts
+      WHERE deleted_at IS NULL
+        AND visibility = 'public'
+        AND type NOT IN ('note', 'bookmark')
+    ), unique_aliases AS (
+      SELECT blog_id, slug, min(post_id::text)::uuid AS post_id
+      FROM aliases
+      WHERE slug <> ''
+      GROUP BY blog_id, slug
+      HAVING count(DISTINCT post_id) = 1
+    )
+    INSERT INTO public_url_tombstones (blog_id, path, post_id)
+    SELECT blog_id, '@legacy/' || slug, post_id FROM unique_aliases
+    ON CONFLICT (blog_id, path) DO NOTHING
+  `;
+  await sql`
+    CREATE OR REPLACE FUNCTION guard_public_post_path() RETURNS trigger AS $$
+    DECLARE
+      new_folder_path text;
+      new_public_path text;
+      reserved_for uuid;
+    BEGIN
+      IF NEW.visibility <> 'public'
+         OR NEW.type IN ('note', 'bookmark')
+         OR NEW.deleted_at IS NOT NULL THEN
+        RETURN NEW;
+      END IF;
+      SELECT path INTO new_folder_path FROM folders WHERE id = NEW.folder_id;
+      new_public_path := new_folder_path || '/' || NEW.slug;
+      PERFORM pg_advisory_xact_lock(
+        hashtextextended(NEW.blog_id::text || ':' || new_public_path, 0)
+      );
+      SELECT post_id INTO reserved_for
+      FROM public_url_tombstones
+      WHERE blog_id = NEW.blog_id AND path = new_public_path;
+      IF FOUND AND reserved_for IS DISTINCT FROM NEW.id THEN
+        RAISE EXCEPTION 'public URL is reserved'
+          USING ERRCODE = 'unique_violation',
+                CONSTRAINT = 'public_url_tombstones_blog_path_idx';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `;
+  await sql`DROP TRIGGER IF EXISTS posts_guard_public_path ON posts`;
+  await sql`
+    CREATE TRIGGER posts_guard_public_path
+      BEFORE INSERT OR UPDATE OF blog_id, folder_id, slug, visibility, deleted_at ON posts
+      FOR EACH ROW EXECUTE FUNCTION guard_public_post_path()
+  `;
+  await sql`
+    CREATE OR REPLACE FUNCTION preserve_public_post_path() RETURNS trigger AS $$
+    DECLARE
+      old_folder_path text;
+      old_public_path text;
+      leaves_public_path boolean;
+    BEGIN
+      IF OLD.visibility <> 'public'
+         OR OLD.type IN ('note', 'bookmark')
+         OR OLD.deleted_at IS NOT NULL THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+      END IF;
+
+      leaves_public_path := TG_OP = 'DELETE'
+        OR NEW.deleted_at IS NOT NULL
+        OR NEW.visibility <> 'public'
+        OR NEW.blog_id IS DISTINCT FROM OLD.blog_id
+        OR NEW.folder_id IS DISTINCT FROM OLD.folder_id
+        OR NEW.slug IS DISTINCT FROM OLD.slug;
+      IF NOT leaves_public_path THEN
+        RETURN NEW;
+      END IF;
+
+      SELECT path INTO old_folder_path FROM folders WHERE id = OLD.folder_id;
+      old_folder_path := COALESCE(old_folder_path, 'blog');
+      old_public_path := old_folder_path || '/' || OLD.slug;
+      PERFORM pg_advisory_xact_lock(
+        hashtextextended(OLD.blog_id::text || ':' || old_public_path, 0)
+      );
+
+      INSERT INTO public_url_tombstones (blog_id, path, post_id, updated_at)
+      VALUES (OLD.blog_id, old_public_path, OLD.id, now())
+      ON CONFLICT (blog_id, path) DO NOTHING;
+
+      RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END;
+    $$ LANGUAGE plpgsql
+  `;
+  await sql`DROP TRIGGER IF EXISTS posts_preserve_public_path ON posts`;
+  await sql`
+    CREATE TRIGGER posts_preserve_public_path
+      BEFORE UPDATE OF blog_id, folder_id, slug, visibility, deleted_at OR DELETE ON posts
+      FOR EACH ROW EXECUTE FUNCTION preserve_public_post_path()
+  `;
+
   const [summary] = await sql`
     SELECT
       count(*)::int AS posts,
