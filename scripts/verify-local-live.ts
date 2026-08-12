@@ -24,6 +24,7 @@ if (!["localhost", "127.0.0.1", "::1"].includes(databaseHost)) {
 // through that same public origin so OAuth's same-origin approval check tests
 // the real browser contract instead of an equivalent 127.0.0.1 alias.
 const origin = `http://localhost:${port}`;
+const rootDomain = `localhost:${port}`;
 const evaluationDistDir = ".texttext/next-live-eval";
 const evaluationDistPath = join(process.cwd(), evaluationDistDir);
 const commandTimeoutMilliseconds = 300_000;
@@ -129,6 +130,7 @@ async function runBounded(
     env: {
       ...process.env,
       AUTH_DEV_LOGIN: "1",
+      NEXT_PUBLIC_ROOT_DOMAIN: rootDomain,
       NEXT_TELEMETRY_DISABLED: "1",
       TEXTTEXT_ORIGIN: origin,
     },
@@ -177,6 +179,7 @@ async function main() {
       env: {
         ...process.env,
         AUTH_DEV_LOGIN: "1",
+        NEXT_PUBLIC_ROOT_DOMAIN: rootDomain,
         NEXT_TELEMETRY_DISABLED: "1",
         TEXTTEXT_NEXT_DIST_DIR: evaluationDistDir,
         TEXTTEXT_ORIGIN: origin,

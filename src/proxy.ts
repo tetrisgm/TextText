@@ -5,6 +5,7 @@ import { usernameFromAtPath } from "@/lib/public-paths";
 import { tenantFromHost } from "@/lib/tenants";
 import {
   genericPublicNotFound,
+  isPublicOriginRequest,
   sessionlessPublicRequestHeaders,
 } from "@/lib/public-origin";
 import { getBlog, resolvePublicPostPath } from "@/lib/store";
@@ -38,6 +39,7 @@ export async function proxy(request: NextRequest) {
   );
   if (
     rootTenantPath &&
+    !isPublicOriginRequest(request.headers) &&
     !["c", "tags", "public-assets"].includes(rootTenantPath[1] ?? "") &&
     !request.headers.get("cookie") &&
     !request.headers.get("authorization")
@@ -52,6 +54,7 @@ export async function proxy(request: NextRequest) {
   // A tenant host asking for /t/... is not a real route; never double-rewrite.
   // Answer 404 directly from the proxy instead of rewriting to a phantom path.
   if (url.pathname.startsWith("/t/")) {
+    if (isPublicOriginRequest(request.headers)) return NextResponse.next();
     return new Response("Not found", { status: 404 });
   }
   const publicPath = url.pathname === "/" ? "" : url.pathname;

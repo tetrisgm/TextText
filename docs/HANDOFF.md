@@ -971,3 +971,21 @@ sitemaps. Account-deletion copy, connector examples, local demo links, release
 health fixtures, and architecture documentation now use workspace subdomains
 and folder-qualified paths rather than presenting legacy `/t` or `/@` routes
 as public addresses.
+
+## Tenant article rewrite regression found by the release gate (2026-08-11)
+
+The first 0.175 release attempt stopped before production mutation when the
+live generation proof followed its retired `/@` URL. Updating that proof to
+the workspace URL exposed a real proxy fault: Next evaluates the rewritten
+`/t/<handle>/<folder>/<slug>` path a second time, and the direct-legacy-path
+guard rejected the proxy's own sessionless-public rewrite. Workspace homes and
+robots were unaffected because their internal paths did not match that guard.
+
+Marked internal public rewrites now pass through instead of being rejected or
+rewritten twice. An unmarked direct root-origin folder path still returns the
+same generic 404. The generation proof sets the local root domain explicitly,
+preserves the workspace Host header through Node's HTTP client, and verifies
+the composed public reader at
+`http://generation.localhost:<port>/blog/chateau-musar-2017`. The focused live
+proof passes with the tenant article at 200, while cross-workspace and direct
+legacy probes remain 404. Production was still untouched when this was found.
