@@ -184,6 +184,7 @@ let package = Package(
             name: "TextTextTests",
             dependencies: [
                 "TextTextApp",
+                "TextTextWorkspaceCore",
                 "TextTextFileProviderExtensionCore",
                 "TextTextFileProviderBridge",
                 "TextTextFileProviderKit",
