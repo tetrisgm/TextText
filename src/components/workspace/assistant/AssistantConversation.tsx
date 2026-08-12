@@ -128,7 +128,7 @@ export function AssistantConversation({
             ? "Ask about what you are looking at, or start with one of these."
             : nativeConnection?.state === "runtime-missing"
               ? "The embedded agent is available in the Mac app. You can connect another AI app or add an API key to start here."
-              : "Connect ChatGPT to use an agent directly inside TextText, or choose another connection path in Settings."}
+              : "Connect an AI provider. Connect ChatGPT to use an agent directly inside TextText, or choose another connection path in Settings."}
         </p>
         {!cloudProvider && nativeConnection?.state !== "ready" && (
           <div className={styles.examples} aria-label="AI connection choices">

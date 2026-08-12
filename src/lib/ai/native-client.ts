@@ -3,6 +3,7 @@ import type { AiConnectionSnapshot } from "./connection-state";
 export type NativeAssistantEvent =
   | ({ type: "status" } & Partial<AiConnectionSnapshot>)
   | { type: "text-delta"; text: string }
+  | { type: "tool-call"; callId: string; tool: string; arguments: unknown }
   | { type: "error"; message: string };
 
 type NativeWindow = Window & {
@@ -34,6 +35,30 @@ export function requestNativeAssistant(
 
 export function submitNativeAssistantTurn(prompt: string): boolean {
   return requestNativeAssistant("assistantTurn", prompt);
+}
+
+export function registerNativeAssistantTools(
+  tools: ReadonlyArray<{ name: string; description: string; inputSchema: Record<string, unknown> }>,
+): boolean {
+  if (typeof window === "undefined") return false;
+  const current = window as NativeWindow;
+  const handler = current.webkit?.messageHandlers?.textTextApp;
+  if (!current.__TEXTTEXT_APP__ || !handler) return false;
+  handler.postMessage({ action: "assistantTools", tools });
+  return true;
+}
+
+export function submitNativeAssistantToolResult(
+  callId: string,
+  output: unknown,
+  isError = false,
+): boolean {
+  if (typeof window === "undefined") return false;
+  const current = window as NativeWindow;
+  const handler = current.webkit?.messageHandlers?.textTextApp;
+  if (!current.__TEXTTEXT_APP__ || !handler) return false;
+  handler.postMessage({ action: "assistantToolResult", callId, output, isError });
+  return true;
 }
 
 export function subscribeNativeAssistant(

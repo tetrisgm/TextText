@@ -64,8 +64,10 @@ import { formatAssistantSubmission } from "./attachments";
 import { type AssistantViewSnapshot } from "./context";
 import {
   nativeAssistantAvailable,
+  registerNativeAssistantTools,
   requestNativeAssistant,
   subscribeNativeAssistant,
+  submitNativeAssistantToolResult,
   submitNativeAssistantTurn,
 } from "@/lib/ai/native-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
@@ -424,6 +426,13 @@ export function useNativeAssistant({
 
 
   useEffect(() => {
+    if (nativeAssistantAvailable()) {
+      registerNativeAssistantTools(tools.toolDefinitions.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema as Record<string, unknown>,
+      })));
+    }
     const unsubscribe = subscribeNativeAssistant((event) => {
       if (event.type === "status") {
         setNativeConnection((current) => ({
@@ -440,11 +449,21 @@ export function useNativeAssistant({
         }));
       } else if (event.type === "text-delta") {
         appendToThread(threadKey, "assistant", event.text, undefined, "OpenAI");
+      } else if (event.type === "tool-call") {
+        void (async () => {
+          try {
+            const args = typeof event.arguments === "string" ? JSON.parse(event.arguments) : event.arguments;
+            const output = await tools.executor(event.tool as never, args as never);
+            submitNativeAssistantToolResult(event.callId, output);
+          } catch (error) {
+            submitNativeAssistantToolResult(event.callId, { error: assistantAgentError(error) }, true);
+          }
+        })();
       }
     });
     if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
     return unsubscribe;
-  }, []);
+  }, [threadKey, tools]);
 
   useEffect(() => {
     let cancelled = false;

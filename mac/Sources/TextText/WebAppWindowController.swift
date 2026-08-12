@@ -54,6 +54,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var codexServer: CodexAppServerController?
     private var codexRequestCounter = 0
     private var codexThreadID: String?
+    private var codexDynamicTools: [[String: Any]] = []
+    private var codexPendingToolCalls: [String: String] = [:]
 
     static let cacheWebView = true
 
@@ -543,7 +545,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                         "approvalPolicy": "never",
                         "sandboxPolicy": ["type": "readOnly"],
                         "ephemeral": true,
-                        "dynamicTools": [],
+                        "dynamicTools": codexDynamicTools,
                     ])
                 emitCodexEvent([
                     "type": "status",
@@ -566,6 +568,13 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if message.method == "item/agentMessage/delta",
            let delta = message.params?["delta"] as? String {
             emitCodexEvent(["type": "text-delta", "text": delta])
+            return
+        }
+        if message.method == "item/tool/call" {
+            let params = message.rawParams ?? [:]
+            let callId = (params["callId"] as? String) ?? (params["id"] as? String) ?? UUID().uuidString
+            if let requestId = message.id { codexPendingToolCalls[callId] = requestId }
+            emitCodexEvent(["type": "tool-call", "callId": callId, "tool": params["name"] as? String ?? "", "arguments": params["arguments"] ?? [:]])
             return
         }
         if message.method == "turn/completed" {
@@ -612,6 +621,22 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         if body["action"] as? String == "assistantTurn",
            let prompt = body["prompt"] as? String {
             sendCodexTurn(prompt)
+            return
+        }
+        if body["action"] as? String == "assistantTools",
+           let tools = body["tools"] as? [[String: Any]] {
+            codexDynamicTools = tools.map { tool in
+                ["type": "function", "name": tool["name"] ?? "", "description": tool["description"] ?? "", "inputSchema": tool["inputSchema"] ?? [:]]
+            }
+            return
+        }
+        if body["action"] as? String == "assistantToolResult",
+           let callId = body["callId"] as? String,
+           let requestId = codexPendingToolCalls.removeValue(forKey: callId) {
+            let output = body["output"] ?? NSNull()
+            let text: String
+            if let data = try? JSONSerialization.data(withJSONObject: output), let encoded = String(data: data, encoding: .utf8) { text = encoded } else { text = String(describing: output) }
+            try? codexServer?.respond(id: requestId, result: ["contentItems": [["type": "inputText", "text": text]]])
             return
         }
         guard body["action"] as? String == "linked",

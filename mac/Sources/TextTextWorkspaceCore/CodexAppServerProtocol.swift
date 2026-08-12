@@ -9,6 +9,8 @@ public struct CodexAppServerMessage: Equatable {
     public let method: String?
     public let params: [String: AnyHashable]?
     public let result: [String: AnyHashable]?
+    public let rawParams: [String: Any]?
+    public let rawResult: [String: Any]?
     public let errorMessage: String?
 
     public init(data: Data) throws {
@@ -20,12 +22,18 @@ public struct CodexAppServerMessage: Equatable {
         method = dictionary["method"] as? String
         params = dictionary["params"] as? [String: AnyHashable]
         result = dictionary["result"] as? [String: AnyHashable]
+        rawParams = dictionary["params"] as? [String: Any]
+        rawResult = dictionary["result"] as? [String: Any]
         if let error = dictionary["error"] as? [String: Any],
            let message = error["message"] as? String {
             errorMessage = message
         } else {
             errorMessage = nil
         }
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.method == rhs.method && lhs.errorMessage == rhs.errorMessage
     }
 }
 
