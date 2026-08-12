@@ -102,7 +102,8 @@
   gap: 5px;
 }
 
-.examples button {
+.examples button,
+.examples a {
   width: 100%;
   min-height: 34px;
   display: flex;
@@ -117,6 +118,7 @@
   font: 600 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
   letter-spacing: 0;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
   transition:
     background-color 180ms ease,
@@ -124,11 +126,13 @@
     color 180ms ease;
 }
 
-.examples button:hover:not(:disabled) {
+.examples button:hover:not(:disabled),
+.examples a:hover {
   background: var(--ac-fill-3);
 }
 
-.examples button:focus-visible {
+.examples button:focus-visible,
+.examples a:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
 }

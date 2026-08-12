@@ -62,6 +62,12 @@ import { normalizeTags } from "@/lib/tags";
 import type { AssistantAttachment } from "./AssistantSidebar";
 import { formatAssistantSubmission } from "./attachments";
 import { type AssistantViewSnapshot } from "./context";
+import {
+  nativeAssistantAvailable,
+  requestNativeAssistant,
+  subscribeNativeAssistant,
+} from "@/lib/ai/native-client";
+import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -363,6 +369,8 @@ export function useNativeAssistant({
 }: UseNativeAssistantOptions) {
   const [cloudProvider, setCloudProvider] =
     useState<CloudAssistantProviderLabel | null>(null);
+  const [nativeConnection, setNativeConnection] =
+    useState<AiConnectionSnapshot | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
   const readItemTextRef = useRef(readItemText);
@@ -413,6 +421,26 @@ export function useNativeAssistant({
     ],
   );
 
+
+  useEffect(() => {
+    const unsubscribe = subscribeNativeAssistant((event) => {
+      if (event.type !== "status") return;
+      setNativeConnection((current) => ({
+        state: event.state ?? current?.state ?? "unavailable",
+        kind: event.kind ?? current?.kind ?? "native-codex",
+        providerLabel: event.providerLabel ?? current?.providerLabel ?? "Codex with ChatGPT",
+        accountEmail: event.accountEmail ?? current?.accountEmail ?? null,
+        planLabel: event.planLabel ?? current?.planLabel ?? null,
+        runtimeVersion: event.runtimeVersion ?? current?.runtimeVersion ?? null,
+        rateLimitResetAt: event.rateLimitResetAt ?? current?.rateLimitResetAt ?? null,
+        lastHealthCheckAt: event.lastHealthCheckAt ?? current?.lastHealthCheckAt ?? null,
+        embeddedChatSupported: event.embeddedChatSupported ?? current?.embeddedChatSupported ?? false,
+        recoveryAction: event.recoveryAction ?? current?.recoveryAction ?? null,
+      }));
+    });
+    if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -810,6 +838,8 @@ export function useNativeAssistant({
     attachmentTitle,
     applyProposal,
     cloudProvider,
+    nativeConnection,
+    connectNativeAssistant: () => requestNativeAssistant("assistantConnect"),
     deleteSkill,
     jobs,
     messages,

@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import TextTextWorkspaceCore
 
 // WKUserContentController retains its message handler STRONGLY; adding the
 // controller directly would cycle (controller -> webView -> config -> ucc ->
@@ -50,6 +51,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private var startupNavigation: WebAppStartupNavigation
     private var appToken: String?
     private let ocrBridge = NativeOCRBridge()
+    private var codexServer: CodexAppServerController?
+    private var codexRequestCounter = 0
 
     static let cacheWebView = true
 
@@ -419,6 +422,111 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         NSWorkspace.shared.open(url)
     }
 
+    private func nextCodexRequestID() -> String {
+        codexRequestCounter += 1
+        return "texttext-" + String(codexRequestCounter)
+    }
+
+    private func emitCodexEvent(_ payload: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView.evaluateJavaScript(
+                "window.dispatchEvent(new CustomEvent('texttext:assistant', { detail: " + json + " }));",
+                completionHandler: nil)
+        }
+    }
+
+    private func codexStatus() {
+        #if TEXTTEXT_STORE
+        emitCodexEvent([
+            "type": "status",
+            "state": "runtime-missing",
+            "embeddedChatSupported": false,
+            "recoveryAction": "install-runtime",
+        ])
+        #else
+        let locator = CodexRuntimeLocator(bundleURL: Bundle.main.bundleURL)
+        guard let executableURL = locator.executableURL else {
+            emitCodexEvent([
+                "type": "status",
+                "state": "runtime-missing",
+                "embeddedChatSupported": false,
+                "recoveryAction": "install-runtime",
+            ])
+            return
+        }
+        if codexServer == nil {
+            let server = CodexAppServerController(executableURL: executableURL)
+            server.onEvent = { [weak self] message in
+                self?.handleCodexMessage(message)
+            }
+            codexServer = server
+        }
+        emitCodexEvent([
+            "type": "status",
+            "state": codexServer?.isRunning == true ? "connecting" : "signed-out",
+            "embeddedChatSupported": true,
+            "runtimeVersion": "available",
+            "recoveryAction": "connect",
+        ])
+        #endif
+    }
+
+    private func connectCodex() {
+        #if TEXTTEXT_STORE
+        codexStatus()
+        #else
+        guard let server = codexServer else {
+            codexStatus()
+            return
+        }
+        do {
+            try server.start()
+            try server.send(
+                id: nextCodexRequestID(),
+                method: "initialize",
+                params: [
+                    "clientInfo": [
+                        "name": "texttext",
+                        "title": "TextText",
+                        "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
+                    ],
+                    "capabilities": ["experimentalApi": true],
+                ])
+            emitCodexEvent(["type": "status", "state": "connecting", "embeddedChatSupported": true])
+        } catch {
+            emitCodexEvent(["type": "status", "state": "failed", "embeddedChatSupported": false, "recoveryAction": "retry"])
+        }
+        #endif
+    }
+
+    private func handleCodexMessage(_ message: CodexAppServerMessage) {
+        if message.method == "remoteControl/status/changed" {
+            return
+        }
+        if message.id != nil, message.result != nil, message.method == nil {
+            if let result = message.result, result["userAgent"] != nil {
+                try? codexServer?.send(id: nextCodexRequestID(), method: "initialized", params: [:])
+                try? codexServer?.send(id: nextCodexRequestID(), method: "account/read", params: [:])
+                return
+            }
+            if let result = message.result, result["account"] != nil {
+                emitCodexEvent([
+                    "type": "status",
+                    "state": "ready",
+                    "embeddedChatSupported": true,
+                    "providerLabel": "Codex with ChatGPT",
+                ])
+                return
+            }
+        }
+        if message.errorMessage != nil {
+            emitCodexEvent(["type": "status", "state": "failed", "embeddedChatSupported": false, "recoveryAction": "retry"])
+        }
+    }
+
     // MARK: WKScriptMessageHandler (JS -> Swift)
 
     func userContentController(
@@ -441,6 +549,14 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         }
         if body["action"] as? String == "signOut" {
             onSignOutRequested()
+            return
+        }
+        if body["action"] as? String == "assistantStatus" {
+            codexStatus()
+            return
+        }
+        if body["action"] as? String == "assistantConnect" {
+            connectCodex()
             return
         }
         guard body["action"] as? String == "linked",

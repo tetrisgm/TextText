@@ -5,6 +5,7 @@ import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
+import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import { greeting, startersFor, type StarterContext } from "./starters";
 import styles from "./AssistantConversation.module.css";
 
@@ -31,6 +32,8 @@ export function AssistantConversation({
   onUsePrompt,
   onQuickAction,
   onUndoProposal,
+  nativeConnection,
+  onConnectNative,
 }: {
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
@@ -50,6 +53,8 @@ export function AssistantConversation({
   onUsePrompt?: (prompt: string) => void;
   onQuickAction?: (action: NativeQuickActionId) => Promise<void> | void;
   onUndoProposal?: (messageId: string) => Promise<void> | void;
+  nativeConnection?: AiConnectionSnapshot | null;
+  onConnectNative?: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -114,14 +119,36 @@ export function AssistantConversation({
             the lead when there is none, because then it is the thing standing
             in the way. */}
         <p className={styles.emptyTitle}>
-          {cloudProvider ? greeting(viewerName, new Date()) : "Connect an AI provider"}
+          {cloudProvider || nativeConnection?.state === "ready"
+            ? greeting(viewerName, new Date())
+            : "Write with an agent"}
         </p>
         <p className={styles.emptyBody}>
-          {cloudProvider
+          {cloudProvider || nativeConnection?.state === "ready"
             ? "Ask about what you are looking at, or start with one of these."
-            : "Add an Anthropic or OpenAI API key in Workspace Settings. To use an existing ChatGPT or Claude subscription, connect TextText from that app through MCP."}
+            : nativeConnection?.state === "runtime-missing"
+              ? "The embedded agent is available in the Mac app. You can connect another AI app or add an API key to start here."
+              : "Connect ChatGPT to use an agent directly inside TextText, or choose another connection path in Settings."}
         </p>
-        {cloudProvider && onUsePrompt && (
+        {!cloudProvider && nativeConnection?.state !== "ready" && (
+          <div className={styles.examples} aria-label="AI connection choices">
+            {nativeConnection?.embeddedChatSupported && onConnectNative ? (
+              <button type="button" onClick={onConnectNative}>
+                <span>Continue with ChatGPT</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            ) : null}
+            <a href="/connect">
+              <span>Connect another AI app</span>
+              <span aria-hidden="true">→</span>
+            </a>
+            <a href="/docs/ai#api-key">
+              <span>Use an API key</span>
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        )}
+        {(cloudProvider || nativeConnection?.state === "ready") && onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">
             {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
               <button
