@@ -29,7 +29,10 @@ import { MCP_PROTOCOL_VERSION } from "@/lib/mcp/protocol";
 import { closeDatabaseConnections } from "@/lib/db/client";
 
 const PORT = Number(process.env.LIVE_COLLAB_PORT ?? 3130);
-const BASE = `http://127.0.0.1:${PORT}`;
+// Keep one hostname for every browser navigation and API request. Auth.js
+// cookies are host-scoped, so mixing 127.0.0.1 and localhost makes the harness
+// report redirect loops before it reaches collaboration at all.
+const BASE = `http://localhost:${PORT}`;
 const SHOTS = process.env.LIVE_COLLAB_SHOTS ?? "/tmp/live-collab";
 const HEADED = process.env.LIVE_COLLAB_HEADED === "1";
 

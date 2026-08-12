@@ -206,10 +206,11 @@ function appendToThread(
   text: string,
   proposal?: AssistantProposal,
   provider?: CloudAssistantProviderLabel,
-) {
+): string {
+  const id = nextMessageId();
   const next = [
     ...threadFor(threadKey),
-    { id: nextMessageId(), role, text, proposal, provider },
+    { id, role, text, proposal, provider },
   ].slice(-MAX_MESSAGES_PER_THREAD);
   transcripts.set(threadKey, next);
   try {
@@ -218,6 +219,7 @@ function appendToThread(
     // Quota or private mode: the in-memory thread still works.
   }
   notify();
+  return id;
 }
 
 function updateThreadMessage(
@@ -374,6 +376,8 @@ export function useNativeAssistant({
     useState<CloudAssistantProviderLabel | null>(null);
   const [nativeConnection, setNativeConnection] =
     useState<AiConnectionSnapshot | null>(null);
+  const nativeJobRef = useRef<string | null>(null);
+  const nativeMessageRef = useRef<string | null>(null);
   const getPoolRef = useRef(getPool);
   const getViewRef = useRef(getView);
   const readItemTextRef = useRef(readItemText);
@@ -448,7 +452,20 @@ export function useNativeAssistant({
           recoveryAction: event.recoveryAction ?? current?.recoveryAction ?? null,
         }));
       } else if (event.type === "text-delta") {
-        appendToThread(threadKey, "assistant", event.text, undefined, "OpenAI");
+        if (nativeMessageRef.current) {
+          updateThreadMessage(threadKey, nativeMessageRef.current, (message) => ({
+            ...message,
+            text: message.text + event.text,
+          }));
+        } else {
+          nativeMessageRef.current = appendToThread(
+            threadKey,
+            "assistant",
+            event.text,
+            undefined,
+            "OpenAI",
+          );
+        }
       } else if (event.type === "tool-call") {
         void (async () => {
           try {
@@ -459,6 +476,17 @@ export function useNativeAssistant({
             submitNativeAssistantToolResult(event.callId, { error: assistantAgentError(error) }, true);
           }
         })();
+      } else if (event.type === "turn-completed") {
+        if (nativeJobRef.current) updateAssistantJob(nativeJobRef.current, { status: "done" });
+        nativeJobRef.current = null;
+        nativeMessageRef.current = null;
+        setThreadBusy(threadKey, false);
+      } else if (event.type === "error") {
+        appendToThread(threadKey, "error", assistantAgentError(event.message));
+        if (nativeJobRef.current) updateAssistantJob(nativeJobRef.current, { status: "error" });
+        nativeJobRef.current = null;
+        nativeMessageRef.current = null;
+        setThreadBusy(threadKey, false);
       }
     });
     if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
@@ -522,6 +550,8 @@ export function useNativeAssistant({
       try {
         if (nativeConnection?.state === "ready" && submitNativeAssistantTurn(prompt)) {
           appendToThread(thread, "progress", "Working with the TextText Agent");
+          nativeJobRef.current = jobId;
+          nativeMessageRef.current = null;
           return;
         }
         updateAssistantJob(jobId, { activity: "Contacting your AI provider" });

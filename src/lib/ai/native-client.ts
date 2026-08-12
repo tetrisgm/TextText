@@ -4,6 +4,7 @@ export type NativeAssistantEvent =
   | ({ type: "status" } & Partial<AiConnectionSnapshot>)
   | { type: "text-delta"; text: string }
   | { type: "tool-call"; callId: string; tool: string; arguments: unknown }
+  | { type: "turn-completed" }
   | { type: "error"; message: string };
 
 type NativeWindow = Window & {

@@ -47,6 +47,21 @@ workspace silently, which looks exactly like the app being broken.
 
 Type-check/build only: `swift build --package-path mac`.
 
+### One canonical local app
+
+For a development build that should replace the installed copy, build the
+bundle and run the deliberate installer from this checkout:
+
+    mac/scripts/build-app.sh
+    mac/scripts/install-local.sh
+
+The installer accepts only the production bundle identifier, quits an existing
+`/Applications/TextText.app` process, atomically swaps the bundle, and launches
+that exact path. The previous bundle is moved to the macOS Trash for recovery;
+it is never left beside the installed app. Do not launch the bundle from
+`mac/build`, Finder Downloads, or a second Applications directory when testing
+the installed build.
+
 ### Two executables, two names
 
 The app target is `TextTextApp` and the CLI product is `texttext`. They used to
