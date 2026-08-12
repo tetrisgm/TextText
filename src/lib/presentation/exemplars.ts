@@ -579,7 +579,7 @@ export const EXEMPLARS: Exemplar[] = [
         },
         {
           title: "The case for slow publishing",
-          url: "https://TextText.app/@demo/slow-publishing",
+          url: "https://demo.TextText.app/blog/slow-publishing",
           blurb:
             "The writing worth reading in five years is the writing someone sat on for five weeks.",
         },

@@ -8,15 +8,17 @@ release metadata rather than relying on historical handoffs.
 
 ## Tenancy and URLs
 
-- `src/proxy.ts` (Next 16 proxy, not middleware) rewrites `/@{username}` to
-  `/u/{username}`, then resolves the Host header to `/t/{handle}`. Reserved
-  subdomains live in `src/lib/tenants.ts`.
-- Unclaimed guest blogs live at `/t/{three-word-handle}`. Claimed blogs live at
-  `/@{username}`, served by `src/app/u/[username]`.
+- `src/proxy.ts` (Next 16 proxy, not middleware) keeps authenticated workspace
+  routes on the platform origin and rewrites each `{handle}.{root-domain}`
+  request to the matching `/t/{handle}` reader with all viewer credentials
+  removed. Reserved subdomains live in `src/lib/tenants.ts`.
+- Private workspace routes retain `/t/{handle}` and `/@{username}` for editing,
+  shares, and collaboration. Published pages live at
+  `{handle}.{root-domain}/{folder}/{slug}` and never read a viewer session.
 - `/start` is the single entry into a workspace. Signing in claims the browser's
   guest workspace.
-- Local dev: `npm run dev`, then `/@demo`. `demo.localhost:3000` and `/t/demo`
-  both redirect there.
+- Local dev: `npm run dev`, then `demo.localhost:3000` for the public demo.
+  Legacy `/@demo` and `/t/demo` links redirect there.
 
 ## Content model
 

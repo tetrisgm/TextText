@@ -8,6 +8,7 @@ import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentRead
 import { legacyTemplateId } from "@/lib/documents/legacy";
 import { postSubtitle } from "@/lib/markdown-subtitle";
 import {
+  platformReportUrl,
   publicFolderPath,
   workspacePublicPostPath,
   workspacePublicPostUrl,
@@ -162,7 +163,7 @@ export default async function WorkspacePublicPost({ params }: Props) {
       {reader}
       <footer className="public-report-footer">
         <a
-          href={`/report?path=${encodeURIComponent(currentPath)}${post.id ? `&doc=${post.id}` : ""}`}
+          href={platformReportUrl(currentPath, post.id)}
           rel="nofollow"
         >
           Report this page

@@ -1153,7 +1153,7 @@ components:
         slug: hello-world
         title: Hello world
         status: draft
-        canonical: https://example.com/@alice/hello-world
+        canonical: https://alice.example.com/blog/hello-world
         ---
 
         Hello from the sync API.

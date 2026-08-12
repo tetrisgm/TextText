@@ -284,9 +284,9 @@ if [ -n "$ORIGIN" ]; then
   curl -fsSI "$ORIGIN/download/TextText.zip" >/dev/null
   [ "$API_VERSION" = "$VERSION" ] || { echo "Public app version API is $API_VERSION, expected $VERSION." >&2; exit 1; }
   [ "$API_BUILD" = "$EXPECTED_BUILD" ] || { echo "Public app build API is $API_BUILD, expected $EXPECTED_BUILD." >&2; exit 1; }
-  # The way in is signing in. This used to smoke-test /try, the guest sandbox,
-  # which was removed from the product along with the seeded /@demo blog: both
-  # were pretence, and a release must not verify a route it no longer serves.
+  # The way in is signing in. This used to smoke-test /try and a production
+  # demo route. Both were removed; a release must not verify a route it no
+  # longer serves. The no-database local demo is a development fallback only.
   SIGNIN_SMOKE_DIR="$(mktemp -d)"
   SIGNIN_SMOKE_COOKIES="$SIGNIN_SMOKE_DIR/cookies"
   SIGNIN_SMOKE_RESULT="$(

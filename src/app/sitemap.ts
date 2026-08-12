@@ -41,7 +41,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  // No demo routes: the seeded /@demo blog was removed from the product, and a
-  // sitemap advertising pages that answer 404 is worse than a shorter sitemap.
+  // The zero-setup demo exists only without a database. Production workspaces
+  // advertise their own sitemap from their sessionless workspace origin.
   return platformRoutes;
 }

@@ -35,11 +35,11 @@ beforeEach(() => {
 describe("POST /api/report", () => {
   it("files a report with no session and notifies", async () => {
     const response = await POST(
-      post({ path: "/t/demo/some-page", reason: "This page hosts my leaked address." }),
+      post({ path: "/blog/research/some-page", reason: "This page hosts my leaked address." }),
     );
     expect(response.status).toBe(200);
     expect(mocks.fileContentReport).toHaveBeenCalledWith({
-      path: "/t/demo/some-page",
+      path: "/blog/research/some-page",
       postId: undefined,
       reason: "This page hosts my leaked address.",
       reporterEmail: undefined,
@@ -50,7 +50,7 @@ describe("POST /api/report", () => {
   it("keeps the optional email and document id", async () => {
     await POST(
       post({
-        path: "/t/demo/some-page",
+        path: "/blog/research/some-page",
         doc: "74341338-11a9-4ca4-b205-041dc0ce3bb3",
         reason: "Reason long enough to count.",
         email: "reader@example.com",
@@ -66,7 +66,7 @@ describe("POST /api/report", () => {
 
   it("swallows honeypot submissions without filing", async () => {
     const response = await POST(
-      post({ path: "/t/demo/x", reason: "long enough reason", website: "http://spam" }),
+      post({ path: "/blog/research/x", reason: "long enough reason", website: "http://spam" }),
     );
     // Answers success so the bot does not learn it was caught.
     expect(response.status).toBe(200);
@@ -82,7 +82,7 @@ describe("POST /api/report", () => {
   });
 
   it("rejects a reason that says nothing", async () => {
-    const response = await POST(post({ path: "/t/demo/x", reason: "bad" }));
+    const response = await POST(post({ path: "/blog/research/x", reason: "bad" }));
     expect(response.status).toBe(400);
     expect(mocks.fileContentReport).not.toHaveBeenCalled();
   });
@@ -90,7 +90,7 @@ describe("POST /api/report", () => {
   it("says unavailable when there is no database, not ok", async () => {
     mocks.fileContentReport.mockResolvedValue(null);
     const response = await POST(
-      post({ path: "/t/demo/x", reason: "long enough reason" }),
+      post({ path: "/blog/research/x", reason: "long enough reason" }),
     );
     expect(response.status).toBe(503);
   });
@@ -98,7 +98,7 @@ describe("POST /api/report", () => {
   it("does not fail the report when only the email fails", async () => {
     mocks.sendContentReportEmail.mockResolvedValue(false);
     const response = await POST(
-      post({ path: "/t/demo/x", reason: "long enough reason" }),
+      post({ path: "/blog/research/x", reason: "long enough reason" }),
     );
     expect(response.status).toBe(200);
   });

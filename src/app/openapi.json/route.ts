@@ -2,6 +2,7 @@ import {
   WORKSPACE_TOOL_DEFINITIONS,
   WORKSPACE_TOOL_NAMES,
 } from "@/lib/ai/tools";
+import { workspacePublicBaseUrl } from "@/lib/public-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
 }
 
 function openApiDocument(origin: string) {
+  const examplePublicOrigin = workspacePublicBaseUrl("alice");
   return {
     openapi: "3.1.0",
     info: {
@@ -830,7 +832,7 @@ function openApiDocument(origin: string) {
             "slug: hello-world\n" +
             "title: Hello world\n" +
             "status: draft\n" +
-            `canonical: ${origin}/@alice/hello-world\n` +
+            `canonical: ${examplePublicOrigin}/blog/hello-world\n` +
             "---\n\n" +
             "Hello from the sync API.\n",
         },

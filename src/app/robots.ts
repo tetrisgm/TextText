@@ -12,11 +12,7 @@ export default function robots(): MetadataRoute.Robots {
       allow: ["/", "/@", "/t/"],
       disallow: ["/editor", "/connect", "/api"],
     },
-    sitemap: [
-      absolute("/sitemap.xml"),
-      absolute("/@demo/sitemap.xml"),
-      absolute("/t/demo/sitemap.xml"),
-    ],
+    sitemap: absolute("/sitemap.xml"),
     host: rootDomainUrl().origin,
   };
 }

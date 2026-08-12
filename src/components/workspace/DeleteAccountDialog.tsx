@@ -13,20 +13,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
+import {
+  accountDeletionConsequences,
+  type AccountDeletionOverview,
+} from "@/lib/account-deletion-copy";
 
-export type AccountOverview = {
-  identities: string[];
-  email: string | null;
-  username: string | null;
-  handle: string;
-  workspaceName: string;
-  documents: number;
-  publishedDocuments: number;
-  collaborators: number;
-  apiTokens: number;
-  hasCloudAiKey: boolean;
-  confirmationPhrase: string;
-};
+export type AccountOverview = AccountDeletionOverview;
 
 export type DeleteAccountStage = "idle" | "failed" | "incomplete" | "signedOut";
 
@@ -93,33 +85,7 @@ export default function DeleteAccountDialog({
 
   // Only the true statements. A workspace with no collaborators should not be
   // told that zero people lose access.
-  const consequences: string[] = [];
-  if (account.documents > 0) {
-    consequences.push(
-      `${account.documents} ${account.documents === 1 ? "document is" : "documents are"} deleted, with their images, files, and drafts.`,
-    );
-  }
-  consequences.push(
-    `The workspace ${account.workspaceName} is deleted, with its folders and Trash.`,
-  );
-  if (account.publishedDocuments > 0) {
-    consequences.push(
-      `Published pages at /t/${account.handle} stop working. That address stays reserved, so nobody can publish at your old links.`,
-    );
-  }
-  if (account.collaborators > 0) {
-    consequences.push(
-      `${account.collaborators} ${account.collaborators === 1 ? "person" : "people"} you share with lose access, and comments they wrote on your documents are deleted too.`,
-    );
-  }
-  if (account.apiTokens > 0) {
-    consequences.push(
-      `${account.apiTokens} API ${account.apiTokens === 1 ? "token" : "tokens"} stop working. TextText on your other devices signs out.`,
-    );
-  }
-  if (account.hasCloudAiKey) {
-    consequences.push("Your saved cloud AI key is deleted.");
-  }
+  const consequences = accountDeletionConsequences(account);
 
   return createPortal(
     // The applecms class is re-declared here on purpose: outside the shell

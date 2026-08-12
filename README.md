@@ -15,9 +15,9 @@ npm run dev
 ```
 
 - `http://localhost:3000` is the platform site.
-- `http://localhost:3000/@demo` is the demo workspace, served from the
-  zero-setup seed in `src/lib/demo.ts`. `/t/demo` and `demo.localhost:3000`
-  both redirect there.
+- `http://demo.localhost:3000` is the public demo workspace, served from the
+  zero-setup seed in `src/lib/demo.ts`. Legacy `/@demo` and `/t/demo` links
+  redirect to that workspace origin.
 
 No database or credentials are needed for the demo. For real data, run
 `bash scripts/setup-local-db.sh` once and see `.env.example`. Never point

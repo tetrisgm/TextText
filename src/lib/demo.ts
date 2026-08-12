@@ -1,6 +1,6 @@
 // Zero-setup demo content: with no DATABASE_URL the app serves this seed blog,
 // so `npm run dev` shows the full product (list + reader) immediately.
-// The demo lives at /@demo, matching claimed user pages.
+// The public demo lives at demo.{root-domain}, like every published workspace.
 
 import type { Blog, Post } from "./content";
 import { documentFromLegacyPost } from "./documents/legacy";
@@ -98,8 +98,8 @@ The broadsheet still works because it is not nostalgic. It is a compact system f
       },
     ],
     links: [
-      { label: "Method note", href: "/@demo/field-guide-to-durable-defaults" },
-      { label: "Launch essay", href: "/@demo/why-a-broadsheet" },
+      { label: "Method note", href: "/blog/field-guide-to-durable-defaults" },
+      { label: "Launch essay", href: "/blog/why-a-broadsheet" },
     ],
     body: `Signal Desk is a prototype for teams that make product decisions in writing. It brings research excerpts, review state, launch notes, and owner decisions into a single editorial workspace so the record is useful after the meeting ends.
 

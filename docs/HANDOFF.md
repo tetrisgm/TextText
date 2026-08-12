@@ -955,3 +955,19 @@ contained no unpublished titles. Workspace home, article, category, and tag
 metadata now replace inherited root-site social fields with workspace-owned
 canonical and image URLs. This remains source and local-database verification;
 no production migration, deployment, release, or app installation was run.
+
+## Public URL follow-through audit (2026-08-11)
+
+The sessionless origin exposed one platform-navigation bug after the main URL
+migration. Public article footers linked to `/report` relatively, so a click on
+`<workspace>.texttext.app` was rewritten as tenant content instead of reaching
+the platform report form. Report links now use an absolute platform-origin URL
+while preserving the public folder path and document id in the query.
+
+Each existing workspace origin now serves a `robots.txt` that advertises its
+own workspace sitemap. An unknown workspace returns the same generic 404 on
+that route. Root robots no longer advertises the retired root-domain demo
+sitemaps. Account-deletion copy, connector examples, local demo links, release
+health fixtures, and architecture documentation now use workspace subdomains
+and folder-qualified paths rather than presenting legacy `/t` or `/@` routes
+as public addresses.

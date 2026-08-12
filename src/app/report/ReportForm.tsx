@@ -55,7 +55,7 @@ export function ReportForm({ path, doc }: { path: string; doc: string }) {
           type="text"
           value={pageUrl}
           onChange={(event) => setPageUrl(event.target.value)}
-          placeholder="/t/handle/page"
+          placeholder="/blog/research/example"
           required
         />
       </label>

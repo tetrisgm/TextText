@@ -45,6 +45,7 @@ import {
   blogPostPath,
   blogWorkspacePostEditPath,
   blogWorkspacePostPath,
+  platformReportUrl,
   workspacePublicPostUrl,
 } from "@/lib/public-paths";
 import {
@@ -521,7 +522,7 @@ export async function PostPageForHandle({
               page can say it should not be here, without an account. */}
           <footer className="public-report-footer">
             <a
-              href={`/report?path=${encodeURIComponent(currentPostPath)}${post.id ? `&doc=${post.id}` : ""}`}
+              href={platformReportUrl(currentPostPath, post.id)}
               rel="nofollow"
             >
               Report this page

@@ -731,7 +731,7 @@ final class AppHealthReporter {
 
     private func checkPublicLinkMapping() -> (TextTextHealthStatus, [String: Double]) {
         let privateURL = "https://TextText.app/api/sync/v1/files/health-item"
-        let publicURL = "https://TextText.app/t/demo/health-item"
+        let publicURL = "https://demo.TextText.app/blog/health-item"
         let entry = TextTextManifestItem(
             file: "health-item.md", kind: "article", slug: "health-item",
             title: "Health item", status: "published", hash: "health-hash",

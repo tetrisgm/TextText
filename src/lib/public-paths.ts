@@ -89,6 +89,14 @@ export function workspacePublicBaseUrl(handle: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
+/** Reports always live on the private platform origin, not a tenant origin. */
+export function platformReportUrl(path: string, postId?: string): string {
+  const url = new URL("/report", rootDomainUrl());
+  url.searchParams.set("path", path);
+  if (postId) url.searchParams.set("doc", postId);
+  return url.toString();
+}
+
 export function workspacePublicPostUrl(
   handle: string,
   folderPath: string,
