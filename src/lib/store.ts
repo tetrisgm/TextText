@@ -2710,15 +2710,6 @@ export async function getUnclaimedBlogEditRecordsByIds(
     .orderBy(desc(blogs.createdAt));
 }
 
-export async function isBlogOwner(
-  handle: string,
-  sub: string,
-): Promise<boolean> {
-  if (!db) return false;
-  const row = await getBlogCore(handle);
-  return Boolean(row?.ownerSub && row.ownerSub === sub);
-}
-
 async function getPostByIdUncached(
   handle: string,
   id: string,

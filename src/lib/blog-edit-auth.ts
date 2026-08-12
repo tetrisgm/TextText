@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/lib/session";
 import {
   getBlogEditRecord,
   getUnclaimedBlogEditRecordsByIds,
-  isBlogOwner,
+  getUserIdBySub,
 } from "@/lib/store";
 
 const EDIT_COOKIE_PREFIX = "wr_edit_";
@@ -155,7 +155,10 @@ export async function getBlogEditAccess(
 
   if (record.ownerId) {
     const user = await getCurrentUser();
-    const isOwner = user ? await isBlogOwner(handle, user.sub) : false;
+    const userId = user
+      ? user.userId ?? (await getUserIdBySub(user.sub))
+      : null;
+    const isOwner = userId === record.ownerId;
     return {
       canEdit: isOwner,
       isOwner,

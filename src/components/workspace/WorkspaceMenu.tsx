@@ -22,6 +22,23 @@ export type WorkspaceMenuProps = {
   signedIn?: boolean;
 };
 
+type NativeAppWindow = typeof window & {
+  __TEXTTEXT_APP__?: boolean;
+  webkit?: {
+    messageHandlers?: {
+      textTextApp?: { postMessage: (message: unknown) => void };
+    };
+  };
+};
+
+function requestNativeSignOut(): void {
+  const appWindow = window as NativeAppWindow;
+  if (appWindow.__TEXTTEXT_APP__ !== true) return;
+  appWindow.webkit?.messageHandlers?.textTextApp?.postMessage({
+    action: "signOut",
+  });
+}
+
 export function WorkspaceMenu({
   blogName,
   email,
@@ -194,11 +211,24 @@ export function WorkspaceMenu({
           <div className={styles.divider} role="separator" />
 
           {signedIn && (
-            <SignOutButton
-              className={styles.signOutButton}
-              role="menuitem"
-              aria-label="Log out"
-            />
+            inNativeApp ? (
+              <button
+                className={styles.signOutButton}
+                type="button"
+                role="menuitem"
+                aria-label="Log out"
+                onClick={requestNativeSignOut}
+              >
+                Sign out
+              </button>
+            ) : (
+              <SignOutButton
+                className={styles.signOutButton}
+                role="menuitem"
+                aria-label="Log out"
+                redirectTo="/signin"
+              />
+            )
           )}
         </div>
       )}

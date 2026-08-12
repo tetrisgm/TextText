@@ -60,11 +60,12 @@ describe("app session route", () => {
       new URL("https://TextText.app/t/workspace/post?edit=1").href,
     );
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("set-cookie")).toContain(
-      "__Secure-authjs.session-token=",
-    );
-    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
-    expect(response.headers.get("set-cookie")).toContain("Secure");
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("__Secure-authjs.session-token=");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).not.toContain("Domain=");
     expect(mocks.resolveApiToken).toHaveBeenCalledWith(
       `Bearer ${appToken}`,
     );

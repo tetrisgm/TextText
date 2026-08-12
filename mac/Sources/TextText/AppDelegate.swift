@@ -1421,7 +1421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // a person who had just pressed Sign out was shown their own blog with
         // nothing in it, because nothing of theirs is published. It reads
         // exactly like the account being emptied.
-        webWindow?.load(path: "/signin")
+        webWindow?.signOut()
         refreshUI()
     }
 
@@ -2391,6 +2391,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 appToken: credentials?.token,
                 onSystemSignInRequested: { [weak self] in
                     self?.signIn()
+                },
+                onSignOutRequested: { [weak self] in
+                    self?.signOut()
                 },
                 onLinked: { [weak self] token, linkedOrigin in
                     self?.handleAppLinked(token: token, origin: linkedOrigin)

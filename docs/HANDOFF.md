@@ -770,24 +770,55 @@ Decisions that have to be made before writing any code:
   blog today) and it changes what a rename can collide with.
 - **Cookie scope, if subdomains.** Session cookies scoped to `texttext.app` do
   not automatically apply to a workspace subdomain. Sign-in, the Mac app's web
-  view, and the auth sheet all need deliberate handling. See the open bug below;
-  understand that first, because moving to subdomains without knowing the cause
-  would multiply it rather than reveal it.
+  view, and the auth sheet all need deliberate handling. See the owner-access
+  findings below; moving to subdomains must preserve their origin boundary.
 - **Redirects.** Every `/t/` URL that exists has to keep working, with canonical
   tags and the sitemap updated. `release/app-store-listing.md` also cites
   `texttext.app` URLs.
 
-## Open bug: the owner is served the stranger's view of their own blog
+## Owner access on public routes and the Mac dead end (2026-08-11)
 
-`src/app/t/[handle]/page.tsx:560` renders the visitor empty state only when
-`!canEdit`. The owner reported seeing it, twice, which means `canEdit` was false
-for them on their own blog: on that route the web view is not recognised as the
-signed-in owner.
+Root-caused and fixed in code; installed-app verification is still pending a
+future build. The direct cause was split sign-out state, not a `/t/` cookie
+scope. The workspace menu called Auth.js sign-out, clearing the web session but
+leaving the native app token in `StateStore`. The native status action did the
+opposite: it deleted the app token and loaded `/signin` while the Auth.js cookie
+was still live, so `/signin` immediately redirected back into the workspace.
+Neither path actually signed the Mac out. After the web half was cleared,
+`getBlogEditAccess` correctly saw a visitor and the public empty state made the
+still-linked native app look like it had lost the workspace.
 
-This is the layer every previous fix missed. Pointing sign-out at `/signin`
-treated the symptom, and the dead end came back through a different door (the
-workspace title in the Mac app navigates there). Start at `access.canEdit`
-around line 387 and at whether the session cookie is sent on `/t/[handle]`.
+Sign-out is one native operation now. The web workspace asks the native bridge
+to sign out; `AppDelegate` clears credentials, index, and File Provider state;
+`WebAppWindowController` deletes only the host's Auth.js session cookies and
+loads `/signin` after deletion completes. The retained app token is cleared at
+the same time, so a navigation recovery cannot silently sign the person back in.
+This makes the auth-sheet verification path real: sign out, press Sign In, and
+the installed app is genuinely unlinked before the sheet begins.
+
+Two adjacent defects were fixed in the same fault line. `getBlogEditAccess`
+still compared a provider subject with `users.apple_sub` after
+`user_identities` made one person reachable through several subjects. It now
+compares `blogs.owner_id` with the stable session `userId`, resolving an older
+JWT through `user_identities` when needed. And the Mac app no longer trusts a
+public-home link to preserve private context: exact `/t/<handle>` and
+`/@<username>` link clicks are captured before the Next.js client router and
+re-enter through `/start?to=home`, exchanging the retained app token if the web
+session expired. A WK navigation fallback covers non-client transitions.
+
+This is compatible with the sessionless-public-origin decision below. Future
+workspace subdomains remain public and external to the private app origin;
+private navigation re-enters on the root app origin instead of widening cookie
+scope. The native marker, sign-out bridge, and OCR bridge are now injected only
+on that exact configured origin, not its public subdomains.
+
+Regression coverage: `blog-edit-auth.test.ts` covers linked and legacy sessions;
+`app-session-route.test.ts` pins the host-only, root-path cookie;
+`WebAppSessionRequestTests` pins native public-home and session-cookie handling.
+The focused web tests and Swift tests pass on the Mac. Production browser
+verification confirmed the current owner route renders the workspace and the
+workspace title opens its menu. Computer Use could not read the installed app's
+window, so the owner has not yet exercised the fix in an installed build.
 
 ## Public URL security invariants (owner: leaking content torpedoes the app)
 

@@ -45,7 +45,10 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     private let onLinked: (String, URL) -> Void
     /// Starts the system-browser account and device approval flow.
     private let onSystemSignInRequested: () -> Void
+    /// Clears the native credential when the web workspace signs out.
+    private let onSignOutRequested: () -> Void
     private var startupNavigation: WebAppStartupNavigation
+    private var appToken: String?
     private let ocrBridge = NativeOCRBridge()
 
     static let cacheWebView = true
@@ -62,12 +65,15 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         startPath: String,
         appToken: String?,
         onSystemSignInRequested: @escaping () -> Void,
+        onSignOutRequested: @escaping () -> Void,
         onLinked: @escaping (String, URL) -> Void
     ) {
         self.origin = origin
         self.onLinked = onLinked
         self.onSystemSignInRequested = onSystemSignInRequested
+        self.onSignOutRequested = onSignOutRequested
         self.startupNavigation = WebAppStartupNavigation(path: startPath)
+        self.appToken = appToken
 
         Self.configureURLCacheForStartup()
 
@@ -88,10 +94,44 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             source: """
             (function () {
               var h = location.hostname, base = "\(origin.host ?? "")";
-              if (base && h !== base && !h.endsWith("." + base)) return;
+              if (base && h !== base) return;
               window.__TEXTTEXT_APP__ = true;
               window.__TEXTTEXT_DEVICE__ = "\(escapedDevice)";
               window.__TEXTTEXT_NEEDS_TOKEN__ = \(appToken == nil ? "true" : "false");
+            })();
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // Next.js handles same-origin links with history.pushState, so its
+        // transitions never reach WKNavigationDelegate. Capture exact public
+        // workspace-home links before the client router does and ask the
+        // native shell to re-enter through its authenticated app-token path.
+        ucc.addUserScript(WKUserScript(
+            source: """
+            (function () {
+            var h = location.hostname, base = "\(origin.host ?? "")";
+            if (base && h !== base) return;
+            document.addEventListener("click", function (event) {
+              if (event.defaultPrevented || event.button !== 0 ||
+                  event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              var target = event.target;
+              if (!target || !target.closest) return;
+              var anchor = target.closest("a[href]");
+              if (!anchor || anchor.target || anchor.hasAttribute("download")) return;
+              var url;
+              try { url = new URL(anchor.href, location.href); } catch (_) { return; }
+              if (url.origin !== location.origin || url.search || url.hash) return;
+              var parts = url.pathname.split("/").filter(Boolean);
+              var publicHome =
+                (parts.length === 2 && parts[0] === "t" && parts[1]) ||
+                (parts.length === 1 && parts[0].charAt(0) === "@" && parts[0].length > 1);
+              if (!publicHome) return;
+              var handler = window.webkit && window.webkit.messageHandlers &&
+                window.webkit.messageHandlers.textTextApp;
+              if (!handler) return;
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              handler.postMessage({ action: "workspaceHome" });
+            }, true);
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -101,7 +141,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             source: """
             (function () {
               var h = location.hostname, base = "\(origin.host ?? "")";
-              if (base && h !== base && !h.endsWith("." + base)) return;
+              if (base && h !== base) return;
               \(NativeOCRBridge.shimScript)
             })();
             """,
@@ -249,8 +289,39 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
     }
 
     func establishSession(token: String, nextPath: String = "/start?to=home") {
+        appToken = token
         webView.load(Self.sessionRequest(
             origin: origin, token: token, nextPath: nextPath))
+    }
+
+    static func isAuthSessionCookieName(_ name: String) -> Bool {
+        name == "authjs.session-token" || name == "__Secure-authjs.session-token"
+    }
+
+    /// Clear the web half of the native account and navigate only after WebKit
+    /// has deleted it. Loading /signin first would see the old cookie and send
+    /// the person straight back into the workspace.
+    func signOut(nextPath: String = "/signin") {
+        appToken = nil
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        store.getAllCookies { [weak self] cookies in
+            guard let self else { return }
+            let sessions = cookies.filter {
+                Self.isAuthSessionCookieName($0.name) &&
+                    $0.domain.lowercased().trimmingCharacters(
+                        in: CharacterSet(charactersIn: ".")) ==
+                    (self.origin.host ?? "").lowercased()
+            }
+            let group = DispatchGroup()
+            for cookie in sessions {
+                group.enter()
+                store.delete(cookie) { group.leave() }
+            }
+            group.notify(queue: .main) { [weak self] in
+                guard let self else { return }
+                self.webView.load(self.request(for: nextPath))
+            }
+        }
     }
 
     func present() {
@@ -320,6 +391,28 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         isInApp(url) && url.path == "/api/app/session"
     }
 
+    static func isPublicWorkspaceHome(_ url: URL, on origin: URL) -> Bool {
+        guard url.scheme?.lowercased() == origin.scheme?.lowercased(),
+              url.host?.lowercased() == origin.host?.lowercased(),
+              url.port == origin.port,
+              url.query == nil,
+              url.fragment == nil else { return false }
+        let parts = url.path.split(separator: "/", omittingEmptySubsequences: true)
+        if parts.count == 2, parts[0] == "t", !parts[1].isEmpty {
+            return true
+        }
+        return parts.count == 1 && parts[0].hasPrefix("@") && parts[0].count > 1
+    }
+
+    private func loadWorkspaceHome() {
+        if let appToken {
+            webView.load(Self.sessionRequest(
+                origin: origin, token: appToken, nextPath: "/start?to=home"))
+        } else {
+            webView.load(request(for: "/start?to=home"))
+        }
+    }
+
     private func openExternally(_ url: URL) {
         guard url.scheme == "https" || url.scheme == "http" || url.scheme == "mailto"
         else { return }
@@ -332,6 +425,9 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         _ ucc: WKUserContentController, didReceive message: WKScriptMessage
     ) {
         guard message.name == "textTextApp",
+              message.frameInfo.isMainFrame,
+              message.frameInfo.securityOrigin.host.lowercased() ==
+                (origin.host ?? "").lowercased(),
               let body = message.body as? [String: Any]
         else { return }
         // The unreachable-origin page's Retry button.
@@ -339,11 +435,20 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             webView.load(request(for: startupNavigation.path))
             return
         }
+        if body["action"] as? String == "workspaceHome" {
+            loadWorkspaceHome()
+            return
+        }
+        if body["action"] as? String == "signOut" {
+            onSignOutRequested()
+            return
+        }
         guard body["action"] as? String == "linked",
               let token = body["token"] as? String,
               let originString = body["origin"] as? String,
               let linkedOrigin = URL(string: originString)
         else { return }
+        appToken = token
         onLinked(token, linkedOrigin)
     }
 
@@ -368,6 +473,19 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 // button simply does nothing, whether or not the browser
                 // opened behind the window. Reload so the form returns to rest.
                 self.webView.reload()
+            }
+            return
+        }
+        // Workspace-home URLs are public reader surfaces. Inside the native
+        // shell, a title/back link must return through the authenticated entry
+        // point instead, re-exchanging the app token if the web cookie expired.
+        if let url = navigationAction.request.url,
+           navigationAction.targetFrame?.isMainFrame != false,
+           navigationAction.navigationType == .linkActivated,
+           Self.isPublicWorkspaceHome(url, on: origin) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in
+                self?.loadWorkspaceHome()
             }
             return
         }
@@ -410,6 +528,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 // the native window as a blank WebKit surface. Keep a useful
                 // sign-in state visible while the system-browser device flow
                 // replaces the stale credential.
+                self.appToken = nil
                 self.webView.load(self.request(for: recoveryPath))
                 self.onSystemSignInRequested()
             } else {
