@@ -999,3 +999,22 @@ the workspace host. It verifies a 307 to the new folder-qualified canonical
 URL. The shared local request helper preserves the workspace Host header for
 both generation and sync proofs without depending on wildcard-localhost DNS.
 The corrected sync proof passes 17 checks and tears its scratch workspace down.
+
+## 0.175 production release (2026-08-11)
+
+Owner authorization covered production migration, deployment, release, and
+local installation. Version 0.175 build 182 passed the exact-source release
+gate (877 web tests and 440 Swift tests), notarization, production database
+migrations, Vercel prebuilt deployment, public appcast/version checks, and the
+17-step live workspace workflow proof. The workspace URL schema and tenant
+proxy fixes are live at `texttext.app`; the notarized Developer ID artifact is
+published through the retained Sparkle channel.
+
+The release installed `/Applications/TextText.app` as the single Developer ID
+copy and launched it. Atomic replacement moved the prior root-owned TestFlight
+0.174 app to a release-created hidden backup, but the unprivileged cleanup step
+could not remove its App Store-owned files. After inspecting that exact backup,
+it was removed with elevation. The only remaining installed bundle is 0.175
+build 182. Runtime health had not uploaded an exact-release report immediately
+after launch, so installed auth verification and a follow-up health review were
+still pending at this checkpoint.
