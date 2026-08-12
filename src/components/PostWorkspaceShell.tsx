@@ -6619,6 +6619,8 @@ function LocalWorkspaceShell({
         <AssistantConversation
           activeCloudProvider={assistant.activeCloudProvider}
           cloudProvider={assistant.cloudProvider}
+          nativeConnection={assistant.nativeConnection}
+          onConnectNative={assistant.connectNativeAssistant}
           jobs={assistant.jobs}
           messages={assistant.messages}
           starterContext={starterContextFromChip(assistantContext)}
