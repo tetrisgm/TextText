@@ -535,6 +535,7 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                 return
             }
             if let result = message.result, result["account"] != nil {
+                let account = result["account"] as? [String: AnyHashable]
                 try? codexServer?.send(
                     id: nextCodexRequestID(),
                     method: "thread/start",
@@ -549,6 +550,8 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
                     "state": "ready",
                     "embeddedChatSupported": true,
                     "providerLabel": "Codex with ChatGPT",
+                    "accountEmail": account?["email"] as? String ?? NSNull(),
+                    "planLabel": account?["planType"] as? String ?? NSNull(),
                 ])
                 return
             }
