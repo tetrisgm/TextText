@@ -62,6 +62,7 @@ export default async function UsernamePostPage({ params, searchParams }: Props) 
   return (
     <PostPageForHandle
       handle={blog.handle}
+      canonicalUsernameRoute
       redirectClaimed={false}
       searchParams={searchParams}
       slug={slug}

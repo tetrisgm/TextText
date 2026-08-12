@@ -148,6 +148,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export async function PostPageForHandle({
   handle,
   redirectClaimed = true,
+  canonicalUsernameRoute = false,
   searchParams,
   slug,
   folderPath,
@@ -157,11 +158,14 @@ export async function PostPageForHandle({
   searchParams?: Promise<PostPageQuery>;
   slug: string;
   folderPath?: string;
+  /** The /@username alias is already canonical; never bounce it through /t. */
+  canonicalUsernameRoute?: boolean;
 }) {
   const queryPromise: Promise<PostPageQuery> =
     searchParams ?? Promise.resolve({});
   const query = await queryPromise;
-  const legacyPublicRequest = !folderPath && queryValue(query.edit) !== "1";
+  const legacyPublicRequest =
+    !canonicalUsernameRoute && !folderPath && queryValue(query.edit) !== "1";
   if (legacyPublicRequest) {
     const legacy = await resolveLegacyPublicSlug(handle, slug);
     if (legacy.kind === "redirect") {
@@ -208,14 +212,16 @@ export async function PostPageForHandle({
         : null;
       activeFolderPath = actualFolder?.path ?? activeFolderPath;
       if (post.slug !== slug || activeFolderPath !== folderPath) {
-        redirect(
-          postEditPathForRequest(
-            blog,
-            post,
-            tenantHandle,
-            activeFolderPath,
-          ),
-        );
+        if (!canonicalUsernameRoute) {
+          redirect(
+            postEditPathForRequest(
+              blog,
+              post,
+              tenantHandle,
+              activeFolderPath,
+            ),
+          );
+        }
       }
     }
   }
@@ -266,23 +272,27 @@ export async function PostPageForHandle({
   }
   if (slugResolution.kind === "history") {
     const path = postPathForRequest(blog, post, tenantHandle, activeFolderPath);
-    redirect(
-      editMode
-        ? postEditPathForRequest(blog, post, tenantHandle, activeFolderPath)
-        : editRequested
-          ? `${path}?edit=1`
-          : path,
-    );
+    if (!canonicalUsernameRoute) {
+      redirect(
+        editMode
+          ? postEditPathForRequest(blog, post, tenantHandle, activeFolderPath)
+          : editRequested
+            ? `${path}?edit=1`
+            : path,
+      );
+    }
   }
   if (redirectClaimed && blog.username && tenantHandle !== blog.handle) {
     const path = blogPostPath(blog, post);
-    redirect(
-      editMode
-        ? blogPostEditPath(blog, post)
-        : editRequested
-          ? `${path}?edit=1`
-          : path,
-    );
+    if (!canonicalUsernameRoute) {
+      redirect(
+        editMode
+          ? blogPostEditPath(blog, post)
+          : editRequested
+            ? `${path}?edit=1`
+            : path,
+      );
+    }
   }
 
   const currentPostPath = postPathForRequest(
@@ -296,11 +306,15 @@ export async function PostPageForHandle({
     canEdit && access.isUnclaimed && access.isTokenEditor && isAuthConfigured;
 
   if (editMode && post.id && editId !== post.id) {
-    redirect(postEditPathForRequest(blog, post, tenantHandle, activeFolderPath));
+    if (!canonicalUsernameRoute) {
+      redirect(postEditPathForRequest(blog, post, tenantHandle, activeFolderPath));
+    }
   }
 
   if (canEdit && !editMode && isEmptyOwnedPost(post)) {
-    redirect(postEditPathForRequest(blog, post, tenantHandle, activeFolderPath));
+    if (!canonicalUsernameRoute) {
+      redirect(postEditPathForRequest(blog, post, tenantHandle, activeFolderPath));
+    }
   }
 
   const adjacentPromise = getAdjacentPublishedPosts(handle, post.id ?? post.slug);

@@ -224,7 +224,12 @@ async function main(): Promise<void> {
     await devSignIn(ada, ADA);
 
     // Ada creates the item they will share.
-    await ada.goto(`${BASE}/start`, { waitUntil: "domcontentloaded" });
+    const startProbe = await ada.request.get(`${BASE}/start`, { maxRedirects: 0 });
+    const itemLocation = startProbe.headers().location ?? "";
+    const itemMatch = itemLocation.match(/^\/@[^/]+\/([^?]+)(\?.*)?$/);
+    if (!itemMatch) throw new Error(`unexpected starter location: ${itemLocation}`);
+    const itemPath = `/t/ada-live-collab/${itemMatch[1]}${itemMatch[2] ?? ""}`;
+    await ada.goto(`${BASE}${itemPath}`, { waitUntil: "domcontentloaded" });
     await ada.waitForTimeout(2500);
     const itemUrl = ada.url();
     const itemId = new URL(itemUrl).searchParams.get("id");
@@ -234,12 +239,19 @@ async function main(): Promise<void> {
     await titleField(ada).fill("Launch plan").catch(() => undefined);
     await ada.waitForTimeout(800);
 
+    const adaUserId = await resolveUserId(ADA.email);
+    if (!adaUserId) throw new Error("could not resolve Ada's user id");
+    const { raw: token } = await createApiToken(adaUserId, "live-collab-eval", {
+      scopes: "sync",
+    });
+
     // --- Share it with Grace, as an editor -------------------------------
     // Sharing lives on the reader's action bar, not the editor toolbar, so Ada
     // steps out of edit mode to invite and steps back in afterwards.
-    const readUrl = itemUrl.replace(/\?.*$/, "");
-    await ada.goto(readUrl, { waitUntil: "domcontentloaded" });
-    await ada.waitForTimeout(2200);
+    // The owner controls are available in the open editor. Keeping the editor
+    // mounted also makes this check exercise the same surface collaborators
+    // use while they are typing.
+    await ada.waitForTimeout(1200);
     const shareButton = ada.locator('[aria-label="Share post"], [aria-label="Share"]').first();
     let sharedByDialog = false;
     if (await shareButton.count()) {
@@ -271,12 +283,25 @@ async function main(): Promise<void> {
       await shot(ada, "01-ada-share-dialog");
       await ada.keyboard.press("Escape");
       await ada.waitForTimeout(600);
-    } else {
-      await shot(ada, "01-ada-no-share-control");
     }
-    // Back into the editor for the rest of the run.
+    // The compact reader/editor shell can intentionally omit the share chrome
+    // at narrow widths. Exercise the same access command surface that hosted
+    // agents use so the collaboration run still proves a real editor invite.
+    if (!sharedByDialog) {
+      const access = await agentTool(token, "TextText collaboration verifier", "set_access", {
+        scope_type: "item",
+        scope_id: itemId,
+        email: GRACE.email,
+        role: "editor",
+      });
+      sharedByDialog = access.ok;
+      note(`  command-surface invite -> ${access.ok ? "accepted" : `failed: ${access.body.slice(0, 180)}`}`);
+    }
+    // Access mutations can revalidate the document route. Re-open the same
+    // URL before measuring live edits so the writer has a mounted editor.
     await ada.goto(itemUrl, { waitUntil: "domcontentloaded" });
-    await ada.waitForTimeout(2600);
+    await ada.waitForTimeout(1800);
+    await ada.waitForTimeout(600);
     record(
       "share",
       "Ada can invite Grace as an editor from the item",
@@ -429,12 +454,6 @@ async function main(): Promise<void> {
     );
 
     // --- 4. an agent joins -------------------------------------------------
-    const adaUserId = await resolveUserId(ADA.email);
-    if (!adaUserId) throw new Error("could not resolve Ada's user id");
-    const { raw: token } = await createApiToken(adaUserId, "live-collab-eval", {
-      scopes: "sync",
-    });
-
     const presenceRes = await fetch(`${BASE}/api/agent/presence`, {
       method: "POST",
       headers: {

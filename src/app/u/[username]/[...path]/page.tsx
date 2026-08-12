@@ -22,6 +22,7 @@ export default async function UsernameWorkspacePost({
   return (
     <PostPageForHandle
       handle={blog.handle}
+      canonicalUsernameRoute
       folderPath={folderPath}
       searchParams={searchParams}
       slug={slug}
