@@ -687,10 +687,14 @@ installed at a time.
 - The dev direction is handled: `ship.sh` moves the existing app aside and takes
   the canonical path, whatever signed it, and now also removes any numbered
   `TextText <n>.app` sibling carrying our bundle id.
-- The TestFlight direction cannot be fixed from here; it is the installer's
-  behaviour. If a Developer ID build has been shipped since the last TestFlight
-  install, remove it first, otherwise a numbered copy appears again:
-  `rm -rf /Applications/TextText.app` before pressing Install in TestFlight.
+- The TestFlight direction cannot be made automatic because it is the
+  installer's behaviour. If a Developer ID build has been installed since the
+  last TestFlight install, run `npm run testflight:prepare` before pressing
+  Install in TestFlight. The command verifies the bundle id, moves only
+  TextText's standalone and numbered bundles to Trash, and opens TestFlight.
+  State in the shared app-group container is not touched. If TestFlight already
+  owns the canonical app, the command leaves it in place so TestFlight updates
+  it normally.
 
 ## The two editions share one state directory
 
@@ -1018,3 +1022,22 @@ it was removed with elevation. The only remaining installed bundle is 0.175
 build 182. Runtime health had not uploaded an exact-release report immediately
 after launch, so installed auth verification and a follow-up health review were
 still pending at this checkpoint.
+
+## Development and TestFlight lanes (2026-08-11)
+
+The owner confirmed the intended distribution model while developing on the
+macOS 27 beta: everyday builds use the Developer ID lane, and shareable release
+builds may use TestFlight for the owner or friends. The Mac App Store review
+and storefront submission lane is not part of this workflow. Store build 0.175
+(182) was uploaded only to TestFlight, processed as VALID, and assigned to the
+existing Internal group. The untouched App Store version remains 1.0 in
+PREPARE_FOR_SUBMISSION with no build attached and no review submission.
+
+Both development and TestFlight editions still use the single canonical path
+`/Applications/TextText.app`. `npm run testflight:prepare` now handles the one
+direction Apple does not: it verifies installed bundle identities, moves a
+Developer ID copy and verified numbered duplicates to Trash, and opens
+TestFlight. A TestFlight-owned canonical copy stays in place for Apple's normal
+update. The existing `release/ship.sh` install path continues to replace either
+edition with a development/standalone build and removes verified numbered
+duplicates.

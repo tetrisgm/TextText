@@ -18,6 +18,7 @@
     "start": "next start",
     "lint": "eslint",
     "ship": "release/ship.sh",
+    "testflight:prepare": "release/prepare-testflight-install.sh",
     "health:review": "node scripts/review-app-health.mjs",
     "work:start": "tsx scripts/work-unit.ts begin",
     "work:doctor": "tsx scripts/work-unit.ts doctor",
