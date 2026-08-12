@@ -67,6 +67,8 @@ import {
   workspacePublicPostPath,
 } from "@/lib/public-paths";
 import { isPublicOriginRequest } from "@/lib/public-origin";
+import { publicSocialMetadata } from "@/lib/public-metadata";
+import { publishedPublicLocations } from "@/lib/agent-surface";
 import {
   WORKSPACE_SIDEBAR_COOKIE,
   parseWorkspaceSidebarCollapsed,
@@ -336,7 +338,9 @@ function WorkspaceRootLanding({ blog }: { blog: Blog }) {
 }
 
 async function PublicBlogHome({ blog }: { blog: Blog }) {
-  const locations = await getPublicPostLocations(blog.handle);
+  const locations = publishedPublicLocations(
+    await getPublicPostLocations(blog.handle),
+  );
   const posts = locations.map((location) => location.post);
   const pathByPost = new Map(
     locations.map((location) => [
@@ -433,13 +437,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
   const blog = await getBlog(handle);
   if (!blog) return {};
+  const publicBaseUrl = workspacePublicBaseUrl(handle);
   return {
     title: blog.name,
     description: blog.tagline,
     alternates: {
-      canonical: workspacePublicBaseUrl(handle),
+      canonical: publicBaseUrl,
       types: blogFeedAlternateTypes(blog, blog.name),
     },
+    ...publicSocialMetadata({
+      title: blog.name,
+      description: blog.tagline,
+      url: publicBaseUrl,
+      imageUrl: `${publicBaseUrl}/opengraph-image`,
+    }),
   };
 }
 

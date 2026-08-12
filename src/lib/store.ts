@@ -23,6 +23,7 @@ import {
   BLOG_FOLDER_PATH,
   DEFAULT_FILE_REPRESENTATION,
   isPrivatePostType,
+  isPublishedPublicPost,
   readingTimeMinForWordCount,
   wordCountForMarkdown,
 } from "./content";
@@ -78,7 +79,6 @@ import {
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
 import { DEMO_BLOG, DEMO_POSTS } from "./demo";
-import { rootDomainUrl } from "./site-url";
 import {
   accessibleFolderIdsForUser,
   accessiblePostIdsForUser,
@@ -321,10 +321,6 @@ function readingTimeForWordCount(wordCount: number | null): number | undefined {
   return wordCount == null ? undefined : readingTimeMinForWordCount(wordCount);
 }
 
-function isPublicDocument(post: Pick<Post, "visibility" | "type">): boolean {
-  return post.visibility === "public" && !isPrivatePostType(post.type);
-}
-
 function mapPost(row: PostRow): Post {
   const wordCount = row.wordCount ?? wordCountForMarkdown(row.body);
   const legacyPost: Post = {
@@ -561,6 +557,7 @@ async function selectPosts(handle: string, publishedOnly: boolean): Promise<Post
         ? and(
             eq(blogs.handle, handle),
             eq(posts.visibility, "public"),
+            eq(posts.status, "published"),
             ne(posts.type, "note"),
             ne(posts.type, "bookmark"),
             isNull(blogs.deletedAt),
@@ -600,7 +597,7 @@ async function getPostsUncached(handle: string): Promise<Post[]> {
     if (handle !== DEMO_BLOG.handle) return [];
     const selected = pinnedFirst(
       DEMO_POSTS.filter(
-        (post) => isPublicDocument(post),
+        (post) => isPublishedPublicPost(post),
       ),
     );
     return selected.map(withoutPersonalWorkspaceMetadata);
@@ -624,7 +621,7 @@ async function getPublicPostLocationsUncached(
 ): Promise<PublicPostLocation[]> {
   if (!db) {
     if (handle !== DEMO_BLOG.handle) return [];
-    return DEMO_POSTS.filter(isPublicDocument).map((post) => ({
+    return DEMO_POSTS.filter(isPublishedPublicPost).map((post) => ({
       folderPath: BLOG_FOLDER_PATH,
       post: withoutPersonalWorkspaceMetadata(post),
     }));
@@ -638,6 +635,7 @@ async function getPublicPostLocationsUncached(
       and(
         eq(blogs.handle, handle),
         eq(posts.visibility, "public"),
+        eq(posts.status, "published"),
         ne(posts.type, "note"),
         ne(posts.type, "bookmark"),
         isNull(blogs.deletedAt),
@@ -679,7 +677,7 @@ async function getPostsForTagUncached(
         (post) =>
           !isPrivatePostType(post.type) &&
           normalizeTags(post.tags).includes(tag) &&
-          (!publishedOnly || isPublicDocument(post)),
+          (!publishedOnly || isPublishedPublicPost(post)),
       ),
     );
     return selected.map(withoutPersonalWorkspaceMetadata);
@@ -697,6 +695,7 @@ async function getPostsForTagUncached(
         ne(posts.type, "note"),
         ne(posts.type, "bookmark"),
         publishedOnly ? eq(posts.visibility, "public") : undefined,
+        publishedOnly ? eq(posts.status, "published") : undefined,
         sql`${posts.tags} @> ARRAY[${tag}]::text[]`,
       ),
     )
@@ -870,7 +869,7 @@ async function publicPostLocationById(
       ),
     )
     .limit(1);
-  if (!row || !isPublicDocument(mapPost(row.post))) return null;
+  if (!row || !isPublishedPublicPost(mapPost(row.post))) return null;
   return { folderPath: row.folderPath, post: withoutPersonalWorkspaceMetadata(mapPost(row.post)) };
 }
 
@@ -888,7 +887,8 @@ export async function resolvePublicPostPath(
     const post =
       handle === DEMO_BLOG.handle && folderPath === BLOG_FOLDER_PATH
         ? DEMO_POSTS.find(
-            (candidate) => candidate.slug === slug && isPublicDocument(candidate),
+            (candidate) =>
+              candidate.slug === slug && isPublishedPublicPost(candidate),
           )
         : undefined;
     return post
@@ -931,7 +931,7 @@ export async function resolvePublicPostPath(
   if (exactRow) {
     const post = mapPost(exactRow.post);
     if (
-      !isPublicDocument(post) ||
+      !isPublishedPublicPost(post) ||
       (tombstone.length > 0 && reservedFor !== post.id)
     ) {
       return { kind: "missing" };
@@ -958,7 +958,8 @@ export async function resolveLegacyPublicSlug(
     const post =
       handle === DEMO_BLOG.handle
         ? DEMO_POSTS.find(
-            (candidate) => candidate.slug === slug && isPublicDocument(candidate),
+            (candidate) =>
+              candidate.slug === slug && isPublishedPublicPost(candidate),
           )
         : undefined;
     return post
@@ -2561,7 +2562,7 @@ async function getFolderPostsUncached(
     const folderPosts = DEMO_POSTS.filter(
       (post) =>
         folderPathForPostType(post.type) === folderPath &&
-        (!publishedOnly || isPublicDocument(post)),
+        (!publishedOnly || isPublishedPublicPost(post)),
     );
     const selected = pinnedFirst(folderPosts);
     return publishedOnly
@@ -2597,6 +2598,7 @@ async function getFolderPostsUncached(
         publishedOnly ? ne(posts.type, "note") : undefined,
         publishedOnly ? ne(posts.type, "bookmark") : undefined,
         publishedOnly ? eq(posts.visibility, "public") : undefined,
+        publishedOnly ? eq(posts.status, "published") : undefined,
         inFolder,
       ),
     )
@@ -2634,6 +2636,7 @@ async function selectFullPosts(
         ? and(
             eq(blogs.handle, handle),
             eq(posts.visibility, "public"),
+            eq(posts.status, "published"),
             ne(posts.type, "note"),
             ne(posts.type, "bookmark"),
             isNull(blogs.deletedAt),
@@ -2661,7 +2664,7 @@ async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
     if (handle !== DEMO_BLOG.handle) return [];
     const selected = pinnedFirst(
       DEMO_POSTS.filter(
-        (post) => isPublicDocument(post),
+        (post) => isPublishedPublicPost(post),
       ),
     );
     return selected.map(withoutPersonalWorkspaceMetadata);
@@ -2699,7 +2702,7 @@ async function getFolderPostFilesUncached(
     const folderPosts = DEMO_POSTS.filter(
       (post) =>
         folderPathForPostType(post.type) === folderPath &&
-        (!publishedOnly || isPublicDocument(post)),
+        (!publishedOnly || isPublishedPublicPost(post)),
     );
     const selected = pinnedFirst(folderPosts);
     return publishedOnly
@@ -2737,6 +2740,7 @@ async function getFolderPostFilesUncached(
         publishedOnly ? ne(posts.type, "note") : undefined,
         publishedOnly ? ne(posts.type, "bookmark") : undefined,
         publishedOnly ? eq(posts.visibility, "public") : undefined,
+        publishedOnly ? eq(posts.status, "published") : undefined,
         inFolder,
       ),
     )

@@ -14,6 +14,8 @@ import {
 } from "@/lib/public-paths";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { isPublicOriginRequest } from "@/lib/public-origin";
+import { publicSocialMetadata } from "@/lib/public-metadata";
+import { publishedPublicLocations } from "@/lib/agent-surface";
 import {
   getBlog,
   getDocumentTemplate,
@@ -56,15 +58,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     resolution.folderPath,
     resolution.post.slug,
   );
+  const pageTitle = `${title(resolution.post.title)} · ${blog.name}`;
+  const description =
+    postSubtitle(resolution.post) ||
+    resolution.post.body.split(/\n{2,}/)[0]?.slice(0, 160);
   return {
-    title: `${title(resolution.post.title)} · ${blog.name}`,
-    description:
-      postSubtitle(resolution.post) ||
-      resolution.post.body.split(/\n{2,}/)[0]?.slice(0, 160),
+    title: pageTitle,
+    description,
     alternates: canonical ? { canonical } : undefined,
-    openGraph: canonical
-      ? { images: [{ url: `${canonical}/opengraph-image` }] }
-      : undefined,
+    ...(canonical
+      ? publicSocialMetadata({
+          title: pageTitle,
+          description,
+          url: canonical,
+          imageUrl: `${canonical}/opengraph-image`,
+        })
+      : {}),
   };
 }
 
@@ -81,7 +90,7 @@ export default async function WorkspacePublicPost({ params }: Props) {
       />
     );
   }
-  const [blog, resolution, locations] = await Promise.all([
+  const [blog, resolution, unfilteredLocations] = await Promise.all([
     getBlog(handle),
     resolvePublicPostPath(handle, requested.folderPath, requested.slug),
     getPublicPostLocations(handle),
@@ -98,6 +107,7 @@ export default async function WorkspacePublicPost({ params }: Props) {
   }
 
   const post = resolution.post;
+  const locations = publishedPublicLocations(unfilteredLocations);
   const currentPath = workspacePublicPostPath(
     resolution.folderPath,
     post.slug,

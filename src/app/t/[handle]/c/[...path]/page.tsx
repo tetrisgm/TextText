@@ -10,6 +10,7 @@ import {
 } from "@/lib/categories";
 import { workspacePublicBaseUrl } from "@/lib/public-paths";
 import { isPublicOriginRequest } from "@/lib/public-origin";
+import { publicSocialMetadata } from "@/lib/public-metadata";
 import { getBlog } from "@/lib/store";
 
 interface Props {
@@ -26,13 +27,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!blog) return {};
   const category = await resolveCategory(handle, path, { publicOnly: true });
   if (!category) return {};
+  const publicBaseUrl = workspacePublicBaseUrl(handle);
+  const canonical = `${publicBaseUrl}${workspaceCategoryPath(path)}`;
+  const title = `${categoryTitle(category.folder.name)} · ${blog.name}`;
+  const description = `Published posts in ${category.folder.name}.`;
   return {
-    title: `${categoryTitle(category.folder.name)} · ${blog.name}`,
-    description: `Published posts in ${category.folder.name}.`,
+    title,
+    description,
     alternates: {
-      canonical: `${workspacePublicBaseUrl(handle)}${workspaceCategoryPath(path)}`,
+      canonical,
       types: blogFeedAlternateTypes(blog, blog.name),
     },
+    ...publicSocialMetadata({
+      title,
+      description,
+      url: canonical,
+      imageUrl: `${publicBaseUrl}/opengraph-image`,
+    }),
   };
 }
 

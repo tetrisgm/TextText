@@ -830,11 +830,12 @@ the setup guidance and disabled composer. The provider-connected starter state
 and the provider-disconnected absence are both covered by the sidebar render
 tests. The disconnected result was also inspected in the real local workspace
 UI. That run exposed local schema drift: `/api/ai` returned 500 because the
-local `workspace_ai_config` table lacks the `model` column, so the browser run
-exercised the provider-unavailable presentation rather than the clean 404
-response. The render test covers the true `cloudProvider: null` state. No
-production provider was connected, so exercising a starter and the selection
-rewrite end to end still requires the owner.
+local `workspace_ai_config` table lacked the `model` column. The completion
+audit below repaired the local migration lane so `npm run db:push` now adds the
+column and all later workspace AI schema. The render test covers the true
+`cloudProvider: null` state. No production provider was connected, so
+exercising a starter and the selection rewrite end to end still requires the
+owner.
 
 ## Public URL security invariants (owner: leaking content torpedoes the app)
 
@@ -913,6 +914,44 @@ and the Next 16 production build passes. A production-mode local server was
 inspected at `demo.localhost`: public home and article rendering worked at
 `/blog/<slug>`, Markdown and OG representations returned the right content,
 and private, missing, and unknown-workspace requests returned byte-identical
-constant 404 bodies. The schema migration has not been applied to a real
-database in this session, production has not been deployed, and existing
-public links have not yet been exercised against migrated production rows.
+constant 404 bodies. The schema migration has not been applied to production,
+production has not been deployed, and existing public links have not yet been
+exercised against migrated production rows.
+
+## Public URL migration completion audit (2026-08-11)
+
+The migration was exercised against two disposable local Postgres databases,
+including one created from the pre-migration `fcc07edc` schema and seeded with
+published, draft, private, nested-folder, alias, and deleted-workspace rows.
+The migrated database has non-null folder IDs, per-folder slug uniqueness, and
+frozen legacy tombstones. A published rename redirected while public; moving
+the target to draft, private, note, or bookmark made both old and current
+public locations return missing. A second item could use the same slug in a
+different folder but could not capture a tombstoned path in the original
+folder. A brand-new empty database also completed the full `npm run db:push`
+sequence.
+
+That exercise found two faults before production. The public URL migration
+used Neon's HTTP driver even though `db:push` must run against local Postgres,
+and six later migrations had the same incompatibility. They now share a local
+Postgres/Neon wire-protocol adapter. The public URL migration runs on both
+sides of Drizzle schema creation, skips cleanly when `posts` does not exist,
+and wraps an existing-schema migration in a transaction. This also repairs the
+local `workspace_ai_config.model` drift found during the AI rail check.
+
+The second fault was a fail-open mismatch between `visibility` and `status`.
+A row marked public but still draft could reach public queries. One shared
+eligibility rule now requires public visibility, published status, and an
+article-like item type. Store queries, path resolution, adjacent navigation,
+sessionless rendering, sitemap, and JSON payloads enforce it. Tombstone guards
+also preserve paths when status or type crosses the public boundary.
+
+With the inconsistent seed rows still present, a local sessionless server
+returned the published sibling as 200 and returned byte-identical constant 404
+bodies for a public draft, a private note, a missing path, a dead tombstone,
+and an unknown workspace. Draft Markdown and OpenGraph representations also
+returned the same 404 bytes. Home HTML, RSC data, sitemap, and JSON listings
+contained no unpublished titles. Workspace home, article, category, and tag
+metadata now replace inherited root-site social fields with workspace-owned
+canonical and image URLs. This remains source and local-database verification;
+no production migration, deployment, release, or app installation was run.

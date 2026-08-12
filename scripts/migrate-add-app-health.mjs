@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import pkg from "@next/env";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 const databaseUrl = process.env.DATABASE_URL;
@@ -9,7 +9,7 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-const sql = neon(databaseUrl);
+const sql = await connectMigrationDatabase(databaseUrl);
 await sql.query(`
   CREATE TABLE IF NOT EXISTS app_health_reports (
     id uuid PRIMARY KEY,
@@ -45,4 +45,5 @@ await sql.query(`
   CREATE INDEX IF NOT EXISTS app_health_reports_received_idx
   ON app_health_reports (received_at)
 `);
+await sql.close();
 console.log("App health report table is ready.");

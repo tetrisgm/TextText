@@ -110,7 +110,9 @@ describe("unified document boundaries", () => {
   it("only includes explicitly public documents in public adjacency", () => {
     const data = pool([
       post("legacy-status-only", "folder-blog", "private"),
+      { ...post("public-draft", "folder-blog", "public"), status: "draft" },
       post("public", "folder-blog", "public"),
+      { ...post("public-note", "folder-blog", "public"), type: "note" },
     ]);
     expect(adjacentPublishedPostsForPool(data, "public")).toEqual({
       previous: null,

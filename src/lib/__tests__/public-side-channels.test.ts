@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 delete process.env.DATABASE_URL;
 
 const { DEMO_BLOG, DEMO_POSTS } = await import("@/lib/demo");
+const { isPublishedPublicPost } = await import("@/lib/content");
+const { publishedPublicLocations } = await import("@/lib/agent-surface");
 const { getPublicPostLocations } = await import("@/lib/store");
 const { GET: sitemap } = await import(
   "@/app/t/[handle]/sitemap.xml/route"
@@ -12,6 +14,20 @@ const { GET: postsJson } = await import(
 );
 
 describe("public URL side channels", () => {
+  it("requires status, visibility, and item kind to agree before publishing", () => {
+    const base = {
+      type: "article" as const,
+      visibility: "public" as const,
+      status: "published" as const,
+    };
+
+    expect(isPublishedPublicPost(base)).toBe(true);
+    expect(isPublishedPublicPost({ ...base, status: "draft" })).toBe(false);
+    expect(isPublishedPublicPost({ ...base, visibility: "private" })).toBe(false);
+    expect(isPublishedPublicPost({ ...base, type: "note" })).toBe(false);
+    expect(isPublishedPublicPost({ ...base, type: "bookmark" })).toBe(false);
+  });
+
   it("uses one published-only location set", async () => {
     const locations = await getPublicPostLocations(DEMO_BLOG.handle);
 
@@ -21,6 +37,28 @@ describe("public URL side channels", () => {
     expect(
       locations.every(({ post }) => post.type !== "note" && post.type !== "bookmark"),
     ).toBe(true);
+  });
+
+  it("removes unpublished titles again at the public payload boundary", async () => {
+    const [published] = await getPublicPostLocations(DEMO_BLOG.handle);
+    expect(published).toBeDefined();
+    const locations = publishedPublicLocations([
+      published!,
+      {
+        ...published!,
+        post: {
+          ...published!.post,
+          id: "deliberate-draft",
+          slug: "deliberate-draft",
+          title: "Do not serialize this title",
+          status: "draft",
+        },
+      },
+    ]);
+
+    const payload = JSON.stringify(locations);
+    expect(payload).not.toContain("Do not serialize this title");
+    expect(locations).toEqual([published]);
   });
 
   it("keeps every draft and private title out of sitemap and JSON listings", async () => {

@@ -1,4 +1,9 @@
-import { blogBaseUrl, locatedPostUrl, notFound } from "@/lib/agent-surface";
+import {
+  blogBaseUrl,
+  locatedPostUrl,
+  notFound,
+  publishedPublicLocations,
+} from "@/lib/agent-surface";
 import type { Post } from "@/lib/content";
 import { getBlog, getPublicPostLocations } from "@/lib/store";
 import type { PublicPostLocation } from "@/lib/store";
@@ -14,7 +19,9 @@ export async function GET(_request: Request, { params }: Props) {
   const blog = await getBlog(handle);
   if (!blog) return notFound();
 
-  const locations = newestFirst(await getPublicPostLocations(handle));
+  const locations = newestFirst(
+    publishedPublicLocations(await getPublicPostLocations(handle)),
+  );
   const baseUrl = blogBaseUrl(blog);
 
   return new Response(renderSitemap(locations, baseUrl), {

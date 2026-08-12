@@ -1,4 +1,4 @@
-import type { Blog, Post } from "@/lib/content";
+import { isPublishedPublicPost, type Blog, type Post } from "@/lib/content";
 import {
   workspacePublicBaseUrl,
   workspacePublicPostPath,
@@ -7,7 +7,7 @@ import type { PublicPostLocation } from "@/lib/store";
 
 export function publishedNewestFirst(posts: Post[]): Post[] {
   return posts
-    .filter((post) => post.status === "published")
+    .filter(isPublishedPublicPost)
     .sort((a, b) => {
       const aDate = postDate(a);
       const bDate = postDate(b);
@@ -16,6 +16,13 @@ export function publishedNewestFirst(posts: Post[]): Post[] {
       const byDate = (bDate?.getTime() ?? 0) - (aDate?.getTime() ?? 0);
       return byDate || a.slug.localeCompare(b.slug);
     });
+}
+
+/** Defense in depth for every sessionless route and serialized payload. */
+export function publishedPublicLocations(
+  locations: PublicPostLocation[],
+): PublicPostLocation[] {
+  return locations.filter(({ post }) => isPublishedPublicPost(post));
 }
 
 export function blogBaseUrl(blog: Pick<Blog, "handle" | "username">): string {

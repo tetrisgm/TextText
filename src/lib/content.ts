@@ -224,6 +224,17 @@ export interface Post {
   revision?: number;
 }
 
+/** The single eligibility rule for every sessionless publication surface. */
+export function isPublishedPublicPost(
+  post: Pick<Post, "visibility" | "status" | "type">,
+): boolean {
+  return (
+    post.visibility === "public" &&
+    post.status === "published" &&
+    !isPrivatePostType(post.type)
+  );
+}
+
 /**
  * Whether a user-supplied link href is safe to render as a clickable link:
  * web URLs, mail links, and in-site references only. Rejects javascript:,

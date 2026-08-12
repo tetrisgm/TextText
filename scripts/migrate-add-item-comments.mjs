@@ -5,7 +5,7 @@
 //   node scripts/migrate-add-item-comments.mjs
 
 import pkg from "@next/env";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 const databaseUrl = process.env.DATABASE_URL;
@@ -14,7 +14,7 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-const sql = neon(databaseUrl);
+const sql = await connectMigrationDatabase(databaseUrl);
 
 console.log("Creating item comment anchor field type...");
 await sql`
@@ -109,3 +109,4 @@ console.log(
   `Item comments ready. comments=${summary.comments} ` +
     `replies=${summary.replies} resolved=${summary.resolved}`,
 );
+await sql.close();

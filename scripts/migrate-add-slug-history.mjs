@@ -7,7 +7,7 @@
 // Reads DATABASE_URL from the environment or .env.local (no dotenv dependency).
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import pg from "pg";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -24,7 +24,38 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const databaseUrl = loadDatabaseUrl();
+  // This migration runs in both `db:push` (local Postgres) and the release
+  // lane (Neon). Use the wire-protocol driver shared by the other dual-lane
+  // migrations instead of Neon's HTTP-only tagged client.
+  const client = new pg.Client({
+    connectionString: databaseUrl,
+    ssl: databaseUrl.includes(".neon.tech")
+      ? { rejectUnauthorized: true }
+      : undefined,
+  });
+  await client.connect();
+  const table = await client.query(
+    "SELECT to_regclass('public.posts') AS posts_table",
+  );
+  if (!table.rows[0]?.posts_table) {
+    console.log(
+      "Posts table does not exist yet; public URL triggers will run after schema creation.",
+    );
+    await client.end();
+    return;
+  }
+  const sql = async (strings, ...values) => {
+    let text = strings[0];
+    for (let index = 0; index < values.length; index += 1) {
+      text += `$${index + 1}${strings[index + 1]}`;
+    }
+    const result = await client.query(text, values);
+    return result.rows;
+  };
+
+  await client.query("BEGIN");
+  try {
 
   console.log("Adding posts.slug_history...");
   await sql`
@@ -135,6 +166,7 @@ async function main() {
     FROM posts
     WHERE deleted_at IS NULL
       AND visibility = 'public'
+      AND status = 'published'
       AND type NOT IN ('note', 'bookmark')
     ON CONFLICT (blog_id, path) DO NOTHING
   `;
@@ -144,6 +176,7 @@ async function main() {
       FROM posts
       WHERE deleted_at IS NULL
         AND visibility = 'public'
+        AND status = 'published'
         AND type NOT IN ('note', 'bookmark')
     ), unique_aliases AS (
       SELECT blog_id, slug, min(post_id::text)::uuid AS post_id
@@ -164,6 +197,7 @@ async function main() {
       reserved_for uuid;
     BEGIN
       IF NEW.visibility <> 'public'
+         OR NEW.status <> 'published'
          OR NEW.type IN ('note', 'bookmark')
          OR NEW.deleted_at IS NOT NULL THEN
         RETURN NEW;
@@ -188,7 +222,7 @@ async function main() {
   await sql`DROP TRIGGER IF EXISTS posts_guard_public_path ON posts`;
   await sql`
     CREATE TRIGGER posts_guard_public_path
-      BEFORE INSERT OR UPDATE OF blog_id, folder_id, slug, visibility, deleted_at ON posts
+      BEFORE INSERT OR UPDATE OF blog_id, folder_id, slug, visibility, status, type, deleted_at ON posts
       FOR EACH ROW EXECUTE FUNCTION guard_public_post_path()
   `;
   await sql`
@@ -199,6 +233,7 @@ async function main() {
       leaves_public_path boolean;
     BEGIN
       IF OLD.visibility <> 'public'
+         OR OLD.status <> 'published'
          OR OLD.type IN ('note', 'bookmark')
          OR OLD.deleted_at IS NOT NULL THEN
         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
@@ -207,6 +242,8 @@ async function main() {
       leaves_public_path := TG_OP = 'DELETE'
         OR NEW.deleted_at IS NOT NULL
         OR NEW.visibility <> 'public'
+        OR NEW.status <> 'published'
+        OR NEW.type IN ('note', 'bookmark')
         OR NEW.blog_id IS DISTINCT FROM OLD.blog_id
         OR NEW.folder_id IS DISTINCT FROM OLD.folder_id
         OR NEW.slug IS DISTINCT FROM OLD.slug;
@@ -232,7 +269,7 @@ async function main() {
   await sql`DROP TRIGGER IF EXISTS posts_preserve_public_path ON posts`;
   await sql`
     CREATE TRIGGER posts_preserve_public_path
-      BEFORE UPDATE OF blog_id, folder_id, slug, visibility, deleted_at OR DELETE ON posts
+      BEFORE UPDATE OF blog_id, folder_id, slug, visibility, status, type, deleted_at OR DELETE ON posts
       FOR EACH ROW EXECUTE FUNCTION preserve_public_post_path()
   `;
 
@@ -246,6 +283,13 @@ async function main() {
   console.log(
     `Done. posts=${summary.posts} posts_with_aliases=${summary.aliases} max_aliases=${summary.max_aliases}`,
   );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    await client.end();
+  }
 }
 
 main().catch((error) => {

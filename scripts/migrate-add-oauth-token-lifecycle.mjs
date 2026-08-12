@@ -6,7 +6,7 @@
 //   node scripts/migrate-add-oauth-token-lifecycle.mjs
 
 import pkg from "@next/env";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 
@@ -16,7 +16,7 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-const sql = neon(databaseUrl);
+const sql = await connectMigrationDatabase(databaseUrl);
 
 console.log("Adding nullable access-token expiry...");
 await sql`
@@ -93,3 +93,4 @@ console.log(
     `refresh_tokens=${summary.refresh_tokens} ` +
     `access_tokens=${summary.oauth_access_tokens}`,
 );
+await sql.close();

@@ -8,6 +8,8 @@ import {
   workspacePublicBaseUrl,
 } from "@/lib/public-paths";
 import { isPublicOriginRequest } from "@/lib/public-origin";
+import { publicSocialMetadata } from "@/lib/public-metadata";
+import { publishedPublicLocations } from "@/lib/agent-surface";
 import { getBlog, getPublicPostLocations } from "@/lib/store";
 import { normalizeTag, normalizeTags } from "@/lib/tags";
 
@@ -20,13 +22,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const blog = await getBlog(handle);
   const tag = normalizeTag(rawTag);
   if (!blog || !tag) return {};
+  const publicBaseUrl = workspacePublicBaseUrl(handle);
+  const canonical = `${publicBaseUrl}/tags/${encodeURIComponent(tag)}`;
+  const title = `#${tag} · ${blog.name}`;
+  const description = `Published posts tagged #${tag}.`;
   return {
-    title: `#${tag} · ${blog.name}`,
-    description: `Published posts tagged #${tag}.`,
+    title,
+    description,
     alternates: {
-      canonical: `${workspacePublicBaseUrl(handle)}/tags/${encodeURIComponent(tag)}`,
+      canonical,
       types: blogFeedAlternateTypes(blog, blog.name),
     },
+    ...publicSocialMetadata({
+      title,
+      description,
+      url: canonical,
+      imageUrl: `${publicBaseUrl}/opengraph-image`,
+    }),
   };
 }
 
@@ -46,9 +58,9 @@ export async function TagPageForHandle({
   if (!publicOrigin && redirectClaimed && blog.username) {
     redirect(blogTagPath(blog, tag));
   }
-  const locations = (await getPublicPostLocations(handle)).filter((location) =>
-    normalizeTags(location.post.tags).includes(tag),
-  );
+  const locations = publishedPublicLocations(
+    await getPublicPostLocations(handle),
+  ).filter((location) => normalizeTags(location.post.tags).includes(tag));
   return (
     <TagListing
       blog={blog}

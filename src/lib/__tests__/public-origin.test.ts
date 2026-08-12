@@ -13,6 +13,7 @@ import {
   workspacePublicPostPath,
   workspacePublicPostUrl,
 } from "@/lib/public-paths";
+import { publicSocialMetadata } from "@/lib/public-metadata";
 
 const previousRootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
 
@@ -78,6 +79,33 @@ describe("sessionless workspace origins", () => {
     expect(blogWorkspacePostEditPath(blog, "blog/research-notes", post)).toBe(
       "/@writer/blog/research-notes/index?edit=1&id=post-id",
     );
+  });
+
+  it("replaces inherited root-site social URLs on public pages", () => {
+    const metadata = publicSocialMetadata({
+      title: "Research · Clear Slate",
+      description: "Published research.",
+      url: "https://clear-slate.texttext.app/blog/research/index",
+      imageUrl:
+        "https://clear-slate.texttext.app/blog/research/index/opengraph-image",
+    });
+
+    expect(metadata.openGraph).toMatchObject({
+      title: "Research · Clear Slate",
+      url: "https://clear-slate.texttext.app/blog/research/index",
+      images: [
+        {
+          url: "https://clear-slate.texttext.app/blog/research/index/opengraph-image",
+        },
+      ],
+    });
+    expect(metadata.twitter).toMatchObject({
+      title: "Research · Clear Slate",
+      images: [
+        "https://clear-slate.texttext.app/blog/research/index/opengraph-image",
+      ],
+    });
+    expect(JSON.stringify(metadata)).not.toContain("/t/clear-slate");
   });
 
   it("rejects folder paths that could escape or collide with route syntax", () => {

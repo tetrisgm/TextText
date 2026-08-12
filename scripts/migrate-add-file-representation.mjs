@@ -8,7 +8,7 @@
 //   node scripts/migrate-add-file-representation.mjs
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 const BACKFILL_MARKER = "texttext:file-representation:v1-backfilled";
 const BACKFILL_MARKER_SUFFIX = ":file-representation:v1-backfilled";
@@ -28,7 +28,7 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
 
   console.log("Creating file_representation enum (if missing)...");
   await sql`
@@ -138,6 +138,7 @@ async function main() {
     `Done. posts=${summary.posts} textbundle=${summary.textbundles} ` +
       `markdown=${summary.markdown} text=${summary.text} backfilled=${backfilled}`,
   );
+  await sql.close();
 }
 
 main().catch((error) => {

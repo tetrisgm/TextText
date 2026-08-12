@@ -5,7 +5,7 @@
 // Reads DATABASE_URL from the environment or .env.local (no dotenv dependency).
 
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -22,7 +22,7 @@ function loadDatabaseUrl() {
 }
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const sql = await connectMigrationDatabase(loadDatabaseUrl());
 
   console.log("Adding posts.tags...");
   await sql`
@@ -47,6 +47,7 @@ async function main() {
   console.log(
     `Done. posts=${summary.posts} tagged_posts=${summary.tagged_posts} max_tags=${summary.max_tags}`,
   );
+  await sql.close();
 }
 
 main().catch((error) => {

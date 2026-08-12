@@ -1,5 +1,6 @@
 import {
   BLOG_FOLDER_PATH,
+  isPublishedPublicPost,
   readingTimeMinForWordCount,
 } from "@/lib/content";
 import type { Blog, Folder, Post } from "@/lib/content";
@@ -315,7 +316,7 @@ export function adjacentPublishedPostsForPool(
   postKey: string,
 ): AdjacentPublishedPosts {
   const published = pool.posts
-    .filter((post) => post.visibility === "public")
+    .filter(isPublishedPublicPost)
     .slice()
     .sort((a, b) => {
       if (Boolean(a.pinned) !== Boolean(b.pinned)) {

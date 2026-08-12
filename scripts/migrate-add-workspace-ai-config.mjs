@@ -2,7 +2,7 @@
 // Idempotent migration for encrypted, workspace-scoped cloud AI credentials.
 
 import pkg from "@next/env";
-import { neon } from "@neondatabase/serverless";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
 pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 const databaseUrl = process.env.DATABASE_URL;
@@ -11,7 +11,7 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-const sql = neon(databaseUrl);
+const sql = await connectMigrationDatabase(databaseUrl);
 await sql.query(`
   CREATE TABLE IF NOT EXISTS workspace_ai_config (
     blog_id uuid PRIMARY KEY REFERENCES blogs(id) ON DELETE CASCADE,
@@ -40,4 +40,5 @@ await sql.query(`
   ALTER TABLE workspace_ai_config
   ALTER COLUMN model SET NOT NULL
 `);
+await sql.close();
 console.log("Workspace AI configuration table is ready.");

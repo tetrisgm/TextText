@@ -6,6 +6,7 @@ import {
   llmsTxtUrl,
   notFound,
   postIsoDate,
+  publishedPublicLocations,
   publishedNewestFirst,
 } from "@/lib/agent-surface";
 import {
@@ -20,11 +21,12 @@ interface Props {
 
 export async function GET(_request: Request, { params }: Props) {
   const { handle } = await params;
-  const [blog, locations] = await Promise.all([
+  const [blog, unfilteredLocations] = await Promise.all([
     getBlog(handle),
     getPublicPostLocations(handle),
   ]);
   if (!blog) return notFound();
+  const locations = publishedPublicLocations(unfilteredLocations);
 
   const baseUrl = blogBaseUrl(blog);
   const listing = {
