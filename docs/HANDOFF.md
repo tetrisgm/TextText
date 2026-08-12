@@ -765,11 +765,9 @@ Target, in the owner's order of preference:
 
 Decisions that have to be made before writing any code:
 
-- **Slug uniqueness scope.** `posts_blog_slug_idx` is a partial index over live
-  slugs per blog. Putting the folder in the path allows per-folder uniqueness
-  instead, which is friendlier (two folders can each have `index`), but it is a
-  schema change and it changes what a rename can collide with. Decide before
-  migrating, not after.
+- **Slug uniqueness scope: DECIDED 2026-08-11 — per folder.** Two folders can
+  each have `index`. This is a schema change (`posts_blog_slug_idx` is per
+  blog today) and it changes what a rename can collide with.
 - **Cookie scope, if subdomains.** Session cookies scoped to `texttext.app` do
   not automatically apply to a workspace subdomain. Sign-in, the Mac app's web
   view, and the auth sheet all need deliberate handling. See the open bug below;
@@ -790,3 +788,43 @@ This is the layer every previous fix missed. Pointing sign-out at `/signin`
 treated the symptom, and the dead end came back through a different door (the
 workspace title in the Mac app navigates there). Start at `access.canEdit`
 around line 387 and at whether the session cookie is sent on `/t/[handle]`.
+
+## Public URL security invariants (owner: leaking content torpedoes the app)
+
+Decided alongside per-folder slugs. These are requirements, not suggestions;
+each one exists because readable folder-in-path URLs enlarge the privacy
+surface. The owner rates a content leak as fatal to the product.
+
+1. **One generic 404.** Any URL the viewer may not see returns the same
+   response - same status, same body shape, no 403, no "private" variant -
+   whether the folder does not exist, the item is a draft, or nothing was ever
+   there. Distinguishable responses are an enumeration oracle for private
+   structure. Applies to nonexistent workspace subdomains too (wildcard DNS
+   answers for everything).
+2. **Publishing is the only act that exposes a folder name.** A folder with no
+   published items appears in no URL, sitemap, index page, redirect, or error.
+   In a shared workspace, publishing an item exposes the folder name to the
+   world - say so in the publish flow ("this will be at /research/...").
+3. **Freed slugs must not capture old links.** Per-folder uniqueness means a
+   move or delete frees a slug. Old published URLs get tombstone redirects, and
+   a redirect follows the item ONLY while the destination is itself public;
+   an item moved to a private folder or unpublished gets the generic 404, or
+   the redirect leaks the new location to anyone holding the old link.
+4. **Every side channel filters with the page's own rule.** Sitemap, RSS,
+   search, OG images, and the hydrated workspace pool payload can each leak a
+   draft title on their own. Notes and bookmarks stay unlisted whatever folder
+   they are in; their links resolve only for people with access.
+5. **Preferred architecture: sessionless public origin.** If workspaces get
+   subdomains, the public origin reads no cookies at all. It can only serve
+   published content because it has no notion of a viewer. The private/public
+   boundary becomes an origin boundary - structurally leak-proof rather than
+   tested-leak-free - and the cookie-scoping problem disappears instead of
+   needing to be solved. (Notion Sites shape: notion.site is publish-only.)
+   Consequence: the public page is always the stranger's view, by design; the
+   Mac app must stop stranding the owner there (the title-click dead end) and
+   offer a way back into the app instead.
+6. **Tests to write with the migration, not after:** signed-out fetch of an
+   unlisted note URL is byte-identical to a never-existed URL; a draft in a
+   published folder 404s while its published sibling 200s; the sitemap and
+   pool payload contain no unpublished titles; a tombstone redirect dies the
+   moment its target is moved private.
