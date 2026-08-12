@@ -820,6 +820,22 @@ verification confirmed the current owner route renders the workspace and the
 workspace title opens its menu. Computer Use could not read the installed app's
 window, so the owner has not yet exercised the fix in an installed build.
 
+## AI rail starters require a connected provider (2026-08-11)
+
+The empty assistant rail used to render working-looking prompt starters even
+when `cloudProvider` was null. The composer was disabled, but a starter could
+still copy a prompt into it and leave the person at a dead end. Starters now
+render only when a provider is connected; the disconnected state contains only
+the setup guidance and disabled composer. The provider-connected starter state
+and the provider-disconnected absence are both covered by the sidebar render
+tests. The disconnected result was also inspected in the real local workspace
+UI. That run exposed local schema drift: `/api/ai` returned 500 because the
+local `workspace_ai_config` table lacks the `model` column, so the browser run
+exercised the provider-unavailable presentation rather than the clean 404
+response. The render test covers the true `cloudProvider: null` state. No
+production provider was connected, so exercising a starter and the selection
+rewrite end to end still requires the owner.
+
 ## Public URL security invariants (owner: leaking content torpedoes the app)
 
 Decided alongside per-folder slugs. These are requirements, not suggestions;

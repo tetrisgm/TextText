@@ -121,7 +121,7 @@ export function AssistantConversation({
             ? "Ask about what you are looking at, or start with one of these."
             : "Add an Anthropic or OpenAI API key in Workspace Settings. To use an existing ChatGPT or Claude subscription, connect TextText from that app through MCP."}
         </p>
-        {onUsePrompt && (
+        {cloudProvider && onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">
             {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
               <button

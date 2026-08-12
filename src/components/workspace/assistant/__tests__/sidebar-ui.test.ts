@@ -233,6 +233,8 @@ describe("assistant sidebar UI", () => {
 
     expect(html).toContain("Connect an AI provider");
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
+    expect(html).not.toContain('aria-label="Prompt starters"');
+    expect(html).not.toContain("Catch me up");
   });
 
   it("explains selected-text context and unavailable attachments", () => {
