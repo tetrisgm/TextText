@@ -22,7 +22,15 @@ final class CodexAppServerController {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
-        process.environment = environment
+        var safeEnvironment: [String: String] = [
+            "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
+            "TMPDIR": NSTemporaryDirectory(),
+        ]
+        for (key, value) in environment where key != "OPENAI_API_KEY" && key != "ANTHROPIC_API_KEY" {
+            safeEnvironment[key] = value
+        }
+        process.environment = safeEnvironment
     }
 
     func start() throws {
