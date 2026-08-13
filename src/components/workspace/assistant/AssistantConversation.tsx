@@ -135,11 +135,6 @@ export function AssistantConversation({
         </p>
         {!cloudProvider && nativeConnection?.state !== "ready" && (
           <>
-            <ol className={styles.connectionSteps}>
-              <li>Connect ChatGPT, Claude, or another agent</li>
-              <li>TextText remembers your selected agent</li>
-              <li>Ask it to work on the document beside you</li>
-            </ol>
             <div className={styles.examples} aria-label="AI connection choices">
             {nativeConnection?.embeddedChatSupported && onConnectNative ? (
               <button type="button" onClick={onConnectNative}>
