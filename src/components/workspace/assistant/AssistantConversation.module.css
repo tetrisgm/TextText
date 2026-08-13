@@ -35,6 +35,37 @@
   text-underline-offset: 3px;
 }
 
+.otherConnections {
+  margin-top: 1px;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+}
+
+.otherConnections summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.otherConnections summary::-webkit-details-marker { display: none; }
+.otherConnections summary::after { content: "＋"; margin-left: 5px; }
+.otherConnections[open] summary::after { content: "−"; }
+
+.otherConnectionsBody {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--ac-hairline);
+}
+
+.otherConnectionsBody a {
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption1) / 1.35 var(--ac-font-text);
+  text-decoration: none;
+}
+
+.otherConnectionsBody a:hover { color: var(--ac-label); text-decoration: underline; }
+
 .empty::before {
   content: "✦";
   display: grid;

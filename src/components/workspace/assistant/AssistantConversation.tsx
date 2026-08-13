@@ -136,21 +136,25 @@ export function AssistantConversation({
         {!cloudProvider && nativeConnection?.state !== "ready" && (
           <>
             <div className={styles.examples} aria-label="AI connection choices">
-            {nativeConnection?.embeddedChatSupported && onConnectNative ? (
-              <button type="button" onClick={onConnectNative}>
-                <span>Continue with ChatGPT</span>
-                <span aria-hidden="true">→</span>
-              </button>
-            ) : null}
-            <a href="/connect">
-              <span>Connect another AI app</span>
-              <span aria-hidden="true">→</span>
-            </a>
-            <a href="/docs/ai#api-key">
-              <span>Use an API key</span>
-              <span aria-hidden="true">→</span>
-            </a>
+              {nativeConnection?.embeddedChatSupported && onConnectNative ? (
+                <button type="button" onClick={onConnectNative}>
+                  <span>Continue with ChatGPT</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              ) : (
+                <a href="/connect">
+                  <span>Connect an AI app</span>
+                  <span aria-hidden="true">→</span>
+                </a>
+              )}
             </div>
+            <details className={styles.otherConnections}>
+              <summary>Other ways to connect</summary>
+              <div className={styles.otherConnectionsBody}>
+                <a href="/connect">Claude, Codex, ChatGPT, or another MCP app</a>
+                <a href="/docs/ai#api-key">Bring your own API key</a>
+              </div>
+            </details>
             <a className={styles.setupLink} href="/docs/ai">See the 2-minute setup guide</a>
           </>
         )}
