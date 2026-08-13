@@ -38,6 +38,31 @@ if [[ -x "$executable" ]]; then
   fi
 fi
 
+# TestFlight can leave a numbered sibling when it cannot replace a prior
+# bundle. Before installing the local build, collect every TextText bundle in
+# Applications so the canonical path is the only launchable copy.
+shopt -s nullglob
+siblings=("$PARENT"/TextText\ [0-9]*.app)
+for sibling in "${siblings[@]}"; do
+  sibling_id="$($PB -c 'Print :CFBundleIdentifier' "$sibling/Contents/Info.plist" 2>/dev/null || true)"
+  [[ "$sibling_id" == "app.texttext.mac" ]] || continue
+  sibling_executable="$sibling/Contents/MacOS/TextText"
+  sibling_pids="$(ps ax -o pid=,command= | awk -v executable="$sibling_executable" '$2 == executable { print $1 }')"
+  if [[ -n "$sibling_pids" ]]; then
+    kill -TERM $sibling_pids 2>/dev/null || true
+    for _ in {1..20}; do
+      sibling_pids="$(ps ax -o pid=,command= | awk -v executable="$sibling_executable" '$2 == executable { print $1 }')"
+      [[ -z "$sibling_pids" ]] && break
+      sleep 0.25
+    done
+    [[ -z "$sibling_pids" ]] || { echo "TextText sibling did not quit; refusing replacement." >&2; rm -rf "$STAGE"; exit 1; }
+  fi
+  mkdir -p "$TRASH"
+  sibling_destination="$TRASH/TextText.previous-sibling.$$.app"
+  [[ ! -e "$sibling_destination" ]] || sibling_destination="$TRASH/TextText.previous-sibling.$$.${RANDOM}.app"
+  mv "$sibling" "$sibling_destination"
+done
+
 if [[ -e "$APP" ]]; then
   mv "$APP" "$OLD"
 fi
