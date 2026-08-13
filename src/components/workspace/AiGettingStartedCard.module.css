@@ -1,7 +1,8 @@
 .card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px 24px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  max-width: 760px;
   margin: 16px 0 20px;
   padding: 18px 20px;
   border: 1px solid var(--ac-hairline);
@@ -14,7 +15,7 @@
 .kicker { margin: 0; color: var(--ac-label-2); font-size: var(--ac-fs-caption1); font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
 .copy h2 { margin: 0; font-size: var(--ac-fs-title3); line-height: 1.2; }
 .copy p:last-child { margin: 0; max-width: 58ch; color: var(--ac-label-2); font-size: var(--ac-fs-footnote); line-height: 1.45; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px; }
 .primary, .secondary { min-height: 32px; border-radius: 7px; padding: 7px 11px; font: 650 var(--ac-fs-footnote) / 1 var(--ac-font-text); text-decoration: none; cursor: pointer; }
 .primary { border: 1px solid var(--ac-accent); background: var(--ac-accent); color: var(--ac-accent-contrast); }
 .secondary { border: 1px solid var(--ac-hairline); background: transparent; color: var(--ac-label); }
@@ -22,7 +23,4 @@
 .prompts button { border: 0; border-radius: 999px; padding: 6px 9px; background: var(--ac-fill-3); color: var(--ac-label); font: 600 var(--ac-fs-caption1) / 1.1 var(--ac-font-text); cursor: pointer; }
 .primary:focus-visible, .secondary:focus-visible, .prompts button:focus-visible { outline: none; box-shadow: var(--ac-focus); }
 
-@media (max-width: 720px) {
-  .card { grid-template-columns: 1fr; }
-  .actions { justify-content: flex-start; }
-}
+@media (max-width: 720px) { .card { max-width: none; } }

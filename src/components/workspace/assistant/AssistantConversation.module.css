@@ -4,7 +4,7 @@
 .empty {
   display: grid;
   gap: 8px;
-  padding: 18px 4px;
+  padding: 24px 12px 18px;
   color: var(--ac-label-2);
 }
 
@@ -19,6 +19,19 @@
   margin: 0;
   font: 500 var(--ac-fs-footnote) / 1.4 var(--ac-font-text);
   letter-spacing: 0;
+}
+
+.empty::before {
+  content: "✦";
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--ac-fill-3);
+  color: var(--ac-label);
+  font-size: 22px;
 }
 
 .modelStatus {
