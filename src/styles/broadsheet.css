@@ -7667,17 +7667,17 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 /* Workspace proportions: the assistant is a calm inspector, not a second
    page. Keep its width bounded even when an older saved resize is present. */
 .workspace-document-layout {
-  grid-template-columns: minmax(0, 1fr) 320px !important;
+  grid-template-columns: minmax(0, 1fr) 240px !important;
 }
 .workspace-document-layout > .workspace-assistant-shell {
-  --assistant-sidebar-width: 320px !important;
-  width: 320px !important;
-  max-width: 320px !important;
+  --assistant-sidebar-width: 240px !important;
+  width: 240px !important;
+  max-width: 240px !important;
 }
 .workspace-document-layout [data-assistant-sidebar] {
-  --assistant-sidebar-width: 320px !important;
-  width: 320px !important;
-  max-width: 320px !important;
+  --assistant-sidebar-width: 240px !important;
+  width: 240px !important;
+  max-width: 240px !important;
 }
 .workspace-root-page .workspace-root-inner {
   width: min(100%, 1080px) !important;
