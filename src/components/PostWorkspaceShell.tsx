@@ -6641,7 +6641,10 @@ function LocalWorkspaceShell({
         onStateChange={changeAssistantState}
         width={assistantWidth}
         onWidthChange={changeAssistantWidth}
-        layout="overlay"
+        // The assistant is a real second column in the workspace shell. Using
+        // overlay mode here makes its absolute-positioning rules collapse the
+        // grid track and overlap the library on narrower windows.
+        layout="inline"
         context={assistantContext}
         composerValue={assistantComposer.draft.text}
         onComposerChange={assistantComposer.setText}

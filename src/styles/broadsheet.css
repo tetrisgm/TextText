@@ -2440,7 +2440,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .workspace-document-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, var(--workspace-assistant-width, 360px));
   min-width: 0;
   min-height: 100%;
   align-items: stretch;
@@ -2452,7 +2452,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   position: relative !important;
   inset: auto !important;
   height: auto !important;
-  width: min(var(--workspace-assistant-width, 360px), 100% ) !important;
+  width: var(--workspace-assistant-width, 360px) !important;
+  min-width: 280px !important;
+  max-width: 100% !important;
 }
 .post-editor-shell {
   position: relative;
