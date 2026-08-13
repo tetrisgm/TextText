@@ -42,8 +42,11 @@ fi
 # bundle. Before installing the local build, collect every TextText bundle in
 # Applications so the canonical path is the only launchable copy.
 shopt -s nullglob
-siblings=("$PARENT"/TextText\ [0-9]*.app)
-for sibling in "${siblings[@]}"; do
+siblings=()
+if compgen -G "$PARENT/TextText [0-9]*.app" >/dev/null; then
+  siblings=("$PARENT"/TextText\ [0-9]*.app)
+fi
+for sibling in "${siblings[@]-}"; do
   sibling_id="$($PB -c 'Print :CFBundleIdentifier' "$sibling/Contents/Info.plist" 2>/dev/null || true)"
   [[ "$sibling_id" == "app.texttext.mac" ]] || continue
   sibling_executable="$sibling/Contents/MacOS/TextText"
