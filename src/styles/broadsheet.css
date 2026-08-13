@@ -2438,6 +2438,22 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     margin-left 0.18s var(--ease),
     margin-right 0.18s var(--ease);
 }
+.workspace-document-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 100%;
+  align-items: stretch;
+}
+.workspace-document-layout > .post-editor-content { grid-column: 1; min-width: 0; }
+.workspace-document-layout > .workspace-assistant-shell {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative !important;
+  inset: auto !important;
+  height: auto !important;
+  width: min(var(--workspace-assistant-width, 360px), 100% ) !important;
+}
 .post-editor-shell {
   position: relative;
   min-height: 100dvh;

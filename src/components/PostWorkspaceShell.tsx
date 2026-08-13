@@ -6569,6 +6569,7 @@ function LocalWorkspaceShell({
           (displayPool.trashedFolders?.length ?? 0)
         }
       />
+      <div className="workspace-document-layout">
       <div
         ref={contentRef}
         tabIndex={-1}
@@ -6692,6 +6693,7 @@ function LocalWorkspaceShell({
           onUndoProposal={assistant.undoProposal}
         />
       </AssistantSidebar>
+      </div>
       <ConfirmationDialog
         open={Boolean(assistantConfirmation)}
         title="Confirm assistant action"
