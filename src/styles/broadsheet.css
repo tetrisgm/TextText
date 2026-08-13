@@ -7672,6 +7672,12 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-document-layout > .workspace-assistant-shell {
   --assistant-sidebar-width: 400px !important;
   width: 400px !important;
+  max-width: 400px !important;
+}
+.workspace-document-layout [data-assistant-sidebar] {
+  --assistant-sidebar-width: 400px !important;
+  width: 400px !important;
+  max-width: 400px !important;
 }
 .workspace-root-page .workspace-root-inner {
   width: min(100%, 1080px) !important;
