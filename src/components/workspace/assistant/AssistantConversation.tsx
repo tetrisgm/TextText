@@ -123,15 +123,24 @@ export function AssistantConversation({
             ? greeting(viewerName, new Date())
             : "Write with an agent"}
         </p>
+        {!cloudProvider && nativeConnection?.state !== "ready" && (
+          <p className={styles.emptyEyebrow}>Connect once, then keep working here</p>
+        )}
         <p className={styles.emptyBody}>
           {cloudProvider || nativeConnection?.state === "ready"
             ? "Ask about what you are looking at, or start with one of these."
             : nativeConnection?.state === "runtime-missing"
               ? "The embedded agent is available in the Mac app. You can connect another AI app or add an API key to start here."
-              : "Connect an AI provider. Connect ChatGPT to use an agent directly inside TextText, or choose another connection path in Settings."}
+              : "Connect an AI provider once. Choose the agent you already use, and TextText keeps it in this sidebar so you can write, revise, and act without switching apps. API keys are optional."}
         </p>
         {!cloudProvider && nativeConnection?.state !== "ready" && (
-          <div className={styles.examples} aria-label="AI connection choices">
+          <>
+            <ol className={styles.connectionSteps}>
+              <li>Connect ChatGPT, Claude, or another agent</li>
+              <li>TextText remembers your selected agent</li>
+              <li>Ask it to work on the document beside you</li>
+            </ol>
+            <div className={styles.examples} aria-label="AI connection choices">
             {nativeConnection?.embeddedChatSupported && onConnectNative ? (
               <button type="button" onClick={onConnectNative}>
                 <span>Continue with ChatGPT</span>
@@ -146,7 +155,9 @@ export function AssistantConversation({
               <span>Use an API key</span>
               <span aria-hidden="true">→</span>
             </a>
-          </div>
+            </div>
+            <a className={styles.setupLink} href="/docs/ai">See the 2-minute setup guide</a>
+          </>
         )}
         {(cloudProvider || nativeConnection?.state === "ready") && onUsePrompt && (
           <div className={styles.examples} aria-label="Prompt starters">

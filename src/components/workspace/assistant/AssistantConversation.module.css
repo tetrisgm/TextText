@@ -21,6 +21,29 @@
   letter-spacing: 0;
 }
 
+.emptyEyebrow {
+  margin: -2px 0 0;
+  color: var(--ac-label);
+  font: 650 var(--ac-fs-footnote) / 1.3 var(--ac-font-text);
+}
+
+.connectionSteps {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0 4px;
+  padding: 0 0 0 18px;
+  color: var(--ac-label-2);
+  font: 500 var(--ac-fs-caption1) / 1.4 var(--ac-font-text);
+}
+
+.setupLink {
+  align-self: start;
+  margin-top: 1px;
+  color: var(--ac-label-2);
+  font: 600 var(--ac-fs-caption1) / 1.2 var(--ac-font-text);
+  text-underline-offset: 3px;
+}
+
 .empty::before {
   content: "✦";
   display: grid;
@@ -142,6 +165,16 @@
 .examples button:hover:not(:disabled),
 .examples a:hover {
   background: var(--ac-fill-3);
+}
+
+.examples button:first-child {
+  border-color: var(--ac-accent);
+  background: var(--ac-accent);
+  color: var(--ac-accent-contrast);
+}
+
+.examples button:first-child:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ac-accent) 88%, var(--ac-label));
 }
 
 .examples button:focus-visible,
