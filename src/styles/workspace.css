@@ -768,6 +768,18 @@
   background: var(--bg);
 }
 
+/* Keep the library and assistant in the same proportions as the document
+   view: a generous writing surface with a quiet, fixed inspector.  The
+   previous fluid rail could grow to half the window after a persisted resize,
+   leaving the library stranded in a narrow strip. */
+.workspace-document-layout {
+  grid-template-columns: minmax(0, 1fr) 400px;
+}
+
+.workspace-document-layout > .workspace-assistant-shell {
+  width: 400px !important;
+}
+
 .workspace-assistant-shell[data-state="hidden"] {
   width: 44px !important;
 }
@@ -783,8 +795,8 @@
 }
 
 :where(.workspace-root-page, .workspace-collection-page, .post-folder-page) {
-  max-width: 1180px;
-  padding: 56px 28px 80px;
+  max-width: none;
+  padding: 56px 48px 80px;
 }
 
 .workspace-root-inner {
