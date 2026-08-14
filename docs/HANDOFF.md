@@ -1106,3 +1106,32 @@ Open, in order:
    unexercised end to end: the dev workspace has no AI provider key.
 4. The workspace title in the Mac app still strands the owner on the public
    blog page (canEdit bug recorded above, 2026-08-11, unfixed).
+
+## The Notion polish loop (2026-08-14, owner directive: loop until it looks like Notion)
+
+Standing loop: name the loudest deltas from Notion, fix, verify both themes by
+screenshot at 1400, commit, repeat. Rounds landed so far:
+
+1. `8aa78c43` - measured centered content column (1000px), quiet search field,
+   sidebar boundary is a color not a line, unboxed item icons and create box.
+2. `249384da` - bare-glyph history arrows and sidebar toggle, counts as quiet
+   facts, whispering section headings.
+3. `4714b447` - `--workspace-rail-inset`: the shell publishes how much right
+   edge the docked rail owns; ALL fixed chrome (action bars, save chip) adds
+   it to its own right offset. Add the inset to any new fixed element or it
+   will sit on top of the rail.
+
+Also this session: the rail state machine is binary (`d90650df`, open=docked
+or closed=avatar; the overlay state and hover-peek are gone), starters are
+filled cards, scrollbars thin and trackless, toolbar controls surface on
+hover only.
+
+Next-round candidates, loudest first:
+- The blog/editor surface pins its theme at load and does not re-resolve on a
+  live prefers-color-scheme flip (mixed frame: dark chips on a light page).
+  Real users hit this on macOS auto theme switch at sunset.
+- Rail connect-state block could inherit the greeting state's vertical rhythm.
+- Library "Type a title" composer + blue submit could be quieter still.
+- Typography rhythm pass: line-heights and paddings against Notion's 14px UI.
+- The owner still has NO provider key in dev, so the greeting/starters state
+  and every AI run remain visually unverified; ask for or wait for a key.
