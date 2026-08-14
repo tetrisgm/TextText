@@ -189,11 +189,16 @@
 }
 
 .universal-item-composer {
-  min-height: 46px;
-  border: 1px solid var(--hairline);
-  border-radius: 9px;
-  background: var(--bg);
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--control-bg);
   box-shadow: none;
+  transition: background-color 0.18s var(--ease);
+}
+
+.universal-item-composer:hover {
+  background: var(--control-bg-hover);
 }
 
 .universal-item-composer:focus-within {
@@ -773,8 +778,9 @@
    previous fluid rail could grow to half the window after a persisted resize,
    leaving the library stranded in a narrow strip. */
 :where(.workspace-root-page, .workspace-collection-page, .post-folder-page) {
-  max-width: none;
-  padding: 56px 48px 80px;
+  max-width: 1000px;
+  margin-inline: auto;
+  padding: 64px 48px 96px;
 }
 
 .workspace-root-inner {
