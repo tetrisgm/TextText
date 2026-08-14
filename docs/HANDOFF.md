@@ -1126,6 +1126,17 @@ or closed=avatar; the overlay state and hover-peek are gone), starters are
 filled cards, scrollbars thin and trackless, toolbar controls surface on
 hover only.
 
+Round landed 2026-08-14 (a3065460, 27666973): the connect CTA rebuilt to the
+pen.dev/paper.design bar. The rail's connect state lists every path as its own
+actionable row from AGENT_INTEGRATIONS (Claude and Codex copy their one
+install command via execCommand-inside-activation with async fallback;
+ChatGPT links; MCP address copies; API key as the quiet line). New workspaces
+seed the two AI guides in Notes again (owner reversal of empty-by-default),
+and the connect guide ends with a check-it-worked ask. Verified end to end as
+a brand-new dev user: guides present in the Library, rows render, real-click
+copy confirmed by API spy. Hosted MCP URL and sibling strings are lowercase
+now; the guide previously printed a mixed-case URL.
+
 Next-round candidates, loudest first:
 - A blog may pin its page appearance (by design), so the reading surface can
   be light while the app is dark. The fixed action chips float OVER that page
