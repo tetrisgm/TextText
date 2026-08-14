@@ -906,3 +906,48 @@
   .tt-collection-item:has(.tt-cover, .tt-image, .tt-gallery, .tt-video) {
   min-height: 320px;
 }
+
+/* == The quiet chrome pass ====================================================
+   Scrollbars and controls recede so the page reads as paper. WebKit is the
+   only engine this app ships in (the Mac app is a WKWebView), so the webkit
+   scrollbar styling is the real one, with scrollbar-width as the fallback. */
+
+.post-editor-shell {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 22%, transparent) transparent;
+}
+
+.post-editor-shell ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.post-editor-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.post-editor-shell ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  background-clip: padding-box;
+}
+
+.post-editor-shell ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink) 34%, transparent);
+  background-clip: padding-box;
+}
+
+/* Controls show their surface only when the pointer arrives; at rest the
+   toolbar is just words, which is most of why a Notion page reads as calm. */
+.workspace-library-controls select,
+.workspace-view-segmented {
+  border-color: transparent;
+  background-color: transparent;
+}
+
+.workspace-library-controls select:hover,
+.workspace-view-segmented:hover {
+  border-color: transparent;
+  background-color: var(--control-bg);
+}

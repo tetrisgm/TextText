@@ -780,7 +780,12 @@ function readAssistantState(): AssistantSidebarState {
   } catch {
     return preferred;
   }
-  if (saved === "open" || saved === "pinned" || saved === "hidden") {
+  if (saved === "open" || saved === "pinned") {
+    // The floating "open" state is gone; open means docked now.
+    assistantStateMemory = "pinned";
+    return assistantStateMemory;
+  }
+  if (saved === "hidden") {
     assistantStateMemory = saved;
     return saved;
   }
@@ -4240,7 +4245,6 @@ function LocalWorkspaceShell({
   const [marqueeRectangle, setMarqueeRectangle] =
     useState<SelectionRectangle | null>(null);
   const [leftEdgePeeking, setLeftEdgePeeking] = useState(false);
-  const [rightEdgePeeking, setRightEdgePeeking] = useState(false);
   const [selectedSectionPath, setSelectedSectionPath] = useState<string | null>(
     null,
   );
@@ -4288,7 +4292,6 @@ function LocalWorkspaceShell({
   useEffect(() => {
     const clearPeeks = () => {
       setLeftEdgePeeking(false);
-      setRightEdgePeeking(false);
     };
     const trackEdges = (event: PointerEvent) => {
       const selection = window.getSelection();
@@ -4309,12 +4312,6 @@ function LocalWorkspaceShell({
       setLeftEdgePeeking((current) =>
         sidebarCollapsed &&
         (event.clientX <= 24 || (current && event.clientX <= sidebarWidth)),
-      );
-      setRightEdgePeeking((current) =>
-        assistantState === "hidden" &&
-        (window.innerWidth - event.clientX <= 24 ||
-          (current &&
-            event.clientX >= window.innerWidth - assistantWidth)),
       );
     };
     window.addEventListener("pointermove", trackEdges, { passive: true });
@@ -6511,7 +6508,7 @@ function LocalWorkspaceShell({
       assistantConnection={assistant.nativeConnection}
       assistantCloudProvider={assistant.cloudProvider}
       onConnectAssistant={assistant.connectNativeAssistant}
-      onOpenAssistant={() => changeAssistantState("open")}
+      onOpenAssistant={() => changeAssistantState("pinned")}
     />
   );
 
@@ -6644,11 +6641,6 @@ function LocalWorkspaceShell({
         hasConversation={assistant.messages.length > 0}
         className="workspace-assistant-shell"
         state={assistantState}
-        edgePeeking={rightEdgePeeking}
-        onEdgePeekEngage={() => {
-          setRightEdgePeeking(false);
-          changeAssistantState("open");
-        }}
         onStateChange={changeAssistantState}
         width={assistantWidth}
         onWidthChange={changeAssistantWidth}

@@ -10,12 +10,11 @@ import {
   AssistantSidebar,
   isAssistantToggleShortcut,
   resolveAssistantSidebarDimensions,
-  shouldRetractAssistantSidebar,
 } from "@/components/workspace/assistant/AssistantSidebar";
 import { AssistantConversation } from "@/components/workspace/assistant/AssistantConversation";
 
 describe("assistant sidebar UI", () => {
-  it("renders pinned, contextual, resizable, hideable, and attach controls", () => {
+  it("renders contextual, resizable, hideable, and attach controls", () => {
     const html = renderToStaticMarkup(
       React.createElement(
         AssistantSidebar,
@@ -38,7 +37,9 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain('data-state="pinned"');
     expect(html).toContain('aria-label="Context: Notes, Folder"');
     expect(html).toContain('aria-label="Resize assistant sidebar"');
-    expect(html).toContain('aria-label="Unpin assistant"');
+    // No pin control: the rail is open or closed, and the X is the whole
+    // close story.
+    expect(html).not.toContain("pin assistant");
     expect(html).toContain('aria-label="Hide assistant"');
     expect(html).toContain('aria-label="Add attachment"');
     expect(html).toContain('aria-label="Message assistant"');
@@ -94,37 +95,6 @@ describe("assistant sidebar UI", () => {
         key: "a",
         metaKey: false,
         shiftKey: false,
-      }),
-    ).toBe(false);
-  });
-
-  it("retracts only an idle unpinned assistant", () => {
-    expect(
-      shouldRetractAssistantSidebar({
-        state: "open",
-        pointerWithin: false,
-        focusWithin: false,
-      }),
-    ).toBe(true);
-    expect(
-      shouldRetractAssistantSidebar({
-        state: "open",
-        pointerWithin: true,
-        focusWithin: false,
-      }),
-    ).toBe(false);
-    expect(
-      shouldRetractAssistantSidebar({
-        state: "open",
-        pointerWithin: false,
-        focusWithin: true,
-      }),
-    ).toBe(false);
-    expect(
-      shouldRetractAssistantSidebar({
-        state: "pinned",
-        pointerWithin: false,
-        focusWithin: false,
       }),
     ).toBe(false);
   });

@@ -161,17 +161,6 @@ export function isAssistantToggleShortcut(
   );
 }
 
-export function shouldRetractAssistantSidebar({
-  focusWithin,
-  pointerWithin,
-  state,
-}: {
-  focusWithin: boolean;
-  pointerWithin: boolean;
-  state: AssistantSidebarState;
-}): boolean {
-  return state === "open" && !pointerWithin && !focusWithin;
-}
 
 function formatFileSize(value: number | undefined): string | null {
   if (value === undefined || !Number.isFinite(value) || value < 0) return null;
@@ -244,16 +233,10 @@ export function AssistantSidebar({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previousStateRef = useRef(state);
-  const lastVisibleStateRef = useRef<Exclude<AssistantSidebarState, "hidden">>(
-    state === "pinned" ? "pinned" : "open",
-  );
   const focusOnOpenRef = useRef(true);
   const pointerWithinRef = useRef(false);
   const resizeSessionRef = useRef<ResizeSession | null>(null);
   const [resizing, setResizing] = useState(false);
-  // Approaching the collapsed right rail reveals an interactive overlay. It
-  // retracts unless focus moves inside, which promotes it to persistent open.
-  const [peeking, setPeeking] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number | null>(null);
 
@@ -265,18 +248,20 @@ export function AssistantSidebar({
       width,
     });
   const resolvedResizeStep = positiveNumber(resizeStep, 16);
+  // The rail is open or it is closed; there is nothing else. A floating
+  // third state (an overlay that covered the page, plus a hover-peek that
+  // opened it uninvited) is what made the layout read as chaos: the panel
+  // over the sort controls, the toggle over the search bar, two surfaces
+  // fighting for the same pixels. "open" survives in the type only so old
+  // saved values still parse; it means open.
   const visible = state !== "hidden";
-  const pinned = state === "pinned";
-  // Revealed = actually usable: the persistent open/pinned states, or a
-  // transient hover-peek of the hidden rail.
-  const peekingHidden = state === "hidden" && (edgePeeking ?? peeking);
-  const revealed = visible || peekingHidden;
+  const pinned = visible;
+  const revealed = visible;
   const canSubmit =
     !disabled &&
     !submitDisabled &&
     !submitting &&
     (composerValue.trim().length > 0 || attachments.length > 0);
-  const pinLabel = pinned ? "Unpin assistant" : "Pin assistant";
   const rootStyle = {
     ...style,
     "--assistant-sidebar-width": `${resolvedWidth}px`,
@@ -286,12 +271,10 @@ export function AssistantSidebar({
 
   const showAssistant = useCallback(() => {
     focusOnOpenRef.current = true;
-    setPeeking(false);
-    onStateChange(lastVisibleStateRef.current);
+    onStateChange("pinned");
   }, [onStateChange]);
 
   const hideAssistant = useCallback(() => {
-    setPeeking(false);
     onStateChange("hidden");
   }, [onStateChange]);
 
@@ -300,14 +283,7 @@ export function AssistantSidebar({
     else showAssistant();
   }, [hideAssistant, revealed, showAssistant]);
 
-  useEscapeLayer(
-    state === "open" || peekingHidden || (pinned && focusWithin),
-    "Assistant",
-    () => {
-      if (peekingHidden) setPeeking(false);
-      else hideAssistant();
-    },
-  );
+  useEscapeLayer(visible && focusWithin, "Assistant", hideAssistant);
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -328,10 +304,6 @@ export function AssistantSidebar({
   }, [toggleAssistant]);
 
   useEffect(() => {
-    if (visible) lastVisibleStateRef.current = pinned ? "pinned" : "open";
-  }, [pinned, visible]);
-
-  useEffect(() => {
     const previousState = previousStateRef.current;
     previousStateRef.current = state;
 
@@ -348,32 +320,9 @@ export function AssistantSidebar({
 
   const handleRootPointerEnter = () => {
     pointerWithinRef.current = true;
-    if (edgePeeking === undefined && state === "hidden") setPeeking(true);
   };
   const handleRootPointerLeave = () => {
     pointerWithinRef.current = false;
-    const panelHasFocus = Boolean(
-      panelRef.current?.contains(document.activeElement),
-    );
-    if (
-      shouldRetractAssistantSidebar({
-        state,
-        pointerWithin: false,
-        focusWithin: panelHasFocus,
-      })
-    ) {
-      hideAssistant();
-      return;
-    }
-    if (state !== "hidden" || edgePeeking !== undefined) return;
-    // Keep the panel up if the pointer left while focus is inside it (e.g. the
-    // user clicked into the composer): engage the unpinned overlay instead of
-    // yanking it away mid-interaction.
-    if (panelRef.current?.contains(document.activeElement)) {
-      focusOnOpenRef.current = false;
-      onStateChange("open");
-    }
-    setPeeking(false);
   };
 
   const requestWidth = (nextWidth: number) => {
@@ -467,40 +416,19 @@ export function AssistantSidebar({
     if (event.defaultPrevented || event.key !== "Escape" || !revealed) return;
     event.preventDefault();
     event.stopPropagation();
-    if (peekingHidden) setPeeking(false);
-    else hideAssistant();
+    hideAssistant();
   };
 
   const handlePanelFocus = () => {
     setFocusWithin(true);
-    if (!peekingHidden) return;
-    focusOnOpenRef.current = false;
-    setPeeking(false);
-    if (onEdgePeekEngage) onEdgePeekEngage();
-    else onStateChange("open");
   };
 
-  const handlePanelPointerDown = () => {
-    if (!peekingHidden) return;
-    focusOnOpenRef.current = false;
-    setPeeking(false);
-    if (onEdgePeekEngage) onEdgePeekEngage();
-    else onStateChange("open");
-  };
+  const handlePanelPointerDown = () => {};
 
   const handlePanelBlur = (event: ReactFocusEvent<HTMLElement>) => {
     const next = event.relatedTarget;
     if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
       setFocusWithin(false);
-      if (
-        shouldRetractAssistantSidebar({
-          state,
-          pointerWithin: pointerWithinRef.current,
-          focusWithin: false,
-        })
-      ) {
-        hideAssistant();
-      }
     }
   };
 
@@ -511,7 +439,6 @@ export function AssistantSidebar({
       data-layout={layout}
       data-resizing={resizing ? "true" : undefined}
       data-state={state}
-      data-peeking={peekingHidden ? "true" : undefined}
       style={rootStyle}
       onPointerEnter={handleRootPointerEnter}
       onPointerLeave={handleRootPointerLeave}
@@ -597,16 +524,6 @@ export function AssistantSidebar({
                   <NewChatIcon />
                 </button>
               ) : null}
-              <button
-                className={styles.iconButton}
-                type="button"
-                aria-label={pinLabel}
-                aria-pressed={pinned}
-                title={pinLabel}
-                onClick={() => onStateChange(pinned ? "open" : "pinned")}
-              >
-                <PinIcon pinned={pinned} />
-              </button>
               <button
                 ref={closeButtonRef}
                 className={styles.iconButton}
@@ -818,21 +735,6 @@ function NewChatIcon() {
   );
 }
 
-function PinIcon({ pinned }: { pinned: boolean }) {
-  return (
-    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path
-        d="M6.4 2.75h5.2l-.7 4.1 2.15 2.2v1.2H9.7v4.45l-.7.75-.7-.75v-4.45H4.95v-1.2l2.15-2.2-.7-4.1Z"
-        fill={pinned ? "currentColor" : "none"}
-        fillOpacity={pinned ? "0.16" : undefined}
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.45"
-      />
-    </svg>
-  );
-}
 
 function CloseIcon() {
   return (
