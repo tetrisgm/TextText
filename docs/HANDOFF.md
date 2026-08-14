@@ -24,12 +24,22 @@ polish ledger.
 - [x] Complete rewrite under observation: agent replaced an open document's
   entire body; the change appeared live with the agent's presence chip and
   its named cursor at the end of its own text. Observed 2026-08-14.
-- [ ] Transform: change look, retitle, excerpt, tags via agent; notes into a
-  structured article.
-- [ ] Workspace operations: search by meaning, append_to_item idempotency
-  under retries, durable changelog pattern.
-- [ ] Rules hold under agency: audit rows for every mutation, visibility
-  fails closed from the agent's side, comments and access tools behave.
+- [x] Transform: note became a Broadsheet article via set_item_template
+  (template_version is required, no default), retitled with excerpt and tags
+  via update_item; rendered look verified in the open browser. Observed
+  2026-08-14.
+- [x] Workspace operations: search matches titles and body text;
+  append_to_item (arg is markdown_fragment) replayed=true on a same-key
+  retry with exactly one block in the body, which is the changelog pattern.
+  Observed 2026-08-14.
+- [x] Rules under agency: every agent mutation has an action_audit row typed
+  external_agent; a real foreign-workspace item id reads back as not-in-this-
+  workspace (fails closed, no existence oracle); comments land attributed to
+  the agent. Observed 2026-08-14.
+- Papercuts for a future pass: set_item_template should default
+  template_version to latest; append_to_item's argument name
+  markdown_fragment differs from create/update's markdown and costs agents a
+  failed call to learn.
 - How to run the loop: mint a token (POST /api/link/start, approve in a
   signed-in browser, poll), then drive `/api/mcp` per the transport contract
   in scratchpad agent.py: `_meta` trio in the body plus MCP-Protocol-Version,

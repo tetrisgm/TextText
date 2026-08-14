@@ -52,6 +52,14 @@ const sections = [
     ],
   },
   {
+    title: "Agents do real document work",
+    body: [
+      "A connected agent works with the same tools the app uses. It can create an item with real content in the right folder, rewrite an entire document while you watch it happen, change an item's look, retitle it, set its excerpt and tags, and find items by title or by words inside their bodies.",
+      "Repeated automation is safe: an agent that retries a create or an append with the same idempotency key gets the original result back instead of a duplicate. Every agent action is recorded in the audit log under the agent's own identity, agents cannot see into workspaces they were not granted, and their comments carry their name.",
+      "While an agent edits a document you have open, you see it as a collaborator: its avatar in the page header and its named cursor at the text it is writing.",
+    ],
+  },
+  {
     title: "The AI rail",
     body: [
       "Everything AI lives in the rail on the right. Open, it greets you and offers starters for exactly where you are; the context chip in the composer always says what the AI is looking at. New chat starts over without leaving the page.",
