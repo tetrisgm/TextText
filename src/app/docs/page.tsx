@@ -8,6 +8,7 @@ export const metadata: Metadata = {
 };
 
 const guides = [
+  ["Features", "What TextText does today, feature by feature, as verified in a running build.", "/docs/features"],
   ["Getting started", "Connect an agent and send your first safe workspace request.", "/docs/getting-started"],
   ["How AI works", "Understand native ChatGPT/Codex, API keys, MCP, tools, and billing.", "/docs/how-it-works"],
   ["AI and agent guide", "Complete provider setup, tool reference, workflows, and verification.", "/docs/ai"],
