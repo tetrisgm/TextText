@@ -72,54 +72,57 @@
   box-shadow: var(--ac-focus);
 }
 
-/* One service per row; opening it shows the numbered steps. */
+/* A macOS grouped inset list: one rounded group, hairline-separated rows,
+   disclosure chevrons that turn when open. The applecms tokens carry both
+   themes; nothing here invents a color. */
 .connectPaths {
   display: grid;
-  gap: 6px;
   width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
   text-align: left;
 }
 
-.connectPath {
-  border-radius: 10px;
-  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
-  overflow: hidden;
+.connectPath + .connectPath {
+  border-top: 1px solid var(--ac-hairline, rgba(0, 0, 0, 0.1));
 }
 
 .connectPathHeader {
   width: 100%;
-  min-height: 46px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 10px;
   border: 0;
-  padding: 8px 12px;
+  padding: 7px 12px;
   background: transparent;
   color: var(--ac-label);
   text-align: left;
   cursor: pointer;
-  transition: background-color 180ms ease;
+  transition: background-color 120ms ease;
 }
 
-.connectPathHeader:hover {
+.connectPathHeader:active {
   background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
 }
 
 .connectPathHeader:focus-visible {
   outline: none;
-  box-shadow: var(--ac-focus);
+  box-shadow: inset var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
 }
 
 .connectPathMark {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 6px;
   background: var(--ac-bg, #fff);
+  box-shadow: 0 0 0 0.5px var(--ac-hairline, rgba(0, 0, 0, 0.1));
   color: var(--ac-label);
-  font: 650 12px/1 var(--ac-font-text);
+  font: 650 11px/1 var(--ac-font-text);
 }
 
 .connectPathCopy {
@@ -131,65 +134,84 @@
 
 .connectPathName {
   color: var(--ac-label);
-  font: 600 var(--ac-fs-footnote) / 1.2 var(--ac-font-text);
+  font: 590 var(--ac-fs-footnote, 13px) / 1.25 var(--ac-font-text);
+  letter-spacing: 0;
 }
 
 .connectPathHint {
   overflow: hidden;
   color: var(--ac-label-2);
-  font: 400 var(--ac-fs-caption1) / 1.3 var(--ac-font-text);
+  font: 400 var(--ac-fs-caption1, 11px) / 1.3 var(--ac-font-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .connectPathChevron {
   flex: 0 0 auto;
-  color: var(--ac-label-2);
-  font-size: 11px;
+  color: var(--ac-label-3, rgba(60, 60, 67, 0.3));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 160ms var(--ease, ease);
+}
+
+.connectPath[data-open] .connectPathChevron {
+  transform: rotate(90deg);
 }
 
 .connectPathSteps {
-  padding: 2px 12px 12px;
-  text-align: left;
+  padding: 4px 12px 12px 12px;
 }
 
 .connectPathSteps ol {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 16px;
   display: grid;
   gap: 8px;
   color: var(--ac-label);
-  font: 400 var(--ac-fs-footnote) / 1.45 var(--ac-font-text);
+  font: 400 var(--ac-fs-footnote, 13px) / 1.45 var(--ac-font-text);
 }
 
+.connectPathSteps li::marker {
+  color: var(--ac-label-2);
+  font-weight: 500;
+}
+
+/* A macOS push button: neutral surface, hairline edge, the faintest lift.
+   Accent belongs to the one default action per view, and that is Continue
+   with ChatGPT above, not every copy button. */
 .connectStepAction {
   display: inline-flex;
   align-items: center;
   margin-left: 8px;
+  min-height: 22px;
   border: 0;
-  border-radius: 7px;
-  padding: 4px 10px;
+  border-radius: var(--ac-radius-control, 6px);
+  padding: 2px 9px;
   background: var(--ac-bg, #fff);
-  color: var(--ac-accent, #007aff);
-  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  box-shadow:
+    0 0 0 0.5px var(--ac-hairline, rgba(0, 0, 0, 0.12)),
+    0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+  color: var(--ac-label);
+  font: 500 var(--ac-fs-caption1, 12px) / 1 var(--ac-font-text);
   text-decoration: none;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
-.connectStepAction:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+.connectStepAction:active {
+  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
 }
 
 .connectStepAction:focus-visible {
   outline: none;
-  box-shadow: var(--ac-focus);
+  box-shadow: var(--ac-focus, 0 0 0 3px rgba(0, 122, 255, 0.45));
 }
 
 .connectPathOutcome {
   margin: 10px 0 0;
   color: var(--ac-label-2);
-  font: 400 var(--ac-fs-caption1) / 1.45 var(--ac-font-text);
+  font: 400 var(--ac-fs-caption1, 11px) / 1.45 var(--ac-font-text);
 }
 
 .connectAlt {

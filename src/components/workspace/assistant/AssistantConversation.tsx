@@ -17,26 +17,47 @@ function displayedMessageText(message: AssistantMessage): string {
 }
 
 /**
- * One service, opened into its actual steps.
- *
- * The row states the way in; opening it shows the numbered path and exactly
- * one labeled action per step that needs one. Copy actions resolve in place
- * with a Copied beat and run execCommand synchronously inside the click's
- * activation (the async-first order spends the activation and goes mute).
+ * The ways in, as a macOS grouped inset list: one group, hairline-separated
+ * rows, a disclosure chevron, and at most one service open at a time. The
+ * open service shows its numbered steps with exactly one labeled action per
+ * step that needs one; copy actions resolve in place with a Copied beat and
+ * run execCommand synchronously inside the click's activation (the
+ * async-first order spends the activation and goes mute).
  */
+function ConnectPaths() {
+  const [openId, setOpenId] = useState<string | null>(null);
+  return (
+    <div className={styles.connectPaths} aria-label="Ways to connect">
+      {AGENT_INTEGRATIONS.map((integration) => (
+        <ConnectPathRow
+          key={integration.id}
+          integration={integration}
+          open={openId === integration.id}
+          onToggle={() =>
+            setOpenId((value) => (value === integration.id ? null : integration.id))
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
 function ConnectPathRow({
   integration,
+  open,
+  onToggle,
 }: {
   integration: (typeof AGENT_INTEGRATIONS)[number];
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <div className={styles.connectPath} data-open={open || undefined}>
       <button
         type="button"
         className={styles.connectPathHeader}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={onToggle}
       >
         <span className={styles.connectPathMark} aria-hidden="true">
           {integration.monogram}
@@ -46,7 +67,7 @@ function ConnectPathRow({
           <span className={styles.connectPathHint}>{integration.environment}</span>
         </span>
         <span className={styles.connectPathChevron} aria-hidden="true">
-          {open ? "▴" : "▾"}
+          ›
         </span>
       </button>
       {open && (
@@ -245,11 +266,7 @@ export function AssistantConversation({
                   and a labeled action, so nothing is a mystery glyph and
                   nobody lands somewhere with nothing to do. The compressed
                   row-with-a-copy-icon version failed exactly that way. */}
-              <div className={styles.connectPaths} aria-label="Ways to connect">
-                {AGENT_INTEGRATIONS.map((integration) => (
-                  <ConnectPathRow key={integration.id} integration={integration} />
-                ))}
-              </div>
+              <ConnectPaths />
               <p className={styles.connectAlt}>
                 Prefer a key? <a href="/docs/ai#api-key">Add an Anthropic or OpenAI API key</a>
               </p>
