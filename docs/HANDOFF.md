@@ -1127,9 +1127,11 @@ filled cards, scrollbars thin and trackless, toolbar controls surface on
 hover only.
 
 Next-round candidates, loudest first:
-- The blog/editor surface pins its theme at load and does not re-resolve on a
-  live prefers-color-scheme flip (mixed frame: dark chips on a light page).
-  Real users hit this on macOS auto theme switch at sunset.
+- A blog may pin its page appearance (by design), so the reading surface can
+  be light while the app is dark. The fixed action chips float OVER that page
+  but follow the app scheme, which reads broken (dark chips on a light page).
+  The fix is chrome adopting the scheme of the surface it floats over, not a
+  theme re-resolve; there is no JS pinning, it is all CSS.
 - Rail connect-state block could inherit the greeting state's vertical rhythm.
 - Library "Type a title" composer + blue submit could be quieter still.
 - Typography rhythm pass: line-heights and paddings against Notion's 14px UI.
