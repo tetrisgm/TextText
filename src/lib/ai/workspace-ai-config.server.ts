@@ -18,6 +18,13 @@ import {
   type CloudAiProvider,
 } from "@/lib/ai/provider-catalog";
 
+/** Dev only: point provider checks at the same local mock the assistant
+ * route may use. Production always returns null. */
+function devAiBaseUrl(): string | null {
+  if (process.env.NODE_ENV === "production") return null;
+  return process.env.TEXTTEXT_AI_BASE_URL || null;
+}
+
 export type { CloudAiProvider } from "@/lib/ai/provider-catalog";
 export type CloudProviderLabel = "Anthropic" | "OpenAI";
 
@@ -101,8 +108,8 @@ export async function validateWorkspaceAiConnection(
 ): Promise<void> {
   const endpoint =
     provider === "openai"
-      ? `https://api.openai.com/v1/models/${encodeURIComponent(model)}`
-      : `https://api.anthropic.com/v1/models/${encodeURIComponent(model)}`;
+      ? `${devAiBaseUrl() ?? "https://api.openai.com/v1"}/models/${encodeURIComponent(model)}`
+      : `${devAiBaseUrl() ?? "https://api.anthropic.com/v1"}/models/${encodeURIComponent(model)}`;
   const response = await fetch(endpoint, {
     method: "GET",
     headers:

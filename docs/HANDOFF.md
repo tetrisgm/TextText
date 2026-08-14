@@ -51,9 +51,13 @@ polish ledger.
 - Fixed observation hazards: verify `window.innerWidth` is nonzero before
   trusting any browser measurement (a restarted pane can be 0x0 and serves
   stale compositor frames to screenshots).
-- The dev workspace has no AI provider key, so the in-app assistant lane
-  (greeting starters, selection actions end to end, proposals) remains
-  unexercised; the MCP lane does not need one.
+- The in-app assistant lane is exercisable without a real key:
+  `node scripts/mock-ai-provider.mjs` plus
+  `TEXTTEXT_AI_BASE_URL=http://localhost:3999/v1 npm run dev`, then save any
+  fake key in workspace settings. Exercised 2026-08-14: greeting, root and
+  item-named starters, quick actions, chat round trip with provider
+  attribution, and the Rewrite proposal cycle (preview, apply, undo) all
+  observed live. Only real-provider quirks remain untested by the mock.
 - Feature docs (`/docs/features`) grow only with exercised behavior; the
   agent capabilities above belong there once the scorecard closes.
 - Installed-app auth verification (sign out, auth sheet round trip) still

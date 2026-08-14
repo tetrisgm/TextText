@@ -177,10 +177,24 @@ export async function POST(request: Request) {
     handle: workspace.handle,
   };
   const provider = cloudProviderLabel(config.provider);
+  // Development may point the provider at a local mock so the entire
+  // assistant lane is testable without a real key: a credential in a test
+  // is a leak waiting to happen, and a lane only the owner can exercise is
+  // a lane that ships broken. Production ignores the variable entirely.
+  const devBaseUrl =
+    process.env.NODE_ENV !== "production"
+      ? process.env.TEXTTEXT_AI_BASE_URL || undefined
+      : undefined;
   const model =
     config.provider === "anthropic"
-      ? createAnthropic({ apiKey: config.apiKey })(config.model)
-      : createOpenAI({ apiKey: config.apiKey })(config.model);
+      ? createAnthropic({
+          apiKey: config.apiKey,
+          ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
+        })(config.model)
+      : createOpenAI({
+          apiKey: config.apiKey,
+          ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
+        })(config.model);
 
   try {
     const result = await generateText({
