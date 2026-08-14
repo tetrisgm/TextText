@@ -17,55 +17,77 @@ function displayedMessageText(message: AssistantMessage): string {
 }
 
 /**
- * One way in, one action. Copy rows resolve in place with a "Copied" beat so
- * nobody wonders whether anything happened; link rows just go.
+ * One service, opened into its actual steps.
+ *
+ * The row states the way in; opening it shows the numbered path and exactly
+ * one labeled action per step that needs one. Copy actions resolve in place
+ * with a Copied beat and run execCommand synchronously inside the click's
+ * activation (the async-first order spends the activation and goes mute).
  */
 function ConnectPathRow({
   integration,
 }: {
   integration: (typeof AGENT_INTEGRATIONS)[number];
 }) {
-  const [copied, setCopied] = useState(false);
-  const { action } = integration;
-  const hint =
-    action.kind === "copy"
-      ? copied
-        ? action.copiedLabel
-        : action.label
-      : action.label;
-
-  if (action.kind === "link") {
-    return (
-      <a
-        className={styles.connectPath}
-        href={action.href}
-        target={action.href.startsWith("http") ? "_blank" : undefined}
-        rel="noreferrer"
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={styles.connectPath} data-open={open || undefined}>
+      <button
+        type="button"
+        className={styles.connectPathHeader}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
       >
         <span className={styles.connectPathMark} aria-hidden="true">
           {integration.monogram}
         </span>
         <span className={styles.connectPathCopy}>
           <span className={styles.connectPathName}>{integration.name}</span>
-          <span className={styles.connectPathHint}>{hint}</span>
+          <span className={styles.connectPathHint}>{integration.environment}</span>
         </span>
-        <span className={styles.connectPathAction} aria-hidden="true">→</span>
-      </a>
-    );
-  }
+        <span className={styles.connectPathChevron} aria-hidden="true">
+          {open ? "▴" : "▾"}
+        </span>
+      </button>
+      {open && (
+        <div className={styles.connectPathSteps}>
+          <ol>
+            {integration.steps.map((step) => (
+              <li key={step.text}>
+                {step.text}
+                {step.copy && <CopyStepButton copy={step.copy} />}
+                {!step.copy &&
+                  integration.action.kind === "link" &&
+                  step.text.includes("button below") && (
+                    <a
+                      className={styles.connectStepAction}
+                      href={integration.action.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {integration.action.label}
+                    </a>
+                  )}
+              </li>
+            ))}
+          </ol>
+          <p className={styles.connectPathOutcome}>{integration.outcome}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
+function CopyStepButton({ copy }: { copy: { label: string; value: string } }) {
+  const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      className={styles.connectPath}
-      data-copied={copied || undefined}
+      className={styles.connectStepAction}
       onClick={() => {
-        // The async clipboard API can reject in embedded webviews and stricter
-        // permission contexts; a copy row that silently does nothing is worse
-        // than no row, so the selection-and-execCommand fallback stays.
         const legacyCopy = () => {
           const scratch = document.createElement("textarea");
-          scratch.value = action.value;
+          scratch.value = copy.value;
           scratch.setAttribute("readonly", "");
           scratch.style.position = "fixed";
           scratch.style.opacity = "0";
@@ -79,26 +101,13 @@ function ConnectPathRow({
           setCopied(true);
           window.setTimeout(() => setCopied(false), 2400);
         };
-        // Synchronous first: execCommand runs inside the click's transient
-        // activation. Waiting for the async API to reject spends that
-        // activation, after which every path fails and the row goes mute.
-        if (legacyCopy()) {
-          done();
-        } else if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(action.value).then(done).catch(() => {});
+        if (legacyCopy()) done();
+        else if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(copy.value).then(done).catch(() => {});
         }
       }}
     >
-      <span className={styles.connectPathMark} aria-hidden="true">
-        {integration.monogram}
-      </span>
-      <span className={styles.connectPathCopy}>
-        <span className={styles.connectPathName}>{integration.name}</span>
-        <span className={styles.connectPathHint}>{hint}</span>
-      </span>
-      <span className={styles.connectPathAction} aria-hidden="true">
-        {copied ? "✓" : "⧉"}
-      </span>
+      {copied ? "Copied" : copy.label}
     </button>
   );
 }
@@ -232,11 +241,10 @@ export function AssistantConversation({
                   Continue with ChatGPT
                 </button>
               )}
-              {/* Every path, each one actionable in place: the copy rows put
-                  the install command or the MCP address on the clipboard, the
-                  link rows open the one page that finishes the job. pen.dev
-                  and paper.design set the bar here; a single "connect an AI"
-                  button under it told people nothing about their options. */}
+              {/* One service per row; opening a row shows the numbered steps
+                  and a labeled action, so nothing is a mystery glyph and
+                  nobody lands somewhere with nothing to do. The compressed
+                  row-with-a-copy-icon version failed exactly that way. */}
               <div className={styles.connectPaths} aria-label="Ways to connect">
                 {AGENT_INTEGRATIONS.map((integration) => (
                   <ConnectPathRow key={integration.id} integration={integration} />
@@ -244,8 +252,6 @@ export function AssistantConversation({
               </div>
               <p className={styles.connectAlt}>
                 Prefer a key? <a href="/docs/ai#api-key">Add an Anthropic or OpenAI API key</a>
-                <span aria-hidden="true"> · </span>
-                <a href="/connect">Full setup guide</a>
               </p>
             </div>
           )}

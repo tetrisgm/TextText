@@ -72,7 +72,7 @@
   box-shadow: var(--ac-focus);
 }
 
-/* The ways in, each one actionable where it stands. */
+/* One service per row; opening it shows the numbered steps. */
 .connectPaths {
   display: grid;
   gap: 6px;
@@ -81,27 +81,31 @@
 }
 
 .connectPath {
+  border-radius: 10px;
+  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
+  overflow: hidden;
+}
+
+.connectPathHeader {
   width: 100%;
   min-height: 46px;
   display: flex;
   align-items: center;
   gap: 10px;
   border: 0;
-  border-radius: 10px;
   padding: 8px 12px;
-  background: var(--ac-fill-4, rgba(116, 116, 128, 0.08));
+  background: transparent;
   color: var(--ac-label);
   text-align: left;
-  text-decoration: none;
   cursor: pointer;
   transition: background-color 180ms ease;
 }
 
-.connectPath:hover {
+.connectPathHeader:hover {
   background: var(--ac-fill-3, rgba(118, 118, 128, 0.12));
 }
 
-.connectPath:focus-visible {
+.connectPathHeader:focus-visible {
   outline: none;
   box-shadow: var(--ac-focus);
 }
@@ -138,14 +142,54 @@
   white-space: nowrap;
 }
 
-.connectPathAction {
+.connectPathChevron {
   flex: 0 0 auto;
   color: var(--ac-label-2);
-  font-size: 14px;
+  font-size: 11px;
 }
 
-.connectPath[data-copied] .connectPathAction {
-  color: var(--ac-accent);
+.connectPathSteps {
+  padding: 2px 12px 12px;
+  text-align: left;
+}
+
+.connectPathSteps ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--ac-label);
+  font: 400 var(--ac-fs-footnote) / 1.45 var(--ac-font-text);
+}
+
+.connectStepAction {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  border: 0;
+  border-radius: 7px;
+  padding: 4px 10px;
+  background: var(--ac-bg, #fff);
+  color: var(--ac-accent, #007aff);
+  font: 600 var(--ac-fs-caption1) / 1 var(--ac-font-text);
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.connectStepAction:hover {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.connectStepAction:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.connectPathOutcome {
+  margin: 10px 0 0;
+  color: var(--ac-label-2);
+  font: 400 var(--ac-fs-caption1) / 1.45 var(--ac-font-text);
 }
 
 .connectAlt {

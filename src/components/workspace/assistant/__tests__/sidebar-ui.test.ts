@@ -201,16 +201,14 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    // Every way in is its own actionable row, pen.dev/paper.design style:
-    // the copy rows carry the install command, the link rows go to the one
-    // page that finishes the job, and the key path survives as the quiet
-    // trailing line.
+    // Every service is a row that opens into its numbered steps; the closed
+    // row states the service and where it runs, never a bare glyph.
     expect(html).toContain("Write with your AI");
     expect(html).toContain('aria-label="Ways to connect"');
-    expect(html).toContain("Install Claude plugin");
-    expect(html).toContain("Install Codex plugin");
-    expect(html).toContain("Open ChatGPT apps");
-    expect(html).toContain("Copy MCP address");
+    expect(html).toContain("Claude");
+    expect(html).toContain("Codex");
+    expect(html).toContain("ChatGPT");
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("API key");
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(html).not.toContain('aria-label="Prompt starters"');

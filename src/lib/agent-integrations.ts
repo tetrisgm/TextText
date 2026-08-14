@@ -13,6 +13,13 @@ export const CODEX_PLUGIN_INSTALL_COMMAND =
 export const CHATGPT_CONNECTOR_URL =
   "https://chatgpt.com/#settings/Connectors";
 
+export type AgentIntegrationStep = {
+  /** One sentence, imperative, sentence case. */
+  text: string;
+  /** Optional value this step hands the person, with a labeled copy action. */
+  copy?: { label: string; value: string };
+};
+
 export type AgentIntegration = {
   id: "claude" | "codex" | "chatgpt" | "mcp";
   name: string;
@@ -24,6 +31,10 @@ export type AgentIntegration = {
     | { kind: "copy"; label: string; value: string; copiedLabel: string }
     | { kind: "link"; label: string; href: string };
   secondaryAction?: { label: string; href: string };
+  /** How you actually get connected, start to finish. */
+  steps: AgentIntegrationStep[];
+  /** What the person sees once it works; the reason to bother. */
+  outcome: string;
 };
 
 export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
@@ -45,6 +56,15 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
       label: "Use in Claude.ai",
       href: "https://claude.ai/settings/connectors",
     },
+    steps: [
+      {
+        text: "Copy the install command.",
+        copy: { label: "Copy install command", value: CLAUDE_PLUGIN_INSTALL_COMMAND },
+      },
+      { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Claude Code." },
+      { text: "In Claude, say: connect to my TextText workspace. A browser window opens; approve it with your TextText account." },
+    ],
+    outcome: "Claude appears as a collaborator with its own cursor whenever it works in your documents.",
   },
   {
     id: "codex",
@@ -60,6 +80,15 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
       value: CODEX_PLUGIN_INSTALL_COMMAND,
       copiedLabel: "Copied. Paste in Terminal",
     },
+    steps: [
+      {
+        text: "Copy the install command.",
+        copy: { label: "Copy install command", value: CODEX_PLUGIN_INSTALL_COMMAND },
+      },
+      { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Codex." },
+      { text: "In Codex, ask for your TextText library. A browser window opens; approve it with your TextText account." },
+    ],
+    outcome: "Codex appears as a collaborator with its own cursor whenever it works in your documents.",
   },
   {
     id: "chatgpt",
@@ -74,6 +103,15 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
       label: "Open ChatGPT apps",
       href: CHATGPT_CONNECTOR_URL,
     },
+    steps: [
+      {
+        text: "Copy the TextText address first.",
+        copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
+      },
+      { text: "Open ChatGPT's settings. The button below takes you there; depending on your plan the section is called Connectors or Plugins." },
+      { text: "Add TextText there with the copied address. ChatGPT opens a TextText page where you approve access with your account." },
+    ],
+    outcome: "ChatGPT can read and edit your documents from any chat, and appears as a collaborator while it works.",
   },
   {
     id: "mcp",
@@ -89,6 +127,15 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
       value: TEXTTEXT_HOSTED_MCP_URL,
       copiedLabel: "MCP address copied",
     },
+    steps: [
+      {
+        text: "Copy the TextText address.",
+        copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
+      },
+      { text: "Add it wherever your app configures MCP servers, and give the connection a name you will recognize." },
+      { text: "The first connection opens a browser window; approve it with your TextText account." },
+    ],
+    outcome: "The app appears in your documents under the name you approved, with every change attributed to it.",
   },
 ] as const;
 
