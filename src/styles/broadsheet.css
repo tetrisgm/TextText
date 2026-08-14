@@ -2240,7 +2240,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-top-action-bar {
   position: fixed !important;
   top: 8px;
-  right: 8px;
+  right: calc(8px + var(--workspace-rail-inset, 0px));
   z-index: 200;
   width: fit-content;
   max-width: calc(100vw - 16px);
@@ -2479,13 +2479,15 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   opacity: 0;
   pointer-events: none;
 }
-/* The action bars are fixed to the viewport, so a pinned rail has to push
-   them left; the reflowing grid cannot do it for them. */
-.post-editor-shell.has-assistant-pinned .post-top-action-bar,
-.post-editor-shell.has-assistant-pinned .post-top-action-bar.is-edit,
-.post-editor-shell.has-assistant-pinned .folder-top-action-bar,
-.post-editor-shell.has-assistant-pinned .workspace-root-action-bar {
-  right: calc(var(--workspace-assistant-width, 360px) + 8px);
+/* Fixed chrome is viewport-anchored, so the docked rail cannot reflow it;
+   instead the shell publishes how much of the right edge the rail owns and
+   every fixed element adds it to its own offset. One variable, no cascade
+   fights: a later right rule still works because it also adds the inset. */
+.post-editor-shell {
+  --workspace-rail-inset: 0px;
+}
+.post-editor-shell.has-assistant-pinned {
+  --workspace-rail-inset: var(--workspace-assistant-width, 360px);
 }
 @media (prefers-reduced-motion: reduce) {
   .post-editor-content {
@@ -3011,7 +3013,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .post-editor-shell.has-sidebar .post-top-action-bar.is-edit,
   .post-editor-shell.has-sidebar.is-sidebar-collapsed
     .post-top-action-bar.is-edit {
-    right: 60px;
+    right: calc(60px + var(--workspace-rail-inset, 0px));
     left: auto;
     max-width: calc(100vw - 16px);
   }
@@ -3027,7 +3029,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   .post-editor-shell.has-sidebar .post-top-action-bar.is-edit,
   .post-editor-shell.has-sidebar.is-sidebar-collapsed
     .post-top-action-bar.is-edit {
-    right: 8px;
+    right: calc(8px + var(--workspace-rail-inset, 0px));
     max-width: calc(100vw - 116px);
   }
 }
@@ -3107,7 +3109,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .folder-top-action-bar {
   position: fixed;
   top: 8px;
-  right: 60px;
+  right: calc(60px + var(--workspace-rail-inset, 0px));
   z-index: 200;
   max-width: calc(100vw - 16px);
 }
@@ -3137,7 +3139,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .workspace-root-action-bar.is-inline-search {
   position: fixed;
   top: 8px;
-  right: 60px;
+  right: calc(60px + var(--workspace-rail-inset, 0px));
   z-index: 200;
 }
 .workspace-root-action-toolbar {
@@ -3191,7 +3193,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   margin-left: auto;
 }
 .post-editor-shell.has-sidebar .post-top-action-bar {
-  right: 60px;
+  right: calc(60px + var(--workspace-rail-inset, 0px));
 }
 .post-action-toolbar .ac-btn,
 .post-action-toolbar .post-detail-nav,
