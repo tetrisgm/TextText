@@ -2568,19 +2568,16 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 }
 .post-editor-sidebar-toggle {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--ac-hairline);
+  border: 0;
   border-radius: var(--ac-radius-control, 6px);
-  background: var(--ac-mat-bg);
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
-  -webkit-backdrop-filter: var(--ac-mat-blur);
-  backdrop-filter: var(--ac-mat-blur);
-  box-shadow: 0 8px 22px -14px rgba(0, 0, 0, 0.48);
   transition:
     background-color 0.18s var(--ease),
     color 0.18s var(--ease);
@@ -2775,10 +2772,9 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   flex: 0 0 auto;
   min-width: 20px;
   padding: 3px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  background: transparent;
   color: var(--muted);
-  font: 700 11px/1 var(--font-body);
+  font: 500 11px/1 var(--font-body);
   text-align: center;
 }
 .post-editor-special-folders {
@@ -7695,4 +7691,16 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   width: 1px;
   height: 1px;
   overflow: hidden;
+}
+
+.post-editor-sidebar-toggle:hover {
+  background: var(--control-bg);
+  color: var(--ink);
+}
+
+/* Section headings whisper. */
+.post-editor-nav-heading {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
