@@ -3820,10 +3820,38 @@ function LocalUnifiedWorkspacePostEditor({
     collaboratorColor,
   );
   const template = templateForPoolPost(pool, poolPost);
+  // The authoritative body may not be local yet. The pool list omits document
+  // bodies, and the cache only knows what THIS browser typed or fetched, so an
+  // item written by an agent (or another device) arrived here as an empty
+  // editor one keystroke away from overwriting real content with "". The
+  // editor now refuses to mount until the body entry resolves; an empty
+  // baseline may only mean "this item is empty", never "the fetch had not
+  // happened yet".
+  const bodyState = useWorkspacePostBody(pool.blogId, poolPost.id);
+  const poolBody = poolPost.document?.content.body;
+  const cachedBody = getCachedWorkspacePostBody(pool.blogId, poolPost.id)?.body;
+  // Hydration-safe: the server and the first client render may consult only
+  // what the RSC payload carries (poolBody). The body cache and fetch entry
+  // are client module state; letting them into the first render made the
+  // server and client disagree and hydration fail. After mount, the client
+  // may know more.
+  const [bodySourcesMounted, setBodySourcesMounted] = useState(false);
+  useEffect(() => setBodySourcesMounted(true), []);
+  const bodyKnown =
+    poolBody != null ||
+    (bodySourcesMounted &&
+      (cachedBody != null ||
+        bodyState.entry.status === "ready" ||
+        bodyState.entry.status === "error"));
+  useEffect(() => {
+    if (poolBody == null && cachedBody == null) bodyState.load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pool.blogId, poolPost.id]);
   const post = postFromPoolPost(
     poolPost,
-    poolPost.document?.content.body ??
-      getCachedWorkspacePostBody(pool.blogId, poolPost.id)?.body ??
+    poolBody ??
+      cachedBody ??
+      (bodyState.entry.status === "ready" ? bodyState.entry.body.body : "") ??
       "",
   );
   const containingFolderPath = folderPathForPoolPost(pool, poolPost);
@@ -3868,6 +3896,8 @@ function LocalUnifiedWorkspacePostEditor({
     },
     [pool.blogId, poolPost.id, updateLocalDocument],
   );
+
+  if (!bodyKnown) return null;
 
   return (
     <UnifiedDocumentEditor

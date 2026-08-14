@@ -326,5 +326,6 @@ if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
   window.__ttDraftDebug = {
     selection: readOpenWorkspaceItemSelection,
     draftIds: () => [...openDrafts.keys()],
+    snapshot: readOpenWorkspaceItemDraft,
   };
 }
