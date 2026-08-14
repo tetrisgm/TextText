@@ -163,6 +163,12 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
         let webView = WKWebView(
             frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
         webView.allowsBackForwardNavigationGestures = true
+        // A development build pointed at a local server is the only place the
+        // inspector belongs; a release origin is always https, so this never
+        // ships enabled.
+        if #available(macOS 13.3, *), origin.scheme == "http" {
+            webView.isInspectable = true
+        }
         self.webView = webView
 
         let window = NSWindow(
@@ -736,6 +742,56 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         window?.title = webView.title?.isEmpty == false ? webView.title! : "TextText"
+        logLayoutDiagnostics(webView)
+    }
+
+    /// Dev builds only: one line of layout truth per load, because the class
+    /// of bug where the page overflows or reserves phantom space is invisible
+    /// from outside the web view and has burned days of guessing. Read it with
+    /// `log stream --predicate 'subsystem == "app.texttext.mac"'`.
+    private func logLayoutDiagnostics(_ webView: WKWebView) {
+        guard origin.scheme == "http" else { return }
+        let probe = """
+        (() => { try {
+          const r = s => { const e = document.querySelector(s);
+            if (!e) return null; const b = e.getBoundingClientRect();
+            return { x: Math.round(b.x), w: Math.round(b.width) }; };
+          return JSON.stringify({
+            vw: document.documentElement.clientWidth,
+            vh: document.documentElement.clientHeight,
+            scrollW: document.documentElement.scrollWidth,
+            scrollX: Math.round(window.scrollX),
+            dpr: window.devicePixelRatio,
+            sidebar: r('.workspace-sidebar, [class*="workspace-sidebar"]'),
+            content: r('.post-editor-content'),
+            rail: (() => { const e = document.querySelector('.workspace-assistant-shell');
+              if (!e) return null; const b = e.getBoundingClientRect();
+              return { x: Math.round(b.x), w: Math.round(b.width), state: e.dataset.state }; })(),
+            saved: {
+              state: localStorage.getItem('texttext:workspace-assistant-state'),
+              width: localStorage.getItem('texttext:workspace-assistant-width'),
+            },
+          });
+        } catch (e) { return "probe failed: " + e; } })()
+        """
+        webView.evaluateJavaScript(probe) { result, _ in
+            guard let line = result as? String else { return }
+            // The unified log filters third-party NSLog unpredictably; a dev
+            // diagnostic that sometimes vanishes is worse than none. A plain
+            // file in the temp dir is boring and always there.
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("texttext-layout.log")
+            let stamped = "\(Date()) \(line)\n"
+            if let data = stamped.data(using: .utf8) {
+                if let handle = try? FileHandle(forWritingTo: url) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    try? handle.close()
+                } else {
+                    try? data.write(to: url)
+                }
+            }
+        }
     }
 
     // A window is a native shell around the web app, so an origin that does not

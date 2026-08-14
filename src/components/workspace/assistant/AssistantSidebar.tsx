@@ -621,35 +621,6 @@ export function AssistantSidebar({
             </div>
           </div>
 
-          {context && (
-            <div
-              className={styles.contextChip}
-              aria-label={
-                context.detail
-                  ? `Context: ${context.label}, ${context.detail}`
-                  : `Context: ${context.label}`
-              }
-              title={
-                context.detail
-                  ? `${context.label} - ${context.detail}`
-                  : context.label
-              }
-            >
-              <span className={styles.contextIcon} aria-hidden="true">
-                {context.kind === "folder" ? (
-                  <FolderIcon />
-                ) : context.kind === "workspace" ? (
-                  <WorkspaceIcon />
-                ) : (
-                  <DocumentIcon />
-                )}
-              </span>
-              <span className={styles.contextLabel}>{context.label}</span>
-              {context.detail && (
-                <span className={styles.contextDetail}>{context.detail}</span>
-              )}
-            </div>
-          )}
         </header>
 
         <div
@@ -715,6 +686,39 @@ export function AssistantSidebar({
           )}
 
           <div className={styles.composerField}>
+            {/* The chip lives with the input, where it answers the question
+                the input raises: what will this message be about? Removable
+                scope belongs here too when it arrives; the header stays a
+                title bar. */}
+            {context && (
+              <div
+                className={styles.contextChip}
+                aria-label={
+                  context.detail
+                    ? `Context: ${context.label}, ${context.detail}`
+                    : `Context: ${context.label}`
+                }
+                title={
+                  context.detail
+                    ? `${context.label} - ${context.detail}`
+                    : context.label
+                }
+              >
+                <span className={styles.contextIcon} aria-hidden="true">
+                  {context.kind === "folder" ? (
+                    <FolderIcon />
+                  ) : context.kind === "workspace" ? (
+                    <WorkspaceIcon />
+                  ) : (
+                    <DocumentIcon />
+                  )}
+                </span>
+                <span className={styles.contextLabel}>{context.label}</span>
+                {context.detail && (
+                  <span className={styles.contextDetail}>{context.detail}</span>
+                )}
+              </div>
+            )}
             <textarea
               ref={composerRef}
               className={styles.textarea}

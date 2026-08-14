@@ -110,79 +110,83 @@ export function AssistantConversation({
     ) : null;
 
   if (messages.length === 0) {
+    const connected = Boolean(cloudProvider) || nativeConnection?.state === "ready";
     return (
       <div className={styles.empty}>
         {jobsStrip}
         {quickActionBar}
-        {/* A greeting and starters that name the current item, rather than
-            which provider is wired up. Which provider is connected only earns
-            the lead when there is none, because then it is the thing standing
-            in the way. */}
-        <p className={styles.emptyTitle}>
-          {cloudProvider || nativeConnection?.state === "ready"
-            ? greeting(viewerName, new Date())
-            : "Write with an agent"}
-        </p>
-        {!cloudProvider && nativeConnection?.state !== "ready" && (
-          <p className={styles.emptyEyebrow}>Connect once, then keep working here</p>
-        )}
-        <p className={styles.emptyBody}>
-          {cloudProvider || nativeConnection?.state === "ready"
-            ? "Ask about what you are looking at, or start with one of these."
-            : nativeConnection?.state === "runtime-missing"
-              ? "The embedded agent is available in the Mac app. You can connect another AI app or add an API key to start here."
-              : "Connect an AI provider once. Choose the agent you already use, and TextText keeps it in this sidebar so you can write, revise, and act without switching apps. API keys are optional."}
-        </p>
-        {!cloudProvider && nativeConnection?.state !== "ready" && (
-          <>
-            <div className={styles.examples} aria-label="AI connection choices">
+        {/* One idea per state, vertically centered like a place rather than
+            stacked like a form. Connected: a greeting and starters that name
+            the current item. Not connected: one sentence and one action,
+            because connecting is the only thing worth saying until it is
+            done. The alternatives survive as a single quiet line. */}
+        <div className={styles.emptyCenter}>
+          <div className={styles.emptyLede}>
+            <p className={styles.emptyTitle}>
+              {connected ? greeting(viewerName, new Date()) : "Write with your AI"}
+            </p>
+            <p className={styles.emptyBody}>
+              {connected
+                ? "Ask about what you are looking at, or start with one of these."
+                : nativeConnection?.state === "runtime-missing"
+                  ? "The built-in agent needs the Mac app. Connect another AI app or add an API key to work here."
+                  : "Connect the AI you already use once, and it works right here, beside your documents."}
+            </p>
+          </div>
+          {!connected && (
+            <div className={styles.connect} aria-label="Connect an AI">
               {nativeConnection?.embeddedChatSupported && onConnectNative ? (
-                <button type="button" onClick={onConnectNative}>
-                  <span>Continue with ChatGPT</span>
-                  <span aria-hidden="true">→</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={styles.connectPrimary}
+                    onClick={onConnectNative}
+                  >
+                    Continue with ChatGPT
+                  </button>
+                  <p className={styles.connectAlt}>
+                    <a href="/connect">Connect a different app</a>
+                    <span aria-hidden="true"> · </span>
+                    <a href="/docs/ai#api-key">Add an API key</a>
+                  </p>
+                </>
               ) : (
-                <a href="/connect">
-                  <span>Connect an AI app</span>
-                  <span aria-hidden="true">→</span>
-                </a>
+                <>
+                  <a className={styles.connectPrimary} href="/connect">
+                    Connect an AI app
+                  </a>
+                  <p className={styles.connectAlt}>
+                    Claude, ChatGPT, Codex, or <a href="/docs/ai#api-key">an API key</a>
+                  </p>
+                </>
               )}
             </div>
-            <details className={styles.otherConnections}>
-              <summary>Other ways to connect</summary>
-              <div className={styles.otherConnectionsBody}>
-                <a href="/connect">Claude, Codex, ChatGPT, or another MCP app</a>
-                <a href="/docs/ai#api-key">Bring your own API key</a>
-              </div>
-            </details>
-            <a className={styles.setupLink} href="/docs/ai">See the 2-minute setup guide</a>
-          </>
-        )}
-        {(cloudProvider || nativeConnection?.state === "ready") && onUsePrompt && (
-          <div className={styles.examples} aria-label="Prompt starters">
-            {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
-              <button
-                key={starter.label}
-                type="button"
-                disabled={submitting}
-                onClick={(event) => {
-                  const sidebar = event.currentTarget.closest<HTMLElement>(
-                    "[data-assistant-sidebar]",
-                  );
-                  onUsePrompt(starter.prompt);
-                  window.requestAnimationFrame(() => {
-                    sidebar
-                      ?.querySelector<HTMLTextAreaElement>("textarea")
-                      ?.focus({ preventScroll: true });
-                  });
-                }}
-              >
-                <span>{starter.label}</span>
-                <span aria-hidden="true">→</span>
-              </button>
-            ))}
-          </div>
-        )}
+          )}
+          {connected && onUsePrompt && (
+            <div className={styles.examples} aria-label="Prompt starters">
+              {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (
+                <button
+                  key={starter.label}
+                  type="button"
+                  disabled={submitting}
+                  onClick={(event) => {
+                    const sidebar = event.currentTarget.closest<HTMLElement>(
+                      "[data-assistant-sidebar]",
+                    );
+                    onUsePrompt(starter.prompt);
+                    window.requestAnimationFrame(() => {
+                      sidebar
+                        ?.querySelector<HTMLTextAreaElement>("textarea")
+                        ?.focus({ preventScroll: true });
+                    });
+                  }}
+                >
+                  {starter.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

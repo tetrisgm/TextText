@@ -220,7 +220,7 @@ describe("assistant sidebar UI", () => {
     expect(html).toContain("Challenge my thinking");
   });
 
-  it("still leads with the provider when there is none to use", () => {
+  it("leads with one connect action when no AI is wired up", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantConversation, {
         cloudProvider: null,
@@ -231,7 +231,11 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    expect(html).toContain("Connect an AI provider");
+    // One idea: connect. No greeting, no starters, exactly one primary
+    // action; the alternatives survive only as the quiet trailing line.
+    expect(html).toContain("Write with your AI");
+    expect(html).toContain("Connect an AI app");
+    expect(html).toContain("an API key");
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(html).not.toContain('aria-label="Prompt starters"');
     expect(html).not.toContain("Catch me up");
