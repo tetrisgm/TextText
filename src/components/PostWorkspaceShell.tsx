@@ -76,7 +76,6 @@ import {
   WorkspaceItemStar,
 } from "@/components/workspace/WorkspaceItemActions";
 import { WorkspaceItemThumbnail } from "@/components/workspace/WorkspaceItemThumbnail";
-import { AiGettingStartedCard } from "@/components/workspace/AiGettingStartedCard";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 
 type TrashApiOperation =
@@ -2907,12 +2906,6 @@ function WorkspaceRootLanding({
             <header className="workspace-library-header">
               <h1 id="workspace-root-title">Library</h1>
             </header>
-            <AiGettingStartedCard
-              connection={assistantConnection}
-              settingsHref={settingsHref}
-              onConnect={onConnectAssistant}
-              onOpenAssistant={onOpenAssistant}
-            />
             {canManageItems && creationFolder ? (
               <section
                 className="workspace-root-create"
@@ -6641,10 +6634,13 @@ function LocalWorkspaceShell({
         onStateChange={changeAssistantState}
         width={assistantWidth}
         onWidthChange={changeAssistantWidth}
-        // The assistant is a real second column in the workspace shell. Using
-        // overlay mode here makes its absolute-positioning rules collapse the
-        // grid track and overlap the library on narrower windows.
-        layout="inline"
+        // Auto: pinned participates in the shell grid as a real column;
+        // open/hidden float over the page. The module owns its own
+        // positioning per state, and the grid only reserves a column when
+        // the shell says has-assistant-pinned, so nothing is reserved for a
+        // hidden rail. inline was wrong here: it holds a track open in every
+        // state, which squeezed the library beside an invisible assistant.
+        layout="auto"
         context={assistantContext}
         composerValue={assistantComposer.draft.text}
         onComposerChange={assistantComposer.setText}
@@ -6660,9 +6656,10 @@ function LocalWorkspaceShell({
         submitting={assistant.submitting}
         launcherBusy={assistant.runningJobs > 0}
         composerPlaceholder={
-          assistant.cloudProvider
-            ? `Ask or act with ${assistant.cloudProvider}`
-            : "Connect an AI provider in Settings"
+          assistant.cloudProvider ||
+          assistant.nativeConnection?.state === "ready"
+            ? "Do anything with AI"
+            : "Connect an AI to start"
         }
         accept={assistant.attachmentAccept}
         attachmentDisabled={!assistant.attachmentsAvailable}

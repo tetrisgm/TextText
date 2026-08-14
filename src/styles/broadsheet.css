@@ -2438,23 +2438,33 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
     margin-left 0.18s var(--ease),
     margin-right 0.18s var(--ease);
 }
+/* The one layout mechanism for the assistant. The shell decides with
+   has-assistant-pinned; everything else follows. Pinned: the rail is a real
+   grid column and the page reflows beside it. Open or hidden: the module's
+   own auto-layout floats it over the page, and the grid holds a single
+   column, so nothing is ever reserved for a rail that is not showing.
+   No rule here or anywhere else may size the rail with !important; the
+   history of this file says that ends with three mechanisms stacked and a
+   533px library in a 1400px window. */
 .workspace-document-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, var(--workspace-assistant-width, 360px));
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 100%;
   align-items: stretch;
 }
-.workspace-document-layout > .post-editor-content { grid-column: 1; min-width: 0; }
-.workspace-document-layout > .workspace-assistant-shell {
+.workspace-document-layout > .post-editor-content {
+  grid-column: 1;
+  min-width: 0;
+}
+.post-editor-shell.has-assistant-pinned .workspace-document-layout {
+  grid-template-columns: minmax(0, 1fr) var(--workspace-assistant-width, 360px);
+}
+.post-editor-shell.has-assistant-pinned
+  .workspace-document-layout
+  > .workspace-assistant-shell {
   grid-column: 2;
   grid-row: 1;
-  position: relative !important;
-  inset: auto !important;
-  height: auto !important;
-  width: var(--workspace-assistant-width, 360px) !important;
-  min-width: 280px !important;
-  max-width: 100% !important;
 }
 .post-editor-shell {
   position: relative;
@@ -2463,39 +2473,19 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
 .post-editor-content:focus {
   outline: none;
 }
-.workspace-assistant-shell {
-  position: absolute !important;
-  inset: 0 0 0 auto !important;
-  z-index: 8 !important;
-  width: min(var(--workspace-assistant-width, 360px), 100vw) !important;
-  height: 100% !important;
-}
-.workspace-assistant-shell[data-state="hidden"] {
-  width: 52px !important;
-}
-/* Approaching the assistant rail reveals its panel without moving the page. */
-.workspace-assistant-shell[data-state="hidden"][data-peeking="true"] {
-  width: min(var(--workspace-assistant-width, 360px), 100vw) !important;
-}
+/* Approaching the hidden rail reveals its panel without moving the page. */
 .workspace-assistant-shell[data-state="hidden"][data-peeking="true"]
   button[aria-label^="Open assistant"] {
   opacity: 0;
   pointer-events: none;
 }
-@media (min-width: 1281px) {
-  .post-editor-shell.has-assistant-open {
-    padding-right: var(--workspace-assistant-width, 360px);
-  }
-
-.post-editor-shell.has-sidebar.has-assistant-pinned .post-top-action-bar,
-  .post-editor-shell.has-sidebar.has-assistant-pinned
-    .post-top-action-bar.is-edit,
-  .post-editor-shell.has-sidebar.has-assistant-pinned
-    .folder-top-action-bar,
-  .post-editor-shell.has-sidebar.has-assistant-pinned
-    .workspace-root-action-bar {
-    right: calc(var(--workspace-assistant-width, 360px) + 8px);
-  }
+/* The action bars are fixed to the viewport, so a pinned rail has to push
+   them left; the reflowing grid cannot do it for them. */
+.post-editor-shell.has-assistant-pinned .post-top-action-bar,
+.post-editor-shell.has-assistant-pinned .post-top-action-bar.is-edit,
+.post-editor-shell.has-assistant-pinned .folder-top-action-bar,
+.post-editor-shell.has-assistant-pinned .workspace-root-action-bar {
+  right: calc(var(--workspace-assistant-width, 360px) + 8px);
 }
 @media (prefers-reduced-motion: reduce) {
   .post-editor-content {
@@ -7664,24 +7654,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   text-decoration: underline;
 }
 
-/* Workspace proportions: the assistant is a calm inspector, not a second
-   page. Keep its width bounded even when an older saved resize is present. */
-.workspace-document-layout {
-  grid-template-columns: minmax(0, 1fr) 240px !important;
-}
-.workspace-document-layout > .workspace-assistant-shell {
-  --assistant-sidebar-width: 240px !important;
-  width: 240px !important;
-  max-width: 240px !important;
-}
-.workspace-document-layout [data-assistant-sidebar] {
-  --assistant-sidebar-width: 240px !important;
-  width: 240px !important;
-  max-width: 240px !important;
-}
-.workspace-root-page .workspace-root-inner {
-  width: min(100%, 1080px) !important;
-}
 
 .texttext-report-form {
   display: grid;

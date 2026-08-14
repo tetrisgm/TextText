@@ -772,28 +772,6 @@
    view: a generous writing surface with a quiet, fixed inspector.  The
    previous fluid rail could grow to half the window after a persisted resize,
    leaving the library stranded in a narrow strip. */
-.workspace-document-layout {
-  grid-template-columns: minmax(0, 1fr) 400px;
-}
-
-.workspace-document-layout > .workspace-assistant-shell {
-  width: 400px !important;
-}
-
-.workspace-assistant-shell[data-state="hidden"] {
-  width: 44px !important;
-}
-
-.post-editor-shell.has-sidebar.has-assistant-open
-  :where(
-    .post-top-action-bar,
-    .post-top-action-bar.is-edit,
-    .folder-top-action-bar,
-    .workspace-root-action-bar
-  ) {
-  right: 8px;
-}
-
 :where(.workspace-root-page, .workspace-collection-page, .post-folder-page) {
   max-width: none;
   padding: 56px 48px 80px;
@@ -865,22 +843,6 @@
 
 .workspace-trash-row {
   min-height: 52px;
-}
-
-@media (min-width: 1500px) {
-  .post-editor-shell.has-assistant-pinned .post-editor-content {
-    margin-right: var(--workspace-assistant-width, 360px);
-  }
-
-  .post-editor-shell.has-sidebar.has-assistant-pinned
-    :where(
-      .post-top-action-bar,
-      .post-top-action-bar.is-edit,
-      .folder-top-action-bar,
-      .workspace-root-action-bar
-    ) {
-    right: calc(var(--workspace-assistant-width, 360px) + 8px);
-  }
 }
 
 @media (max-width: 760px) {
