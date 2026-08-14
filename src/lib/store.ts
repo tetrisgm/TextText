@@ -1143,6 +1143,10 @@ ChatGPT appears as **ChatGPT** while it works in an open document.
 
 Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with OAuth. Give the connection a descriptive name. TextText uses that approved name when the client is not Claude, Codex, ChatGPT, or Cursor.
 
+## Check it worked
+
+Ask your agent: "List my TextText library." If it answers with your items, the connection is live. From then on the agent appears with its own name and avatar whenever it works in a document you have open.
+
 ## What agents can do
 
 Connected agents can create and find documents, update or append content, move items, publish articles, manage access, add comments, recapture bookmarks, and work in the same live document as you. Privacy and audit rules apply no matter which client performs the action.`,
