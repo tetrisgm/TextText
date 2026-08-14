@@ -1042,3 +1042,67 @@ TestFlight. A TestFlight-owned canonical copy stays in place for Apple's normal
 update. The existing `release/ship.sh` install path continues to replace either
 edition with a development/standalone build and removes verified numbered
 duplicates.
+
+## 2026-08-14: the Notion-simplicity rebuild, and what live verification found
+
+Owner goal restated: Notion is the visual bar. Clean left menu, clean body,
+clean right rail; everything AI lives in the rail; the AI has an avatar at the
+bottom right and appears as an active collaborator on open documents; a docs
+folder must explain every feature, and no feature gets documented unverified.
+
+Landed on main today (f326a321, 358e938b, 93f83ccc, 5bfe9ad2):
+
+- **One rail layout mechanism.** Three stacked generations (shell padding,
+  always-on grid column, 240px !important clamps) reserved 600px for a 240px
+  rail and squeezed the Library to 533px at 1400. Now: pinned = a real grid
+  column via `has-assistant-pinned`; otherwise the module's auto layout
+  overlays and nothing is reserved. No !important sizing of the rail, ever.
+- **The Library AI promo card is gone**; the rail owns AI first-run. Rail
+  redesigned: centered greeting, equal-weight starter cards, one connect
+  action, context chip inside the composer, circular send, no slab borders.
+- **The launcher is a 40px circular avatar at the bottom right** wearing the
+  connected agent's identity. Save-state chip sits beside it, not under it.
+- **assistantAgentIdentity() is the one derivation** of which AI is present;
+  the inline copies had drifted (API-key assistants never appeared on
+  documents). In-app assistant runs already register real Yjs presence via
+  runWorkspaceToolForSession -> agentPresence; MCP agents likewise.
+- **The selection pipeline was dead end to end** and no test knew: the draft
+  store (workspace-item-draft.ts) had no writer, the toolbar read
+  window.getSelection() which cannot see textarea selections, and a
+  double-click race hid the rest. The editor now registers the open draft and
+  mirrors selections; verified live (double-click -> Rewrite/Summarize/
+  Excerpt above the selection).
+
+Working facts for the next session:
+
+- Dev loop: `npm run dev`; build the Mac app with
+  TEXTTEXT_PRODUCT_ORIGIN=http://localhost:3000 (plus bundle id, app group,
+  Sparkle key as in mac/scripts/build-store.sh defaults) and
+  `mac/scripts/install-local.sh`. Dev builds (http origin) are Safari-
+  inspectable and append a layout probe line per load to
+  `$(getconf DARWIN_USER_TEMP_DIR)/texttext-layout.log` - trust it over
+  screenshots; computer-use screenshots downscale and lie about geometry.
+- The Mac app webview ignores synthetic automation clicks while hover works;
+  drive the same UI in a browser at localhost instead. Real human clicks are
+  unaffected.
+- A stale pre-commit hook still demands merge-gate (deleted 2026-08-12).
+  Current contract is work-on-main; commit with OWNER_OVERRIDE=1. The hook is
+  a persistent job and not ours to remove without the owner.
+- `window.__ttDraftDebug` (dev only) reads the draft store; every writer in
+  that store fails silent by design.
+- HMR resets module-level state (the draft store empties); after editing
+  workspace-item-draft.ts, reload the page before concluding anything.
+
+Open, in order:
+
+1. **Docs folder (owner directive, unstarted).** A dedicated folder explaining
+   every feature and AI use case; nothing documented without being exercised
+   first. The /docs route exists as the product docs surface. Today's
+   verification notes are the raw material.
+2. Whole-app light/dark sweep is partial: Library, rail, editor, and reading
+   view checked dark; Library and rail checked light; editor and reading view
+   light-mode unchecked.
+3. The greeting/starters connected state and assistant runs are still
+   unexercised end to end: the dev workspace has no AI provider key.
+4. The workspace title in the Mac app still strands the owner on the public
+   blog page (canEdit bug recorded above, 2026-08-11, unfixed).
