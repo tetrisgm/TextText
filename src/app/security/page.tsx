@@ -85,7 +85,7 @@ export default function SecurityPage() {
           <h2>Report a security issue</h2>
           <p>
             Send security reports to{" "}
-            <a href="mailto:security@TextText.app">security@TextText.app</a>.
+            <a href="mailto:security@texttext.app">security@texttext.app</a>.
             Include the affected URL, steps to reproduce, and whether any data
             may have been exposed.
           </p>

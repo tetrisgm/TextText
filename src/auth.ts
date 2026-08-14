@@ -25,7 +25,7 @@ const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
 // like smtps://user:pass@host:465 or smtp://user:pass@host:587 (STARTTLS).
 const emailServer = process.env.AUTH_EMAIL_SERVER;
 const emailFrom =
-  process.env.AUTH_EMAIL_FROM ?? "TextText <noreply@TextText.app>";
+  process.env.AUTH_EMAIL_FROM ?? "TextText <noreply@texttext.app>";
 const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
 export const LAST_USED_PROVIDER_COOKIE = "wr_last_signin_provider";
 export const SIGNIN_EMAIL_COOKIE = "wr_signin_email";

@@ -201,11 +201,17 @@ describe("assistant sidebar UI", () => {
       }),
     );
 
-    // One idea: connect. No greeting, no starters, exactly one primary
-    // action; the alternatives survive only as the quiet trailing line.
+    // Every way in is its own actionable row, pen.dev/paper.design style:
+    // the copy rows carry the install command, the link rows go to the one
+    // page that finishes the job, and the key path survives as the quiet
+    // trailing line.
     expect(html).toContain("Write with your AI");
-    expect(html).toContain("Connect an AI app");
-    expect(html).toContain("an API key");
+    expect(html).toContain('aria-label="Ways to connect"');
+    expect(html).toContain("Install Claude plugin");
+    expect(html).toContain("Install Codex plugin");
+    expect(html).toContain("Open ChatGPT apps");
+    expect(html).toContain("Copy MCP address");
+    expect(html).toContain("API key");
     expect(html).not.toMatch(/Good (morning|afternoon|evening)/);
     expect(html).not.toContain('aria-label="Prompt starters"');
     expect(html).not.toContain("Catch me up");

@@ -84,7 +84,7 @@ export default function TermsPage() {
           <h2>Contact</h2>
           <p>
             Questions about these terms can be sent to{" "}
-            <a href="mailto:security@TextText.app">security@TextText.app</a>.
+            <a href="mailto:security@texttext.app">security@texttext.app</a>.
           </p>
         </section>
       </article>

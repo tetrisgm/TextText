@@ -2419,12 +2419,21 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   if (!blogFolderId || !notesFolderId || !bookmarksFolderId) {
     throw new Error("failed to resolve the workspace folders");
   }
-  // A new workspace is empty on purpose. The first visit to the editor
-  // creates one untitled draft and opens it, so the first thing a person
-  // sees is their own document rather than an explanation of the product.
+  // A new workspace starts with the two AI guides in Notes (owner decision
+  // 2026-08-14, reversing the empty-by-default of 2026-08-08): the paths for
+  // connecting an AI must be discoverable from the very first Library view,
+  // not only from the docs site. They are private notes, they are marked as
+  // starter posts so caps and cleanups know them, and the first visit to the
+  // editor still creates the person's own first draft.
   void blogFolderId;
-  void notesFolderId;
   void bookmarksFolderId;
+  await db!
+    .insert(posts)
+    .values(starterAgentGuideValues(blogId, notesFolderId))
+    .onConflictDoNothing({
+      target: [posts.folderId, posts.slug],
+      where: sql`${posts.deletedAt} is null`,
+    });
 
   // Provisioning is a mutation like any other; without this row the starter
   // posts are the only content that appears with no audit trail.

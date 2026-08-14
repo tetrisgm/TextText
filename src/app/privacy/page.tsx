@@ -85,7 +85,7 @@ export default function PrivacyPage() {
           </p>
           <p>
             For a data question, email{" "}
-            <a href="mailto:security@TextText.app">security@TextText.app</a>.
+            <a href="mailto:security@texttext.app">security@texttext.app</a>.
           </p>
         </section>
       </article>

@@ -53,7 +53,7 @@ export function ConnectPanel({
   const remoteOrigin =
     origin ||
     (typeof window === "undefined"
-      ? "https://TextText.app"
+      ? "https://texttext.app"
       : window.location.origin);
   const remoteMcpUrl = hostedMcpUrl(remoteOrigin);
 

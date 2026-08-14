@@ -29,7 +29,7 @@ export default function SupportPage() {
           <h2>Write to a person</h2>
           <p>
             Email{" "}
-            <a href="mailto:security@TextText.app">security@TextText.app</a> with
+            <a href="mailto:security@texttext.app">security@texttext.app</a> with
             what you were doing, what happened, and what you expected instead. If
             it involves the Mac app, the version from the TextText menu helps.
           </p>

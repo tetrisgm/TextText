@@ -93,7 +93,7 @@ export function ReportForm({ path, doc }: { path: string; doc: string }) {
       {stage === "failed" ? (
         <p role="alert">
           That did not go through. Try again, or email{" "}
-          <a href="mailto:security@TextText.app">security@TextText.app</a>.
+          <a href="mailto:security@texttext.app">security@texttext.app</a>.
         </p>
       ) : null}
       <button type="submit" disabled={stage === "sending"}>

@@ -1,18 +1,106 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AssistantMessage } from "./useNativeAssistant";
 import type { AssistantJob } from "@/lib/ai/jobs";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import type { CloudAssistantProviderLabel } from "@/lib/ai/cloud-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import { greeting, startersFor, type StarterContext } from "./starters";
+import { AGENT_INTEGRATIONS } from "@/lib/agent-integrations";
 import styles from "./AssistantConversation.module.css";
 
 const FALLBACK_STARTER_CONTEXT: StarterContext = { level: "root" };
 
 function displayedMessageText(message: AssistantMessage): string {
   return message.text;
+}
+
+/**
+ * One way in, one action. Copy rows resolve in place with a "Copied" beat so
+ * nobody wonders whether anything happened; link rows just go.
+ */
+function ConnectPathRow({
+  integration,
+}: {
+  integration: (typeof AGENT_INTEGRATIONS)[number];
+}) {
+  const [copied, setCopied] = useState(false);
+  const { action } = integration;
+  const hint =
+    action.kind === "copy"
+      ? copied
+        ? action.copiedLabel
+        : action.label
+      : action.label;
+
+  if (action.kind === "link") {
+    return (
+      <a
+        className={styles.connectPath}
+        href={action.href}
+        target={action.href.startsWith("http") ? "_blank" : undefined}
+        rel="noreferrer"
+      >
+        <span className={styles.connectPathMark} aria-hidden="true">
+          {integration.monogram}
+        </span>
+        <span className={styles.connectPathCopy}>
+          <span className={styles.connectPathName}>{integration.name}</span>
+          <span className={styles.connectPathHint}>{hint}</span>
+        </span>
+        <span className={styles.connectPathAction} aria-hidden="true">→</span>
+      </a>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={styles.connectPath}
+      data-copied={copied || undefined}
+      onClick={() => {
+        // The async clipboard API can reject in embedded webviews and stricter
+        // permission contexts; a copy row that silently does nothing is worse
+        // than no row, so the selection-and-execCommand fallback stays.
+        const legacyCopy = () => {
+          const scratch = document.createElement("textarea");
+          scratch.value = action.value;
+          scratch.setAttribute("readonly", "");
+          scratch.style.position = "fixed";
+          scratch.style.opacity = "0";
+          document.body.appendChild(scratch);
+          scratch.select();
+          const ok = document.execCommand("copy");
+          scratch.remove();
+          return ok;
+        };
+        const done = () => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 2400);
+        };
+        // Synchronous first: execCommand runs inside the click's transient
+        // activation. Waiting for the async API to reject spends that
+        // activation, after which every path fails and the row goes mute.
+        if (legacyCopy()) {
+          done();
+        } else if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(action.value).then(done).catch(() => {});
+        }
+      }}
+    >
+      <span className={styles.connectPathMark} aria-hidden="true">
+        {integration.monogram}
+      </span>
+      <span className={styles.connectPathCopy}>
+        <span className={styles.connectPathName}>{integration.name}</span>
+        <span className={styles.connectPathHint}>{hint}</span>
+      </span>
+      <span className={styles.connectPathAction} aria-hidden="true">
+        {copied ? "✓" : "⧉"}
+      </span>
+    </button>
+  );
 }
 
 // The transcript inside the assistant sidebar: user and assistant turns,
@@ -135,31 +223,30 @@ export function AssistantConversation({
           </div>
           {!connected && (
             <div className={styles.connect} aria-label="Connect an AI">
-              {nativeConnection?.embeddedChatSupported && onConnectNative ? (
-                <>
-                  <button
-                    type="button"
-                    className={styles.connectPrimary}
-                    onClick={onConnectNative}
-                  >
-                    Continue with ChatGPT
-                  </button>
-                  <p className={styles.connectAlt}>
-                    <a href="/connect">Connect a different app</a>
-                    <span aria-hidden="true"> · </span>
-                    <a href="/docs/ai#api-key">Add an API key</a>
-                  </p>
-                </>
-              ) : (
-                <>
-                  <a className={styles.connectPrimary} href="/connect">
-                    Connect an AI app
-                  </a>
-                  <p className={styles.connectAlt}>
-                    Claude, ChatGPT, Codex, or <a href="/docs/ai#api-key">an API key</a>
-                  </p>
-                </>
+              {nativeConnection?.embeddedChatSupported && onConnectNative && (
+                <button
+                  type="button"
+                  className={styles.connectPrimary}
+                  onClick={onConnectNative}
+                >
+                  Continue with ChatGPT
+                </button>
               )}
+              {/* Every path, each one actionable in place: the copy rows put
+                  the install command or the MCP address on the clipboard, the
+                  link rows open the one page that finishes the job. pen.dev
+                  and paper.design set the bar here; a single "connect an AI"
+                  button under it told people nothing about their options. */}
+              <div className={styles.connectPaths} aria-label="Ways to connect">
+                {AGENT_INTEGRATIONS.map((integration) => (
+                  <ConnectPathRow key={integration.id} integration={integration} />
+                ))}
+              </div>
+              <p className={styles.connectAlt}>
+                Prefer a key? <a href="/docs/ai#api-key">Add an Anthropic or OpenAI API key</a>
+                <span aria-hidden="true"> · </span>
+                <a href="/connect">Full setup guide</a>
+              </p>
             </div>
           )}
           {connected && onUsePrompt && (

@@ -90,7 +90,7 @@ const publicDocs = [
   readFileSync(join(repositoryRoot, "src/app/llms.txt/route.ts"), "utf8"),
 ].join("\n");
 assert(
-  TEXTTEXT_HOSTED_MCP_URL === "https://TextText.app/api/mcp" &&
+  TEXTTEXT_HOSTED_MCP_URL === "https://texttext.app/api/mcp" &&
     publicDocs.includes("TEXTTEXT_HOSTED_MCP_URL"),
   "Public agent docs must advertise the production MCP endpoint",
 );
