@@ -11,9 +11,11 @@
 // arrives as a proposal you accept or undo. Nothing here applies model output
 // to a document.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NativeQuickActionId } from "@/lib/ai/quick-actions";
 import styles from "./SelectionActions.module.css";
+
+export type EditorTextSelection = { text: string };
 
 /** Only the actions that mean something about a passage of text. */
 export const SELECTION_ACTIONS: ReadonlyArray<{
@@ -58,54 +60,90 @@ export function isActionableSelection(text: string | null | undefined): boolean 
 
 export function SelectionActions({
   enabled,
+  readSelection,
   onRunAction,
 }: {
   /** Editing an item. Elsewhere a selection is just reading. */
   enabled: boolean;
+  /**
+   * The editor's own account of what is selected. The body of an item is a
+   * textarea, and window.getSelection() does not see textarea selections at
+   * all, so the first version of this toolbar could never appear where it
+   * mattered. The editor already reports its selection for the assistant
+   * context; that one source feeds this too.
+   */
+  readSelection: () => EditorTextSelection | null;
   onRunAction: (id: NativeQuickActionId) => void;
 }) {
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
+  // Where the pointer last let go: the anchor a textarea cannot give us.
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const refresh = useCallback(() => {
     if (!enabled) {
       setAnchor(null);
       return;
     }
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    const selection = readSelection();
+    if (!selection || !isActionableSelection(selection.text)) {
       setAnchor(null);
       return;
     }
-    if (!isActionableSelection(selection.toString())) {
-      setAnchor(null);
-      return;
-    }
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
-    if (!rect || (rect.width === 0 && rect.height === 0)) {
+    const at = pointerRef.current;
+    const rect = at
+      ? { left: at.x, right: at.x, top: at.y, width: 0 }
+      : (() => {
+          const field = document.activeElement;
+          if (!(field instanceof HTMLElement)) return null;
+          const b = field.getBoundingClientRect();
+          return { left: b.left + b.width / 2, right: b.left + b.width / 2, top: b.top + 48, width: 0 };
+        })();
+    if (!rect) {
       setAnchor(null);
       return;
     }
     setAnchor(anchorFor(rect, { width: window.innerWidth }));
-  }, [enabled]);
+  }, [enabled, readSelection]);
 
   useEffect(() => {
     if (!enabled) {
       setAnchor(null);
       return;
     }
-    // selectionchange fires while dragging; settling on mouse/key release keeps
-    // the toolbar from chasing the cursor across the paragraph.
-    document.addEventListener("mouseup", refresh);
-    document.addEventListener("keyup", refresh);
-    document.addEventListener("selectionchange", refresh);
-    window.addEventListener("scroll", refresh, true);
-    window.addEventListener("resize", refresh);
+    // Settling on mouse/key release keeps the toolbar from chasing the cursor
+    // across the paragraph mid-drag.
+    // A short settle beats event-order archaeology: a double-click's word
+    // selection, a drag release, and shift-arrow growth all finish writing to
+    // the draft store within a frame or two of their last event.
+    let settle: number | undefined;
+    const scheduleRefresh = () => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(refresh, 60);
+    };
+    const onMouseUp = (event: MouseEvent) => {
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      scheduleRefresh();
+    };
+    const onKeyUp = () => {
+      pointerRef.current = null;
+      scheduleRefresh();
+    };
+    // selectionchange fires for textarea selections too, which covers the
+    // paths that have no convenient final event of their own.
+    const onSelectionChange = () => scheduleRefresh();
+    const dismiss = () => setAnchor(null);
+    document.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("keyup", onKeyUp);
+    document.addEventListener("selectionchange", onSelectionChange);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
     return () => {
-      document.removeEventListener("mouseup", refresh);
-      document.removeEventListener("keyup", refresh);
-      document.removeEventListener("selectionchange", refresh);
-      window.removeEventListener("scroll", refresh, true);
-      window.removeEventListener("resize", refresh);
+      window.clearTimeout(settle);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("selectionchange", onSelectionChange);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
     };
   }, [enabled, refresh]);
 

@@ -23,6 +23,10 @@ import { CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import { CollaboratorMark } from "@/components/collab/CollaboratorMark";
 import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import {
+  registerOpenWorkspaceItemDraft,
+  setOpenWorkspaceItemSelection,
+} from "@/lib/ai/workspace-item-draft";
+import {
   applyDocumentBaseline,
   applyDocumentSnapshot,
   documentSnapshotFromYDoc,
@@ -695,8 +699,51 @@ export function UnifiedDocumentEditor({
     [currentLocalDocument, doc, networkEnabled, publishDocument, ready],
   );
 
+  // The bridge the assistant reads through. Selections used to flow only
+  // into Yjs awareness, which paints collaborative cursors and nothing else;
+  // the draft store that feeds the assistant's context, the selection quick
+  // actions, and the selection toolbar had lost its writer in a refactor, so
+  // "Selected body text" could never appear and every selection feature was
+  // quietly dead. The editor is the one thing that knows the live text, so it
+  // registers the draft for as long as the item is open to edit.
+  useEffect(() => {
+    if (!collab.canEdit) return;
+    const unregister = registerOpenWorkspaceItemDraft(collab.postId, {
+      read: () => {
+        const snapshot = currentLocalDocument();
+        return {
+          title: snapshot.content.title ?? "",
+          excerpt: snapshot.content.subtitle ?? "",
+          body: snapshot.content.body ?? "",
+          tags: snapshot.content.tags,
+        };
+      },
+      apply: (patch) => {
+        if (typeof patch.title === "string") updateText("title", patch.title);
+        if (typeof patch.excerpt === "string") updateText("subtitle", patch.excerpt);
+        if (typeof patch.body === "string") updateText("body", patch.body);
+      },
+    });
+    return unregister;
+  }, [collab.canEdit, collab.postId, currentLocalDocument, updateText]);
+
   const updateSelection = useCallback(
     (field: EditableField, anchor: number, head: number) => {
+      // The draft store names the subtitle field "excerpt"; same text, two
+      // vocabularies.
+      const draftField = field === "subtitle" ? "excerpt" : field;
+      if (anchor < 0 || head < 0) {
+        setOpenWorkspaceItemSelection(collab.postId, null);
+      } else {
+        const start = Math.min(anchor, head);
+        const end = Math.max(anchor, head);
+        setOpenWorkspaceItemSelection(collab.postId, {
+          field: draftField,
+          start,
+          end,
+          text: documentText(doc, field).toString().slice(start, end),
+        });
+      }
       if (!ready || anchor < 0 || head < 0) {
         awareness.setLocalStateField("selection", null);
         return;
@@ -1013,7 +1060,7 @@ export function UnifiedDocumentEditor({
         .tt-agent-avatar>span{display:contents}
         .tt-agent-avatar svg{width:13px;height:13px;fill:currentColor}
         .tt-agent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .tt-save-state{position:fixed;right:12px;bottom:12px;z-index:220;min-height:1rem;padding:5px 9px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 12%,transparent);border-radius:6px;background:var(--paper,#fff);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
+        .tt-save-state{position:fixed;right:72px;bottom:24px;z-index:220;min-height:1rem;padding:5px 9px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 12%,transparent);border-radius:6px;background:var(--paper,#fff);color:var(--muted,#6e6e73);font-size:12px;pointer-events:none}
         .tt-save-state:empty{display:none}.tt-save-state.is-error{color:#b42318}@media(prefers-color-scheme:dark){.tt-save-state.is-error{color:#ff8a80}}
         .tt-look-button{display:inline-flex;align-items:center;gap:5px}.tt-look-name{max-width:9rem;overflow:hidden;color:var(--muted,#6e6e73);font-weight:500;text-overflow:ellipsis;white-space:nowrap}
         .tt-editor-more{position:relative}.tt-editor-more>summary{display:grid;place-items:center;box-sizing:border-box;min-width:30px;height:30px;padding:0 8px;border:0;border-radius:6px;background:var(--ac-fill-4,rgba(118,118,128,.12));color:var(--ink,#1d1d1f);font:700 11px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:1px;cursor:pointer;list-style:none}.tt-editor-more>summary::-webkit-details-marker{display:none}.tt-editor-more[open]>summary{background:var(--ac-fill-3,rgba(118,118,128,.2))}

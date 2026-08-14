@@ -317,3 +317,14 @@ export function subscribeOpenWorkspaceItemDrafts(
 export function openWorkspaceItemDraftRevision(): number {
   return revision;
 }
+
+// Dev builds expose the read side on window so a live session can be
+// interrogated from outside React. Selection bugs in this file are invisible
+// otherwise: every writer fails silent by design.
+declare const window: (Window & { __ttDraftDebug?: unknown }) | undefined;
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+  window.__ttDraftDebug = {
+    selection: readOpenWorkspaceItemSelection,
+    draftIds: () => [...openDrafts.keys()],
+  };
+}

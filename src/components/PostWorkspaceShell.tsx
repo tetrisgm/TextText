@@ -6622,6 +6622,11 @@ function LocalWorkspaceShell({
           result arrives as a proposal to accept or undo. */}
       <SelectionActions
         enabled={assistantTarget.view.level === "edit"}
+        readSelection={() =>
+          assistantTarget.view.level === "edit" && assistantTarget.view.postId
+            ? readOpenWorkspaceItemSelection(assistantTarget.view.postId)
+            : null
+        }
         onRunAction={(id) => {
           if (assistantState === "hidden") changeAssistantState("pinned");
           void assistant.runQuickAction(id);
