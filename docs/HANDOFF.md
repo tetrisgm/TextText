@@ -1,53 +1,57 @@
 # TextText handoff
 
 Read `AGENTS.md` first; it is the contract. This file is the durable working
-state: a summary, the open list, and the facts that keep future sessions from
+state: the goal, the scorecard, and the facts that keep future sessions from
 relearning. Keep this shape: short sections, bullets, newest decisions win.
-Full narratives live in `git log`; commit messages carry the reasoning.
+Narratives live in `git log`.
 
-## Summary (2026-08-14)
+## The goal (owner, 2026-08-14)
 
-- Web is deployed through the 0.175 release plus dev-lane commits since; the
-  Mac app runs as a single Developer ID install at `/Applications/TextText.app`
-  (0.175 build 182), with TestFlight as the shareable lane and no App Store
-  submission planned.
-- Public URLs are live: `<handle>.texttext.app/<folder>/<slug>` on a
-  sessionless origin, per-folder slugs, tombstone redirects, constant-404
-  fail-closed everywhere.
-- The AI rail is the one home for AI: binary open/closed, avatar launcher
-  bottom right, greeting plus context starters when a provider is connected,
-  and a per-path connect state (Claude, Codex, ChatGPT, MCP, API key) with
-  in-place copy actions.
-- New workspaces seed the two AI guide notes (owner decision 2026-08-14,
-  reversing 2026-08-08 empty-by-default).
-- The Notion polish loop is standing: rounds land small, verified by
-  screenshot in both themes, ledger below.
-- Owner directives in force: loop until the app looks and feels like Notion;
-  document every feature only after exercising it; a content leak is fatal.
+TextText is a proven agent canvas. An agent connected any way (CLI, hosted
+MCP, in-app assistant) can do real document work on par with pen.dev and
+paper.design's canvas manipulation and Notion AI's documented capabilities.
+Done means each capability exercised against a running build by a real agent
+connection and observed in the UI. Green tests do not count; observed
+behavior does. Prior sessions' claims (especially Codex-era) are treated as
+unverified until exercised. The Notion-look polish continues, but behavior
+outranks look, and the owner's Notion screenshots set the bar, not the old
+polish ledger.
+
+## Capability scorecard
+
+- [x] Create with substance: agent-created note with body, right folder,
+  idempotent replay on the same key. Observed 2026-08-14.
+- [x] Complete rewrite under observation: agent replaced an open document's
+  entire body; the change appeared live with the agent's presence chip and
+  its named cursor at the end of its own text. Observed 2026-08-14.
+- [ ] Transform: change look, retitle, excerpt, tags via agent; notes into a
+  structured article.
+- [ ] Workspace operations: search by meaning, append_to_item idempotency
+  under retries, durable changelog pattern.
+- [ ] Rules hold under agency: audit rows for every mutation, visibility
+  fails closed from the agent's side, comments and access tools behave.
+- How to run the loop: mint a token (POST /api/link/start, approve in a
+  signed-in browser, poll), then drive `/api/mcp` per the transport contract
+  in scratchpad agent.py: `_meta` trio in the body plus MCP-Protocol-Version,
+  Mcp-Method, and Mcp-Name headers. 33 tools.
 
 ## Open, in priority order
 
-- Polish loop next rounds: fixed chrome should adopt the scheme of a
-  pinned-appearance page it floats over (dark chips on a light page);
-  rail connect-block vertical rhythm; Library composer weight; typography
-  rhythm against Notion's 14px UI.
-- The dev workspace has no AI provider key, so greeting starters, selection
-  actions end to end, proposals, and AI presence during runs remain
-  unexercised and undocumented. One key unblocks all of it.
-- Feature docs (`/docs/features`) cover only what has been exercised; extend
-  as verification proceeds (publishing flow detail, File Provider, Spotlight,
-  share extension, MCP workflows).
-- Installed-app auth verification: sign out, auth sheet round trip, and a
-  post-release health review were still pending after 0.175 installed.
-- From the 2026-08-12 session, still open: `blog-folder-feed` hardcodes the
-  stock Article feed instead of `article.collection`; no UI writer for a
-  folder's look (`set_folder_template` is assistant/MCP-only); template
-  gallery shows duplicate cards after a second `customize` with no retire
-  affordance; `set-collection-layout` lacks `index`/`timeline`/`single`
-  readers; eight visual-critique findings (Checklist/Bookmark polish,
-  Project orphan checkmarks).
-- App Store record still says 1.0 PREPARE_FOR_SUBMISSION, app ships 0.175;
-  only matters if a Store submission ever happens.
+- Finish the scorecard above; each unchecked line is one loop iteration.
+- Fixed observation hazards: verify `window.innerWidth` is nonzero before
+  trusting any browser measurement (a restarted pane can be 0x0 and serves
+  stale compositor frames to screenshots).
+- The dev workspace has no AI provider key, so the in-app assistant lane
+  (greeting starters, selection actions end to end, proposals) remains
+  unexercised; the MCP lane does not need one.
+- Feature docs (`/docs/features`) grow only with exercised behavior; the
+  agent capabilities above belong there once the scorecard closes.
+- Installed-app auth verification (sign out, auth sheet round trip) still
+  pending.
+- From 2026-08-12, unverified inventory: blog-folder-feed hardcode, no UI
+  writer for a folder's look, template gallery duplicate cards,
+  set-collection-layout missing readers, eight visual-critique findings.
+- App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop
 
