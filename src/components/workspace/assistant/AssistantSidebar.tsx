@@ -521,7 +521,7 @@ export function AssistantSidebar({
           className={styles.launcherWrap}
           label={launcherBusy ? "Assistant is working" : agent ? `Chat with ${agent.name}` : "Open assistant"}
           keys="⌘⇧A"
-          placement="bottom"
+          placement="top"
         >
           <button
             ref={launcherRef}

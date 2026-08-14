@@ -140,6 +140,7 @@ import {
   resolveWorkspaceAssistantContext,
 } from "@/components/workspace/assistant/context";
 import { starterContextFromChip } from "@/components/workspace/assistant/starters";
+import { assistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import { SelectionActions } from "@/components/workspace/assistant/SelectionActions";
 import { useNativeAssistant } from "@/components/workspace/assistant/useNativeAssistant";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
@@ -2478,6 +2479,7 @@ function WorkspaceRootLanding({
   selectedPostIds,
   selectedSectionPath,
   assistantConnection,
+  assistantCloudProvider,
   onConnectAssistant,
   onOpenAssistant,
   settingsHref,
@@ -2503,6 +2505,7 @@ function WorkspaceRootLanding({
   selectedPostIds: ReadonlySet<string>;
   selectedSectionPath: string | null;
   assistantConnection: AiConnectionSnapshot | null;
+  assistantCloudProvider?: string | null;
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
   settingsHref: string;
@@ -3790,6 +3793,7 @@ function LocalUnifiedWorkspacePostEditor({
   poolPost,
   returnToSearch,
   assistantConnection,
+  assistantCloudProvider,
   onOpenAssistant,
 }: {
   active: boolean;
@@ -3802,11 +3806,14 @@ function LocalUnifiedWorkspacePostEditor({
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
   assistantConnection?: AiConnectionSnapshot | null;
+  assistantCloudProvider?: string | null;
   onOpenAssistant?: () => void;
 }) {
-  const activeAgent: AssistantAgentIdentity | null = assistantConnection?.state === "ready"
-    ? { name: assistantConnection.providerLabel?.includes("Claude") ? "Claude" : "Codex", provider: assistantConnection.providerLabel?.includes("Claude") ? "claude" : "codex", color: collaboratorColor(assistantConnection.providerLabel ?? "agent"), status: "connected" }
-    : null;
+  const activeAgent = assistantAgentIdentity(
+    assistantCloudProvider,
+    assistantConnection,
+    collaboratorColor,
+  );
   const template = templateForPoolPost(pool, poolPost);
   const post = postFromPoolPost(
     poolPost,
@@ -3927,6 +3934,7 @@ function LocalWorkspaceContent({
   onRemoveSkill,
   onToggleSkill,
   assistantConnection,
+  assistantCloudProvider,
   onConnectAssistant,
   onOpenAssistant,
 }: {
@@ -3973,6 +3981,7 @@ function LocalWorkspaceContent({
   onRemoveSkill?: (skillId: string) => void;
   onToggleSkill?: (skillId: string, enabled: boolean) => void;
   assistantConnection: AiConnectionSnapshot | null;
+  assistantCloudProvider?: string | null;
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
 }) {
@@ -3998,6 +4007,7 @@ function LocalWorkspaceContent({
       selectedPostIds={selectedPostIds}
       selectedSectionPath={selectedSectionPath}
       assistantConnection={assistantConnection}
+      assistantCloudProvider={assistantCloudProvider}
       onConnectAssistant={onConnectAssistant}
       onOpenAssistant={onOpenAssistant}
       settingsHref={workspaceSettingsHref(homePath)}
@@ -4142,6 +4152,7 @@ function LocalWorkspaceContent({
                 : undefined
             }
             assistantConnection={assistantConnection}
+            assistantCloudProvider={assistantCloudProvider}
             onOpenAssistant={onOpenAssistant}
           />
         </div>
@@ -6498,6 +6509,7 @@ function LocalWorkspaceShell({
       onRemoveSkill={assistant.deleteSkill}
       onToggleSkill={assistant.toggleSkill}
       assistantConnection={assistant.nativeConnection}
+      assistantCloudProvider={assistant.cloudProvider}
       onConnectAssistant={assistant.connectNativeAssistant}
       onOpenAssistant={() => changeAssistantState("open")}
     />
@@ -6617,11 +6629,12 @@ function LocalWorkspaceShell({
       />
 
       <AssistantSidebar
-        agent={assistant.nativeConnection?.state === "ready"
-          ? { name: assistant.nativeConnection.providerLabel?.includes("Claude") ? "Claude" : "Codex", provider: assistant.nativeConnection.providerLabel?.includes("Claude") ? "claude" : "codex", color: collaboratorColor(assistant.nativeConnection.providerLabel ?? "agent"), status: assistant.runningJobs > 0 ? "working" : "connected" }
-          : assistant.cloudProvider
-            ? { name: assistant.cloudProvider.includes("Anthropic") ? "Claude" : "OpenAI", provider: assistant.cloudProvider.includes("Anthropic") ? "claude" : "chatgpt", color: collaboratorColor(assistant.cloudProvider), status: assistant.runningJobs > 0 ? "working" : "connected" }
-            : null}
+        agent={assistantAgentIdentity(
+          assistant.cloudProvider,
+          assistant.nativeConnection,
+          collaboratorColor,
+          assistant.runningJobs > 0,
+        )}
         onNewConversation={assistant.startNewConversation}
         hasConversation={assistant.messages.length > 0}
         className="workspace-assistant-shell"
