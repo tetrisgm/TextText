@@ -32,7 +32,7 @@ function jsonError(message: string, status: number): NextResponse {
 }
 
 /**
- * Fails closed at every step, and identically at each one: demo mode, a
+ * Fails closed at every step, and identically at each one: no database, a
  * signed-out visitor, and a collaborator who owns no workspace are all a 404,
  * so this endpoint never confirms that some other account exists.
  */

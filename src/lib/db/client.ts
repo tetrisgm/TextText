@@ -1,6 +1,7 @@
-// The Postgres client. Null when DATABASE_URL is unset, which is how the app
-// stays zero-setup: store.ts falls back to the demo seed. Everything server
-// side goes through store.ts, not this module directly.
+// The Postgres client. Null when DATABASE_URL is unset, which the store now
+// treats as a configuration error rather than a mode: the demo seed that once
+// answered every read without a database was removed 2026-08-14. Everything
+// server side goes through store.ts, not this module directly.
 //
 // Two drivers by URL so local dev/test never touches the paid database:
 //   - Production (Neon): the HTTP driver, unchanged.

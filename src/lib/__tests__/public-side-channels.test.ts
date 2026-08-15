@@ -1,17 +1,33 @@
+// The last gate before anything reaches a sessionless reader.
+//
+// Two of these cases used to read the demo seed through the store with no
+// database configured, which only ever exercised the in-memory fallback. Demo
+// mode was removed 2026-08-14; the guards that matter are pure, so they are
+// tested against constructed fixtures and hold for whatever the database
+// returns.
+
 import { describe, expect, it } from "vitest";
+import { isPublishedPublicPost } from "@/lib/content";
+import { publishedPublicLocations } from "@/lib/agent-surface";
+import type { PublicPostLocation } from "@/lib/store";
+import type { Post } from "@/lib/content";
 
-delete process.env.DATABASE_URL;
+function post(patch: Partial<Post> = {}): Post {
+  return {
+    id: "post-1",
+    type: "article",
+    slug: "published",
+    title: "A published article",
+    body: "Body",
+    status: "published",
+    visibility: "public",
+    ...patch,
+  };
+}
 
-const { DEMO_BLOG, DEMO_POSTS } = await import("@/lib/demo");
-const { isPublishedPublicPost } = await import("@/lib/content");
-const { publishedPublicLocations } = await import("@/lib/agent-surface");
-const { getPublicPostLocations } = await import("@/lib/store");
-const { GET: sitemap } = await import(
-  "@/app/t/[handle]/sitemap.xml/route"
-);
-const { GET: postsJson } = await import(
-  "@/app/t/[handle]/posts.json/route"
-);
+function location(patch: Partial<Post> = {}): PublicPostLocation {
+  return { folderPath: "blog", post: post(patch) };
+}
 
 describe("public URL side channels", () => {
   it("requires status, visibility, and item kind to agree before publishing", () => {
@@ -28,58 +44,33 @@ describe("public URL side channels", () => {
     expect(isPublishedPublicPost({ ...base, type: "bookmark" })).toBe(false);
   });
 
-  it("uses one published-only location set", async () => {
-    const locations = await getPublicPostLocations(DEMO_BLOG.handle);
-
-    expect(locations.length).toBeGreaterThan(0);
-    expect(locations.every(({ post }) => post.visibility === "public")).toBe(true);
-    expect(locations.every(({ post }) => post.status === "published")).toBe(true);
-    expect(
-      locations.every(({ post }) => post.type !== "note" && post.type !== "bookmark"),
-    ).toBe(true);
-  });
-
-  it("removes unpublished titles again at the public payload boundary", async () => {
-    const [published] = await getPublicPostLocations(DEMO_BLOG.handle);
-    expect(published).toBeDefined();
+  it("removes unpublished titles again at the public payload boundary", () => {
+    const published = location();
     const locations = publishedPublicLocations([
-      published!,
-      {
-        ...published!,
-        post: {
-          ...published!.post,
-          id: "deliberate-draft",
-          slug: "deliberate-draft",
-          title: "Do not serialize this title",
-          status: "draft",
-        },
-      },
+      published,
+      location({
+        id: "deliberate-draft",
+        slug: "deliberate-draft",
+        title: "Do not serialize this title",
+        status: "draft",
+      }),
     ]);
 
-    const payload = JSON.stringify(locations);
-    expect(payload).not.toContain("Do not serialize this title");
+    expect(JSON.stringify(locations)).not.toContain(
+      "Do not serialize this title",
+    );
     expect(locations).toEqual([published]);
   });
 
-  it("keeps every draft and private title out of sitemap and JSON listings", async () => {
-    const privateTitles = DEMO_POSTS.filter(
-      (post) => post.status !== "published" || post.type === "note" || post.type === "bookmark",
-    ).map((post) => post.title);
-    const params = { params: Promise.resolve({ handle: DEMO_BLOG.handle }) };
-    const [sitemapResponse, jsonResponse] = await Promise.all([
-      sitemap(new Request("https://demo.texttext.app/sitemap.xml"), params),
-      postsJson(new Request("https://demo.texttext.app/posts.json"), params),
+  it("drops every unlisted kind and private item at that same boundary", () => {
+    const published = location();
+    const locations = publishedPublicLocations([
+      published,
+      location({ id: "n", slug: "a-note", type: "note" }),
+      location({ id: "b", slug: "a-bookmark", type: "bookmark" }),
+      location({ id: "p", slug: "private", visibility: "private" }),
     ]);
-    const sitemapBody = await sitemapResponse.text();
-    const jsonBody = await jsonResponse.text();
 
-    for (const title of privateTitles) {
-      expect(sitemapBody).not.toContain(title);
-      expect(jsonBody).not.toContain(title);
-    }
-    expect(sitemapBody).toContain("https://demo.texttext.app/blog/");
-    expect(jsonBody).toContain("https://demo.texttext.app/blog/");
-    expect(sitemapBody).not.toContain("/t/demo/");
-    expect(jsonBody).not.toContain("/t/demo/");
+    expect(locations).toEqual([published]);
   });
 });

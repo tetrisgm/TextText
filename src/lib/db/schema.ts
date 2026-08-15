@@ -1,6 +1,5 @@
 // Drizzle schema for the hosted platform (Neon Postgres). All content access
-// goes through src/lib/store.ts, which serves the demo seed when DATABASE_URL
-// is unset and reads/writes these tables when it is set.
+// goes through src/lib/store.ts, which reads and writes these tables.
 
 import { sql } from "drizzle-orm";
 import {

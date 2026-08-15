@@ -1,10 +1,12 @@
 // Adversarial verification of the files substrate: hostile round trips,
 // hand-typed frontmatter edge cases, hash stability, manifest compatibility,
-// and the folder.json route's conditional-GET contract (exercised for real
-// against the demo seed; the dynamic import below keeps db/client.ts on the
-// demo path even if the shell that launched vitest exports DATABASE_URL).
+// and the folder.json route's conditional-GET contract. The route cases used
+// to run against the demo seed with DATABASE_URL cleared; demo mode was removed
+// 2026-08-14, so the store is mocked instead. What is under test there is the
+// ETag and If-None-Match handling, which does not care where the rows came
+// from.
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { Blog, Folder, Post } from "@/lib/content";
 import { markdownFileHash } from "@/lib/content-hash";
@@ -352,10 +354,25 @@ describe("folder.json route conditional GET", () => {
   type RouteModule = typeof import("../../app/t/[handle]/folder.json/route");
   let GET: RouteModule["GET"];
 
+  const routeBlog: Blog = { ...blog, handle: "demo" };
+  const routeFolder: Folder = { ...folder, id: "demo-blog-folder" };
+  const routePost: Post = {
+    ...basePost,
+    id: "demo-post-1",
+    status: "published",
+    visibility: "public",
+  };
+
   beforeAll(async () => {
-    // db/client.ts reads DATABASE_URL at import time; clear it BEFORE the
-    // route's import chain loads so the store serves the demo seed.
-    delete process.env.DATABASE_URL;
+    vi.doMock("@/lib/store", () => ({
+      getBlog: async (handle: string) => (handle === "demo" ? routeBlog : null),
+      getFolders: async (handle: string) =>
+        handle === "demo" ? [routeFolder] : [],
+      getPublicPostLocations: async (handle: string) =>
+        handle === "demo"
+          ? [{ folderPath: routeFolder.path, post: routePost }]
+          : [],
+    }));
     ({ GET } = await import("../../app/t/[handle]/folder.json/route"));
   });
 

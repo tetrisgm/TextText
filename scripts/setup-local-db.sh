@@ -94,11 +94,9 @@ UPDATE blogs SET change_seq = GREATEST(
 );
 SQL
 
-echo ">> seed the demo workspace"
-DATABASE_URL="$URL" npm run db:seed
-
 echo
 echo "Local DB ready: $URL"
+echo "The database starts empty; signing in provisions your workspace."
 echo "Point .env.local DATABASE_URL at it; the app auto-uses the pg driver for a"
 echo "non-neon.tech URL. Local revision and workspace cursor behavior now matches"
 echo "production so sync and collaboration checks exercise the real contract."

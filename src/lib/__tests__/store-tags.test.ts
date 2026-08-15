@@ -1,57 +1,44 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+// The tag query's privacy guards, asserted against the SQL that ships.
+//
+// This used to be a behavioral test driven by the demo seed with `db` mocked to
+// null. That proved the in-memory fallback filtered correctly, which was never
+// the code serving anybody: production always read Postgres. Demo mode was
+// removed 2026-08-14, so the invariant is guarded here at the source instead.
+// A tag page is public, so the guards below are the difference between a tag
+// listing and a leak.
 
-vi.mock("@/lib/db/client", () => ({ db: null }));
-import { DEMO_BLOG, DEMO_POSTS } from "@/lib/demo";
-import { getPostsForTag } from "@/lib/store";
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
 
-const snapshots = DEMO_POSTS.map((post) => ({
-  post,
-  status: post.status,
-  visibility: post.visibility,
-  tags: post.tags,
-}));
+const storeSource = readFileSync(
+  new URL("../store.ts", import.meta.url),
+  "utf8",
+);
 
-afterEach(() => {
-  for (const snapshot of snapshots) {
-    snapshot.post.status = snapshot.status;
-    snapshot.post.visibility = snapshot.visibility;
-    snapshot.post.tags = snapshot.tags;
-  }
-});
+function tagQuerySource(): string {
+  const start = storeSource.indexOf("async function getPostsForTagUncached(");
+  expect(start, "getPostsForTagUncached must exist").toBeGreaterThan(-1);
+  const end = storeSource.indexOf("\n}", start);
+  return storeSource.slice(start, end);
+}
 
-describe("getPostsForTag", () => {
-  it("keeps private kinds unlisted and honors the published guard", async () => {
-    const tag = "privacy-gate-test";
-    const publicPost = DEMO_POSTS.find((post) => post.type === "article")!;
-    const draftPost = DEMO_POSTS.find(
-      (post) => post.type === "project" || post.type === "talk",
-    )!;
-    const note = DEMO_POSTS.find((post) => post.type === "note")!;
-    const bookmark = DEMO_POSTS.find((post) => post.type === "bookmark")!;
-    publicPost.tags = [tag];
-    draftPost.tags = [tag];
-    draftPost.status = "draft";
-    draftPost.visibility = "private";
-    note.tags = [tag];
-    bookmark.tags = [tag];
+describe("getPostsForTag privacy guards", () => {
+  it("never lets an unlisted kind reach a tag listing", () => {
+    const query = tagQuerySource();
+    expect(query).toContain('ne(posts.type, "note")');
+    expect(query).toContain('ne(posts.type, "bookmark")');
+  });
 
-    const published = await getPostsForTag(DEMO_BLOG.handle, tag, {
-      publishedOnly: true,
-    });
-    expect(published.map((post) => post.slug)).toEqual([publicPost.slug]);
+  it("requires published status and public visibility to agree", () => {
+    const query = tagQuerySource();
+    expect(query).toContain('publishedOnly ? eq(posts.visibility, "public")');
+    expect(query).toContain('publishedOnly ? eq(posts.status, "published")');
+  });
 
-    const ownerVisibleKinds = await getPostsForTag(DEMO_BLOG.handle, tag, {
-      publishedOnly: false,
-    });
-    expect(ownerVisibleKinds.map((post) => post.slug)).toEqual(
-      expect.arrayContaining([publicPost.slug, draftPost.slug]),
-    );
-    expect(ownerVisibleKinds.some((post) => post.type === "note")).toBe(false);
-    expect(ownerVisibleKinds.some((post) => post.type === "bookmark")).toBe(
-      false,
-    );
-    expect(ownerVisibleKinds.every((post) => post.starred === undefined)).toBe(
-      true,
-    );
+  it("scopes to one live workspace and skips trashed rows", () => {
+    const query = tagQuerySource();
+    expect(query).toContain("eq(blogs.handle, handle)");
+    expect(query).toContain("isNull(blogs.deletedAt)");
+    expect(query).toContain("isNull(posts.deletedAt)");
   });
 });

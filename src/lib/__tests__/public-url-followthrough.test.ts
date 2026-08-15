@@ -75,7 +75,6 @@ describe("public URL migration follow-through", () => {
       "public/openapi/sync-v1.yaml",
       "src/app/openapi.json/route.ts",
       "src/app/report/ReportForm.tsx",
-      "src/lib/demo.ts",
       "src/lib/presentation/exemplars.ts",
       "mac/Sources/TextText/AppHealthReporter.swift",
     ];

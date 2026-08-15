@@ -56,9 +56,13 @@ polish ledger.
   and 27 dead exports. `blogs.edit_token_hash` drops via
   `scripts/migrate-drop-edit-token-hash.mjs` at next release.
 - SUSPECT bucket ruled by the owner 2026-08-14, all removals: assistant
-  skills, demo mode (`src/lib/demo.ts` and the store's no-database
-  branches), `bench/`, both dated docs (deleted, not archived), and the
-  duplicate collaboration verifier scripts.
+  skills, demo mode (the seed module and the store's demo branches),
+  `bench/`, both dated docs (deleted, not archived), and the duplicate
+  collaboration verifier scripts.
+- Postgres is now required. A missing `DATABASE_URL` throws
+  `TextText requires DATABASE_URL` from store.ts instead of quietly serving
+  fixture content. `scripts/setup-local-db.sh` no longer seeds; the database
+  starts empty and signing in provisions the workspace.
 - Kept by ruling: the `project` "Media post" item type. It is the
   video-focused blog post (the shape ramine.net publishes), not a legacy
   gallery. Its reader is the DocumentRenderer gallery node.

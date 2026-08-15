@@ -23,7 +23,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Same guard as the editor actions: tokens always require a signed-in user;
-// demo mode (auth off) has no machine surface.
+// with auth off there is no machine surface.
 async function tokenOwnerId(): Promise<string> {
   if (!isAuthConfigured) throw new Error("API tokens require signing in");
   const user = await getCurrentUser();

@@ -1,7 +1,10 @@
 // Content access for the app. This is the ONLY content access point: routes and
-// the editor go through here, never src/lib/demo.ts directly. With DATABASE_URL
-// unset the app serves the demo seed so it runs with zero setup; with a database
-// configured the same functions read and write Postgres (Drizzle + Neon).
+// the editor go through here. Postgres (Drizzle + Neon) is the sole backing
+// store; the demo seed that once served every read path without a database was
+// removed 2026-08-14, so a missing DATABASE_URL now fails loudly instead of
+// quietly serving fixture content.
+
+const NO_DATABASE = "TextText requires DATABASE_URL";
 
 import {
   and,
@@ -78,7 +81,6 @@ import {
 } from "./db/schema";
 import { listItemAssetReferences } from "./item-assets";
 import { localizeRemoteMarkdownImages } from "./markdown-images";
-import { DEMO_BLOG, DEMO_POSTS } from "./demo";
 import {
   accessibleFolderIdsForUser,
   accessiblePostIdsForUser,
@@ -504,9 +506,7 @@ function mapBlog(row: BlogRow): Blog {
 }
 
 async function getBlogUncached(handle: string): Promise<Blog | null> {
-  if (!db) {
-    return handle === DEMO_BLOG.handle ? DEMO_BLOG : null;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const row = await getBlogCore(handle);
   if (!row) return null;
   return mapBlog(row);
@@ -521,9 +521,7 @@ export async function getBlog(handle: string): Promise<Blog | null> {
 async function getBlogByUsernameNormalized(
   username: string,
 ): Promise<Blog | null> {
-  if (!db) {
-    return username === DEMO_BLOG.username ? DEMO_BLOG : null;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const row = await getBlogCoreByUsername(username);
   if (!row) return null;
   return mapBlog(row);
@@ -587,15 +585,7 @@ function pinnedFirst(items: Post[]): Post[] {
 }
 
 async function getPostsUncached(handle: string): Promise<Post[]> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return [];
-    const selected = pinnedFirst(
-      DEMO_POSTS.filter(
-        (post) => isPublishedPublicPost(post),
-      ),
-    );
-    return selected.map(withoutPersonalWorkspaceMetadata);
-  }
+  if (!db) throw new Error(NO_DATABASE);
   return selectPosts(handle, true);
 }
 
@@ -613,13 +603,7 @@ export type PublicPostLocation = {
 async function getPublicPostLocationsUncached(
   handle: string,
 ): Promise<PublicPostLocation[]> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return [];
-    return DEMO_POSTS.filter(isPublishedPublicPost).map((post) => ({
-      folderPath: BLOG_FOLDER_PATH,
-      post: withoutPersonalWorkspaceMetadata(post),
-    }));
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select({ folderPath: folders.path, post: posts })
     .from(posts)
@@ -664,18 +648,7 @@ async function getPostsForTagUncached(
 ): Promise<Post[]> {
   const tag = normalizeTag(tagInput);
   if (!tag) return [];
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return [];
-    const selected = pinnedFirst(
-      DEMO_POSTS.filter(
-        (post) =>
-          !isPrivatePostType(post.type) &&
-          normalizeTags(post.tags).includes(tag) &&
-          (!publishedOnly || isPublishedPublicPost(post)),
-      ),
-    );
-    return selected.map(withoutPersonalWorkspaceMetadata);
-  }
+  if (!db) throw new Error(NO_DATABASE);
 
   const rows = await db
     .select(postListSelection())
@@ -713,9 +686,7 @@ export async function getPostsForTag(
 }
 
 async function getAllPostsUncached(handle: string): Promise<Post[]> {
-  if (!db) {
-    return handle === DEMO_BLOG.handle ? pinnedFirst(DEMO_POSTS) : [];
-  }
+  if (!db) throw new Error(NO_DATABASE);
   return selectPosts(handle, false);
 }
 
@@ -726,7 +697,7 @@ export async function getAllPosts(handle: string): Promise<Post[]> {
 }
 
 export async function countAllPosts(handle: string): Promise<number> {
-  if (!db) return handle === DEMO_BLOG.handle ? DEMO_POSTS.length : 0;
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(posts)
@@ -772,10 +743,7 @@ async function getPostUncached(
   handle: string,
   slug: string,
 ): Promise<Post | null> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return null;
-    return DEMO_POSTS.find((p) => p.slug === slug) ?? null;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select()
     .from(posts)
@@ -809,10 +777,7 @@ export async function getPostByFolderPath(
   slug: string,
 ): Promise<Post | null> {
   if (!isSafePostSlug(slug)) return null;
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle || folderPath !== BLOG_FOLDER_PATH) return null;
-    return DEMO_POSTS.find((post) => post.slug === slug) ?? null;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const [row] = await db
     .select({ post: posts })
     .from(posts)
@@ -877,18 +842,7 @@ export async function resolvePublicPostPath(
   slug: string,
 ): Promise<PublicPostPathResolution> {
   if (!isSafePostSlug(slug)) return { kind: "missing" };
-  if (!db) {
-    const post =
-      handle === DEMO_BLOG.handle && folderPath === BLOG_FOLDER_PATH
-        ? DEMO_POSTS.find(
-            (candidate) =>
-              candidate.slug === slug && isPublishedPublicPost(candidate),
-          )
-        : undefined;
-    return post
-      ? { kind: "exact", folderPath, post: withoutPersonalWorkspaceMetadata(post) }
-      : { kind: "missing" };
-  }
+  if (!db) throw new Error(NO_DATABASE);
 
   const blog = await getBlogCore(handle);
   if (!blog) return { kind: "missing" };
@@ -948,22 +902,7 @@ export async function resolveLegacyPublicSlug(
   slug: string,
 ): Promise<PublicPostPathResolution> {
   if (!isSafePostSlug(slug)) return { kind: "missing" };
-  if (!db) {
-    const post =
-      handle === DEMO_BLOG.handle
-        ? DEMO_POSTS.find(
-            (candidate) =>
-              candidate.slug === slug && isPublishedPublicPost(candidate),
-          )
-        : undefined;
-    return post
-      ? {
-          kind: "redirect",
-          folderPath: BLOG_FOLDER_PATH,
-          post: withoutPersonalWorkspaceMetadata(post),
-        }
-      : { kind: "missing" };
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const blog = await getBlogCore(handle);
   if (!blog) return { kind: "missing" };
   const [legacy] = await db
@@ -991,13 +930,7 @@ export async function resolvePostSlug(
   slug: string,
 ): Promise<PostSlugResolution> {
   if (!isSafePostSlug(slug)) return { kind: "missing" };
-  if (!db) {
-    const post =
-      handle === DEMO_BLOG.handle
-        ? DEMO_POSTS.find((candidate) => candidate.slug === slug)
-        : undefined;
-    return post ? { kind: "exact", post } : { kind: "missing" };
-  }
+  if (!db) throw new Error(NO_DATABASE);
 
   const rows = await db
     .select({ post: posts })
@@ -1027,11 +960,7 @@ export async function resolvePostSlug(
 export async function getPostSlugAliases(
   handle: string,
 ): Promise<Record<string, string>> {
-  if (!db) {
-    return handle === DEMO_BLOG.handle
-      ? Object.fromEntries(DEMO_POSTS.map((post) => [post.slug, post.slug]))
-      : {};
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select({ slug: posts.slug, slugHistory: posts.slugHistory })
     .from(posts)
@@ -1095,11 +1024,6 @@ const WORKSPACE_FOLDERS: ReadonlyArray<Omit<Folder, "id">> = [
 ];
 
 const DEFAULT_FOLDER_PATH = BLOG_FOLDER_PATH;
-
-const DEMO_FOLDERS: Folder[] = WORKSPACE_FOLDERS.map((folder) => ({
-  id: `demo-${folder.path}-folder`,
-  ...folder,
-}));
 
 const STARTER_AGENT_GUIDES = [
   {
@@ -2238,9 +2162,7 @@ export async function getFolderByPath(
   handle: string,
   path: string,
 ): Promise<Folder | null> {
-  if (!db) {
-    return DEMO_FOLDERS.find((folder) => folder.path === path) ?? null;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const blogId = await blogIdFor(handle);
   const rows = await db
     .select()
@@ -2261,9 +2183,7 @@ export async function getFolderById(
   handle: string,
   folderId: string,
 ): Promise<Folder | null> {
-  if (!db) {
-    return DEMO_FOLDERS.find((folder) => folder.id === folderId) ?? null;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const blogId = await blogIdFor(handle);
   const rows = await db
     .select()
@@ -2360,7 +2280,7 @@ function cleanFolderMode(value: string | null): FolderMode {
 }
 
 async function workspaceFoldersByBlogId(blogId: string): Promise<Folder[]> {
-  if (!db) return DEMO_FOLDERS;
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select()
     .from(folders)
@@ -2382,7 +2302,7 @@ async function workspaceFoldersByBlogId(blogId: string): Promise<Folder[]> {
 // NOTHING settles races on the (blog, path) partial unique index, same pattern
 // as blogs, then one SELECT reads the settled rows back in order.
 export async function ensureWorkspaceFolders(blogId: string): Promise<Folder[]> {
-  if (!db) return DEMO_FOLDERS;
+  if (!db) throw new Error(NO_DATABASE);
   await db
     .insert(folders)
     .values(
@@ -2513,9 +2433,7 @@ async function folderForPostType(
 }
 
 async function getFoldersUncached(handle: string): Promise<Folder[]> {
-  if (!db) {
-    return handle === DEMO_BLOG.handle ? DEMO_FOLDERS : [];
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select({
       id: folders.id,
@@ -2558,18 +2476,7 @@ async function getFolderPostsUncached(
   folderPath: string,
   publishedOnly: boolean,
 ): Promise<Post[]> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return [];
-    const folderPosts = DEMO_POSTS.filter(
-      (post) =>
-        folderPathForPostType(post.type) === folderPath &&
-        (!publishedOnly || isPublishedPublicPost(post)),
-    );
-    const selected = pinnedFirst(folderPosts);
-    return publishedOnly
-      ? selected.map(withoutPersonalWorkspaceMetadata)
-      : selected;
-  }
+  if (!db) throw new Error(NO_DATABASE);
 
   // The blog home ("blog") is the additive view of everything blog-mode: the
   // root plus every subfolder, so filing a post into a category keeps it on
@@ -2661,15 +2568,7 @@ async function selectFullPosts(
 }
 
 async function getPublishedPostFilesUncached(handle: string): Promise<Post[]> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return [];
-    const selected = pinnedFirst(
-      DEMO_POSTS.filter(
-        (post) => isPublishedPublicPost(post),
-      ),
-    );
-    return selected.map(withoutPersonalWorkspaceMetadata);
-  }
+  if (!db) throw new Error(NO_DATABASE);
   return selectFullPosts(handle, true);
 }
 
@@ -2680,9 +2579,7 @@ export async function getPublishedPostFiles(handle: string): Promise<Post[]> {
 }
 
 async function getAllPostFilesUncached(handle: string): Promise<Post[]> {
-  if (!db) {
-    return handle === DEMO_BLOG.handle ? pinnedFirst(DEMO_POSTS) : [];
-  }
+  if (!db) throw new Error(NO_DATABASE);
   return selectFullPosts(handle, false);
 }
 
@@ -2698,18 +2595,7 @@ async function getFolderPostFilesUncached(
   publishedOnly: boolean,
   exact: boolean,
 ): Promise<Post[]> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return [];
-    const folderPosts = DEMO_POSTS.filter(
-      (post) =>
-        folderPathForPostType(post.type) === folderPath &&
-        (!publishedOnly || isPublishedPublicPost(post)),
-    );
-    const selected = pinnedFirst(folderPosts);
-    return publishedOnly
-      ? selected.map(withoutPersonalWorkspaceMetadata)
-      : selected;
-  }
+  if (!db) throw new Error(NO_DATABASE);
 
   // The blog root normally absorbs its descendants (the public blog view lists
   // every article, wherever it is filed). The sync manifest asks for `exact`:
@@ -2774,15 +2660,7 @@ export async function getFolderPostFiles(
 // Live (not trashed) item counts per folder path, drafts included, in one
 // grouped query. A NULL folder_id counts toward the default "blog" folder.
 async function getFolderCountsUncached(handle: string): Promise<Record<string, number>> {
-  if (!db) {
-    if (handle !== DEMO_BLOG.handle) return {};
-    const counts: Record<string, number> = {};
-    for (const post of DEMO_POSTS) {
-      const path = folderPathForPostType(post.type);
-      counts[path] = (counts[path] ?? 0) + 1;
-    }
-    return counts;
-  }
+  if (!db) throw new Error(NO_DATABASE);
   const rows = await db
     .select({ path: folders.path, count: sql<number>`count(*)::int` })
     .from(posts)
@@ -2923,7 +2801,7 @@ export async function getAccessibleFolderCounts(
   return counts;
 }
 
-/** The owner's pricing plan for a blog, or null (unclaimed / demo mode). */
+/** The owner's pricing plan for a blog, or null when it has no owner. */
 export async function getOwnerPlan(handle: string): Promise<string | null> {
   if (!db) return null;
   return (await getBlogCore(handle))?.ownerPlan ?? null;
@@ -4279,7 +4157,7 @@ function hasOwnContentKey<K extends keyof PostContentPatch>(
   return Object.prototype.hasOwnProperty.call(patch, key);
 }
 
-// Persist the editor's draft. Requires a database (the demo seed is read only).
+// Persist the editor's draft.
 // Updates the row by id, scoped to this blog so a stale or foreign id can never
 // touch another tenant, so a slug edit renames in place; otherwise inserts,
 // upserting on the (blog, slug) unique index. For a published post, published_at

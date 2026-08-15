@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_POSTS } from "@/lib/demo";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { resolveDocumentVisibility } from "@/lib/documents/visibility";
@@ -118,19 +117,5 @@ describe("unified document boundaries", () => {
       previous: null,
       next: null,
     });
-  });
-
-  it("gives every demo document explicit fail-closed visibility", () => {
-    expect(DEMO_POSTS.every((item) => item.visibility !== undefined)).toBe(true);
-    expect(
-      DEMO_POSTS.filter((item) => item.status === "published").every(
-        (item) => item.visibility === "public",
-      ),
-    ).toBe(true);
-    expect(
-      DEMO_POSTS.filter(
-        (item) => item.type === "note" || item.type === "bookmark",
-      ).every((item) => item.visibility === "private"),
-    ).toBe(true);
   });
 });

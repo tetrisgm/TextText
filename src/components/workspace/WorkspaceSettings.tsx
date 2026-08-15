@@ -54,7 +54,7 @@ export function WorkspaceSettings({
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Self-contained fetch, like WorkspaceMenuMount does. A 404 is the normal
-  // answer for a collaborator or demo mode, and leaving account null is what
+  // answer for a collaborator or a signed-out viewer, and leaving account
   // makes the section fail closed.
   useEffect(() => {
     let cancelled = false;
@@ -408,7 +408,7 @@ export function WorkspaceSettings({
         </section>
 
         {/* Only when the viewer owns an account. A collaborator, a guest
-            workspace, demo mode and a failed fetch all render nothing, and this
+            workspace and a failed fetch all render nothing, and this
             describes the VIEWER's own account rather than the blog prop, since
             a collaborator can open Settings on a workspace they do not own. */}
         {account && (

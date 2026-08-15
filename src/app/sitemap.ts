@@ -41,7 +41,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  // The zero-setup demo exists only without a database. Production workspaces
-  // advertise their own sitemap from their sessionless workspace origin.
+  // Workspaces advertise their own sitemap from their sessionless workspace
+  // origin, so the platform sitemap lists only platform routes.
   return platformRoutes;
 }

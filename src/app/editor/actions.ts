@@ -91,8 +91,8 @@ import { exemplarFor } from "@/lib/presentation/exemplars";
 import type { TemplateReference } from "@/lib/documents/model";
 
 // The blog the editor writes to, resolved from the session on the SERVER so a
-// client can never target another user's blog. Writing always requires auth;
-// demo mode (auth off) is read only, so these actions refuse there.
+// client can never target another user's blog. Writing always requires auth,
+// so these actions refuse when auth is not configured.
 async function editorUser() {
   if (!isAuthConfigured) throw new Error("Editing requires signing in");
   const user = await getCurrentUser();

@@ -113,7 +113,7 @@ export function auditInsertQuery(
 }
 
 export async function recordAction(entry: AuditEntry): Promise<void> {
-  if (!db) return; // demo mode has no durable audit
+  if (!db) return; // no database configured, nothing durable to write to
   const values = auditValues(entry);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {

@@ -16,8 +16,8 @@ release metadata rather than relying on historical handoffs.
   shares, and collaboration. Published pages live at
   `{handle}.{root-domain}/{folder}/{slug}` and never read a viewer session.
 - `/start` is the single entry into a workspace.
-- Local dev: `npm run dev`, then `demo.localhost:3000` for the public demo.
-  Legacy `/@demo` and `/t/demo` links redirect there.
+- Local dev: `npm run dev`, then `{handle}.localhost:3000` for a workspace's
+  published pages.
 
 ## Content model
 
@@ -37,9 +37,8 @@ Notes and bookmarks stay unlisted forever. Visibility fails closed
 - Postgres. `src/lib/db/client.ts` picks the driver by URL: a `neon.tech` URL
   uses the Neon HTTP driver, anything else uses node-postgres. Schema in
   `src/lib/db/schema.ts`.
-- `src/lib/store.ts` is the ONLY content access point. Without `DATABASE_URL` it
-  serves the demo seed (`src/lib/demo.ts`) so the app runs with zero setup.
-  Routes never import `demo.ts` directly.
+- `src/lib/store.ts` is the ONLY content access point. Postgres is the sole
+  backing store; a missing `DATABASE_URL` fails loudly.
 - Every mutation writes an `action_audit` row.
 - Media goes to Vercel Blob.
 

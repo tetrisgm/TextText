@@ -15,13 +15,10 @@ npm run dev
 ```
 
 - `http://localhost:3000` is the platform site.
-- `http://demo.localhost:3000` is the public demo workspace, served from the
-  zero-setup seed in `src/lib/demo.ts`. Legacy `/@demo` and `/t/demo` links
-  redirect to that workspace origin.
+- A workspace is served from its own origin, `http://{handle}.localhost:3000`.
 
-No database or credentials are needed for the demo. For real data, run
-`bash scripts/setup-local-db.sh` once and see `.env.example`. Never point
-`.env.local` at production Neon.
+A database is required: run `bash scripts/setup-local-db.sh` once and see
+`.env.example`. Never point `.env.local` at production Neon.
 
 ## Read first
 
