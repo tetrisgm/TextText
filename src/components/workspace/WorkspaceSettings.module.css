@@ -98,7 +98,6 @@
 }
 
 .nameForm input,
-.install input,
 .aiForm input,
 .aiForm select {
   width: 100%;
@@ -112,7 +111,6 @@
 }
 
 .nameForm input:focus-visible,
-.install input:focus-visible,
 .aiForm input:focus-visible,
 .aiForm select:focus-visible,
 .back:focus-visible {
@@ -168,53 +166,6 @@
   gap: 8px;
 }
 
-.skills {
-  display: grid;
-}
-
-.skillRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 44px;
-  padding: 9px 0;
-  border-top: 1px solid var(--ac-separator);
-}
-
-.skillRow:first-child {
-  border-top: 0;
-}
-
-.skillRow label {
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.skillRow label > span {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.skillRow strong {
-  color: var(--ac-label);
-  font: 650 14px/1.25 var(--ac-font-text);
-}
-
-.skillRow small {
-  color: var(--ac-label-2);
-  font: 500 12px/1.4 var(--ac-font-text);
-}
-
-.install {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
 .error {
   color: var(--ac-red);
 }
@@ -231,7 +182,6 @@
   }
 
   .nameForm,
-  .install,
   .aiForm {
     grid-template-columns: 1fr;
   }
@@ -252,7 +202,6 @@
   }
 
   .nameForm,
-  .install,
   .aiForm {
     grid-template-columns: 1fr;
   }

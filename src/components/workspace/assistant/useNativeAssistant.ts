@@ -47,12 +47,6 @@ import {
   subscribeAssistantJobs,
   updateAssistantJob,
 } from "@/lib/ai/jobs";
-import {
-  installSkill,
-  removeSkill,
-  setSkillEnabled,
-  skillStates,
-} from "@/lib/ai/skills";
 import { findPoolPostById } from "@/lib/pool/selectors";
 import type {
   WorkspacePoolPayload,
@@ -844,38 +838,6 @@ export function useNativeAssistant({
   const attachmentTitle =
     "Attachments are not available for provider connections yet";
 
-  // Skill toggles for the sidebar; a plain version counter re-reads
-  // localStorage-backed state after each change.
-  const [skillsVersion, setSkillsVersion] = useState(0);
-  const skills = useMemo(
-    () => skillStates(handle),
-    // skillsVersion invalidates the memo after a toggle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [handle, skillsVersion],
-  );
-  const toggleSkill = useCallback(
-    (skillId: string, enabled: boolean) => {
-      setSkillEnabled(handle, skillId, enabled);
-      setSkillsVersion((current) => current + 1);
-    },
-    [handle],
-  );
-  const addSkill = useCallback(
-    async (reference: string) => {
-      const skill = await installSkill(handle, reference);
-      setSkillsVersion((current) => current + 1);
-      return skill;
-    },
-    [handle],
-  );
-  const deleteSkill = useCallback(
-    (skillId: string) => {
-      removeSkill(handle, skillId);
-      setSkillsVersion((current) => current + 1);
-    },
-    [handle],
-  );
-
   const jobs = useSyncExternalStore(
     subscribeAssistantJobs,
     assistantJobs,
@@ -888,7 +850,6 @@ export function useNativeAssistant({
   );
 
   return {
-    addSkill,
     activeCloudProvider,
     startNewConversation: () => clearThread(threadKey),
     attachmentAccept: "",
@@ -898,16 +859,13 @@ export function useNativeAssistant({
     cloudProvider,
     nativeConnection,
     connectNativeAssistant: () => requestNativeAssistant("assistantConnect"),
-    deleteSkill,
     jobs,
     messages,
     quickActions,
     runQuickAction,
     runningJobs,
-    skills,
     submit,
     submitting,
-    toggleSkill,
     undoProposal,
   };
 }

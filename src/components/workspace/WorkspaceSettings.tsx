@@ -8,7 +8,6 @@ import {
   saveWorkspaceAiSettingsAction,
   type WorkspaceAiSettingsState,
 } from "@/app/editor/ai-config-actions";
-import type { AssistantSkill } from "@/lib/ai/skills";
 import type { Blog } from "@/lib/content";
 import {
   CLOUD_AI_CATALOG,
@@ -26,24 +25,14 @@ import DeleteAccountDialog, {
 import { ShareDialog } from "./ShareDialog";
 import styles from "./WorkspaceSettings.module.css";
 
-type SkillState = AssistantSkill & { enabled: boolean; source?: string };
-
 export function WorkspaceSettings({
   blog,
   canManageSharing,
   onBack,
-  onInstallSkill,
-  onRemoveSkill,
-  onToggleSkill,
-  skills,
 }: {
   blog: Blog;
   canManageSharing: boolean;
   onBack: () => void;
-  onInstallSkill?: (reference: string) => Promise<unknown>;
-  onRemoveSkill?: (skillId: string) => void;
-  onToggleSkill?: (skillId: string, enabled: boolean) => void;
-  skills: SkillState[];
 }) {
   const [name, setName] = useState(blog.name);
   const [saving, setSaving] = useState(false);
@@ -54,9 +43,6 @@ export function WorkspaceSettings({
   const [deletePending, setDeletePending] = useState(false);
   const [deleteStage, setDeleteStage] = useState<DeleteAccountStage>("idle");
 
-  const [installValue, setInstallValue] = useState("");
-  const [installing, setInstalling] = useState(false);
-  const [installError, setInstallError] = useState<string | null>(null);
   const [aiSettings, setAiSettings] =
     useState<WorkspaceAiSettingsState | null>(null);
   const [aiProvider, setAiProvider] =
@@ -163,23 +149,6 @@ export function WorkspaceSettings({
       setNameError(error instanceof Error ? error.message : "Could not save");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const install = async () => {
-    const reference = installValue.trim();
-    if (!reference || !onInstallSkill || installing) return;
-    setInstalling(true);
-    setInstallError(null);
-    try {
-      await onInstallSkill(reference);
-      setInstallValue("");
-    } catch (error) {
-      setInstallError(
-        error instanceof Error ? error.message : "Could not install",
-      );
-    } finally {
-      setInstalling(false);
     }
   };
 
@@ -433,74 +402,6 @@ export function WorkspaceSettings({
             </p>
           </section>
         )}
-
-        <section className={styles.section} aria-labelledby="settings-skills">
-          <div className={styles.sectionHeader}>
-            <div>
-              <h2 id="settings-skills">Skills</h2>
-              <p>Choose the writing guidance available to the assistant.</p>
-            </div>
-          </div>
-          <div className={styles.skills}>
-            {skills.map((skill) => (
-              <div className={styles.skillRow} key={skill.id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={skill.enabled}
-                    disabled={!onToggleSkill}
-                    onChange={(event) =>
-                      onToggleSkill?.(skill.id, event.currentTarget.checked)
-                    }
-                  />
-                  <span>
-                    <strong>{skill.name}</strong>
-                    <small>{skill.description}</small>
-                  </span>
-                </label>
-                {skill.source && onRemoveSkill && (
-                  <button
-                    type="button"
-                    className="ac-btn ac-btn-plain"
-                    onClick={() => onRemoveSkill(skill.id)}
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {onInstallSkill && (
-            <div className={styles.install}>
-              <input
-                type="url"
-                value={installValue}
-                aria-label="Skill link"
-                placeholder="Paste a skills.sh link"
-                onChange={(event) => setInstallValue(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void install();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="ac-btn ac-btn-gray"
-                disabled={!installValue.trim() || installing}
-                onClick={() => void install()}
-              >
-                {installing ? "Installing" : "Install skill"}
-              </button>
-            </div>
-          )}
-          {installError && (
-            <p className={styles.error} role="alert">
-              {installError}
-            </p>
-          )}
-        </section>
 
         <section className={styles.section} aria-label="AI connections">
           <AgentIntegrationHome compact />

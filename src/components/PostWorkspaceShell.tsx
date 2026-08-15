@@ -159,7 +159,6 @@ import {
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
 import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
-import type { AssistantSkill } from "@/lib/ai/skills";
 import { isVideoFile } from "@/lib/content";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import type { DocumentSnapshot } from "@/lib/documents/model";
@@ -3946,10 +3945,6 @@ function LocalWorkspaceContent({
   selectedPostId,
   selectedPostIds,
   view,
-  assistantSkills,
-  onInstallSkill,
-  onRemoveSkill,
-  onToggleSkill,
   assistantConnection,
   assistantCloudProvider,
   onConnectAssistant,
@@ -3991,12 +3986,6 @@ function LocalWorkspaceContent({
   selectedPostId: string | null;
   selectedPostIds: ReadonlySet<string>;
   view: LocalWorkspaceView;
-  assistantSkills: Array<
-    AssistantSkill & { enabled: boolean; source?: string }
-  >;
-  onInstallSkill?: (reference: string) => Promise<unknown>;
-  onRemoveSkill?: (skillId: string) => void;
-  onToggleSkill?: (skillId: string, enabled: boolean) => void;
   assistantConnection: AiConnectionSnapshot | null;
   assistantCloudProvider?: string | null;
   onConnectAssistant?: () => void;
@@ -4041,10 +4030,6 @@ function LocalWorkspaceContent({
           blog={blog}
           canManageSharing={canManageSharing}
           onBack={onOpenRoot}
-          onInstallSkill={onInstallSkill}
-          onRemoveSkill={onRemoveSkill}
-          onToggleSkill={onToggleSkill}
-          skills={assistantSkills}
         />
       </>
     );
@@ -6511,10 +6496,6 @@ function LocalWorkspaceShell({
       selectedPostId={effectiveSelectedPostId}
       selectedPostIds={effectiveSelectedPostIds}
       view={view}
-      assistantSkills={assistant.skills}
-      onInstallSkill={assistant.addSkill}
-      onRemoveSkill={assistant.deleteSkill}
-      onToggleSkill={assistant.toggleSkill}
       assistantConnection={assistant.nativeConnection}
       assistantCloudProvider={assistant.cloudProvider}
       onConnectAssistant={assistant.connectNativeAssistant}
