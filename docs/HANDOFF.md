@@ -94,6 +94,38 @@ polish ledger.
   real commands, a verify step, the outbound direction, and the safety
   boundary. A test fails if a tool name is ever hardcoded there.
 
+## Outbound MCP after the 2026-07-28 revision (2026-08-15)
+
+- The revision retired `initialize`, replaced server-initiated requests with
+  Multi Round-Trip Requests (`resultType: "input_required"`), and added
+  `ttlMs`/`cacheScope` to list results. Our INBOUND server was already built
+  to it: `server/discover` answers, every result carries `resultType`, and
+  the cacheable lists carry hints. Verified live, not read off a comment.
+- The outbound CLIENT was not, because I wrote it by learning our own
+  server's errors rather than from the spec. Three defects, all fixed:
+  `input_required` read as an empty success and returned "Done."; the
+  retired `initialize` cost a round trip per connection per turn; cache
+  hints were ignored so every message re-listed every server.
+- OAuth was ruled unnecessary (owner, 2026-08-15). Local servers need no
+  auth, and hosted ones mostly issue static tokens. The cost is a worse
+  first five minutes and any OAuth-only server being unconnectable.
+  Note that DCR is deprecated in favour of CIMD if this is ever revisited.
+- Per-call approval was dropped: MRTR is the protocol's own mechanism, so
+  bespoke approval UI would have been reinventing it worse.
+
+## Local MCP servers (Mac only, by physics)
+
+- Paper listens on `127.0.0.1:29979`; pen.dev and Figma are the same shape.
+  Nothing hosted can reach a person's loopback, and an https page cannot
+  either (mixed content), so `LocalMcpBridge.swift` makes the call natively
+  and refuses any address that does not RESOLVE to loopback.
+- Local tools live on the NATIVE rung only, since that rung executes tools
+  in the app on the person's machine. Hosted servers stay on the cloud rung.
+- `outbound-protocol.ts` is isomorphic and shared by both clients, so a
+  server on somebody's laptop cannot get a laxer parser than a hosted one.
+- Local connections carry no token yet; the local design servers do not ask
+  for one.
+
 ## Traps found while building these
 
 - `position: fixed` does not escape an ancestor with `backdrop-filter`. The
