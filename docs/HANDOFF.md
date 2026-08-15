@@ -74,8 +74,42 @@ polish ledger.
 - Kept by ruling: the `project` "Media post" item type. It is the
   video-focused blog post (the shape ramine.net publishes), not a legacy
   gallery. Its reader is the DocumentRenderer gallery node.
-- Still to build for the spec: outbound MCP (rail assistant as client) and
-  first-class folder/item template management.
+## The two build pillars (2026-08-15)
+
+- **Outbound MCP is built.** Workspace Settings has Connected MCP servers;
+  TextText handshakes, lists tools, stores them, and the connection is saved
+  OFF until the owner allows it. Remote tools are namespaced `slug__tool`,
+  the URL is SSRF-checked before every connection, descriptions are capped
+  and fenced, tokens are encrypted with `lib/secret-box.ts`. Proof:
+  `npm run eval:mcp:outbound` drives Settings in Chromium against
+  `scripts/mock-mcp-server.mjs` and reads the mock's own log to show the call
+  arrived. The mock ships a deliberately hostile tool description; the run
+  asserts from the receiving side that no document text was forwarded.
+- **Template management is built.** The folder menu has Change look (the
+  agent could do this and a person could not). Retiring a look exists for the
+  first time, in the UI-facing store and as `retire_document_template`. Proof:
+  `npm run eval:folder-look`, both themes.
+- **`/docs/mcp` is the reference**, generated from the tool registry so it
+  cannot drift: 33+ tools grouped by what they do, eight client setups with
+  real commands, a verify step, the outbound direction, and the safety
+  boundary. A test fails if a tool name is ever hardcoded there.
+
+## Traps found while building these
+
+- `position: fixed` does not escape an ancestor with `backdrop-filter`. The
+  look gallery opened from the sidebar rendered inside a 260px column with
+  its card names cut to three letters. Portal to `document.body`.
+- A dead-export sweep removed `textTextChangeSequence` from `db/schema.ts`.
+  Nothing imported it, and drizzle-kit builds its model from that module's
+  exports, so the next `drizzle-kit push` tried to DROP the sequence that
+  `posts.revision` defaults from. Schema declarations are load-bearing
+  without importers.
+- Never truncate a JSON body before parsing it. The outbound client capped
+  the raw reply, which turned a large but legitimate `tools/list` into a
+  parse error rather than protecting anything.
+- A controlled checkbox bound to server state ignores the click for a whole
+  round trip and reads as broken. Keep an optimistic override until the
+  server answers.
 
 ## Open, in priority order
 
