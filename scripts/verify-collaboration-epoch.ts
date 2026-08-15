@@ -4,7 +4,7 @@
 // The script stands up an isolated scratch document and tears it down in a
 // finally.
 //
-//   DATABASE_URL=... npx tsx scripts/verify-collab-epoch-live.ts
+//   DATABASE_URL=... npx tsx scripts/verify-collaboration-epoch.ts
 
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";

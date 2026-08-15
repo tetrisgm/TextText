@@ -286,7 +286,11 @@ Template definitions sync as immutable workspace records, not character-level
 CRDT state. A document pins `{id, version}`, so concurrently created later
 versions do not mutate an open document.
 
-Collaboration has three app-owned evaluators:
+Collaboration has four app-owned evaluators, one per layer. They are not
+duplicates of each other, and the file names now say so: a 2026-08-14 audit read
+`verify-collaboration-live.ts` and `verify-live-collaboration.ts` as the same
+check under two names and proposed deleting one. They were renamed rather than
+cut. Each answers a question the others cannot.
 
 - `scripts/verify-collaboration.ts` is the fast deterministic release check. It
   makes browser, native Mac, agent, and delayed offline clients edit one
@@ -309,11 +313,18 @@ Collaboration has three app-owned evaluators:
   both typing without losing anyone's words, and that a right-sidebar assistant
   edit is indistinguishable from a human's. It kills its server in a finally
   block and writes screenshots for the record.
+- `npx tsx scripts/verify-collaboration-epoch.ts` proves the canonical-document
+  baseline: deterministic baseline creation, epoch fencing, baseline rotation
+  after an out-of-band canonical write, and materialization provenance. It is
+  the proof cited by the `collab_state` epoch comment in `db/schema.ts`, and it
+  stands up an isolated scratch document and tears it down in a finally.
 
 The release check catches deterministic merge regressions without network or
 database variability. The local soak proves the full persistence path when
 collaboration or sync code changes. The browser proof is what catches a
-regression that converges correctly and still shows a person nothing.
+regression that converges correctly and still shows a person nothing. The epoch
+check is what catches a stale client writing over a document that was rebased
+underneath it.
 
 ## Performance contract
 

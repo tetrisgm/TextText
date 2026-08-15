@@ -1,6 +1,6 @@
 // The invariants behind "an agent participates exactly the way a human does".
 //
-// `scripts/verify-live-collaboration.ts` proves these in real browsers against
+// `scripts/verify-collaboration-browsers.ts` proves these in real browsers against
 // a real server. That run needs Postgres, a build, and Chromium, so it is not
 // something a unit suite can call. These assertions pin the pieces it depends
 // on, so a regression is caught in seconds rather than at the next live run.

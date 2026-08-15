@@ -224,7 +224,7 @@ async function main() {
       durations.collaborationMilliseconds = await runBounded(
         "four-client collaboration",
         process.execPath,
-        ["--import", "tsx", "scripts/verify-collaboration-live.ts"],
+        ["--import", "tsx", "scripts/verify-collaboration-database.ts"],
       );
     }
   } finally {

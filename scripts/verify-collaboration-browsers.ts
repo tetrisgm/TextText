@@ -1,6 +1,6 @@
 // Live browser collaboration evaluation.
 //
-//   node --env-file=.env.local --import tsx scripts/verify-live-collaboration.ts
+//   npm run eval:collaboration:browser
 //
 // The other collaboration checks drive Yjs clients in process. This one drives
 // real browsers against a real server, because the question it answers is not

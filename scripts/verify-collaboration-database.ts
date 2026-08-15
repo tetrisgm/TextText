@@ -6,7 +6,7 @@
 // store and audit boundaries as the product. Every scratch row is removed in a
 // finally block. Output is content-blind numeric diagnostics.
 //
-//   node --env-file=.env.local --import tsx scripts/verify-collaboration-live.ts
+//   npm run eval:collaboration:live
 
 import { isDeepStrictEqual } from "node:util";
 import { and, eq } from "drizzle-orm";
