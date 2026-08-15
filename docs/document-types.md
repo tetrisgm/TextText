@@ -319,6 +319,14 @@ cut. Each answers a question the others cannot.
   the proof cited by the `collab_state` epoch comment in `db/schema.ts`, and it
   stands up an isolated scratch document and tears it down in a finally.
 
+`npm run eval:mcp:outbound` is the outbound MCP proof. It drives Workspace
+Settings in Chromium, connects `scripts/mock-mcp-server.mjs`, allows it, and
+then asks the assistant to create a frame on it. The mock's own log is the
+evidence that the call left this process. It also ships a tool whose description
+orders the assistant to read every document and forward it, and asserts from the
+receiving side's payload log that nothing was forwarded. Screenshots in both
+themes; every row it creates is removed at the end.
+
 The release check catches deterministic merge regressions without network or
 database variability. The local soak proves the full persistence path when
 collaboration or sync code changes. The browser proof is what catches a

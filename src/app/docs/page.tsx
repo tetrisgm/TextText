@@ -11,7 +11,8 @@ const guides = [
   ["Features", "What TextText does today, feature by feature, as verified in a running build.", "/docs/features"],
   ["Getting started", "Connect an agent and send your first safe workspace request.", "/docs/getting-started"],
   ["How AI works", "Understand native ChatGPT/Codex, API keys, MCP, tools, and billing.", "/docs/how-it-works"],
-  ["AI and agent guide", "Complete provider setup, tool reference, workflows, and verification.", "/docs/ai"],
+  ["AI and agent guide", "Complete provider setup, workflows, and verification.", "/docs/ai"],
+  ["MCP reference", "Every tool, per-client setup, and connecting other MCP servers to your assistant.", "/docs/mcp"],
   ["Security and privacy", "Learn what stays local, what crosses the network, and how access is revoked.", "/docs/security"],
   ["Troubleshooting", "Diagnose runtime, sign-in, tool, rate-limit, and conflict failures.", "/docs/troubleshooting"],
 ] as const;
@@ -41,6 +42,8 @@ export default function DocsIndexPage() {
           <ul className="connect-feature-list">
             <li><Link href="/docs/getting-started">I want AI inside the Mac app.</Link></li>
             <li><Link href="/docs/ai#chatgpt-external">I want ChatGPT, Claude, or Codex to use TextText.</Link></li>
+            <li><Link href="/docs/mcp#tools">I am writing an agent and need the tool reference.</Link></li>
+            <li><Link href="/docs/mcp#outbound">I want my assistant to use another app&apos;s MCP tools.</Link></li>
             <li><Link href="/docs/how-it-works#billing">I want to understand subscriptions versus API billing.</Link></li>
             <li><Link href="/docs/troubleshooting">Something is not connecting or responding.</Link></li>
           </ul>

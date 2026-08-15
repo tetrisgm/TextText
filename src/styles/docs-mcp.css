@@ -1,0 +1,128 @@
+/* The MCP reference page. Reference documentation is read by somebody who is
+   scanning for one tool name, so the tool list is a definition list with the
+   name doing the work, and code blocks are monospaced blocks you can select in
+   one gesture rather than inline fragments. Every color is a token, so light
+   and dark come from the same declarations. */
+
+.docs-code {
+  overflow-x: auto;
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.28));
+  border-radius: 10px;
+  background: var(--ac-fill-4, rgba(128, 128, 128, 0.08));
+  color: var(--ac-label, inherit);
+  font: 500 13px/1.55 var(--ac-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  white-space: pre;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+.docs-code-label {
+  margin: 14px 0 0;
+  color: var(--ac-label-2, inherit);
+  font: 600 11px/1.2 var(--ac-font-text, inherit);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.docs-clients {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.docs-client {
+  padding: 18px 20px 20px;
+  border: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.28));
+  border-radius: 14px;
+  background: var(--ac-bg-2, transparent);
+}
+
+.docs-client h3 {
+  margin: 0;
+  color: var(--ac-label, inherit);
+  font: 650 16px/1.25 var(--ac-font-text, inherit);
+}
+
+.docs-client ol,
+.docs-verify {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 7px;
+  color: var(--ac-label-2, inherit);
+  font: 500 14px/1.5 var(--ac-font-text, inherit);
+}
+
+.docs-verify em {
+  color: var(--ac-label, inherit);
+}
+
+.docs-tool-group {
+  margin-top: 26px;
+}
+
+.docs-tool-group h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--ac-label, inherit);
+  font: 650 16px/1.25 var(--ac-font-text, inherit);
+}
+
+/* The count is a fact about the group, not a heading, so it recedes. */
+.docs-tool-group h3 span {
+  color: var(--ac-label-2, inherit);
+  font: 600 12px/1.2 var(--ac-font-text, inherit);
+}
+
+.docs-tool-list {
+  display: grid;
+  gap: 0;
+  margin: 12px 0 0;
+}
+
+.docs-tool {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.2));
+}
+
+.docs-tool dt code {
+  color: var(--ac-label, inherit);
+  font: 600 13px/1.5 var(--ac-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.docs-tool dd {
+  margin: 0;
+  color: var(--ac-label-2, inherit);
+  font: 500 14px/1.5 var(--ac-font-text, inherit);
+}
+
+@media (max-width: 700px) {
+  .docs-tool {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
+/* The rest of a model-facing description: available, not in the way. */
+.docs-tool-more {
+  margin-top: 6px;
+}
+
+.docs-tool-more summary {
+  color: color-mix(in srgb, var(--ac-accent, #0a84ff) 62%, var(--ac-label, currentColor));
+  font: 600 12px/1.4 var(--ac-font-text, inherit);
+  cursor: pointer;
+}
+
+.docs-tool-more p {
+  margin: 6px 0 0;
+  color: var(--ac-label-2, inherit);
+  font: 500 13px/1.5 var(--ac-font-text, inherit);
+}
