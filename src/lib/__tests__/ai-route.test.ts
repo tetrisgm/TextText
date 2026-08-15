@@ -8,6 +8,14 @@ const mocks = vi.hoisted(() => ({
     async (): Promise<{ handle: string } | null> => ({ handle: "demo-blog" }),
   ),
   getUserIdBySub: vi.fn(async () => "user-uuid"),
+  getBlogEditRecord: vi.fn(async () => ({
+    id: "blog-uuid",
+    handle: "demo-blog",
+    name: "Demo",
+    ownerId: "user-uuid",
+  })),
+  enabledMcpConnections: vi.fn(async () => []),
+  listRemoteTools: vi.fn(async () => []),
   cloudAssistantTools: vi.fn(() => ({ get_workspace: {} })),
   getWorkspaceAiConfigForOwner: vi.fn(),
   getWorkspaceAiConfigStatusForOwner: vi.fn(),
@@ -21,8 +29,17 @@ vi.mock("ai", () => ({
 }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/store", () => ({
+  getBlogEditRecord: mocks.getBlogEditRecord,
   getOwnedBlog: mocks.getOwnedBlog,
   getUserIdBySub: mocks.getUserIdBySub,
+}));
+// Outbound MCP: with no connected servers the assistant's tool list is exactly
+// the workspace's own, which is what these cases assert.
+vi.mock("@/lib/mcp/outbound.server", () => ({
+  enabledMcpConnections: mocks.enabledMcpConnections,
+}));
+vi.mock("@/lib/mcp/outbound-client", () => ({
+  listRemoteTools: mocks.listRemoteTools,
 }));
 vi.mock("@/lib/ai/cloud-tools", () => ({
   cloudAssistantTools: mocks.cloudAssistantTools,

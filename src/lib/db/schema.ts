@@ -24,6 +24,15 @@ import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
 import type { TemplateDefinition } from "../presentation/schema";
 
+// No TypeScript file imports this, and it must still be exported. drizzle-kit
+// builds its model from the objects this module exports, so dropping the
+// declaration makes `drizzle-kit push` try to DROP the sequence that posts.revision
+// and folders.revision default from. A 2026-08-14 dead-export sweep cut it on
+// the evidence that nothing referenced the symbol; the next push failed with
+// "cannot drop sequence texttext_change_seq because other objects depend on it",
+// which is the database refusing to be broken. Leave it here.
+export const textTextChangeSequence = pgSequence("texttext_change_seq");
+
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
 export const fileRepresentation = pgEnum("file_representation", [
   "textbundle",
@@ -247,6 +256,43 @@ export const workspaceAiConfigs = pgTable(
       "workspace_ai_config_provider_valid",
       sql`${t.provider} in ('anthropic', 'openai')`,
     ),
+  ],
+);
+
+// An external MCP server this workspace's assistant may call: the outbound
+// half of "MCP in both directions". Inbound, agents connect to us; here, we
+// connect to Figma or anything else that speaks MCP.
+//
+// `enabled` is the approval and it starts false. A saved connection is inert
+// until the owner turns it on, because turning it on means a remote server's
+// tool list and tool descriptions start entering the model's prompt, and those
+// are somebody else's text. Storing a connection is not consenting to use it.
+//
+// The bearer token is encrypted with the same secret box as the workspace AI
+// key and is never returned to any client.
+export const mcpConnections = pgTable(
+  "mcp_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blogId: uuid("blog_id")
+      .notNull()
+      .references(() => blogs.id, { onDelete: "cascade" }),
+    /** what the owner calls it, and the namespace its tools get */
+    name: text("name").notNull(),
+    /** absolute https URL of the remote MCP endpoint */
+    url: text("url").notNull(),
+    tokenCiphertext: text("token_ciphertext"),
+    enabled: boolean("enabled").notNull().default(false),
+    /** last successful tools/list, for showing what it offers without a round trip */
+    toolNames: jsonb("tool_names").$type<string[]>(),
+    lastCheckedAt: timestamp("last_checked_at"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("mcp_connections_blog_idx").on(t.blogId),
+    uniqueIndex("mcp_connections_blog_name_idx").on(t.blogId, t.name),
   ],
 );
 

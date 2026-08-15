@@ -1,13 +1,8 @@
 // Server-only: this module reads node:crypto + the DB. It is never imported by
 // a client component (WorkspaceSettings imports only the CloudAiProvider type),
 // and the decrypted key is used solely in the /api/ai route.
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-} from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
+import { decryptSecret, encryptSecret } from "@/lib/secret-box";
 import { db } from "@/lib/db/client";
 import { blogs, users, workspaceAiConfigs } from "@/lib/db/schema";
 import {
@@ -40,9 +35,6 @@ export type WorkspaceAiConfigStatus = {
   model: string | null;
 };
 
-const CIPHER_VERSION = "v1";
-const IV_BYTES = 12;
-
 export { isCloudAiProvider };
 
 export function cloudProviderLabel(
@@ -51,54 +43,16 @@ export function cloudProviderLabel(
   return CLOUD_AI_CATALOG[provider].label;
 }
 
-function encryptionKey(): Buffer {
-  const secret =
-    process.env.AI_CONFIG_ENCRYPTION_KEY ??
-    process.env.AUTH_SECRET ??
-    process.env.NEXTAUTH_SECRET;
-  if (!secret) {
-    throw new Error("AI key storage needs a server encryption secret.");
-  }
-  return createHash("sha256").update(secret, "utf8").digest();
-}
-
 export function encryptWorkspaceAiKey(apiKey: string): string {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(apiKey, "utf8"),
-    cipher.final(),
-  ]);
-  const tag = cipher.getAuthTag();
-  return [
-    CIPHER_VERSION,
-    iv.toString("base64url"),
-    tag.toString("base64url"),
-    ciphertext.toString("base64url"),
-  ].join(":");
+  return encryptSecret(apiKey);
 }
 
 export function decryptWorkspaceAiKey(value: string): string {
-  const [version, ivValue, tagValue, ciphertextValue, extra] = value.split(":");
-  if (
-    version !== CIPHER_VERSION ||
-    !ivValue ||
-    !tagValue ||
-    !ciphertextValue ||
-    extra !== undefined
-  ) {
+  try {
+    return decryptSecret(value);
+  } catch {
     throw new Error("The stored AI key could not be read.");
   }
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    encryptionKey(),
-    Buffer.from(ivValue, "base64url"),
-  );
-  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ciphertextValue, "base64url")),
-    decipher.final(),
-  ]).toString("utf8");
 }
 
 export async function validateWorkspaceAiConnection(
@@ -106,6 +60,15 @@ export async function validateWorkspaceAiConnection(
   model: string,
   apiKey: string,
 ): Promise<void> {
+  // Development with TEXTTEXT_DEV_AI_KEY set: the stored key is never the one
+  // that talks to the provider, because /api/ai substitutes the Keychain key at
+  // request time. Validating the placeholder would then be theatre that makes
+  // the assistant impossible to configure in dev without either putting a real
+  // credential through a form or running the mock. Production never takes this
+  // branch: the guard requires both a non-production build and the dev key.
+  if (process.env.NODE_ENV !== "production" && process.env.TEXTTEXT_DEV_AI_KEY) {
+    return;
+  }
   const endpoint =
     provider === "openai"
       ? `${devAiBaseUrl() ?? "https://api.openai.com/v1"}/models/${encodeURIComponent(model)}`

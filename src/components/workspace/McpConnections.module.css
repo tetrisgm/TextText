@@ -1,0 +1,241 @@
+/* Outbound MCP connections, in the Settings page's own idiom: one section
+   rule, hairline separators, no card-in-a-card. Every color is a semantic
+   token so light and dark both come out of the same declarations. */
+
+.section {
+  display: grid;
+  gap: 14px;
+  padding: 24px 0 28px;
+  border-top: 1px solid var(--ac-separator);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header > div {
+  display: grid;
+  gap: 5px;
+}
+
+.header h2 {
+  margin: 0;
+  color: var(--ac-label);
+  font: 650 17px/1.2 var(--ac-font-text);
+}
+
+.header p {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--ac-label-2);
+  font: 500 13px/1.45 var(--ac-font-text);
+}
+
+.empty {
+  margin: 0;
+  color: var(--ac-label-2);
+  font: 500 13px/1.45 var(--ac-font-text);
+}
+
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--ac-separator);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+.rowMain {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rowName {
+  color: var(--ac-label);
+  font: 650 14px/1.25 var(--ac-font-text);
+}
+
+.pill {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label-2);
+  font: 600 11px/1.5 var(--ac-font-text);
+}
+
+/* The one accented thing in the row: it marks the connection that can act. */
+.pillOn {
+  background: color-mix(in srgb, var(--ac-accent) 16%, transparent);
+  color: color-mix(in srgb, var(--ac-accent) 72%, var(--ac-label));
+}
+
+.rowUrl {
+  overflow-wrap: anywhere;
+  color: var(--ac-label-2);
+  font: 500 12px/1.4 var(--ac-font-mono, var(--ac-font-text));
+}
+
+.rowMeta {
+  color: var(--ac-label-2);
+  font: 500 12px/1.45 var(--ac-font-text);
+}
+
+.rowError {
+  color: color-mix(in srgb, var(--ac-red) 62%, var(--ac-label));
+  font: 500 12px/1.45 var(--ac-font-text);
+}
+
+.rowActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A switch, not a checkbox. The control that grants a remote server the right
+   to act should look like the platform's own consent control, and a default
+   checkbox next to Apple-style push buttons reads as unfinished. The input
+   stays a real checkbox underneath, so keyboard and screen readers get the
+   semantics for free; only its appearance is replaced. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  color: var(--ac-label-2);
+  font: 600 12px/1.2 var(--ac-font-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--ac-fill-2, color-mix(in srgb, var(--ac-label) 22%, transparent));
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.toggle input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  transition: transform 180ms ease;
+}
+
+.toggle input:checked {
+  background: var(--ac-accent);
+}
+
+.toggle input:checked::after {
+  transform: translateX(14px);
+}
+
+.toggle input:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+/* Reduced motion still needs the state change, just not the travel. */
+@media (prefers-reduced-motion: reduce) {
+  .toggle input,
+  .toggle input::after {
+    transition: none;
+  }
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control, 8px);
+  background: var(--ac-fill-4);
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  color: var(--ac-label-2);
+  font: 600 12px/1.2 var(--ac-font-text);
+}
+
+.field input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--ac-separator);
+  border-radius: var(--ac-radius-control, 8px);
+  padding: 0 11px;
+  background: var(--ac-bg);
+  color: var(--ac-label);
+  font: 500 15px/1 var(--ac-font-text);
+}
+
+.field input:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
+
+.note {
+  margin: 0;
+  color: var(--ac-label-2);
+  font: 500 12px/1.45 var(--ac-font-text);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.error {
+  margin: 0;
+  color: color-mix(in srgb, var(--ac-red) 58%, var(--ac-label));
+  font: 500 13px/1.45 var(--ac-font-text);
+}
+
+@media (max-width: 720px) {
+  .row,
+  .header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+}

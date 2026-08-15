@@ -11,8 +11,14 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { getCurrentUser } from "@/lib/session";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
-import { getOwnedBlog, getUserIdBySub } from "@/lib/store";
+import { getBlogEditRecord, getOwnedBlog, getUserIdBySub } from "@/lib/store";
 import { cloudAssistantTools } from "@/lib/ai/cloud-tools";
+import {
+  outboundAssistantTools,
+  outboundSystemNote,
+} from "@/lib/ai/outbound-tools";
+import { enabledMcpConnections } from "@/lib/mcp/outbound.server";
+import { listRemoteTools, type RemoteTool } from "@/lib/mcp/outbound-client";
 import {
   cloudProviderLabel,
   getWorkspaceAiConfigForOwner,
@@ -177,6 +183,33 @@ export async function POST(request: Request) {
     handle: workspace.handle,
   };
   const provider = cloudProviderLabel(config.provider);
+
+  // Outbound MCP: a workspace can connect servers somebody else runs, and the
+  // assistant may use their tools. Discovery happens per turn so a server that
+  // changed its tool list is not called with a stale one, and a server that is
+  // down costs this turn nothing but its own tools.
+  const workspaceRecord = await getBlogEditRecord(workspace.handle);
+  const connections = workspaceRecord
+    ? await enabledMcpConnections(workspaceRecord.id)
+    : [];
+  const reachable: Array<{
+    connection: (typeof connections)[number];
+    tools: RemoteTool[];
+  }> = [];
+  await Promise.all(
+    connections.map(async (connection) => {
+      try {
+        const tools = await listRemoteTools(connection);
+        if (tools.length > 0) reachable.push({ connection, tools });
+      } catch {
+        // A connected server being unreachable is not this turn's failure.
+      }
+    }),
+  );
+  const remoteTools = outboundAssistantTools(
+    { userId: userId ?? null, handle: workspace.handle },
+    reachable,
+  );
   // Development can override two things so the assistant lane is testable
   // without a real key ever passing through a person or an agent:
   //   TEXTTEXT_AI_BASE_URL points the provider at a local mock
@@ -206,9 +239,11 @@ export async function POST(request: Request) {
   try {
     const result = await generateText({
       model,
-      system: buildSystem(body.context),
+      system:
+        buildSystem(body.context) +
+        outboundSystemNote(reachable.map((entry) => entry.connection.name)),
       messages,
-      tools: cloudAssistantTools(actor),
+      tools: { ...cloudAssistantTools(actor), ...remoteTools },
       stopWhen: stepCountIs(MAX_STEPS),
     });
     return Response.json({ text: result.text, provider, model: config.model });

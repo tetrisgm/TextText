@@ -17,6 +17,7 @@ import {
 import { updateWorkspaceBlog } from "@/lib/pool/store";
 import { AgentIntegrationHome } from "./AgentIntegrationHome";
 import { AiConnectionSettings } from "./AiConnectionSettings";
+import { McpConnections } from "./McpConnections";
 import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
 import DeleteAccountDialog, {
   type AccountOverview,
@@ -402,6 +403,8 @@ export function WorkspaceSettings({
             </p>
           </section>
         )}
+
+        <McpConnections handle={blog.handle} />
 
         <section className={styles.section} aria-label="AI connections">
           <AgentIntegrationHome compact />
