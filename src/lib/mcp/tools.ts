@@ -78,6 +78,7 @@ import {
   getTrashedPosts,
   listItemComments,
   listDocumentTemplates,
+  retireDocumentTemplate,
   markCapturePending,
   movePostFile,
   PostConflictError,
@@ -833,6 +834,37 @@ export async function executeMcpTool(
           error instanceof Error
             ? error.message
             : "The folder's look could not be set.",
+        );
+      }
+    }
+
+    case "retire_document_template": {
+      const input = args as WorkspaceToolInput<"retire_document_template">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      try {
+        const retired = await retireDocumentTemplate(
+          resolved.access.blogId,
+          input.template_id,
+        );
+        if (!retired) {
+          return errorResult("No look with that id is in use in this workspace.");
+        }
+        await auditMcp(
+          extra,
+          "mcp.retire_document_template",
+          "workspace",
+          resolved.access.blogId,
+          input.template_id,
+        );
+        return jsonResult({
+          retired: input.template_id,
+          note: "Documents already using it keep rendering unchanged.",
+        });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error ? error.message : "Could not retire that look.",
         );
       }
     }

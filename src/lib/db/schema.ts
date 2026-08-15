@@ -666,6 +666,14 @@ export const documentTemplates = pgTable(
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    /**
+     * Retiring a look hides it from the pickers; it never deletes the row.
+     * Template versions are immutable and documents pin exact ones, so deleting
+     * a version would leave documents pointing at nothing. Set on every version
+     * of a template id, so a retired look stops being offered while the
+     * documents already wearing it keep rendering.
+     */
+    retiredAt: timestamp("retired_at"),
   },
   (t) => [
     primaryKey({

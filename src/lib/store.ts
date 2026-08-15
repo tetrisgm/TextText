@@ -2956,7 +2956,12 @@ export async function listDocumentTemplates(
       definition: documentTemplates.definition,
     })
     .from(documentTemplates)
-    .where(eq(documentTemplates.blogId, blogId))
+    .where(
+      and(
+        eq(documentTemplates.blogId, blogId),
+        isNull(documentTemplates.retiredAt),
+      ),
+    )
     .orderBy(asc(documentTemplates.templateId), desc(documentTemplates.version));
   const latest: TemplateDefinition[] = [];
   const seen = new Set<string>();
@@ -3010,6 +3015,37 @@ export async function createDocumentTemplateVersion(input: {
     outputSummary: definition.name,
   });
   return definition;
+}
+
+/**
+ * Retire a workspace look: stop offering it, keep every document that wears it
+ * rendering exactly as it does.
+ *
+ * Every version of the template id is marked, because a look is the thing a
+ * person retires, not one of its versions. Nothing is deleted: versions are
+ * immutable and documents pin exact ones, so a delete would leave those
+ * documents pointing at a row that is gone. Built-ins cannot be retired.
+ */
+export async function retireDocumentTemplate(
+  blogId: string,
+  templateId: string,
+): Promise<boolean> {
+  if (!db) throw new Error(NO_DATABASE);
+  if (templateId.startsWith("texttext.")) {
+    throw new Error("Built-in looks cannot be retired.");
+  }
+  const rows = await db
+    .update(documentTemplates)
+    .set({ retiredAt: new Date() })
+    .where(
+      and(
+        eq(documentTemplates.blogId, blogId),
+        eq(documentTemplates.templateId, templateId),
+        isNull(documentTemplates.retiredAt),
+      ),
+    )
+    .returning({ templateId: documentTemplates.templateId });
+  return rows.length > 0;
 }
 
 export async function createDocumentCapability(input: {

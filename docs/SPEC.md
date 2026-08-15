@@ -46,7 +46,7 @@ Nothing else is.
   agent, anything) connects to the hosted server and works on documents with
   the full tool surface, under the workspace's permissions, with presence
   and audit.
-- **Outbound** (to build): the rail assistant is itself an MCP client. The
+- **Outbound** (built 2026-08-15): the rail assistant is itself an MCP client. The
   workspace keeps a list of connected external servers; the assistant may
   use their tools with per-connection approval. "Put this spec in Figma" and
   "document what you did into TextText" are the same conversation from
@@ -61,7 +61,8 @@ Nothing else is.
   retire - in the UI and by talking to the assistant ("this folder is for
   blog posts; posts render like essays; the folder shows cards").
 - Templates are validated render specs. Switching a template never moves or
-  mutates content.
+  mutates content. Retiring one stops it being offered and never deletes a
+  version, because documents pin exact versions and must keep rendering.
 - The blog kinds are article, **Media post** (video-focused, the shape
   ramine.net publishes), and Video post. Media post renders through the
   gallery node, which gives a video asset a real player. Owner ruling

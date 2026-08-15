@@ -467,6 +467,19 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     mutability: "write",
     idempotent: true,
   }),
+  retire_document_template: defineTool("retire_document_template", {
+    title: "Retire a look",
+    description:
+      "Stop offering one workspace look. It disappears from the look pickers and from list_document_templates, and every document and folder already using it keeps rendering exactly as it does now, because template versions are immutable and nothing is deleted. Built-in looks cannot be retired. Use this when someone says a look they made is no longer wanted, rather than leaving a picker full of abandoned experiments.",
+    inputSchema: z
+      .object({
+        template_id: templateId,
+      })
+      .strict(),
+    mutability: "write",
+    confirmation: "destructive",
+    idempotent: true,
+  }),
   set_item_template: defineTool("set_item_template", {
     title: "Set item template",
     description:

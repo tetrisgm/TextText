@@ -22,6 +22,7 @@ const EXPECTED_NAMES = [
   "customize_document_template",
   "preview_document_template",
   "set_folder_template",
+  "retire_document_template",
   "set_item_template",
   "create_item",
   "update_item",
@@ -54,6 +55,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "set_comment_resolved",
   "recapture_bookmark",
   "remove_item_asset",
+  "retire_document_template",
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
@@ -68,6 +70,7 @@ const IDEMPOTENT_WRITES = new Set([
   "set_comment_resolved",
   "remove_item_asset",
   "set_folder_template",
+  "retire_document_template",
   "set_item_template",
 ]);
 
@@ -80,6 +83,7 @@ const CONFIRMED_TOOLS = new Set([
   "set_access",
   "revoke_access",
   "remove_item_asset",
+  "retire_document_template",
 ]);
 
 const OPEN_WORLD_TOOLS = new Set([
