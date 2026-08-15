@@ -34,8 +34,7 @@ body:has(.blog-home):not(:has(.post-editor-shell)) {
   }
 }
 
-body:has(.reader):not(:has(.post-editor-shell)),
-body:has(.project-split):not(:has(.post-editor-shell)) {
+body:has(.reader):not(:has(.post-editor-shell)) {
   background: var(--bg);
   color: var(--ink);
 }
@@ -106,8 +105,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   color-scheme: light;
 }
 
-.reader,
-.project-split {
+.reader {
   background: var(--bg);
   color: var(--ink);
   color-scheme: light dark;
@@ -2419,8 +2417,7 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   background: var(--bg);
   color: var(--ink);
 }
-.post-editor-shell.is-edit-workspace-shell .reader,
-.post-editor-shell.is-edit-workspace-shell .project-split {
+.post-editor-shell.is-edit-workspace-shell .reader {
   --ink: var(--ac-label);
   --ink-2: var(--ac-label-2);
   --muted: var(--ac-label-2);
@@ -5552,7 +5549,6 @@ body:has(.project-split):not(:has(.post-editor-shell)) {
   max-width: calc(100vw - 24px);
   pointer-events: none;
 }
-.project-split .body-editor-toolbar-shell,
 .talk-detail .body-editor-toolbar-shell {
   align-items: center;
 }

@@ -53,7 +53,6 @@ const nextConfig: NextConfig = {
     // just inlined rather than looked up.
     runtimeServerDeploymentId: false,
     proxyClientMaxBodySize: "55mb",
-    optimizePackageImports: ["embla-carousel-react"],
   },
 };
 
