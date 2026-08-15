@@ -2,17 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import MarkdownIt from "markdown-it";
-import { Schema } from "@tiptap/pm/model";
-import {
-  defaultMarkdownSerializer,
-  MarkdownSerializer,
-} from "prosemirror-markdown";
 import { describe, expect, it } from "vitest";
-import {
-  installWikiLinkMarkdownRule,
-  wikiLinkMarkdownSpec,
-} from "@/components/editor/WikiLink";
 import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
 import {
   backlinksForPost,
@@ -45,63 +35,6 @@ const blog: Blog = {
   cardStyle: "cover",
   homeLayout: "single",
 };
-
-describe("wikilink markdown", () => {
-  it("round-trips a labeled inline atom byte-for-byte", () => {
-    const markdownIt = new MarkdownIt();
-    installWikiLinkMarkdownRule(markdownIt);
-    const source = "[[field-notes|Label with spaces]]";
-    const html = markdownIt.renderInline(source);
-    expect(html).toBe(
-      '<span class="wiki-link-node" data-wiki-link="field-notes" data-wiki-label="Label with spaces">Label with spaces</span>',
-    );
-
-    const schema = new Schema({
-      nodes: {
-        doc: { content: "block+" },
-        paragraph: { content: "inline*", group: "block" },
-        text: { group: "inline" },
-        wikiLink: {
-          inline: true,
-          group: "inline",
-          atom: true,
-          attrs: { target: {}, label: {} },
-        },
-      },
-    });
-    const wikiNode = schema.nodes.wikiLink!.create({
-      target: "field-notes",
-      label: "Label with spaces",
-    });
-    const document = schema.nodes.doc!.create(
-      null,
-      schema.nodes.paragraph!.create(null, wikiNode),
-    );
-    const serializer = new MarkdownSerializer(
-      {
-        doc: (state, node) => state.renderContent(node),
-        paragraph: defaultMarkdownSerializer.nodes.paragraph,
-        text: defaultMarkdownSerializer.nodes.text,
-        wikiLink: wikiLinkMarkdownSpec.serialize,
-      },
-      {},
-    );
-    expect(serializer.serialize(document)).toBe(source);
-  });
-
-  it("does not swallow ordinary links, escaped openers, or double-escape", () => {
-    const markdownIt = new MarkdownIt();
-    installWikiLinkMarkdownRule(markdownIt);
-    const html = markdownIt.renderInline(
-      "[Web](https://example.com) [[field-notes|Field notes]] \\[[literal]]",
-    );
-    expect(html).toContain('<a href="https://example.com">Web</a>');
-    expect(html.match(/class="wiki-link-node"/g)).toHaveLength(1);
-    expect(html).toContain(">Field notes</span>");
-    expect(html).toContain("[[literal]]");
-    expect(html).not.toContain("&amp;#91;");
-  });
-});
 
 describe("wikilink extraction and backlinks", () => {
   it("extracts prose links while ignoring inline and fenced code", () => {

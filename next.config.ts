@@ -53,21 +53,7 @@ const nextConfig: NextConfig = {
     // just inlined rather than looked up.
     runtimeServerDeploymentId: false,
     proxyClientMaxBodySize: "55mb",
-    optimizePackageImports: [
-      "@tiptap/core",
-      "@tiptap/react",
-      "@tiptap/starter-kit",
-      "@tiptap/pm",
-      "@tiptap/extension-collaboration",
-      "@tiptap/extension-collaboration-cursor",
-      "@tiptap/extension-image",
-      "@tiptap/extension-link",
-      "@tiptap/extension-placeholder",
-      "@tiptap/extension-task-item",
-      "@tiptap/extension-task-list",
-      "tiptap-markdown",
-      "embla-carousel-react",
-    ],
+    optimizePackageImports: ["embla-carousel-react"],
   },
 };
 
