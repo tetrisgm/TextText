@@ -45,6 +45,25 @@ polish ledger.
   in scratchpad agent.py: `_meta` trio in the body plus MCP-Protocol-Version,
   Mcp-Method, and Mcp-Name headers. 33 tools.
 
+## The spec and the removal pass (2026-08-14)
+
+- `docs/SPEC.md` is the owner-ratified constitution: five pillars plus an
+  explicit out-of-scope list. Code no pillar justifies gets removed.
+- The REMOVE bucket is done, five commits, ~5,900 lines: legacy TipTap
+  editor cluster (14 deps), legacy project-gallery reader and its CSS,
+  App Store listing draft, merge-accounts and spent repair scripts, the
+  entire guest/anonymous/claim machinery (plan tier, tokens, cookies, UI),
+  and 27 dead exports. `blogs.edit_token_hash` drops via
+  `scripts/migrate-drop-edit-token-hash.mjs` at next release.
+- SUSPECT bucket awaits owner rulings: assistant "skills" (checkboxes wired
+  to nothing; composeInstructions had no callers), `src/lib/demo.ts` + ~94
+  `if (!db)` store branches (zero-setup dev mode), `bench/` (196 lines,
+  nothing runs it), two dated docs to archive, the `project` "Media post"
+  type (its only distinctive renderer is gone), and three overlapping
+  collab verifier scripts.
+- Still to build for the spec: outbound MCP (rail assistant as client) and
+  first-class folder/item template management.
+
 ## Open, in priority order
 
 - Finish the scorecard above; each unchecked line is one loop iteration.
