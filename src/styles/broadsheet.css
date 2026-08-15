@@ -1075,14 +1075,6 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   position: relative;
   flex: 0 0 auto;
 }
-.blog-folder-menu-wrap {
-  position: relative;
-  flex: 0 0 auto;
-}
-.blog-folder-menu-button svg {
-  width: 15px;
-  height: 15px;
-}
 .blog-create-button {
   flex: 0 0 auto;
   letter-spacing: 0;

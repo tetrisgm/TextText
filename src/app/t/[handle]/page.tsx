@@ -10,7 +10,6 @@ import { BlogHomeWorkspaceShell } from "@/components/PostWorkspaceShell";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
 import { FolderPage } from "@/components/FolderPage";
 import { PostCard } from "@/components/PostCard";
-import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
 import { getSharedPostsForUser } from "@/lib/shares";
@@ -27,7 +26,6 @@ import {
   blogJsonFeedHref,
 } from "@/lib/feed-links";
 import {
-  DEFAULT_ANONYMOUS_BLOG_NAME,
   getAllPostFiles,
   getAccessibleFolderCounts,
   getAccessibleFolderPosts,
@@ -124,7 +122,7 @@ function isDefaultBlogName(name: string): boolean {
   const normalized = name.trim().replace(/\s+/g, " ").toLowerCase();
   return (
     !normalized ||
-    normalized === DEFAULT_ANONYMOUS_BLOG_NAME.toLowerCase()
+    normalized === "untitled blog"
   );
 }
 
@@ -379,8 +377,6 @@ async function PublicBlogHome({ blog }: { blog: Blog }) {
       initialName={blog.name}
       tagline={blog.tagline}
       canEdit={false}
-      isGuestWorkspace={false}
-      authConfigured={false}
       publicPath="/"
       initialCardStyle={blog.cardStyle}
       initialHomeLayout={blog.homeLayout}
@@ -655,8 +651,6 @@ export async function BlogHomeForHandle({
   const isUnnamedBlog = isDefaultBlogName(blog.name);
   const editableBlogName = isUnnamedBlog ? "" : blog.name;
   const showNamingCeremony = canEdit && isUnnamedBlog;
-  const isGuestWorkspace =
-    canEdit && access.isUnclaimed && access.isTokenEditor;
   const feedLinks = [
     { href: feedHref, label: "RSS" },
     { href: blogAtomHref(blog), label: "Atom" },
@@ -670,8 +664,6 @@ export async function BlogHomeForHandle({
       initialName={editableBlogName}
       tagline={displayBlog.tagline}
       canEdit={canEdit}
-      isGuestWorkspace={isGuestWorkspace}
-      authConfigured={isAuthConfigured}
       publicPath={blogHomePath(blog)}
       initialCardStyle={blog.cardStyle}
       initialHomeLayout={blog.homeLayout}
@@ -764,7 +756,6 @@ export async function BlogHomeForHandle({
       }
       initialSettingsOpen={queryValue(query.view) === "settings"}
       initialPool={initialPool}
-      showGuestSignIn={isGuestWorkspace && isAuthConfigured}
     >
       {activeFolder ? (
         <FolderPage

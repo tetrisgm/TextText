@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { isAuthConfigured } from "@/auth";
 import { getBlogEditAccess } from "@/lib/blog-edit-auth";
 import { getCurrentUser } from "@/lib/session";
 import { getSharedPostsForUser } from "@/lib/shares";
@@ -302,8 +301,6 @@ export async function PostPageForHandle({
     activeFolderPath,
   );
   const homePath = tenantHandle === blog.handle ? "/" : blogHomePath(blog);
-  const showGuestSignIn =
-    canEdit && access.isUnclaimed && access.isTokenEditor && isAuthConfigured;
 
   if (editMode && post.id && editId !== post.id) {
     if (!canonicalUsernameRoute) {
@@ -437,7 +434,6 @@ export async function PostPageForHandle({
           }
           post={post}
           postPath={currentPostPath}
-          showGuestSignIn={showGuestSignIn}
         >
           {reader}
         </PostReadWorkspaceShell>
@@ -513,7 +509,6 @@ export async function PostPageForHandle({
           }
           post={post}
           postPath={currentPostPath}
-          showGuestSignIn={showGuestSignIn}
         >
           {reader}
         </PostReadWorkspaceShell>

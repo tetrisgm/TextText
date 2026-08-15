@@ -16,7 +16,6 @@ import {
   LAST_USED_PROVIDER_COOKIE,
   lastUsedProviderLabel,
 } from "@/auth";
-import { getActiveGuestBlogFromCookie } from "@/lib/blog-edit-auth";
 import {
   signInWithApple,
   signInWithDevLogin,
@@ -119,19 +118,10 @@ export default async function SignInPage({ searchParams }: Props) {
   const providerLabel = lastUsedProviderLabel(
     cookieStore.get(LAST_USED_PROVIDER_COOKIE)?.value,
   );
-  const guest = await getActiveGuestBlogFromCookie();
-
   return (
     <Shell>
       <h1 className="connect-title">Sign in</h1>
       <p className="connect-lede">Pick up your writing where you left it.</p>
-
-      {guest && (
-        <p className="signin-notice">
-          You have unsaved demo work here. Signing in will add it to your
-          workspace.
-        </p>
-      )}
 
       {providerLabel && (
         <p className="signin-hint">

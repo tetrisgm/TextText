@@ -68,9 +68,8 @@ export async function GET(request: Request): Promise<Response> {
     });
   }
 
-  // Same first-touch work the typed-code approval does: make sure the user and
-  // a workspace exist, claiming the browser's guest blog when there is one, so
-  // the app's token lands on the workspace the person can already see.
+  // Same first-touch work the typed-code approval does: make sure the user
+  // and a workspace exist, so the app's token lands on their workspace.
   await resolveOwnedWorkspace(user);
   const userId = await getUserIdBySub(user.sub);
   if (!userId) {

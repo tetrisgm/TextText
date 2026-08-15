@@ -207,8 +207,6 @@ export const blogs = pgTable(
     cardStyle: text("card_style").notNull().default("cover"),
     homeLayout: text("home_layout").notNull().default("grid"),
     ownerId: uuid("owner_id").references(() => users.id),
-    /** SHA-256 hash of the anonymous editor token; null after claim */
-    editTokenHash: text("edit_token_hash"),
     /**
      * Durable workspace change high-water-mark: the largest `revision` ever
      * assigned to any of this blog's posts or folders, bumped by an AFTER trigger

@@ -16,7 +16,6 @@ export type BlogCore = {
   cardStyle: string | null;
   homeLayout: string | null;
   author: string | null;
-  editTokenHash: string | null;
   ownerPlan: string | null;
 };
 
@@ -33,7 +32,6 @@ const blogCoreSelection = {
   cardStyle: blogs.cardStyle,
   homeLayout: blogs.homeLayout,
   author: users.name,
-  editTokenHash: blogs.editTokenHash,
   ownerPlan: users.plan,
 };
 

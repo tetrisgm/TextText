@@ -15,14 +15,11 @@ import type {
 import { useRouter } from "next/navigation";
 import {
   createDraftAction,
-  trashEditableBlogAction,
   updateBlogAction,
   updateBlogNameAction,
 } from "@/app/editor/actions";
-import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
-import { setWorkspaceSidebarCollapsedPreference } from "@/components/PostWorkspaceShell";
 import type { BlogCardStyle, BlogHomeLayout, PostType } from "@/lib/content";
 
 type ActionError = string | null;
@@ -36,8 +33,6 @@ type BlogHomeShellProps = {
   initialName: string;
   tagline?: string;
   canEdit: boolean;
-  isGuestWorkspace: boolean;
-  authConfigured: boolean;
   publicPath: string;
   initialCardStyle: BlogCardStyle;
   initialHomeLayout: BlogHomeLayout;
@@ -61,18 +56,7 @@ const HOME_LAYOUT_OPTIONS: Array<{ value: BlogHomeLayout; label: string }> = [
   { value: "grid", label: "Grid" },
   { value: "index", label: "Index" },
 ];
-const KEEP_WORKSPACE_PATH = "/start?to=home";
 const NAME_FLIGHT_MS = 520;
-
-function EllipsisIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
-    </svg>
-  );
-}
 
 function postEditPath(
   publicPath: string,
@@ -120,8 +104,6 @@ export function BlogHomeShell({
   initialName,
   tagline,
   canEdit,
-  isGuestWorkspace,
-  authConfigured,
   publicPath,
   initialCardStyle,
   initialHomeLayout,
@@ -161,8 +143,6 @@ export function BlogHomeShell({
         <BlogFolderActionBar
           handle={handle}
           publicPath={publicPath}
-          isGuestWorkspace={isGuestWorkspace}
-          authConfigured={authConfigured}
           initialCardStyle={initialCardStyle}
           initialHomeLayout={initialHomeLayout}
         />
@@ -203,37 +183,23 @@ export function BlogHomeShell({
 function BlogFolderActionBar({
   handle,
   publicPath,
-  isGuestWorkspace,
-  authConfigured,
   initialCardStyle,
   initialHomeLayout,
 }: {
   handle: string;
   publicPath: string;
-  isGuestWorkspace: boolean;
-  authConfigured: boolean;
   initialCardStyle: BlogCardStyle;
   initialHomeLayout: BlogHomeLayout;
 }) {
   return (
     <div className="blog-home-action-bar applecms" aria-label="Folder controls">
       <div className="blog-home-action-toolbar ac-chrome">
-        {isGuestWorkspace && authConfigured && (
-          <a
-            className="blog-keep-button ac-btn ac-btn-gray"
-            href={KEEP_WORKSPACE_PATH}
-            title="Saved in this browser only. Sign in to keep it and edit from any device."
-          >
-            Sign in to keep it
-          </a>
-        )}
         <BlogDisplaySettings
           handle={handle}
           initialCardStyle={initialCardStyle}
           initialHomeLayout={initialHomeLayout}
         />
         <CreatePostTypePicker handle={handle} publicPath={publicPath} />
-        {isGuestWorkspace && <BlogFolderMenu handle={handle} />}
       </div>
     </div>
   );
@@ -355,103 +321,6 @@ function BlogDisplaySettings({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function BlogFolderMenu({ handle }: { handle: string }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState<"trash" | null>(null);
-  const [trashDialogOpen, setTrashDialogOpen] = useState(false);
-  const [error, setError] = useState<ActionError>(null);
-  const [, startTransition] = useTransition();
-  const menuRef = useRef<HTMLDivElement>(null);
-  const closeMenu = useCallback(() => setOpen(false), []);
-  useDismissPopover(open, menuRef, closeMenu);
-
-  const navigateAfterAction = useCallback(
-    (path: string, options?: { openSidebar?: boolean }) => {
-      if (options?.openSidebar) setWorkspaceSidebarCollapsedPreference(false);
-      router.push(path);
-      router.refresh();
-    },
-    [router],
-  );
-
-  const requestTrashFolder = useCallback(() => {
-    if (pending) return;
-    setOpen(false);
-    setError(null);
-    setTrashDialogOpen(true);
-  }, [pending]);
-
-  const trashFolder = useCallback(() => {
-    if (pending) return;
-    setTrashDialogOpen(false);
-    setPending("trash");
-    startTransition(() => {
-      void trashEditableBlogAction(handle)
-        .then((result) => {
-          if (!result.ok) {
-            setOpen(true);
-            setError(result.error);
-            return;
-          }
-          setOpen(false);
-          navigateAfterAction(result.path, { openSidebar: result.openSidebar });
-        })
-        .catch(() => {
-          setOpen(true);
-          setError("Could not move folder to Trash");
-        })
-        .finally(() => setPending(null));
-    });
-  }, [handle, navigateAfterAction, pending, startTransition]);
-
-  return (
-    <div className="blog-folder-menu-wrap" ref={menuRef}>
-      <button
-        type="button"
-        className="post-edit-menu-button blog-folder-menu-button ac-icon-btn"
-        aria-label="Folder actions"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <EllipsisIcon />
-      </button>
-      {open && (
-        <div
-          className="blog-folder-menu post-edit-menu"
-          data-post-edit-menu-open="true"
-          role="menu"
-          aria-label="Folder actions"
-        >
-          <button
-            className="post-edit-delete"
-            type="button"
-            role="menuitem"
-            disabled={Boolean(pending)}
-            onClick={requestTrashFolder}
-          >
-            {pending === "trash" ? "Moving to Trash" : "Move folder to Trash"}
-          </button>
-          {error && (
-            <span className="blog-home-control-error" role="alert">
-              {error}
-            </span>
-          )}
-        </div>
-      )}
-      <ConfirmationDialog
-        open={trashDialogOpen}
-        title="Move folder to Trash?"
-        message="This moves every post in this folder to Trash."
-        confirmLabel="Move to Trash"
-        onCancel={() => setTrashDialogOpen(false)}
-        onConfirm={trashFolder}
-      />
     </div>
   );
 }

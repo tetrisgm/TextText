@@ -15,10 +15,8 @@ import { isAuthConfigured } from "@/auth";
 import { getCurrentUser } from "@/lib/session";
 import type { BlogPatch, ItemComment, PostContentPatch } from "@/lib/store";
 import {
-  claimBlogForUser,
   countAllPosts,
   createItemComment,
-  createAnonymousBlogRecord,
   createDraft,
   createDraftInFolder,
   getDocumentTemplate,
@@ -31,7 +29,6 @@ import {
   getOwnerPlan,
   getPostById,
   getUserIdBySub,
-  isWorkspaceStarterPost,
   listItemComments,
   markCapturePending,
   renameFolder,
@@ -42,7 +39,6 @@ import {
   setPostPinned,
   setPostStarred,
   setItemCommentResolved,
-  trashBlogPosts,
   trashFolder,
   updateBlogByHandle,
 } from "@/lib/store";
@@ -65,20 +61,8 @@ import {
 } from "@/lib/permissions";
 import { after } from "next/server";
 import { lightCaptureBookmark } from "@/lib/bookmark-fetch";
-import {
-  deleteAnonymousEditCookie,
-  friendlyAnonymousSeed,
-  generateEditToken,
-  getActiveGuestBlogFromCookie,
-  getBlogEditAccess,
-  hashEditToken,
-  setAnonymousEditCookie,
-} from "@/lib/blog-edit-auth";
-import {
-  ANONYMOUS_POST_LIMIT_COPY,
-  cleanPlanTier,
-  planLimits,
-} from "@/lib/product-limits";
+import { getBlogEditAccess } from "@/lib/blog-edit-auth";
+import { cleanPlanTier, planLimits } from "@/lib/product-limits";
 import type { PlanTier } from "@/lib/product-limits";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 import {
@@ -134,20 +118,6 @@ function cleanHomeLayout(value: unknown): BlogHomeLayout {
   }
   if (value === "cards") return "grid";
   return "grid";
-}
-
-async function createAnonymousBlogHandle(
-  layoutInput?: unknown,
-): Promise<string> {
-  const token = generateEditToken();
-  const homeLayout = cleanHomeLayout(layoutInput);
-  const blog = await createAnonymousBlogRecord(
-    hashEditToken(token),
-    friendlyAnonymousSeed(),
-    homeLayout,
-  );
-  await setAnonymousEditCookie(blog.id, token);
-  return blog.handle;
 }
 
 // The Blog folder's public vocabulary; the blog-home Create picker offers
@@ -506,25 +476,11 @@ async function auditEdit(
   });
 }
 
-async function enforceAnonymousPostLimit(
-  handle: string,
-  access: Awaited<ReturnType<typeof getBlogEditAccess>>,
-) {
-  // Every tier has a server-enforced item cap: guests are held to the
-  // try-before-signup limit, owners to their plan's.
-  const tier: PlanTier = access.isUnclaimed
-    ? "anonymous"
-    : cleanPlanTier(await getOwnerPlan(handle));
-  const count = access.isUnclaimed
-    ? (await getAllPosts(handle)).filter((post) => !isWorkspaceStarterPost(post))
-        .length
-    : await countAllPosts(handle);
-  if (count >= planLimits(tier).maxPosts) {
-    throw new Error(
-      tier === "anonymous"
-        ? ANONYMOUS_POST_LIMIT_COPY
-        : "This workspace reached its item limit.",
-    );
+async function enforcePostLimit(handle: string) {
+  // Every workspace has a server-enforced item cap from its owner's plan.
+  const tier: PlanTier = cleanPlanTier(await getOwnerPlan(handle));
+  if ((await countAllPosts(handle)) >= planLimits(tier).maxPosts) {
+    throw new Error("This workspace reached its item limit.");
   }
 }
 
@@ -546,18 +502,15 @@ function firstWritableArticle(posts: Post[]): Post | undefined {
   );
 }
 
-async function ensureFirstArticleDraftPath(
-  handle: string,
-  access?: Awaited<ReturnType<typeof getBlogEditAccess>>,
-): Promise<string> {
+async function ensureFirstArticleDraftPath(handle: string): Promise<string> {
   const posts = await getAllPosts(handle);
   let post = firstWritableArticle(posts);
 
   if (!post) {
-    if (access) await enforceAnonymousPostLimit(handle, access);
+    await enforcePostLimit(handle);
     post = await createDraft(handle, "article");
     await auditEdit(
-      access ?? (await getBlogEditAccess(handle)),
+      await getBlogEditAccess(handle),
       "create_post",
       "item",
       post.id,
@@ -572,26 +525,14 @@ async function ensureFirstArticleDraftPath(
 }
 
 export async function createStarterDraftPath(layoutInput?: unknown): Promise<string> {
-  const user = await getCurrentUser();
+  const user = await editorUser();
   const hasLayoutInput = layoutInput !== undefined && layoutInput !== null;
   const layout = cleanHomeLayout(layoutInput);
-  if (user) {
-    const handle = (await resolveOwnedWorkspace(user)).handle;
-    if (hasLayoutInput) {
-      await updateBlogByHandle(handle, { homeLayout: layout }, { allowHandleChange: true });
-    }
-    return ensureFirstArticleDraftPath(handle);
+  const handle = (await resolveOwnedWorkspace(user)).handle;
+  if (hasLayoutInput) {
+    await updateBlogByHandle(handle, { homeLayout: layout }, { allowHandleChange: true });
   }
-
-  const activeGuest = await getActiveGuestBlogFromCookie();
-  const handle = activeGuest?.handle ?? await createAnonymousBlogHandle(layout);
-  const access = await getBlogEditAccess(handle);
-
-  if (activeGuest && hasLayoutInput) {
-    await updateBlogByHandle(handle, { homeLayout: layout }, { allowHandleChange: false });
-  }
-
-  return ensureFirstArticleDraftPath(handle, access);
+  return ensureFirstArticleDraftPath(handle);
 }
 
 // "Use this template" from the /templates gallery: create a real draft
@@ -641,18 +582,11 @@ export async function createTemplateDraftPath(
   return tenantPostEditPath(handle, post);
 }
 
-// Where "keep this workspace" lands: the signed-in user's workspace home,
-// claiming the browser's guest blog on the way when there is one.
+// The signed-in user's workspace home.
 export async function resolveWorkspaceHomePath(): Promise<string> {
-  const user = await getCurrentUser();
-  if (user) {
-    const blog = await resolveOwnedWorkspace(user);
-    return blogHomePath(blog);
-  }
-
-  const activeGuest = await getActiveGuestBlogFromCookie();
-  if (activeGuest) return blogPath(activeGuest.handle);
-  return blogPath(await createAnonymousBlogHandle());
+  const user = await editorUser();
+  const blog = await resolveOwnedWorkspace(user);
+  return blogHomePath(blog);
 }
 
 export async function savePostAction(post: Post): Promise<Post> {
@@ -686,7 +620,7 @@ export async function savePostAction(post: Post): Promise<Post> {
     return saved;
   }
 
-  await enforceAnonymousPostLimit(handle, access);
+  await enforcePostLimit(handle);
   const created = await createDraft(handle, cleanPostType(post.type));
   const patch = editableInput(
     { ...post, id: created.id },
@@ -707,7 +641,7 @@ export async function createDraftAction(
   handleInput?: unknown,
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
-  await enforceAnonymousPostLimit(handle, access);
+  await enforcePostLimit(handle);
   // Blog kinds only: notes and bookmarks go through createFolderItemAction.
   const post = await createDraft(handle, cleanPostType(type));
   await auditEdit(access, "create_post", "item", post.id, post.type);
@@ -724,7 +658,7 @@ export async function createWorkspacePostAction(
   bodyInput?: unknown,
 ): Promise<Post> {
   const { handle, access } = await editableHandleFor(handleInput);
-  await enforceAnonymousPostLimit(handle, access);
+  await enforcePostLimit(handle);
   const type = cleanWorkspaceCreateType(typeInput);
   const template = await cleanTemplateReference(templateInput, access.blogId);
   const created = await createDraft(handle, type, { template });
@@ -808,7 +742,7 @@ export async function createFolderItemAction(
 ): Promise<Post> {
   const folder = cleanItemFolder(folderInput);
   const { handle, access } = await editableHandleFor(handleInput);
-  await enforceAnonymousPostLimit(handle, access);
+  await enforcePostLimit(handle);
 
   if (folder === "notes") {
     const created = await createDraft(handle, "note", {
@@ -914,7 +848,7 @@ export async function createPostAndRedirectAction(formData: FormData) {
       ? handleValue
       : undefined,
   );
-  await enforceAnonymousPostLimit(handle, access);
+  await enforcePostLimit(handle);
   const post = await createDraft(handle, cleanPostType(formData.get("type")));
   await auditEdit(access, "create_post", "item", post.id, post.type);
   await revalidateBlog(handle, [post.slug]);
@@ -929,7 +863,7 @@ export async function createArticleDraftPathAction(
   handleInput?: unknown,
 ): Promise<string> {
   const { handle, access } = await editableHandleFor(handleInput);
-  await enforceAnonymousPostLimit(handle, access);
+  await enforcePostLimit(handle);
   const post = await createDraft(handle, "article");
   await auditEdit(access, "create_post", "item", post.id, post.type);
   await revalidateBlog(handle, [post.slug]);
@@ -1802,46 +1736,11 @@ export async function deleteEditablePostAction(
   const access = await getBlogEditAccess(handle);
   const existing = await getPostById(handle, postId);
   if (!existing) throw new Error("Post not found");
-  // Deleting always requires the edit credential (owner or the guest cookie);
-  // an unclaimed blog's starter draft is NOT deletable by arbitrary visitors.
   if (!access.canEdit) throw new Error("You cannot edit this blog");
   await deletePost(handle, postId);
   await auditEdit(access, "delete_post", "item", postId, existing.title);
   await revalidateBlog(handle, [existing.slug]);
   return { handle };
-}
-
-export async function trashEditableBlogAction(
-  handleInput: unknown,
-): Promise<
-  | { ok: true; path: string; openSidebar: boolean }
-  | { ok: false; error: string }
-> {
-  try {
-    const { handle, access } = await editableHandleFor(handleInput);
-    if (!access.isUnclaimed) {
-      return {
-        ok: false,
-        error: "Trash is available for guest workspaces first.",
-      };
-    }
-    const existingPosts = await getAllPosts(handle);
-    await trashBlogPosts(handle);
-    await auditEdit(
-      access,
-      "trash_workspace_posts",
-      "workspace",
-      access.blogId,
-      `${existingPosts.length} posts`,
-    );
-    await revalidateBlog(handle, existingPosts.map((post) => post.slug));
-    return { ok: true, path: blogPath(handle), openSidebar: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: actionErrorMessage(error, "Could not move folder to Trash"),
-    };
-  }
 }
 
 export async function updateBlogNameAction(
@@ -1863,43 +1762,3 @@ export async function updateBlogNameAction(
   }
 }
 
-export async function claimBlog(
-  handleInput: unknown,
-): Promise<
-  | { ok: true; handle: string }
-  | { ok: false; error: string; signInRequired?: boolean }
-> {
-  const handle = cleanHandle(handleInput);
-  const user = await getCurrentUser();
-  if (!user) {
-    return {
-      ok: false,
-      error: "Sign in to claim this blog",
-      signInRequired: true,
-    };
-  }
-
-  const access = await getBlogEditAccess(handle);
-  if (!access.isUnclaimed) {
-    return { ok: false, error: "This blog is already claimed" };
-  }
-  if (!access.canEdit || !access.isTokenEditor) {
-    return { ok: false, error: "You cannot claim this blog" };
-  }
-
-  try {
-    const blog = await claimBlogForUser(handle, user);
-    if (access.blogId) await deleteAnonymousEditCookie(access.blogId);
-    await recordAction({
-      actorType: "human",
-      actionName: "claim_workspace",
-      targetType: "workspace",
-      targetId: access.blogId,
-      inputSummary: blog.handle,
-    });
-    await revalidateBlog(handle, [], blog);
-    return { ok: true, handle: blog.handle };
-  } catch (error) {
-    return { ok: false, error: actionErrorMessage(error, "Could not claim") };
-  }
-}

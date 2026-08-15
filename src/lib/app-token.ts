@@ -1,6 +1,5 @@
 // One in-app sign-in mints the desktop app's sync token. Ensure the user and
-// workspace exist (claiming the browser's guest blog if there is one), then
-// bind a token to the account. Shared by the /connect/app server action (the
+// workspace exist, then bind a token to the account. Shared by the /connect/app server action (the
 // browser fallback) and the /api/app/token route the app's web view calls
 // silently in the background right after sign-in. No separate code step.
 

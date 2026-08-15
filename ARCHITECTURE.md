@@ -15,8 +15,7 @@ release metadata rather than relying on historical handoffs.
 - Private workspace routes retain `/t/{handle}` and `/@{username}` for editing,
   shares, and collaboration. Published pages live at
   `{handle}.{root-domain}/{folder}/{slug}` and never read a viewer session.
-- `/start` is the single entry into a workspace. Signing in claims the browser's
-  guest workspace.
+- `/start` is the single entry into a workspace.
 - Local dev: `npm run dev`, then `demo.localhost:3000` for the public demo.
   Legacy `/@demo` and `/t/demo` links redirect there.
 

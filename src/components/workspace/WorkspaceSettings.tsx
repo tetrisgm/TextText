@@ -68,8 +68,8 @@ export function WorkspaceSettings({
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Self-contained fetch, like WorkspaceMenuMount does. A 404 is the normal
-  // answer for a collaborator, a guest workspace or demo mode, and leaving
-  // account null is what makes the section fail closed.
+  // answer for a collaborator or demo mode, and leaving account null is what
+  // makes the section fail closed.
   useEffect(() => {
     let cancelled = false;
     void (async () => {

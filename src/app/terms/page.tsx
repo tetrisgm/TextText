@@ -19,8 +19,8 @@ export default function TermsPage() {
         <section>
           <h2>Your account</h2>
           <p>
-            You are responsible for the activity in your TextText account, guest
-            workspace, Mac app session, and API tokens. Keep sign-in links,
+            You are responsible for the activity in your TextText account,
+            Mac app session, and API tokens. Keep sign-in links,
             sessions, and tokens private.
           </p>
         </section>

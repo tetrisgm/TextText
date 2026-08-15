@@ -1,17 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  cookies: vi.fn(),
   getBlogEditRecord: vi.fn(),
   getCurrentUser: vi.fn(),
   getUserIdBySub: vi.fn(),
 }));
 
-vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/store", () => ({
   getBlogEditRecord: mocks.getBlogEditRecord,
-  getUnclaimedBlogEditRecordsByIds: vi.fn(),
   getUserIdBySub: mocks.getUserIdBySub,
 }));
 
@@ -24,7 +21,6 @@ beforeEach(() => {
     handle: "workspace",
     name: "Workspace",
     ownerId: "owner-id",
-    editTokenHash: null,
   });
 });
 

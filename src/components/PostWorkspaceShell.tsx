@@ -1688,7 +1688,6 @@ export function PostFolderSidebar({
   onToggleCollapsed,
   sharedCount = 0,
   starredCount = 0,
-  showGuestSignIn = false,
   trashCount = 0,
 }: {
   blog: Blog;
@@ -1712,7 +1711,6 @@ export function PostFolderSidebar({
   onToggleCollapsed: () => void;
   sharedCount?: number;
   starredCount?: number;
-  showGuestSignIn?: boolean;
   trashCount?: number;
 }) {
   const navFolders =
@@ -1888,19 +1886,6 @@ export function PostFolderSidebar({
         />
       )}
 
-      {showGuestSignIn && (
-        <div className="post-editor-sidebar-footer">
-          <p className="post-editor-guest-note">
-            Demo workspace, saved in this browser.
-          </p>
-          <a
-            className="post-editor-guest-keep ac-btn ac-btn-gray"
-            href="/start?to=home"
-          >
-            Sign in to keep it
-          </a>
-        </div>
-      )}
       {sharingFolder && (
         <ShareDialog
           handle={blog.handle}
@@ -1937,7 +1922,6 @@ export function WorkspaceSidebarChrome({
   prefetchFolders = true,
   onToggleCollapsed,
   escapeToCollapse = true,
-  showGuestSignIn = false,
   sharedCount = 0,
   starredCount = 0,
   trashCount = 0,
@@ -1964,7 +1948,6 @@ export function WorkspaceSidebarChrome({
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
   escapeToCollapse?: boolean;
-  showGuestSignIn?: boolean;
   sharedCount?: number;
   starredCount?: number;
   trashCount?: number;
@@ -2130,7 +2113,6 @@ export function WorkspaceSidebarChrome({
           onToggleCollapsed={toggleSidebar}
           sharedCount={sharedCount}
           starredCount={starredCount}
-          showGuestSignIn={showGuestSignIn}
           trashCount={trashCount}
         />
         {!collapsed && (
@@ -4207,7 +4189,6 @@ function LocalWorkspaceShell({
   initialSidebarCollapsed,
   initialSearchQuery,
   initialView,
-  showGuestSignIn,
 }: {
   blog: Blog;
   canCommentPost: boolean;
@@ -4220,7 +4201,6 @@ function LocalWorkspaceShell({
   initialSidebarCollapsed: boolean;
   initialSearchQuery?: string;
   initialView: LocalWorkspaceView;
-  showGuestSignIn: boolean;
 }) {
   const router = useRouter();
   const { pool } = useWorkspacePool();
@@ -6595,7 +6575,6 @@ function LocalWorkspaceShell({
         prefetchFolders={false}
         sharedCount={displayPool.sharedEntries?.length ?? 0}
         starredCount={displayPool.posts.filter((post) => post.starred).length}
-        showGuestSignIn={showGuestSignIn}
         trashCount={
           (displayPool.trashedPosts?.length ?? 0) +
           (displayPool.trashedFolders?.length ?? 0)
@@ -6777,7 +6756,6 @@ export function BlogHomeWorkspaceShell({
   initialSearchSource = "query",
   initialSettingsOpen = false,
   initialPool,
-  showGuestSignIn = false,
 }: {
   activeFolder?: SidebarFolderId | null;
   blog: Blog;
@@ -6793,7 +6771,6 @@ export function BlogHomeWorkspaceShell({
   initialSearchSource?: WorkspaceSearchLocation["source"];
   initialSettingsOpen?: boolean;
   initialPool?: WorkspacePoolPayload | null;
-  showGuestSignIn?: boolean;
 }) {
   const router = useRouter();
   const { sidebarCollapsed, toggleSidebarCollapsed } =
@@ -6838,7 +6815,6 @@ export function BlogHomeWorkspaceShell({
                       }
                   : { level: "root" }
           }
-          showGuestSignIn={showGuestSignIn}
         >
           {children}
         </LocalWorkspaceShell>
@@ -6864,7 +6840,6 @@ export function BlogHomeWorkspaceShell({
         onSelectFolder={selectFolder}
         onSelectRoot={() => router.push(homePath)}
         onToggleCollapsed={toggleSidebarCollapsed}
-        showGuestSignIn={showGuestSignIn}
       />
       <div
         className={`post-editor-content${
@@ -6893,7 +6868,6 @@ export function PostReadWorkspaceShell({
   initialMode = "read",
   post,
   postPath,
-  showGuestSignIn = false,
 }: {
   adjacent: AdjacentPosts;
   blog: Blog;
@@ -6910,7 +6884,6 @@ export function PostReadWorkspaceShell({
   initialMode?: "read" | "edit";
   post: Post;
   postPath: string;
-  showGuestSignIn?: boolean;
 }) {
   const router = useRouter();
   const { sidebarCollapsed, toggleSidebarCollapsed } =
@@ -6972,7 +6945,6 @@ export function PostReadWorkspaceShell({
                 }
               : { level: "root" }
           }
-          showGuestSignIn={showGuestSignIn}
         >
           <PostActionBar
             mode="read"
@@ -7010,7 +6982,6 @@ export function PostReadWorkspaceShell({
         homePath={homePath}
         onSelectFolder={selectSidebarFolder}
         onToggleCollapsed={toggleSidebarCollapsed}
-        showGuestSignIn={showGuestSignIn}
       />
       <div className="post-editor-content">
         <PostActionBar

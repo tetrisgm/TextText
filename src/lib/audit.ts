@@ -32,7 +32,7 @@ export type AuditActorType = "human" | "ai" | "external_agent";
 export type AuditTargetType = "workspace" | "folder" | "item" | "mode";
 
 export type AuditEntry = {
-  /** users.id when known; null for guest (cookie) editors */
+  /** users.id when known; null when no account is attached */
   actorUserId?: string | null;
   actorType: AuditActorType;
   /** e.g. "save_post", "sync.put_file", "mcp.create_item" */

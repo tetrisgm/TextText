@@ -65,16 +65,11 @@
   margin: 0 0 4px;
 }
 
-.signin-notice,
 .signin-hint {
   font: 400 var(--ac-fs-footnote)/1.45 var(--ac-font-text);
   letter-spacing: var(--ac-tr-footnote);
   color: var(--ac-label-2);
   margin: 12px 0 0;
-}
-
-.signin-notice {
-  color: var(--ac-label);
 }
 
 .signin-section {

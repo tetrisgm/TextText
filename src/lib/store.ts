@@ -214,11 +214,6 @@ export type BlogEditRecord = {
   handle: string;
   name: string;
   ownerId: string | null;
-  editTokenHash: string | null;
-};
-export type AnonymousBlogRecord = {
-  id: string;
-  handle: string;
 };
 export type StoreUser = {
   sub: string;
@@ -307,7 +302,6 @@ export type CreatedDocumentCapability = DocumentCapability & {
   token: string;
 };
 
-export const DEFAULT_ANONYMOUS_BLOG_NAME = "Untitled blog";
 const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
 const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "grid";
 
@@ -2952,7 +2946,6 @@ async function getBlogEditRecordUncached(
     handle: row.handle,
     name: row.name,
     ownerId: row.ownerId,
-    editTokenHash: row.editTokenHash,
   };
 }
 
@@ -2962,29 +2955,6 @@ export async function getBlogEditRecord(
   handle: string,
 ): Promise<BlogEditRecord | null> {
   return getBlogEditRecordCached(handle);
-}
-
-export async function getUnclaimedBlogEditRecordsByIds(
-  ids: string[],
-): Promise<BlogEditRecord[]> {
-  if (!db || ids.length === 0) return [];
-  return db
-    .select({
-      id: blogs.id,
-      handle: blogs.handle,
-      name: blogs.name,
-      ownerId: blogs.ownerId,
-      editTokenHash: blogs.editTokenHash,
-    })
-    .from(blogs)
-    .where(
-      and(
-        inArray(blogs.id, ids),
-        isNull(blogs.ownerId),
-        isNull(blogs.deletedAt),
-      ),
-    )
-    .orderBy(desc(blogs.createdAt));
 }
 
 async function getPostByIdUncached(
@@ -5101,24 +5071,6 @@ function isBlogsHandleConflict(error: unknown): boolean {
   return code === "23505" && (message + detail).includes("blogs_handle_idx");
 }
 
-function isBlogsOwnerConflict(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const candidate = error as {
-    code?: unknown;
-    constraint?: unknown;
-    message?: unknown;
-    detail?: unknown;
-  };
-  const code = typeof candidate.code === "string" ? candidate.code : "";
-  const constraint =
-    typeof candidate.constraint === "string" ? candidate.constraint : "";
-  const message =
-    typeof candidate.message === "string" ? candidate.message : "";
-  const detail = typeof candidate.detail === "string" ? candidate.detail : "";
-  if (constraint === "blogs_owner_idx") return true;
-  return code === "23505" && (message + detail).includes("blogs_owner_idx");
-}
-
 export async function signalWorkspaceChange(handle: string): Promise<void> {
   if (!db) throw new Error("signalWorkspaceChange requires DATABASE_URL");
   const [updated] = await db
@@ -5264,72 +5216,6 @@ export async function updateBlog(sub: string, patch: BlogPatch): Promise<Blog> {
   )[0];
   if (!owned) throw new Error("No blog found for this user");
   return updateBlogByHandle(owned.handle, patch, { allowHandleChange: true });
-}
-
-export async function createAnonymousBlogRecord(
-  editTokenHash: string,
-  seed: string,
-  homeLayout: BlogHomeLayout = DEFAULT_HOME_LAYOUT,
-): Promise<AnonymousBlogRecord> {
-  if (!db) throw new Error("createAnonymousBlog requires DATABASE_URL");
-  if (!editTokenHash) throw new Error("edit token hash is required");
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const handle = await uniqueHandle(attempt === 0 ? seed : `${seed}-${attempt + 1}`);
-    const inserted = await db
-      .insert(blogs)
-      .values({
-        handle,
-        name: DEFAULT_ANONYMOUS_BLOG_NAME,
-        homeLayout: cleanBlogHomeLayout(homeLayout),
-        ownerId: null,
-        editTokenHash,
-      })
-      .onConflictDoNothing()
-      .returning({ id: blogs.id, handle: blogs.handle });
-    if (inserted[0]) {
-      await provisionNewWorkspaceDefaults(inserted[0].id);
-      return inserted[0];
-    }
-  }
-
-  throw new Error("failed to create a blog");
-}
-
-export async function claimBlogForUser(
-  handle: string,
-  user: StoreUser,
-): Promise<Blog> {
-  if (!db) throw new Error("claimBlog requires DATABASE_URL");
-
-  const owner = await upsertUser(user);
-  const existingOwned = await getOwnedBlog(user.sub);
-  if (existingOwned) throw new Error("You already have a blog");
-
-  const target = await getBlogEditRecord(handle);
-  if (!target) throw new Error("Blog not found");
-  if (target.ownerId) throw new Error("This blog is already claimed");
-  const username = await ensureUserUsername(owner, usernameSeedForUser(user, handle));
-
-  try {
-    const updated = await db
-      .update(blogs)
-      .set({ ownerId: owner.id, editTokenHash: null })
-      .where(
-        and(
-          eq(blogs.id, target.id),
-          isNull(blogs.ownerId),
-          isNull(blogs.deletedAt),
-        ),
-      )
-      .returning();
-    const row = updated[0];
-    if (!row) throw new Error("This blog is already claimed");
-    return mapBlog({ ...row, author: owner.name, username });
-  } catch (error) {
-    if (isBlogsOwnerConflict(error)) throw new Error("You already have a blog");
-    throw error;
-  }
 }
 
 // Get-or-create the signed-in user's blog. Upserts the user (keyed by Apple sub;

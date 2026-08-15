@@ -1519,26 +1519,6 @@
   text-decoration: none;
   color: inherit;
 }
-.applecms .post-editor-sidebar-footer {
-  display: grid;
-  gap: 8px;
-  margin-top: auto;
-  padding: 12px 10px;
-  border-top: 1px solid var(--ac-hairline);
-}
-.applecms .post-editor-guest-note {
-  margin: 0;
-  font: 500 var(--ac-fs-caption1)/var(--ac-lh-caption1) var(--ac-font-text);
-  color: var(--ac-label-2);
-}
-.applecms .post-editor-guest-keep {
-  justify-content: center;
-  text-align: center;
-}
-.applecms .post-editor-sidebar.is-collapsed .post-editor-sidebar-footer {
-  display: none;
-}
-
 /* ---- command layer ---- */
 .command-palette-backdrop.applecms {
   position: fixed;

@@ -20,8 +20,7 @@ async function approve(codeInput: unknown): Promise<string | null> {
   if (!user) return "Sign in to approve this link";
 
   // Approval is a first meaningful touch: make sure the user exists and has
-  // a workspace, claiming the browser's guest blog on the way when there is
-  // one, so the app's token lands on the blog the person can already see.
+  // a workspace, so the app's token lands on the blog the person can see.
   await resolveOwnedWorkspace(user);
   const userId = await getUserIdBySub(user.sub);
   if (!userId) return "Sign in to approve this link";

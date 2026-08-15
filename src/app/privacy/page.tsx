@@ -35,7 +35,7 @@ export default function PrivacyPage() {
           <h2>Cookies and analytics</h2>
           <p>
             TextText uses first-party cookies only for product needs such as
-            sign-in, guest workspaces, and preferences. TextText does not use
+            sign-in and preferences. TextText does not use
             third-party advertising cookies, cross-site tracking, or a consent
             banner analytics stack.
           </p>

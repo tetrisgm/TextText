@@ -17,10 +17,6 @@ const folderPageSource = readFileSync(
   new URL("../../FolderPage.tsx", import.meta.url),
   "utf8",
 );
-const blogControlsSource = readFileSync(
-  new URL("../../BlogHomeEditorControls.tsx", import.meta.url),
-  "utf8",
-);
 
 describe("Trash confirmation dismissal", () => {
   it("dismisses multi-item confirmation before starting deletion", () => {
@@ -41,9 +37,6 @@ describe("Trash confirmation dismissal", () => {
     );
     expect(folderPageSource).toMatch(
       /setDeleteOpen\(false\);\s+setDeleting\(true\)/,
-    );
-    expect(blogControlsSource).toMatch(
-      /setTrashDialogOpen\(false\);\s+setPending\("trash"\)/,
     );
   });
 
