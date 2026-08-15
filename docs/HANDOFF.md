@@ -55,10 +55,18 @@ polish ledger.
   entire guest/anonymous/claim machinery (plan tier, tokens, cookies, UI),
   and 27 dead exports. `blogs.edit_token_hash` drops via
   `scripts/migrate-drop-edit-token-hash.mjs` at next release.
-- SUSPECT bucket ruled by the owner 2026-08-14, all removals: assistant
-  skills, demo mode (the seed module and the store's demo branches),
-  `bench/`, both dated docs (deleted, not archived), and the duplicate
-  collaboration verifier scripts.
+- SUSPECT bucket ruled by the owner 2026-08-14: assistant skills, demo
+  mode (the seed module and the store's demo branches), `bench/`, and both
+  dated docs (deleted, not archived) are all gone.
+- The one ruling not carried out as written: the collaboration verifiers
+  were not duplicates. My audit read `verify-collaboration-live.ts` and
+  `verify-live-collaboration.ts` as one check under two names. They are
+  four layers (in-process merge on the release gate, database soak with an
+  offline reconnect, two real browsers proving a human SEES a caret, and
+  epoch fencing cited from `db/schema.ts`). Renamed to
+  `verify-collaboration-{database,browsers,epoch}.ts` instead of deleted;
+  all four are listed in `docs/document-types.md`. Say so if you still want
+  them cut.
 - Postgres is now required. A missing `DATABASE_URL` throws
   `TextText requires DATABASE_URL` from store.ts instead of quietly serving
   fixture content. `scripts/setup-local-db.sh` no longer seeds; the database
