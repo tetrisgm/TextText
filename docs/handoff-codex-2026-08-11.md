@@ -232,8 +232,9 @@ Owner decisions, recorded in `docs/HANDOFF.md` (commits `5a1182c2`,
 
 Sequencing the owner accepted: canEdit bug first (same fault line as cookie
 handling), then the migration as one deliberate piece — routes, schema,
-redirects, canonicals, sitemap, and `release/app-store-listing.md` which
-cites current URLs.
+redirects, canonicals, sitemap, and the App Store listing draft which
+cited current URLs (the draft was removed 2026-08-14 with the storefront
+scope; see docs/SPEC.md).
 
 ## 5. Workflow facts you will hit immediately
 

@@ -208,14 +208,11 @@ polish ledger.
 - One schema-v1 `DocumentSnapshot` is the content model; store.ts is the only
   access point; visibility fails closed; every mutation audits.
 - Search/list projections (title/body columns) are derived from the snapshot;
-  `saveBookmarkCapture` once wrote projections without the document - the
-  repair script and invariant live with the canonical-documents work
-  (2026-08-10).
+  the invariant lives with the canonical-documents work (2026-08-10).
 - Account deletion: CLOSE (atomic) then PURGE (resumable); tombstones fence
   resurrection; audit rows are anonymized, never deleted.
-- Merging accounts: `scripts/merge-accounts.ts` reports by default; folder
-  path and live slug collisions handled; synthetic `merged:` tombstone so a
-  live subject is not fenced.
+- Account merge tooling was removed 2026-08-14 (spec: superseded by
+  `user_identities` provider linking; recoverable in git history).
 - Starter guides seed at provisioning (`starterAgentGuideValues`);
   `backfillWorkspaceAgentGuides()` retrofits older workspaces; both are
   idempotent per `(folder_id, slug)`.
