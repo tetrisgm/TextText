@@ -62,6 +62,10 @@ Nothing else is.
   blog posts; posts render like essays; the folder shows cards").
 - Templates are validated render specs. Switching a template never moves or
   mutates content.
+- The blog kinds are article, **Media post** (video-focused, the shape
+  ramine.net publishes), and Video post. Media post renders through the
+  gallery node, which gives a video asset a real player. Owner ruling
+  2026-08-14: Media post stays. It is an item kind, not a legacy gallery.
 
 ## Pillar 5: publishing and people
 
