@@ -70,15 +70,6 @@ export function categoryPathFromFolderPath(folderPath: string): string | null {
   return categoryPath;
 }
 
-export function tenantCategoryPath(
-  handle: string,
-  path: Folder | string | readonly string[],
-): string {
-  const categoryPath = categoryPathInput(path);
-  if (!categoryPath) return tenantHomePath(handle);
-  return `${tenantHomePath(handle)}/c/${encodePath(categoryPath)}`;
-}
-
 export function usernameCategoryPath(
   username: string,
   path: Folder | string | readonly string[],

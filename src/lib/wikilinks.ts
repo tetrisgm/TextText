@@ -154,34 +154,3 @@ export function publicWikiLinkRenderTargets({
   }
   return targets;
 }
-
-export async function resolveWikiLinkRenderTargets({
-  blog,
-  handle,
-  includePrivate = false,
-  markdown,
-}: {
-  blog: Pick<Blog, "handle" | "username">;
-  handle: string;
-  includePrivate?: boolean;
-  markdown: string;
-}): Promise<WikiLinkRenderTargets> {
-  const targets = [
-    ...new Set(extractWikiLinks(markdown).map((link) => link.target)),
-  ];
-  const resolved = await Promise.all(
-    targets.map(async (target) => {
-      const resolution = await resolveTarget(handle, target);
-      return [
-        target,
-        renderTargetForResolution(blog, resolution, { includePrivate }),
-      ] as const;
-    }),
-  );
-  return Object.fromEntries(
-    resolved.filter(
-      (entry): entry is readonly [string, WikiLinkRenderTarget] =>
-        entry[1] !== null,
-    ),
-  );
-}

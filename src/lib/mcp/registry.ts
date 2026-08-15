@@ -115,11 +115,6 @@ export function listTools() {
   });
 }
 
-export function toolRequiredScope(name: string) {
-  const definition = WORKSPACE_TOOL_DEFINITIONS[name as WorkspaceToolName];
-  return definition?.requiredScope ?? null;
-}
-
 export async function callTool(
   name: string,
   args: Record<string, unknown>,
@@ -223,11 +218,5 @@ export async function getPrompt(
   if (!entry) throw invalidParams(`Unknown prompt: ${name}`);
   return entry.handler(args);
 }
-
-export const registryCounts = () => ({
-  tools: WORKSPACE_TOOL_NAMES.length,
-  resources: resources.length,
-  prompts: prompts.length,
-});
 
 export { methodNotFound };

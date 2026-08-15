@@ -2,8 +2,6 @@
 // this exact string gets pasted into connectors and compared by tools that
 // are not, and a mixed-case copy of it already broke the Mac sign-in once.
 export const TEXTTEXT_HOSTED_MCP_URL = "https://texttext.app/api/mcp";
-export const TEXTTEXT_PLUGIN_REPOSITORY = "tetrisgm/TextText";
-
 export const CLAUDE_PLUGIN_INSTALL_COMMAND =
   "claude plugin marketplace add tetrisgm/TextText && claude plugin install texttext@texttext";
 

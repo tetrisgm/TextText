@@ -2490,12 +2490,6 @@ export async function backfillWorkspaceAgentGuides(): Promise<{
   return { workspaces: workspaceRows.length, inserted };
 }
 
-// Resolve the default "blog" folder. Creation is handled during workspace
-// provisioning, and older workspaces are handled by the migration backfill.
-export async function ensureDefaultFolder(blogId: string): Promise<Folder> {
-  return folderForPostType(blogId, "article");
-}
-
 // The system folder a post of this type belongs in. New blogs are provisioned
 // at creation, and older blogs are covered by the backfill migration.
 async function folderForPostType(
@@ -3120,18 +3114,6 @@ export async function createDocumentTemplateVersion(input: {
     outputSummary: definition.name,
   });
   return definition;
-}
-
-export async function listDocumentCapabilities(
-  itemId: string,
-): Promise<DocumentCapability[]> {
-  if (!db) return [];
-  const rows = await db
-    .select()
-    .from(documentCapabilityLinks)
-    .where(eq(documentCapabilityLinks.postId, itemId))
-    .orderBy(desc(documentCapabilityLinks.createdAt));
-  return rows.map(mapDocumentCapability);
 }
 
 export async function createDocumentCapability(input: {

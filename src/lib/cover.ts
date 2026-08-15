@@ -47,26 +47,6 @@ export function resolveCover(post: CoverPost): string {
   return resolveCoverSource(post).src;
 }
 
-export function usesBookmarkCaptureCover(post: CoverPost): boolean {
-  return resolveCoverSource(post).kind === "bookmark-screenshot";
-}
-
-export function usesBookmarkFaviconCover(post: CoverPost): boolean {
-  return resolveCoverSource(post).kind === "bookmark-favicon";
-}
-
-export function firstHttpMarkdownImage(markdown: string | undefined): string {
-  const body = markdown ?? "";
-  const imagePattern =
-    /!\[[^\]]*]\(\s*<?(https?:\/\/[^\s<>)]+)>?(?:\s+["'][^)]*["'])?\s*\)/gi;
-  let match: RegExpExecArray | null;
-  while ((match = imagePattern.exec(body))) {
-    const src = match[1]?.trim();
-    if (isHttpUrl(src)) return src;
-  }
-  return "";
-}
-
 export function bookmarkFaviconUrl(post: CoverPost): string {
   const sourceUrl = bookmarkSourceUrl(post);
   if (!sourceUrl) return "";

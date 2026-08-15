@@ -260,15 +260,6 @@ export function seedWorkspacePool(
   }
 }
 
-export async function hydrateWorkspacePoolFromStorage(blogId: string) {
-  const cached = await readPersistedPool(blogId);
-  if (!cached) return;
-  const current = state.pool;
-  if (!current || current.blogId !== blogId) {
-    setState({ pool: mergeIncomingPool(cached), error: null });
-  }
-}
-
 export async function refreshWorkspacePool(handle: string, blogId: string) {
   if (state.refreshing) return;
   const requestGeneration = poolMutationGeneration;

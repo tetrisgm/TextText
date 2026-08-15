@@ -227,15 +227,6 @@ export async function itemEntry(
 }
 
 /**
- * Whether a post lives in a folder. A post without a folderId (not yet
- * backfilled) counts as living in the default "blog" folder, the same rule as
- * the sync manifest route.
- */
-export function postInFolder(folder: Folder, post: Post): boolean {
-  return post.folderId ? post.folderId === folder.id : folder.path === "blog";
-}
-
-/**
  * An if_match_hash as clients may quote it: bare hex, an ETag ("hash"), or a
  * proxy-weakened W/"hash" all normalize to the bare hex the manifest carries.
  */

@@ -48,8 +48,6 @@ import {
 } from "@/lib/pool/selectors";
 import type { WorkspacePoolPayload, WorkspacePoolPost } from "@/lib/pool/types";
 
-export const WORKSPACE_AGENT_TOOL_NAMES = WORKSPACE_TOOL_NAMES;
-
 export const WORKSPACE_AGENT_TOOL_DEFINITIONS = WORKSPACE_TOOL_NAMES.map(
   (name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];

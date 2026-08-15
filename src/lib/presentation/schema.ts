@@ -909,12 +909,6 @@ function requireRowBinding(
   }
 }
 
-export function validateRenderSpec(value: unknown): RenderNode {
-  const node = renderNodeSchema.parse(value);
-  visitTree(node, () => undefined);
-  return node as RenderNode;
-}
-
 export function validateTemplateDefinition(value: unknown): TemplateDefinition {
   const template = templateDefinitionSchema.parse(value);
   const fields = new Map<string, DocumentFieldDefinition>();

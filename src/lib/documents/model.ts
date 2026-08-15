@@ -123,13 +123,3 @@ export function emptyDocumentSnapshot(
   };
 }
 
-export function documentIsEmpty(document: DocumentSnapshot): boolean {
-  const { content } = document;
-  return (
-    content.title.trim() === "" &&
-    (content.subtitle?.trim() ?? "") === "" &&
-    content.body.trim() === "" &&
-    Object.keys(content.fields).length === 0 &&
-    content.assets.length === 0
-  );
-}

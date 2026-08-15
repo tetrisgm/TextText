@@ -51,10 +51,6 @@ export function postUrl(baseUrl: string, slug: string): string {
   return `${baseUrl}/blog/${encodeURIComponent(slug)}`;
 }
 
-export function postMarkdownUrl(baseUrl: string, slug: string): string {
-  return `${postUrl(baseUrl, slug)}/index.md`;
-}
-
 export function postsJsonUrl(baseUrl: string): string {
   return `${baseUrl}/posts.json`;
 }

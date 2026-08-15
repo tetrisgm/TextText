@@ -185,35 +185,3 @@ export function setSkillEnabled(
     // Best effort; in-memory defaults still apply next session.
   }
 }
-
-/**
- * Compose the instruction string for one request: base + up to two enabled
- * skills selected by prompt keywords or the context description. Returns the
- * applied skill names so the UI can show what shaped the answer.
- */
-export function composeInstructions(
-  handle: string,
-  prompt: string,
-  contextDescription: string,
-): { instructions: string; appliedSkills: string[] } {
-  const loweredPrompt = prompt.toLowerCase();
-  const loweredContext = contextDescription.toLowerCase();
-  const selected = skillStates(handle)
-    .filter((skill) => skill.enabled)
-    .filter(
-      (skill) =>
-        skill.triggers.some((trigger) => loweredPrompt.includes(trigger)) ||
-        skill.contextTriggers.some((trigger) =>
-          loweredContext.includes(trigger),
-        ),
-    )
-    .slice(0, 2);
-  const sections = [
-    BASE_ASSISTANT_INSTRUCTIONS,
-    ...selected.map((skill) => skill.instructions),
-  ];
-  return {
-    instructions: sections.join("\n\n"),
-    appliedSkills: selected.map((skill) => skill.name),
-  };
-}

@@ -72,16 +72,6 @@ export function isPrivatePostType(
   return type === "note" || type === "bookmark";
 }
 
-export function isPrivateFolderMode(
-  mode: string | null | undefined,
-): mode is Extract<FolderMode, "notes" | "bookmarks"> {
-  return mode === "notes" || mode === "bookmarks";
-}
-
-export function isBlogBucketPath(path: string): boolean {
-  return path === BLOG_FOLDER_PATH || path.startsWith(`${BLOG_FOLDER_PATH}/`);
-}
-
 export interface Folder {
   id: string;
   name: string;

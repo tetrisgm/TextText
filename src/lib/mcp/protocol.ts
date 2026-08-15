@@ -54,7 +54,6 @@ export const META_SUBSCRIPTION_ID = "io.modelcontextprotocol/subscriptionId";
 // HeaderMismatch moved -32001 -> -32020, MissingRequiredClientCapability
 // -32003 -> -32021, UnsupportedProtocolVersion -32004 -> -32022.
 
-export const JSONRPC_INVALID_REQUEST = -32600;
 export const JSONRPC_METHOD_NOT_FOUND = -32601;
 export const JSONRPC_INVALID_PARAMS = -32602;
 export const JSONRPC_INTERNAL_ERROR = -32603;
@@ -154,14 +153,6 @@ export const unsupportedProtocolVersion = (requested: string | null) =>
     { supported: [...MCP_SUPPORTED_VERSIONS], requested },
   );
 
-export const missingClientCapability = (required: string[]) =>
-  new McpError(
-    MCP_MISSING_REQUIRED_CLIENT_CAPABILITY,
-    `Missing required client capability: ${required.join(", ")}`,
-    400,
-    { requiredCapabilities: required },
-  );
-
 // ---------------------------------------------------------------------------
 // Request metadata
 // ---------------------------------------------------------------------------
@@ -255,14 +246,4 @@ export function decodeHeaderValue(raw: string): string {
     }
   }
   return raw;
-}
-
-export function encodeHeaderValue(value: string): string {
-  // Visible ASCII only, and never something that could be mistaken for the
-  // sentinel itself.
-  const safe =
-    /^[\x21-\x7e]([\x20-\x7e]*[\x21-\x7e])?$/.test(value) &&
-    !(value.startsWith(BASE64_PREFIX) && value.endsWith(BASE64_SUFFIX));
-  if (safe) return value;
-  return `${BASE64_PREFIX}${Buffer.from(value, "utf8").toString("base64")}${BASE64_SUFFIX}`;
 }

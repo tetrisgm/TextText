@@ -25,8 +25,6 @@ import type { BookmarkCapture, GalleryItem, LinkRef } from "../content";
 import type { DocumentSnapshot, DocumentVisibility } from "../documents/model";
 import type { TemplateDefinition } from "../presentation/schema";
 
-export const textTextChangeSequence = pgSequence("texttext_change_seq");
-
 export const postStatus = pgEnum("post_status", ["draft", "published"]);
 export const fileRepresentation = pgEnum("file_representation", [
   "textbundle",

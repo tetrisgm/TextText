@@ -310,21 +310,6 @@ export async function deletePersistedWorkspaceDraft(
   });
 }
 
-export async function movePersistedWorkspaceDraft(
-  blogId: string,
-  previousPostId: string,
-  postId: string,
-): Promise<void> {
-  const current = await readPersistedWorkspaceDraft(blogId, previousPostId);
-  if (!current) return;
-  await persistWorkspaceDraft({
-    ...current,
-    postId,
-    persistedAt: new Date().toISOString(),
-  });
-  await deletePersistedWorkspaceDraft(blogId, previousPostId, current.key);
-}
-
 /**
  * Wipes every local copy of the workspace: the IndexedDB pool, the cached
  * bodies, and the drafts held in localStorage.

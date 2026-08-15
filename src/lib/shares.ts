@@ -271,47 +271,12 @@ export async function listPostShares(postId: string): Promise<PostShare[]> {
   }));
 }
 
-export async function invitePostShare(opts: {
-  postId: string;
-  email: string;
-  role: ShareRole;
-  invitedBySub: string;
-}): Promise<PostShare> {
-  const share = await inviteScopeShare({
-    scopeType: "item",
-    scopeId: opts.postId,
-    email: opts.email,
-    role: opts.role,
-    invitedBySub: opts.invitedBySub,
-  });
-  return { ...share, role: cleanItemRole(share.role) };
-}
-
 export async function revokePostShare(
   postId: string,
   shareId: string,
   revokedBySub: string,
 ): Promise<void> {
   return revokeScopeShare("item", postId, shareId, revokedBySub);
-}
-
-export async function postShareRoleFor(
-  user: ShareUser | null,
-  postId: string,
-): Promise<ShareRole | null> {
-  if (!db || !user) return null;
-  const rows = await db
-    .select({ handle: blogs.handle })
-    .from(posts)
-    .innerJoin(blogs, eq(posts.blogId, blogs.id))
-    .where(and(eq(posts.id, postId), isNull(posts.deletedAt), isNull(blogs.deletedAt)))
-    .limit(1);
-  const handle = rows[0]?.handle;
-  if (!handle) return null;
-  const access = await resolveItemAccess({ handle, postId, user });
-  if (access.canEditContent) return "editor";
-  if (access.canView) return "viewer";
-  return null;
 }
 
 export async function listSharedWithMe(
@@ -456,14 +421,4 @@ export async function getSharedPostsForUser(
       updatedAt: row.updatedAt.toISOString(),
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-export async function emailForSub(sub: string): Promise<string | null> {
-  if (!db) return null;
-  const rows = await db
-    .select({ email: users.email })
-    .from(users)
-    .where(eq(users.appleSub, sub))
-    .limit(1);
-  return rows[0]?.email ?? null;
 }
