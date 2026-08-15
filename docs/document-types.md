@@ -319,6 +319,11 @@ cut. Each answers a question the others cannot.
   the proof cited by the `collab_state` epoch comment in `db/schema.ts`, and it
   stands up an isolated scratch document and tears it down in a finally.
 
+`npm run eval:folder-look` proves a person can change a folder's look: it opens
+the folder menu in Chromium, picks a look from the gallery, and checks that each
+look appears exactly once (customizing one used to add a duplicate card) in both
+themes.
+
 `npm run eval:mcp:outbound` is the outbound MCP proof. It drives Workspace
 Settings in Chromium, connects `scripts/mock-mcp-server.mjs`, allows it, and
 then asks the assistant to create a frame on it. The mock's own log is the

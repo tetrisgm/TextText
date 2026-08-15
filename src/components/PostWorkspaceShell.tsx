@@ -63,6 +63,7 @@ import {
   EditableCover as WorkspaceEditableCover,
   randomCover,
 } from "@/components/editor/EditableCover";
+import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
@@ -1328,6 +1329,7 @@ function FolderTreeNav({
   canManageSharing,
   canManageFolders,
   onSelectFolder,
+  onChangeFolderLook,
   onShareFolder,
   homePath,
 }: {
@@ -1340,6 +1342,7 @@ function FolderTreeNav({
   canManageSharing: boolean;
   canManageFolders: boolean;
   onSelectFolder: (folder: SidebarFolderId) => void;
+  onChangeFolderLook: (folder: Folder) => void;
   onShareFolder: (folder: Folder) => void;
   homePath?: string;
 }) {
@@ -1584,6 +1587,19 @@ function FolderTreeNav({
                       Rename
                     </button>
                   )}
+                  {canManageFolders && (
+                    <button
+                      type="button"
+                      className="folder-action-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpenFor(null);
+                        onChangeFolderLook(folder);
+                      }}
+                    >
+                      Change look
+                    </button>
+                  )}
                 </span>
               )}
             </span>
@@ -1715,6 +1731,8 @@ export function PostFolderSidebar({
   const navFolders =
     folders.length > 0 || !canManageFolders ? folders : FALLBACK_FOLDERS;
   const [sharingFolder, setSharingFolder] = useState<Folder | null>(null);
+  const [folderLook, setFolderLook] = useState<Folder | null>(null);
+  const sidebarRouter = useRouter();
   return (
     <aside
       className={`ac-sidebar ac-chrome post-editor-sidebar${
@@ -1874,6 +1892,7 @@ export function PostFolderSidebar({
           canManageSharing={canManageSharing}
           homePath={homePath}
           onSelectFolder={onSelectFolder}
+          onChangeFolderLook={setFolderLook}
           onShareFolder={setSharingFolder}
         />
       </nav>
@@ -1885,6 +1904,15 @@ export function PostFolderSidebar({
         />
       )}
 
+      {folderLook && (
+        <FolderLookPicker
+          handle={blog.handle}
+          folderPath={folderLook.path}
+          folderName={folderLook.name}
+          onClose={() => setFolderLook(null)}
+          onChanged={() => sidebarRouter.refresh()}
+        />
+      )}
       {sharingFolder && (
         <ShareDialog
           handle={blog.handle}

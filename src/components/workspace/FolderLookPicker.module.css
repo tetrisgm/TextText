@@ -1,0 +1,32 @@
+/* A status line over the gallery while a restyle is in flight. It sits above
+   the gallery's own backdrop, because the gallery is what the person is looking
+   at when they need to know the work is happening. */
+
+.status {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 1000;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.3));
+  border-radius: 999px;
+  padding: 9px 18px;
+  background: var(--ac-bg, rgba(28, 28, 30, 0.92));
+  color: var(--ac-label, #fff);
+  font: 600 13px/1.2 var(--ac-font-text, system-ui, sans-serif);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+.error {
+  color: color-mix(in srgb, var(--ac-red, #ff453a) 60%, var(--ac-label, #fff));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .status {
+    backdrop-filter: none;
+  }
+}

@@ -2935,19 +2935,37 @@ export async function getDocumentTemplate(
   return rows[0] ? validateTemplateDefinition(rows[0].definition) : null;
 }
 
+/**
+ * The looks available to CHOOSE from: one entry per template, at its current
+ * version.
+ *
+ * Template versions are immutable and every document pins an exact one, which
+ * is what keeps a newer version from restyling documents behind their authors.
+ * But that made this return every version ever written, so customizing a look
+ * twice put two identically named cards in the picker and a third put three.
+ * Picking a look means picking its current version; older versions stay
+ * resolvable through getDocumentTemplate for the documents already on them.
+ */
 export async function listDocumentTemplates(
   blogId: string,
 ): Promise<TemplateDefinition[]> {
   if (!db) return [...BUILTIN_TEMPLATES];
   const rows = await db
-    .select({ definition: documentTemplates.definition })
+    .select({
+      templateId: documentTemplates.templateId,
+      definition: documentTemplates.definition,
+    })
     .from(documentTemplates)
     .where(eq(documentTemplates.blogId, blogId))
     .orderBy(asc(documentTemplates.templateId), desc(documentTemplates.version));
-  return [
-    ...BUILTIN_TEMPLATES,
-    ...rows.map((row) => validateTemplateDefinition(row.definition)),
-  ];
+  const latest: TemplateDefinition[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.templateId)) continue;
+    seen.add(row.templateId);
+    latest.push(validateTemplateDefinition(row.definition));
+  }
+  return [...BUILTIN_TEMPLATES, ...latest];
 }
 
 export async function createDocumentTemplateVersion(input: {
