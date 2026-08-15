@@ -177,22 +177,29 @@ export async function POST(request: Request) {
     handle: workspace.handle,
   };
   const provider = cloudProviderLabel(config.provider);
-  // Development may point the provider at a local mock so the entire
-  // assistant lane is testable without a real key: a credential in a test
-  // is a leak waiting to happen, and a lane only the owner can exercise is
-  // a lane that ships broken. Production ignores the variable entirely.
-  const devBaseUrl =
-    process.env.NODE_ENV !== "production"
-      ? process.env.TEXTTEXT_AI_BASE_URL || undefined
-      : undefined;
+  // Development can override two things so the assistant lane is testable
+  // without a real key ever passing through a person or an agent:
+  //   TEXTTEXT_AI_BASE_URL points the provider at a local mock
+  //     (scripts/mock-ai-provider.mjs) - a deterministic, no-key run.
+  //   TEXTTEXT_DEV_AI_KEY supplies a real key read from the login Keychain
+  //     by scripts/dev-secrets.sh, so a real provider can be exercised
+  //     without the key touching the workspace form, the shell history, or
+  //     any log.
+  // Production ignores both entirely and uses the workspace-configured key.
+  const isDev = process.env.NODE_ENV !== "production";
+  const devBaseUrl = isDev ? process.env.TEXTTEXT_AI_BASE_URL || undefined : undefined;
+  const apiKey =
+    isDev && process.env.TEXTTEXT_DEV_AI_KEY
+      ? process.env.TEXTTEXT_DEV_AI_KEY
+      : config.apiKey;
   const model =
     config.provider === "anthropic"
       ? createAnthropic({
-          apiKey: config.apiKey,
+          apiKey,
           ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
         })(config.model)
       : createOpenAI({
-          apiKey: config.apiKey,
+          apiKey,
           ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
         })(config.model);
 
