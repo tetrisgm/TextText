@@ -119,6 +119,8 @@ describe("/api/ai cloud assistant route", () => {
       text: "Here is a summary.",
       provider: "Anthropic",
       model: "claude-sonnet-5",
+      outboundCalls: [],
+      unreachableServers: [],
     });
     // The session actor is threaded into the tool factory.
     expect(mocks.cloudAssistantTools).toHaveBeenCalledWith({
@@ -153,6 +155,8 @@ describe("/api/ai cloud assistant route", () => {
       text: "Here is a summary.",
       provider: "OpenAI",
       model: "gpt-5.6",
+      outboundCalls: [],
+      unreachableServers: [],
     });
   });
 

@@ -136,6 +136,48 @@ function CopyStepButton({ copy }: { copy: { label: string; value: string } }) {
 // The transcript inside the assistant sidebar: user and assistant turns,
 // lightweight progress rows while the selected provider drives tools, a jobs
 // strip so background work stays visible from anywhere.
+/**
+ * What the assistant did somewhere else.
+ *
+ * A remote MCP call has effects on a machine this workspace does not control,
+ * and until this existed the only trace was an audit row nobody reads mid
+ * conversation: the reply said a frame was created and gave no sign that a
+ * request had left the building. One line per call, naming the server, so the
+ * person can see it and object to it.
+ */
+function OutboundTrace({
+  outbound,
+}: {
+  outbound: NonNullable<AssistantMessage["outbound"]>;
+}) {
+  const { calls, unreachable } = outbound;
+  if (calls.length === 0 && unreachable.length === 0) return null;
+  return (
+    <div className={styles.outbound}>
+      {calls.map((call, index) => (
+        <span
+          className={styles.outboundCall}
+          key={`${call.connection}-${call.tool}-${index}`}
+        >
+          <span className={styles.outboundName}>{call.connection}</span>
+          <code>{call.tool}</code>
+          {call.status === "failed" && (
+            <span className={styles.outboundFailed}>failed</span>
+          )}
+          {call.status === "input_required" && (
+            <span className={styles.outboundAsked}>needs more information</span>
+          )}
+        </span>
+      ))}
+      {unreachable.length > 0 && (
+        <span className={styles.outboundDown}>
+          {unreachable.join(", ")} did not answer, so its tools were unavailable
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function AssistantConversation({
   activeCloudProvider,
   cloudProvider,
@@ -439,6 +481,7 @@ export function AssistantConversation({
               </span>
             )}
             <span>{displayedMessageText(message)}</span>
+            {message.outbound && <OutboundTrace outbound={message.outbound} />}
           </div>
         );
       })}

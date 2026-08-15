@@ -115,7 +115,7 @@ export async function addMcpConnection(
     throw new OutboundMcpError("A connection with that name already exists.");
   }
 
-  const tools = await listRemoteTools({ id: "new", name, url, token });
+  const { tools } = await listRemoteTools({ id: "new", name, url, token });
 
   const [row] = await db
     .insert(mcpConnections)
@@ -173,7 +173,7 @@ export async function refreshMcpConnection(
   if (!row) return null;
 
   try {
-    const tools = await listRemoteTools({
+    const { tools } = await listRemoteTools({
       id: row.id,
       name: row.name,
       url: row.url,

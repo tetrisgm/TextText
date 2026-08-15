@@ -22,6 +22,7 @@ import {
 import { createWorkspaceAgentTools } from "@/lib/ai/agent-tools";
 import {
   cloudAssistantTurn,
+  type OutboundCall,
   cloudAssistantStatus,
   type CloudAssistantProviderLabel,
 } from "@/lib/ai/cloud-client";
@@ -105,6 +106,12 @@ export type AssistantMessage = {
   text: string;
   provider?: CloudAssistantProviderLabel;
   proposal?: AssistantProposal;
+  /**
+   * What this turn did on machines the workspace does not control, and which
+   * connected servers were unreachable. Attached to the message rather than
+   * kept beside the thread so it survives reload with the words it explains.
+   */
+  outbound?: { calls: OutboundCall[]; unreachable: string[] };
 };
 
 type UseNativeAssistantOptions = {
@@ -200,11 +207,12 @@ function appendToThread(
   text: string,
   proposal?: AssistantProposal,
   provider?: CloudAssistantProviderLabel,
+  outbound?: AssistantMessage["outbound"],
 ): string {
   const id = nextMessageId();
   const next = [
     ...threadFor(threadKey),
-    { id, role, text, proposal, provider },
+    { id, role, text, proposal, provider, outbound },
   ].slice(-MAX_MESSAGES_PER_THREAD);
   transcripts.set(threadKey, next);
   try {
@@ -583,6 +591,12 @@ export function useNativeAssistant({
           result.text || "Done.",
           undefined,
           result.provider,
+          result.outboundCalls.length || result.unreachableServers.length
+            ? {
+                calls: result.outboundCalls,
+                unreachable: result.unreachableServers,
+              }
+            : undefined,
         );
         updateAssistantJob(jobId, { status: "done" });
       } catch (error) {
@@ -654,6 +668,12 @@ export function useNativeAssistant({
             text: result.text ?? "",
           }),
           result.provider,
+          result.outboundCalls.length || result.unreachableServers.length
+            ? {
+                calls: result.outboundCalls,
+                unreachable: result.unreachableServers,
+              }
+            : undefined,
         );
       } catch (error) {
         appendToThread(

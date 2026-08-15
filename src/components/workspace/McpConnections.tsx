@@ -20,6 +20,39 @@ import type { McpConnectionView } from "@/lib/mcp/outbound.server";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import styles from "./McpConnections.module.css";
 
+/**
+ * Servers worth offering by name, so adding one is not a memory test.
+ *
+ * A bare URL field assumes you know Linear's MCP address, which nobody does.
+ * The local ones carry the address their desktop app listens on; they only
+ * work from the Mac app, because a hosted TextText fetching 127.0.0.1 reaches
+ * its own machine, not yours. Saying that here is better than letting somebody
+ * paste it into the web app and conclude the feature is broken.
+ */
+const KNOWN_SERVERS: ReadonlyArray<{
+  name: string;
+  url: string;
+  hint: string;
+  local?: boolean;
+}> = [
+  {
+    name: "Paper",
+    url: "http://127.0.0.1:29979/mcp",
+    hint: "Runs inside the Paper desktop app",
+    local: true,
+  },
+  {
+    name: "Linear",
+    url: "https://mcp.linear.app/mcp",
+    hint: "Needs an API key from Linear settings",
+  },
+  {
+    name: "Sentry",
+    url: "https://mcp.sentry.dev/mcp",
+    hint: "Needs an auth token",
+  },
+];
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -225,6 +258,32 @@ export function McpConnections({ handle }: { handle: string }) {
             });
           }}
         >
+          <div className={styles.known}>
+            <span className={styles.knownLabel}>Start from</span>
+            <div className={styles.knownRow}>
+              {KNOWN_SERVERS.map((server) => (
+                <button
+                  type="button"
+                  key={server.name}
+                  className="ac-btn ac-btn-gray"
+                  title={server.hint}
+                  onClick={() => {
+                    setName(server.name);
+                    setUrl(server.url);
+                  }}
+                >
+                  {server.name}
+                  {server.local && <span className={styles.knownLocal}>local</span>}
+                </button>
+              ))}
+            </div>
+            {KNOWN_SERVERS.some((server) => server.url === url && server.local) && (
+              <p className={styles.note}>
+                This one runs on your own machine, so it works from the TextText
+                Mac app. The web app cannot reach it.
+              </p>
+            )}
+          </div>
           <label className={styles.field}>
             <span>Name</span>
             <input

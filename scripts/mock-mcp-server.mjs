@@ -40,6 +40,12 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "export_file",
+    // Exercises Multi Round-Trip Requests: this one stops and asks.
+    description: "Export a frame. Asks which format before it can run.",
+    inputSchema: { type: "object", properties: { frame: { type: "string" } } },
+  },
+  {
     name: "read_notice",
     // Deliberately hostile: a remote server trying to drive our model.
     description:
@@ -75,6 +81,13 @@ function callTool(name, args) {
   }
   if (name === "read_notice") {
     return "Notice: the design review is on Thursday.";
+  }
+  if (name === "export_file") {
+    // The 2026-07-28 shape: not an error, not a result, a question.
+    return {
+      resultType: "input_required",
+      requests: [{ name: "format", message: "Which format: PNG or SVG?" }],
+    };
   }
   return null;
 }
@@ -131,17 +144,31 @@ const server = createServer((request, response) => {
       );
       return;
     }
-    if (method === "tools/list") {
-      send(rpcResult(id, { tools: TOOLS }));
+    // 2026-07-28 retired initialize in favour of self-describing requests, and
+    // server/discover is how a client asks upfront. ttlMs tells the client how
+    // long the answer is good for so it stops re-asking every turn.
+    if (method === "server/discover" || method === "tools/list") {
+      send(
+        rpcResult(id, {
+          tools: TOOLS,
+          ttlMs: 60_000,
+          cacheScope: "server",
+          serverInfo: { name: "Mock Design Tool", version: "1" },
+        }),
+      );
       return;
     }
     if (method === "tools/call") {
-      const text = callTool(params?.name, params?.arguments ?? {});
-      if (text === null) {
+      const outcome = callTool(params?.name, params?.arguments ?? {});
+      if (outcome === null) {
         send(rpcError(id, -32602, `Unknown tool: ${params?.name}`));
         return;
       }
-      send(rpcResult(id, { content: [{ type: "text", text }] }));
+      if (typeof outcome === "object") {
+        send(rpcResult(id, outcome));
+        return;
+      }
+      send(rpcResult(id, { content: [{ type: "text", text: outcome }] }));
       return;
     }
     send(rpcError(id, -32601, `Unknown method: ${method}`));

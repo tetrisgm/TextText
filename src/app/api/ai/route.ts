@@ -16,9 +16,14 @@ import { cloudAssistantTools } from "@/lib/ai/cloud-tools";
 import {
   outboundAssistantTools,
   outboundSystemNote,
+  type OutboundCallRecord,
 } from "@/lib/ai/outbound-tools";
 import { enabledMcpConnections } from "@/lib/mcp/outbound.server";
-import { listRemoteTools, type RemoteTool } from "@/lib/mcp/outbound-client";
+import {
+  listRemoteTools,
+  type OutboundConnection,
+  type RemoteTool,
+} from "@/lib/mcp/outbound-client";
 import {
   cloudProviderLabel,
   getWorkspaceAiConfigForOwner,
@@ -56,6 +61,31 @@ function rateLimited(sub: string): boolean {
 }
 
 const SYSTEM = ASSISTANT_SYSTEM_PROMPT;
+
+/**
+ * Remembered tool lists, keyed by connection, expiring when the server said
+ * they would. In-process and best effort: losing it costs one round trip.
+ */
+const toolCache = new Map<string, { tools: RemoteTool[]; expiresAt: number }>();
+const DEFAULT_TOOL_TTL_MS = 5 * 60 * 1000;
+
+async function discoverTools(
+  connection: OutboundConnection,
+): Promise<RemoteTool[]> {
+  const cached = toolCache.get(connection.id);
+  if (cached && cached.expiresAt > Date.now()) return cached.tools;
+  const { tools, ttlMs } = await listRemoteTools(connection);
+  toolCache.set(connection.id, {
+    tools,
+    expiresAt: Date.now() + (ttlMs ?? DEFAULT_TOOL_TTL_MS),
+  });
+  if (toolCache.size > 500) {
+    for (const [key, entry] of toolCache) {
+      if (entry.expiresAt <= Date.now()) toolCache.delete(key);
+    }
+  }
+  return tools;
+}
 
 function coerceMessages(value: unknown): ModelMessage[] {
   if (!Array.isArray(value)) return [];
@@ -185,9 +215,13 @@ export async function POST(request: Request) {
   const provider = cloudProviderLabel(config.provider);
 
   // Outbound MCP: a workspace can connect servers somebody else runs, and the
-  // assistant may use their tools. Discovery happens per turn so a server that
-  // changed its tool list is not called with a stale one, and a server that is
-  // down costs this turn nothing but its own tools.
+  // assistant may use their tools.
+  //
+  // Discovery is cached per connection for as long as the server says its list
+  // is good for (2026-07-28 added ttlMs). Before that this route asked every
+  // connected server for its tool list on every single message, which is a
+  // round trip the person waits through to learn something that had not
+  // changed.
   const workspaceRecord = await getBlogEditRecord(workspace.handle);
   const connections = workspaceRecord
     ? await enabledMcpConnections(workspaceRecord.id)
@@ -196,19 +230,18 @@ export async function POST(request: Request) {
     connection: (typeof connections)[number];
     tools: RemoteTool[];
   }> = [];
+  // A connected server that is down used to vanish silently, so the assistant
+  // simply seemed unable to do what it did yesterday. Now the turn says so.
+  const unreachable: string[] = [];
   await Promise.all(
     connections.map(async (connection) => {
       try {
-        const tools = await listRemoteTools(connection);
+        const tools = await discoverTools(connection);
         if (tools.length > 0) reachable.push({ connection, tools });
       } catch {
-        // A connected server being unreachable is not this turn's failure.
+        unreachable.push(connection.name);
       }
     }),
-  );
-  const remoteTools = outboundAssistantTools(
-    { userId: userId ?? null, handle: workspace.handle },
-    reachable,
   );
   // Development can override two things so the assistant lane is testable
   // without a real key ever passing through a person or an agent:
@@ -236,17 +269,36 @@ export async function POST(request: Request) {
           ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
         })(config.model);
 
+  const calls: OutboundCallRecord[] = [];
+  const remoteTools = outboundAssistantTools(
+    { userId: userId ?? null, handle: workspace.handle },
+    reachable,
+    (record) => calls.push(record),
+  );
+
   try {
     const result = await generateText({
       model,
       system:
         buildSystem(body.context) +
-        outboundSystemNote(reachable.map((entry) => entry.connection.name)),
+        outboundSystemNote(
+          reachable.map((entry) => entry.connection.name),
+          unreachable,
+        ),
       messages,
       tools: { ...cloudAssistantTools(actor), ...remoteTools },
       stopWhen: stepCountIs(MAX_STEPS),
     });
-    return Response.json({ text: result.text, provider, model: config.model });
+    return Response.json({
+      text: result.text,
+      provider,
+      model: config.model,
+      // What the assistant did on machines this workspace does not control.
+      // The conversation shows these, because a remote side effect the person
+      // cannot see is one they cannot object to.
+      outboundCalls: calls,
+      unreachableServers: unreachable,
+    });
   } catch {
     // Provider errors can carry request metadata. Do not log the error object,
     // because a user-supplied API key must never reach logs.

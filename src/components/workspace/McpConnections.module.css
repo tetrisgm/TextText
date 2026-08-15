@@ -239,3 +239,35 @@
     justify-content: flex-start;
   }
 }
+
+/* Known servers: adding a connection should not require remembering a URL. */
+.known {
+  display: grid;
+  gap: 8px;
+}
+
+.knownLabel {
+  color: var(--ac-label-2);
+  font: 600 12px/1.2 var(--ac-font-text);
+}
+
+.knownRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.knownRow button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A local server is a different promise: it only works from the Mac app. */
+.knownLocal {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: color-mix(in srgb, var(--ac-label) 12%, transparent);
+  color: var(--ac-label-2);
+  font: 650 10px/1.5 var(--ac-font-text);
+}

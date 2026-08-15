@@ -29,6 +29,8 @@ const MAX_DESCRIPTION_CHARS = 600;
 const MAX_RESULT_CHARS = 20_000;
 /** A whole JSON-RPC reply above this is refused rather than truncated. */
 const MAX_RESPONSE_CHARS = 2_000_000;
+/** Longest we will trust a server's own cache hint. */
+const MAX_CACHE_MS = 60 * 60 * 1000;
 /** Remote tool names we will speak to. Anything else is skipped, not sanitized. */
 const REMOTE_TOOL_NAME = /^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/;
 
@@ -44,6 +46,20 @@ export type RemoteTool = {
   description: string;
   inputSchema: Record<string, unknown>;
 };
+
+export type RemoteToolsResult = {
+  tools: RemoteTool[];
+  /** How long the server says this list is good for, clamped. */
+  ttlMs: number | null;
+};
+
+/**
+ * A remote call either produced a result, or stopped to ask something. It never
+ * silently means "done" when it did neither.
+ */
+export type RemoteCallResult =
+  | { status: "ok"; text: string }
+  | { status: "input_required"; text: string; asked: string[] };
 
 export class OutboundMcpError extends Error {}
 
@@ -175,24 +191,36 @@ async function rpc(
   return payload.result;
 }
 
-/** Handshake, then ask what it can do. Also the "test this connection" path. */
+/**
+ * Ask a server what it offers.
+ *
+ * The 2026-07-28 revision retired the initialize/initialized handshake: every
+ * request now carries its protocol version, client identity and capabilities in
+ * `_meta`, which is what `rpc` above sends. We used to open with `initialize`
+ * anyway, which cost a round trip per connection per turn and told the server
+ * nothing it was not about to be told again. `server/discover` is the sanctioned
+ * way to ask upfront, and a server that does not implement it is not broken, so
+ * a failure there falls through to `tools/list` rather than failing the
+ * connection.
+ */
 export async function listRemoteTools(
   connection: OutboundConnection,
-): Promise<RemoteTool[]> {
-  await rpc(
+): Promise<RemoteToolsResult> {
+  const discovered = await rpc(
     connection,
-    "initialize",
-    {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: "TextText", version: "1" },
-    },
+    "server/discover",
+    {},
     CONNECT_TIMEOUT_MS,
-  );
+  ).catch(() => null);
 
-  const result = await rpc(connection, "tools/list", {}, CONNECT_TIMEOUT_MS);
+  const inlineTools = (discovered as { tools?: unknown } | null)?.tools;
+  const result = Array.isArray(inlineTools)
+    ? discovered
+    : await rpc(connection, "tools/list", {}, CONNECT_TIMEOUT_MS);
+
   const listed = (result as { tools?: unknown })?.tools;
-  if (!Array.isArray(listed)) return [];
+  const cache = readCacheHints(result);
+  if (!Array.isArray(listed)) return { tools: [], ...cache };
 
   const tools: RemoteTool[] = [];
   for (const entry of listed) {
@@ -215,15 +243,41 @@ export async function listRemoteTools(
     });
     if (tools.length >= MAX_TOOLS) break;
   }
-  return tools;
+  return { tools, ...cache };
 }
 
-/** Run one remote tool. The text it returns is untrusted content. */
+/**
+ * A list result now says how long it is good for. Honouring that is the
+ * difference between one discovery per connection per turn and one per hour.
+ */
+function readCacheHints(result: unknown): { ttlMs: number | null } {
+  const hints = result as { ttlMs?: unknown; cacheScope?: unknown } | null;
+  const ttl = typeof hints?.ttlMs === "number" ? hints.ttlMs : null;
+  if (ttl === null || !Number.isFinite(ttl) || ttl <= 0) return { ttlMs: null };
+  // A server asking to be cached for a week is not a reason to be wrong for a
+  // week; a tool list that changed is worse than a round trip.
+  return { ttlMs: Math.min(ttl, MAX_CACHE_MS) };
+}
+
+/**
+ * Run one remote tool.
+ *
+ * Three outcomes, and the middle one is the reason this signature is not just a
+ * string. A tool can succeed, fail, or come back needing input: the revision
+ * replaced server-initiated requests with Multi Round-Trip Requests, where the
+ * server answers `resultType: "input_required"` and names what it needs. We
+ * cannot answer those yet, and the previous version of this function read such
+ * a reply as an empty success and returned "Done." to the model, which then
+ * reported success to the person. Saying "it asked a question I could not
+ * answer" is worse for the demo and true.
+ *
+ * The text is untrusted content either way.
+ */
 export async function callRemoteTool(
   connection: OutboundConnection,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<string> {
+): Promise<RemoteCallResult> {
   if (!REMOTE_TOOL_NAME.test(toolName)) {
     throw new OutboundMcpError("That tool name is not one we will call.");
   }
@@ -237,14 +291,39 @@ export async function callRemoteTool(
   const payload = result as {
     content?: Array<{ type?: string; text?: string }>;
     isError?: boolean;
+    resultType?: unknown;
+    requests?: unknown;
   };
   const text = (payload?.content ?? [])
     .map((part) => (part?.type === "text" ? clamp(part.text, MAX_RESULT_CHARS) : ""))
     .filter(Boolean)
     .join("\n")
     .slice(0, MAX_RESULT_CHARS);
+
+  if (payload?.resultType === "input_required") {
+    return {
+      status: "input_required",
+      text:
+        text ||
+        `${connection.name} needs more information before it can run ${toolName}.`,
+      asked: describeRequests(payload.requests),
+    };
+  }
   if (payload?.isError) {
     throw new OutboundMcpError(text || `${connection.name} could not run that.`);
   }
-  return text || "Done.";
+  return { status: "ok", text: text || "Done." };
+}
+
+/** What the server said it needs, bounded and treated as untrusted text. */
+function describeRequests(requests: unknown): string[] {
+  if (!Array.isArray(requests)) return [];
+  return requests
+    .slice(0, 8)
+    .map((entry) => {
+      if (typeof entry === "string") return clamp(entry, 200);
+      const named = entry as { name?: unknown; message?: unknown; prompt?: unknown };
+      return clamp(named?.message ?? named?.prompt ?? named?.name, 200);
+    })
+    .filter(Boolean);
 }

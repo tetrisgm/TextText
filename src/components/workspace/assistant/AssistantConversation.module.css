@@ -820,3 +820,52 @@
   background: var(--ac-fill-4);
   color: var(--ac-label);
 }
+
+/* Outbound MCP trace: what the assistant did on somebody else's machine.
+   Quiet by default, because most turns touch nothing remote and this must not
+   compete with the answer. It only earns attention when something went wrong. */
+.outbound {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ac-separator);
+}
+
+.outboundCall {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--ac-fill-4);
+  color: var(--ac-label-2);
+  font: 500 11px/1.4 var(--ac-font-text);
+}
+
+.outboundName {
+  color: var(--ac-label);
+  font-weight: 650;
+}
+
+.outboundCall code {
+  font: 500 11px/1.4 var(--ac-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.outboundFailed {
+  color: color-mix(in srgb, var(--ac-red) 62%, var(--ac-label));
+  font-weight: 650;
+}
+
+/* Not a failure and not a success: the server stopped to ask something we
+   cannot answer mid-call yet. */
+.outboundAsked {
+  color: color-mix(in srgb, var(--ac-orange, #ff9f0a) 68%, var(--ac-label));
+  font-weight: 650;
+}
+
+.outboundDown {
+  color: color-mix(in srgb, var(--ac-red) 55%, var(--ac-label-2));
+  font: 500 11px/1.4 var(--ac-font-text);
+}

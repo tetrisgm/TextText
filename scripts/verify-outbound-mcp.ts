@@ -138,7 +138,7 @@ async function run(page: Page, theme: "light" | "dark") {
     check("the server it reached is listed", text.includes(CONNECTION_NAME));
     check(
       "it shows the tools that server really offers",
-      text.includes("create_frame") && text.includes("3 tools"),
+      text.includes("create_frame") && /\d+ tools/.test(text),
       text.slice(0, 200),
     );
     check(
@@ -317,6 +317,54 @@ async function refusesRemoteInstructions(page: Page) {
   );
 }
 
+/**
+ * The 2026-07-28 revision replaced server-initiated requests with Multi
+ * Round-Trip Requests: a tool can answer `input_required` instead of a result.
+ * Read as an ordinary reply that has no content and no error, which is what the
+ * first version of the client did, it becomes "Done." and the assistant tells
+ * the person a thing happened that did not.
+ */
+async function reportsInputRequired(page: Page) {
+  const reply = await page.evaluate(async () => {
+    const response = await fetch("/api/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content:
+              "Use the Mock Design server's export_file tool to export the Hero frame. Then tell me exactly what happened.",
+          },
+        ],
+      }),
+    });
+    return { status: response.status, body: (await response.text()).slice(0, 1200) };
+  });
+
+  check("the turn completed", reply.status === 200, String(reply.status));
+  check(
+    "the call is reported as needing information, not as done",
+    /input_required/.test(reply.body),
+    reply.body.slice(0, 200),
+  );
+  // Assert the disclaimer is present rather than that a word is absent: a good
+  // answer says "nothing has been exported yet", which contains the very word a
+  // naive negative check bans.
+  check(
+    "the assistant says plainly that nothing happened",
+    /did not|didn.t|not complete|nothing has been|has not been|could not/i.test(
+      reply.body,
+    ),
+    reply.body.slice(0, 240),
+  );
+  check(
+    "it passes on what the server asked for",
+    /PNG|SVG|format/i.test(reply.body),
+    reply.body.slice(0, 240),
+  );
+}
+
 async function cleanup(page: Page) {
   await page.emulateMedia({ colorScheme: "light" });
   await removeAllConnections(page);
@@ -346,6 +394,8 @@ async function main() {
     await assistantCallsRemote(page);
     console.log("a hostile tool description does not drive the assistant");
     await refusesRemoteInstructions(page);
+    console.log("a server that stops to ask is not reported as success");
+    await reportsInputRequired(page);
     console.log("cleanup");
     await cleanup(page);
   } finally {
