@@ -48,6 +48,12 @@ import {
   subscribeAssistantJobs,
   updateAssistantJob,
 } from "@/lib/ai/jobs";
+import {
+  loadLocalTools,
+  localConnectionsFrom,
+  type LocalToolSet,
+} from "@/lib/mcp/local-tools";
+import { getMcpConnectionsAction } from "@/app/editor/mcp-connection-actions";
 import { findPoolPostById } from "@/lib/pool/selectors";
 import type {
   WorkspacePoolPayload,
@@ -431,13 +437,58 @@ export function useNativeAssistant({
   );
 
 
+  /**
+   * What the connected servers on this Mac offer, discovered once per mount.
+   *
+   * A ref rather than state on purpose: the tool-call handler reads it, and
+   * rebuilding that subscription every time discovery finishes would drop
+   * in-flight calls. Discovery failing is normal, the design app is closed, and
+   * costs nothing but those tools.
+   */
+  const localToolsRef = useRef<LocalToolSet>({
+    definitions: [],
+    connectionNames: [],
+    unreachable: [],
+    run: () => null,
+  });
+  const [localToolsVersion, setLocalToolsVersion] = useState(0);
+
+  useEffect(() => {
+    if (!nativeAssistantAvailable()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const state = await getMcpConnectionsAction(handle);
+        const local = localConnectionsFrom(state.connections);
+        if (local.length === 0) return;
+        const loaded = await loadLocalTools(local);
+        if (cancelled) return;
+        localToolsRef.current = loaded;
+        // Re-register so the assistant is offered them.
+        setLocalToolsVersion((current) => current + 1);
+      } catch {
+        // No connections, or the settings action refused: nothing local to add.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [handle]);
+
   useEffect(() => {
     if (nativeAssistantAvailable()) {
-      registerNativeAssistantTools(tools.toolDefinitions.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema as Record<string, unknown>,
-      })));
+      // Workspace tools, plus whatever the connected servers on THIS Mac offer.
+      // The hosted rung cannot include those: a server in a data centre
+      // fetching 127.0.0.1 reaches itself, so a local design tool is only ever
+      // reachable from here.
+      registerNativeAssistantTools([
+        ...tools.toolDefinitions.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema as Record<string, unknown>,
+        })),
+        ...localToolsRef.current.definitions,
+      ]);
     }
     const unsubscribe = subscribeNativeAssistant((event) => {
       if (event.type === "status") {
@@ -472,7 +523,15 @@ export function useNativeAssistant({
         void (async () => {
           try {
             const args = typeof event.arguments === "string" ? JSON.parse(event.arguments) : event.arguments;
-            const output = await tools.executor(event.tool as never, args as never);
+            // A namespaced name belongs to a connected server, not the
+            // workspace, and runs through the local bridge instead.
+            const local = localToolsRef.current.run(
+              event.tool,
+              (args ?? {}) as Record<string, unknown>,
+            );
+            const output = local
+              ? await local
+              : await tools.executor(event.tool as never, args as never);
             submitNativeAssistantToolResult(event.callId, output);
           } catch (error) {
             submitNativeAssistantToolResult(event.callId, { error: assistantAgentError(error) }, true);
@@ -493,7 +552,7 @@ export function useNativeAssistant({
     });
     if (nativeAssistantAvailable()) requestNativeAssistant("assistantStatus");
     return unsubscribe;
-  }, [threadKey, tools]);
+  }, [threadKey, tools, localToolsVersion]);
 
   useEffect(() => {
     let cancelled = false;

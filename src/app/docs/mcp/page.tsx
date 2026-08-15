@@ -352,6 +352,20 @@ export default function McpReferencePage() {
             assistant as <code>figma__create_frame</code>, so a connected server
             can never shadow one of TextText&apos;s own tools.
           </p>
+          <h3>Servers on your own machine</h3>
+          <p className="connect-body">
+            The design tools run locally: Paper listens on{" "}
+            <code>127.0.0.1:29979</code>, and pen.dev and Figma ship the same
+            shape, because the design file never leaves your Mac. Nothing on the
+            internet can reach that address, including TextText&apos;s own
+            servers, so a loopback connection works in the{" "}
+            <strong>Mac app</strong> and not on the web. The app makes the
+            request natively and refuses any address that is not loopback.
+          </p>
+          <p className="connect-body">
+            Local connections do not carry an access token yet. The local design
+            servers do not ask for one.
+          </p>
         </section>
 
         <section className="connect-section" id="safety">

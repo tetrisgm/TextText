@@ -51,6 +51,12 @@ Nothing else is.
   use their tools with per-connection approval. "Put this spec in Figma" and
   "document what you did into TextText" are the same conversation from
   either end.
+- Hosted servers are reached from our server. Servers on the person's own
+  machine (Paper, pen.dev, Figma all listen on loopback) are reached by the
+  Mac app natively, because nothing on the internet can fetch someone's
+  127.0.0.1 and an https page cannot either. This is the one capability the
+  web genuinely cannot have, and it does not make the Mac app superior: it
+  makes local tools a Mac thing, like Finder and Quick Look.
 
 ## Pillar 4: templates for items and folders, managed by conversation
 

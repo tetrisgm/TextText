@@ -40,15 +40,7 @@ export function cleanConnectionName(value: unknown): string {
   return name;
 }
 
-/**
- * The namespace a connection's tools get in the model's tool list. Two
- * connections cannot collide because the name is unique per workspace, and a
- * remote cannot collide with one of OUR tools because every remote tool carries
- * this prefix and a separator no workspace tool name contains.
- */
-export function connectionSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
+export { connectionSlug } from "@/lib/mcp/outbound-protocol";
 
 function view(row: typeof mcpConnections.$inferSelect): McpConnectionView {
   return {

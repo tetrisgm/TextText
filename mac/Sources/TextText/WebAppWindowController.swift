@@ -637,6 +637,39 @@ final class WebAppWindowController: NSWindowController, WKNavigationDelegate,
             }
             return
         }
+        // Outbound MCP to a server on this Mac. The web view cannot make this
+        // request itself: the page is https in production and the server is
+        // http on loopback, which is mixed content. LocalMcpBridge refuses
+        // anything that is not loopback.
+        if body["action"] as? String == "localMcpRequest",
+           let requestId = body["requestId"] as? String,
+           let urlString = body["url"] as? String,
+           let payload = body["body"] as? [String: Any] {
+            let token = body["token"] as? String
+            let headers = (body["headers"] as? [String: String]) ?? [:]
+            LocalMcpBridge.send(
+                urlString: urlString,
+                body: payload,
+                token: token,
+                headers: headers
+            ) { [weak self] result in
+                switch result {
+                case .success(let text):
+                    self?.emitCodexEvent([
+                        "type": "local-mcp-response",
+                        "requestId": requestId,
+                        "text": text,
+                    ])
+                case .failure(let failure):
+                    self?.emitCodexEvent([
+                        "type": "local-mcp-response",
+                        "requestId": requestId,
+                        "error": failure.message,
+                    ])
+                }
+            }
+            return
+        }
         if body["action"] as? String == "assistantToolResult",
            let callId = body["callId"] as? String,
            let requestId = codexPendingToolCalls.removeValue(forKey: callId) {
