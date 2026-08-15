@@ -55,12 +55,13 @@ polish ledger.
   entire guest/anonymous/claim machinery (plan tier, tokens, cookies, UI),
   and 27 dead exports. `blogs.edit_token_hash` drops via
   `scripts/migrate-drop-edit-token-hash.mjs` at next release.
-- SUSPECT bucket awaits owner rulings: assistant "skills" (checkboxes wired
-  to nothing; composeInstructions had no callers), `src/lib/demo.ts` + ~94
-  `if (!db)` store branches (zero-setup dev mode), `bench/` (196 lines,
-  nothing runs it), two dated docs to archive, the `project` "Media post"
-  type (its only distinctive renderer is gone), and three overlapping
-  collab verifier scripts.
+- SUSPECT bucket ruled by the owner 2026-08-14, all removals: assistant
+  skills, demo mode (`src/lib/demo.ts` and the store's no-database
+  branches), `bench/`, both dated docs (deleted, not archived), and the
+  duplicate collaboration verifier scripts.
+- Kept by ruling: the `project` "Media post" item type. It is the
+  video-focused blog post (the shape ramine.net publishes), not a legacy
+  gallery. Its reader is the DocumentRenderer gallery node.
 - Still to build for the spec: outbound MCP (rail assistant as client) and
   first-class folder/item template management.
 
