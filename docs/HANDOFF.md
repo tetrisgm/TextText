@@ -254,29 +254,44 @@ Two traps worth keeping:
   CGWindowList without checking it fits the display. Capture the whole screen
   with `screencapture -x` and read that. The display here is 1800x1169 points
   at 2x, so a full capture is 3600x2338.
-- Open: the File Provider domain is still never added, so
-  `~/Library/CloudStorage/TextText-*` is absent and the bundled `texttext`
-  CLI reports no workspace. Traced this far:
-  - The handoff is not a file. It is a Keychain item, service
-    `app.texttext.fileprovider`, access group `52WM463HR2.app.texttext.fp`
-    (`FileProviderHandoffStore`). Info.plist and the signature both carry that
-    group and the app is properly Developer ID signed for team 52WM463HR2, so
-    the entitlement is legitimate.
-  - `FileProviderHandoffStore.save` logs to subsystem `app.texttext` and logs
-    at `.error` when it fails. Sixty minutes of the app running produced ZERO
-    lines from that subsystem, so `save()` was never called: the failure is
-    upstream, in `syncFileProviderDomain` returning at one of its two guards.
-  - Native state lives in `~/Library/Application Support/TextText/`, not in
-    either group container (both are empty, which is expected: the group is
-    the Store edition's path). `account.json` and `credentials.json` are
-    present and well formed, but dated Aug 11 and naming workspace
-    `leshokunin` / "Ramine's blog", while the window is signed in as "test's
-    blog". The native store is stale and disagrees with the web session.
-  - So the app most likely never completed a NATIVE sign-in this session: the
-    web view is authenticated, the native side is not, and the domain sync is
-    never reached with fresh state. The next test is the sign-out and auth
-    sheet round trip, which would refresh both. It clears local credentials,
-    so it needs the owner's say-so rather than an agent doing it unasked.
+- Open, and now precisely characterised: THE MAC APP NEVER LINKS. On a Mac
+  with no stored credentials the web view mints an app token successfully
+  (`POST /api/app/token` returns 200, observed in the dev server log) and the
+  native side persists NOTHING. Watched for 24 seconds across a clean quit and
+  relaunch: `~/Library/Application Support/TextText/credentials.json` is never
+  written, and `find ~/Library -newermt "-10 minutes" -path "*exttext*"`
+  returns nothing at all. That is why the File Provider domain is never added
+  (`syncFileProviderDomain` returns at its first guard,
+  `store.loadCredentials()`), why `~/Library/CloudStorage/TextText-*` is
+  absent, and why the bundled `texttext` CLI reports no workspace. The
+  window still works because the web view has its own session cookie; the
+  NATIVE half of the app has been unlinked this whole time.
+- The chain, all of it verified present and correctly named, which is what
+  makes the failure interesting: the injected `mintScript`
+  (WebAppWindowController:212) runs only when `appToken == nil`, which was the
+  case; it posts `{action:"linked", token, origin}` to the handler registered
+  as `textTextApp` (:187); the handler (:682) accepts exactly that shape and
+  calls `onLinked`; `onLinked` is wired to `handleAppLinked` whenever the
+  window is created (AppDelegate:2398); `handleAppLinked` calls
+  `store.saveCredentials`. Every link in that chain reads correct, and the
+  bytes never land.
+- Next step is instrumentation, not more reading: put an os_log at the top of
+  the message handler, inside the `linked` guard, and in `handleAppLinked`,
+  rebuild, relaunch, and read subsystem `app.texttext`. Note that the app
+  currently emits NOTHING to that subsystem in an hour of running, which is
+  itself a signal worth keeping.
+- Also found: there are two minting paths and only one is live.
+  `AppLinkBridge.tsx` posts the same message shape through a server action and
+  is the `/connect/app` flow; the injected script posts through
+  `POST /api/app/token`. The log shows the injected one ran.
+- The workspace menu (the "test's blog" chip that holds Sign out) does not
+  open under synthetic clicks, so a sign-out cannot be driven from outside the
+  app. Signing out at the state level works instead: quit, move
+  `account.json` and `credentials.json` aside, relaunch. Restore them the same
+  way, because the app cannot sign itself back in while this bug stands.
+- NotchNook owns a 1800x250 window at layer 25 across the top of the screen,
+  so computer-use clicks in the top 250px land on it and are refused. Move the
+  target window below y=250 first.
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop
