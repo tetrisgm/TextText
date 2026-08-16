@@ -28,6 +28,22 @@ export type McpConnectionView = {
 };
 
 const MAX_CONNECTIONS = 8;
+
+/** Loopback, and therefore only reachable by the Mac app. */
+function isLoopbackAddress(raw: string): boolean {
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return (
+      host === "127.0.0.1" ||
+      host === "localhost" ||
+      host === "::1" ||
+      host === "[::1]" ||
+      host.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
+}
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9 _-]{0,31}$/;
 
 export function cleanConnectionName(value: unknown): string {
@@ -98,6 +114,18 @@ export async function addMcpConnection(
   const name = cleanConnectionName(input.name);
   const url = typeof input.url === "string" ? input.url.trim() : "";
   const token = input.token?.trim() ? input.token.trim() : null;
+
+  // A loopback connection is run by the Mac app, which sends the request from
+  // the web view through Swift. The token would have to be handed to the
+  // browser to get there, and no token ever reaches a browser: listMcpConnections
+  // has no token field at all, deliberately. Storing one and never using it is
+  // worse than refusing, because the row would then say "access token saved"
+  // about a value nothing reads.
+  if (token && isLoopbackAddress(url)) {
+    throw new OutboundMcpError(
+      "A server on this Mac is reached without a token. Remove the token, or connect it over https instead.",
+    );
+  }
 
   const existing = await listMcpConnections(blogId);
   if (existing.length >= MAX_CONNECTIONS) {

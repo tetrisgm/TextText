@@ -52,11 +52,19 @@ async function openWorkspace(page: Page) {
   await page.waitForTimeout(1200);
 }
 
-/** Open the Blog folder's "..." menu in the sidebar. */
+/**
+ * Open the Blog folder's "..." menu in the sidebar.
+ *
+ * The control is revealed on hover, the way a row's overflow menu usually is,
+ * so the row has to be hovered before the button is there to click. Waiting for
+ * it without hovering waits forever.
+ */
 async function openFolderMenu(page: Page) {
   const button = page.locator('button[aria-label="Folder options for Blog"]');
-  await button.waitFor({ timeout: 20000 });
-  await button.click();
+  await button.waitFor({ state: "attached", timeout: 20000 });
+  await button.hover({ force: true });
+  await page.waitForTimeout(200);
+  await button.click({ force: true });
   await page.waitForTimeout(400);
 }
 

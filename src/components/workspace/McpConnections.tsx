@@ -53,6 +53,21 @@ const KNOWN_SERVERS: ReadonlyArray<{
   },
 ];
 
+/** Loopback, and therefore Mac-app-only and token-free. */
+function isLocalAddress(raw: string): boolean {
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return (
+      host === "127.0.0.1" ||
+      host === "localhost" ||
+      host === "::1" ||
+      host.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -270,6 +285,7 @@ export function McpConnections({ handle }: { handle: string }) {
                   onClick={() => {
                     setName(server.name);
                     setUrl(server.url);
+                    if (isLocalAddress(server.url)) setToken("");
                   }}
                 >
                   {server.name}
@@ -305,17 +321,22 @@ export function McpConnections({ handle }: { handle: string }) {
               required
             />
           </label>
-          <label className={styles.field}>
-            <span>Access token (optional)</span>
-            <input
-              className="ac-field"
-              type="password"
-              value={token}
-              autoComplete="off"
-              placeholder="Only if that server needs one"
-              onChange={(event) => setToken(event.currentTarget.value)}
-            />
-          </label>
+          {/* A server on this Mac is reached without a token, so the field is
+              not offered for one: an input that silently does nothing is worse
+              than an absent input. */}
+          {!isLocalAddress(url) && (
+            <label className={styles.field}>
+              <span>Access token (optional)</span>
+              <input
+                className="ac-field"
+                type="password"
+                value={token}
+                autoComplete="off"
+                placeholder="Only if that server needs one"
+                onChange={(event) => setToken(event.currentTarget.value)}
+              />
+            </label>
+          )}
           <p className={styles.note}>
             We will connect once to see what it offers. It stays switched off
             until you allow it.

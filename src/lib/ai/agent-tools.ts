@@ -971,7 +971,9 @@ export function createWorkspaceAgentTools(
         const post = requirePost(input.id);
         await signalActivity(post.id, { kind: "edit", field: "body" }, actor);
         const body = (await currentText(post)).body;
-        const fragment = input.markdown_fragment.trim();
+        // Either spelling, same as the MCP rung.
+        const fragment = (input.markdown ?? input.markdown_fragment ?? "").trim();
+        if (!fragment) throw new Error("Pass the text to append as `markdown`.");
         const joined = body.trim()
           ? `${body.replace(/\s+$/, "")}\n\n${fragment}`
           : fragment;

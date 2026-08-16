@@ -60,6 +60,22 @@ const sections = [
     ],
   },
   {
+    title: "Your assistant can use other apps",
+    body: [
+      "TextText speaks MCP in both directions. Other tools reach your documents, and your own assistant can use tools from servers you connect to it, so \u201cput this spec in Figma\u201d stays one sentence instead of a copy and a paste.",
+      "A server you add is saved switched off. Turning on Allow is the consent, because connecting a URL and letting somebody else\u2019s tools into your assistant are different promises. When the assistant uses one, the conversation shows which server and which tool, and a server that did not answer is named rather than quietly missing.",
+      "Design tools run on your own machine: Paper and pen.dev listen on a local address that nothing on the internet can reach. Those work in the Mac app, which makes the request natively and refuses any address that is not your own machine.",
+    ],
+  },
+  {
+    title: "Looks, and who can change them",
+    body: [
+      "A look controls how a document reads when opened and how its folder\u2019s index renders. Choosing one is a gallery of real previews, each drawn with the look it is offering rather than a thumbnail of it.",
+      "Folders have looks too, and the folder menu changes them: applying one restyles what is already in the folder, because a folder whose index changed while every item kept the old look reads as nothing having happened.",
+      "Looks are immutable versions and documents pin the exact one they use, so a newer version never restyles work behind its author. Retiring a look stops it being offered and changes nothing already wearing it.",
+    ],
+  },
+  {
     title: "The AI rail",
     body: [
       "Everything AI lives in the rail on the right. Open, it greets you and offers starters for exactly where you are; the context chip in the composer always says what the AI is looking at. New chat starts over without leaving the page.",

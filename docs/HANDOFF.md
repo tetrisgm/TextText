@@ -24,26 +24,24 @@ polish ledger.
 - [x] Complete rewrite under observation: agent replaced an open document's
   entire body; the change appeared live with the agent's presence chip and
   its named cursor at the end of its own text. Observed 2026-08-14.
-- [x] Transform: note became a Broadsheet article via set_item_template
-  (template_version is required, no default), retitled with excerpt and tags
-  via update_item; rendered look verified in the open browser. Observed
-  2026-08-14.
+- [x] Transform: note became a Broadsheet article via set_item_template,
+  retitled with excerpt and tags via update_item; rendered look verified in
+  the open browser. Observed 2026-08-14.
 - [x] Workspace operations: search matches titles and body text;
-  append_to_item (arg is markdown_fragment) replayed=true on a same-key
-  retry with exactly one block in the body, which is the changelog pattern.
-  Observed 2026-08-14.
+  append_to_item replayed=true on a same-key retry with exactly one block in
+  the body, which is the changelog pattern. Observed 2026-08-14.
 - [x] Rules under agency: every agent mutation has an action_audit row typed
   external_agent; a real foreign-workspace item id reads back as not-in-this-
   workspace (fails closed, no existence oracle); comments land attributed to
   the agent. Observed 2026-08-14.
-- Papercuts for a future pass: set_item_template should default
-  template_version to latest; append_to_item's argument name
-  markdown_fragment differs from create/update's markdown and costs agents a
-  failed call to learn.
+- Both agent papercuts are fixed (2026-08-15) and verified live:
+  set_item_template takes template_version optionally and defaults to the
+  look's current version, and append_to_item takes `markdown` like its
+  siblings while still accepting the original `markdown_fragment`.
 - How to run the loop: mint a token (POST /api/link/start, approve in a
   signed-in browser, poll), then drive `/api/mcp` per the transport contract
   in scratchpad agent.py: `_meta` trio in the body plus MCP-Protocol-Version,
-  Mcp-Method, and Mcp-Name headers. 33 tools.
+  Mcp-Method, and Mcp-Name headers. 34 tools.
 
 ## The spec and the removal pass (2026-08-14)
 
@@ -123,8 +121,11 @@ polish ledger.
   in the app on the person's machine. Hosted servers stay on the cloud rung.
 - `outbound-protocol.ts` is isomorphic and shared by both clients, so a
   server on somebody's laptop cannot get a laxer parser than a hosted one.
-- Local connections carry no token yet; the local design servers do not ask
-  for one.
+- Local connections take no token, and the form no longer offers the field
+  for a loopback address. Storing one would mean handing it to the browser to
+  reach Swift, and no token ever reaches a browser. A local server that
+  required auth is unsupported, deliberately and visibly rather than by a
+  field that silently does nothing.
 
 ## Traps found while building these
 
@@ -160,9 +161,6 @@ polish ledger.
   agent capabilities above belong there once the scorecard closes.
 - Installed-app auth verification (sign out, auth sheet round trip) still
   pending.
-- From 2026-08-12, unverified inventory: blog-folder-feed hardcode, no UI
-  writer for a folder's look, template gallery duplicate cards,
-  set-collection-layout missing readers, eight visual-critique findings.
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop

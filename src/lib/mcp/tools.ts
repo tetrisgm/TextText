@@ -881,10 +881,19 @@ export async function executeMcpTool(
       const revision = mutationRevision(resolved.post);
       if (typeof revision !== "number") return revision;
       if (!resolved.access.blogId) return errorResult("Workspace not found.");
-      const reference = {
-        id: input.template_id,
-        version: input.template_version,
-      };
+      // Omitting the version means the look's current one. Requiring it made an
+      // agent call list_document_templates purely to learn a number, and a
+      // wrong guess was a failed call rather than the obvious default.
+      let version = input.template_version;
+      if (version === undefined) {
+        const available = await listDocumentTemplates(resolved.access.blogId);
+        const latest = available.find(
+          (candidate) => candidate.id === input.template_id,
+        );
+        if (!latest) return errorResult("Template not found.");
+        version = latest.version;
+      }
+      const reference = { id: input.template_id, version };
       const template = await getDocumentTemplate(resolved.access.blogId, reference);
       if (!template) return errorResult("Template not found.");
       const current = requireDocumentSnapshot(
@@ -1601,7 +1610,15 @@ export async function executeMcpTool(
         }
         return revision;
       }
-      const fragment = input.markdown_fragment.trim();
+      // Either spelling. `markdown` is the sibling-consistent one; the tool
+      // shipped with `markdown_fragment` and clients exist that send it.
+      const fragment = (input.markdown ?? input.markdown_fragment ?? "").trim();
+      if (!fragment) {
+        if (retryKey) {
+          await releaseIdempotencyKey(blog.handle, retryKey).catch(() => {});
+        }
+        return errorResult("Pass the text to append as `markdown`.");
+      }
       const base = post.body.replace(/\s+$/, "");
       const body = base ? `${base}\n\n${fragment}` : fragment;
       const audit = mcpAuditEntry(

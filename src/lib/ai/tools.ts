@@ -483,12 +483,15 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   set_item_template: defineTool("set_item_template", {
     title: "Set item template",
     description:
-      "Apply one immutable document template version to an item without changing its content or audience.",
+      "Apply one document template to an item without changing its content or audience. Omit template_version to use the look's current version, which is almost always what you want.",
     inputSchema: z
       .object({
         id,
         template_id: templateId,
-        template_version: templateVersion,
+        // Optional since 2026-08-15. Requiring it meant an agent had to call
+        // list_document_templates purely to learn a number, and getting it
+        // wrong was a failed call rather than a sensible default.
+        template_version: templateVersion.optional(),
         if_match_hash: ifMatchHash,
       })
       .strict(),
@@ -513,11 +516,16 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   append_to_item: defineTool("append_to_item", {
     title: "Append to item",
     description:
-      "Append a markdown block to the end of one item's body without touching its metadata. Automated clients should pass an idempotency_key derived from the source event or commit.",
+      "Append a markdown block to the end of one item's body without touching its metadata. Pass the text as `markdown`. Automated clients should pass an idempotency_key derived from the source event or commit.",
     inputSchema: z
       .object({
         id,
-        markdown_fragment: z.string().min(1).max(1_000_000),
+        // `markdown` matches create_item and update_item. This tool shipped
+        // with `markdown_fragment`, which cost every agent one failed call to
+        // discover, so both are accepted and the old name stays valid for the
+        // clients already written against it.
+        markdown: z.string().min(1).max(1_000_000).optional(),
+        markdown_fragment: z.string().min(1).max(1_000_000).optional(),
         if_match_hash: ifMatchHash,
         idempotency_key: z
           .string()
