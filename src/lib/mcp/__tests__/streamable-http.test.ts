@@ -92,13 +92,17 @@ describe("verbs this revision removed", () => {
 });
 
 describe("authorization", () => {
-  it("challenges an unauthenticated request with resource metadata", async () => {
+  it("challenges an unauthenticated request and says where to get a token", async () => {
     resolveApiToken.mockResolvedValue(null);
     const response = await handleMcpRequest(post({ method: "tools/list" }));
     expect(response.status).toBe(401);
-    expect(response.headers.get("WWW-Authenticate")).toContain(
-      "resource_metadata=",
-    );
+    const challenge = response.headers.get("WWW-Authenticate") ?? "";
+    expect(challenge).toContain('error="invalid_token"');
+    // Points at the docs rather than at authorization-server metadata: OAuth
+    // was removed 2026-08-15, and advertising a chain that dead-ends in a 404
+    // is worse than not advertising one.
+    expect(challenge).toContain("resource_documentation=");
+    expect(challenge).not.toContain("resource_metadata=");
   });
 });
 

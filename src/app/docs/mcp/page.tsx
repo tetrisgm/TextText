@@ -183,9 +183,9 @@ const CLIENTS: Array<{
     id: "chatgpt",
     name: "ChatGPT",
     steps: [
-      "Copy the endpoint address first, because the settings screen has no way back to this page:",
-      "In ChatGPT, open Settings, then the connectors area, and add a custom connector using that address.",
-      "Approve access in the TextText window that opens.",
+      "Create a token at Connect and copy it, along with the address below.",
+      "In ChatGPT, open Settings, then the connectors area, and add a custom connector using that address with the token as its bearer credential.",
+      "ChatGPT's connector setup expects an OAuth server for some connector kinds. TextText does not run one, so use the token field; if your ChatGPT build offers no way to supply a token, use Claude, Codex, Cursor or Copilot instead.",
     ],
     code: { label: "Server address", value: MCP_URL },
   },
@@ -217,15 +217,17 @@ export default function McpReferencePage() {
         <section className="connect-section" id="endpoint">
           <h2 className="connect-section-title">The endpoint</h2>
           <p className="connect-body">
-            One address, Streamable HTTP, OAuth on first use. It is the same
-            server for every client.
+            One address, Streamable HTTP, and a workspace token you create and
+            paste. It is the same server for every client.
           </p>
           <pre className="docs-code" aria-label="TextText MCP endpoint">
             <code>{MCP_URL}</code>
           </pre>
           <p className="connect-body">
-            Access is per workspace and revocable at any time from Workspace
-            Settings without touching the client that used it.
+            Create a token at <Link href="/connect">Connect</Link>, and revoke it
+            there. TextText does not run an OAuth authorization server: every
+            client authenticates with a bearer token, which is one thing to
+            understand and one thing to revoke.
           </p>
         </section>
 

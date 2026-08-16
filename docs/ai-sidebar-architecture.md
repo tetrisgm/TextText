@@ -31,7 +31,7 @@ agents. The web product does not call its own MCP server.
 <!-- generated:tool-contract -->
 ## Shared 33-tool contract
 
-The 11 read-scope tools are:
+The 10 read-scope tools are:
 
 1. `get_workspace`
 2. `list_folders`
@@ -43,32 +43,32 @@ The 11 read-scope tools are:
 8. `list_comments`
 9. `list_responses`
 10. `list_document_templates`
-11. `preview_document_template`
 
-The 22 sync-scope tools are:
+The 23 sync-scope tools are:
 
 1. `list_access`
-2. `customize_document_template`
+2. `save_item_as_look`
 3. `set_folder_template`
-4. `set_item_template`
-5. `create_item`
-6. `update_item`
-7. `append_to_item`
-8. `set_item_status`
-9. `move_item`
-10. `delete_item`
-11. `restore_item`
-12. `add_item_asset`
-13. `remove_item_asset`
-14. `recapture_bookmark`
-15. `add_comment`
-16. `set_comment_resolved`
-17. `create_folder`
-18. `rename_folder`
-19. `delete_folder`
-20. `restore_folder`
-21. `set_access`
-22. `revoke_access`
+4. `retire_document_template`
+5. `set_item_template`
+6. `create_item`
+7. `update_item`
+8. `append_to_item`
+9. `set_item_status`
+10. `move_item`
+11. `delete_item`
+12. `restore_item`
+13. `add_item_asset`
+14. `remove_item_asset`
+15. `recapture_bookmark`
+16. `add_comment`
+17. `set_comment_resolved`
+18. `create_folder`
+19. `rename_folder`
+20. `delete_folder`
+21. `restore_folder`
+22. `set_access`
+23. `revoke_access`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
@@ -164,18 +164,18 @@ leaking workspace data or provider credentials.
    billing stay with that client, presence and audit intent are automatic, and
    local file changes remain immediate.
 3. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
-   ChatGPT, Cursor, and other MCP hosts can connect to `/api/mcp` using OAuth.
+   ChatGPT, Cursor, and other MCP hosts connect to `/api/mcp` with a workspace token.
    Claude, Codex, and ChatGPT are the primary documented clients. Cursor and
    other standards-compatible hosts remain supported secondary clients.
 4. **Native agent plugins: shipped.** The repository is a Claude and Codex
-   plugin marketplace. `plugins/texttext` packages the hosted OAuth MCP
+   plugin marketplace. `plugins/texttext` packages the hosted MCP
    connection with reusable skills for conversation capture, project
    changelogs, publishing, and collaboration. The product connection center
    leads with these installs. Raw MCP commands and bearer tokens are advanced
    fallbacks, not the primary experience.
 
 ChatGPT connects as a hosted app because it does not install repository plugins.
-It uses the same OAuth endpoint and command surface. TextText never receives a
+It uses the same endpoint and command surface. TextText never receives a
 user's Claude, ChatGPT, or Codex password.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains
@@ -216,7 +216,7 @@ The server enforces the privacy invariant below both adapters. A note or
 bookmark cannot be published or moved into a public-mode folder, and a public
 item cannot cross into a private-mode folder through the tool surface.
 
-## OAuth and external access
+## External access
 
 The hosted MCP endpoint uses OAuth authorization code with PKCE S256 and a
 human click-to-approve consent page. Discovery follows this chain:
@@ -247,10 +247,10 @@ to fail.
 ## Maintenance
 
 - Keep `docs/mcp.md`, `/docs/ai`, `/llms.txt`, and `/openapi.json` aligned with
-  `WORKSPACE_TOOL_DEFINITIONS` and the OAuth constants in `src/lib/oauth.ts`.
+  `WORKSPACE_TOOL_DEFINITIONS`. `/docs/mcp` generates its tool table from that
+  registry, so it cannot drift.
 - Add or change a workspace tool in the shared registry first, then implement
   both execution adapters and their tests.
 - Keep privacy and auditing below the tool layer.
-- Reusable versions live in `~/dev/stack` under `mcp-kit` and the Mac kit
-  templates. Port command-contract, local-CLI, or OAuth hardening back to
-  the relevant kit and note it in the kit README.
+- Agents authenticate with a workspace bearer token from `/connect`. TextText
+  runs no OAuth authorization server (owner ruling 2026-08-15).

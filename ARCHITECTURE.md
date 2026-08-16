@@ -86,7 +86,7 @@ projection, not the local edit hot path.
 ## Auth
 
 Sign in with Apple, Google, or email through Auth.js. `/connect` mints machine
-tokens and manages OAuth client approvals. See `docs/production-auth.md`.
+tokens. See `docs/production-auth.md`.
 
 ## Positioning (decided, do not relitigate)
 

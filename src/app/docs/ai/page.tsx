@@ -232,7 +232,7 @@ export default function AiDocsPage() {
           <h2 className="connect-section-title">What agents can do</h2>
           <div className="connect-capability-strip">
             <span>{WORKSPACE_TOOL_NAMES.length} document tools</span>
-            <span>OAuth approval</span>
+            <span>Revocable tokens</span>
             <span>Audited mutations</span>
             <span>Conflict-safe edits</span>
           </div>
@@ -265,8 +265,7 @@ export default function AiDocsPage() {
             Advanced and manual connections
           </summary>
           <p className="connect-body">
-            Use these only for clients that cannot install the plugin or finish
-            OAuth.
+            Use these for clients that cannot install the plugin.
           </p>
           <h3>Agents on the same Mac</h3>
           <p className="connect-body">
@@ -282,12 +281,10 @@ export default function AiDocsPage() {
             <code className="connect-inline-code">
               {TEXTTEXT_HOSTED_MCP_URL}
             </code>{" "}
-            and use TextText OAuth.
-          </p>
-          <h3>Bearer token fallback</h3>
-          <p className="connect-body">
-            If a host cannot complete OAuth, create a revocable token at{" "}
-            <Link href="/connect">Connect</Link>.
+            with a workspace token. Create and revoke one at{" "}
+            <Link href="/connect">Connect</Link>. TextText does not run an OAuth
+            authorization server: a token is one thing to understand and one
+            thing to take away.
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{tokenConfig}</pre>

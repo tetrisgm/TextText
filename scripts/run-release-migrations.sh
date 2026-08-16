@@ -39,6 +39,7 @@ migrations=(
   scripts/migrate-drop-edit-token-hash.mjs
   scripts/migrate-add-mcp-connections.mjs
   scripts/migrate-add-template-retirement.mjs
+  scripts/migrate-drop-oauth.mjs
 )
 
 missing=()

@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import {
   createApiTokenAction,
   revokeApiTokenAction,
-  revokeOAuthConnectionAction,
 } from "@/app/editor/token-actions";
 import {
   AGENT_INTEGRATIONS,
@@ -12,7 +11,6 @@ import {
   hostedMcpUrl,
 } from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
-import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 
 type FreshToken = { id: string; name: string; token: string };
 
@@ -32,16 +30,12 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export function ConnectPanel({
-  initialConnections,
   initialTokens,
   origin,
 }: {
-  initialConnections: OAuthConnectionSummary[];
   initialTokens: ApiTokenSummary[];
   origin: string;
 }) {
-  const [connections, setConnections] =
-    useState<OAuthConnectionSummary[]>(initialConnections);
   const [tokens, setTokens] = useState<ApiTokenSummary[]>(initialTokens);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -104,20 +98,6 @@ export function ConnectPanel({
       setError(errorMessage(err, "The token could not be created."));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function handleDisconnect(clientId: string) {
-    setError(null);
-    try {
-      await revokeOAuthConnectionAction(clientId);
-      setConnections((previous) =>
-        previous.filter((connection) => connection.clientId !== clientId),
-      );
-    } catch (err) {
-      setError(errorMessage(err, "The app could not be disconnected."));
-    } finally {
-      setConfirming(null);
     }
   }
 
@@ -267,69 +247,6 @@ export function ConnectPanel({
         </div>
       </section>
 
-      <section className="connect-section" aria-labelledby="connect-apps">
-        <h2 className="connect-section-title" id="connect-apps">
-          Connected apps
-        </h2>
-        <p className="connect-sub">
-          These clients approved access through TextText. Disconnecting revokes
-          every active grant for that client.
-        </p>
-        {connections.length === 0 ? (
-          <p className="connect-empty">No OAuth apps are connected.</p>
-        ) : (
-          <ul className="connect-rows">
-            {connections.map((connection) => (
-              <li className="connect-row" key={connection.clientId}>
-                <div className="connect-row-main">
-                  <div className="connect-row-name">{connection.name}</div>
-                  <div className="connect-row-meta">
-                    {connection.scope === "sync" ? "Can read and write" : "Read only"}
-                    {" · "}Connected {formatDay(connection.connectedAt)}
-                    {connection.lastUsedAt
-                      ? ` · Last used ${formatDay(connection.lastUsedAt)}`
-                      : ""}
-                  </div>
-                </div>
-                <div className="connect-row-actions">
-                  {confirming === `oauth:${connection.clientId}` ? (
-                    <>
-                      <span className="connect-confirm-label">Disconnect?</span>
-                      <button
-                        className="ac-btn ac-btn-plain ac-danger"
-                        type="button"
-                        onClick={() => void handleDisconnect(connection.clientId)}
-                      >
-                        Disconnect
-                      </button>
-                      <button
-                        className="ac-btn ac-btn-plain"
-                        type="button"
-                        onClick={() => setConfirming(null)}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="ac-btn ac-btn-plain ac-danger"
-                      type="button"
-                      onClick={() => setConfirming(`oauth:${connection.clientId}`)}
-                    >
-                      Disconnect
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        {error && (
-          <p className="connect-error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
 
       <section className="connect-section" aria-labelledby="connect-in-app">
         <h2 className="connect-section-title" id="connect-in-app">

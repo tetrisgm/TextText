@@ -30,7 +30,8 @@ A database is required: run `bash scripts/setup-local-db.sh` once and see
 ## For AI agents
 
 - On this Mac, use the `texttext` CLI that ships inside the app bundle.
-- Anywhere else, connect to `https://TextText.app/api/mcp` with OAuth.
+- Anywhere else, connect to `https://texttext.app/api/mcp` with a workspace
+  token created at `/connect`.
 
 `docs/agent-interoperability.md` is the reference for both.
 

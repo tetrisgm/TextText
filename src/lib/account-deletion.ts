@@ -32,8 +32,8 @@
  * authored elsewhere, capability links they minted there. The author becomes
  * null and the row survives with its author-name snapshot. That is other
  * people's workspaces, and deleting from them is not this operation's business.
- * oauth_clients is likewise never touched: Dynamic Client Registration records
- * are global and shared by every account using that connector.
+ * There are no OAuth grants to revoke: agent access is a workspace token, and
+ * api_tokens is revoked above (OAuth removed 2026-08-15).
  */
 
 import { auditInsertQuery } from "@/lib/audit";
@@ -43,7 +43,6 @@ import {
   apiTokens,
   blogs,
   deletedAccounts,
-  oauthRefreshTokenFamilies,
 } from "@/lib/db/schema";
 import {
   anonymizeAuditActor,
@@ -145,15 +144,6 @@ export async function closeAccount(
       .set({ revokedAt: now })
       .where(
         and(eq(apiTokens.userId, summary.userId), isNull(apiTokens.revokedAt)),
-      ),
-    executor
-      .update(oauthRefreshTokenFamilies)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(oauthRefreshTokenFamilies.userId, summary.userId),
-          isNull(oauthRefreshTokenFamilies.revokedAt),
-        ),
       ),
     executor.insert(deletedAccounts).values({
       subHash,

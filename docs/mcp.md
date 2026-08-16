@@ -7,7 +7,7 @@ endpoint.
 
 This document covers the hosted endpoint, which is for agents that are not on
 the user's Mac. An agent running on the same Mac uses the `texttext` CLI
-instead, and does not need a token, a port, or OAuth. See
+instead, and does not need a token or a port. See
 `docs/agent-interoperability.md`. There is no local MCP server; the loopback
 endpoint was retired in `0.146`.
 
@@ -91,28 +91,9 @@ TextText has no server-pushed changes to offer, so it acknowledges an empty
 filter and closes the stream gracefully with the empty result the spec defines,
 rather than holding a connection open that would never emit.
 
-## Authentication and OAuth lifecycle
+## Authentication
 
-The normal connection flow is OAuth authorization code with PKCE S256:
-
-1. The client follows the protected-resource and authorization-server
-   metadata advertised by TextText.
-2. Public clients can register at `/oauth/register` and request the least
-   privilege they need: `read` or `sync`. A client that requests both
-   advertised scopes receives effective `sync` access.
-3. TextText shows the signed-in owner a consent page naming the client and
-   requested access. The owner must click Approve.
-4. The authorization code exchange returns a `wsk_` bearer access token and a
-   `wrt_` refresh token. Access tokens expire after 3,600 seconds.
-5. Every refresh returns a new access token and a new refresh token. The old
-   refresh token is consumed. Reusing it is treated as a replay and revokes
-   the complete refresh-token family, including its access tokens.
-
-Refresh-token families have a 180-day absolute lifetime and expire after 30
-days without use. Owners can also revoke a connection immediately from
-`/connect`. Access and refresh secrets are stored only as SHA-256 hashes.
-
-Clients that cannot complete OAuth can create a manual `wsk_` token at
+Every client authenticates with a workspace bearer token. Create one at
 `/connect` and send it as:
 
 ```http
@@ -126,8 +107,8 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 <!-- generated:scope-table -->
 | Scope | Access |
 |-------|--------|
-| `read` | Call the 11 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `preview_document_template`. |
-| `sync` | Call all 33 tools, including the 22 that mutate content or read administration data. It also grants every `read` operation. |
+| `read` | Call the 10 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
+| `sync` | Call all 33 tools, including the 23 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -172,13 +153,13 @@ or workspace selector that could cross that boundary.
 | `list_responses` | `read` or `sync` | List reader responses to one item's poll nodes: per-option tallies plus individual responses. Responder identity is a name only when the reader was signed in. |
 | `list_access` | `sync` | List who can access the workspace, one folder, or one item, and their role. |
 | `list_document_templates` | `read` or `sync` | List the immutable built-in and workspace templates available for shaping documents. |
-| `customize_document_template` | `sync` | Create an immutable workspace template (a 'look') by applying operations to an existing one. A look is data only: it can never contain HTML, CSS, or JavaScript, and anything that tries is rejected. A look controls BOTH surfaces: `item` is how one document renders when opened, and `collection` is how the folder's index renders. Set both, or the folder page will not match the item pages. The sequence that works, for a request like 'make my blog look like Medium': 1. list_document_templates - see what exists and pick the closest base. 2. preview_document_template - dry-run your operations; nothing is saved and a rejection is free. 3. customize_document_template - write the version once the preview is clean. 4. set_folder_template - point the folder at it. WITHOUT THIS STEP NOTHING THE PERSON CAN SEE HAS CHANGED: new items get the look and the folder index renders from it only once the folder carries it. Rules that cause most rejections: every binding must name a field declared by `set-fields` (bindings look like `content.fields.<id>`, plus `content.title`, `content.subtitle`, `content.body`, `content.tags`); if you replace the fields you must also replace `item` AND `collection.item` in the same call, because the whole template is revalidated together; a `board` layout also needs `groupBy` and a `calendar` layout needs `dateBy`. |
-| `preview_document_template` | `read` or `sync` | Dry-run template operations and return the resulting template, or the reason it was rejected, WITHOUT saving anything. Use this to check a look before customize_document_template writes a version: a rejected batch here costs nothing, while a rejected write costs a round trip and leaves the workspace unchanged anyway. |
+| `save_item_as_look` | `sync` | Take the way one item currently renders and save it as a reusable look, under a name. The look then appears in the look pickers and can be applied to other items or given to a folder with set_folder_template. This replaced an operations-based authoring API: shape a document the ordinary way, with update_item and the item's own theme, then save what you made. It never changes the item. |
 | `set_folder_template` | `sync` | Give a folder a look, and by default restyle everything already in it. The template becomes what the folder's index page renders from, what new items are created with, and what the items already there use. This is how a request like 'make this folder a magazine' actually lands. Pass apply_to_existing false only if the person asked for the change to affect new items alone: leaving old items behind means the index changes and not one article does, which reads as nothing having happened. |
-| `set_item_template` | `sync` | Apply one immutable document template version to an item without changing its content or audience. |
+| `retire_document_template` | `sync` | Stop offering one workspace look. It disappears from the look pickers and from list_document_templates, and every document and folder already using it keeps rendering exactly as it does now, because template versions are immutable and nothing is deleted. Built-in looks cannot be retired. Use this when someone says a look they made is no longer wanted, rather than leaving a picker full of abandoned experiments. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
+| `set_item_template` | `sync` | Apply one document template to an item without changing its content or audience. Omit template_version to use the look's current version, which is almost always what you want. |
 | `create_item` | `sync` | Create one draft item in a folder from fields or a full markdown file. Never published, never pinned. Automated clients should pass a stable idempotency_key so retries cannot create duplicates. |
 | `update_item` | `sync` | Update one item's content or metadata: title, body, excerpt, tags, slug, cover, pin, publication date, and custom template fields via the fields map. Full markdown may update the same fields. Cannot publish, unpublish, or move an item. |
-| `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Automated clients should pass an idempotency_key derived from the source event or commit. |
+| `append_to_item` | `sync` | Append a markdown block to the end of one item's body without touching its metadata. Pass the text as `markdown`. Automated clients should pass an idempotency_key derived from the source event or commit. |
 | `set_item_status` | `sync` | Publish or unpublish one blog item. Notes and bookmarks can never be published. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `move_item` | `sync` | Move one item to another folder of the same mode. |
 | `delete_item` | `sync` | Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |

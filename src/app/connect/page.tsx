@@ -5,7 +5,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   listApiTokensAction,
-  listOAuthConnectionsAction,
 } from "@/app/editor/token-actions";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import {
@@ -14,7 +13,6 @@ import {
   CODEX_PLUGIN_INSTALL_COMMAND,
 } from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
-import type { OAuthConnectionSummary } from "@/lib/oauth-connections";
 import { getCurrentUser } from "@/lib/session";
 import { rootDomainUrl } from "@/lib/site-url";
 import "@/styles/connect.css";
@@ -103,15 +101,8 @@ export default async function ConnectPage() {
   // A signed-in user without a users row yet (never opened the editor) has
   // no tokens; the list degrades to empty instead of failing the page.
   let tokens: ApiTokenSummary[] = [];
-  let connections: OAuthConnectionSummary[] = [];
-  const [tokenResult, connectionResult] = await Promise.allSettled([
-    listApiTokensAction(),
-    listOAuthConnectionsAction(),
-  ]);
+  const [tokenResult] = await Promise.allSettled([listApiTokensAction()]);
   if (tokenResult.status === "fulfilled") tokens = tokenResult.value;
-  if (connectionResult.status === "fulfilled") {
-    connections = connectionResult.value;
-  }
 
   return (
     <div className="applecms connect-shell">
@@ -124,7 +115,6 @@ export default async function ConnectPage() {
           <Link href="/docs/ai">Open the complete setup guide</Link>.
         </p>
         <ConnectPanel
-          initialConnections={connections}
           initialTokens={tokens}
           origin={origin}
         />

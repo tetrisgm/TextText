@@ -63,7 +63,9 @@ function requestedToolNames(value: unknown): string[] {
 }
 
 function insufficientScopeResponse(request: Request): Response {
-  const metadata = `${publicOrigin(request)}/.well-known/oauth-protected-resource`;
+  // Points at the page that creates a token, not at authorization-server
+  // metadata: there is no authorization server to walk.
+  const docs = `${publicOrigin(request)}/docs/mcp`;
   return Response.json(
     {
       error: "insufficient_scope",
@@ -76,7 +78,7 @@ function insufficientScopeResponse(request: Request): Response {
         "WWW-Authenticate":
           `Bearer error="insufficient_scope", ` +
           `error_description="The sync scope is required for mutating tools", ` +
-          `scope="sync", resource_metadata="${metadata}"`,
+          `scope="sync", resource_documentation="${docs}"`,
       },
     },
   );

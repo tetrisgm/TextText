@@ -70,8 +70,6 @@ import {
   folders,
   idempotencyKeys,
   itemComments,
-  oauthAuthorizationCodes,
-  oauthRefreshTokenFamilies,
   posts,
   publicUrlTombstones,
   userIdentities,
@@ -5472,14 +5470,7 @@ export async function purgeUserIdentityRows(
   email: string | null,
 ): Promise<void> {
   if (!db) throw new Error("purgeUserIdentityRows requires DATABASE_URL");
-  // Families first: they cascade access and refresh tokens.
-  await db
-    .delete(oauthRefreshTokenFamilies)
-    .where(eq(oauthRefreshTokenFamilies.userId, userId));
   await db.delete(apiTokens).where(eq(apiTokens.userId, userId));
-  await db
-    .delete(oauthAuthorizationCodes)
-    .where(eq(oauthAuthorizationCodes.userId, userId));
   await db.delete(appHealthReports).where(eq(appHealthReports.userId, userId));
   await db
     .delete(deviceLinks)

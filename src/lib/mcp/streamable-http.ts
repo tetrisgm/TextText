@@ -87,7 +87,9 @@ function originRejected(request: Request): boolean {
 }
 
 function unauthorized(request: Request): Response {
-  const metadata = `${publicOrigin(request)}/.well-known/oauth-protected-resource`;
+  // A client that lands here needs a workspace token, which a person creates
+  // and pastes. There is no authorization server to point it at.
+  const docs = `${publicOrigin(request)}/docs/mcp`;
   return new Response(
     JSON.stringify({
       error: "invalid_token",
@@ -97,7 +99,7 @@ function unauthorized(request: Request): Response {
       status: 401,
       headers: {
         ...JSON_HEADERS,
-        "WWW-Authenticate": `Bearer error="invalid_token", error_description="A valid bearer token is required", resource_metadata="${metadata}"`,
+        "WWW-Authenticate": `Bearer error="invalid_token", error_description="A valid bearer token is required", resource_documentation="${docs}"`,
       },
     },
   );

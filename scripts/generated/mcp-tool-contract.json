@@ -13,9 +13,9 @@
     "list_responses",
     "list_access",
     "list_document_templates",
-    "customize_document_template",
-    "preview_document_template",
+    "save_item_as_look",
     "set_folder_template",
+    "retire_document_template",
     "set_item_template",
     "create_item",
     "update_item",
@@ -46,8 +46,7 @@
     "list_trash",
     "list_comments",
     "list_responses",
-    "list_document_templates",
-    "preview_document_template"
+    "list_document_templates"
   ],
   "openWorld": [
     "add_item_asset",
