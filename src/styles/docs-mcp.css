@@ -6,6 +6,7 @@
 
 .docs-code {
   overflow-x: auto;
+  max-width: 100%;
   margin: 10px 0 0;
   padding: 12px 14px;
   border: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.28));
@@ -33,6 +34,11 @@
 }
 
 .docs-client {
+  /* A grid item defaults to min-width: auto, which means it cannot shrink
+     below its widest child. The setup snippets are `white-space: pre` and
+     scroll themselves, but the card grew to fit them anyway and pushed the
+     whole page sideways on a phone: 732px of document in a 390px viewport. */
+  min-width: 0;
   padding: 18px 20px 20px;
   border: 1px solid var(--ac-separator, rgba(128, 128, 128, 0.28));
   border-radius: 14px;

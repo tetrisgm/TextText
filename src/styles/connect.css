@@ -141,6 +141,22 @@
   margin: 0 0 2px;
 }
 
+/* A card whose whole surface is the link took the accent from
+   `.connect-shell a` and painted its title blue, so seven guide cards read as
+   seven shouts. The title is the name of the thing; the arrow is the
+   affordance, and it is the only part that needs the accent. */
+.connect-integration-card :is(h2, h3) {
+  color: var(--ac-label);
+  font: 600 var(--ac-fs-title3)/var(--ac-lh-title3) var(--ac-font-text);
+  letter-spacing: var(--ac-tr-title3);
+  margin: 0;
+}
+
+.connect-integration-card > span[aria-hidden] {
+  color: var(--ac-accent);
+  font: 500 var(--ac-fs-callout)/1.2 var(--ac-font-text);
+}
+
 .connect-integration-description {
   min-height: 48px;
   margin: 0;
@@ -419,6 +435,45 @@
 }
 
 /* --- /docs/ai prose --- */
+
+/* ---------- documentation prose ----------
+   The shell narrows for documentation. At 1080px a 680px reading column left
+   a third of the page empty on a prose-only page, and the widest thing any
+   docs page actually needs is a table or a code block, which fit here. The
+   connect centre keeps the full 1080, because its card grids are the page.
+*/
+.connect-main.connect-doc {
+  max-width: 860px;
+}
+
+/* ---------- documentation prose ----------
+   A documentation page is reading, and it was being set as layout: prose ran
+   the full 1040px of the shell at 16px, which is roughly 150 characters a
+   line against the 45-75 a reader can track, and a bare <p> inside a section
+   matched no rule at all, so it inherited line-height: normal. DESIGN.md puts
+   text in a 680px column; 68ch is that column expressed in the text's own
+   size, so it holds when the reader scales type up.
+
+   The measure goes on the prose, never on .connect-main, because the same
+   shell also carries card grids, tables and code blocks that are meant to be
+   wide. */
+.connect-doc :is(p, li) {
+  max-width: min(68ch, 100%);
+}
+
+.connect-doc :is(.connect-section, .connect-doc-intro) > p {
+  font: 400 var(--ac-fs-callout)/1.65 var(--ac-font-text);
+  letter-spacing: var(--ac-tr-callout);
+  color: var(--ac-label);
+  margin: 0 0 14px;
+}
+
+/* Leading tracks size inversely: the lede is larger than body, so it needs
+   less of it, and the section rule above must not flatten the difference. */
+.connect-doc .connect-lede {
+  max-width: min(64ch, 100%);
+  line-height: 1.5;
+}
 
 .connect-doc .connect-body + .connect-body { margin-top: 0; }
 
