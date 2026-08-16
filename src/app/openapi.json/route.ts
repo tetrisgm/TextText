@@ -472,7 +472,7 @@ function openApiDocument(origin: string) {
         Blog: {
           type: "object",
           additionalProperties: false,
-          required: ["handle", "username", "name", "homeLayout", "cardStyle"],
+          required: ["handle", "username", "name", "homeLayout"],
           properties: {
             handle: { type: "string", example: "alice" },
             username: {
@@ -480,17 +480,22 @@ function openApiDocument(origin: string) {
               example: "alice",
             },
             name: { type: "string", example: "Alice Writes" },
-            homeLayout: { $ref: "#/components/schemas/BlogHomeLayout" },
-            cardStyle: { $ref: "#/components/schemas/BlogCardStyle" },
+            homeLayout: { $ref: "#/components/schemas/BlogHomeView" },
           },
         },
+        // How Home lays its items out. Not the same vocabulary as a folder
+        // index: this is the one layout choice stored on the workspace, and
+        // the enum said single/timeline/grid/index for weeks after the field
+        // stopped meaning that.
+        BlogHomeView: {
+          type: "string",
+          enum: ["list", "column", "grid"],
+        },
+        // How a collection of items renders on a page. A folder's look
+        // declares one; the manifest reports it.
         BlogHomeLayout: {
           type: "string",
           enum: ["single", "timeline", "grid", "index"],
-        },
-        BlogCardStyle: {
-          type: "string",
-          enum: ["cover", "minimal"],
         },
         Folder: {
           type: "object",

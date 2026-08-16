@@ -54,7 +54,7 @@ import {
   postReadingTimeMin,
   youtubeThumb,
 } from "@/lib/content";
-import type { Blog, BlogCardStyle, BlogHomeLayout, Post } from "@/lib/content";
+import type { Blog, BlogHomeLayout, Post } from "@/lib/content";
 import { collectionPageLayout, plainTextExcerpt } from "@/lib/content";
 import { legacyTemplateId } from "@/lib/documents/legacy";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
@@ -84,7 +84,6 @@ interface Props {
   searchParams?: Promise<BlogHomeQuery>;
 }
 type BlogHomeQuery = {
-  card?: string | string[];
   date?: string | string[];
   folder?: string | string[];
   layout?: string | string[];
@@ -113,11 +112,6 @@ function queryHomeLayout(value: string | undefined): BlogHomeLayout | null {
   ) {
     return value;
   }
-  return null;
-}
-
-function queryCardStyle(value: string | undefined): BlogCardStyle | null {
-  if (value === "cover" || value === "minimal") return value;
   return null;
 }
 
@@ -456,7 +450,6 @@ export async function BlogHomeForHandle({
   if (redirectClaimed && blog.username) {
     const redirectParams = new URLSearchParams();
     for (const key of [
-      "card",
       "date",
       "folder",
       "layout",
@@ -511,16 +504,12 @@ export async function BlogHomeForHandle({
   const canManageSharing = access.isOwner || Boolean(workspaceAccess?.canManage);
   const hasBlogWorkspaceContent =
     canEdit || Boolean(workspaceAccess?.canEditContent);
-  // ?layout= and ?card= preview a look without saving it, for everyone; the
-  // editor's Layout popover is what persists a choice.
+  // ?layout= previews a page layout without saving it, for everyone. What
+  // persists is the look on the folder.
   const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
-  const previewCardStyle = queryCardStyle(queryValue(query.card));
   const layout =
     previewHomeLayout ??
     collectionPageLayout(await getFolderCollectionLayout(handle, "blog"));
-  const displayBlog: Blog = previewCardStyle
-    ? { ...blog, cardStyle: previewCardStyle }
-    : blog;
   // The blog home lists ONLY the Blog folder: notes and bookmarks live in
   // their own folder views and never mix into the cards, even for the owner.
   const [posts, folders, counts] = initialPool
@@ -629,13 +618,13 @@ export async function BlogHomeForHandle({
   const home = (
     <BlogHomeShell
       handle={handle}
-      blogName={displayBlog.name}
+      blogName={blog.name}
       initialName={editableBlogName}
-      tagline={displayBlog.tagline}
+      tagline={blog.tagline}
       canEdit={canEdit}
       publicPath={blogHomePath(blog)}
       initialNamingCeremony={showNamingCeremony}
-      style={blogStyle(displayBlog)}
+      style={blogStyle(blog)}
     >
       {posts.length === 0 && !canEdit && (
         <BlogEmptyState layout={layout} />
@@ -643,7 +632,7 @@ export async function BlogHomeForHandle({
 
       {singleReaderPost && singleReaderTemplate && layout === "single" && (
         <BlogSingleHome
-          blog={displayBlog}
+          blog={blog}
           post={singleReaderPost}
           template={singleReaderTemplate}
         />
@@ -651,7 +640,7 @@ export async function BlogHomeForHandle({
 
       {posts.length > 0 && layout === "timeline" && (
         <BlogTimeline
-          blog={displayBlog}
+          blog={blog}
           posts={posts}
         />
       )}
@@ -661,7 +650,7 @@ export async function BlogHomeForHandle({
           {posts.map((post) => (
             <PostCard
               key={post.slug}
-              blog={displayBlog}
+              blog={blog}
               handle={handle}
               post={post}
               owner={canEdit}
@@ -673,7 +662,7 @@ export async function BlogHomeForHandle({
       )}
 
       {posts.length > 0 && layout === "index" && (
-        <BlogIndex blog={displayBlog} posts={posts} />
+        <BlogIndex blog={blog} posts={posts} />
       )}
 
       {posts.length > 0 && !inTextTextApp && (

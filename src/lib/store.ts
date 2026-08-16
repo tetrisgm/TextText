@@ -32,7 +32,6 @@ import {
 } from "./content";
 import type {
   Blog,
-  BlogCardStyle,
   BlogHomeView,
   BookmarkCaptureAsset,
   BookmarkCapture,
@@ -190,7 +189,6 @@ type BlogRow = {
   tagline: string | null;
   accent: string | null;
   bioLine: string | null;
-  cardStyle: string | null;
   homeLayout: string | null;
   author: string | null;
 };
@@ -200,7 +198,6 @@ export type BlogPatch = {
   accent?: string | null;
   tagline?: string | null;
   bioLine?: string | null;
-  cardStyle?: BlogCardStyle;
   homeLayout?: BlogHomeView;
   username?: string;
 };
@@ -302,7 +299,6 @@ export type CreatedDocumentCapability = DocumentCapability & {
   token: string;
 };
 
-const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
 const DEFAULT_HOME_LAYOUT: BlogHomeView = "list";
 
 function toISODate(value: Date | string | null): string | undefined {
@@ -498,7 +494,6 @@ function mapBlog(row: BlogRow): Blog {
     tagline: row.tagline ?? undefined,
     accent: row.accent ?? undefined,
     bioLine: row.bioLine ?? undefined,
-    cardStyle: cleanStoredCardStyle(row.cardStyle),
     homeLayout: cleanStoredHomeLayout(row.homeLayout),
   };
 }
@@ -4775,7 +4770,6 @@ export async function getOwnedBlog(sub: string): Promise<Blog | null> {
       tagline: blogs.tagline,
       accent: blogs.accent,
       bioLine: blogs.bioLine,
-      cardStyle: blogs.cardStyle,
       homeLayout: blogs.homeLayout,
       author: users.name,
     })
@@ -5029,21 +5023,12 @@ function cleanBlogAccent(value: unknown): string | null {
   return accent;
 }
 
-function cleanStoredCardStyle(value: unknown): BlogCardStyle {
-  return value === "minimal" ? "minimal" : DEFAULT_CARD_STYLE;
-}
-
 function cleanStoredHomeLayout(value: unknown): BlogHomeView {
   if (value === "list" || value === "column" || value === "grid") return value;
   // Rows written before Home owned this field held a page layout. The
   // migration converts them; this keeps a straggler readable.
   if (value === "single") return "column";
   return DEFAULT_HOME_LAYOUT;
-}
-
-function cleanBlogCardStyle(value: unknown): BlogCardStyle {
-  if (value === "cover" || value === "minimal") return value;
-  throw new Error("Card style must be Cover or Minimal");
 }
 
 function cleanBlogHomeLayout(value: unknown): BlogHomeView {
@@ -5101,8 +5086,7 @@ export async function updateBlogByHandle(
         tagline: blogs.tagline,
         accent: blogs.accent,
         bioLine: blogs.bioLine,
-        cardStyle: blogs.cardStyle,
-        homeLayout: blogs.homeLayout,
+          homeLayout: blogs.homeLayout,
         author: users.name,
       })
       .from(blogs)
@@ -5127,9 +5111,6 @@ export async function updateBlogByHandle(
   }
   if (hasPatchKey(input, "accent")) {
     set.accent = cleanBlogAccent(input.accent);
-  }
-  if (hasPatchKey(input, "cardStyle")) {
-    set.cardStyle = cleanBlogCardStyle(input.cardStyle);
   }
   if (hasPatchKey(input, "homeLayout")) {
     set.homeLayout = cleanBlogHomeLayout(input.homeLayout);

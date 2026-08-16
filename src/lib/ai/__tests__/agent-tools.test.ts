@@ -18,7 +18,6 @@ function workspacePool(): WorkspacePoolPayload {
       handle: "local",
       name: "Local Workspace",
       author: "Writer",
-      cardStyle: "cover",
       homeLayout: "grid",
     },
     folders: [

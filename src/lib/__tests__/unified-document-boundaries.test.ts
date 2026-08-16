@@ -35,7 +35,6 @@ function pool(posts: WorkspacePoolPost[]): WorkspacePoolPayload {
       name: "Writer",
       author: "Writer",
       tagline: "",
-      cardStyle: "cover",
       homeLayout: "grid",
     },
     folders: [

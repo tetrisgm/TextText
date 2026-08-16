@@ -70,7 +70,6 @@ const blog: Blog = {
   handle: "sync-test",
   name: "Sync test",
   author: "Owner",
-  cardStyle: "cover",
   homeLayout: "grid",
 };
 const legacyPost: Post = {

@@ -204,14 +204,12 @@ describe("MCP workspace tool adapter", () => {
       handle: "local",
       name: "Local Workspace",
       author: "Writer",
-      cardStyle: "cover",
       homeLayout: "grid",
     });
     mocks.getBlog.mockResolvedValue({
       handle: "local",
       name: "Local Workspace",
       author: "Writer",
-      cardStyle: "cover",
       homeLayout: "grid",
     });
     mocks.resolveWorkspaceAccess.mockResolvedValue({

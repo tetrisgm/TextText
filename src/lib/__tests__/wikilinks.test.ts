@@ -32,7 +32,6 @@ const blog: Blog = {
   handle: "garden",
   name: "Garden",
   author: "Writer",
-  cardStyle: "cover",
   homeLayout: "column",
 };
 

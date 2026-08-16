@@ -92,8 +92,7 @@ export function PostCard({
   const desc = postDesc(post, expanded);
   const coverSource = resolveCoverSource(post);
   const cover = coverSource.src;
-  const isMinimal = blog.cardStyle === "minimal";
-  const isVideoCover = !isMinimal && isVideoFile(cover);
+  const isVideoCover = isVideoFile(cover);
   const isCaptureCover = coverSource.kind === "bookmark-screenshot";
   const isFaviconCover = coverSource.kind === "bookmark-favicon";
   const accent = postAccent(blog, post);
@@ -239,7 +238,6 @@ export function PostCard({
   const className = [
     "tvcard",
     `tvcard--${post.type}`,
-    `tvcard--style-${blog.cardStyle}`,
     expanded ? "tvcard--expanded" : "",
     cover ? "" : "tvcard--no-cover",
     hovered ? "is-hover" : "",
@@ -249,9 +247,7 @@ export function PostCard({
 
   return (
     <div
-      className={`tvcard-shell${
-        isMinimal ? " tvcard-shell--minimal" : ""
-      }${expanded ? " tvcard-shell--expanded" : ""}`}
+      className={`tvcard-shell${expanded ? " tvcard-shell--expanded" : ""}`}
     >
       <WorkspaceItemStar handle={handle} owner={owner} post={post} />
       <Link
@@ -267,7 +263,7 @@ export function PostCard({
       >
         <span className="tvcard-inner">
           <span className="tvcard-tilt">
-            {!isMinimal && cover && (
+            {cover && (
               <span
                 className={`tvcard-media${
                   isCaptureCover ? " is-capture-cover" : ""

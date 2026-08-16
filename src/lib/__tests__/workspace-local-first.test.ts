@@ -24,7 +24,6 @@ function pool(
       name: "Local first",
       author: "Local writer",
       tagline: "",
-      cardStyle: "cover",
       homeLayout: "grid",
     },
     folders: [],

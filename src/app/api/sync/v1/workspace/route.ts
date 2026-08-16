@@ -20,7 +20,6 @@ export async function GET(request: Request) {
       username: blog.username ?? null,
       name: blog.name,
       homeLayout: blog.homeLayout,
-      cardStyle: blog.cardStyle,
     },
     folders: folders.map((folder) => ({
       id: folder.id,
@@ -38,7 +37,7 @@ export async function GET(request: Request) {
 // everywhere the workspace is shown. The handle/URL is unchanged.
 //
 //   PATCH /api/sync/v1/workspace  {"name": "New name"}
-//   -> 200 {blog: {handle, username, name, homeLayout, cardStyle}}
+//   -> 200 {blog: {handle, username, name, homeLayout}}
 export async function PATCH(request: Request) {
   const workspace = await resolveSyncWorkspace(request);
   if (workspace instanceof Response) return workspace;
@@ -74,7 +73,6 @@ export async function PATCH(request: Request) {
         username: updated.username ?? null,
         name: updated.name,
         homeLayout: updated.homeLayout,
-        cardStyle: updated.cardStyle,
       },
     });
   } catch (error) {

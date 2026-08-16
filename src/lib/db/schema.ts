@@ -210,7 +210,6 @@ export const blogs = pgTable(
     accent: text("accent"),
     /** one-line standing bio for the reader end card */
     bioLine: text("bio_line"),
-    cardStyle: text("card_style").notNull().default("cover"),
     /**
      * How Home lays its items out: list | column | grid. A new workspace opens
      * as a list, because a list of documents reads as a list and cards are a

@@ -45,7 +45,6 @@ function pool(): WorkspacePoolPayload {
       name: "Local",
       author: "Writer",
       tagline: "",
-      cardStyle: "cover",
       homeLayout: "grid",
     },
     folders: [

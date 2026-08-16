@@ -38,7 +38,6 @@ const blog: Blog = {
   handle: "demo",
   name: "Demo",
   author: "Demo Author",
-  cardStyle: "cover",
   homeLayout: "list",
 };
 const legacyBasePost: Post = {

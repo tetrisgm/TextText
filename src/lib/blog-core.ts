@@ -13,7 +13,6 @@ export type BlogCore = {
   tagline: string | null;
   accent: string | null;
   bioLine: string | null;
-  cardStyle: string | null;
   homeLayout: string | null;
   author: string | null;
   ownerPlan: string | null;
@@ -29,7 +28,6 @@ const blogCoreSelection = {
   tagline: blogs.tagline,
   accent: blogs.accent,
   bioLine: blogs.bioLine,
-  cardStyle: blogs.cardStyle,
   homeLayout: blogs.homeLayout,
   author: users.name,
   ownerPlan: users.plan,

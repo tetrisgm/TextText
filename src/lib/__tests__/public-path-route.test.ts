@@ -17,7 +17,6 @@ const blog: Blog = {
   handle: "workspace",
   name: "Workspace",
   author: "Writer",
-  cardStyle: "cover",
   homeLayout: "grid",
 };
 const post: Post = {

@@ -19,7 +19,6 @@ const blog: Blog = {
   handle: "test",
   name: "Test",
   author: "Writer",
-  cardStyle: "minimal",
   homeLayout: "column",
 };
 

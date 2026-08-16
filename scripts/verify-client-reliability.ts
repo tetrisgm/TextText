@@ -23,7 +23,6 @@ function emptyPool(): WorkspacePoolPayload {
       name: "Reliability",
       author: "TextText",
       tagline: "",
-      cardStyle: "cover",
       homeLayout: "grid",
     },
     folders: [

@@ -61,7 +61,6 @@ beforeEach(() => {
       handle: "demo",
       name: "Demo",
       author: "Demo",
-      cardStyle: "cover",
       homeLayout: "grid",
     },
     userId: "user-1",

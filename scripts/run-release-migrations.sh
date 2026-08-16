@@ -41,6 +41,7 @@ migrations=(
   scripts/migrate-add-template-retirement.mjs
   scripts/migrate-drop-oauth.mjs
   scripts/migrate-home-layout-default.mjs
+  scripts/migrate-drop-card-style.mjs
 )
 
 missing=()

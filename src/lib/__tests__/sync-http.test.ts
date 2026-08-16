@@ -34,7 +34,6 @@ const blog: Blog = {
   handle: "demo",
   name: "The Demo Broadsheet",
   author: "Demo Author",
-  cardStyle: "cover",
   homeLayout: "list",
 };
 

@@ -19,7 +19,6 @@ const blog: Blog = {
   name: "The Demo Broadsheet",
   author: "Demo Author",
   accent: "#065ec6",
-  cardStyle: "cover",
   homeLayout: "list",
 };
 

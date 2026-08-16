@@ -142,64 +142,21 @@ polish ledger.
   `npm run eval:folder-look`.
 - Known rough edge: a look saved during a session shows up in the picker on
   the next load, because the gallery reads the pool fetched at page load.
-- The two layout systems, resolved as a finding, not yet as code. The owner
-  says the `homeLayout`/`cardStyle` picker was INTENDED for the Home (root)
-  navigation. It does not do that today: it drives `BlogHomeShell`, which is
-  the Blog folder's page in both `PublicBlogHome` and the owner's view.
-  `WorkspaceRootLanding` (the actual Home) reads neither. So the picker and
-  the template engine's `collection.layout` both style the same surface,
-  which is the duplication, and the fix is to move the picker to Home rather
-  than to merge the two. Not started: it takes a control off the Blog page
-  and puts one on Home, which is a visible product change.
-
-## OAuth for agents is gone (owner, 2026-08-15)
-
-- Removed: `/oauth/**`, both `.well-known` OAuth documents, `lib/oauth.ts`,
-  `lib/oauth-connections.ts`, the connected-apps panel, five test files, the
-  grant revocation in account deletion, and three tables (migration
-  `scripts/migrate-drop-oauth.mjs`). ~2,400 lines.
-- Nothing about agent auth changed: OAuth only ever MINTED the token, and
-  `api-tokens.ts` resolves `wsk_` bearers without importing any of it.
-  Verified after removal that an agent with a token reads its workspace.
-- The MCP 401 and 403 used to advertise `resource_metadata` pointing at a
-  document that would now 404, which sends a conforming client down a dead
-  chain. They point at `/docs/mcp` with `resource_documentation` instead.
-- `/.well-known/mcp.json` STAYS. Zero-config discovery does not depend on
-  OAuth and is how a client finds the endpoint at all.
-- Known limit, documented on `/docs/mcp`: ChatGPT's connector UI expects an
-  OAuth server for some connector kinds. The page says so and names the
-  clients that take a pasted token instead.
-- Sign in with Apple/Google (people signing in to TextText) is untouched.
-  That is Pillar 5 and was never what the ruling was about.
-
-## One layout answer per surface (owner, 2026-08-15)
-
-- The ruling: move the picker to Home, let folder pages be governed by their
-  look. Three systems became two.
-- A folder's look decides how that folder's index renders, everywhere:
-  `collectionPageLayout` in `lib/content.ts` maps a look's collection layout
-  to the page renderers, and the Blog page, category pages and the folder
-  manifest all read it. A list renders as an index; board, calendar and
-  heatmap fall to cards.
-- Home's own control decides Home and saves on the workspace
-  (`blogs.home_layout`, now `list | column | grid`), not in localStorage, so
-  the choice travels between browsers.
-- `scripts/migrate-blog-layout-to-home.ts` preserves appearance: a workspace
-  whose Blog page was Timeline, Index or Single gets a look on its Blog folder
-  that renders the same way, written from the look the folder already wore.
-  Idempotent; proved against the local database.
-- Every folder ships with `texttext.article` as its look, so there is no
-  "no look" fallback in practice. That is why the migration is the mechanism
-  and not a default.
-- Gap, deliberate: the look catalogue was cut to nine at the owner's request
-  and none of the nine declares `timeline` or `single`, so those two layouts
-  are no longer reachable for a folder index. `changelog` (timeline) and
-  `now` (single) still exist and still resolve for documents pinned to them.
-  Restoring reach is a catalogue decision, not a code one.
-- `blog.cardStyle` kept its meaning and its sync/openapi field but has no UI
-  now that the Blog popover is gone. A Covers toggle was built on Home and
-  then removed: `WorkspacePostOption` renders no covers, so the control would
-  have claimed to do something it does not do.
+- The look catalogue was cut to nine at the owner's request and none of the
+  nine declares `timeline` or `single`, so those two layouts are no longer
+  reachable for a folder index. `changelog` (timeline) and `now` (single)
+  still exist and still resolve for documents pinned to them. Restoring reach
+  is a catalogue decision, not a code one.
+- `blog.cardStyle` is deleted (owner ruling 2026-08-16), column and all:
+  `scripts/migrate-drop-card-style.mjs`. It chose whether published cards
+  showed their cover, it was set from the same Blog popover the layout picker
+  lived in, and it lost its only UI when that popover went. Card style is a
+  property of how a folder index renders, and looks govern those now, so a
+  second stored answer on the workspace row was the shape the ruling removed.
+  A Covers toggle was built on Home first and deleted before it shipped:
+  `WorkspacePostOption` renders no covers, so it would have been a control on
+  Home that silently changed the published Blog page. Cards always show the
+  cover they have.
 - `npm run eval:home-layout` is the live proof, both themes. It needs
   `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000` on the dev server, because the
   published Blog page is a workspace subdomain.

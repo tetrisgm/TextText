@@ -16,7 +16,6 @@ const blog: Blog = {
   username: "writer",
   name: "Publication",
   author: "Writer",
-  cardStyle: "cover",
   homeLayout: "grid",
 };
 const post: Post = {

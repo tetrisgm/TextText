@@ -18,7 +18,6 @@ export interface Blog {
   accent?: string;
   /** one-line standing profile bio */
   bioLine?: string;
-  cardStyle: BlogCardStyle;
   /**
    * How Home, the workspace landing, lays its items out. This is the one
    * stored layout choice in the workspace: every folder page, Blog included,
@@ -27,7 +26,6 @@ export interface Blog {
   homeLayout: BlogHomeView;
 }
 
-export type BlogCardStyle = "cover" | "minimal";
 export type BlogHomeView = "list" | "column" | "grid";
 /**
  * Markdown reduced to the words, for a preview that is not a rendered page.

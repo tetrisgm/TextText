@@ -20,7 +20,7 @@ import {
 } from "@/app/editor/actions";
 import { useEscapeLayer } from "@/components/keyboard/CommandLayer";
 import { BlogHomeShortcuts } from "@/components/PostShortcuts";
-import type { BlogCardStyle, BlogHomeLayout, PostType } from "@/lib/content";
+import type { PostType } from "@/lib/content";
 
 type ActionError = string | null;
 type NamingFlightStyle = Pick<
@@ -43,16 +43,6 @@ const POST_TYPE_OPTIONS: Array<{ type: PostType; label: string }> = [
   { type: "article", label: "Article" },
   { type: "project", label: "Media post" },
   { type: "talk", label: "Video post" },
-];
-const CARD_STYLE_OPTIONS: Array<{ value: BlogCardStyle; label: string }> = [
-  { value: "cover", label: "Cover" },
-  { value: "minimal", label: "Minimal" },
-];
-const HOME_LAYOUT_OPTIONS: Array<{ value: BlogHomeLayout; label: string }> = [
-  { value: "single", label: "Single" },
-  { value: "timeline", label: "Timeline" },
-  { value: "grid", label: "Grid" },
-  { value: "index", label: "Index" },
 ];
 const NAME_FLIGHT_MS = 520;
 
