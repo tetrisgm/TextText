@@ -45,7 +45,7 @@ Base URL: ${origin}/@{username}
 TextText for macOS ships a "texttext" command inside the app bundle. It edits
 documents as files, owns the document format so an edit cannot corrupt a
 package, writes atomically, and shows you in the open document as a named
-collaborator while you work. It needs no token, no port, and no OAuth, because
+collaborator while you work. It needs no token and no port, because
 it runs as the user.
 
 Check for it with "command -v texttext", falling back to
@@ -89,23 +89,12 @@ Every request MUST carry matching headers, or it is rejected with -32020:
 Results carry resultType "complete"; list and read results also carry ttlMs and
 cacheScope so you can cache instead of poll.
 
-The endpoint advertises OAuth discovery from its unauthenticated 401 response.
-The click-to-approve flow uses authorization code with PKCE S256. Clients
-should request the least privilege they need:
+Authenticate with a workspace token created at ${origin}/connect. Send it as
+"Authorization: Bearer wsk_...". A token stays valid until it is revoked there.
+Request the least privilege you need:
 
 - read: ${readTools.length} workspace inspection tools
 - sync: all ${WORKSPACE_TOOL_NAMES.length} tools, including access management and mutations
-
-A client requesting both advertised scopes receives effective sync access.
-
-OAuth access tokens begin with wsk_ and expire after 3,600 seconds. Each token
-exchange also returns a wrt_ refresh token. Refresh tokens rotate on every use;
-reusing a consumed refresh token revokes the complete token family. Refresh
-access has a 180-day absolute lifetime and a 30-day inactivity lifetime.
-
-Clients without OAuth can create a manual sync-scoped wsk_ bearer token at
-${origin}/connect. Manual tokens remain valid until revoked. Send access tokens
-as "Authorization: Bearer wsk_...".
 
 The shared ${WORKSPACE_TOOL_NAMES.length} tools are:
 
@@ -166,7 +155,7 @@ ${WORKSPACE_TOOL_NAMES.length} workspace commands directly through the signed-in
 page and does not use TextText's MCP endpoint. ChatGPT, Claude, Cursor, and
 other hosts can connect as external MCP clients.
 
-Human setup: ${origin}/docs/ai. Approval flow: ${origin}/api/mcp advertises OAuth from its 401.
+Human setup: ${origin}/docs/mcp, which lists every tool and how to connect each client.
 `;
 
   return new Response(text, {

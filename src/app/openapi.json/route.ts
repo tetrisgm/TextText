@@ -28,22 +28,18 @@ function openApiDocument(origin: string) {
     info: {
       title: "TextText AI connector API",
       version: "1.0.0",
-      summary: "OAuth setup and markdown content actions for TextText.",
+      summary: "Markdown content actions for TextText.",
       description:
         "Import this document into ChatGPT Actions or another AI connector. " +
-        "These actions use the sync HTTP API and require the sync scope. " +
-        `TextText also offers a read-only OAuth scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
+        "These actions use the sync HTTP API and require a workspace token " +
+        `with the sync scope, created at ${origin}/connect. TextText also ` +
+        `offers a read-only scope for the ${READ_TOOL_COUNT} read MCP tools, ` +
         "but this document is a smaller action surface, not the complete " +
-        `${WORKSPACE_TOOL_COUNT}-tool MCP contract. OAuth uses authorization code with PKCE S256, ` +
-        "one-hour access tokens, and rotating refresh tokens.",
+        `${WORKSPACE_TOOL_COUNT}-tool MCP contract.`,
     },
     servers: [{ url: origin }],
-    security: [{ writeOAuth: ["sync"] }],
+    security: [{ workspaceToken: [] }],
     tags: [
-      {
-        name: "Connect",
-        description: "OAuth discovery and dynamic client registration.",
-      },
       {
         name: "Workspace",
         description: "Discover the authenticated workspace and folders.",
@@ -54,63 +50,6 @@ function openApiDocument(origin: string) {
       },
     ],
     paths: {
-      "/oauth/register": {
-        post: {
-          tags: ["Connect"],
-          operationId: "registerOAuthClient",
-          summary: "Register an OAuth client",
-          description:
-            "Registers a public OAuth client and stores its exact redirect_uri " +
-            "allowlist. Redirect URIs must be HTTPS absolute URLs with no " +
-            "fragment or userinfo. The client uses PKCE S256 and no client " +
-            "secret. Request the least privilege needed, read or sync. A " +
-            "request for both advertised scopes receives sync. Include the " +
-            "refresh_token grant type to advertise refresh support.",
-          security: [],
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/OAuthClientRegistrationRequest",
-                },
-                examples: {
-                  publicClient: {
-                    summary: "Public MCP client registration",
-                    value: {
-                      client_name: "Example MCP Client",
-                      redirect_uris: [
-                        "https://client.example.com/oauth/callback",
-                      ],
-                      grant_types: ["authorization_code", "refresh_token"],
-                      response_types: ["code"],
-                      token_endpoint_auth_method: "none",
-                      scope: "sync",
-                    },
-                  },
-                },
-              },
-            },
-          },
-          responses: {
-            "201": {
-              description: "Client registered.",
-              content: {
-                "application/json": {
-                  schema: {
-                    $ref: "#/components/schemas/OAuthClientRegistrationResponse",
-                  },
-                },
-              },
-            },
-            "400": { $ref: "#/components/responses/BadRegistration" },
-            "413": { $ref: "#/components/responses/BadRegistration" },
-            "429": { $ref: "#/components/responses/RateLimited" },
-            "503": { $ref: "#/components/responses/TemporarilyUnavailable" },
-            default: { $ref: "#/components/responses/UnexpectedError" },
-          },
-        },
-      },
       "/api/sync/v1/workspace": {
         get: {
           tags: ["Workspace"],
@@ -341,28 +280,13 @@ function openApiDocument(origin: string) {
     },
     components: {
       securitySchemes: {
-        writeOAuth: {
-          type: "oauth2",
+        workspaceToken: {
+          type: "http",
+          scheme: "bearer",
           description:
-            "OAuth authorization code with PKCE S256. Register first at " +
-            `${origin}/oauth/register. Access tokens begin with wsk_, expire ` +
-            "after 3,600 seconds, and are renewed with rotating wrt_ refresh " +
-            "tokens. Reusing a consumed refresh token revokes its complete " +
-            "token family.",
-          "x-registrationEndpoint": `${origin}/oauth/register`,
-          flows: {
-            authorizationCode: {
-              authorizationUrl: `${origin}/oauth/authorize`,
-              tokenUrl: `${origin}/oauth/token`,
-              refreshUrl: `${origin}/oauth/token`,
-              scopes: {
-                read:
-                  `Call the ${READ_TOOL_COUNT} read-only MCP workspace tools. The sync HTTP ` +
-                  "actions in this document do not accept this scope.",
-                sync: "Read and write the authenticated owner's workspace.",
-              },
-            },
-          },
+            "A workspace token created at " +
+            `${origin}/connect. Send it as Authorization: Bearer wsk_... ` +
+            "It stays valid until revoked there.",
         },
       },
       parameters: {
@@ -420,10 +344,10 @@ function openApiDocument(origin: string) {
       },
       responses: {
         BadRegistration: {
-          description: "The OAuth client metadata is invalid.",
+          description: "The request was malformed.",
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/OAuthErrorResponse" },
+              schema: { $ref: "#/components/schemas/ErrorResponse" },
             },
           },
         },
@@ -436,7 +360,7 @@ function openApiDocument(origin: string) {
           },
         },
         Unauthorized: {
-          description: "A valid OAuth access token is required.",
+          description: "A valid workspace token is required.",
           headers: {
             "WWW-Authenticate": {
               $ref: "#/components/headers/WWWAuthenticate",
@@ -501,7 +425,7 @@ function openApiDocument(origin: string) {
           description: "Too many registration requests.",
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/OAuthErrorResponse" },
+              schema: { $ref: "#/components/schemas/ErrorResponse" },
             },
           },
         },
@@ -509,7 +433,7 @@ function openApiDocument(origin: string) {
           description: "Registration is temporarily unavailable.",
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/OAuthErrorResponse" },
+              schema: { $ref: "#/components/schemas/ErrorResponse" },
             },
           },
         },
@@ -523,112 +447,13 @@ function openApiDocument(origin: string) {
         },
       },
       schemas: {
-        OAuthErrorResponse: {
-          type: "object",
-          additionalProperties: false,
-          required: ["error", "error_description"],
-          properties: {
-            error: { type: "string" },
-            error_description: { type: "string" },
-          },
-        },
         ErrorResponse: {
           type: "object",
           additionalProperties: false,
           required: ["error"],
           properties: {
             error: { type: "string" },
-          },
-        },
-        OAuthClientRegistrationRequest: {
-          type: "object",
-          additionalProperties: true,
-          required: ["redirect_uris"],
-          properties: {
-            client_name: {
-              type: "string",
-              maxLength: 80,
-              description: "Display name shown during authorization.",
-              example: "ChatGPT",
-            },
-            redirect_uris: {
-              type: "array",
-              minItems: 1,
-              maxItems: 20,
-              items: { type: "string", format: "uri" },
-              description:
-                "Exact redirect URI allowlist. Each URI must be HTTPS, " +
-                "absolute, and must not contain a fragment or userinfo.",
-            },
-            grant_types: {
-              type: "array",
-              uniqueItems: true,
-              contains: { const: "authorization_code" },
-              items: {
-                type: "string",
-                enum: ["authorization_code", "refresh_token"],
-              },
-              default: ["authorization_code"],
-              description:
-                "Must include authorization_code and may include " +
-                "refresh_token.",
-            },
-            response_types: {
-              type: "array",
-              items: { type: "string", enum: ["code"] },
-              default: ["code"],
-            },
-            token_endpoint_auth_method: {
-              type: "string",
-              enum: ["none"],
-              default: "none",
-            },
-            scope: {
-              type: "string",
-              pattern: "^(?:(?:read|sync)(?:\\s+(?:read|sync))*)$",
-              default: "sync",
-              description:
-                "Request the least privilege needed. read is MCP read-only " +
-                "access; sync grants read/write access and is required by " +
-                "every action in this document. A request containing both " +
-                "advertised scopes is normalized to sync.",
-            },
-          },
-        },
-        OAuthClientRegistrationResponse: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "client_id",
-            "client_id_issued_at",
-            "client_name",
-            "redirect_uris",
-            "grant_types",
-            "response_types",
-            "token_endpoint_auth_method",
-            "scope",
-          ],
-          properties: {
-            client_id: { type: "string" },
-            client_id_issued_at: { type: "integer" },
-            client_name: { type: "string" },
-            redirect_uris: {
-              type: "array",
-              items: { type: "string", format: "uri" },
-            },
-            grant_types: {
-              type: "array",
-              items: {
-                type: "string",
-                enum: ["authorization_code", "refresh_token"],
-              },
-            },
-            response_types: {
-              type: "array",
-              items: { type: "string", enum: ["code"] },
-            },
-            token_endpoint_auth_method: { type: "string", enum: ["none"] },
-            scope: { type: "string", enum: ["read", "sync"] },
+            error_description: { type: "string" },
           },
         },
         WorkspaceResponse: {

@@ -185,7 +185,7 @@ const CLIENTS: Array<{
     steps: [
       "Create a token at Connect and copy it, along with the address below.",
       "In ChatGPT, open Settings, then the connectors area, and add a custom connector using that address with the token as its bearer credential.",
-      "ChatGPT's connector setup expects an OAuth server for some connector kinds. TextText does not run one, so use the token field; if your ChatGPT build offers no way to supply a token, use Claude, Codex, Cursor or Copilot instead.",
+      "Some ChatGPT connector kinds expect an authorization server rather than a pasted token. If yours offers no token field, use Claude, Codex, Cursor or Copilot instead.",
     ],
     code: { label: "Server address", value: MCP_URL },
   },
@@ -225,9 +225,8 @@ export default function McpReferencePage() {
           </pre>
           <p className="connect-body">
             Create a token at <Link href="/connect">Connect</Link>, and revoke it
-            there. TextText does not run an OAuth authorization server: every
-            client authenticates with a bearer token, which is one thing to
-            understand and one thing to revoke.
+            there. Every client authenticates the same way: one thing to
+            understand, one thing to take away.
           </p>
         </section>
 

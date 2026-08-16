@@ -282,9 +282,7 @@ export default function AiDocsPage() {
               {TEXTTEXT_HOSTED_MCP_URL}
             </code>{" "}
             with a workspace token. Create and revoke one at{" "}
-            <Link href="/connect">Connect</Link>. TextText does not run an OAuth
-            authorization server: a token is one thing to understand and one
-            thing to take away.
+            <Link href="/connect">Connect</Link>.
           </p>
           <div className="connect-code-wrap">
             <pre className="connect-code">{tokenConfig}</pre>

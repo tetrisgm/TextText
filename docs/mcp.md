@@ -34,8 +34,9 @@ answered with `400` and `-32022`, listing what it does support.
 - `GET` and `DELETE` answer `405`. Those were the session and standalone-stream
   verbs and this revision removed both.
 - `/.well-known/mcp.json` provides zero-configuration server discovery.
-- An unauthenticated request returns a `WWW-Authenticate` challenge pointing
-  to `/.well-known/oauth-protected-resource`.
+- An unauthenticated request returns a `WWW-Authenticate` challenge whose
+  `resource_documentation` points at `/docs/mcp`, which is where a person
+  creates the token it is asking for.
 
 ### Every request carries its own context
 
