@@ -243,15 +243,40 @@ Two traps worth keeping:
   It asserts nothing on purpose. It is what found the landing page.
 - Installed-app auth verification (sign out, auth sheet round trip) still
   pending.
-- Mac round trip 2026-08-15: built, installed to /Applications, launched,
-  signed in, and observed live against the dev server (`GET /@shoku`,
-  `/api/auth/session`, `getMcpConnectionsAction`, `POST /api/app/token`). Two
-  things could not be checked without the owner present: a screenshot of the
-  app window (Screen Recording is not granted to the agent shell, so
-  `screencapture -l` returns chrome with a black body and `-R` refuses), and
-  the File Provider mount (all three extensions register from the fresh
-  build, but no domain is added, so `~/Library/CloudStorage/TextText-*` is
-  absent and the bundled `texttext` CLI reports no workspace).
+- Mac round trip 2026-08-16. The app builds, installs, launches, renders
+  correctly in BOTH themes, is signed in, opens Home on List (the new
+  default), and talks to the dev server. Screenshots taken unattended.
+- Screen Recording was NEVER the blocker; the 2026-08-15 note claiming it was
+  is wrong. `screencapture -l <window>` returns a window's own backing store,
+  and a WKWebView renders its content out of process, so the web view is not
+  in it: that is the black rectangle, on a machine with the permission
+  granted. `-R` failed separately because the rect was taken from
+  CGWindowList without checking it fits the display. Capture the whole screen
+  with `screencapture -x` and read that. The display here is 1800x1169 points
+  at 2x, so a full capture is 3600x2338.
+- Open: the File Provider domain is still never added, so
+  `~/Library/CloudStorage/TextText-*` is absent and the bundled `texttext`
+  CLI reports no workspace. Traced this far:
+  - The handoff is not a file. It is a Keychain item, service
+    `app.texttext.fileprovider`, access group `52WM463HR2.app.texttext.fp`
+    (`FileProviderHandoffStore`). Info.plist and the signature both carry that
+    group and the app is properly Developer ID signed for team 52WM463HR2, so
+    the entitlement is legitimate.
+  - `FileProviderHandoffStore.save` logs to subsystem `app.texttext` and logs
+    at `.error` when it fails. Sixty minutes of the app running produced ZERO
+    lines from that subsystem, so `save()` was never called: the failure is
+    upstream, in `syncFileProviderDomain` returning at one of its two guards.
+  - Native state lives in `~/Library/Application Support/TextText/`, not in
+    either group container (both are empty, which is expected: the group is
+    the Store edition's path). `account.json` and `credentials.json` are
+    present and well formed, but dated Aug 11 and naming workspace
+    `leshokunin` / "Ramine's blog", while the window is signed in as "test's
+    blog". The native store is stale and disagrees with the web session.
+  - So the app most likely never completed a NATIVE sign-in this session: the
+    web view is authenticated, the native side is not, and the domain sync is
+    never reached with fresh state. The next test is the sign-out and auth
+    sheet round trip, which would refresh both. It clears local credentials,
+    so it needs the owner's say-so rather than an agent doing it unasked.
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop
