@@ -204,6 +204,55 @@ polish ledger.
   `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000` on the dev server, because the
   published Blog page is a workspace subdomain.
 
+## Open bug: the landing page paints nothing above the fold (2026-08-16)
+
+Found by `npm run sweep`. A signed-out visitor at `/` sees white. Not a
+screenshot artifact and not dev-only.
+
+What is established:
+
+- Reproduces in headless Playwright, in the in-app browser, and in a real
+  visible Chromium window, and in a production build (`next build` + `next
+  start` on 3100), at 1280x800 and 1440x940, light and dark.
+- The DOM is correct. `h1` is "Everything you write, in one place.", rect
+  (43, 195, 534, 196), opacity 1, visibility visible, no transform, no filter,
+  and every ancestor up to `html` is the same. `elementsFromPoint` inside the
+  h1 returns the h1. `document.fonts.status` is "loaded".
+- Nothing in `.texttext-landing` paints, not even a `background: yellow` set
+  on the h1 by hand, and not even `document.body.style.background = magenta`.
+  A `position: fixed` div appended at runtime DOES paint on top. So the
+  compositor is alive; this subtree is not reaching it.
+- A full-page screenshot renders the LOWER sections correctly and leaves the
+  hero blank, with the next heading clipped. A forced whole-document raster
+  therefore sees most of the page but not the hero.
+- With every stylesheet disabled at once (`sheet.disabled = true` on all four)
+  the page paints as unstyled HTML. Disabling any ONE of the four, including
+  the whole app chunk, does not bring it back, which is itself a clue: the
+  broken state survives removing the rules that could have caused it, so
+  whatever it is is latched at first paint.
+
+Ruled out, each tested directly and reverted:
+
+- `overflow-x: clip` on `.texttext-landing`, `min-height: 100dvh` on it, and
+  `min-height: calc(100dvh - 132px)` on the hero.
+- The `body:has(.texttext-landing)` rules (neutralised at the source and
+  reloaded; still blank).
+- Fonts: the h1 resolves to the system stack, and the font set reports loaded.
+- View transitions: the app declares none, and next.config.ts enables none.
+- Console and page errors: none, on load or after.
+
+Do not trust `IntersectionObserver({trackVisibility: true})` as the oracle
+here. It reports isVisible false for the h1 even in states where the page
+paints, because it refuses to answer when effects are present, and a bisect
+built on it produced a confident and wrong answer (`.tt-editor-more-form
+button:disabled`). Pixels are the only oracle that held up: screenshot and
+look.
+
+Next thing to try, untested: bisect `src/app/page.tsx` itself rather than the
+CSS, since the CSS bisect kept contradicting itself. Delete the hero section,
+then halves of the remaining sections, reloading between each, and find the
+markup that latches it.
+
 ## Traps found while building these
 
 - `position: fixed` does not escape an ancestor with `backdrop-filter`. The
@@ -223,6 +272,8 @@ polish ledger.
 
 ## Open, in priority order
 
+- The landing page paints nothing above the fold. See the open-bug section
+  above; it is the front door and it ships.
 - Finish the scorecard above; each unchecked line is one loop iteration.
 - Fixed observation hazards: verify `window.innerWidth` is nonzero before
   trusting any browser measurement (a restarted pane can be 0x0 and serves
@@ -234,8 +285,12 @@ polish ledger.
   item-named starters, quick actions, chat round trip with provider
   attribution, and the Rewrite proposal cycle (preview, apply, undo) all
   observed live. Only real-provider quirks remain untested by the mock.
-- Feature docs (`/docs/features`) grow only with exercised behavior; the
-  agent capabilities above belong there once the scorecard closes.
+- Feature docs (`/docs/features`) grow only with exercised behavior, and
+  `npm run eval:features` now enforces that: it drives the claims the page
+  makes and names the ones it cannot drive. It caught /connect still promising
+  OAuth after the removal. Add a check when you add a claim.
+- `npm run sweep` photographs every surface, both themes, for a design pass.
+  It asserts nothing on purpose. It is what found the landing page.
 - Installed-app auth verification (sign out, auth sheet round trip) still
   pending.
 - Mac round trip 2026-08-15: built, installed to /Applications, launched,
