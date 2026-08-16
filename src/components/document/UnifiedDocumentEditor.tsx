@@ -83,6 +83,12 @@ export type UnifiedDocumentEditorProps = {
   onDone: () => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
   onChooseTemplate?: () => void;
+  /**
+   * Save this document's look under a name. Passed in rather than imported:
+   * this component is a leaf, and importing a server action here drags the
+   * auth graph into every unit test that renders it.
+   */
+  onSaveAsLook?: (name: string) => Promise<{ ok: boolean; message: string }>;
   leadingControls?: ReactNode;
 };
 
@@ -390,6 +396,7 @@ export function UnifiedDocumentEditor({
   onDone,
   onDelete,
   onChooseTemplate,
+  onSaveAsLook,
   leadingControls,
   activeAgent,
   onOpenAgent,
@@ -429,6 +436,10 @@ export function UnifiedDocumentEditor({
   const [saveState, setSaveState] = useState<SaveState>("local");
   const [error, setError] = useState<string | null>(null);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
+  // "Save as look" is how a look gets made now. It takes what this document
+  // already renders as and keeps it under a name; it never edits the document.
+  const [savingLook, setSavingLook] = useState(false);
+  const [lookNotice, setLookNotice] = useState<string | null>(null);
   const [showSubtitle, setShowSubtitle] = useState(false);
   const canAddSubtitle =
     !showSubtitle && !document.content.subtitle?.trim();
@@ -916,12 +927,38 @@ export function UnifiedDocumentEditor({
               <span className="tt-look-name">{activeTemplate.name}</span>
             </button>
           )}
-          {(canAddSubtitle || onDelete) && (
+          {lookNotice && (
+            <span className="tt-look-notice" role="status">
+              {lookNotice}
+            </span>
+          )}
+          {(
             <details className="tt-editor-more">
             <summary aria-label="More actions" title="More actions">
               <span aria-hidden="true">•••</span>
             </summary>
             <div className="tt-editor-more-menu">
+              {onSaveAsLook && (
+                <button
+                  type="button"
+                  disabled={savingLook}
+                  onClick={() => {
+                    const name = window.prompt(
+                      "Save this document's look as:",
+                      `${activeTemplate.name} copy`,
+                    );
+                    if (!name?.trim()) return;
+                    setSavingLook(true);
+                    setLookNotice(null);
+                    void onSaveAsLook(name)
+                      .then((result) => setLookNotice(result.message))
+                      .catch(() => setLookNotice("Could not save that look."))
+                      .finally(() => setSavingLook(false));
+                  }}
+                >
+                  {savingLook ? "Saving look" : "Save as look"}
+                </button>
+              )}
               {canAddSubtitle && (
                 <button
                   type="button"

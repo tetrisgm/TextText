@@ -206,13 +206,6 @@ async function main() {
         ["--import", "tsx", "scripts/verify-workflow-live.ts"],
       );
     }
-    if (shouldRun("generation")) {
-      durations.generationMilliseconds = await runBounded(
-        "agent-composed template generation",
-        process.execPath,
-        ["--import", "tsx", "scripts/verify-generation-live.ts"],
-      );
-    }
     if (shouldRun("sync")) {
       durations.syncMilliseconds = await runBounded(
         "sync and page creation",

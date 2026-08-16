@@ -3018,6 +3018,72 @@ export async function createDocumentTemplateVersion(input: {
 }
 
 /**
+ * Save the look of one document as a reusable look.
+ *
+ * This replaced an authoring API. A person used to be unable to make a look at
+ * all, and an agent could only do it by sending up to 32 operations from a
+ * closed vocabulary, declaring fields, and rebinding both the item and the
+ * collection composition in one call or having the whole thing rejected. The
+ * tool's own description needed an eight-line procedure and a list of the rules
+ * that caused most rejections, which is a fair sign no person was ever going to
+ * use it.
+ *
+ * A look is a template plus the theme the document carries, so saving one is
+ * just: resolve what this document is already rendering with, fold in its
+ * theme, give it a name. You design by editing a document normally, which is
+ * how Notion has always done it.
+ */
+export async function saveDocumentAsLook(input: {
+  blogId: string;
+  handle: string;
+  postId: string;
+  name: string;
+  actor: AuditEntry;
+  createdById?: string | null;
+}): Promise<TemplateDefinition> {
+  if (!db) throw new Error(NO_DATABASE);
+  const name = input.name.trim().replace(/\s+/g, " ");
+  if (!name) throw new Error("Give the look a name.");
+  if (name.length > 160) throw new Error("That name is too long.");
+
+  const post = await getPostById(input.handle, input.postId);
+  if (!post) throw new Error("That item could not be found.");
+  const document = post.document;
+  if (!document) throw new Error("That item has no document to take a look from.");
+
+  const reference = document.presentation.template;
+  const base = await getDocumentTemplate(input.blogId, reference);
+  if (!base) throw new Error("That item's current look could not be read.");
+
+  // A workspace look never uses the reserved prefix, and two looks saved from
+  // the same name must not collide, so the id carries a short suffix.
+  const slug =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "look";
+  const templateId = `${slug}-${randomUUID().slice(0, 6)}`;
+
+  const definition = validateTemplateDefinition({
+    ...base,
+    id: templateId,
+    version: 1,
+    name,
+    // The document's own theme is what makes it look the way it does; without
+    // this the saved look would be the base template again under a new name.
+    theme: { ...base.theme, ...document.presentation.theme },
+  });
+
+  return createDocumentTemplateVersion({
+    blogId: input.blogId,
+    definition,
+    actor: input.actor,
+    createdById: input.createdById ?? null,
+  });
+}
+
+/**
  * Retire a workspace look: stop offering it, keep every document that wears it
  * rendering exactly as it does.
  *

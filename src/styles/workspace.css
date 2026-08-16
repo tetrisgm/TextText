@@ -957,3 +957,15 @@
   border-color: transparent;
   background-color: var(--control-bg);
 }
+
+/* "Saved as ..." after Save as look. A quiet confirmation beside the control
+   that did it, rather than a dialog: the action is small and reversible, and
+   the look it made is already in the gallery. */
+.tt-look-notice {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--ac-label-2);
+  font: 600 12px/1.2 var(--ac-font-text);
+  white-space: nowrap;
+}

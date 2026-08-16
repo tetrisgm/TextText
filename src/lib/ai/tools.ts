@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { templateOperationsSchema } from "@/lib/presentation/operations";
 
 export type WorkspaceToolMutability = "read" | "write";
 export type WorkspaceToolConfirmation = "none" | "destructive" | "audience";
@@ -403,44 +402,17 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       "List the immutable built-in and workspace templates available for shaping documents.",
     inputSchema: emptyInput(),
   }),
-  customize_document_template: defineTool("customize_document_template", {
-    title: "Customize document template",
-    description: [
-      "Create an immutable workspace template (a 'look') by applying operations to an existing one. A look is data only: it can never contain HTML, CSS, or JavaScript, and anything that tries is rejected.",
-      "",
-      "A look controls BOTH surfaces: `item` is how one document renders when opened, and `collection` is how the folder's index renders. Set both, or the folder page will not match the item pages.",
-      "",
-      "The sequence that works, for a request like 'make my blog look like Medium':",
-      "1. list_document_templates - see what exists and pick the closest base.",
-      "2. preview_document_template - dry-run your operations; nothing is saved and a rejection is free.",
-      "3. customize_document_template - write the version once the preview is clean.",
-      "4. set_folder_template - point the folder at it. WITHOUT THIS STEP NOTHING THE PERSON CAN SEE HAS CHANGED: new items get the look and the folder index renders from it only once the folder carries it.",
-      "",
-      "Rules that cause most rejections: every binding must name a field declared by `set-fields` (bindings look like `content.fields.<id>`, plus `content.title`, `content.subtitle`, `content.body`, `content.tags`); if you replace the fields you must also replace `item` AND `collection.item` in the same call, because the whole template is revalidated together; a `board` layout also needs `groupBy` and a `calendar` layout needs `dateBy`.",
-    ].join("\n"),
+  save_item_as_look: defineTool("save_item_as_look", {
+    title: "Save this item's look",
+    description:
+      "Take the way one item currently renders and save it as a reusable look, under a name. The look then appears in the look pickers and can be applied to other items or given to a folder with set_folder_template. This replaced an operations-based authoring API: shape a document the ordinary way, with update_item and the item's own theme, then save what you made. It never changes the item.",
     inputSchema: z
       .object({
-        base_template_id: templateId,
-        base_template_version: templateVersion,
-        template_id: customTemplateId,
-        name: z.string().trim().min(1).max(160),
-        operations: templateOperationsSchema,
+        id,
+        name: z.string().trim().min(1).max(160).describe("What to call the look."),
       })
       .strict(),
     mutability: "write",
-  }),
-  preview_document_template: defineTool("preview_document_template", {
-    title: "Preview document template",
-    description:
-      "Dry-run template operations and return the resulting template, or the reason it was rejected, WITHOUT saving anything. Use this to check a look before customize_document_template writes a version: a rejected batch here costs nothing, while a rejected write costs a round trip and leaves the workspace unchanged anyway.",
-    inputSchema: z
-      .object({
-        base_template_id: templateId,
-        base_template_version: templateVersion,
-        operations: templateOperationsSchema,
-      })
-      .strict(),
-    mutability: "read",
   }),
   set_folder_template: defineTool("set_folder_template", {
     title: "Set folder look",

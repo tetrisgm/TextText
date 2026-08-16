@@ -17,7 +17,6 @@ import {
   SYNC_DOCUMENT_SCHEMA,
 } from "@/lib/documents/sync";
 import { resolveDocumentVisibility } from "@/lib/documents/visibility";
-import { applyTemplateOperations } from "@/lib/presentation/operations";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import {
   BUILTIN_TEMPLATES,
@@ -30,23 +29,21 @@ function verifyBuiltinsAndConstrainedAuthoring(): void {
     assert.deepEqual(validateTemplateDefinition(template), template);
   }
 
+  // Deriving a look the way "Save as look" does: take a template and fold in a
+  // document's own theme. The operations vocabulary this used to exercise was
+  // removed 2026-08-15; a look is now a template plus a theme, not a program.
   const article = requireBuiltinTemplate("texttext.article");
-  const customized = applyTemplateOperations(article, [
-    { op: "set-name", name: "Compact dispatch" },
-    {
-      op: "set-theme",
-      theme: {
-        accent: "#1473E6",
-        alignment: "start",
-        density: "compact",
-      },
-    },
-    { op: "set-collection-layout", layout: "list", columns: 1 },
-  ]);
+  const customized = validateTemplateDefinition({
+    ...article,
+    id: "compact-dispatch",
+    version: 1,
+    name: "Compact dispatch",
+    theme: { ...article.theme, accent: "#1473E6", density: "compact" },
+  });
   assert.equal(customized.name, "Compact dispatch");
-  assert.equal(customized.collection.layout, "list");
-  assert.equal(customized.collection.columns, 1);
   assert.equal(customized.theme.accent, "#1473E6");
+  assert.equal(customized.theme.density, "compact");
+  // Content bindings still cannot name a field the template does not declare.
   assert.throws(() =>
     validateTemplateDefinition({
       ...customized,

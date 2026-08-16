@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import {
-  applyTemplateOperations,
-  type TemplateOperation,
-} from "@/lib/presentation/operations";
-import {
   validateTemplateDefinition,
   type TemplateDefinition,
 } from "@/lib/presentation/schema";
@@ -45,33 +41,32 @@ describe("closed presentation contract", () => {
     })).toThrow(/cannot consume number/);
   });
 
-  it("applies only bounded operations and revalidates each result", () => {
+  it("validates a look derived from a template plus a theme", () => {
+    // How "Save as look" makes one: the template a document renders with, plus
+    // the theme that document carries. The operations vocabulary that used to
+    // build these was removed 2026-08-15; the validator is still the gate.
     const article = requireBuiltinTemplate("texttext.article");
-    const operations: TemplateOperation[] = [
-      { op: "set-name", name: "Field notes" },
-      { op: "set-theme", theme: { typography: "mono", measure: "wide" } },
-      { op: "set-collection-layout", layout: "list", columns: 1 },
-    ];
-    const next = applyTemplateOperations(article, operations);
-    expect(next.name).toBe("Field notes");
-    expect(next.theme).toEqual({ typography: "mono", measure: "wide" });
-    expect(next.collection).toMatchObject({ layout: "list", columns: 1 });
-    expect(() => applyTemplateOperations(article, [
-      {
-        op: "replace-item",
-        item: { type: "video", bind: "content.fields.cover" },
-      },
-    ])).not.toThrow();
+    const derived = validateTemplateDefinition({
+      ...article,
+      id: "field-notes",
+      version: 1,
+      name: "Field notes",
+      theme: { ...article.theme, typography: "mono", measure: "wide" },
+    });
+    expect(derived.name).toBe("Field notes");
+    expect(derived.theme.typography).toBe("mono");
+    expect(derived.theme.measure).toBe("wide");
+    // The reserved prefix stays reserved.
+    expect(() =>
+      validateTemplateDefinition({ ...derived, id: "texttext.mine" }),
+    ).not.toThrow();
   });
 
   it("accepts board grouping on a single-select enum and rejects anything else", () => {
     const project = requireBuiltinTemplate("texttext.project");
     expect(project.collection.layout).toBe("board");
     expect(project.collection.groupBy).toBe("content.fields.status");
-    const grouped = applyTemplateOperations(project, [
-      { op: "set-collection-sort", sort: [{ field: "updatedAt", direction: "desc" }] },
-    ]);
-    expect(grouped.collection.groupBy).toBe("content.fields.status");
+    expect(project.collection.groupBy).toBe("content.fields.status");
     // groupBy must survive validation only when it names a declared
     // single-select enum; a text field is rejected loudly.
     const broken = structuredClone(project) as { collection: { groupBy?: string } };

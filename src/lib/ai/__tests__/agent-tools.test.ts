@@ -155,15 +155,14 @@ describe("native workspace tool adapter", () => {
       "get_workspace",
       "list_folders",
       "list_document_templates",
-      "customize_document_template",
-      // A free dry run before the write: a rejected batch is the single most
+          // A free dry run before the write: a rejected batch is the single most
       // common way authoring a look fails, and this is how the model finds out
       // without spending a version on it.
-      "preview_document_template",
-      // Applying the look to the folder is what finishes the request. Without
+          // Applying the look to the folder is what finishes the request. Without
       // it the model can author a look and restyle one item, and the blog the
       // person actually asked about stays exactly as it was.
-      "set_folder_template",
+      "save_item_as_look",
+  "set_folder_template",
       "set_item_template",
       "create_item",
     ]);

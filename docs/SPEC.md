@@ -63,9 +63,13 @@ Nothing else is.
 - **Item templates** define how a document reads and how it edits.
 - **Folder templates** define how a collection renders (a blog folder's
   feed, a to-do folder's checklist board) and what its items default to.
-- Both are first-class objects you can create, modify, preview, switch, and
-  retire - in the UI and by talking to the assistant ("this folder is for
-  blog posts; posts render like essays; the folder shows cards").
+- Both are first-class objects you can create, preview, switch, and retire -
+  in the UI and by talking to the assistant.
+- You create one by MAKING A DOCUMENT and saving it: "Save as look" in the
+  document menu, `save_item_as_look` for an agent. Owner ruling 2026-08-15:
+  the operations-based authoring API is removed. It needed a procedure and a
+  list of rejection rules to use, which is Notion's opposite, and a person
+  could not author a look at all.
 - Templates are validated render specs. Switching a template never moves or
   mutates content. Retiring one stops it being offered and never deletes a
   version, because documents pin exact versions and must keep rendering.

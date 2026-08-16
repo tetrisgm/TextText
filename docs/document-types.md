@@ -203,19 +203,20 @@ the document. A customized template uses a workspace-owned id and creates the
 next immutable version. Existing documents never change presentation merely
 because a newer version exists.
 
-AI does not emit an entire executable page. It emits at most 32 constrained
-operations from `src/lib/presentation/operations.ts`:
+A look is made by making a document. `save_item_as_look` (and "Save as look" in
+the document menu) takes what a document already renders as, folds in the theme
+that document carries, and stores it as a new workspace template version under a
+name. Nothing about the document changes.
 
-- Set name or description
-- Set capabilities
-- Replace the declared field list
-- Set closed theme tokens
-- Replace the item composition
-- Replace the collection item composition
-- Set collection layout and columns
+This replaced an operations API, removed 2026-08-15. An agent used to build a
+look by sending up to 32 operations from a closed vocabulary, declaring fields
+and rebinding both the item and the collection composition in one call or having
+the whole batch rejected; a person could not author a look at all. The validator
+in `presentation/schema.ts` is still the gate, and every stored template is
+validated before it can render.
 
-Every operation is applied to the previous valid template and the complete
-result is validated before the next operation. A failed step changes nothing.
+Retiring a look marks every version and deletes none, because documents pin
+exact versions and must keep rendering.
 
 The UI assistant, workspace-configured provider, and MCP all consume the shared
 tool definitions in `src/lib/ai/tools.ts`. They execute through the same

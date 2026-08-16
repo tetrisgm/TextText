@@ -32,6 +32,7 @@ import {
 import { usePresence } from "@/lib/collab/usePresence";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
+import { saveItemAsLookAction } from "@/app/editor/look-actions";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
 import type { AssistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
@@ -3915,6 +3916,13 @@ function LocalUnifiedWorkspacePostEditor({
       post={post}
       template={template}
       availableTemplates={pool.templates}
+      onSaveAsLook={async (name) => {
+        if (!post.id) return { ok: false, message: "Save the item first." };
+        const result = await saveItemAsLookAction(blog.handle, post.id, name);
+        return result.ok
+          ? { ok: true, message: `Saved as "${result.name}"` }
+          : { ok: false, message: result.error };
+      }}
       activeAgent={activeAgent}
       onOpenAgent={onOpenAssistant}
       collab={{

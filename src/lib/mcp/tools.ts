@@ -50,7 +50,6 @@ import {
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { normalizeTags } from "@/lib/tags";
-import { applyTemplateOperations } from "@/lib/presentation/operations";
 import {
   inviteScopeShare,
   listScopeShares,
@@ -79,6 +78,7 @@ import {
   listItemComments,
   listDocumentTemplates,
   retireDocumentTemplate,
+  saveDocumentAsLook,
   markCapturePending,
   movePostFile,
   PostConflictError,
@@ -716,69 +716,36 @@ export async function executeMcpTool(
       });
     }
 
-    case "customize_document_template": {
-      const input = args as WorkspaceToolInput<"customize_document_template">;
-      const resolved = await requireWorkspace(extra, true);
+    case "save_item_as_look": {
+      const input = args as WorkspaceToolInput<"save_item_as_look">;
+      const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.canEditContent) {
+        return errorResult("You cannot save a look from this item.");
+      }
       if (!resolved.access.blogId) return errorResult("Workspace not found.");
-      const base = await getDocumentTemplate(resolved.access.blogId, {
-        id: input.base_template_id,
-        version: input.base_template_version,
-      });
-      if (!base) return errorResult("Base template not found.");
       try {
-        const candidate = applyTemplateOperations(
-          {
-            ...base,
-            id: input.template_id,
-            version: 1,
-            name: input.name,
-          },
-          input.operations,
-        );
-        const template = await createDocumentTemplateVersion({
+        const look = await saveDocumentAsLook({
           blogId: resolved.access.blogId,
-          definition: candidate,
-          createdById: resolved.access.userId,
+          handle: resolved.blog.handle,
+          postId: resolved.post.id ?? input.id,
+          name: input.name,
           actor: mcpAuditEntry(
             extra,
-            "mcp.customize_document_template",
-            "mode",
-            input.template_id,
+            "mcp.save_item_as_look",
+            "item",
+            resolved.post.id,
             input.name,
           ),
         });
-        return jsonResult({ template });
+        return jsonResult({
+          look: { id: look.id, version: look.version, name: look.name },
+          note: "Apply it with set_item_template, or give it to a folder with set_folder_template.",
+        });
       } catch (error) {
         return errorResult(
-          error instanceof Error
-            ? `Template rejected: ${error.message}`
-            : "Template rejected.",
+          error instanceof Error ? error.message : "Could not save that look.",
         );
-      }
-    }
-
-    case "preview_document_template": {
-      const input = args as WorkspaceToolInput<"preview_document_template">;
-      const resolved = await requireWorkspace(extra);
-      if (isToolResult(resolved)) return resolved;
-      if (!resolved.access.blogId) return errorResult("Workspace not found.");
-      const base = await getDocumentTemplate(resolved.access.blogId, {
-        id: input.base_template_id,
-        version: input.base_template_version,
-      });
-      if (!base) return errorResult("Base template not found.");
-      try {
-        // Nothing is written. The point is that a model can learn its batch is
-        // wrong for the price of a read.
-        const template = applyTemplateOperations(base, input.operations);
-        return jsonResult({ ok: true, template });
-      } catch (error) {
-        return jsonResult({
-          ok: false,
-          rejected:
-            error instanceof Error ? error.message : "Template rejected.",
-        });
       }
     }
 

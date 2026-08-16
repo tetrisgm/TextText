@@ -127,6 +127,27 @@ polish ledger.
   required auth is unsupported, deliberately and visibly rather than by a
   field that silently does nothing.
 
+## Templates simplified to A+B (owner, 2026-08-15)
+
+- The authoring API is GONE: `customize_document_template`,
+  `preview_document_template`, `presentation/operations.ts`, two test files
+  and two eval scripts, plus most of the system prompt, which had become a
+  manual for a vocabulary nobody could use. ~1,400 lines.
+- Making a look is now: shape a document, then "Save as look" in its menu, or
+  `save_item_as_look` for an agent. A look is a template plus the theme the
+  document carries. `saveDocumentAsLook` in store.ts is the one implementation.
+- Verified live: `npm run eval:save-as-look` drives the real menu in Chromium,
+  names a look, checks the document did not change, and confirms the look is
+  in the workspace's templates. The gallery's own rendering is proven by
+  `npm run eval:folder-look`.
+- Known rough edge: a look saved during a session shows up in the picker on
+  the next load, because the gallery reads the pool fetched at page load.
+- NOT done, still open: collapsing the two layout systems. `homeLayout` and
+  `cardStyle` (Single/Timeline/Grid/Index, Cover/Minimal) and the template
+  engine's `collection.layout` (list, cards, timeline, index, single, board,
+  calendar, heatmap) overlap almost exactly. Timeline, index and single are in
+  both; grid and cards are the same thing named twice.
+
 ## Traps found while building these
 
 - `position: fixed` does not escape an ancestor with `backdrop-filter`. The
