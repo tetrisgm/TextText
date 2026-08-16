@@ -1,4 +1,4 @@
-import { isPublishedPublicPost, type Blog, type Post } from "@/lib/content";
+import { isPublishedPublicPost, stripMarkdown, type Blog, type Post } from "@/lib/content";
 import {
   workspacePublicBaseUrl,
   workspacePublicPostPath,
@@ -108,18 +108,6 @@ function parseDate(value: string | undefined): Date | null {
     ? new Date(`${value}T00:00:00.000Z`)
     : new Date(value);
   return Number.isNaN(candidate.getTime()) ? null : candidate;
-}
-
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^>\s?/gm, "")
-    .replace(/^\s{0,3}[-*+]\s+/gm, "")
-    .replace(/[*_~]/g, "")
-    .replace(/\s+/g, " ");
 }
 
 function truncate(value: string, maxLength: number): string {

@@ -12,6 +12,7 @@ import {
   postAccent,
   postReadingTimeMin,
   youtubeThumb,
+  plainTextExcerpt,
 } from "@/lib/content";
 import { resolveCover } from "@/lib/cover";
 import {
@@ -38,39 +39,6 @@ function postStyle(blog: Blog, post: Post): CSSProperties | undefined {
 
 function postTitle(post: Post): string {
   return post.title.trim() || "Untitled";
-}
-
-function oneLine(value: string): string {
-  return value
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^>\s?/gm, "")
-    .replace(/^\s{0,3}[-*+]\s+/gm, "")
-    .replace(/[*_~]/g, "")
-    .replace(/\s+/g, " ");
-}
-
-function truncate(value: string, maxLength: number): string {
-  if (value.length <= maxLength) return value;
-  const sliced = value.slice(0, maxLength - 3).trimEnd();
-  const wordBreak = sliced.lastIndexOf(" ");
-  const base = wordBreak > 70 ? sliced.slice(0, wordBreak) : sliced;
-  return `${base}...`;
-}
-
-function plainTextExcerpt(markdown: string | undefined): string {
-  if (!markdown) return "";
-  return truncate(oneLine(stripMarkdown(markdown)), 180);
 }
 
 function timelineExcerpt(post: Post): string {

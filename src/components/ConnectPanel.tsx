@@ -11,6 +11,9 @@ import {
   hostedMcpUrl,
 } from "@/lib/agent-integrations";
 import type { ApiTokenSummary } from "@/lib/api-tokens";
+import { WORKSPACE_TOOL_DEFINITIONS } from "@/lib/ai/tools";
+
+const WORKSPACE_TOOL_COUNT = Object.keys(WORKSPACE_TOOL_DEFINITIONS).length;
 
 type FreshToken = { id: string; name: string; token: string };
 
@@ -211,9 +214,13 @@ export function ConnectPanel({
           })}
         </div>
 
+        {/* Counted, not typed. The strip claimed 29 tools while the workspace
+            surface had grown to 33, and it advertised OAuth for months after
+            OAuth was deleted. Both were hand-written promises about a moving
+            product. */}
         <div className="connect-capability-strip" aria-label="Connection features">
-          <span>29 document tools</span>
-          <span>TextText OAuth</span>
+          <span>{WORKSPACE_TOOL_COUNT} document tools</span>
+          <span>One workspace token</span>
           <span>Read, write, publish, and collaborate</span>
         </div>
       </section>
@@ -262,8 +269,9 @@ export function ConnectPanel({
       <details className="connect-section connect-advanced">
         <summary className="connect-section-title">Advanced connections</summary>
         <p className="connect-sub">
-          Use direct MCP commands or bearer tokens only when a client cannot
-          install the TextText plugin or complete OAuth.
+          The plugins above set this up for you. Reach for these when a client
+          cannot install one and you want to wire the endpoint and the token by
+          hand.
         </p>
 
         <h3 className="connect-minor-title">Agents on this Mac</h3>

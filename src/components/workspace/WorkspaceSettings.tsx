@@ -15,7 +15,6 @@ import {
   type CloudAiProvider,
 } from "@/lib/ai/provider-catalog";
 import { updateWorkspaceBlog } from "@/lib/pool/store";
-import { AgentIntegrationHome } from "./AgentIntegrationHome";
 import { AiConnectionSettings } from "./AiConnectionSettings";
 import { McpConnections } from "./McpConnections";
 import { connectApple, connectGoogle } from "@/app/editor/connect-provider-actions";
@@ -406,10 +405,6 @@ export function WorkspaceSettings({
 
         <McpConnections handle={blog.handle} />
 
-        <section className={styles.section} aria-label="AI connections">
-          <AgentIntegrationHome compact />
-        </section>
-
         {/* Only when the viewer owns an account. A collaborator, a guest
             workspace and a failed fetch all render nothing, and this
             describes the VIEWER's own account rather than the blog prop, since
@@ -442,21 +437,22 @@ export function WorkspaceSettings({
                       : provider === "google"
                         ? "Google"
                         : "Email link";
+                  // Every row reads the same way: the name, then its state or
+                  // the one action that changes it. Three different shapes for
+                  // three rows of one list is what made this read as broken.
                   return (
                     <li key={provider}>
                       <span>{label}</span>
                       {connected ? (
                         <span className={styles.identityOn}>Connected</span>
                       ) : provider === "email" ? (
-                        <span className={styles.identityOff}>
-                          Sign in once with an emailed link to connect it
-                        </span>
+                        <span className={styles.identityOff}>Not connected</span>
                       ) : (
                         <form
                           action={provider === "apple" ? connectApple : connectGoogle}
                         >
                           <button type="submit" className="ac-btn ac-btn-plain">
-                            Connect {label}
+                            Connect
                           </button>
                         </form>
                       )}
@@ -464,9 +460,13 @@ export function WorkspaceSettings({
                   );
                 })}
               </ul>
+              <p className={styles.identityNote}>
+                Signing in once with an emailed link connects it.
+              </p>
             </div>
+            {/* One control, not a red heading above a red link of the same
+                name. The sentence says what happens; the button does it. */}
             <div className={styles.dangerBlock}>
-              <strong>Delete account</strong>
               <p>
                 Deleting removes your account, the workspace {account.workspaceName},
                 and everything in it. This cannot be undone.

@@ -29,6 +29,52 @@ export interface Blog {
 
 export type BlogCardStyle = "cover" | "minimal";
 export type BlogHomeView = "list" | "column" | "grid";
+/**
+ * Markdown reduced to the words, for a preview that is not a rendered page.
+ *
+ * Seven copies of this lived across the feeds, the cards, the category pages
+ * and the agent surface, and four of them predated the fenced-code rule, so a
+ * document that opened with a code block leaked ``` and its contents into the
+ * RSS summary and onto the Library card. One home, so a rule added here
+ * reaches every preview.
+ */
+export function stripMarkdown(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function oneLinePreview(value: string): string {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncatePreview(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const sliced = value.slice(0, maxLength - 3).trimEnd();
+  const wordBreak = sliced.lastIndexOf(" ");
+  const base = wordBreak > 70 ? sliced.slice(0, wordBreak) : sliced;
+  return `${base}...`;
+}
+
+/** One line of readable prose from Markdown, cut on a word. */
+export function plainTextExcerpt(
+  markdown: string | undefined | null,
+  maxLength = 180,
+): string {
+  if (!markdown) return "";
+  return truncatePreview(oneLinePreview(stripMarkdown(markdown)), maxLength);
+}
+
 /** How a collection of items renders on a page. A look declares one. */
 export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
 

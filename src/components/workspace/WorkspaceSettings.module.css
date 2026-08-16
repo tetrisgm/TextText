@@ -232,10 +232,6 @@
   border-radius: var(--ac-radius-field);
 }
 
-.dangerBlock strong {
-  color: color-mix(in srgb, var(--ac-red) 60%, var(--ac-label));
-}
-
 .dangerBlock p {
   margin: 0;
   color: var(--ac-label-2);
@@ -265,4 +261,9 @@
 }
 .identityOff {
   color: var(--ac-label-3);
+}
+.identityNote {
+  margin: 2px 0 0;
+  color: var(--ac-label-3);
+  font-size: var(--ac-fs-footnote);
 }

@@ -56,11 +56,13 @@ export function AiConnectionSettings() {
         </div>
         <a className={styles.secondary} href="/connect">Open connection center</a>
       </article>
-      <details className={styles.advanced}>
-        <summary>Advanced: use an API key</summary>
-        <p>API usage is billed separately by the provider. Configure a key below when you want TextText to call Anthropic or OpenAI directly.</p>
-      </details>
-      <a className={styles.secondary} href="/docs">Read the AI documentation</a>
+      {/* No "Advanced: use an API key" disclosure here. It opened onto a
+          sentence and nothing else, while the key form it described sat below
+          it, always visible: a control that hid nothing and could not be the
+          way in. The API key section says the same thing where the keys are. */}
+      <p className={styles.footnote}>
+        <a href="/docs">Read the AI documentation</a>
+      </p>
     </div>
   );
 }

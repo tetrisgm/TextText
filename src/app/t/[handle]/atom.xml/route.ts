@@ -1,6 +1,6 @@
 import { blogBaseUrl, locatedPostUrl, notFound } from "@/lib/agent-surface";
 import type { Blog, Post } from "@/lib/content";
-import { postBodyPreview } from "@/lib/content";
+import { postBodyPreview, stripMarkdown } from "@/lib/content";
 import { coverMimeType, resolveCoverUrl } from "@/lib/cover";
 import { getBlog, getPublicPostLocations } from "@/lib/store";
 import type { PublicPostLocation } from "@/lib/store";
@@ -121,18 +121,6 @@ function plainTextSummary(markdown: string): string {
       .find(Boolean) ?? "";
 
   return truncate(firstBlock, 280);
-}
-
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^>\s?/gm, "")
-    .replace(/^\s{0,3}[-*+]\s+/gm, "")
-    .replace(/[*_~]/g, "")
-    .replace(/\s+/g, " ");
 }
 
 function truncate(value: string, maxLength: number): string {

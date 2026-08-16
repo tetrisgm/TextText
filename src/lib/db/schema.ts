@@ -211,7 +211,13 @@ export const blogs = pgTable(
     /** one-line standing bio for the reader end card */
     bioLine: text("bio_line"),
     cardStyle: text("card_style").notNull().default("cover"),
-    homeLayout: text("home_layout").notNull().default("grid"),
+    /**
+     * How Home lays its items out: list | column | grid. A new workspace opens
+     * as a list, because a list of documents reads as a list and cards are a
+     * deliberate choice. The column default said grid, so every workspace
+     * started on cards no matter what the app said its default was.
+     */
+    homeLayout: text("home_layout").notNull().default("list"),
     ownerId: uuid("owner_id").references(() => users.id),
     /**
      * Durable workspace change high-water-mark: the largest `revision` ever

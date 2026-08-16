@@ -439,6 +439,9 @@ export function UnifiedDocumentEditor({
   // "Save as look" is how a look gets made now. It takes what this document
   // already renders as and keeps it under a name; it never edits the document.
   const [savingLook, setSavingLook] = useState(false);
+  const [namingLook, setNamingLook] = useState(false);
+  const [lookName, setLookName] = useState("");
+  const lookNameRef = useRef<HTMLInputElement>(null);
   const [lookNotice, setLookNotice] = useState<string | null>(null);
   const [showSubtitle, setShowSubtitle] = useState(false);
   const canAddSubtitle =
@@ -938,26 +941,59 @@ export function UnifiedDocumentEditor({
               <span aria-hidden="true">•••</span>
             </summary>
             <div className="tt-editor-more-menu">
-              {onSaveAsLook && (
+              {/* Naming happens in the menu, not in a window.prompt. The
+                  browser dialog was a grey system box with the page frozen
+                  behind it, which is the exact jank the look work was meant to
+                  remove. */}
+              {onSaveAsLook && !namingLook && (
                 <button
                   type="button"
                   disabled={savingLook}
                   onClick={() => {
-                    const name = window.prompt(
-                      "Save this document's look as:",
-                      `${activeTemplate.name} copy`,
+                    setLookName(`${activeTemplate.name} copy`);
+                    setNamingLook(true);
+                    window.requestAnimationFrame(() =>
+                      lookNameRef.current?.select(),
                     );
-                    if (!name?.trim()) return;
+                  }}
+                >
+                  Save as look
+                </button>
+              )}
+              {onSaveAsLook && namingLook && (
+                <form
+                  className="tt-editor-more-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = lookName.trim();
+                    if (!name) return;
                     setSavingLook(true);
                     setLookNotice(null);
+                    setNamingLook(false);
                     void onSaveAsLook(name)
                       .then((result) => setLookNotice(result.message))
                       .catch(() => setLookNotice("Could not save that look."))
                       .finally(() => setSavingLook(false));
                   }}
                 >
-                  {savingLook ? "Saving look" : "Save as look"}
-                </button>
+                  <input
+                    ref={lookNameRef}
+                    aria-label="Name this look"
+                    value={lookName}
+                    disabled={savingLook}
+                    maxLength={160}
+                    onChange={(event) => setLookName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setNamingLook(false);
+                      }
+                    }}
+                  />
+                  <button type="submit" disabled={savingLook || !lookName.trim()}>
+                    {savingLook ? "Saving" : "Save"}
+                  </button>
+                </form>
               )}
               {canAddSubtitle && (
                 <button

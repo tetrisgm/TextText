@@ -35,6 +35,15 @@ export type AgentIntegration = {
   outcome: string;
 };
 
+/**
+ * Every path in here ends in a token a person creates at /connect and pastes.
+ *
+ * These steps described a browser window opening for an approval, which was
+ * the OAuth flow; that flow was deleted (owner ruling 2026-08-15) and the copy
+ * outlived it here, on the three surfaces that render this list: /connect,
+ * /docs/ai, and the assistant rail. Onboarding copy is a claim about the
+ * product like any other.
+ */
 export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
   {
     id: "claude",
@@ -60,7 +69,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         copy: { label: "Copy install command", value: CLAUDE_PLUGIN_INSTALL_COMMAND },
       },
       { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Claude Code." },
-      { text: "In Claude, say: connect to my TextText workspace. A browser window opens; approve it with your TextText account." },
+      { text: "Create a token at Connect, then paste it into Claude when it asks for the TextText credential." },
     ],
     outcome: "Claude appears as a collaborator with its own cursor whenever it works in your documents.",
   },
@@ -84,7 +93,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         copy: { label: "Copy install command", value: CODEX_PLUGIN_INSTALL_COMMAND },
       },
       { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Codex." },
-      { text: "In Codex, ask for your TextText library. A browser window opens; approve it with your TextText account." },
+      { text: "Create a token at Connect, then paste it into Codex when it asks for the TextText credential." },
     ],
     outcome: "Codex appears as a collaborator with its own cursor whenever it works in your documents.",
   },
@@ -94,7 +103,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "OpenAI",
     monogram: "G",
     description:
-      "Connect your TextText workspace as a ChatGPT app and approve access with your TextText account.",
+      "Connect your TextText workspace as a ChatGPT app, using a token you create and paste.",
     environment: "ChatGPT apps",
     action: {
       kind: "link",
@@ -107,7 +116,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
       },
       { text: "Open ChatGPT's settings. The button below takes you there; depending on your plan the section is called Connectors or Plugins." },
-      { text: "Add TextText there with the copied address. ChatGPT opens a TextText page where you approve access with your account." },
+      { text: "Add TextText there with the copied address, and give it a token you created at Connect as its bearer credential." },
     ],
     outcome: "ChatGPT can read and edit your documents from any chat, and appears as a collaborator while it works.",
   },
@@ -117,7 +126,7 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "MCP",
     monogram: "M",
     description:
-      "Use the hosted OAuth connection in Cursor, Claude-compatible clients, automations, and any MCP app.",
+      "Use the hosted address in Cursor, Claude-compatible clients, automations, and any MCP app.",
     environment: "Any remote MCP client",
     action: {
       kind: "copy",
@@ -131,9 +140,9 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
       },
       { text: "Add it wherever your app configures MCP servers, and give the connection a name you will recognize." },
-      { text: "The first connection opens a browser window; approve it with your TextText account." },
+      { text: "Give the client a token you created at Connect. One token, one workspace, revocable from the same page." },
     ],
-    outcome: "The app appears in your documents under the name you approved, with every change attributed to it.",
+    outcome: "The app appears in your documents under the name on its token, with every change attributed to it.",
   },
 ] as const;
 

@@ -27,6 +27,7 @@ const sections = [
     title: "The Library and collections",
     body: [
       "The Library lists everything, newest first, with filters for articles, notes, and bookmarks and a sort control. Collections in the left sidebar (Blog, Notes, Bookmarks) file items by kind, and each shows its count.",
+      "How Home lays out is the one layout choice the workspace stores: list, one column, or cards. It is saved on the workspace rather than in the browser you set it from, so it is the same on your Mac and on the web.",
       "Starred keeps the items you pin. Trash keeps what you delete until you decide; deleting is never the end of the story.",
     ],
   },
@@ -55,6 +56,7 @@ const sections = [
     title: "Agents do real document work",
     body: [
       "A connected agent works with the same tools the app uses. It can create an item with real content in the right folder, rewrite an entire document while you watch it happen, change an item's look, retitle it, set its excerpt and tags, and find items by title or by words inside their bodies.",
+      "An agent authenticates with a workspace token you create at /connect and paste into the client. One token, one workspace, revocable from the same page; there is no consent screen to click through and no OAuth server to keep alive.",
       "Repeated automation is safe: an agent that retries a create or an append with the same idempotency key gets the original result back instead of a duplicate. Every agent action is recorded in the audit log under the agent's own identity, agents cannot see into workspaces they were not granted, and their comments carry their name.",
       "While an agent edits a document you have open, you see it as a collaborator: its avatar in the page header and its named cursor at the text it is writing.",
     ],
@@ -71,8 +73,10 @@ const sections = [
     title: "Looks, and who can change them",
     body: [
       "A look controls how a document reads when opened and how its folder\u2019s index renders. Choosing one is a gallery of real previews, each drawn with the look it is offering rather than a thumbnail of it.",
+      "Every folder page is governed by the look on its folder, the published blog page included. There is no second layout control on a page that already has a look; the only stored layout choice besides looks is Home\u2019s own.",
       "Folders have looks too, and the folder menu changes them: applying one restyles what is already in the folder, because a folder whose index changed while every item kept the old look reads as nothing having happened.",
       "Looks are immutable versions and documents pin the exact one they use, so a newer version never restyles work behind its author. Retiring a look stops it being offered and changes nothing already wearing it.",
+      "A look you want again is saved from the document that already reads that way: Save as look in the editor takes the document\u2019s own presentation, names it, and adds it to the gallery. There is no form of fields to fill in, because a look worth keeping is one you can already see.",
     ],
   },
   {

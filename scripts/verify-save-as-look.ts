@@ -134,9 +134,13 @@ async function run(page: Page, theme: "light" | "dark", lookName: string) {
   if ((await save.count()) === 0) return;
 
   if (theme === "light") {
-    // Name it. The control asks with a prompt, so answer the dialog.
-    page.once("dialog", (dialog) => void dialog.accept(lookName));
+    // Name it in the menu. This used to answer a window.prompt; the field is
+    // now part of the menu, so it is typed and submitted like anything else.
     await save.click();
+    const field = page.locator('input[aria-label="Name this look"]');
+    await field.waitFor({ timeout: 10000 });
+    await field.fill(lookName);
+    await page.locator('.tt-editor-more-form button[type="submit"]').click();
     await page.waitForTimeout(3000);
 
     const notice = await page.locator(".tt-look-notice").innerText().catch(() => "");

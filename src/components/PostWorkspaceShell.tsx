@@ -168,7 +168,7 @@ import type {
   Post,
   PostType,
 } from "@/lib/content";
-import { isVideoFile } from "@/lib/content";
+import { isVideoFile, plainTextExcerpt } from "@/lib/content";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { isNoCoverValue, NO_COVER_VALUE, resolveCover } from "@/lib/cover";
@@ -2382,6 +2382,10 @@ function WorkspaceRootSearchActionBar({
   );
 }
 
+function itemPreview(post: { excerpt?: string; bodyPreview?: string }): string {
+  return plainTextExcerpt(post.excerpt) || plainTextExcerpt(post.bodyPreview);
+}
+
 function WorkspacePostOption({
   active,
   blog,
@@ -2446,10 +2450,12 @@ function WorkspacePostOption({
         <span className="workspace-item-option-copy">
           <strong>{sidebarDocumentTitle(post)}</strong>
           {/* The icon already says what kind of item this is, so the row
-              carries the title and whatever the document actually says. */}
-          {(post.excerpt?.trim() || post.bodyPreview?.trim()) && (
+              carries the title and whatever the document actually says. The
+              preview is prose, not Markdown: a document that opens with a
+              heading or a code fence used to put ## and ``` on the card. */}
+          {itemPreview(post) && (
             <span className="workspace-item-option-detail">
-              <small>{post.excerpt?.trim() || post.bodyPreview?.trim()}</small>
+              <small>{itemPreview(post)}</small>
             </span>
           )}
         </span>

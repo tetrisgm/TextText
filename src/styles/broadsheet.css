@@ -6971,80 +6971,6 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   display: block;
   margin: 0 0 4px;
 }
-.workspace-agent-entry {
-  display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 96%, var(--ink) 4%);
-}
-.workspace-agent-entry-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-}
-.workspace-agent-entry-heading > div:first-child {
-  min-width: 0;
-  display: grid;
-  gap: 5px;
-}
-.workspace-agent-entry p,
-.workspace-agent-entry h2,
-.workspace-agent-entry h3,
-.workspace-agent-entry span,
-.workspace-agent-entry ol {
-  margin: 0;
-}
-.workspace-agent-entry-heading p {
-  color: var(--muted);
-  font: 700 11px/1.2 var(--font-body);
-  text-transform: uppercase;
-}
-.workspace-agent-entry-heading h2 {
-  color: var(--ink);
-  font: 750 18px/1.25 var(--font-body);
-}
-.workspace-agent-entry-heading span {
-  max-width: 720px;
-  color: var(--muted);
-  font: 500 13px/1.4 var(--font-body);
-}
-.workspace-agent-entry-links,
-.workspace-agent-provider-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.workspace-agent-entry-links a,
-.workspace-agent-provider-actions a,
-.workspace-agent-provider-actions button {
-  min-height: 34px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 11px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--ink);
-  font: 700 13px/1 var(--font-body);
-  text-decoration: none;
-  cursor: pointer;
-}
-.workspace-agent-entry-links a.is-primary,
-.workspace-agent-provider-actions > :first-child {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--bg);
-}
-.workspace-agent-entry-links a:hover,
-.workspace-agent-provider-actions a:hover,
-.workspace-agent-provider-actions button:hover {
-  opacity: 0.86;
-}
 .workspace-agent-provider-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7202,12 +7128,6 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   }
 }
 @media (max-width: 680px) {
-  .workspace-agent-entry-heading {
-    display: grid;
-  }
-  .workspace-agent-entry-links {
-    flex-wrap: wrap;
-  }
   .workspace-agent-provider-grid,
   .workspace-agent-live-guide ol {
     grid-template-columns: 1fr;
@@ -7255,13 +7175,6 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   padding: 48px 18px 18px;
 }
 @media (max-width: 700px) {
-  .workspace-agent-entry {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .workspace-agent-entry > a {
-    width: 100%;
-  }
 }
 .post-folder-page {
   gap: 22px;
