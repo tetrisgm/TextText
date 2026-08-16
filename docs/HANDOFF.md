@@ -172,6 +172,38 @@ polish ledger.
 - Sign in with Apple/Google (people signing in to TextText) is untouched.
   That is Pillar 5 and was never what the ruling was about.
 
+## One layout answer per surface (owner, 2026-08-15)
+
+- The ruling: move the picker to Home, let folder pages be governed by their
+  look. Three systems became two.
+- A folder's look decides how that folder's index renders, everywhere:
+  `collectionPageLayout` in `lib/content.ts` maps a look's collection layout
+  to the page renderers, and the Blog page, category pages and the folder
+  manifest all read it. A list renders as an index; board, calendar and
+  heatmap fall to cards.
+- Home's own control decides Home and saves on the workspace
+  (`blogs.home_layout`, now `list | column | grid`), not in localStorage, so
+  the choice travels between browsers.
+- `scripts/migrate-blog-layout-to-home.ts` preserves appearance: a workspace
+  whose Blog page was Timeline, Index or Single gets a look on its Blog folder
+  that renders the same way, written from the look the folder already wore.
+  Idempotent; proved against the local database.
+- Every folder ships with `texttext.article` as its look, so there is no
+  "no look" fallback in practice. That is why the migration is the mechanism
+  and not a default.
+- Gap, deliberate: the look catalogue was cut to nine at the owner's request
+  and none of the nine declares `timeline` or `single`, so those two layouts
+  are no longer reachable for a folder index. `changelog` (timeline) and
+  `now` (single) still exist and still resolve for documents pinned to them.
+  Restoring reach is a catalogue decision, not a code one.
+- `blog.cardStyle` kept its meaning and its sync/openapi field but has no UI
+  now that the Blog popover is gone. A Covers toggle was built on Home and
+  then removed: `WorkspacePostOption` renders no covers, so the control would
+  have claimed to do something it does not do.
+- `npm run eval:home-layout` is the live proof, both themes. It needs
+  `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000` on the dev server, because the
+  published Blog page is a workspace subdomain.
+
 ## Traps found while building these
 
 - `position: fixed` does not escape an ancestor with `backdrop-filter`. The
@@ -206,6 +238,15 @@ polish ledger.
   agent capabilities above belong there once the scorecard closes.
 - Installed-app auth verification (sign out, auth sheet round trip) still
   pending.
+- Mac round trip 2026-08-15: built, installed to /Applications, launched,
+  signed in, and observed live against the dev server (`GET /@shoku`,
+  `/api/auth/session`, `getMcpConnectionsAction`, `POST /api/app/token`). Two
+  things could not be checked without the owner present: a screenshot of the
+  app window (Screen Recording is not granted to the agent shell, so
+  `screencapture -l` returns chrome with a black body and `-R` refuses), and
+  the File Provider mount (all three extensions register from the fresh
+  build, but no domain is added, so `~/Library/CloudStorage/TextText-*` is
+  absent and the bundled `texttext` CLI reports no workspace).
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop

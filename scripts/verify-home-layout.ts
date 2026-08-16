@@ -1,6 +1,11 @@
 // Live proof of where a layout choice lives now.
 //
-//   npm run eval:home-layout        (against a running dev server)
+//   NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 npm run dev
+//   npm run eval:home-layout
+//
+// The root domain matters: the published Blog page is a workspace subdomain,
+// and without it {handle}.localhost:3000 is not a tenant and the checks below
+// read the marketing landing instead.
 //
 // The workspace used to answer "how does this render" in three places: a
 // localStorage view mode on Home, a saved layout on the blog row that governed
