@@ -9,7 +9,8 @@ import type {
   Post,
   PostType,
 } from "@/lib/content";
-import { isSafeLinkHref } from "@/lib/content";
+import { collectionPageLayout, isSafeLinkHref } from "@/lib/content";
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { markdownFileHash } from "@/lib/content-hash";
 import { isNoCoverValue } from "@/lib/cover";
 import { sanitizePostSlug } from "@/lib/post-slug";
@@ -70,6 +71,22 @@ export type MarkdownFolderManifest = {
   };
   items: MarkdownFolderItem[];
 };
+
+/**
+ * The view a folder's manifest reports: the layout its look declares.
+ *
+ * This is a synchronous render, so a workspace's own look cannot be fetched
+ * here; the built-ins cover every folder that has not been customized, and a
+ * customized one reports cards. The manifest is a projection for file clients,
+ * not the thing that decides how a page renders.
+ */
+function folderActiveView(folder: Folder | undefined): BlogHomeLayout {
+  const reference = folder?.defaultTemplate;
+  if (!reference) return "grid";
+  return collectionPageLayout(
+    getBuiltinTemplate(reference.id, reference.version)?.collection.layout,
+  );
+}
 
 export type RenderFolderManifestOptions = {
   folder?: Folder;
@@ -133,7 +150,7 @@ export function renderFolderManifest(
       mode: folder?.mode ?? DEFAULT_FOLDER_MODE,
       views: BLOG_FOLDER_VIEWS,
       itemKinds: itemKindsForFolderMode(folder?.mode),
-      activeView: blog.homeLayout,
+      activeView: folderActiveView(folder),
       ...(folder ? { id: folder.id, path: folder.path } : {}),
     },
     items: posts.map((post) => {

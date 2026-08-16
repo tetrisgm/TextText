@@ -20,7 +20,7 @@ const blog: Blog = {
   name: "Test",
   author: "Writer",
   cardStyle: "minimal",
-  homeLayout: "single",
+  homeLayout: "column",
 };
 
 const article: Post = {

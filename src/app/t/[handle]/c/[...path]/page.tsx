@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { CategoryListing } from "@/components/CategoryListing";
+import { collectionPageLayout } from "@/lib/content";
+import { getFolderCollectionLayout } from "@/lib/store";
 import { blogFeedAlternateTypes } from "@/lib/feed-links";
 import {
   blogCategoryPath,
@@ -69,6 +71,9 @@ export async function CategoryPageForHandle({
   return (
     <CategoryListing
       blog={blog}
+      layout={collectionPageLayout(
+        await getFolderCollectionLayout(handle, category.folder.path),
+      )}
       folder={category.folder}
       folders={category.folders}
       handle={handle}

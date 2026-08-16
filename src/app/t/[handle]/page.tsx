@@ -35,6 +35,7 @@ import {
   getFolderPosts,
   getFolders,
   getDocumentTemplate,
+  getFolderCollectionLayout,
   getTrashedFolders,
   getTrashedPosts,
   getPost,
@@ -54,6 +55,7 @@ import {
   youtubeThumb,
 } from "@/lib/content";
 import type { Blog, BlogCardStyle, BlogHomeLayout, Post } from "@/lib/content";
+import { collectionPageLayout } from "@/lib/content";
 import { legacyTemplateId } from "@/lib/documents/legacy";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
@@ -90,6 +92,7 @@ type BlogHomeQuery = {
   tag?: string | string[];
   view?: string | string[];
 };
+
 
 function blogStyle(blog: Blog): CSSProperties | undefined {
   return blog.accent
@@ -310,7 +313,7 @@ function BlogSingleHome({
  * collection that is not theirs. It also read as though the workspace were
  * empty, when the ordinary cause is simply that nothing here is published.
  */
-function BlogEmptyState({ layout }: { layout: Blog["homeLayout"] }) {
+function BlogEmptyState({ layout }: { layout: BlogHomeLayout }) {
   if (layout === "timeline") return null;
 
   const copy =
@@ -336,6 +339,9 @@ function WorkspaceRootLanding({ blog }: { blog: Blog }) {
 }
 
 async function PublicBlogHome({ blog }: { blog: Blog }) {
+  const layout = collectionPageLayout(
+    await getFolderCollectionLayout(blog.handle, "blog"),
+  );
   const locations = publishedPublicLocations(
     await getPublicPostLocations(blog.handle),
   );
@@ -378,19 +384,17 @@ async function PublicBlogHome({ blog }: { blog: Blog }) {
       tagline={blog.tagline}
       canEdit={false}
       publicPath="/"
-      initialCardStyle={blog.cardStyle}
-      initialHomeLayout={blog.homeLayout}
       initialNamingCeremony={false}
       style={blogStyle(blog)}
     >
-      {posts.length === 0 ? <BlogEmptyState layout={blog.homeLayout} /> : null}
-      {singlePost && singleTemplate && blog.homeLayout === "single" ? (
+      {posts.length === 0 ? <BlogEmptyState layout={layout} /> : null}
+      {singlePost && singleTemplate && layout === "single" ? (
         <BlogSingleHome blog={blog} post={singlePost} template={singleTemplate} />
       ) : null}
-      {posts.length > 0 && blog.homeLayout === "timeline" ? (
+      {posts.length > 0 && layout === "timeline" ? (
         <BlogTimeline blog={blog} posts={posts} hrefFor={hrefFor} />
       ) : null}
-      {posts.length > 0 && blog.homeLayout === "grid" ? (
+      {posts.length > 0 && layout === "grid" ? (
         <div className="tv-grid">
           {locations.map(({ folderPath, post }) => (
             <PostCard
@@ -407,7 +411,7 @@ async function PublicBlogHome({ blog }: { blog: Blog }) {
           ))}
         </div>
       ) : null}
-      {posts.length > 0 && blog.homeLayout === "index" ? (
+      {posts.length > 0 && layout === "index" ? (
         <BlogIndex blog={blog} posts={posts} hrefFor={hrefFor} />
       ) : null}
       {posts.length > 0 ? (
@@ -544,14 +548,12 @@ export async function BlogHomeForHandle({
   // editor's Layout popover is what persists a choice.
   const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
   const previewCardStyle = queryCardStyle(queryValue(query.card));
-  const displayBlog: Blog =
-    previewHomeLayout || previewCardStyle
-      ? {
-          ...blog,
-          cardStyle: previewCardStyle ?? blog.cardStyle,
-          homeLayout: previewHomeLayout ?? blog.homeLayout,
-        }
-      : blog;
+  const layout =
+    previewHomeLayout ??
+    collectionPageLayout(await getFolderCollectionLayout(handle, "blog"));
+  const displayBlog: Blog = previewCardStyle
+    ? { ...blog, cardStyle: previewCardStyle }
+    : blog;
   // The blog home lists ONLY the Blog folder: notes and bookmarks live in
   // their own folder views and never mix into the cards, even for the owner.
   const [posts, folders, counts] = initialPool
@@ -625,7 +627,7 @@ export async function BlogHomeForHandle({
     ? undefined
     : posts.find((post) => post.status === "published") ?? posts[0];
   const singleReaderPostRaw =
-    singlePost && displayBlog.homeLayout === "single"
+    singlePost && layout === "single"
       ? (await getPost(handle, singlePost.slug)) ?? singlePost
       : singlePost;
   // `starred` is personal metadata; never expose it to a non-owner (matches the
@@ -665,16 +667,14 @@ export async function BlogHomeForHandle({
       tagline={displayBlog.tagline}
       canEdit={canEdit}
       publicPath={blogHomePath(blog)}
-      initialCardStyle={blog.cardStyle}
-      initialHomeLayout={blog.homeLayout}
       initialNamingCeremony={showNamingCeremony}
       style={blogStyle(displayBlog)}
     >
       {posts.length === 0 && !canEdit && (
-        <BlogEmptyState layout={displayBlog.homeLayout} />
+        <BlogEmptyState layout={layout} />
       )}
 
-      {singleReaderPost && singleReaderTemplate && displayBlog.homeLayout === "single" && (
+      {singleReaderPost && singleReaderTemplate && layout === "single" && (
         <BlogSingleHome
           blog={displayBlog}
           post={singleReaderPost}
@@ -682,14 +682,14 @@ export async function BlogHomeForHandle({
         />
       )}
 
-      {posts.length > 0 && displayBlog.homeLayout === "timeline" && (
+      {posts.length > 0 && layout === "timeline" && (
         <BlogTimeline
           blog={displayBlog}
           posts={posts}
         />
       )}
 
-      {posts.length > 0 && displayBlog.homeLayout === "grid" && (
+      {posts.length > 0 && layout === "grid" && (
         <div className="tv-grid">
           {posts.map((post) => (
             <PostCard
@@ -705,7 +705,7 @@ export async function BlogHomeForHandle({
         </div>
       )}
 
-      {posts.length > 0 && displayBlog.homeLayout === "index" && (
+      {posts.length > 0 && layout === "index" && (
         <BlogIndex blog={displayBlog} posts={posts} />
       )}
 

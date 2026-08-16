@@ -33,7 +33,7 @@ const blog: Blog = {
   name: "Garden",
   author: "Writer",
   cardStyle: "cover",
-  homeLayout: "single",
+  homeLayout: "column",
 };
 
 describe("wikilink extraction and backlinks", () => {

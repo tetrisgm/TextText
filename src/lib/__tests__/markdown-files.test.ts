@@ -20,7 +20,7 @@ const blog: Blog = {
   author: "Demo Author",
   accent: "#065ec6",
   cardStyle: "cover",
-  homeLayout: "timeline",
+  homeLayout: "list",
 };
 
 const folder: Folder = {
@@ -29,6 +29,7 @@ const folder: Folder = {
   path: "blog",
   mode: "blog",
   position: 0,
+  defaultTemplate: { id: "texttext.article", version: 1 },
 };
 
 const fullArticle: Post = {
@@ -431,7 +432,9 @@ describe("folder manifest v2", () => {
     expect(manifest.folder.id).toBe("folder-1");
     expect(manifest.folder.path).toBe("blog");
     expect(manifest.folder.mode).toBe("blog");
-    expect(manifest.folder.activeView).toBe("timeline");
+    // The folder's look decides how its index renders, so the manifest
+    // reports the look's layout and not a workspace-wide setting.
+    expect(manifest.folder.activeView).toBe("grid");
     expect(manifest.folder.views).toEqual(["timeline", "index", "grid", "single"]);
   });
 

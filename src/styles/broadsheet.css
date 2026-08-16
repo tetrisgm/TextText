@@ -4619,6 +4619,11 @@ body:has(.reader):not(:has(.post-editor-shell)) {
     0 1px 2px rgba(0, 0, 0, 0.1),
     0 0 0 0.5px var(--ac-hairline);
 }
+.workspace-library-error {
+  color: var(--ac-red);
+  font: 500 12px/1 var(--ac-font-text);
+}
+
 .folder-action-toolbar {
   gap: 3px;
   padding: 2px;

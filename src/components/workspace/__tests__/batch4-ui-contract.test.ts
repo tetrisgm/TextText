@@ -114,9 +114,10 @@ describe("batch 4 workspace UI contract", () => {
   it("keeps the library collection-first and embeds the destination in the capture row", () => {
     expect(shellSource).toContain('className="workspace-library-header"');
     expect(shellSource).toContain('id="workspace-root-title">Library</h1>');
-    expect(shellSource).toContain('"library-v3"');
-    // A list of documents reads as a list; cards are a deliberate choice.
-    expect(shellSource).toContain('"list"');
+    // Home's layout is the workspace's one stored layout choice: it is read
+    // from the workspace and written back to it, not kept in this browser.
+    expect(shellSource).toContain("useState<BlogHomeView>(\n    pool.blog.homeLayout,\n  )");
+    expect(shellSource).toContain("updateBlogAction({ homeLayout }, pool.blog.handle)");
     expect(shellSource).toContain(">Collections</p>");
     expect(shellSource).toContain('aria-label="Filter library items"');
     expect(shellSource).toContain('className="workspace-library-toolbar"');

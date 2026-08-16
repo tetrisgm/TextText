@@ -19,11 +19,42 @@ export interface Blog {
   /** one-line standing profile bio */
   bioLine?: string;
   cardStyle: BlogCardStyle;
-  homeLayout: BlogHomeLayout;
+  /**
+   * How Home, the workspace landing, lays its items out. This is the one
+   * stored layout choice in the workspace: every folder page, Blog included,
+   * takes its layout from the look on the folder.
+   */
+  homeLayout: BlogHomeView;
 }
 
 export type BlogCardStyle = "cover" | "minimal";
+export type BlogHomeView = "list" | "column" | "grid";
+/** How a collection of items renders on a page. A look declares one. */
 export type BlogHomeLayout = "single" | "timeline" | "grid" | "index";
+
+/**
+ * A look's collection layout, as the page renderers name it.
+ *
+ * A folder page renders the way its look says to. Looks carry richer layouts
+ * than the page renderers implement (board, calendar, heatmap); those fall to
+ * cards, which is what an unrecognized layout has always fallen to.
+ */
+export function collectionPageLayout(
+  layout: string | null | undefined,
+): BlogHomeLayout {
+  switch (layout) {
+    case "timeline":
+    case "index":
+    case "single":
+      return layout;
+    // A list of items and an index of items are the same page: a stack of
+    // titled rows. The page renderers call it index.
+    case "list":
+      return "index";
+    default:
+      return "grid";
+  }
+}
 export const FILE_REPRESENTATIONS = [
   "textbundle",
   "markdown",

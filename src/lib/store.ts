@@ -33,7 +33,7 @@ import {
 import type {
   Blog,
   BlogCardStyle,
-  BlogHomeLayout,
+  BlogHomeView,
   BookmarkCaptureAsset,
   BookmarkCapture,
   CaptureStatus,
@@ -201,7 +201,7 @@ export type BlogPatch = {
   tagline?: string | null;
   bioLine?: string | null;
   cardStyle?: BlogCardStyle;
-  homeLayout?: BlogHomeLayout;
+  homeLayout?: BlogHomeView;
   username?: string;
 };
 export type AdjacentPostLink = Pick<Post, "id" | "folderId" | "slug" | "title">;
@@ -303,7 +303,7 @@ export type CreatedDocumentCapability = DocumentCapability & {
 };
 
 const DEFAULT_CARD_STYLE: BlogCardStyle = "cover";
-const DEFAULT_HOME_LAYOUT: BlogHomeLayout = "grid";
+const DEFAULT_HOME_LAYOUT: BlogHomeView = "list";
 
 function toISODate(value: Date | string | null): string | undefined {
   if (!value) return undefined;
@@ -2934,6 +2934,29 @@ export async function getDocumentTemplate(
 }
 
 /**
+ * The collection layout of the look governing a folder's index page.
+ *
+ * Null when the folder has no look of its own, which is the caller's signal to
+ * fall back. A folder's look is the single answer to "how does this folder's
+ * index render"; the workspace used to have a second answer for the Blog page
+ * in particular, stored on the blog row, and two answers to one question is
+ * how that surface became confusing.
+ */
+export async function getFolderCollectionLayout(
+  handle: string,
+  folderPath: string,
+): Promise<TemplateDefinition["collection"]["layout"] | null> {
+  const folders = await getFolders(handle);
+  const reference = folders.find(
+    (folder) => folder.path === folderPath,
+  )?.defaultTemplate;
+  if (!reference) return null;
+  const blogId = await blogIdFor(handle);
+  const template = await getDocumentTemplate(blogId, reference);
+  return template?.collection.layout ?? null;
+}
+
+/**
  * The looks available to CHOOSE from: one entry per template, at its current
  * version.
  *
@@ -5010,11 +5033,11 @@ function cleanStoredCardStyle(value: unknown): BlogCardStyle {
   return value === "minimal" ? "minimal" : DEFAULT_CARD_STYLE;
 }
 
-function cleanStoredHomeLayout(value: unknown): BlogHomeLayout {
-  if (value === "single" || value === "timeline" || value === "grid" || value === "index") {
-    return value;
-  }
-  if (value === "cards") return "grid";
+function cleanStoredHomeLayout(value: unknown): BlogHomeView {
+  if (value === "list" || value === "column" || value === "grid") return value;
+  // Rows written before Home owned this field held a page layout. The
+  // migration converts them; this keeps a straggler readable.
+  if (value === "single") return "column";
   return DEFAULT_HOME_LAYOUT;
 }
 
@@ -5023,12 +5046,9 @@ function cleanBlogCardStyle(value: unknown): BlogCardStyle {
   throw new Error("Card style must be Cover or Minimal");
 }
 
-function cleanBlogHomeLayout(value: unknown): BlogHomeLayout {
-  if (value === "single" || value === "timeline" || value === "grid" || value === "index") {
-    return value;
-  }
-  if (value === "cards") return "grid";
-  throw new Error("Home layout must be Single, Timeline, Grid, or Index");
+function cleanBlogHomeLayout(value: unknown): BlogHomeView {
+  if (value === "list" || value === "column" || value === "grid") return value;
+  throw new Error("Home layout must be List, One column, or Cards");
 }
 
 function isBlogsHandleConflict(error: unknown): boolean {

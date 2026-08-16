@@ -39,7 +39,7 @@ const blog: Blog = {
   name: "Demo",
   author: "Demo Author",
   cardStyle: "cover",
-  homeLayout: "timeline",
+  homeLayout: "list",
 };
 const legacyBasePost: Post = {
   id: postId,

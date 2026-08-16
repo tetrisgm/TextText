@@ -22,7 +22,7 @@ const blog: Blog = {
   author: "Demo Author",
   accent: "#065ec6",
   cardStyle: "cover",
-  homeLayout: "timeline",
+  homeLayout: "list",
 };
 
 const folder: Folder = {
@@ -315,7 +315,8 @@ describe("manifest compatibility and integrity", () => {
       mode: "blog",
       views: ["timeline", "index", "grid", "single"],
       itemKinds: ["article", "media_post", "video_post"],
-      activeView: "timeline",
+      // No folder means no look to read, so the manifest reports cards.
+      activeView: "grid",
     });
     expect(manifest.items[0]).toMatchObject({
       file: "posts/adversarial.md",

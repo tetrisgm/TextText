@@ -73,6 +73,9 @@ for migration in "${migrations[@]}"; do
   node "$migration"
 done
 
+echo ">> migrate content: blog layout to Home"
+npx tsx scripts/migrate-blog-layout-to-home.ts
+
 echo ">> backfill content: AI guide notes"
 npx tsx scripts/migrate-agent-guide-notes.ts
 

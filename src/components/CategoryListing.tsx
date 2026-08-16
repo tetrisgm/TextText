@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { PostCard } from "@/components/PostCard";
 import styles from "@/components/CategoryListing.module.css";
-import type { Blog, Folder, Post } from "@/lib/content";
+import type { Blog, BlogHomeLayout, Folder, Post } from "@/lib/content";
 import {
   formatArticleDate,
   isVideoFile,
@@ -296,6 +296,7 @@ function CategoryPosts({
   folders,
   folderPath,
   handle,
+  layout,
   posts,
   publicOrigin,
 }: {
@@ -303,10 +304,11 @@ function CategoryPosts({
   folders: Folder[];
   folderPath: string;
   handle: string;
+  layout: BlogHomeLayout;
   posts: Post[];
   publicOrigin: boolean;
 }) {
-  if (blog.homeLayout === "timeline") {
+  if (layout === "timeline") {
     return (
       <CategoryTimeline
         blog={blog}
@@ -317,7 +319,7 @@ function CategoryPosts({
       />
     );
   }
-  if (blog.homeLayout === "index") {
+  if (layout === "index") {
     return (
       <CategoryIndex
         blog={blog}
@@ -345,6 +347,7 @@ export function CategoryListing({
   folder,
   folders,
   handle,
+  layout,
   posts,
   publicOrigin = false,
 }: {
@@ -352,6 +355,8 @@ export function CategoryListing({
   folder: Folder;
   folders: Folder[];
   handle: string;
+  /** The folder's look decides how its index renders. */
+  layout: BlogHomeLayout;
   posts: Post[];
   publicOrigin?: boolean;
 }) {
@@ -390,6 +395,7 @@ export function CategoryListing({
           folders={folders}
           folderPath={folder.path}
           handle={handle}
+          layout={layout}
           posts={posts}
           publicOrigin={publicOrigin}
         />

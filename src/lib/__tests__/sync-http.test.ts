@@ -35,7 +35,7 @@ const blog: Blog = {
   name: "The Demo Broadsheet",
   author: "Demo Author",
   cardStyle: "cover",
-  homeLayout: "timeline",
+  homeLayout: "list",
 };
 
 const legacyPost: Post = {

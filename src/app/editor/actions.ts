@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 import type {
   Blog,
-  BlogHomeLayout,
   Folder,
   GalleryItem,
   LinkRef,
@@ -106,19 +105,6 @@ async function editorHandle(): Promise<string> {
   return blog.handle;
 }
 
-
-function cleanHomeLayout(value: unknown): BlogHomeLayout {
-  if (
-    value === "single" ||
-    value === "timeline" ||
-    value === "grid" ||
-    value === "index"
-  ) {
-    return value;
-  }
-  if (value === "cards") return "grid";
-  return "grid";
-}
 
 // The Blog folder's public vocabulary; the blog-home Create picker offers
 // exactly these. Notes and bookmarks are created through
@@ -524,14 +510,9 @@ async function ensureFirstArticleDraftPath(handle: string): Promise<string> {
   return tenantPostEditPath(handle, post);
 }
 
-export async function createStarterDraftPath(layoutInput?: unknown): Promise<string> {
+export async function createStarterDraftPath(): Promise<string> {
   const user = await editorUser();
-  const hasLayoutInput = layoutInput !== undefined && layoutInput !== null;
-  const layout = cleanHomeLayout(layoutInput);
   const handle = (await resolveOwnedWorkspace(user)).handle;
-  if (hasLayoutInput) {
-    await updateBlogByHandle(handle, { homeLayout: layout }, { allowHandleChange: true });
-  }
   return ensureFirstArticleDraftPath(handle);
 }
 

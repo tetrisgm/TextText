@@ -34,8 +34,6 @@ type BlogHomeShellProps = {
   tagline?: string;
   canEdit: boolean;
   publicPath: string;
-  initialCardStyle: BlogCardStyle;
-  initialHomeLayout: BlogHomeLayout;
   initialNamingCeremony: boolean;
   style?: CSSProperties;
   children: ReactNode;
@@ -105,8 +103,6 @@ export function BlogHomeShell({
   tagline,
   canEdit,
   publicPath,
-  initialCardStyle,
-  initialHomeLayout,
   initialNamingCeremony,
   style,
   children,
@@ -140,12 +136,7 @@ export function BlogHomeShell({
     <main className={rootClassName} style={style}>
       {shortcutsActive && <BlogHomeShortcuts owner={canEdit} handle={handle} />}
       {showFolderActions && (
-        <BlogFolderActionBar
-          handle={handle}
-          publicPath={publicPath}
-          initialCardStyle={initialCardStyle}
-          initialHomeLayout={initialHomeLayout}
-        />
+        <BlogFolderActionBar handle={handle} publicPath={publicPath} />
       )}
       <header className="blog-home-header">
         <div className="blog-home-heading">
@@ -183,144 +174,15 @@ export function BlogHomeShell({
 function BlogFolderActionBar({
   handle,
   publicPath,
-  initialCardStyle,
-  initialHomeLayout,
 }: {
   handle: string;
   publicPath: string;
-  initialCardStyle: BlogCardStyle;
-  initialHomeLayout: BlogHomeLayout;
 }) {
   return (
     <div className="blog-home-action-bar applecms" aria-label="Folder controls">
       <div className="blog-home-action-toolbar ac-chrome">
-        <BlogDisplaySettings
-          handle={handle}
-          initialCardStyle={initialCardStyle}
-          initialHomeLayout={initialHomeLayout}
-        />
         <CreatePostTypePicker handle={handle} publicPath={publicPath} />
       </div>
-    </div>
-  );
-}
-
-function BlogDisplaySettings({
-  handle,
-  initialCardStyle,
-  initialHomeLayout,
-}: {
-  handle: string;
-  initialCardStyle: BlogCardStyle;
-  initialHomeLayout: BlogHomeLayout;
-}) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [cardStyle, setCardStyle] = useState(initialCardStyle);
-  const [homeLayout, setHomeLayout] = useState(initialHomeLayout);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<ActionError>(null);
-  const [, startTransition] = useTransition();
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const closeSettings = useCallback(() => setOpen(false), []);
-  useDismissPopover(open, settingsRef, closeSettings);
-
-  const commit = useCallback(
-    (patch: { cardStyle?: BlogCardStyle; homeLayout?: BlogHomeLayout }) => {
-      const previous = { cardStyle, homeLayout };
-      if (patch.cardStyle) setCardStyle(patch.cardStyle);
-      if (patch.homeLayout) setHomeLayout(patch.homeLayout);
-      setError(null);
-      setPending(true);
-      startTransition(() => {
-        void updateBlogAction(patch, handle)
-          .then((saved) => {
-            setCardStyle(saved.cardStyle);
-            setHomeLayout(saved.homeLayout);
-            router.refresh();
-          })
-          .catch(() => {
-            setCardStyle(previous.cardStyle);
-            setHomeLayout(previous.homeLayout);
-            setError("Could not save");
-          })
-          .finally(() => setPending(false));
-      });
-    },
-    [cardStyle, handle, homeLayout, router],
-  );
-
-  return (
-    <div className="blog-settings-picker" ref={settingsRef}>
-      <button
-        className="blog-settings-button ac-btn ac-btn-gray"
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        Layout
-      </button>
-      {open && (
-        <div
-          className="blog-settings-popover post-edit-menu"
-          data-post-edit-menu-open="true"
-          role="dialog"
-          aria-label="Folder layout"
-        >
-          <div className="blog-settings-section">
-            <span className="blog-settings-label">Home layout</span>
-            <div
-              className="ac-segmented blog-settings-segmented"
-              role="group"
-              aria-label="Home layout"
-            >
-              {HOME_LAYOUT_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`ac-segmented-button${
-                    homeLayout === option.value ? " ac-active" : ""
-                  }`}
-                  aria-pressed={homeLayout === option.value}
-                  disabled={pending}
-                  onClick={() => commit({ homeLayout: option.value })}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="blog-settings-section">
-            <span className="blog-settings-label">Cards</span>
-            <div
-              className="ac-segmented blog-settings-segmented"
-              role="group"
-              aria-label="Card style"
-            >
-              {CARD_STYLE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`ac-segmented-button${
-                    cardStyle === option.value ? " ac-active" : ""
-                  }`}
-                  aria-pressed={cardStyle === option.value}
-                  disabled={pending}
-                  onClick={() => commit({ cardStyle: option.value })}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {error && (
-            <span className="blog-home-control-error" role="alert">
-              {error}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

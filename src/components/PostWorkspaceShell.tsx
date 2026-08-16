@@ -28,6 +28,7 @@ import {
   renameFolderAction,
   toggleEditablePostStarredAction,
   trashFolderAction,
+  updateBlogAction,
 } from "@/app/editor/actions";
 import { usePresence } from "@/lib/collab/usePresence";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
@@ -109,7 +110,6 @@ async function runTrashOperation(
   throw new Error(payload?.error || "Trash operation failed");
 }
 import {
-  useWorkspaceViewMode,
   WorkspaceViewModeControl,
 } from "@/components/workspace/WorkspaceViewModeControl";
 import {
@@ -160,7 +160,14 @@ import {
   type WorkspaceItemTextPatch,
   type WorkspaceItemTextSnapshot,
 } from "@/lib/ai/workspace-item-draft";
-import type { Blog, Folder, FolderMode, Post, PostType } from "@/lib/content";
+import type {
+  Blog,
+  BlogHomeView,
+  Folder,
+  FolderMode,
+  Post,
+  PostType,
+} from "@/lib/content";
 import { isVideoFile } from "@/lib/content";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import type { DocumentSnapshot } from "@/lib/documents/model";
@@ -2529,9 +2536,28 @@ function WorkspaceRootLanding({
   const requestedBodiesRef = useRef(new Set<string>());
   const [bodyRevision, setBodyRevision] = useState(0);
   const [sort, setSort] = useState<SidebarDocumentSort>("recent");
-  const [recentViewMode, setRecentViewMode] = useWorkspaceViewMode(
-    "library-v3",
-    "list",
+  // Home's layout is the workspace's one stored layout choice, so it travels
+  // with the workspace instead of with the browser that set it. Every folder
+  // page, Blog included, takes its layout from the look on the folder; this
+  // control governs Home and nothing else.
+  const [recentViewMode, setRecentViewMode] = useState<BlogHomeView>(
+    pool.blog.homeLayout,
+  );
+  const [homeViewError, setHomeViewError] = useState<string | null>(null);
+  const commitHomeView = useCallback(
+    (homeLayout: BlogHomeView) => {
+      const previous = recentViewMode;
+      setRecentViewMode(homeLayout);
+      setHomeViewError(null);
+      // A viewer who cannot manage the workspace still gets to switch views;
+      // theirs simply is not saved for everyone.
+      if (!canManageItems) return;
+      void updateBlogAction({ homeLayout }, pool.blog.handle).catch(() => {
+        setRecentViewMode(previous);
+        setHomeViewError("Could not save");
+      });
+    },
+    [canManageItems, pool.blog.handle, recentViewMode],
   );
   const [itemFilter, setItemFilter] = useState<
     "all" | "article" | "note" | "bookmark"
@@ -2981,8 +3007,13 @@ function WorkspaceRootLanding({
                   </select>
                   <WorkspaceViewModeControl
                     mode={recentViewMode}
-                    onChange={setRecentViewMode}
+                    onChange={commitHomeView}
                   />
+                  {homeViewError && (
+                    <span className="workspace-library-error" role="alert">
+                      {homeViewError}
+                    </span>
+                  )}
                 </div>
               </header>
               {recent.length === 0 ? (
