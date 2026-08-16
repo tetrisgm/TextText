@@ -83,6 +83,29 @@ const article = {
   },
 } as const;
 
+/**
+ * The Article document, listed as a timeline instead of as cards.
+ *
+ * A blog that reads as a dated run of entries was reachable until folder looks
+ * took over how an index renders: the old Blog page had a Layout popover with
+ * Timeline in it, and when that moved to Home the catalogue had no look
+ * declaring `collection.layout: "timeline"`, so the layout became unreachable
+ * (owner ruling 2026-08-16 restores it). Named for what it makes the FOLDER
+ * do, because that is the only thing separating it from Article: the item is
+ * the same article, field for field.
+ */
+const timeline = {
+  ...article,
+  id: "texttext.timeline",
+  name: "Timeline",
+  description: "Articles as a dated run, newest first, with the date and reading time under each title.",
+  collection: {
+    ...article.collection,
+    layout: "timeline",
+    columns: 1,
+  },
+} as const;
+
 const note = {
   schemaVersion: 1,
   engineVersion: 1,
@@ -3334,6 +3357,7 @@ const activeDefinitions = [
   talk,
   // Anything new goes after the original five, which stay first and
   // byte-compatible; presentation-schema.test.ts pins that.
+  timeline,
   casestudy,
   page,
   todo,
@@ -3409,6 +3433,7 @@ export const TEMPLATE_CATALOG: readonly {
   category: TemplateCategory;
 }[] = Object.freeze([
   { id: "texttext.article", category: "Text" },
+  { id: "texttext.timeline", category: "Publish" },
   { id: "texttext.note", category: "Text" },
   { id: "texttext.page", category: "Text" },
   { id: "texttext.casestudy", category: "Publish" },

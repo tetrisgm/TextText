@@ -150,6 +150,7 @@ async function checkBlogPage(page: Page, handle: string, theme: "light" | "dark"
  */
 const CARDS_COPY = "Nothing published in this collection yet.";
 const INDEX_COPY = "No pages published in this index yet.";
+const TIMELINE_COPY = "Nothing published in this timeline yet.";
 
 async function applyLook(page: Page, name: string): Promise<boolean> {
   await openHome(page);
@@ -186,20 +187,24 @@ async function checkLookGovernsTheBlogPage(page: Page, handle: string) {
     before,
   );
 
-  // Article's look is cards, Page's look is a list, which the page renderers
-  // call an index. Whichever the folder is on, this moves it to the other.
-  const target = before === CARDS_COPY ? "Page" : "Article";
-  const expected = before === CARDS_COPY ? INDEX_COPY : CARDS_COPY;
-  check(`the look gallery offers ${target}`, await applyLook(page, target));
-
-  await publicBlogHome(page, handle);
-  const after = await emptyCopy(page);
-  check(
-    `changing the folder's look to ${target} changes the published page`,
-    after === expected,
-    after,
-  );
-  await page.screenshot({ path: `${SHOTS}/blog-after-look.png` });
+  // Article's look is cards, Page's is a list which the page renderers call an
+  // index, Timeline's is a timeline. Walking all three proves the derivation
+  // rather than one hop of it, and leaves the folder back where it started.
+  for (const [target, expected] of [
+    ["Page", INDEX_COPY],
+    ["Timeline", TIMELINE_COPY],
+    ["Article", CARDS_COPY],
+  ] as const) {
+    check(`the look gallery offers ${target}`, await applyLook(page, target));
+    await publicBlogHome(page, handle);
+    const after = await emptyCopy(page);
+    check(
+      `the folder wearing ${target} makes the published page render that way`,
+      after === expected,
+      after,
+    );
+    await page.screenshot({ path: `${SHOTS}/blog-look-${target.toLowerCase()}.png` });
+  }
 }
 
 /**

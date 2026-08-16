@@ -275,14 +275,17 @@ function BlogSingleHome({
  * empty, when the ordinary cause is simply that nothing here is published.
  */
 function BlogEmptyState({ layout }: { layout: BlogHomeLayout }) {
-  if (layout === "timeline") return null;
-
+  // Every layout says something. Timeline used to return null, which left a
+  // visitor on a page with a name and nothing under it, indistinguishable
+  // from a page that failed to load.
   const copy =
     layout === "single"
       ? "Nothing published here yet."
       : layout === "index"
         ? "No pages published in this index yet."
-        : "Nothing published in this collection yet.";
+        : layout === "timeline"
+          ? "Nothing published in this timeline yet."
+          : "Nothing published in this collection yet.";
 
   return <p className="blog-home-empty">{copy}</p>;
 }

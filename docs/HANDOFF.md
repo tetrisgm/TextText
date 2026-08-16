@@ -142,11 +142,13 @@ polish ledger.
   `npm run eval:folder-look`.
 - Known rough edge: a look saved during a session shows up in the picker on
   the next load, because the gallery reads the pool fetched at page load.
-- The look catalogue was cut to nine at the owner's request and none of the
-  nine declares `timeline` or `single`, so those two layouts are no longer
-  reachable for a folder index. `changelog` (timeline) and `now` (single)
-  still exist and still resolve for documents pinned to them. Restoring reach
-  is a catalogue decision, not a code one.
+- The catalogue is ten. Cutting it to nine left no look declaring
+  `collection.layout: "timeline"`, so a blog could not read as a dated run at
+  all once folder looks took over how an index renders. `texttext.timeline`
+  restores it (owner ruling 2026-08-16): Article's document, field for field,
+  with a timeline index. It sits after the original five, which stay first and
+  byte-compatible. `single` was NOT restored, deliberately; `now` still exists
+  and still resolves for documents pinned to it.
 - `blog.cardStyle` is deleted (owner ruling 2026-08-16), column and all:
   `scripts/migrate-drop-card-style.mjs`. It chose whether published cards
   showed their cover, it was set from the same Blog popover the layout picker
