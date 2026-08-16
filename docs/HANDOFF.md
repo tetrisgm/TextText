@@ -142,11 +142,35 @@ polish ledger.
   `npm run eval:folder-look`.
 - Known rough edge: a look saved during a session shows up in the picker on
   the next load, because the gallery reads the pool fetched at page load.
-- NOT done, still open: collapsing the two layout systems. `homeLayout` and
-  `cardStyle` (Single/Timeline/Grid/Index, Cover/Minimal) and the template
-  engine's `collection.layout` (list, cards, timeline, index, single, board,
-  calendar, heatmap) overlap almost exactly. Timeline, index and single are in
-  both; grid and cards are the same thing named twice.
+- The two layout systems, resolved as a finding, not yet as code. The owner
+  says the `homeLayout`/`cardStyle` picker was INTENDED for the Home (root)
+  navigation. It does not do that today: it drives `BlogHomeShell`, which is
+  the Blog folder's page in both `PublicBlogHome` and the owner's view.
+  `WorkspaceRootLanding` (the actual Home) reads neither. So the picker and
+  the template engine's `collection.layout` both style the same surface,
+  which is the duplication, and the fix is to move the picker to Home rather
+  than to merge the two. Not started: it takes a control off the Blog page
+  and puts one on Home, which is a visible product change.
+
+## OAuth for agents is gone (owner, 2026-08-15)
+
+- Removed: `/oauth/**`, both `.well-known` OAuth documents, `lib/oauth.ts`,
+  `lib/oauth-connections.ts`, the connected-apps panel, five test files, the
+  grant revocation in account deletion, and three tables (migration
+  `scripts/migrate-drop-oauth.mjs`). ~2,400 lines.
+- Nothing about agent auth changed: OAuth only ever MINTED the token, and
+  `api-tokens.ts` resolves `wsk_` bearers without importing any of it.
+  Verified after removal that an agent with a token reads its workspace.
+- The MCP 401 and 403 used to advertise `resource_metadata` pointing at a
+  document that would now 404, which sends a conforming client down a dead
+  chain. They point at `/docs/mcp` with `resource_documentation` instead.
+- `/.well-known/mcp.json` STAYS. Zero-config discovery does not depend on
+  OAuth and is how a client finds the endpoint at all.
+- Known limit, documented on `/docs/mcp`: ChatGPT's connector UI expects an
+  OAuth server for some connector kinds. The page says so and names the
+  clients that take a pasted token instead.
+- Sign in with Apple/Google (people signing in to TextText) is untouched.
+  That is Pillar 5 and was never what the ruling was about.
 
 ## Traps found while building these
 
