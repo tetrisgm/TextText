@@ -51,6 +51,12 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
    layout. Miniatures and collection rows are not pages, so they keep painting
    only themselves. */
 .tt-document:not(.tt-collection-item):not([data-preview]){position:relative;z-index:0}
+/* HAZARD, and the reason this rule carries a warning. The sheet is FIXED and
+   covers the whole window, so a document rendered INSIDE another page paints
+   over everything above it in that page. The landing page shipped blank above
+   the fold this way: its hero laid out, hit-tested and reported opacity 1
+   while painting nothing, because the look demo further down the page had
+   thrown this sheet over it. Any embedded document must pass the preview prop. */
 .tt-document:not(.tt-collection-item):not([data-preview])::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--paper,#fff);pointer-events:none}
 .tt-prose{width:min(var(--tt-measure),calc(100% - 2rem));margin-inline:auto;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.06rem;line-height:1.7}.tt-prose>*:first-child{margin-top:0}
 /* Lists keep the document's left edge. The browser indents a list by 40px,

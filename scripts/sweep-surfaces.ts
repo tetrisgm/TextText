@@ -10,6 +10,11 @@
 // surface that fails to load is named rather than silently skipped.
 //
 // SWEEP_ONLY=editor npm run sweep    photograph one surface
+//
+// It does make one assertion, because a screenshot nobody looks at is worth
+// nothing: a surface that comes back as a blank rectangle is reported. The
+// landing page shipped blank above the fold with correct markup, correct
+// layout and correct computed styles, and only a pixel told the truth.
 
 import { chromium, type Browser, type Page } from "playwright";
 import { mkdirSync } from "node:fs";
@@ -167,6 +172,27 @@ const surfaces: Surface[] = [
   },
 ];
 
+/**
+ * Does anything at all reach the pixels?
+ *
+ * Measured by covering the viewport with a probe of a known colour, reading
+ * back what a screenshot of one pixel outside the probe contains, and instead,
+ * more cheaply: comparing the PNG byte length of the viewport against a plain
+ * one-colour capture of the same size. A page that paints text and rules
+ * compresses far worse than a flat rectangle, so a capture within a hair of
+ * flat is blank.
+ */
+async function paints(page: Page): Promise<boolean> {
+  const shot = await page.screenshot({ fullPage: false });
+  const flat = await page.screenshot({
+    fullPage: false,
+    clip: { x: 0, y: 0, width: 8, height: 8 },
+  });
+  // A flat 8x8 is the floor. A real surface at 1440x940 is tens of kilobytes;
+  // a blank one lands within a few hundred bytes of the floor per megapixel.
+  return shot.length > flat.length * 12;
+}
+
 async function devSignIn(page: Page): Promise<string> {
   await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
   const form = page.locator("form.ac-devsignin");
@@ -182,6 +208,8 @@ async function devSignIn(page: Page): Promise<string> {
   const match = /\/@([^/?#]+)/.exec(page.url());
   return match?.[1] ?? "";
 }
+
+const blank: string[] = [];
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
@@ -208,11 +236,15 @@ async function main() {
       try {
         await surface.go(target, handle);
         await target.waitForTimeout(1800);
-        await target.screenshot({
+        const shot = await target.screenshot({
           path: `${OUT}/${surface.name}-${theme}.png`,
           fullPage: surface.fullPage ?? false,
         });
-        console.log(`  ${surface.name} ${theme}`);
+        const painted = await paints(target);
+        if (!painted) blank.push(`${surface.name} ${theme}`);
+        console.log(
+          `  ${surface.name} ${theme}${painted ? "" : "   BLANK"} (${Math.round(shot.length / 1024)}kb)`,
+        );
       } catch (error) {
         console.log(`  FAILED ${surface.name} ${theme}: ${String(error).slice(0, 120)}`);
       }
@@ -221,6 +253,10 @@ async function main() {
 
   await browser.close();
   console.log(`\nscreenshots in ${OUT}`);
+  if (blank.length) {
+    console.log(`\nBLANK: ${blank.join(", ")}`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

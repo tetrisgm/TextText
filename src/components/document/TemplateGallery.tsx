@@ -173,7 +173,10 @@ export function TemplateGallery({
             </button>
           </div>
           <div className={styles.previewDocument}>
-            <DocumentRenderer document={shown(preview)} template={preview} documentId="template-preview" />
+            {/* preview: this is a look being shown inside a dialog, not the
+                page. Without the flag the document paints its paper across the
+                whole window from behind the dialog. */}
+            <DocumentRenderer document={shown(preview)} template={preview} documentId="template-preview" preview />
           </div>
           <button
             ref={continueRef}

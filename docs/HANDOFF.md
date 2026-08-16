@@ -204,54 +204,47 @@ polish ledger.
   `NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000` on the dev server, because the
   published Blog page is a workspace subdomain.
 
-## Open bug: the landing page paints nothing above the fold (2026-08-16)
+## The blank landing page, and why it was blank (fixed 2026-08-16)
 
-Found by `npm run sweep`. A signed-out visitor at `/` sees white. Not a
-screenshot artifact and not dev-only.
+A signed-out visitor at `/` saw white above the fold, in every browser and in
+a production build. The DOM was correct, the layout was correct, the h1
+reported opacity 1 and hit-tested as itself, and nothing painted, not even a
+background colour set on it by hand.
 
-What is established:
+The cause was one rule in the document engine:
 
-- Reproduces in headless Playwright, in the in-app browser, and in a real
-  visible Chromium window, and in a production build (`next build` + `next
-  start` on 3100), at 1280x800 and 1440x940, light and dark.
-- The DOM is correct. `h1` is "Everything you write, in one place.", rect
-  (43, 195, 534, 196), opacity 1, visibility visible, no transform, no filter,
-  and every ancestor up to `html` is the same. `elementsFromPoint` inside the
-  h1 returns the h1. `document.fonts.status` is "loaded".
-- Nothing in `.texttext-landing` paints, not even a `background: yellow` set
-  on the h1 by hand, and not even `document.body.style.background = magenta`.
-  A `position: fixed` div appended at runtime DOES paint on top. So the
-  compositor is alive; this subtree is not reaching it.
-- A full-page screenshot renders the LOWER sections correctly and leaves the
-  hero blank, with the next heading clipped. A forced whole-document raster
-  therefore sees most of the page but not the hero.
-- With every stylesheet disabled at once (`sheet.disabled = true` on all four)
-  the page paints as unstyled HTML. Disabling any ONE of the four, including
-  the whole app chunk, does not bring it back, which is itself a clue: the
-  broken state survives removing the rules that could have caused it, so
-  whatever it is is latched at first paint.
+    .tt-document:not(.tt-collection-item):not([data-preview])::before {
+      content: ""; position: fixed; inset: 0; z-index: -1;
+      background: var(--paper, #fff);
+    }
 
-Ruled out, each tested directly and reverted:
+A document that IS the page paints its paper across the window, which is
+right for a reader. The landing page embeds a look demo further down, and that
+demo threw the same fixed, full-window sheet over everything above it. The
+sections after the demo painted because they come later in paint order; the
+hero did not. A `position: fixed` div appended at runtime painted on top,
+which is what made it look like a compositor fault rather than a stacking one.
 
-- `overflow-x: clip` on `.texttext-landing`, `min-height: 100dvh` on it, and
-  `min-height: calc(100dvh - 132px)` on the hero.
-- The `body:has(.texttext-landing)` rules (neutralised at the source and
-  reloaded; still blank).
-- Fonts: the h1 resolves to the system stack, and the font set reports loaded.
-- View transitions: the app declares none, and next.config.ts enables none.
-- Console and page errors: none, on load or after.
+The fix is the mechanism the engine already had: an embedded document passes
+`preview`. Three of five call sites were not passing it. The rule now carries
+the hazard in a comment, because the guard is opt-out and the set of places a
+document can be embedded is open-ended.
 
-Do not trust `IntersectionObserver({trackVisibility: true})` as the oracle
-here. It reports isVisible false for the h1 even in states where the page
-paints, because it refuses to answer when effects are present, and a bisect
-built on it produced a confident and wrong answer (`.tt-editor-more-form
-button:disabled`). Pixels are the only oracle that held up: screenshot and
-look.
+`npm run sweep` now fails on a surface that comes back blank. It compares the
+PNG byte length of a capture against a flat 8x8 of the same page: a surface
+with text and rules compresses far worse than a rectangle. That check is the
+only thing in this session that would have caught it, and cheap.
 
-Next thing to try, untested: bisect `src/app/page.tsx` itself rather than the
-CSS, since the CSS bisect kept contradicting itself. Delete the hero section,
-then halves of the remaining sections, reloading between each, and find the
-markup that latches it.
+Two traps worth keeping:
+
+- `IntersectionObserver({trackVisibility: true})` is not a paint oracle. It
+  reported the heading invisible in states where the page painted, and a
+  bisect built on it named an innocent rule with total confidence. Pixels, or
+  nothing.
+- Disabling one stylesheet at a time proves nothing here, because the engine
+  CSS is injected by the renderer itself as well as by the page. Removing the
+  page-level copy while the renderer kept emitting its own is why the CSS
+  looked exonerated for an hour.
 
 ## Traps found while building these
 
@@ -272,8 +265,6 @@ markup that latches it.
 
 ## Open, in priority order
 
-- The landing page paints nothing above the fold. See the open-bug section
-  above; it is the front door and it ships.
 - Finish the scorecard above; each unchecked line is one loop iteration.
 - Fixed observation hazards: verify `window.innerWidth` is nonzero before
   trusting any browser measurement (a restarted pane can be 0x0 and serves

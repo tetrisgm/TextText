@@ -161,10 +161,16 @@ function DocumentDemo({ slug }: { slug: string }) {
     <div className="texttext-doc-demo" aria-hidden="true">
       <DocumentEngineStyles />
       <div className="texttext-doc-demo-inner">
+        {/* preview, because this is one. A document that is the page paints
+            its paper across the whole window with a fixed pseudo-element, and
+            without this flag that sheet covered the landing page above it: the
+            hero rendered, laid out and hit-tested correctly, and painted
+            nothing. Any document embedded inside another page needs it. */}
         <DocumentRenderer
           document={example.document}
           template={example.template}
           documentId={`landing-${slug}`}
+          preview
         />
       </div>
     </div>
