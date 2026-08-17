@@ -266,6 +266,14 @@ Two traps worth keeping:
   absent, and why the bundled `texttext` CLI reports no workspace. The
   window still works because the web view has its own session cookie; the
   NATIVE half of the app has been unlinked this whole time.
+- NOT localhost-specific, tested 2026-08-16: rebuilt against
+  `https://texttext.app`, reinstalled, launched. The app signs in with the
+  Aug 11 credentials (`serverOrigin: https://texttext.app`, valid), shows the
+  real workspace and its 14 items, and STILL registers no File Provider
+  domain, so the CLI still finds no workspace. Both guards in
+  `syncFileProviderDomain` pass in this state (credentials load, and
+  `account.json` carries a non-empty blog handle), which means the function is
+  most likely never called at all rather than returning early.
 - The chain, all of it verified present and correctly named, which is what
   makes the failure interesting: the injected `mintScript`
   (WebAppWindowController:212) runs only when `appToken == nil`, which was the
@@ -280,6 +288,14 @@ Two traps worth keeping:
   rebuild, relaunch, and read subsystem `app.texttext`. Note that the app
   currently emits NOTHING to that subsystem in an hour of running, which is
   itself a signal worth keeping.
+- The installed app is now the PRODUCTION build again (origin
+  https://texttext.app, appcast https://texttext.app/appcast.xml). A localhost
+  build had been installed over it on 2026-08-15 for verification, which is
+  why the owner found an app with no Apple or Google sign-in and none of their
+  content. Use `npm run try` for that instead: it runs the server, opens the
+  app and takes both down, leaving the one canonical install alone.
+  `mac/scripts/install-local.sh` REPLACES the owner's app; it is not a
+  sandbox.
 - Also found: there are two minting paths and only one is live.
   `AppLinkBridge.tsx` posts the same message shape through a server action and
   is the `/connect/app` flow; the injected script posts through
