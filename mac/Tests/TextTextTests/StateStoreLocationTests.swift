@@ -117,7 +117,7 @@ final class AppGroupContainerChoiceTests: XCTestCase {
     func testSandboxedTrustsTheSystemContainer() {
         let chosen = AppGroupContainer.choose(
             systemContainer: team, isSandboxed: true,
-            candidates: [team, naive], exists: { _ in true })
+            candidates: [team, naive], isUsable: { _ in true })
         XCTAssertEqual(chosen, team)
     }
 
@@ -126,23 +126,41 @@ final class AppGroupContainerChoiceTests: XCTestCase {
     func testUnsandboxedIgnoresTheNaiveSystemAnswer() {
         let chosen = AppGroupContainer.choose(
             systemContainer: naive, isSandboxed: false,
-            candidates: [team, naive], exists: { _ in true })
+            candidates: [team, naive], isUsable: { _ in true })
         XCTAssertEqual(chosen, team, "both editions must land on the team-prefixed container")
     }
 
     func testUnsandboxedFallsBackWhenOnlyTheNaiveOneExists() {
         let chosen = AppGroupContainer.choose(
             systemContainer: naive, isSandboxed: false,
-            candidates: [team, naive], exists: { $0 == self.naive })
+            candidates: [team, naive], isUsable: { $0 == self.naive })
         XCTAssertEqual(chosen, naive)
+    }
+
+    /// The 2026-08-16 regression: the team-prefixed container exists from an
+    /// older install, but this edition cannot write to it, and choosing it
+    /// silently swallowed every save. Existence is not usability.
+    func testUnsandboxedSkipsAContainerItCannotWriteTo() {
+        let chosen = AppGroupContainer.choose(
+            systemContainer: naive, isSandboxed: false,
+            candidates: [team, naive], isUsable: { $0 != self.team })
+        XCTAssertEqual(chosen, naive)
+    }
+
+    /// And when neither can be written to, nil, so StateStore falls back to
+    /// Application Support rather than writing into a hole.
+    func testUnsandboxedReturnsNilWhenNothingIsWritable() {
+        XCTAssertNil(AppGroupContainer.choose(
+            systemContainer: naive, isSandboxed: false,
+            candidates: [team, naive], isUsable: { _ in false }))
     }
 
     func testNoContainerAtAll() {
         XCTAssertNil(AppGroupContainer.choose(
             systemContainer: naive, isSandboxed: false,
-            candidates: [team, naive], exists: { _ in false }))
+            candidates: [team, naive], isUsable: { _ in false }))
         XCTAssertNil(AppGroupContainer.choose(
             systemContainer: nil, isSandboxed: true,
-            candidates: [], exists: { _ in true }))
+            candidates: [], isUsable: { _ in true }))
     }
 }

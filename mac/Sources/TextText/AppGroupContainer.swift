@@ -69,7 +69,31 @@ enum AppGroupContainer {
                 forSecurityApplicationGroupIdentifier: groupIdentifier),
             isSandboxed: isSandboxed,
             candidates: candidates(for: groupIdentifier),
-            exists: { fileManager.fileExists(atPath: $0.path) })
+            isUsable: { isWritable($0, fileManager: fileManager) })
+    }
+
+    /// Can this app actually PUT something in there?
+    ///
+    /// Existence was the old test, and it is the wrong one. macOS protects
+    /// group containers: the team-prefixed directory survives on disk from an
+    /// earlier install, so it exists, but a Developer ID build is not sandboxed
+    /// and its entitlement names the bare group id, so every write into the
+    /// team-prefixed path is denied. StateStore writes through `try?`, so the
+    /// denial is silent: credentials never persist, the app never links, and the
+    /// File Provider domain is never registered, with the window looking
+    /// perfectly healthy throughout because the web view has its own cookie.
+    /// Found 2026-08-16, after the app had been unlinked for days.
+    ///
+    /// The probe is a real write, because POSIX permissions say yes here and
+    /// the sandbox still says no.
+    static func isWritable(_ directory: URL, fileManager: FileManager) -> Bool {
+        guard fileManager.fileExists(atPath: directory.path) else { return false }
+        let probe = directory.appendingPathComponent(".texttext-write-probe")
+        guard fileManager.createFile(atPath: probe.path, contents: Data()) else {
+            return false
+        }
+        try? fileManager.removeItem(at: probe)
+        return true
     }
 
     /// True only inside the sandboxed (Store) edition. The system sets this for
@@ -91,11 +115,16 @@ enum AppGroupContainer {
     /// the candidates decide, team-prefixed first, because that is the
     /// directory the sandboxed edition and the extensions actually use.
     static func choose(systemContainer: URL?, isSandboxed: Bool,
-                       candidates: [URL], exists: (URL) -> Bool) -> URL? {
-        if isSandboxed, let systemContainer, exists(systemContainer) {
+                       candidates: [URL], isUsable: (URL) -> Bool) -> URL? {
+        if isSandboxed, let systemContainer, isUsable(systemContainer) {
             return systemContainer
         }
-        return candidates.first(where: exists)
+        // The first candidate this edition can actually write to. A directory
+        // that exists but refuses writes is worse than no directory at all: it
+        // swallows every save without an error. Returning nil is fine and
+        // recoverable, because StateStore then keeps state in Application
+        // Support, which is where the Developer ID build kept it all along.
+        return candidates.first(where: isUsable)
     }
 
     /// This app's own Team ID, read from its signature, so the team-prefixed

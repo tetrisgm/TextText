@@ -254,60 +254,37 @@ Two traps worth keeping:
   CGWindowList without checking it fits the display. Capture the whole screen
   with `screencapture -x` and read that. The display here is 1800x1169 points
   at 2x, so a full capture is 3600x2338.
-- Open, and now precisely characterised: THE MAC APP NEVER LINKS. On a Mac
-  with no stored credentials the web view mints an app token successfully
-  (`POST /api/app/token` returns 200, observed in the dev server log) and the
-  native side persists NOTHING. Watched for 24 seconds across a clean quit and
-  relaunch: `~/Library/Application Support/TextText/credentials.json` is never
-  written, and `find ~/Library -newermt "-10 minutes" -path "*exttext*"`
-  returns nothing at all. That is why the File Provider domain is never added
-  (`syncFileProviderDomain` returns at its first guard,
-  `store.loadCredentials()`), why `~/Library/CloudStorage/TextText-*` is
-  absent, and why the bundled `texttext` CLI reports no workspace. The
-  window still works because the web view has its own session cookie; the
-  NATIVE half of the app has been unlinked this whole time.
-- NOT localhost-specific, tested 2026-08-16: rebuilt against
-  `https://texttext.app`, reinstalled, launched. The app signs in with the
-  Aug 11 credentials (`serverOrigin: https://texttext.app`, valid), shows the
-  real workspace and its 14 items, and STILL registers no File Provider
-  domain, so the CLI still finds no workspace. Both guards in
-  `syncFileProviderDomain` pass in this state (credentials load, and
-  `account.json` carries a non-empty blog handle), which means the function is
-  most likely never called at all rather than returning early.
-- The chain, all of it verified present and correctly named, which is what
-  makes the failure interesting: the injected `mintScript`
-  (WebAppWindowController:212) runs only when `appToken == nil`, which was the
-  case; it posts `{action:"linked", token, origin}` to the handler registered
-  as `textTextApp` (:187); the handler (:682) accepts exactly that shape and
-  calls `onLinked`; `onLinked` is wired to `handleAppLinked` whenever the
-  window is created (AppDelegate:2398); `handleAppLinked` calls
-  `store.saveCredentials`. Every link in that chain reads correct, and the
-  bytes never land.
-- Next step is instrumentation, not more reading: put an os_log at the top of
-  the message handler, inside the `linked` guard, and in `handleAppLinked`,
-  rebuild, relaunch, and read subsystem `app.texttext`. Note that the app
-  currently emits NOTHING to that subsystem in an hour of running, which is
-  itself a signal worth keeping.
-- The installed app is now the PRODUCTION build again (origin
-  https://texttext.app, appcast https://texttext.app/appcast.xml). A localhost
-  build had been installed over it on 2026-08-15 for verification, which is
-  why the owner found an app with no Apple or Google sign-in and none of their
-  content. Use `npm run try` for that instead: it runs the server, opens the
-  app and takes both down, leaving the one canonical install alone.
-  `mac/scripts/install-local.sh` REPLACES the owner's app; it is not a
-  sandbox.
-- Also found: there are two minting paths and only one is live.
-  `AppLinkBridge.tsx` posts the same message shape through a server action and
-  is the `/connect/app` flow; the injected script posts through
-  `POST /api/app/token`. The log shows the injected one ran.
-- The workspace menu (the "test's blog" chip that holds Sign out) does not
-  open under synthetic clicks, so a sign-out cannot be driven from outside the
-  app. Signing out at the state level works instead: quit, move
-  `account.json` and `credentials.json` aside, relaunch. Restore them the same
-  way, because the app cannot sign itself back in while this bug stands.
-- NotchNook owns a 1800x250 window at layer 25 across the top of the screen,
-  so computer-use clicks in the top 250px land on it and are refused. Move the
-  target window below y=250 first.
+- FIXED 2026-08-16: the Mac app never linked, and the cause was the state
+  directory. `AppGroupContainer.choose` picked the first candidate that
+  EXISTED. The team-prefixed group container survives on disk from an earlier
+  install, so it existed, but a Developer ID build is not sandboxed and its
+  entitlement names the bare group id, so every write into the team-prefixed
+  path was denied. StateStore writes through `try?`, so the denial was silent:
+  `saveCredentials` appeared to work, `loadCredentials` returned nil a
+  millisecond later, the app never linked, and no File Provider domain was
+  ever registered. The window looked healthy throughout because the web view
+  carries its own session cookie.
+- Existence is now not the test; writability is. `AppGroupContainer.isWritable`
+  probes with a real file create, because POSIX permissions on that directory
+  say yes and the sandbox still says no. When no candidate is writable the
+  resolver returns nil and StateStore keeps state in Application Support,
+  which is where the Developer ID build always kept it. Two regression tests
+  cover it in StateStoreLocationTests.
+- How it was found, for the next silent-failure hunt: an os_log at every branch
+  of the link path, streamed live across a relaunch
+  (`log stream --predicate 'subsystem == "app.texttext"' --info --debug`). The
+  trace read "linked: credentials saved" and then "seed: NO CREDENTIALS" three
+  lines later, which named the bug in one screen after a day of reading code
+  that all looked correct. `log show` after the fact returned nothing for this
+  process; only `log stream` during the run worked.
+- Verified after the fix, with no override: credentials persist, the domain
+  registers, and `~/Library/CloudStorage/TextText-TextText` exists.
+- STILL OPEN, downstream and narrower: the mount does not enumerate. `ls` on
+  it times out and no File Provider extension process is running, so the
+  bundled `texttext` CLI returns nothing (it no longer reports "no workspace",
+  which is the difference). The handoff publishes cleanly
+  (`save: group=52WM463HR2.app.texttext.fp workspaces=1`), so the extension
+  has its credentials; the question is why the system never launches it.
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop
