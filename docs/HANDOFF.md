@@ -279,12 +279,23 @@ Two traps worth keeping:
   process; only `log stream` during the run worked.
 - Verified after the fix, with no override: credentials persist, the domain
   registers, and `~/Library/CloudStorage/TextText-TextText` exists.
-- STILL OPEN, downstream and narrower: the mount does not enumerate. `ls` on
-  it times out and no File Provider extension process is running, so the
-  bundled `texttext` CLI returns nothing (it no longer reports "no workspace",
-  which is the difference). The handoff publishes cleanly
-  (`save: group=52WM463HR2.app.texttext.fp workspaces=1`), so the extension
-  has its credentials; the question is why the system never launches it.
+- The mount then did not enumerate, and that turned out to be a SETTING, not
+  a bug: `fileproviderctl dump app.texttext.mac.fileprovider` reports
+  `domain: t{6}t ... (user-disabled)`. macOS has TextText's File Provider
+  switched off, so the system never launches the extension, every
+  NSFileCoordinator request fails with FP -2011, and `pkd` is never even asked.
+  Nothing the app does can override it; it is the owner's toggle in
+  System Settings > General > Login Items & Extensions > File Providers.
+- Compare states when diagnosing this, they are distinct and the wording is
+  the diagnosis: Synology reads "temporarily disconnected", Write reads
+  "extension not found", TextText read "user-disabled".
+- The app CANNOT detect this on macOS. `NSFileProviderDomain.userEnabled` is
+  `FILEPROVIDER_API_AVAILABILITY_V3_IOS`, iOS only; macOS exposes only
+  `isDisconnected` and `isHidden`. An attempt to surface it was written and
+  reverted because it does not compile. So a disabled mount is indistinguishable
+  from a working one from inside the app, and the only tell is that
+  `fileproviderctl dump` line. Worth knowing before anyone spends another day
+  on it.
 - App Store record 1.0 vs shipped 0.175: submission-time only.
 
 ## Workflow and dev loop
