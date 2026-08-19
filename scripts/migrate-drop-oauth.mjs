@@ -10,39 +10,37 @@
 // Idempotent (DROP TABLE IF EXISTS). Reads DATABASE_URL from the environment
 // or from .env.local.
 
-import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import pkg from "@next/env";
+import { connectMigrationDatabase } from "./lib/postgres-migration.mjs";
 
-function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  try {
-    const text = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
-    for (const line of text.split("\n")) {
-      const match = line.match(/^\s*DATABASE_URL\s*=\s*(.*)\s*$/);
-      if (match) return match[1].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    // fall through to the error below
-  }
-  throw new Error("DATABASE_URL not set and not found in .env.local");
-}
+pkg.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 
 async function main() {
-  const sql = neon(loadDatabaseUrl());
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL is not configured");
+  const sql = await connectMigrationDatabase(databaseUrl);
 
   const [{ n }] = await sql`
     SELECT count(*)::int AS n FROM api_tokens WHERE revoked_at IS NULL
   `;
   console.log(`${n} live workspace token(s); those keep working.`);
 
-  console.log("Dropping oauth_refresh_token_families...");
-  await sql`DROP TABLE IF EXISTS oauth_refresh_token_families`;
+  // Drop the children before the family table. Production still has these
+  // foreign keys from migrate-add-oauth-token-lifecycle, and relying on
+  // CASCADE would make this cleanup broader than the named OAuth tables.
+  console.log("Dropping oauth_access_tokens...");
+  await sql`DROP TABLE IF EXISTS oauth_access_tokens`;
+  console.log("Dropping oauth_refresh_tokens...");
+  await sql`DROP TABLE IF EXISTS oauth_refresh_tokens`;
   console.log("Dropping oauth_authorization_codes...");
   await sql`DROP TABLE IF EXISTS oauth_authorization_codes`;
+  console.log("Dropping oauth_refresh_token_families...");
+  await sql`DROP TABLE IF EXISTS oauth_refresh_token_families`;
   console.log("Dropping oauth_clients...");
   await sql`DROP TABLE IF EXISTS oauth_clients`;
 
   console.log("Done.");
+  await sql.close();
 }
 
 main().catch((error) => {
