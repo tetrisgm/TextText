@@ -12,6 +12,11 @@ describe("item-type text generation", () => {
     expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"item"');
     expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"collection"');
     expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"groupBy"');
+    expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"type": "computed"');
+    expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"people" | "recurrence"');
+    expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"workflow"');
+    expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"views"');
+    expect(ITEM_TYPE_BLUEPRINT_FORMAT).toContain('"filters"');
   });
 
   it("accepts plain or fenced model JSON and validates it", () => {

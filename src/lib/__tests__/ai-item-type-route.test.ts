@@ -116,6 +116,54 @@ describe("/api/ai/item-type", () => {
     );
   });
 
+  it("repairs a schema-valid blueprint whose field relationships cannot compile", async () => {
+    const duplicateFields = {
+      ...blueprint,
+      fields: [...blueprint.fields, { ...blueprint.fields[0] }],
+    };
+    mocks.generateText
+      .mockResolvedValueOnce({ text: JSON.stringify(duplicateFields) })
+      .mockResolvedValueOnce({ text: JSON.stringify(blueprint) });
+
+    const response = await POST(request({ prompt: "A task board" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+    expect(mocks.generateText.mock.calls[1][0].prompt).toContain(
+      "Item type field ids must be unique",
+    );
+  });
+
+  it("keeps a safe first draft when the optional quality revision is malformed", async () => {
+    const incomplete = {
+      ...blueprint,
+      fields: [
+        ...blueprint.fields,
+        {
+          id: "statusNote",
+          label: "Status",
+          type: "text",
+          display: "fact",
+        },
+      ],
+    };
+    mocks.generateText
+      .mockResolvedValueOnce({ text: JSON.stringify(incomplete) })
+      .mockResolvedValueOnce({ text: "not json" });
+
+    const response = await POST(request({ prompt: "A task board" }));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).blueprint).toMatchObject({
+      name: "Project tasks",
+      collection: { layout: "board", groupBy: "status" },
+    });
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+    expect(mocks.generateText.mock.calls[1][0].prompt).toContain(
+      "Improve this reusable item-type blueprint",
+    );
+  });
+
   it("does not spend a model call without a session, workspace, provider, or prompt", async () => {
     mocks.getCurrentUser.mockResolvedValue(null);
     expect((await POST(request({ prompt: "A board" }))).status).toBe(401);

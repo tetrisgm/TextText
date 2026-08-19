@@ -11,7 +11,10 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import {
+  duplicateFolderLookAction,
   getFolderLookAction,
+  importFolderLookAction,
+  restoreFolderLookVersionAction,
   setFolderLookAction,
   type FolderLookState,
 } from "@/app/editor/folder-template-actions";
@@ -67,6 +70,12 @@ export function FolderLookPicker({
   const [applying, setApplying] = useState(false);
   const [, startTransition] = useTransition();
 
+  const load = useCallback(async () => {
+    const next = await getFolderLookAction(handle, folderPath);
+    setState(next);
+    return next;
+  }, [folderPath, handle]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -75,7 +84,13 @@ export function FolderLookPicker({
         if (!cancelled) setState(next);
       } catch {
         if (!cancelled) {
-          setState({ allowed: false, current: null, templates: [] });
+          setState({
+            allowed: false,
+            current: null,
+            templates: [],
+            library: [],
+            targetItemCount: 0,
+          });
         }
       }
     })();
@@ -134,8 +149,37 @@ export function FolderLookPicker({
       <TemplateGallery
         document={preview}
         templates={state.templates}
+        library={state.library}
+        targetItemCount={state.targetItemCount}
         onClose={onClose}
         onApply={(selected) => apply(selected.id, selected.version)}
+        onDuplicate={async (selected, name) => {
+          const result = await duplicateFolderLookAction(
+            handle,
+            selected.id,
+            selected.version,
+            name,
+          );
+          if (!result.ok) throw new Error(result.error);
+          await load();
+          return result.definition;
+        }}
+        onImport={async (text, mode) => {
+          const result = await importFolderLookAction(handle, text, mode);
+          if (!result.ok) throw new Error(result.error);
+          await load();
+          return result.definition;
+        }}
+        onRestoreVersion={async (selected) => {
+          const result = await restoreFolderLookVersionAction(
+            handle,
+            selected.id,
+            selected.version,
+          );
+          if (!result.ok) throw new Error(result.error);
+          await load();
+          return result.definition;
+        }}
       />
       {(applying || error) && (
         <div className={styles.status} role="status">

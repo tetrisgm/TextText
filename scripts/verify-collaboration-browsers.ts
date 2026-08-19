@@ -97,7 +97,7 @@ async function waitForServer(): Promise<void> {
 
 async function devSignIn(page: Page, who: { email: string; name: string }) {
   // The dev-login form lives on the editor sign-in screen, not /signin.
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
   const form = page.locator("form.ac-devsignin");
   await form.waitFor({ timeout: 20000 });
   await form.locator('input[type="email"]').fill(who.email);

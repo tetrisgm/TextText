@@ -156,12 +156,13 @@ export default function AiDocsPage() {
             Claude Code
           </InstallCommand>
           <p className="connect-body">
-            Claude opens TextText so you can approve access. In Claude.ai or
-            Claude Desktop, add a custom connector and paste{" "}
+            Create a workspace token at Connect and paste it when Claude asks
+            for the TextText credential. In Claude.ai or Claude Desktop, add a
+            custom connector and paste{" "}
             <code className="connect-inline-code">
               {TEXTTEXT_HOSTED_MCP_URL}
             </code>
-            .
+            , then use the same kind of token as its bearer credential.
           </p>
         </section>
 
@@ -175,9 +176,9 @@ export default function AiDocsPage() {
             Codex app or CLI
           </InstallCommand>
           <p className="connect-body">
-            Codex opens TextText during installation so you can approve access.
-            The plugin is then available in future tasks without repeating the
-            setup.
+            Create a workspace token at Connect and paste it when Codex asks
+            for the TextText credential. The plugin is then available in future
+            tasks without repeating the setup.
           </p>
         </section>
 
@@ -193,7 +194,7 @@ export default function AiDocsPage() {
               </code>{" "}
               and scan the tools.
             </li>
-            <li>Choose Connect and approve TextText in the browser.</li>
+            <li>Create a workspace token at Connect and use it as the app&apos;s bearer credential.</li>
           </ol>
           <p className="connect-body">
             ChatGPT supplies the model and billing. TextText never needs your
@@ -304,8 +305,9 @@ export default function AiDocsPage() {
           <h2 className="connect-section-title">Troubleshooting</h2>
           <h3>The client shows no TextText tools</h3>
           <p className="connect-body">
-            Restart the AI client after installing the plugin. If approval was
-            interrupted, remove the connection and install it again.
+            Restart the AI client after installing the plugin. If the token was
+            not accepted, revoke it at Connect, create another, and replace the
+            credential in the client.
           </p>
           <h3>A write was rejected as a conflict</h3>
           <p className="connect-body">

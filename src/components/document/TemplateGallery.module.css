@@ -1,57 +1,173 @@
 .backdrop {
+  --gallery-paper: #fff;
+  --gallery-ink: #1d1d1f;
+  --gallery-muted: #6e6e73;
+  --gallery-line: rgba(29, 29, 31, 0.14);
+  --gallery-soft: #f5f5f7;
   position: fixed;
   z-index: 1000;
   inset: 0;
   overflow: auto;
-  background: var(--paper, #fff);
-  color: var(--ink, #1d1d1f);
+  background: var(--gallery-paper);
+  color: var(--gallery-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 }
 
 .chooser,
 .preview {
   min-height: 100%;
-  padding: 18px clamp(18px, 3vw, 44px) 48px;
+  padding: 20px clamp(20px, 4vw, 64px) 64px;
 }
 
-.chooser h2 {
+.libraryHeader {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 110px;
+  align-items: start;
+  gap: 20px;
   width: min(1380px, 100%);
-  margin: 38px auto 22px;
-  text-align: left;
-  font-size: clamp(26px, 3vw, 34px);
+  margin: 0 auto 22px;
+}
+
+.libraryHeader > div {
+  padding-top: 38px;
+}
+
+.libraryHeader h2,
+.importCopy h2,
+.details h2 {
+  margin: 5px 0 0;
+  font-size: clamp(28px, 3vw, 38px);
+  line-height: 1.08;
+  letter-spacing: -0.028em;
+}
+
+.eyebrow,
+.scopeLabel {
+  color: var(--gallery-muted);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.backButton,
+.importButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--gallery-soft);
+  color: inherit;
+  font: 600 13px/1 inherit;
+  cursor: pointer;
 }
 
 .backButton {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  color: #1d1d1f;
-  font: 600 14px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  cursor: pointer;
+  justify-self: start;
 }
 
 .backButton::before {
   content: "\2190";
   margin-right: 7px;
-  font-size: 18px;
+  font-size: 16px;
+}
+
+.importButton {
+  justify-self: end;
+  position: relative;
+  overflow: hidden;
+}
+
+.importButton input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
 
 .note {
+  margin: 7px 0 0;
+  color: var(--gallery-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.libraryTools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   width: min(1380px, 100%);
-  margin: -14px auto 20px;
-  color: color-mix(in srgb, currentColor 62%, transparent);
-  font: 500 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  margin: 0 auto 24px;
+}
+
+.search {
+  flex: 1 1 340px;
+  max-width: 440px;
+}
+
+.search > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.search input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--gallery-line);
+  border-radius: 9px;
+  padding: 0 13px 0 38px;
+  background:
+    linear-gradient(45deg, transparent 46%, var(--gallery-muted) 47% 53%, transparent 54%) 18px 23px / 7px 7px no-repeat,
+    radial-gradient(circle, transparent 46%, var(--gallery-muted) 48% 60%, transparent 62%) 13px 10px / 14px 14px no-repeat,
+    var(--gallery-paper);
+  color: inherit;
+  font: 500 14px/1 inherit;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--gallery-soft);
+}
+
+.filters button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gallery-muted);
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+}
+
+.filters button[aria-pressed="true"] {
+  background: var(--gallery-paper);
+  color: var(--gallery-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.filters span {
+  margin-left: 3px;
+  color: var(--gallery-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
   width: min(1380px, 100%);
   margin: 0 auto;
 }
@@ -63,31 +179,29 @@
   min-width: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 10px;
-  background: var(--paper, #fff);
+  border: 1px solid var(--gallery-line);
+  border-radius: 12px;
+  background: var(--gallery-paper);
   color: inherit;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
   cursor: pointer;
   text-align: initial;
 }
 
 .card:hover,
 .card:focus-visible {
-  border-color: var(--tt-accent, #0071e3);
-  outline: 2px solid color-mix(in srgb, var(--tt-accent, #0071e3) 28%, transparent);
-  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--gallery-ink) 42%, transparent);
+  outline: 3px solid color-mix(in srgb, #007aff 25%, transparent);
+  outline-offset: 2px;
 }
 
-/* A miniature has to show enough of the document to tell the looks apart, so
-   the card is a query container and the document renders at its real width
-   inside it, scaled down. Same recipe as the public catalog. */
 .cardPreview {
   position: relative;
   aspect-ratio: 4 / 3;
   overflow: hidden;
   pointer-events: none;
   container-type: inline-size;
+  background: var(--gallery-soft);
 }
 
 .cardPreviewInner {
@@ -96,123 +210,535 @@
   transform-origin: top left;
 }
 
-/* The document paints its own paper to the card edges, so a short document
-   never draws a seam where the card's background takes over. */
 .cardPreviewInner :global(.tt-document) {
   min-height: 1400px;
 }
 
 .cardApplied {
-  border-color: color-mix(in srgb, currentColor 55%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+  border-color: color-mix(in srgb, #007aff 75%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #007aff 35%, transparent);
 }
 
-.cardCurrent {
-  margin-left: 7px;
-  padding-left: 7px;
-  border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  color: color-mix(in srgb, currentColor 62%, transparent);
-  font-weight: 500;
-}
-
-/* The name sits under the preview, never on top of the words it labels. */
 .cardName {
   display: flex;
   align-items: center;
-  padding: 9px 11px;
-  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-  background: var(--paper, #fff);
-  color: var(--ink, #1d1d1f);
-  font: 650 13px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 54px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--gallery-line);
+  background: var(--gallery-paper);
+}
+
+.cardName > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cardName strong {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardName small,
+.cardCurrent {
+  color: var(--gallery-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cardCurrent {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--gallery-soft);
+}
+
+.empty {
+  width: min(1380px, 100%);
+  margin: 90px auto;
+  text-align: center;
+}
+
+.empty h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.empty p,
+.importCopy p,
+.details > p {
+  color: var(--gallery-muted);
 }
 
 .preview {
-  padding-top: 84px;
+  padding-top: 82px;
 }
 
 .previewBack {
   position: fixed;
-  z-index: 3;
-  top: 18px;
-  left: 18px;
+  z-index: 4;
+  top: 20px;
+  left: 20px;
 }
 
 .previewStep {
   position: fixed;
-  z-index: 3;
-  top: 18px;
+  z-index: 4;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 4px;
+  gap: 3px;
+  border: 1px solid var(--gallery-line);
   border-radius: 8px;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  font: 600 13px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  background: color-mix(in srgb, var(--gallery-paper) 92%, transparent);
+  backdrop-filter: blur(18px);
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .previewStep > span {
-  min-width: 7rem;
-  padding: 0 6px;
+  min-width: 9rem;
+  padding: 0 7px;
   text-align: center;
 }
 
 .previewStep button {
-  min-width: 34px;
-  min-height: 34px;
+  width: 34px;
+  height: 34px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: inherit;
   font-size: 19px;
-  line-height: 1;
   cursor: pointer;
 }
 
 .previewStep button:hover {
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  background: var(--gallery-soft);
+}
+
+.previewLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  align-items: start;
+  gap: 28px;
+  width: min(1440px, 100%);
+  margin: 0 auto;
 }
 
 .previewDocument {
-  width: min(1280px, 100%);
-  margin: 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--gallery-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+.details {
+  position: sticky;
+  top: 82px;
+  padding: 4px 0;
+}
+
+.scopeLabel {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--gallery-soft);
+}
+
+.details h2 {
+  margin-top: 12px;
+  font-size: 26px;
+}
+
+.details > p {
+  margin: 9px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.impact {
+  margin: 22px 0 0;
+  border-block: 1px solid var(--gallery-line);
+}
+
+.impact div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  border-bottom: 1px solid var(--gallery-line);
+  font-size: 12px;
+}
+
+.impact div:last-child {
+  border-bottom: 0;
+}
+
+.impact dt {
+  color: var(--gallery-muted);
+}
+
+.impact dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+.folderNames {
+  font-size: 12px !important;
 }
 
 .continueButton {
   display: block;
-  width: min(620px, calc(100% - 40px));
-  min-height: 56px;
-  margin: 34px auto 20px;
+  width: 100%;
+  min-height: 42px;
+  margin: 18px 0 8px;
   border: 0;
-  border-radius: 28px;
-  background: #1d1d1f;
-  color: #fff;
-  font: 700 16px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  border-radius: 8px;
+  background: var(--gallery-ink);
+  color: var(--gallery-paper);
+  font: 650 14px/1 inherit;
   cursor: pointer;
 }
 
+.secondaryActions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+}
+
+.secondaryActions button,
+.remixForm button,
+.versionRow > button:last-child {
+  min-height: 34px;
+  border: 1px solid var(--gallery-line);
+  border-radius: 7px;
+  background: var(--gallery-paper);
+  color: inherit;
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+}
+
+.remixForm {
+  margin-top: 14px;
+}
+
+.remixForm label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--gallery-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.remixForm > div {
+  display: flex;
+  gap: 6px;
+}
+
+.remixForm input {
+  min-width: 0;
+  flex: 1;
+  min-height: 36px;
+  border: 1px solid var(--gallery-line);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: var(--gallery-paper);
+  color: inherit;
+  font: 500 13px/1 inherit;
+}
+
+.remixForm button {
+  padding: 0 12px;
+}
+
+.history {
+  margin-top: 22px;
+}
+
+.history h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.versionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border-top: 1px solid var(--gallery-line);
+}
+
+.versionRow > button:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.versionRow strong {
+  font-size: 12px;
+}
+
+.versionRow span {
+  color: var(--gallery-muted);
+  font-size: 11px;
+}
+
+.versionRow > button:last-child {
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.importPanel {
+  display: grid;
+  grid-template-columns: 90px minmax(280px, 620px) minmax(280px, 390px);
+  align-items: center;
+  justify-content: center;
+  gap: clamp(24px, 4vw, 56px);
+  min-height: 100%;
+  padding: 32px;
+}
+
+.importPanel > .backButton {
+  align-self: start;
+}
+
+.importPreview {
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid var(--gallery-line);
+  border-radius: 12px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.08);
+}
+
+.importCopy h2 {
+  font-size: 30px;
+}
+
+.importCopy > p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.importChoices {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.importChoices button {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 14px;
+  border: 1px solid var(--gallery-line);
+  border-radius: 9px;
+  background: var(--gallery-paper);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.importChoices button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--gallery-ink) 45%, transparent);
+  background: var(--gallery-soft);
+}
+
+.importChoices button:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.importChoices strong {
+  font-size: 14px;
+}
+
+.importChoices span {
+  color: var(--gallery-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.error {
+  width: min(1380px, 100%);
+  margin: 10px auto;
+  color: color-mix(in srgb, #ff3b30 74%, var(--gallery-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.backButton:focus-visible,
 .continueButton:focus-visible,
-.backButton:focus-visible {
-  outline: 3px solid color-mix(in srgb, #0071e3 45%, transparent);
-  outline-offset: 3px;
+.importButton:focus-within,
+.filters button:focus-visible,
+.search input:focus-visible,
+.secondaryActions button:focus-visible,
+.remixForm input:focus-visible,
+.remixForm button:focus-visible,
+.importChoices button:focus-visible {
+  outline: 3px solid color-mix(in srgb, #007aff 35%, transparent);
+  outline-offset: 2px;
 }
 
 @media (max-width: 1180px) {
-  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .previewLayout {
+    grid-template-columns: minmax(0, 1fr) 270px;
+  }
+
+  .importPanel {
+    grid-template-columns: 80px minmax(260px, 520px) minmax(260px, 340px);
+  }
+}
+
+@media (max-width: 820px) {
+  .libraryHeader {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .libraryTools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search {
+    flex-basis: auto;
+    max-width: none;
+  }
+
+  .filters {
+    align-self: flex-start;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .previewLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .details {
+    position: static;
+    order: -1;
+    width: min(560px, 100%);
+    margin: 0 auto;
+  }
+
+  .importPanel {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  .importPreview {
+    max-height: 50vh;
+  }
 }
 
 @media (max-width: 620px) {
-  .chooser { padding-inline: 12px; }
-  .grid { grid-template-columns: 1fr; }
+  .chooser,
+  .preview {
+    padding-inline: 12px;
+  }
+
+  .libraryHeader {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+  }
+
+  .libraryHeader > div {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    padding-top: 8px;
+  }
+
+  .libraryHeader > .backButton {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .libraryHeader > .importButton {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .libraryHeader h2 {
+    font-size: 28px;
+  }
+
+  .backButton,
+  .importButton {
+    padding-inline: 9px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .previewStep {
+    left: auto;
+    right: 12px;
+    transform: none;
+  }
+
+  .previewStep > span {
+    display: none;
+  }
+
+  .importPanel {
+    padding: 18px;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
-  .backdrop { --paper: #1c1c1e; --ink: #f5f5f7; }
-  .backButton { color: #f5f5f7; }
-  .continueButton { background: #f5f5f7; color: #1d1d1f; }
+  .backdrop {
+    --gallery-paper: #1c1c1e;
+    --gallery-ink: #f5f5f7;
+    --gallery-muted: #a1a1a6;
+    --gallery-line: rgba(235, 235, 245, 0.16);
+    --gallery-soft: #2c2c2e;
+  }
+
+  .card,
+  .previewDocument,
+  .importPreview {
+    box-shadow: none;
+  }
+
+  .filters button[aria-pressed="true"] {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.36);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .previewStep {
+    backdrop-filter: none;
+    background: var(--gallery-paper);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .backdrop * { scroll-behavior: auto !important; transition: none !important; }
+  .backdrop * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
 }

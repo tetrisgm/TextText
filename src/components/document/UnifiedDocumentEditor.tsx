@@ -41,7 +41,11 @@ import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { MarkdownSurface } from "./MarkdownSurface";
 import { TemplateGallery } from "./TemplateGallery";
-import { FieldInput, collectBoundFields } from "./FieldInput";
+import {
+  FieldInput,
+  collectBoundFields,
+} from "./FieldInput";
+import type { WorkspaceReferenceChoice } from "@/lib/presentation/workspace-reference-choices";
 import type { DocumentFieldValue } from "@/lib/documents/model";
 
 export type UnifiedEditorCollab = {
@@ -77,6 +81,7 @@ export type UnifiedDocumentEditorProps = {
   post: Post;
   template: TemplateDefinition;
   availableTemplates?: readonly TemplateDefinition[];
+  referenceChoices?: readonly WorkspaceReferenceChoice[];
   collab: UnifiedEditorCollab;
   onDocumentChange?: (document: DocumentSnapshot) => void;
   onMaterialized?: (document: DocumentSnapshot, revision?: number) => void;
@@ -390,6 +395,7 @@ export function UnifiedDocumentEditor({
   post,
   template,
   availableTemplates,
+  referenceChoices,
   collab,
   onDocumentChange,
   onMaterialized,
@@ -449,6 +455,9 @@ export function UnifiedDocumentEditor({
   const providerRef = useRef<CollabProvider | null>(null);
   const materializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const materializeQueueRef = useRef(Promise.resolve());
+  const localMaterializationVersionRef = useRef(0);
+  const savedMaterializationVersionRef = useRef(0);
+  const pendingMaterializationStateRef = useRef<string | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const subtitleRef = useRef<HTMLTextAreaElement>(null);
   const bodySurfaceRef = useRef<HTMLDivElement>(null);
@@ -474,6 +483,7 @@ export function UnifiedDocumentEditor({
       } else if (hasDocumentSnapshot(doc)) {
         applyDocumentSnapshot(doc, next, localOrigin.current);
         if (ready) preReadyLocalRef.current = null;
+        else preReadyLocalRef.current = next;
       } else {
         // The doc did not accept this edit yet; ledger it so a remote update
         // arriving before ready cannot erase it.
@@ -518,7 +528,11 @@ export function UnifiedDocumentEditor({
         clearTimeout(materializeTimerRef.current);
         materializeTimerRef.current = null;
       }
-      const state = bytesToBase64(Y.encodeStateAsUpdate(doc));
+      const localVersion = localMaterializationVersionRef.current;
+      if (localVersion <= savedMaterializationVersionRef.current) {
+        return Promise.resolve();
+      }
+      const state = pendingMaterializationStateRef.current ?? bytesToBase64(Y.encodeStateAsUpdate(doc));
       setSaveState("saving");
       const request = materializeQueueRef.current
         .catch(() => undefined)
@@ -538,7 +552,16 @@ export function UnifiedDocumentEditor({
             revision?: number;
           };
           if (result.document) {
+            applyDocumentSnapshot(doc, result.document, "materialized");
+            publishDocument(result.document);
             onMaterialized?.(result.document, result.revision);
+          }
+          savedMaterializationVersionRef.current = Math.max(
+            savedMaterializationVersionRef.current,
+            localVersion,
+          );
+          if (localMaterializationVersionRef.current === localVersion) {
+            pendingMaterializationStateRef.current = null;
           }
           setSaveState("saved");
           setError(null);
@@ -557,18 +580,23 @@ export function UnifiedDocumentEditor({
       doc,
       networkEnabled,
       onMaterialized,
+      publishDocument,
     ],
   );
 
   const scheduleMaterialization = useCallback(() => {
     if (!networkEnabled || !collab.canEdit) return;
+    localMaterializationVersionRef.current += 1;
+    pendingMaterializationStateRef.current = bytesToBase64(
+      Y.encodeStateAsUpdate(doc),
+    );
     setSaveState("local");
     if (materializeTimerRef.current) clearTimeout(materializeTimerRef.current);
     materializeTimerRef.current = setTimeout(() => {
       materializeTimerRef.current = null;
       void flushMaterialization();
     }, 500);
-  }, [collab.canEdit, flushMaterialization, networkEnabled]);
+  }, [collab.canEdit, doc, flushMaterialization, networkEnabled]);
 
   useEffect(() => {
     if (!networkEnabled) {
@@ -609,12 +637,17 @@ export function UnifiedDocumentEditor({
     });
     providerRef.current = provider;
 
-    const handleDocumentUpdate = () => {
+    const handleDocumentUpdate = (_update: Uint8Array, origin: unknown) => {
       if (!hasDocumentSnapshot(doc)) return;
       try {
         const next = documentSnapshotFromYDoc(doc);
+        const local = origin === localOrigin.current;
+        const localSavePending =
+          localMaterializationVersionRef.current >
+          savedMaterializationVersionRef.current;
+        if (!local && localSavePending) return;
         publishDocument(next);
-        scheduleMaterialization();
+        if (local) scheduleMaterialization();
       } catch {
         setError("This document contains unsupported data.");
       }
@@ -632,7 +665,7 @@ export function UnifiedDocumentEditor({
           doc,
           initialDocumentRef.current,
           `${collab.postId}:${post.revision ?? 0}`,
-          localOrigin.current,
+          "provider-baseline",
         );
       }
       let remote = documentSnapshotFromYDoc(doc);
@@ -652,7 +685,7 @@ export function UnifiedDocumentEditor({
       }
       publishDocument(documentSnapshotFromYDoc(doc));
       setReady(true);
-      if (!result.authoritative) setSaveState("offline");
+      setSaveState(result.authoritative ? "saved" : "offline");
     });
 
     const handleAwareness = () => setRemoteRevision((value) => value + 1);
@@ -879,13 +912,14 @@ export function UnifiedDocumentEditor({
               field={field}
               value={document.content.fields[field.id]}
               onChange={(value) => updateField(field.id, value)}
+              referenceChoices={referenceChoices}
               embedded
             />,
             ]),
         ),
       },
     }),
-    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, remoteSelections, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, referenceChoices, remoteSelections, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -1067,6 +1101,7 @@ export function UnifiedDocumentEditor({
                 field={field}
                 value={document.content.fields[field.id]}
                 onChange={(value) => updateField(field.id, value)}
+                referenceChoices={referenceChoices}
               />
             ))}
           </div>
@@ -1088,7 +1123,7 @@ export function UnifiedDocumentEditor({
       <style>{`
         .tt-unified-editor{min-height:100%;background:var(--paper,#fff)}
         .tt-document-editor{min-height:100vh;padding-bottom:3rem}
-        @media(max-width:700px){.tt-document-editor{padding-top:56px}.tt-look-name{display:none}}
+        @media(max-width:700px){.tt-document-editor{padding-top:56px}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:5px;padding-inline:8px}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
         .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:visible}
@@ -1145,9 +1180,10 @@ export function UnifiedDocumentEditor({
         .tt-field-row{display:flex;align-items:center;gap:10px;margin:2px 0;font-size:14px;color:var(--ink,#1d1d1f)}
         .tt-field-row.is-richtext{align-items:flex-start}
         .tt-field-label{flex:0 0 8.5rem;color:var(--muted,#6e6e73);font-size:12px;font-weight:600;letter-spacing:.01em}
-        .tt-field-row.is-embedded{position:relative;width:100%;margin:0}
-        .tt-field-row.is-embedded>.tt-field-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-        .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor{width:100%}
+        .tt-field-row.is-embedded{position:relative;display:grid;grid-template-columns:minmax(6.5rem,8.5rem) minmax(0,1fr);align-items:center;gap:12px;width:100%;box-sizing:border-box;margin:0;padding:4px 12px}
+        .tt-field-row.is-embedded>.tt-field-label{position:static;width:auto;height:auto;padding:0;margin:0;overflow:visible;clip:auto;white-space:normal;border:0}
+        .tt-field-row.is-embedded>.tt-field-input,.tt-field-row.is-embedded>.tt-field-multienum,.tt-field-row.is-embedded>.tt-rows-editor,.tt-field-row.is-embedded>.tt-people-picker,.tt-field-row.is-embedded>.tt-status-workflow-control{width:100%}
+        .tt-field-row.is-embedded>.tt-field-input.is-checkbox{width:16px;justify-self:start}
         .tt-field-row.is-image.is-embedded{justify-content:center;margin:1.2rem 0}
         .tt-field-row.is-image.is-embedded .tt-image-field-control.is-canvas{position:relative;display:block;width:100%;overflow:visible}
         .tt-field-row.is-image.is-embedded .tt-image-field-preview{display:block;width:100%;height:auto;max-height:min(62vh,680px);border:0;border-radius:0;background:transparent;object-fit:cover}
@@ -1160,6 +1196,34 @@ export function UnifiedDocumentEditor({
         .tt-field-input.is-checkbox{flex:0 0 auto;width:16px;height:16px;accent-color:var(--tt-accent,#0071e3)}
         .tt-field-input.is-number{max-width:9rem}
         .tt-field-input.is-select{appearance:auto}
+        .tt-status-workflow-control{flex:1 1 auto;min-width:0;display:grid;gap:4px}
+        .tt-status-workflow-control>small{color:var(--muted,#6e6e73);font-size:11px;line-height:1.3}
+        .tt-people-picker{position:relative;flex:1 1 auto;min-width:0;display:grid;gap:7px}
+        .tt-people-selection{display:flex;flex-wrap:wrap;gap:6px}
+        .tt-people-empty{color:var(--muted,#6e6e73);font-size:12px}
+        .tt-person-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 5px 3px 3px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:999px;background:color-mix(in srgb,var(--ink,#1d1d1f) 4%,transparent);font-size:12px;font-weight:600}
+        .tt-person-chip>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .tt-person-chip>button{display:grid;width:18px;height:18px;place-items:center;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font:inherit;cursor:pointer}
+        .tt-person-chip>button:hover{background:color-mix(in srgb,var(--ink,#1d1d1f) 9%,transparent);color:var(--ink,#1d1d1f)}
+        .tt-person-avatar{display:grid;flex:0 0 24px;width:24px;height:24px;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--tt-accent,#0071e3) 14%,var(--paper,#fff));color:var(--tt-accent,#0071e3);font-size:10px;font-weight:750;letter-spacing:.02em}
+        .tt-people-picker-menu{position:relative;width:100%;max-width:100%;font-size:12px}
+        .tt-people-manual{position:relative;width:max-content;max-width:100%;font-size:12px}
+        .tt-people-picker-menu>summary,.tt-people-manual>summary{width:max-content;max-width:100%;padding:0;border:0;color:var(--tt-accent,#0071e3);font-weight:650;cursor:pointer;list-style:none}
+        .tt-people-picker-menu>summary::-webkit-details-marker,.tt-people-manual>summary::-webkit-details-marker{display:none}
+        .tt-people-picker-menu>summary[aria-disabled=true],.tt-people-manual>summary[aria-disabled=true]{opacity:.45;cursor:default}
+        .tt-people-picker-popover{position:absolute;left:0;z-index:40;width:min(320px,calc(100vw - 32px));margin-top:7px;padding:8px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:10px;background:var(--paper,#fff);box-shadow:0 16px 44px rgba(0,0,0,.16)}
+        .tt-people-picker-popover>.tt-field-input{width:100%;margin-bottom:7px}
+        .tt-people-options{display:grid;gap:2px;max-height:240px;overflow:auto}
+        .tt-people-options>button{display:grid;grid-template-columns:24px minmax(0,1fr) 18px;align-items:center;gap:8px;width:100%;padding:7px;border:0;border-radius:7px;background:transparent;color:var(--ink,#1d1d1f);text-align:left;cursor:pointer}
+        .tt-people-options>button:hover,.tt-people-options>button.is-selected{background:color-mix(in srgb,var(--ink,#1d1d1f) 7%,transparent)}
+        .tt-people-options>button>span:nth-child(2){display:grid;min-width:0}
+        .tt-people-options strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+        .tt-people-options small{color:var(--muted,#6e6e73);font-size:10px}
+        .tt-people-options>p{margin:10px;color:var(--muted,#6e6e73);text-align:center}
+        .tt-people-manual[open]{width:100%}
+        .tt-people-manual>div{display:flex;align-items:center;gap:6px;margin-top:6px}
+        .tt-people-manual .tt-field-input{width:100%}
+        .tt-people-manual button{padding:5px 10px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-weight:650;cursor:pointer}
         .tt-field-details{max-width:44rem;margin:0 auto;padding:0 1.5rem 4rem}
         .tt-field-details-title{display:inline-flex;align-items:center;gap:7px;margin:0;padding:5px 0;color:var(--muted,#6e6e73);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;list-style:none}
         .tt-field-details-title::-webkit-details-marker{display:none}
@@ -1178,7 +1242,8 @@ export function UnifiedDocumentEditor({
         .tt-rows-editor-remove{flex:0 0 auto;width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font-size:15px;line-height:1;cursor:pointer}
         .tt-rows-editor-remove:hover{background:color-mix(in srgb,var(--ink,#1d1d1f) 8%,transparent)}
         .tt-rows-editor-add{align-self:flex-start;padding:4px 12px;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--tt-accent,#0071e3);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
-        @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tt-field-input,.tt-field-choice,.tt-rows-editor-add{border-color:rgba(255,255,255,.18)}}
+        @media(max-width:700px){.tt-people-picker-popover{right:0;left:auto}}
+        @media(prefers-color-scheme:dark){.tt-unified-editor{--paper:#1c1c1e;--ink:#f5f5f7;--muted:#a1a1a6}.tt-field-input,.tt-field-choice,.tt-rows-editor-add,.tt-person-chip,.tt-people-picker-popover,.tt-people-manual button{border-color:rgba(255,255,255,.18)}}
         @media(prefers-reduced-motion:reduce){.tt-unified-editor *{transition:none!important;animation:none!important}}
       `}</style>
     </section>

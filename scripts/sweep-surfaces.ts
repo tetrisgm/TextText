@@ -155,9 +155,41 @@ const surfaces: Surface[] = [
     name: "item-type-controls",
     go: async (page) => {
       await openItemTypeStudio(page, "item");
-      await page.locator('[role="dialog"]').evaluate((dialog) => {
-        dialog.scrollTop = dialog.scrollHeight;
+      await page.getByRole("region", { name: "Item type settings" }).evaluate((controls) => {
+        controls.scrollTop = controls.scrollHeight;
       });
+    },
+  },
+  {
+    name: "item-type-compare",
+    go: async (page) => {
+      await openItemTypeStudio(page, "item");
+      const name = page.getByRole("textbox", { name: "Name", exact: true });
+      await name.fill("Project tasks refined");
+      await page.getByRole("button", { name: "Compare" }).click();
+    },
+  },
+  {
+    name: "item-type-stress-phone",
+    go: async (page) => {
+      await openItemTypeStudio(page, "item");
+      await page.getByRole("combobox", { name: "Preview content" }).selectOption("stress");
+      await page.getByRole("button", { name: "Phone" }).click();
+    },
+  },
+  {
+    name: "item-type-folder-content",
+    go: async (page) => {
+      await openItemTypeStudio(page, "folder");
+      await page.getByRole("combobox", { name: "Use in folder" }).selectOption({ label: "Notes" });
+      await page.getByRole("combobox", { name: "Preview content" }).selectOption("folder");
+    },
+  },
+  {
+    name: "item-type-preflight",
+    go: async (page) => {
+      await openItemTypeStudio(page, "item");
+      await page.locator("details").filter({ hasText: /Ready|suggestion|attention/ }).click();
     },
   },
   {
@@ -262,7 +294,7 @@ async function devSignIn(page: Page): Promise<string> {
   // hydration. A click that produces no auth callback did nothing, so reload
   // the form and retry instead of navigating away with no session.
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
     const form = page.locator("form.ac-devsignin");
     await form.waitFor({ timeout: 20000 });
     await form.locator('input[type="email"]').fill(WHO.email);

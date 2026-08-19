@@ -100,6 +100,27 @@ const enumFieldSchema = z.object({
     .max(100),
   /** Labels, genres, moods: multiple selected values stored as string[]. */
   multiple: z.boolean().default(false),
+  /** Optional domain meaning retained without changing storage. Status keeps
+   * a closed transition graph; recurrence stores one safe preset string. */
+  semantic: z.enum(["status", "recurrence"]).optional(),
+  workflow: z
+    .object({
+      initial: z.string().trim().min(1).max(120),
+      completed: z.array(z.string().trim().min(1).max(120)).max(20).default([]),
+      transitions: z
+        .array(
+          z
+            .object({
+              from: z.string().trim().min(1).max(120),
+              to: z.string().trim().min(1).max(120),
+            })
+            .strict(),
+        )
+        .max(100)
+        .default([]),
+    })
+    .strict()
+    .optional(),
 }).strict();
 
 const numberFieldSchema = z.object({
@@ -123,6 +144,9 @@ const referenceFieldSchema = z.object({
   type: z.literal("reference"),
   target: z.enum(["document", "folder"]).default("document"),
   multiple: z.boolean().default(false),
+  /** People are ordinary TextText documents linked through the canonical
+   * reference value. No separate contact model or account data is introduced. */
+  semantic: z.enum(["relation", "people"]).optional(),
 }).strict();
 
 /** Sub-fields a row may declare: every scalar type, no rows-in-rows and no
@@ -627,6 +651,46 @@ export const collectionFilterSchema = z
 
 export type CollectionFilter = z.infer<typeof collectionFilterSchema>;
 
+const collectionViewSchema = z
+  .object({
+    id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
+    name: z.string().trim().min(1).max(80),
+    layout: z.enum([
+      "list",
+      "cards",
+      "timeline",
+      "index",
+      "single",
+      "board",
+      "calendar",
+      "heatmap",
+    ]),
+    columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(1),
+    groupBy: z
+      .string()
+      .regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/)
+      .optional(),
+    dateBy: z
+      .string()
+      .regex(/^content\.fields\.[a-z][A-Za-z0-9_.-]{0,119}$/)
+      .optional(),
+    sort: z
+      .array(
+        z
+          .object({
+            field: collectionSortFieldSchema,
+            direction: z.enum(["asc", "desc"]),
+          })
+          .strict(),
+      )
+      .max(4)
+      .default([]),
+    filters: z.array(collectionFilterSchema).max(8).default([]),
+  })
+  .strict();
+
+export type CollectionViewSpec = z.infer<typeof collectionViewSchema>;
+
 export const collectionRenderSchema = z
   .object({
     layout: z.enum([
@@ -664,6 +728,10 @@ export const collectionRenderSchema = z
       .max(4)
       .default([]),
     filters: z.array(collectionFilterSchema).max(8).default([]),
+    /** Named folder views reuse the same item renderer and field declarations.
+     * They only vary safe query and layout data. */
+    views: z.array(collectionViewSchema).max(12).default([]),
+    defaultView: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/).optional(),
     item: renderNodeSchema,
   })
   .strict();
@@ -955,6 +1023,33 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
       if (values.size !== field.options.length) {
         throw new Error(`enum field ${field.id} has duplicate option values`);
       }
+      if (field.semantic === "recurrence" && field.multiple) {
+        throw new Error(`recurrence field ${field.id} must be single-select`);
+      }
+      if (field.workflow) {
+        if (field.multiple || field.semantic !== "status") {
+          throw new Error(`workflow field ${field.id} must be a single-select status`);
+        }
+        const workflowValues = [
+          field.workflow.initial,
+          ...field.workflow.completed,
+          ...field.workflow.transitions.flatMap((transition) => [
+            transition.from,
+            transition.to,
+          ]),
+        ];
+        for (const value of workflowValues) {
+          if (!values.has(value)) {
+            throw new Error(`workflow field ${field.id} references unknown option ${value}`);
+          }
+        }
+        const transitions = field.workflow.transitions.map(
+          (transition) => `${transition.from}\u0000${transition.to}`,
+        );
+        if (new Set(transitions).size !== transitions.length) {
+          throw new Error(`workflow field ${field.id} has duplicate transitions`);
+        }
+      }
     }
     if (field.type === "number" && field.min != null && field.max != null && field.min > field.max) {
       throw new Error(`number field ${field.id} has min greater than max`);
@@ -1016,6 +1111,75 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
         `collection dateBy requires a date field, not ${declared.type} (${id})`,
       );
     }
+  }
+  const viewIds = new Set<string>();
+  for (const view of template.collection.views) {
+    if (viewIds.has(view.id)) {
+      throw new Error(`collection view id ${view.id} is duplicated`);
+    }
+    viewIds.add(view.id);
+    for (const entry of view.sort) {
+      if (!entry.field.startsWith(FIELD_PREFIX)) continue;
+      const id = entry.field.slice(FIELD_PREFIX.length);
+      if (!fields.has(id)) {
+        throw new Error(`collection view ${view.id} sort references undeclared field ${id}`);
+      }
+    }
+    for (const filter of view.filters) {
+      const id = filter.field.slice(FIELD_PREFIX.length);
+      const declared = fields.get(id);
+      if (!declared) {
+        throw new Error(`collection view ${view.id} filter references undeclared field ${id}`);
+      }
+      if (filter.op === "contains" && declared.type !== "text" && declared.type !== "richtext") {
+        throw new Error(
+          `collection view ${view.id} filter op contains requires a text field, not ${declared.type} (${id})`,
+        );
+      }
+      if (
+        ["gt", "gte", "lt", "lte"].includes(filter.op) &&
+        !["number", "date"].includes(declared.type)
+      ) {
+        throw new Error(
+          `collection view ${view.id} filter op ${filter.op} requires a number or date field, not ${declared.type} (${id})`,
+        );
+      }
+    }
+    if (view.groupBy) {
+      const id = view.groupBy.slice(FIELD_PREFIX.length);
+      const declared = fields.get(id);
+      if (!declared) {
+        throw new Error(`collection view ${view.id} groupBy references undeclared field ${id}`);
+      }
+      if (declared.type !== "enum" || declared.multiple) {
+        throw new Error(
+          `collection view ${view.id} groupBy requires a single-select enum field, not ${declared.type} (${id})`,
+        );
+      }
+    }
+    if (view.layout === "board" && !view.groupBy) {
+      throw new Error(`collection view ${view.id} board needs groupBy`);
+    }
+    if (view.dateBy) {
+      const id = view.dateBy.slice(FIELD_PREFIX.length);
+      const declared = fields.get(id);
+      if (!declared) {
+        throw new Error(`collection view ${view.id} dateBy references undeclared field ${id}`);
+      }
+      if (declared.type !== "date") {
+        throw new Error(
+          `collection view ${view.id} dateBy requires a date field, not ${declared.type} (${id})`,
+        );
+      }
+    }
+    if (["calendar", "heatmap"].includes(view.layout) && !view.dateBy) {
+      throw new Error(`collection view ${view.id} ${view.layout} needs dateBy`);
+    }
+  }
+  if (template.collection.defaultView && !viewIds.has(template.collection.defaultView)) {
+    throw new Error(
+      `collection defaultView references undeclared view ${template.collection.defaultView}`,
+    );
   }
   if (new Set(template.capabilities).size !== template.capabilities.length) {
     throw new Error("template capabilities must be unique");

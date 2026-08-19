@@ -42,7 +42,7 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 async function devSignIn(page: Page) {
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
   const form = page.locator("form.ac-devsignin");
   await form.waitFor({ timeout: 20000 });
   await form.locator('input[type="email"]').fill(WHO.email);
@@ -57,7 +57,7 @@ async function devSignIn(page: Page) {
   // is on the context; landing on /signin means it has not arrived yet.
   for (let attempt = 0; attempt < 3 && page.url().includes("/signin"); attempt += 1) {
     await page.waitForTimeout(1200);
-    await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
   }
 }
 

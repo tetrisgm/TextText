@@ -58,6 +58,10 @@ import { applyCollectionSpec } from "@/lib/documents/collection-query";
 import { parseItemInput } from "@/lib/item-creation";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import {
+  displayModeForCollectionView,
+  selectCollectionView,
+} from "@/lib/presentation/collection-views";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { updateFolder } from "@/lib/pool/store";
 import { shouldSuppressNativeItemSelection } from "@/lib/workspace-selection";
@@ -862,6 +866,30 @@ function UniversalFolderContents({
     () => resolveTemplate(defaultTemplateForFolder(folder)),
     [folder, resolveTemplate],
   );
+  const savedViews = useMemo(
+    () => collectionDefinition?.collection.views ?? [],
+    [collectionDefinition],
+  );
+  const initialSavedView = collectionDefinition?.collection.defaultView ?? "";
+  const [savedViewId, setSavedViewId] = useState(initialSavedView);
+  const savedViewFolder = useRef(folder.id);
+  const savedViewKey = savedViews.map((view) => view.id).join("\u0000");
+  useEffect(() => {
+    const next = collectionDefinition?.collection.defaultView ?? "";
+    const folderChanged = savedViewFolder.current !== folder.id;
+    savedViewFolder.current = folder.id;
+    setSavedViewId((current) => {
+      if (folderChanged) return next;
+      return current && savedViews.some((view) => view.id === current)
+        ? current
+        : next;
+    });
+  }, [collectionDefinition?.collection.defaultView, folder.id, savedViewKey, savedViews]);
+  const selectedSavedView = savedViews.find((view) => view.id === savedViewId);
+  const activeCollection = useMemo(() => {
+    const base = collectionDefinition?.collection;
+    return base ? selectCollectionView(base, selectedSavedView?.id ?? "") : base;
+  }, [collectionDefinition, selectedSavedView?.id]);
   /**
    * Does this folder still wear a look that ships with the app?
    *
@@ -876,10 +904,10 @@ function UniversalFolderContents({
     [folder],
   );
   const collectionSpec = useMemo(() => {
-    if (!collectionDefinition) return null;
-    const { sort, filters } = collectionDefinition.collection;
+    if (!activeCollection) return null;
+    const { sort, filters } = activeCollection;
     return sort.length > 0 || filters.length > 0 ? { sort, filters } : null;
-  }, [collectionDefinition]);
+  }, [activeCollection]);
   const sorted = useMemo(() => {
     if (!collectionSpec) {
       return sortedByTimestampDesc(items, (post) => post.updatedAt ?? post.date ?? "");
@@ -907,7 +935,7 @@ function UniversalFolderContents({
   // date field. The offset is which month is showing, relative to now.
   const [calendarOffset, setCalendarOffset] = useState(0);
   const calendar = useMemo(() => {
-    const collection = collectionDefinition?.collection;
+    const collection = activeCollection;
     if (!collection || collection.layout !== "calendar" || !collection.dateBy) {
       return null;
     }
@@ -933,12 +961,12 @@ function UniversalFolderContents({
       byDay.set(key, list);
     }
     return { byDay, undated };
-  }, [collectionDefinition, sorted]);
+  }, [activeCollection, collectionDefinition, sorted]);
 
   // A heatmap folder shows a trailing year of activity as one cell per day,
   // shaded by how many items carry that date, with the normal list below.
   const heatmap = useMemo(() => {
-    const collection = collectionDefinition?.collection;
+    const collection = activeCollection;
     if (!collection || collection.layout !== "heatmap" || !collection.dateBy) {
       return null;
     }
@@ -956,13 +984,13 @@ function UniversalFolderContents({
       }
     }
     return { counts };
-  }, [collectionDefinition, sorted]);
+  }, [activeCollection, collectionDefinition, sorted]);
 
   // A board folder groups its items into one column per option of the
   // template's groupBy enum, in declared option order, with an Unsorted
   // column for items that have no value yet.
   const board = useMemo(() => {
-    const collection = collectionDefinition?.collection;
+    const collection = activeCollection;
     if (!collection || collection.layout !== "board" || !collection.groupBy) {
       return null;
     }
@@ -988,7 +1016,11 @@ function UniversalFolderContents({
       return value === null || !known.has(value);
     });
     return { columns, unsorted };
-  }, [collectionDefinition, sorted]);
+  }, [activeCollection, collectionDefinition, sorted]);
+  const collectionViewMode: FolderViewMode = displayModeForCollectionView(
+    selectedSavedView,
+    viewMode,
+  );
 
   return (
     <>
@@ -1000,6 +1032,25 @@ function UniversalFolderContents({
           onCreateItem={onCreateItem}
         />
       )}
+      {savedViews.length > 0 ? (
+        <label className="post-folder-saved-view">
+          <span>View</span>
+          <select
+            aria-label="Folder view"
+            value={savedViewId}
+            onChange={(event) => setSavedViewId(event.currentTarget.value)}
+          >
+            {!collectionDefinition?.collection.defaultView ? (
+              <option value="">Main</option>
+            ) : null}
+            {savedViews.map((view) => (
+              <option key={view.id} value={view.id}>
+                {view.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <section className="post-folder-page-items" aria-label="Folder items">
         {sorted.length === 0 ? (
           <FolderEmptyCard
@@ -1588,14 +1639,14 @@ function UniversalFolderContents({
           // whatever CSS happened to say.
           return (
             <div
-              className={`universal-item-collection is-${viewMode}`}
-              data-collection-layout={collectionDefinition?.collection.layout}
+              className={`universal-item-collection is-${collectionViewMode}`}
+              data-collection-layout={activeCollection?.layout}
               style={
                 {
                   "--collection-columns":
-                    collectionDefinition?.collection.columns,
-                  "--collection-gap": collectionDefinition
-                    ? COLLECTION_GAP[collectionDefinition.collection.gap]
+                    activeCollection?.columns,
+                  "--collection-gap": activeCollection
+                    ? COLLECTION_GAP[activeCollection.gap]
                     : undefined,
                 } as CSSProperties
               }

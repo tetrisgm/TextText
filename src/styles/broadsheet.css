@@ -7177,6 +7177,7 @@ body:has(.reader):not(:has(.post-editor-shell)) {
 @media (max-width: 700px) {
 }
 .post-folder-page {
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
   padding: 92px 48px 72px;
 }
@@ -7200,6 +7201,33 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   font-size: 13px;
   line-height: 1.25;
 }
+.post-folder-saved-view {
+  width: min(100%, 1120px);
+  margin-inline: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.post-folder-saved-view select {
+  min-width: 132px;
+  max-width: min(280px, 70vw);
+  height: 30px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  padding: 0 26px 0 9px;
+  color: var(--ink);
+  background: var(--bg);
+  font: inherit;
+  cursor: pointer;
+}
+.post-folder-saved-view select:focus-visible {
+  outline: none;
+  box-shadow: var(--ac-focus);
+}
 .post-folder-page-header h1,
 .post-folder-title-input {
   font-size: 34px;
@@ -7207,7 +7235,9 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   line-height: 1.05;
 }
 .post-folder-page-items {
-  width: min(100%, 1120px);
+  width: 100%;
+  max-width: 1120px;
+  min-width: 0;
 }
 .post-folder-page.is-mode-blog {
   gap: 30px;
@@ -7523,6 +7553,10 @@ body:has(.reader):not(:has(.post-editor-shell)) {
   .post-folder-page {
     padding-right: 18px;
     padding-left: 18px;
+  }
+  .blog-folder-feed-star .workspace-item-leading-star {
+    position: static;
+    translate: none;
   }
   .post-folder-page-header {
     align-items: flex-start;

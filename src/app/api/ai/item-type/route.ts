@@ -14,6 +14,11 @@ import {
   itemTypeBlueprintRepairPrompt,
   parseItemTypeBlueprintText,
 } from "@/lib/ai/item-type-generation";
+import {
+  assessItemTypeQuality,
+  itemTypeQualityRevisionPrompt,
+} from "@/lib/presentation/item-type-quality";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -47,9 +52,14 @@ Rules:
 - Infer a small, useful property set. Prefer 3 to 7 fields. Do not add fields just because you can.
 - Use styleReference when the writer names a familiar product or publication, such as Medium, Notion, or Apple Notes. Capture the visual principles, never trademarks or copied assets.
 - A board must have a single-select enum groupBy field.
-- A calendar must have a date dateBy field.
+- A calendar or heatmap must have a date dateBy field.
 - Keep summaryFields to the two or three values people need while scanning the folder.
 - Use rows only when one item genuinely contains a repeated list, such as checklist steps or recipe ingredients.
+- Use reference for relations between items, people for links to people records, and recurrence for repeating schedules.
+- Use a status enum workflow only when allowed transitions make the process clearer.
+- Use computed fields for read-only row rollups or numeric progress. Never ask the writer to enter a computed value.
+- Add named collection views when the request implies distinct useful perspectives, such as My tasks, Due soon, Board, or Calendar. Each view may have its own filters, grouping, and sort.
+- Use showWhen for low-frequency detail that should appear only after a boolean or enum choice is set. Keep validation constraints practical.
 - Choose publishable only when the request is clearly for public reading.
 - Product copy uses sentence case and never uses an em dash.
 - The result must feel ready to use, not like a schema exercise.
@@ -111,8 +121,15 @@ export async function POST(request: Request) {
       prompt: designPrompt,
     });
     let blueprint: ItemTypeBlueprint;
+    let template: TemplateDefinition;
     try {
-      blueprint = parseItemTypeBlueprintText(result.text);
+      blueprint = honorNamedStyleReference(
+        parseItemTypeBlueprintText(result.text),
+        prompt,
+      );
+      template = compileItemTypeBlueprint(blueprint, {
+        id: "preview.item-type",
+      });
     } catch (validationError) {
       const repaired = await generateText({
         model,
@@ -123,12 +140,45 @@ export async function POST(request: Request) {
           request: designPrompt,
         }),
       });
-      blueprint = parseItemTypeBlueprintText(repaired.text);
+      blueprint = honorNamedStyleReference(
+        parseItemTypeBlueprintText(repaired.text),
+        prompt,
+      );
+      template = compileItemTypeBlueprint(blueprint, {
+        id: "preview.item-type",
+      });
     }
-    blueprint = honorNamedStyleReference(blueprint, prompt);
-    const template = compileItemTypeBlueprint(blueprint, {
-      id: "preview.item-type",
-    });
+    // Schema validity is the safety floor, not the design bar. Give the model
+    // one focused revision when a valid blueprint would still produce an
+    // empty page, an ungrouped board, or another visibly incomplete result.
+    // Keep the original when the revision does not measurably improve it.
+    const firstReview = assessItemTypeQuality(blueprint);
+    if (!firstReview.passes) {
+      try {
+        const revised = await generateText({
+          model,
+          system: SYSTEM,
+          prompt: itemTypeQualityRevisionPrompt(blueprint, firstReview),
+        });
+        const candidate = honorNamedStyleReference(
+          parseItemTypeBlueprintText(revised.text),
+          prompt,
+        );
+        const candidateTemplate = compileItemTypeBlueprint(candidate, {
+          id: "preview.item-type",
+        });
+        const candidateReview = assessItemTypeQuality(candidate);
+        if (candidateReview.score > firstReview.score) {
+          blueprint = candidate;
+          template = candidateTemplate;
+        }
+      } catch {
+        // The first result is already schema-valid and safe to preview. A
+        // failed optional polish pass must not discard it or turn the whole
+        // request into a provider error. The studio's deterministic preflight
+        // still explains anything the writer should refine before saving.
+      }
+    }
     return Response.json({ blueprint, template });
   } catch (error) {
     const failure =

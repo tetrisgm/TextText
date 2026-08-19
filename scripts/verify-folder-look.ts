@@ -34,7 +34,7 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 async function devSignIn(page: Page) {
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
   const form = page.locator("form.ac-devsignin");
   await form.waitFor({ timeout: 20000 });
   await form.locator('input[type="email"]').fill(WHO.email);
@@ -86,12 +86,25 @@ async function run(page: Page, theme: "light" | "dark") {
   await page.waitForTimeout(700);
 
   const cards = await page.evaluate(() => {
-    const nodes = [...document.querySelectorAll('[role="dialog"] button')];
+    const nodes = [
+      ...document.querySelectorAll('[role="dialog"] button[data-template-id]'),
+    ];
     return nodes
       .map((node) => (node as HTMLElement).innerText.trim().split("\n")[0])
       .filter((text) => text && text.length < 60);
   });
   check(`${theme}: the gallery shows look cards`, cards.length > 0, `${cards.length}`);
+  const sourceFilters = await page
+    .locator('[aria-label="Filter looks"] button')
+    .allInnerTexts();
+  check(
+    `${theme}: the library exposes search and source filters`,
+    (await page.getByRole("searchbox", { name: "Search looks" }).count()) === 1 &&
+      ["All", "Mine", "Workspace", "TextText"].every((label) =>
+        sourceFilters.some((text) => text.startsWith(label)),
+      ),
+    sourceFilters.join(", "),
+  );
 
   // Every look exactly once. Customizing a look used to add a second card with
   // the same name, and a third, because the picker listed every version.
@@ -108,14 +121,36 @@ async function run(page: Page, theme: "light" | "dark") {
   if (theme === "light") {
     // Apply a look and confirm the folder really changed.
     const applied = await page.evaluate(() => {
-      const nodes = [...document.querySelectorAll<HTMLElement>('[role="dialog"] button')];
-      const card = nodes.find((node) => /gallery|magazine|index/i.test(node.innerText));
-      const target = card ?? nodes.find((node) => node.innerText.trim().length > 0);
+      const nodes = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[role="dialog"] button[data-template-id]',
+        ),
+      ];
+      const alternatives = nodes.filter(
+        (node) => node.getAttribute("aria-current") !== "true",
+      );
+      const card = alternatives.find((node) =>
+        /gallery|magazine|index/i.test(node.innerText),
+      );
+      const target =
+        card ?? alternatives.find((node) => node.innerText.trim().length > 0);
       target?.click();
       return target?.innerText.trim().split("\n")[0] ?? "";
     });
     await page.waitForTimeout(900);
     const use = page.locator('button:text-is("Use this look")').first();
+    const details = await page
+      .getByRole("complementary", { name: "Look details" })
+      .innerText();
+    check(
+      `${theme}: preview shows impact and reusable look actions`,
+      ["Items using it", "Folders using it", "This change"].every((label) =>
+        details.includes(label),
+      ) &&
+        (await page.getByRole("button", { name: "Export" }).count()) === 1 &&
+        (await page.getByRole("button", { name: "Remix" }).count()) === 1,
+      details.slice(0, 120),
+    );
     if ((await use.count()) > 0) await use.click();
     await page.waitForTimeout(2500);
     check(

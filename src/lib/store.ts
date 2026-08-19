@@ -139,6 +139,11 @@ import {
   validateTemplateDefinition,
   type TemplateDefinition,
 } from "./presentation/schema";
+import type {
+  TemplateLibraryEntry,
+  TemplateLibraryImpact,
+  TemplateLibraryVersion,
+} from "./presentation/template-library";
 
 type PostRow = typeof posts.$inferSelect;
 type ItemCommentRow = typeof itemComments.$inferSelect;
@@ -1032,7 +1037,7 @@ Install the TextText plugin from Terminal:
 ${CLAUDE_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-For Claude.ai, open **Settings > Connectors**, add ${TEXTTEXT_HOSTED_MCP_URL}, and approve the connection in TextText.
+For Claude.ai, open **Settings > Connectors**, add ${TEXTTEXT_HOSTED_MCP_URL}, then give Claude a workspace token from **Connect** as its bearer credential.
 
 ## Codex
 
@@ -1042,17 +1047,17 @@ Install the TextText plugin from Terminal:
 ${CODEX_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-Codex appears as **Codex** while it works in an open document.
+Create a workspace token at **Connect** and paste it into Codex when the plugin asks for the TextText credential. Codex appears as **Codex** while it works in an open document.
 
 ## ChatGPT
 
-Open ${CHATGPT_CONNECTOR_URL}, add a custom app using ${TEXTTEXT_HOSTED_MCP_URL}, and approve access in TextText.
+Open ${CHATGPT_CONNECTOR_URL}, add a custom app using ${TEXTTEXT_HOSTED_MCP_URL}, and give it a workspace token from **Connect** as its bearer credential.
 
 ChatGPT appears as **ChatGPT** while it works in an open document.
 
 ## Other MCP clients
 
-Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with OAuth. Give the connection a descriptive name. TextText uses that approved name when the client is not Claude, Codex, ChatGPT, or Cursor.
+Add ${TEXTTEXT_HOSTED_MCP_URL} to any client that supports remote MCP with a bearer credential. Create a workspace token at **Connect**, paste it into the client, and give the connection a descriptive name. TextText uses that token name when the client is not Claude, Codex, ChatGPT, or Cursor.
 
 ## Check it worked
 
@@ -1106,7 +1111,15 @@ You can also begin with Editorial publication, Project board, or Quick notes. Th
 
 ## Shape the type
 
-Choose the fields people will fill in. Switch between **Item** and **Folder** to see both parts of the design before saving. Pick a destination folder if you want new items there to inherit the type automatically.
+Refine the design in conversation or adjust it directly. Every change becomes a design version, so Undo, Redo, the history menu, and Compare can move between complete directions without touching the workspace.
+
+Choose the fields people will fill in. TextText supports people and relation references, recurrence, guarded status workflows, validation, conditional fields, and read-only computed facts. Switch between **Item** and **Folder** to see both parts of the design before saving.
+
+## Test the real result
+
+Preview an item or its folder with built-in samples, the selected folder's own documents, an empty state, or deliberately long stress-test content. Use the wide, tablet, and phone frames to catch narrow-layout problems. The quality preflight names important structural gaps and blocks Done only when the type would be incomplete.
+
+A folder can carry several named views over the same items. Each view may choose its own layout, columns, grouping, filters, and sort. The Project board starter demonstrates Board, Open tasks, and Schedule.
 
 ## Save and reuse it
 
@@ -3016,6 +3029,220 @@ export async function listDocumentTemplates(
     latest.push(validateTemplateDefinition(row.definition));
   }
   return [...BUILTIN_TEMPLATES, ...latest];
+}
+
+/**
+ * The template library adds lifecycle context to the definitions rendered by
+ * the ordinary picker. Definitions stay immutable. Usage and ownership are
+ * computed from the rows that already exist, so this does not introduce a
+ * second template model.
+ */
+export async function listDocumentTemplateLibrary(
+  blogId: string,
+  viewerUserId: string,
+): Promise<TemplateLibraryEntry[]> {
+  if (!db) {
+    return BUILTIN_TEMPLATES.map((definition) => ({
+      definition,
+      scope: "texttext" as const,
+      createdAt: null,
+      versions: [{ definition, createdAt: null }],
+      impact: { itemCount: 0, folderCount: 0, folderNames: [] },
+    }));
+  }
+
+  const [definitions, versionRows, itemRows, folderRows] = await Promise.all([
+    listDocumentTemplates(blogId),
+    db
+      .select({
+        templateId: documentTemplates.templateId,
+        definition: documentTemplates.definition,
+        createdById: documentTemplates.createdById,
+        createdAt: documentTemplates.createdAt,
+      })
+      .from(documentTemplates)
+      .where(
+        and(
+          eq(documentTemplates.blogId, blogId),
+          isNull(documentTemplates.retiredAt),
+        ),
+      )
+      .orderBy(desc(documentTemplates.version)),
+    db
+      .select({ templateId: posts.templateId, folderId: posts.folderId })
+      .from(posts)
+      .where(and(eq(posts.blogId, blogId), isNull(posts.deletedAt))),
+    db
+      .select({
+        id: folders.id,
+        name: folders.name,
+        templateId: folders.defaultTemplateId,
+      })
+      .from(folders)
+      .where(and(eq(folders.blogId, blogId), isNull(folders.deletedAt))),
+  ]);
+
+  const folderNames = new Map(folderRows.map((row) => [row.id, row.name]));
+  const versionsById = new Map<string, TemplateLibraryVersion[]>();
+  const creatorById = new Map<string, string | null>();
+  const createdAtById = new Map<string, string | null>();
+  for (const row of versionRows) {
+    const definition = validateTemplateDefinition(row.definition);
+    const history = versionsById.get(row.templateId) ?? [];
+    history.push({
+      definition,
+      createdAt: row.createdAt?.toISOString() ?? null,
+    });
+    versionsById.set(row.templateId, history);
+    if (!creatorById.has(row.templateId)) {
+      creatorById.set(row.templateId, row.createdById);
+      createdAtById.set(
+        row.templateId,
+        row.createdAt?.toISOString() ?? null,
+      );
+    }
+  }
+
+  const impactById = new Map<string, TemplateLibraryImpact>();
+  for (const definition of definitions) {
+    const usedFolderIds = new Set<string>();
+    let itemCount = 0;
+    for (const row of itemRows) {
+      if (row.templateId !== definition.id) continue;
+      itemCount += 1;
+      if (row.folderId) usedFolderIds.add(row.folderId);
+    }
+    for (const row of folderRows) {
+      if (row.templateId === definition.id) usedFolderIds.add(row.id);
+    }
+    impactById.set(definition.id, {
+      itemCount,
+      folderCount: usedFolderIds.size,
+      folderNames: [...usedFolderIds]
+        .map((id) => folderNames.get(id))
+        .filter((name): name is string => Boolean(name))
+        .sort((a, b) => a.localeCompare(b)),
+    });
+  }
+
+  return definitions.map((definition) => {
+    const builtin = definition.id.startsWith("texttext.");
+    return {
+      definition,
+      scope: builtin
+        ? "texttext"
+        : creatorById.get(definition.id) === viewerUserId
+          ? "personal"
+          : "workspace",
+      createdAt: builtin ? null : (createdAtById.get(definition.id) ?? null),
+      versions: builtin
+        ? [{ definition, createdAt: null }]
+        : (versionsById.get(definition.id) ?? []),
+      impact: impactById.get(definition.id) ?? {
+        itemCount: 0,
+        folderCount: 0,
+        folderNames: [],
+      },
+    } satisfies TemplateLibraryEntry;
+  });
+}
+
+function workspaceTemplateId(name: string): string {
+  const slug =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "look";
+  return `${slug}-${randomUUID().slice(0, 6)}`;
+}
+
+/** Save an existing version as a new personal look. */
+export async function duplicateDocumentTemplate(input: {
+  blogId: string;
+  reference: TemplateReference;
+  name: string;
+  actor: AuditEntry;
+  createdById: string;
+}): Promise<TemplateDefinition> {
+  const source = await getDocumentTemplate(input.blogId, input.reference);
+  if (!source) throw new Error("That look could not be found.");
+  const name = input.name.trim().replace(/\s+/g, " ");
+  if (!name) throw new Error("Give the new look a name.");
+  if (name.length > 160) throw new Error("That name is too long.");
+  return createDocumentTemplateVersion({
+    blogId: input.blogId,
+    definition: validateTemplateDefinition({
+      ...source,
+      id: workspaceTemplateId(name),
+      version: 1,
+      name,
+    }),
+    actor: input.actor,
+    createdById: input.createdById,
+  });
+}
+
+/**
+ * Import a validated definition either as an independent look or as the next
+ * immutable version of an existing workspace look.
+ */
+export async function importDocumentTemplate(input: {
+  blogId: string;
+  definition: TemplateDefinition;
+  mode: "new" | "update";
+  actor: AuditEntry;
+  createdById: string;
+}): Promise<TemplateDefinition> {
+  const source = validateTemplateDefinition(input.definition);
+  let id = source.id;
+  if (input.mode === "new") {
+    id = workspaceTemplateId(source.name);
+  } else {
+    if (id.startsWith("texttext.")) {
+      throw new Error("Built-in looks cannot be updated.");
+    }
+    const existing = await db
+      ?.select({ templateId: documentTemplates.templateId })
+      .from(documentTemplates)
+      .where(
+        and(
+          eq(documentTemplates.blogId, input.blogId),
+          eq(documentTemplates.templateId, id),
+          isNull(documentTemplates.retiredAt),
+        ),
+      )
+      .limit(1);
+    if (!existing?.[0]) {
+      throw new Error("Update needs a matching workspace look.");
+    }
+  }
+  return createDocumentTemplateVersion({
+    blogId: input.blogId,
+    definition: validateTemplateDefinition({ ...source, id, version: 1 }),
+    actor: input.actor,
+    createdById: input.createdById,
+  });
+}
+
+/** Copy an older immutable version forward, preserving the full history. */
+export async function restoreDocumentTemplateVersion(input: {
+  blogId: string;
+  reference: TemplateReference;
+  actor: AuditEntry;
+  createdById: string;
+}): Promise<TemplateDefinition> {
+  if (input.reference.id.startsWith("texttext.")) {
+    throw new Error("Built-in looks do not have workspace history.");
+  }
+  const source = await getDocumentTemplate(input.blogId, input.reference);
+  if (!source) throw new Error("That version could not be found.");
+  return createDocumentTemplateVersion({
+    blogId: input.blogId,
+    definition: source,
+    actor: input.actor,
+    createdById: input.createdById,
+  });
 }
 
 export async function createDocumentTemplateVersion(input: {

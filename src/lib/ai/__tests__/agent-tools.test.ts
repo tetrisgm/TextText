@@ -193,6 +193,14 @@ describe("native workspace tool adapter", () => {
     ).toContain('"add a section" modify this item');
   });
 
+  it("offers the current-item mutation tools for transformation requests", () => {
+    const itemTools = workspaceAgentToolNamesForView(
+      { level: "edit", folderPath: "notes", postId: "note-1" },
+      "Turn this into a structured project brief and extract its fields",
+    );
+    expect(itemTools).toEqual(["update_item", "append_to_item"]);
+  });
+
   it("normalizes the current native bridge's folder alias before validation", async () => {
     const tools = createWorkspaceAgentTools({
       handle: "local",

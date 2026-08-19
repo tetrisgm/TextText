@@ -30,23 +30,28 @@ function check(claim: string, condition: boolean, detail = "") {
 }
 
 async function devSignIn(page: Page) {
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
-  const form = page.locator("form.ac-devsignin");
-  await form.waitFor({ timeout: 20000 });
-  await form.locator('input[type="email"]').fill(WHO.email);
-  await form
-    .locator('input[placeholder="Name (optional)"]')
-    .first()
-    .fill(WHO.name)
-    .catch(() => undefined);
-  await form.locator('button[type="submit"]').click();
-  await page.waitForTimeout(2500);
-  // The dev sign-in occasionally needs a second beat before the session cookie
-  // is on the context; landing on /signin means it has not arrived yet.
-  for (let attempt = 0; attempt < 3 && page.url().includes("/signin"); attempt += 1) {
+  // Retry the whole form submission. Retrying only the destination after a
+  // bounce cannot create the missing session and makes every later claim fail
+  // for an unrelated reason.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
+    const form = page.locator("form.ac-devsignin");
+    await form.waitFor({ timeout: 20000 }).catch(() => undefined);
+    if ((await form.count()) === 0) return;
+    await form.locator('input[type="email"]').fill(WHO.email);
+    await form
+      .locator('input[placeholder="Name (optional)"]')
+      .first()
+      .fill(WHO.name)
+      .catch(() => undefined);
+    await form.locator('button[type="submit"]').click();
+    await page.waitForTimeout(2500);
+    await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1200);
-    await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+    if (!page.url().includes("/signin")) return;
+    console.log(`    (sign-in bounced, retry ${attempt})`);
   }
+  throw new Error("dev sign-in never took");
 }
 
 async function openHome(page: Page) {
@@ -84,7 +89,11 @@ async function main() {
       claims.includes("Type a thought") &&
         claims.includes("Save as look") &&
         claims.includes("workspace token") &&
-        claims.includes("Build an item type"),
+        claims.includes("Build an item type") &&
+        claims.includes("Look library is searchable") &&
+        claims.includes("before/current comparison") &&
+        claims.includes("guarded status workflows") &&
+        claims.includes("several named views"),
       "the page was rewritten; update this verifier with it",
     );
 
@@ -107,6 +116,13 @@ async function main() {
       "the studio previews both the item and its folder",
       (await page.getByRole("tab", { name: "Item" }).count()) === 1 &&
         (await page.getByRole("tab", { name: "Folder" }).count()) === 1,
+    );
+    check(
+      "the studio exposes the exercised history, responsive content and preflight controls",
+      (await page.getByRole("combobox", { name: "Design version" }).count()) === 1 &&
+        (await page.getByRole("group", { name: "Preview device" }).count()) === 1 &&
+        (await page.getByRole("combobox", { name: "Preview content" }).count()) === 1 &&
+        (await page.locator("details").filter({ hasText: /Ready|suggestion|attention/ }).count()) === 1,
     );
     await page.keyboard.press("Escape");
     await page.getByRole("dialog").waitFor({ state: "detached" });
@@ -177,15 +193,30 @@ async function main() {
     await page.waitForTimeout(300);
 
     // "Rewrite, Summarize, and Excerpt appear above the selection"
-    await page.locator(".applecms [contenteditable], textarea").first().click().catch(() => undefined);
+    const documentBody = page.getByRole("textbox", { name: "Document body" });
+    await documentBody.click();
     await page.keyboard.type("A passage worth rewriting, summarizing and excerpting.");
-    await page.waitForTimeout(600);
-    await page.keyboard.press("Meta+A");
-    await page.waitForTimeout(900);
-    const selection = await page.locator("body").innerText();
+    const selectionActions = page.getByRole("toolbar", {
+      name: "AI actions for the selected text",
+    });
+    let selectionReady = false;
+    for (let attempt = 0; attempt < 3 && !selectionReady; attempt += 1) {
+      await documentBody.click();
+      await page.keyboard.press("Meta+A");
+      selectionReady = await selectionActions
+        .waitFor({ state: "visible", timeout: 2500 })
+        .then(() => true)
+        .catch(() => false);
+    }
+    const selectionLabels = selectionReady
+      ? await selectionActions.getByRole("button").allInnerTexts()
+      : [];
     check(
       "selecting text offers Rewrite, Summarize and Excerpt",
-      ["Rewrite", "Summarize", "Excerpt"].every((label) => selection.includes(label)),
+      ["Rewrite", "Summarize", "Excerpt"].every((label) =>
+        selectionLabels.includes(label),
+      ),
+      selectionLabels.join(", "),
     );
 
     // "Closed, the rail folds into a small round avatar at the bottom right."

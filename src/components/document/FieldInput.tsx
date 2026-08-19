@@ -12,17 +12,20 @@
 // The control follows the declared type, so a new field type needs exactly one
 // case added here and nowhere else.
 
-import { useId } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import type { DocumentFieldRow, DocumentFieldValue } from "@/lib/documents/model";
 import type {
   DocumentFieldDefinition,
   RowSubFieldDefinition,
 } from "@/lib/presentation/schema";
+import { statusWorkflowOptions } from "@/lib/presentation/workflow";
+import type { WorkspaceReferenceChoice } from "@/lib/presentation/workspace-reference-choices";
 
 export type FieldInputProps = {
   field: DocumentFieldDefinition;
   value: DocumentFieldValue | undefined;
   onChange: (value: DocumentFieldValue) => void;
+  referenceChoices?: readonly WorkspaceReferenceChoice[];
   disabled?: boolean;
   embedded?: boolean;
 };
@@ -34,6 +37,7 @@ export function FieldInput({
   field,
   value,
   onChange,
+  referenceChoices = [],
   disabled,
   embedded = false,
 }: FieldInputProps) {
@@ -89,6 +93,28 @@ export function FieldInput({
     );
   }
 
+  if (field.type === "reference" && field.semantic === "people") {
+    return (
+      <div
+        className={`tt-field-row is-reference is-people${embedded ? " is-embedded" : ""}`}
+        data-field-id={field.id}
+      >
+        <span className="tt-field-label" id={`${id}-label`}>
+          {label}
+          {field.required ? <span aria-hidden="true"> *</span> : null}
+        </span>
+        <PeopleReferenceInput
+          field={field}
+          value={value}
+          choices={referenceChoices}
+          disabled={disabled}
+          labelledBy={`${id}-label`}
+          onChange={onChange}
+        />
+      </div>
+    );
+  }
+
   const control = (() => {
     switch (field.type) {
       case "richtext":
@@ -99,6 +125,7 @@ export function FieldInput({
             value={text(value)}
             placeholder={label}
             rows={3}
+            maxLength={field.maxLength}
             disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
           />
@@ -156,6 +183,47 @@ export function FieldInput({
                   </button>
                 );
               })}
+            </span>
+          );
+        }
+        const workflow = statusWorkflowOptions(field, value);
+        if (workflow) {
+          const currentValue =
+            typeof value === "string" && value.trim() ? value : "";
+          return (
+            <span className="tt-status-workflow-control">
+              <select
+                id={id}
+                className="tt-field-input is-select is-status"
+                value={currentValue}
+                disabled={disabled || (workflow.current !== null && workflow.next.length === 0)}
+                onChange={(event) => onChange(event.target.value || null)}
+              >
+                {!workflow.current ? <option value="">Choose a starting state</option> : null}
+                {workflow.current ? (
+                  <optgroup label="Current">
+                    <option value={workflow.current.value}>
+                      {workflow.current.label}
+                    </option>
+                  </optgroup>
+                ) : null}
+                {workflow.next.length > 0 ? (
+                  <optgroup label={workflow.current ? "Next" : "Start with"}>
+                    {workflow.next.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.icon ? `${option.icon} ${option.label}` : option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+              </select>
+              <small>
+                {workflow.next.length > 0
+                  ? `${workflow.current ? "Next" : "Start"}: ${workflow.next
+                      .map((option) => option.label)
+                      .join(" or ")}`
+                  : "No next step"}
+              </small>
             </span>
           );
         }
@@ -249,6 +317,7 @@ export function FieldInput({
             className="tt-field-input"
             value={text(value)}
             placeholder={label}
+            maxLength={field.type === "text" ? field.maxLength : undefined}
             disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
           />
@@ -268,6 +337,210 @@ export function FieldInput({
       </span>
       {control}
     </label>
+  );
+}
+
+type PeopleField = Extract<DocumentFieldDefinition, { type: "reference" }>;
+
+function initials(label: string): string {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function PeopleReferenceInput({
+  field,
+  value,
+  choices,
+  disabled,
+  labelledBy,
+  onChange,
+}: {
+  field: PeopleField;
+  value: DocumentFieldValue | undefined;
+  choices: readonly WorkspaceReferenceChoice[];
+  disabled?: boolean;
+  labelledBy: string;
+  onChange: (value: DocumentFieldValue) => void;
+}) {
+  const picker = useRef<HTMLDetailsElement>(null);
+  const [query, setQuery] = useState("");
+  const [manualValue, setManualValue] = useState("");
+  const selected = useMemo(
+    () =>
+      (field.multiple
+        ? Array.isArray(value)
+          ? value
+          : value == null
+            ? []
+            : [value]
+        : value == null
+          ? []
+          : [value]
+      ).filter((entry): entry is string => typeof entry === "string" && Boolean(entry)),
+    [field.multiple, value],
+  );
+  const choiceById = useMemo(
+    () => new Map(choices.map((choice) => [choice.id, choice] as const)),
+    [choices],
+  );
+  const filteredChoices = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return choices;
+    return choices.filter((choice) =>
+      `${choice.label} ${choice.description ?? ""}`
+        .toLocaleLowerCase()
+        .includes(normalized),
+    );
+  }, [choices, query]);
+  const choose = (choiceId: string) => {
+    if (field.multiple) {
+      onChange(
+        selected.includes(choiceId)
+          ? selected.filter((entry) => entry !== choiceId)
+          : [...selected, choiceId],
+      );
+      return;
+    }
+    onChange(choiceId);
+    picker.current?.removeAttribute("open");
+    setQuery("");
+  };
+  const addManual = () => {
+    const entries = manualValue
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (entries.length === 0) return;
+    onChange(field.multiple ? [...new Set([...selected, ...entries])] : entries[0]!);
+    setManualValue("");
+  };
+
+  return (
+    <div className="tt-people-picker" aria-labelledby={labelledBy}>
+      {selected.length > 0 ? (
+        <div className="tt-people-selection" aria-label="Selected people">
+          {selected.map((entry) => {
+            const choice = choiceById.get(entry);
+            const label = choice?.label ?? entry;
+            return (
+              <span className="tt-person-chip" key={entry}>
+                <span className="tt-person-avatar" aria-hidden="true">
+                  {initials(label)}
+                </span>
+                <span>{label}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${label}`}
+                  disabled={disabled}
+                  onClick={() =>
+                    onChange(
+                      field.multiple
+                        ? selected.filter((selectedId) => selectedId !== entry)
+                        : null,
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <span className="tt-people-empty">No one selected</span>
+      )}
+
+      {choices.length > 0 ? (
+        <details className="tt-people-picker-menu" ref={picker}>
+          <summary
+            aria-disabled={disabled}
+            onClick={(event) => {
+              if (disabled) event.preventDefault();
+            }}
+          >
+            {selected.length > 0 ? "Change people" : "Choose people"}
+          </summary>
+          <div className="tt-people-picker-popover">
+            <input
+              type="search"
+              className="tt-field-input"
+              value={query}
+              placeholder="Find a workspace item"
+              aria-label="Find people"
+              disabled={disabled}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <div className="tt-people-options" role="listbox" aria-multiselectable={field.multiple}>
+              {filteredChoices.map((choice) => {
+                const active = selected.includes(choice.id);
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    className={active ? "is-selected" : undefined}
+                    key={choice.id}
+                    disabled={disabled}
+                    onClick={() => choose(choice.id)}
+                  >
+                    <span className="tt-person-avatar" aria-hidden="true">
+                      {initials(choice.label)}
+                    </span>
+                    <span>
+                      <strong>{choice.label}</strong>
+                      {choice.description ? <small>{choice.description}</small> : null}
+                    </span>
+                    <span aria-hidden="true">{active ? "✓" : ""}</span>
+                  </button>
+                );
+              })}
+              {filteredChoices.length === 0 ? <p>No matching items</p> : null}
+            </div>
+          </div>
+        </details>
+      ) : null}
+
+      <details className="tt-people-manual">
+        <summary
+          aria-disabled={disabled}
+          onClick={(event) => {
+            if (disabled) event.preventDefault();
+          }}
+        >
+          {choices.length > 0 ? "Use an ID instead" : "Enter a person or item ID"}
+        </summary>
+        <div>
+          <input
+            type="text"
+            className="tt-field-input"
+            value={field.multiple ? manualValue : selected[0] ?? ""}
+            placeholder={field.multiple ? "Add IDs, separated by commas" : "Person or item ID"}
+            aria-label={field.multiple ? "Add people by ID" : "Person or item ID"}
+            disabled={disabled}
+            onChange={(event) =>
+              field.multiple
+                ? setManualValue(event.target.value)
+                : onChange(event.target.value || null)
+            }
+            onKeyDown={(event) => {
+              if (field.multiple && event.key === "Enter") {
+                event.preventDefault();
+                addManual();
+              }
+            }}
+          />
+          {field.multiple ? (
+            <button type="button" disabled={disabled || !manualValue.trim()} onClick={addManual}>
+              Add
+            </button>
+          ) : null}
+        </div>
+      </details>
+    </div>
   );
 }
 

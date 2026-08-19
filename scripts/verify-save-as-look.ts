@@ -61,7 +61,7 @@ function check(label: string, condition: boolean, detail = "") {
  *  away with a misleading message. */
 async function devSignIn(page: Page) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
     const form = page.locator("form.ac-devsignin");
     await form.waitFor({ timeout: 20000 }).catch(() => undefined);
     if ((await form.count()) === 0) return; // already signed in

@@ -481,6 +481,30 @@ Two traps worth keeping:
   notes. Provider generation uses validated JSON rather than the provider's
   constrained grammar because the complete blueprint exceeds Anthropic's
   optional-property limit. One bounded repair pass handles invalid model JSON.
+- The focused studio keeps a 30-revision local design history with undo, redo,
+  branching, version switching, and a before/current comparison. Preview modes
+  cover wide, tablet, and phone frames plus sample, real folder, empty, and
+  stress content. A deterministic preflight scores the current blueprint and
+  blocks Done only for important findings.
+- Blueprints can model people and document relations, recurrence, validated
+  values, conditional sections, computed facts, and status workflows. Status
+  controls expose only the initial state or transitions allowed from the
+  current state. People fields store canonical document references and use a
+  searchable workspace picker with a manual ID fallback.
+- Collections can preserve multiple named views with their own layout,
+  filters, grouping, date field, and multi-sort. A compact folder control
+  switches views without changing the underlying documents.
+- The Look library is a searchable visual catalog with Mine, Workspace, and
+  TextText sources, real rendered previews, impact counts, Remix and Save as
+  new, validated JSON import, export, immutable versions, and restore-forward.
+- Native assistant turns are grounded in the active view, document, and safe
+  selected text. Transformation shortcuts expose the same workspace update
+  tools as typed instructions; Structure produces a reversible full-body
+  proposal rather than editing around the document command surface.
+- The final 2026-08-19 gate passed 920 web tests, 446 Swift tests, TypeScript,
+  the 42-page production build, the item-type, feature, look, home-layout,
+  outbound MCP, collaboration, and real-model sidebar evaluations, plus 36
+  inspected light/dark screenshots across 1440, 768, and 375 pixel widths.
 
 ## Resolved episodes (one line each, dates in git log)
 

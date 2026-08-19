@@ -218,31 +218,15 @@ item cannot cross into a private-mode folder through the tool surface.
 
 ## External access
 
-The hosted MCP endpoint uses OAuth authorization code with PKCE S256 and a
-human click-to-approve consent page. Discovery follows this chain:
+The hosted MCP endpoint accepts a workspace bearer token created at `/connect`.
+Each token belongs to one workspace, carries `sync` access, has a descriptive
+agent name for presence and audit attribution, and remains revocable from the
+same page. TextText has no OAuth authorization server, consent page, refresh
+token family, or dynamic client registration endpoint.
 
-```text
-/api/mcp 401 challenge
-  -> /.well-known/oauth-protected-resource
-  -> /.well-known/oauth-authorization-server
-  -> /oauth/register
-  -> /oauth/authorize
-  -> /oauth/token
-```
-
-OAuth clients request `read` or `sync`; clients requesting both advertised
-scopes receive effective `sync` access. Authorization-code
-exchange returns a `wsk_` access token valid for one hour and a `wrt_` refresh
-token. Refresh tokens rotate on every use. Reuse of a consumed refresh token
-revokes the full family and all access tokens in it. Families have a 180-day
-absolute lifetime and a 30-day inactivity lifetime. Manual tokens created at
-`/connect` currently carry `sync`, do not expire automatically, and remain
-revocable.
-
-OAuth, well-known metadata, and MCP auth changes must keep
-`python3 scripts/test-oauth-mcp-loop.py` passing. The approve route must not use
-`Response.redirect()` because its immutable headers previously caused approval
-to fail.
+The resource metadata and the MCP `401` response both direct a client to the
+token flow. A client must let the person provide a bearer credential. The app
+never asks for the person's Claude, ChatGPT, or Codex password.
 
 ## Maintenance
 

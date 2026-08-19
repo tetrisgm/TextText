@@ -55,7 +55,7 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 async function devSignIn(page: Page) {
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
   const form = page.locator("form.ac-devsignin");
   await form.waitFor({ timeout: 20000 });
   await form.locator('input[type="email"]').fill(WHO.email);

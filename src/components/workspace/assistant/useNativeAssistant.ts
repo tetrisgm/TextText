@@ -79,6 +79,7 @@ import {
 } from "@/lib/ai/native-item-type";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
+import { nativeAssistantTurnPrompt } from "@/lib/ai/native-turn";
 
 export type { AssistantViewSnapshot } from "./context";
 
@@ -325,10 +326,12 @@ function quickActionProposal({
   const field: NativeQuickActionField | null =
     action === "title"
       ? "title"
-      : action === "excerpt"
-        ? "excerpt"
-        : action === "rewrite"
-          ? (selection?.field ?? "body")
+        : action === "excerpt"
+          ? "excerpt"
+          : action === "rewrite"
+            ? (selection?.field ?? "body")
+            : action === "structure"
+              ? "body"
           : null;
   if (!field) return undefined;
 
@@ -745,11 +748,32 @@ export function useNativeAssistant({
         prompt: displayPrompt,
       });
       try {
-        if (nativeConnection?.state === "ready" && submitNativeAssistantTurn(prompt)) {
-          appendToThread(thread, "progress", "Working with the TextText Agent");
-          nativeJobRef.current = jobId;
-          nativeMessageRef.current = null;
-          return;
+        if (nativeConnection?.state === "ready") {
+          const open = submittedView.postId
+            ? await readItemTextRef.current(submittedView.postId).catch(() => null)
+            : null;
+          const openSelection = open
+            ? resolveWorkspaceItemTextSelection(open)
+            : null;
+          const nativePrompt = nativeAssistantTurnPrompt({
+            context: tools.describeContext(submittedView),
+            item: open && submittedView.postId
+              ? {
+                  id: submittedView.postId,
+                  title: open.title,
+                  excerpt: open.excerpt,
+                  body: open.body,
+                }
+              : null,
+            request: prompt,
+            selection: openSelection,
+          });
+          if (submitNativeAssistantTurn(nativePrompt)) {
+            appendToThread(thread, "progress", "Working with the TextText Agent");
+            nativeJobRef.current = jobId;
+            nativeMessageRef.current = null;
+            return;
+          }
         }
         updateAssistantJob(jobId, { activity: "Contacting your AI provider" });
         // Hand over what the writer is looking at, the way the quick actions
@@ -807,6 +831,7 @@ export function useNativeAssistant({
       contextLabel,
       nativeConnection,
       threadKey,
+      tools,
     ],
   );
 
@@ -820,7 +845,10 @@ export function useNativeAssistant({
         NATIVE_QUICK_ACTIONS.find((candidate) => candidate.id === action)
           ?.label ?? action;
       setThreadBusy(thread, true);
-      let actionPrompt = `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
+      let actionPrompt =
+        action === "structure"
+          ? "Restructure the current item's full body into a clear, useful document. Preserve its meaning and details. Return the complete replacement body only. Do not change the item."
+          : `${actionLabel} the current item. Return the suggestion only. Do not change the item.`;
       try {
         const item = await readItemTextRef.current(view.postId);
         const selection = resolveWorkspaceItemTextSelection(item);

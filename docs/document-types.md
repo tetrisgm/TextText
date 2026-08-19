@@ -222,21 +222,31 @@ The UI assistant, workspace-configured provider, and MCP all consume the shared
 tool definitions in `src/lib/ai/tools.ts`. They execute through the same
 workspace command boundary. The app never calls its own MCP endpoint.
 
-The configured provider selects a base template and emits bounded token or
-composition operations. Preview is a real render through the validator, not a
-picture or generated HTML. More capable models can propose broader operation
-sequences and research content, but receive no wider render authority.
+The item-type studio accepts a starter, a complete validated blueprint from a
+connected provider, or a sequence of refinements. A blueprint compiles into the
+same closed template schema as every hand-authored look. Preview is a real
+render through the validator, not a picture or generated HTML. Models can
+propose broader information structures, but receive no wider render authority.
 
 ## Template gallery
 
-`src/components/document/TemplateGallery.tsx` presents three columns when space
-allows, does not preselect a look, and previews the current document through the
-actual engine. Arrow keys move spatially, Enter previews or confirms, and Escape
-or Backspace returns. Selecting a look updates presentation only.
+`src/components/document/TemplateGallery.tsx` presents a responsive library,
+does not preselect a look, and previews the current document through the actual
+engine. Arrow keys move spatially, Enter previews or confirms, and Escape or
+Backspace returns. Search and scope filters separate personal, workspace, and
+built-in looks. Selecting a look updates presentation only.
 
 Imported gallery templates are always forked into a workspace-owned immutable
-version before use. Import never inserts a database definition without strict
-validation.
+version before use. An import can instead become the next immutable version of
+a matching workspace look. Import never inserts a database definition without
+strict validation. Export uses the versioned `texttext-look` JSON envelope.
+Remix creates an independent id. Restoring an older version copies it forward
+as a new version, so pinned documents and version history remain intact.
+
+The gallery computes impact from canonical item and folder references before a
+look is applied. It shows item and folder counts and names the first affected
+folders. Applying a folder look restyles the folder and its existing items so
+the index and the documents keep one coherent design.
 
 ## Privacy and access
 
@@ -456,6 +466,41 @@ Catalog: 23 built-in templates in six categories (Text, Plan, Track, Collect,
 Work, Publish), every one validated at module load. `TEMPLATE_CATALOG` in
 `src/lib/presentation/templates.ts` is the grouping.
 
-Deliberately deferred: response records (polls, RSVPs need a server-side
-respond command), calendar and heatmap layouts, derived-value bindings, auto
-table-of-contents and backlink chrome, per-template seed content.
+Still deferred: response records (polls and RSVPs need a server-side respond
+command), auto table-of-contents, and backlink chrome.
+
+## Structured item types and look lifecycle (2026-08-19)
+
+The item-type blueprint compiler adds reusable information behavior without
+adding a second content model:
+
+- Relations compile to canonical document or folder references. People are
+  ordinary related TextText documents with a `people` semantic, not accounts.
+- Recurrence compiles to a single-select enum with safe preset values.
+- A status enum can declare an initial value, completed values, and a closed
+  transition graph. The validator rejects unknown values and duplicate edges.
+- Text fields can set a maximum length. Number fields can set minimum, maximum,
+  and step constraints. The editor consumes the same validated definitions.
+- A property can be conditional on a boolean or single-select enum field. The
+  compiler emits a safe content binding rather than an executable expression.
+- Computed blueprint fields are read-only render nodes. Supported operations
+  are row count, row sum, completed rows, and current-to-target ratio. They do
+  not become stored document fields.
+- Calendar and heatmap collections require a declared date field. Boards
+  require a declared single-select enum group. These constraints apply to the
+  main collection and every named view.
+
+A template may declare up to 12 named collection views. A view reuses the same
+fields, item renderer, and theme while varying only validated layout, columns,
+grouping, date placement, filters, and sort. A declared default view drives the
+initial folder render. The folder View menu changes the active view locally and
+does not duplicate, mutate, or reclassify items.
+
+The item-type studio keeps a complete in-memory revision timeline for the open
+session. Starter choices, provider refinements, and manual edits are undoable;
+Compare renders the previous and current complete definitions side by side.
+Preview content can come from the selected folder, the template example, an
+empty document, or a long-content stress case, and can be framed at wide,
+tablet, or phone widths. A deterministic quality preflight is separate from
+schema validation: schema validation is the safety gate, while preflight blocks
+saving structures that are safe but visibly incomplete.

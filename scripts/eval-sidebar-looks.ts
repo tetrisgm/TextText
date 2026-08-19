@@ -150,7 +150,7 @@ function extractDecision(
 // ------------------------------------------------------------- the workspace
 
 async function signIn(page: Page, email: string): Promise<string> {
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/editor`, { waitUntil: "networkidle" });
   const form = page.locator("form.ac-devsignin");
   await form.waitFor({ timeout: 30000 });
   await form.locator('input[type="email"]').fill(email);

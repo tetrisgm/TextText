@@ -17,6 +17,11 @@ export const NATIVE_QUICK_ACTIONS = [
     description: "Preview a rewrite of the selection or current item",
   },
   {
+    id: "structure",
+    label: "Structure",
+    description: "Preview a clearer structure for the current item",
+  },
+  {
     id: "title",
     label: "Title",
     description: "Suggest a title from the current item",

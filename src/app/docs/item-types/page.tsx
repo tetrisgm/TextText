@@ -25,10 +25,29 @@ export default function ItemTypesDocsPage() {
           <ol className="connect-steps">
             <li>Open Home and choose <strong>Build an item type</strong>.</li>
             <li>Describe a publication, project board, notes system, or your own idea.</li>
-            <li>Choose a visual direction, fields, and a destination folder.</li>
-            <li>Switch between Item and Folder until both previews feel right.</li>
+            <li>Refine the result in conversation or adjust its visual direction, properties, and folder view.</li>
+            <li>Inspect the Item and Folder previews with real, sample, empty, or stress-test content.</li>
             <li>Choose Done once. New items in that folder inherit the type.</li>
           </ol>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Refine without losing a direction</h2>
+          <p className="connect-body">
+            Every starter, agent refinement, and manual edit becomes a design
+            version. Undo and Redo move between complete versions, the history
+            menu jumps to any earlier direction, and Compare places the current
+            design beside the previous one. Nothing is saved to the workspace
+            until you choose Done.
+          </p>
+          <p className="connect-body">
+            The preview uses the same renderer as finished documents. Check a
+            selected folder&apos;s existing items, built-in sample content, a blank
+            state, or deliberately long stress-test content. Wide, tablet, and
+            phone frames make narrow-layout problems visible before saving. A
+            deterministic preflight names important structural issues and
+            prevents an incomplete type from being saved.
+          </p>
         </section>
 
         <section className="connect-section">
@@ -56,6 +75,52 @@ export default function ItemTypesDocsPage() {
         </section>
 
         <section className="connect-section">
+          <h2 className="connect-section-title">Model the information, not just the page</h2>
+          <p className="connect-body">
+            Item types can declare text, rich text, images, dates, URLs,
+            selects, numbers, checkboxes, relations, people records,
+            recurrence, and repeating rows. People are ordinary linked
+            TextText records, not workspace accounts. Status fields can define
+            allowed transitions, and recurrence uses safe named presets.
+          </p>
+          <p className="connect-body">
+            Computed values are read-only. They can count rows, sum a numeric
+            row property, show completed rows, or compare current and target
+            numbers. Text and number properties can carry validation limits,
+            while secondary properties can appear conditionally after a
+            checkbox or single-select choice is set.
+          </p>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Give one folder several useful views</h2>
+          <p className="connect-body">
+            A type can include named folder views such as All work, My tasks,
+            Due soon, Board, or Calendar. Each view can change the safe filters,
+            grouping, sort, columns, and layout while keeping the same items,
+            fields, and renderer. The folder&apos;s View menu switches between the
+            declared views without duplicating or rewriting any document.
+          </p>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Keep and share the looks that work</h2>
+          <p className="connect-body">
+            The Look library can be searched and filtered across your own,
+            workspace, and built-in looks. A preview shows how many items and
+            folders use a look before you apply it. Remix creates an independent
+            personal copy, and Export writes a validated TextText look file.
+          </p>
+          <p className="connect-body">
+            Import can keep that file as a new look or, when its identifier
+            matches a workspace look, create the next immutable version. Version
+            history remains available, and restoring an earlier design copies
+            it forward as a new version instead of rewriting history. Documents
+            already using an older version keep their exact appearance.
+          </p>
+        </section>
+
+        <section className="connect-section">
           <h2 className="connect-section-title">Build through your agent</h2>
           <p className="connect-body">
             Codex with ChatGPT can design the preview inside the focused builder
@@ -70,9 +135,9 @@ export default function ItemTypesDocsPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Keep control</h2>
           <p className="connect-body">
-            The preview is real, the fields are validated, and Done is the only
-            save action. Updating existing items is optional. Saved types are
-            versioned, so later changes never silently rewrite earlier work.
+            The preview is real, fields and views are validated, and Done is the
+            only save action. Updating existing items is optional. Saved types
+            are versioned, so later changes never silently rewrite earlier work.
           </p>
           <p className="connect-body">
             Next, <Link href="/docs/ai">connect an agent</Link> or review the{" "}

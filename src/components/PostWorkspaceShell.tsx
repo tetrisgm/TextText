@@ -220,6 +220,7 @@ import type {
   WorkspacePoolPayload,
   WorkspacePoolPost,
 } from "@/lib/pool/types";
+import { workspaceReferenceChoices } from "@/lib/presentation/workspace-reference-choices";
 import {
   blogPostPath,
   blogWorkspacePostEditPath,
@@ -3938,6 +3939,10 @@ function LocalUnifiedWorkspacePostEditor({
   const containingFolderHref = returnToSearch
     ? workspaceSearchHref(homePath, returnToSearch)
     : folderWorkspaceHref(homePath, containingFolderPath);
+  const referenceChoices = useMemo(
+    () => workspaceReferenceChoices(pool.posts, poolPost.id),
+    [pool.posts, poolPost.id],
+  );
 
   const updateLocalDocument = useCallback(
     (nextDocument: DocumentSnapshot) => {
@@ -3986,6 +3991,7 @@ function LocalUnifiedWorkspacePostEditor({
       post={post}
       template={template}
       availableTemplates={pool.templates}
+      referenceChoices={referenceChoices}
       onSaveAsLook={async (name) => {
         if (!post.id) return { ok: false, message: "Save the item first." };
         const result = await saveItemAsLookAction(blog.handle, post.id, name);
@@ -4317,6 +4323,20 @@ function LocalWorkspaceShell({
             }),
           },
     [sourcePool],
+  );
+  const itemTypeStudioPreviewDocuments = useMemo(
+    () =>
+      displayPool.posts.flatMap((post) =>
+        post.document
+          ? [
+              {
+                folderPath: folderPathForPoolPost(displayPool, post),
+                document: post.document,
+              },
+            ]
+          : [],
+      ),
+    [displayPool],
   );
   const displayPoolRef = useRef(displayPool);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -6835,6 +6855,7 @@ function LocalWorkspaceShell({
           handle={displayPool.blog.handle}
           initialFolderPath={itemTypeStudioFolderPath}
           onClose={() => setItemTypeStudioFolderPath(null)}
+          previewDocuments={itemTypeStudioPreviewDocuments}
         />
       ) : null}
       <ConfirmationDialog

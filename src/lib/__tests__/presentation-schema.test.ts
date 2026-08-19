@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import {
   validateTemplateDefinition,
-  type TemplateDefinition,
 } from "@/lib/presentation/schema";
 import { BUILTIN_TEMPLATES, requireBuiltinTemplate } from "@/lib/presentation/templates";
 
@@ -66,7 +65,6 @@ describe("closed presentation contract", () => {
     const project = requireBuiltinTemplate("texttext.project");
     expect(project.collection.layout).toBe("board");
     expect(project.collection.groupBy).toBe("content.fields.status");
-    expect(project.collection.groupBy).toBe("content.fields.status");
     // groupBy must survive validation only when it names a declared
     // single-select enum; a text field is rejected loudly.
     const broken = structuredClone(project) as { collection: { groupBy?: string } };
@@ -85,6 +83,73 @@ describe("closed presentation contract", () => {
     expect(() => validateTemplateDefinition(broken)).toThrow(/date field/);
     broken.collection.dateBy = "content.fields.nonexistent";
     expect(() => validateTemplateDefinition(broken)).toThrow(/undeclared/);
+  });
+
+  it("validates named collection views against declared fields", () => {
+    const project = requireBuiltinTemplate("texttext.project");
+    const withViews = validateTemplateDefinition({
+      ...project,
+      collection: {
+        ...project.collection,
+        views: [
+          {
+            id: "open-board",
+            name: "Open board",
+            layout: "board",
+            columns: 3,
+            groupBy: "content.fields.status",
+            filters: [
+              { field: "content.fields.status", op: "neq", value: "done" },
+            ],
+            sort: [{ field: "updatedAt", direction: "desc" }],
+          },
+        ],
+        defaultView: "open-board",
+      },
+    });
+    expect(withViews.collection.views[0]).toMatchObject({
+      id: "open-board",
+      groupBy: "content.fields.status",
+    });
+
+    const invalid = structuredClone(withViews);
+    invalid.collection.views[0]!.groupBy = "content.fields.lead";
+    expect(() => validateTemplateDefinition(invalid)).toThrow(/single-select enum/);
+    invalid.collection.views[0]!.groupBy = "content.fields.missing";
+    expect(() => validateTemplateDefinition(invalid)).toThrow(/undeclared/);
+  });
+
+  it("validates status workflows and recurrence semantics", () => {
+    const project = requireBuiltinTemplate("texttext.project");
+    const status = project.fields.find((field) => field.id === "status");
+    expect(status?.type).toBe("enum");
+    const valid = validateTemplateDefinition({
+      ...project,
+      fields: project.fields.map((field) =>
+        field.id === "status"
+          ? {
+              ...field,
+              semantic: "status",
+              workflow: {
+                initial: "planned",
+                completed: ["done"],
+                transitions: [{ from: "planned", to: "active" }],
+              },
+            }
+          : field,
+      ),
+    });
+    expect(valid.fields.find((field) => field.id === "status")).toMatchObject({
+      semantic: "status",
+      workflow: { initial: "planned", completed: ["done"] },
+    });
+
+    const broken = structuredClone(valid);
+    const brokenStatus = broken.fields.find((field) => field.id === "status");
+    if (brokenStatus?.type === "enum" && brokenStatus.workflow) {
+      brokenStatus.workflow.initial = "missing";
+    }
+    expect(() => validateTemplateDefinition(broken)).toThrow(/unknown option/);
   });
 
   it("derived facts validate their rows field and sub-field types", () => {

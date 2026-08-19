@@ -8,7 +8,10 @@ import {
   DocumentEngineStyles,
   DocumentRenderer,
 } from "@/components/document/DocumentRenderer";
-import { validateDocumentSnapshot } from "@/lib/documents/model";
+import {
+  validateDocumentSnapshot,
+  type DocumentSnapshot,
+} from "@/lib/documents/model";
 import { refreshWorkspacePool } from "@/lib/pool/store";
 import {
   compileItemTypeBlueprint,
@@ -17,10 +20,23 @@ import {
   type ItemTypeBlueprint,
   type ItemTypeFieldBlueprint,
 } from "@/lib/presentation/item-type-blueprint";
+import { assessItemTypeQuality } from "@/lib/presentation/item-type-quality";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
+import {
+  EMPTY_STUDIO_TIMELINE,
+  addStudioRevision,
+  currentStudioRevision,
+  moveStudioTimeline,
+  type StudioRevisionSource,
+} from "./item-type-studio-state";
 import styles from "./ItemTypeStudio.module.css";
 
 type StudioFolder = { id: string; name: string; path: string };
+
+export type ItemTypeStudioPreviewDocument = {
+  folderPath: string;
+  document: DocumentSnapshot;
+};
 
 type GeneratedDesign = {
   blueprint: ItemTypeBlueprint;
@@ -37,6 +53,9 @@ type NewFieldType =
   | "boolean"
   | "enum"
   | "rows";
+
+type PreviewContentMode = "folder" | "sample" | "empty" | "stress";
+type PreviewDevice = "desktop" | "tablet" | "phone";
 
 function copyBlueprint(blueprint: ItemTypeBlueprint): ItemTypeBlueprint {
   return itemTypeBlueprintSchema.parse(structuredClone(blueprint));
@@ -125,6 +144,115 @@ function collectionPreviewDocuments(
   });
 }
 
+function retargetPreviewDocument(
+  document: DocumentSnapshot,
+  template: TemplateDefinition,
+): DocumentSnapshot {
+  return validateDocumentSnapshot({
+    ...structuredClone(document),
+    presentation: {
+      template: { id: template.id, version: template.version },
+      theme: {},
+    },
+  });
+}
+
+function emptyPreviewDocument(template: TemplateDefinition): DocumentSnapshot {
+  return validateDocumentSnapshot({
+    schemaVersion: 1,
+    content: {
+      title: "",
+      body: "",
+      fields: {},
+      tags: [],
+      assets: [],
+    },
+    presentation: {
+      template: { id: template.id, version: template.version },
+      theme: {},
+    },
+  });
+}
+
+function stressPreviewDocuments(
+  template: TemplateDefinition,
+  blueprint: ItemTypeBlueprint,
+): DocumentSnapshot[] {
+  return Array.from({ length: 4 }, (_, index) => {
+    const base = previewDocument(template);
+    const fields = { ...base.content.fields };
+    for (const field of blueprint.fields) {
+      if (field.type === "enum") {
+        const values = field.options?.map((option) => option.value) ?? [];
+        fields[field.id] = field.multiple ? values.slice(0, 3) : values[index % Math.max(values.length, 1)] ?? null;
+      } else if (field.type === "boolean") {
+        fields[field.id] = index % 2 === 0;
+      } else if (field.type === "date") {
+        fields[field.id] = "2026-08-29";
+      } else if (field.type === "number") {
+        fields[field.id] = 987654 + index;
+      } else if (field.type === "url") {
+        fields[field.id] = "https://example.com/a-deliberately-long-reference-path";
+      } else if (field.type === "richtext") {
+        fields[field.id] = "A long section tests rhythm, wrapping, and hierarchy.\n\nThe preview should remain calm even when the material is dense and uneven.";
+      } else if (field.type === "text") {
+        fields[field.id] = "A deliberately long property value that should wrap without crowding nearby information";
+      } else if (field.type === "rows") {
+        fields[field.id] = Array.from({ length: 5 }, (_, rowIndex) =>
+          Object.fromEntries(
+            field.fields.map((rowField) => [
+              rowField.id,
+              rowField.type === "boolean"
+                ? rowIndex < 2
+                : rowField.type === "number"
+                  ? rowIndex + 1
+                  : `A checklist item with enough text to test wrapping ${rowIndex + 1}`,
+            ]),
+          ),
+        );
+      }
+    }
+    return validateDocumentSnapshot({
+      ...base,
+      content: {
+        ...base.content,
+        title:
+          index === 0
+            ? "A very long title that tests how this design handles a difficult line break without losing its hierarchy"
+            : `Stress test item ${index + 1}`,
+        subtitle:
+          "An intentionally long subtitle reveals weak spacing before a real reader does.",
+        body:
+          "Real work is rarely tidy. This preview uses longer text, crowded properties, and repeated sections to expose fragile decisions before the design is saved.\n\nA second paragraph tests the reading measure and vertical rhythm.",
+        fields,
+        tags: ["Long label", "Second tag", "A crowded third tag"],
+      },
+    });
+  });
+}
+
+function previewContentForDesign(
+  design: GeneratedDesign,
+  mode: PreviewContentMode,
+  folderDocuments: readonly DocumentSnapshot[],
+): { item: DocumentSnapshot; collection: DocumentSnapshot[] } {
+  if (mode === "empty") {
+    return { item: emptyPreviewDocument(design.template), collection: [] };
+  }
+  if (mode === "stress") {
+    const collection = stressPreviewDocuments(design.template, design.blueprint);
+    return { item: collection[0], collection };
+  }
+  if (mode === "folder" && folderDocuments.length > 0) {
+    const collection = folderDocuments
+      .slice(0, 8)
+      .map((document) => retargetPreviewDocument(document, design.template));
+    return { item: collection[0], collection };
+  }
+  const collection = collectionPreviewDocuments(design.template, design.blueprint);
+  return { item: previewDocument(design.template), collection };
+}
+
 function toneClass(tone: string | undefined) {
   return tone ? ` ${styles[`tone${tone.slice(0, 1).toUpperCase()}${tone.slice(1)}`] ?? ""}` : "";
 }
@@ -167,6 +295,126 @@ function ArrowIcon() {
   );
 }
 
+function PreviewSurface({
+  collectionDocuments,
+  design,
+  itemDocument,
+  label,
+  previewMode,
+}: {
+  collectionDocuments: DocumentSnapshot[];
+  design: GeneratedDesign;
+  itemDocument: DocumentSnapshot;
+  label: string;
+  previewMode: "item" | "folder";
+}) {
+  if (previewMode === "item") {
+    return (
+      <div className={styles.previewSurface} aria-label={label}>
+        <DocumentRenderer
+          document={itemDocument}
+          template={design.template}
+          documentId={`item-type-studio-${label}`}
+          preview
+        />
+      </div>
+    );
+  }
+
+  if (collectionDocuments.length === 0) {
+    return (
+      <div className={styles.previewSurface} aria-label={label}>
+        <div className={styles.emptyPreview}>
+          <span aria-hidden="true">□</span>
+          <strong>No items yet</strong>
+          <p>The folder stays quiet until its first item is added.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const groupField = design.blueprint.fields.find(
+    (field) =>
+      field.id === design.blueprint.collection.groupBy && field.type === "enum",
+  );
+
+  return (
+    <div className={styles.previewSurface} aria-label={label}>
+      <DocumentEngineStyles />
+      {design.template.collection.layout === "board" &&
+      groupField?.type === "enum" ? (
+        <div className={styles.boardPreview}>
+          {groupField.options?.map((option) => {
+            const matches = collectionDocuments.filter(
+              (entry) => entry.content.fields[groupField.id] === option.value,
+            );
+            return (
+              <section key={option.value} className={styles.boardColumn}>
+                <header
+                  className={`${styles.boardHeader}${toneClass(option.tone)}`}
+                >
+                  <span aria-hidden="true" />
+                  <strong>{option.label}</strong>
+                  <small>{matches.length}</small>
+                </header>
+                {matches.map((entry, index) => (
+                  <DocumentCollectionRenderer
+                    key={`${option.value}-${index}`}
+                    document={entry}
+                    template={design.template}
+                    documentId={`item-type-folder-${label}-${option.value}-${index}`}
+                  />
+                ))}
+              </section>
+            );
+          })}
+        </div>
+      ) : design.template.collection.layout === "calendar" ? (
+        <div className={styles.calendarPreview}>
+          <header>
+            <strong>August 2026</strong>
+          </header>
+          <div className={styles.calendarWeekdays} aria-hidden="true">
+            {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+              <span key={`${day}-${index}`}>{day}</span>
+            ))}
+          </div>
+          <div className={styles.calendarGrid}>
+            {Array.from({ length: 28 }, (_, index) => {
+              const day = index + 1;
+              const entry = collectionDocuments.find((candidate) =>
+                Object.values(candidate.content.fields).includes(
+                  `2026-08-${String(day).padStart(2, "0")}`,
+                ),
+              );
+              return (
+                <div key={day}>
+                  <small>{day}</small>
+                  {entry ? <strong>{entry.content.title}</strong> : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div
+          className={styles.collectionPreview}
+          data-layout={design.template.collection.layout}
+        >
+          {collectionDocuments.map((entry, index) => (
+            <DocumentCollectionRenderer
+              key={`${entry.content.title}-${index}`}
+              document={entry}
+              template={design.template}
+              documentId={`item-type-folder-${label}-${index}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ItemTypeStudio({
   blogId,
   folders,
@@ -175,6 +423,7 @@ export function ItemTypeStudio({
   initialFolderPath = "",
   onClose,
   onCreated,
+  previewDocuments = [],
 }: {
   blogId: string;
   folders: readonly StudioFolder[];
@@ -187,46 +436,113 @@ export function ItemTypeStudio({
   initialFolderPath?: string;
   onClose: () => void;
   onCreated?: (folderPath: string | null) => void;
+  previewDocuments?: readonly ItemTypeStudioPreviewDocument[];
 }) {
   const router = useRouter();
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [prompt, setPrompt] = useState("");
   const [followUp, setFollowUp] = useState("");
-  const [design, setDesign] = useState<GeneratedDesign | null>(null);
+  const [timeline, setTimeline] = useState(EMPTY_STUDIO_TIMELINE);
   const [folderPath, setFolderPath] = useState(initialFolderPath);
   const [applyToExisting, setApplyToExisting] = useState(true);
   const [previewMode, setPreviewMode] = useState<"item" | "folder">("item");
+  const [previewContentMode, setPreviewContentMode] =
+    useState<PreviewContentMode>("sample");
+  const [previewDevice, setPreviewDevice] =
+    useState<PreviewDevice>("desktop");
+  const [compare, setCompare] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldType, setNewFieldType] = useState<NewFieldType>("text");
   const [busy, setBusy] = useState<"generate" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const revision = currentStudioRevision(timeline);
+  const design = useMemo(
+    () => (revision ? compiled(revision.blueprint) : null),
+    [revision],
+  );
+  const previousRevision = timeline.revisions[timeline.index - 1] ?? null;
+  const previousDesign = useMemo(
+    () => (previousRevision ? compiled(previousRevision.blueprint) : null),
+    [previousRevision],
+  );
+  const qualityReport = useMemo(
+    () => (design ? assessItemTypeQuality(design.blueprint) : null),
+    [design],
+  );
+  const importantQualityFindings =
+    qualityReport?.findings.filter((finding) => finding.severity === "important") ?? [];
+
   useEffect(() => {
     promptRef.current?.focus();
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousRootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       onClose();
     };
     window.addEventListener("keydown", escape, true);
-    return () => window.removeEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("keydown", escape, true);
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousRootOverflow;
+    };
   }, [onClose]);
 
-  const document = useMemo(
-    () => (design ? previewDocument(design.template) : null),
-    [design],
+  const selectedFolderDocuments = useMemo(
+    () =>
+      previewDocuments
+        .filter((entry) => entry.folderPath === folderPath)
+        .map((entry) => entry.document),
+    [folderPath, previewDocuments],
   );
-  const collectionDocuments = useMemo(
+  const effectivePreviewContentMode =
+    previewContentMode === "folder" && selectedFolderDocuments.length === 0
+      ? "sample"
+      : previewContentMode;
+  const isComparing = compare && Boolean(previousDesign);
+  const previewContent = useMemo(
     () =>
       design
-        ? collectionPreviewDocuments(design.template, design.blueprint)
-        : [],
-    [design],
+        ? previewContentForDesign(
+            design,
+            effectivePreviewContentMode,
+            selectedFolderDocuments,
+          )
+        : null,
+    [design, effectivePreviewContentMode, selectedFolderDocuments],
+  );
+  const previousPreviewContent = useMemo(
+    () =>
+      previousDesign
+        ? previewContentForDesign(
+            previousDesign,
+            effectivePreviewContentMode,
+            selectedFolderDocuments,
+          )
+        : null,
+    [effectivePreviewContentMode, previousDesign, selectedFolderDocuments],
   );
 
-  const setBlueprint = (next: ItemTypeBlueprint) => {
+  const setBlueprint = (
+    next: ItemTypeBlueprint,
+    label = "Edited design",
+    source: StudioRevisionSource = "manual",
+    options: { coalesce?: boolean; request?: string } = { coalesce: true },
+  ) => {
     try {
-      setDesign(compiled(itemTypeBlueprintSchema.parse(next)));
+      const blueprint = itemTypeBlueprintSchema.parse(next);
+      compiled(blueprint);
+      setTimeline((current) =>
+        addStudioRevision(
+          current,
+          { blueprint, label, source, request: options.request },
+          { coalesce: options.coalesce },
+        ),
+      );
       setError(null);
     } catch (nextError) {
       setError(
@@ -252,7 +568,10 @@ export function ItemTypeStudio({
             request: clean,
           }),
         );
-        setDesign(compiled(blueprint));
+        setBlueprint(blueprint, current ? "AI refinement" : "AI first draft", "ai", {
+          coalesce: false,
+          request: clean,
+        });
         if (!current) setPreviewMode("item");
         setFollowUp("");
         return;
@@ -274,7 +593,10 @@ export function ItemTypeStudio({
         throw new Error(payload?.error || "The assistant could not build that.");
       }
       const blueprint = itemTypeBlueprintSchema.parse(payload?.blueprint);
-      setDesign(compiled(blueprint));
+      setBlueprint(blueprint, current ? "AI refinement" : "AI first draft", "ai", {
+        coalesce: false,
+        request: clean,
+      });
       if (!current) setPreviewMode("item");
       setFollowUp("");
     } catch (generationError) {
@@ -304,7 +626,7 @@ export function ItemTypeStudio({
       delete current.collection.dateBy;
       if (current.collection.layout === "calendar") current.collection.layout = "list";
     }
-    setBlueprint(current);
+    setBlueprint(current, "Removed a property", "manual", { coalesce: false });
   };
 
   const renameField = (id: string, label: string) => {
@@ -313,7 +635,7 @@ export function ItemTypeStudio({
     const field = current.fields.find((candidate) => candidate.id === id);
     if (!field) return;
     field.label = label.slice(0, 160);
-    setBlueprint(current);
+    setBlueprint(current, "Edited properties");
   };
 
   const addField = () => {
@@ -349,7 +671,7 @@ export function ItemTypeStudio({
         ],
         maxRows: 200,
       });
-      setBlueprint(current);
+      setBlueprint(current, "Added a property", "manual", { coalesce: false });
       setNewFieldLabel("");
       return;
     }
@@ -397,7 +719,7 @@ export function ItemTypeStudio({
               ? { ...common, type: "date", multiple: false, format: "plain", target: "document" }
               : { ...common, type: "boolean", multiple: false, format: "plain", target: "document" };
     current.fields.push(field);
-    setBlueprint(current);
+    setBlueprint(current, "Added a property", "manual", { coalesce: false });
     setNewFieldLabel("");
   };
 
@@ -447,7 +769,7 @@ export function ItemTypeStudio({
         current.collection.dateBy = "date";
       } else current.collection.dateBy = dated.id;
     } else delete current.collection.dateBy;
-    setBlueprint(current);
+    setBlueprint(current, "Changed folder view", "manual", { coalesce: false });
   };
 
   const save = async () => {
@@ -483,7 +805,9 @@ export function ItemTypeStudio({
         <button
           type="button"
           className={styles.quietButton}
-          onClick={() => (design ? setDesign(null) : onClose())}
+          onClick={() =>
+            design ? setTimeline(EMPTY_STUDIO_TIMELINE) : onClose()
+          }
         >
           {design ? "Back" : "Cancel"}
         </button>
@@ -495,7 +819,12 @@ export function ItemTypeStudio({
           <button
             type="button"
             className={styles.doneButton}
-            disabled={Boolean(busy)}
+            disabled={Boolean(busy) || importantQualityFindings.length > 0}
+            title={
+              importantQualityFindings.length > 0
+                ? "Fix important preflight issues before saving"
+                : undefined
+            }
             onClick={() => void save()}
           >
             {busy === "save" ? "Saving" : "Done"}
@@ -542,7 +871,12 @@ export function ItemTypeStudio({
                   key={starter.id}
                   type="button"
                   onClick={() => {
-                    setDesign(compiled(copyBlueprint(starter.blueprint)));
+                    setBlueprint(
+                      copyBlueprint(starter.blueprint),
+                      `Started with ${starter.label}`,
+                      "starter",
+                      { coalesce: false },
+                    );
                     setPreviewMode("item");
                     setError(null);
                   }}
@@ -557,6 +891,54 @@ export function ItemTypeStudio({
       ) : (
         <main className={styles.designCanvas}>
           <section className={styles.controls} aria-label="Item type settings">
+            <div className={styles.historyPanel} aria-label="Design history">
+              <div className={styles.historyHeading}>
+                <div>
+                  <strong>Design history</strong>
+                  <span>Every direction is reversible</span>
+                </div>
+                <div className={styles.historyButtons}>
+                  <button
+                    type="button"
+                    disabled={timeline.index <= 0}
+                    onClick={() =>
+                      setTimeline((current) =>
+                        moveStudioTimeline(current, current.index - 1),
+                      )
+                    }
+                  >
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={timeline.index >= timeline.revisions.length - 1}
+                    onClick={() =>
+                      setTimeline((current) =>
+                        moveStudioTimeline(current, current.index + 1),
+                      )
+                    }
+                  >
+                    Redo
+                  </button>
+                </div>
+              </div>
+              <select
+                aria-label="Design version"
+                value={timeline.index}
+                onChange={(event) =>
+                  setTimeline((current) =>
+                    moveStudioTimeline(current, Number(event.currentTarget.value)),
+                  )
+                }
+              >
+                {timeline.revisions.map((entry, index) => (
+                  <option key={entry.id} value={index}>
+                    {index + 1}. {entry.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className={styles.section}>
               <label>
                 <span>Name</span>
@@ -566,7 +948,7 @@ export function ItemTypeStudio({
                   onChange={(event) => {
                     const current = copyBlueprint(design.blueprint);
                     current.name = event.currentTarget.value || "Untitled type";
-                    setBlueprint(current);
+                    setBlueprint(current, "Edited details");
                   }}
                 />
               </label>
@@ -579,7 +961,7 @@ export function ItemTypeStudio({
                   onChange={(event) => {
                     const current = copyBlueprint(design.blueprint);
                     current.styleReference = event.currentTarget.value;
-                    setBlueprint(current);
+                    setBlueprint(current, "Edited details");
                   }}
                 />
               </label>
@@ -657,7 +1039,9 @@ export function ItemTypeStudio({
                   onChange={(event) => {
                     const current = copyBlueprint(design.blueprint);
                     current.item.shape = event.currentTarget.value as ItemTypeBlueprint["item"]["shape"];
-                    setBlueprint(current);
+                    setBlueprint(current, "Changed item page", "manual", {
+                      coalesce: false,
+                    });
                   }}
                 >
                   <option value="page">Page</option>
@@ -687,107 +1071,172 @@ export function ItemTypeStudio({
               ) : null}
             </div>
 
-            <form
-              className={styles.refine}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void generate(followUp, design.blueprint);
-              }}
-            >
-              <span aria-hidden="true">✦</span>
-              <textarea
-                value={followUp}
-                maxLength={6000}
-                placeholder="Ask for a change..."
-                onChange={(event) => setFollowUp(event.currentTarget.value)}
-              />
-              <button type="submit" disabled={!followUp.trim() || Boolean(busy)}>
-                {busy === "generate" ? "Updating" : "Update"}
-              </button>
-            </form>
+            <div className={styles.conversation} aria-label="Design conversation">
+              {timeline.revisions
+                .slice(0, timeline.index + 1)
+                .filter((entry) => entry.request)
+                .slice(-3)
+                .map((entry) => (
+                  <div className={styles.exchange} key={entry.id}>
+                    <p className={styles.userMessage}>{entry.request}</p>
+                    <p className={styles.agentMessage}>
+                      <span aria-hidden="true">✦</span>
+                      Preview updated. You can compare it with the previous version.
+                    </p>
+                  </div>
+                ))}
+              <form
+                className={styles.refine}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void generate(followUp, design.blueprint);
+                }}
+              >
+                <span aria-hidden="true">✦</span>
+                <textarea
+                  value={followUp}
+                  maxLength={6000}
+                  placeholder="Tell the agent what to change..."
+                  onChange={(event) => setFollowUp(event.currentTarget.value)}
+                />
+                <button type="submit" disabled={!followUp.trim() || Boolean(busy)}>
+                  {busy === "generate" ? "Updating" : "Send"}
+                </button>
+              </form>
+            </div>
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
           </section>
 
           <section className={styles.preview} aria-label="Live preview">
-            <header>
-              <div>
-                <strong>Preview</strong>
-                <span>Real content renderer</span>
+            <header className={styles.previewToolbar}>
+              <div className={styles.previewTitle}>
+                <div>
+                  <strong>Preview</strong>
+                  <span>Real content renderer</span>
+                </div>
+                <div className={styles.previewTabs} role="tablist" aria-label="Preview surface">
+                  <button type="button" role="tab" aria-selected={previewMode === "item"} onClick={() => setPreviewMode("item")}>Item</button>
+                  <button type="button" role="tab" aria-selected={previewMode === "folder"} onClick={() => setPreviewMode("folder")}>Folder</button>
+                </div>
               </div>
-              <div className={styles.previewTabs} role="tablist" aria-label="Preview surface">
-                <button type="button" role="tab" aria-selected={previewMode === "item"} onClick={() => setPreviewMode("item")}>Item</button>
-                <button type="button" role="tab" aria-selected={previewMode === "folder"} onClick={() => setPreviewMode("folder")}>Folder</button>
+              <div className={styles.previewOptions}>
+                {qualityReport ? (
+                  <details className={styles.preflight}>
+                    <summary>
+                      <span
+                        data-status={
+                          importantQualityFindings.length > 0
+                            ? "important"
+                            : qualityReport.findings.length > 0
+                              ? "suggestion"
+                              : "ready"
+                        }
+                        aria-hidden="true"
+                      />
+                      {importantQualityFindings.length > 0
+                        ? "Needs attention"
+                        : qualityReport.findings.length > 0
+                          ? `${qualityReport.findings.length} suggestion${qualityReport.findings.length === 1 ? "" : "s"}`
+                          : "Ready"}
+                      <small>{qualityReport.score}</small>
+                    </summary>
+                    <div>
+                      {qualityReport.findings.length > 0 ? (
+                        qualityReport.findings.map((finding) => (
+                          <p key={finding.code} data-severity={finding.severity}>
+                            {finding.message}
+                          </p>
+                        ))
+                      ) : (
+                        <p>No preflight issues found.</p>
+                      )}
+                    </div>
+                  </details>
+                ) : null}
+                <select
+                  aria-label="Preview content"
+                  value={effectivePreviewContentMode}
+                  onChange={(event) =>
+                    setPreviewContentMode(
+                      event.currentTarget.value as PreviewContentMode,
+                    )
+                  }
+                >
+                  <option
+                    value="folder"
+                    disabled={selectedFolderDocuments.length === 0}
+                  >
+                    Folder content ({selectedFolderDocuments.length})
+                  </option>
+                  <option value="sample">Sample content</option>
+                  <option value="empty">Empty state</option>
+                  <option value="stress">Stress test</option>
+                </select>
+                <div className={styles.deviceTabs} role="group" aria-label="Preview device">
+                  {(["desktop", "tablet", "phone"] as const).map((device) => (
+                    <button
+                      key={device}
+                      type="button"
+                      aria-pressed={previewDevice === device}
+                      onClick={() => setPreviewDevice(device)}
+                    >
+                      {device === "desktop"
+                        ? "Wide"
+                        : device === "tablet"
+                          ? "Tablet"
+                          : "Phone"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className={styles.compareButton}
+                  aria-pressed={isComparing}
+                  disabled={!previousDesign}
+                  onClick={() => setCompare((current) => !current)}
+                >
+                  Compare
+                </button>
               </div>
             </header>
-            <div className={styles.previewPaper}>
-              {document && previewMode === "item" ? (
-                <DocumentRenderer document={document} template={design.template} documentId="item-type-studio" preview />
-              ) : document ? (
-                <>
-                  <DocumentEngineStyles />
-                  {design.template.collection.layout === "board" && design.blueprint.collection.groupBy ? (
-                  <div className={styles.boardPreview}>
-                    {(() => {
-                      const groupField = design.blueprint.fields.find(
-                        (field) => field.id === design.blueprint.collection.groupBy && field.type === "enum",
-                      );
-                      return groupField && groupField.type === "enum"
-                        ? groupField.options?.map((option) => {
-                            const matches = collectionDocuments.filter(
-                              (entry) => entry.content.fields[groupField.id] === option.value,
-                            );
-                            return (
-                              <section key={option.value} className={styles.boardColumn}>
-                                <header className={`${styles.boardHeader}${toneClass(option.tone)}`}>
-                                  <span aria-hidden="true" />
-                                  <strong>{option.label}</strong>
-                                  <small>{matches.length}</small>
-                                </header>
-                                {matches.map((entry, index) => (
-                                  <DocumentCollectionRenderer
-                                    key={`${option.value}-${index}`}
-                                    document={entry}
-                                    template={design.template}
-                                    documentId={`item-type-folder-${option.value}-${index}`}
-                                  />
-                                ))}
-                              </section>
-                            );
-                          })
-                        : null;
-                    })()}
-                  </div>
-                  ) : design.template.collection.layout === "calendar" ? (
-                  <div className={styles.calendarPreview}>
-                    <header><strong>August 2026</strong></header>
-                    <div className={styles.calendarWeekdays} aria-hidden="true">
-                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
-                    </div>
-                    <div className={styles.calendarGrid}>
-                      {Array.from({ length: 28 }, (_, index) => {
-                        const day = index + 1;
-                        const entry = collectionDocuments.find((candidate) =>
-                          Object.values(candidate.content.fields).includes(
-                            `2026-08-${String(day).padStart(2, "0")}`,
-                          ),
-                        );
-                        return <div key={day}><small>{day}</small>{entry ? <strong>{entry.content.title}</strong> : null}</div>;
-                      })}
-                    </div>
-                  </div>
-                  ) : (
-                  <div className={styles.collectionPreview} data-layout={design.template.collection.layout}>
-                    {collectionDocuments.map((entry, index) => (
-                      <DocumentCollectionRenderer
-                        key={entry.content.title}
-                        document={entry}
-                        template={design.template}
-                        documentId={`item-type-folder-${index}`}
+            <div
+              className={styles.previewPaper}
+              data-compare={isComparing ? "true" : undefined}
+              data-device={previewDevice}
+            >
+              {previewContent ? (
+                isComparing && previousDesign && previousPreviewContent ? (
+                  <div className={styles.compareGrid}>
+                    <div className={styles.comparePane}>
+                      <span>Before</span>
+                      <PreviewSurface
+                        collectionDocuments={previousPreviewContent.collection}
+                        design={previousDesign}
+                        itemDocument={previousPreviewContent.item}
+                        label="before"
+                        previewMode={previewMode}
                       />
-                    ))}
+                    </div>
+                    <div className={styles.comparePane}>
+                      <span>Current</span>
+                      <PreviewSurface
+                        collectionDocuments={previewContent.collection}
+                        design={design}
+                        itemDocument={previewContent.item}
+                        label="current"
+                        previewMode={previewMode}
+                      />
+                    </div>
                   </div>
-                  )}
-                </>
+                ) : (
+                  <PreviewSurface
+                    collectionDocuments={previewContent.collection}
+                    design={design}
+                    itemDocument={previewContent.item}
+                    label="current"
+                    previewMode={previewMode}
+                  />
+                )
               ) : null}
             </div>
           </section>
