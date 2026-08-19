@@ -54,8 +54,8 @@ fi
 "$CODESIGN" --verify --strict --verbose=2 "$APP"
 "$VERIFY_APP" "$APP" --require-extensions
 
-signing_authority="$($CODESIGN -dv --verbose=4 "$APP" 2>&1 \
-  | awk -F= '$1 == "Authority" { print $2; exit }')"
+signature_details="$($CODESIGN -dv --verbose=4 "$APP" 2>&1)"
+signing_authority="$(awk -F= '$1 == "Authority" { print $2; exit }' <<<"$signature_details")"
 if [[ "$signing_authority" != "Apple Distribution:"* ]]; then
   echo "Refusing: app is signed by '$signing_authority', expected Apple Distribution." >&2
   exit 1
@@ -99,8 +99,9 @@ fi
 
 installer_identity="${TEXTTEXT_INSTALLER_ID:-}"
 if [ -z "$installer_identity" ]; then
-  installer_identity="$($SECURITY find-identity -p basic -v 2>/dev/null \
-    | awk -F'"' '/3rd Party Mac Developer Installer/{print $2; exit}')"
+  installer_identities="$($SECURITY find-identity -p basic -v 2>/dev/null)"
+  installer_identity="$(awk -F'"' '/3rd Party Mac Developer Installer/{print $2; exit}' \
+    <<<"$installer_identities")"
 fi
 if [[ "$installer_identity" != "3rd Party Mac Developer Installer:"* ]]; then
   echo "Refusing: no 3rd Party Mac Developer Installer identity is available." >&2

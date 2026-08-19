@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT="$ROOT/release/prepare-testflight-build.sh"
+if grep -Eq '\$\((\$CODESIGN|\$SECURITY).*\|[[:space:]]*awk' "$SCRIPT"; then
+  echo "prepare-testflight-build must capture identity output before filtering under pipefail" >&2
+  exit 1
+fi
 FIXTURE="$(mktemp -d "${TMPDIR:-/tmp}/texttext-testflight-package.XXXXXX")"
 trap 'rm -rf "$FIXTURE"' EXIT
 
