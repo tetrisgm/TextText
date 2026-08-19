@@ -17,6 +17,29 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
 
+# SwiftPM rewrites Package.resolved to match the Store-only manifest, which
+# intentionally excludes Sparkle. Preserve the standalone lockfile so preparing
+# a TestFlight package cannot silently dirty or weaken the Developer ID lane.
+PACKAGE_RESOLVED="$ROOT/mac/Package.resolved"
+PACKAGE_RESOLVED_BACKUP="$(mktemp "${TMPDIR:-/tmp}/texttext-package-resolved.XXXXXX")"
+PACKAGE_RESOLVED_PRESENT=0
+if [ -f "$PACKAGE_RESOLVED" ]; then
+  cp "$PACKAGE_RESOLVED" "$PACKAGE_RESOLVED_BACKUP"
+  PACKAGE_RESOLVED_PRESENT=1
+fi
+restore_package_resolution() {
+  local status=$?
+  trap - EXIT
+  if [ "$PACKAGE_RESOLVED_PRESENT" = "1" ]; then
+    cp "$PACKAGE_RESOLVED_BACKUP" "$PACKAGE_RESOLVED"
+  else
+    rm -f "$PACKAGE_RESOLVED"
+  fi
+  rm -f "$PACKAGE_RESOLVED_BACKUP"
+  exit "$status"
+}
+trap restore_package_resolution EXIT
+
 export TEXTTEXT_STORE=1
 export TEXTTEXT_BUNDLE_ID="${TEXTTEXT_BUNDLE_ID:-app.texttext.mac}"
 export TEXTTEXT_PRODUCT_ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN:-https://texttext.app}"
