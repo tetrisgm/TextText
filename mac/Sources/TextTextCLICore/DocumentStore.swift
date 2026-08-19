@@ -3,6 +3,7 @@ import TextTextFileProviderKit
 
 public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
     case workspaceNotFound
+    case workspaceUnavailable(String)
     case documentNotFound(String)
     case ambiguous(String, [String])
     case sectionNotFound(String, available: [String])
@@ -14,6 +15,12 @@ public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
             return """
                 No TextText workspace found. Open TextText and sign in, then try \
                 again.
+                """
+        case .workspaceUnavailable(let reason):
+            return """
+                The TextText workspace is unavailable: \(reason)
+                Turn on TextText in System Settings > General > Login Items & \
+                Extensions > File Providers, then reopen TextText and try again.
                 """
         case .documentNotFound(let name):
             return "No document matching \(name)."
@@ -60,9 +67,7 @@ public struct DocumentStore: Sendable {
             at: cloud, includingPropertiesForKeys: nil)) ?? []
         // The domain is named for the app, historically "TextText-TextText".
         for candidate in candidates.sorted(by: { $0.path < $1.path })
-        where candidate.lastPathComponent.hasPrefix("TextText-")
-            || candidate.lastPathComponent.hasPrefix("TextText-")
-        {
+        where candidate.lastPathComponent.hasPrefix("TextText-") {
             return DocumentStore(root: candidate)
         }
         throw TextTextCLIError.workspaceNotFound
@@ -84,7 +89,8 @@ public struct DocumentStore: Sendable {
         }
         let direct = root.appendingPathComponent(name)
         if fileManager.fileExists(atPath: direct.path) { return direct }
-        for suffix in [".textpack", ".md"] where !name.hasSuffix(suffix) {
+        for suffix in [".textpack", ".textbundle", ".md", ".txt"]
+        where !name.hasSuffix(suffix) {
             let candidate = root.appendingPathComponent(name + suffix)
             if fileManager.fileExists(atPath: candidate.path) { return candidate }
         }
@@ -113,17 +119,29 @@ public struct DocumentStore: Sendable {
 
         while let directory = queue.first, found.count < limit {
             queue.removeFirst()
-            let entries = (try? fileManager.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles])) ?? []
+            let entries: [URL]
+            do {
+                entries = try fileManager.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles])
+            } catch {
+                throw TextTextCLIError.workspaceUnavailable(error.localizedDescription)
+            }
             for entry in entries.sorted(by: { $0.path < $1.path }) {
                 let isDirectory = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?
                     .isDirectory ?? false
                 let ext = entry.pathExtension.lowercased()
-                if ext == "textpack" || ext == "md" {
+                let relative = relativePath(of: entry)
+                // Data contains TextText-owned attachment copies, not documents.
+                // It is visible in Finder for export and backup, but agents must
+                // not mistake one of its files for an editable workspace item.
+                if relative == "Data" || relative.hasPrefix("Data/") {
+                    continue
+                }
+                if ["textpack", "textbundle", "md", "txt"].contains(ext) {
                     found.append(relativePath(of: entry))
-                } else if isDirectory, ext != "textbundle" {
+                } else if isDirectory {
                     queue.append(entry)
                 }
             }
@@ -141,7 +159,7 @@ public struct DocumentStore: Sendable {
     // MARK: - Read
 
     public func readMarkdown(at url: URL) throws -> String {
-        if url.pathExtension.lowercased() == "md" {
+        if ["md", "txt"].contains(url.pathExtension.lowercased()) {
             let data = try Data(contentsOf: url)
             guard let text = String(data: data, encoding: .utf8) else {
                 throw TextTextCLIError.invalidDocument("\(url.lastPathComponent) is not UTF-8")
@@ -182,7 +200,7 @@ public struct DocumentStore: Sendable {
     /// (assets, document.json, info.json metadata) and swapping the result in
     /// atomically.
     public func writeMarkdown(_ markdown: String, to url: URL) throws {
-        if url.pathExtension.lowercased() == "md" {
+        if ["md", "txt"].contains(url.pathExtension.lowercased()) {
             try atomicallyReplace(url, with: Data(markdown.utf8))
             return
         }
@@ -206,6 +224,10 @@ public struct DocumentStore: Sendable {
             assets: assets,
             sourceURL: nil,
             in: temporary)
+        if url.pathExtension.lowercased() == "textbundle" {
+            try atomicallyReplaceDirectory(url, with: package.url)
+            return
+        }
         let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
         try atomicallyReplace(url, with: try Data(contentsOf: packed))
@@ -255,6 +277,18 @@ public struct DocumentStore: Sendable {
         let staging = url.deletingLastPathComponent()
             .appendingPathComponent(".texttext-\(UUID().uuidString).tmp")
         try data.write(to: staging, options: [.atomic])
+        defer { try? fileManager.removeItem(at: staging) }
+        _ = try fileManager.replaceItemAt(url, withItemAt: staging)
+    }
+
+    /// A `.textbundle` is a directory package, not a zip with a different
+    /// suffix. Copy the replacement beside the target so the final exchange is
+    /// on one volume and preserves the representation expected by File Provider.
+    private func atomicallyReplaceDirectory(_ url: URL, with directory: URL) throws {
+        let fileManager = FileManager.default
+        let staging = url.deletingLastPathComponent()
+            .appendingPathComponent(".texttext-\(UUID().uuidString).tmp", isDirectory: true)
+        try fileManager.copyItem(at: directory, to: staging)
         defer { try? fileManager.removeItem(at: staging) }
         _ = try fileManager.replaceItemAt(url, withItemAt: staging)
     }

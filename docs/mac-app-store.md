@@ -33,13 +33,36 @@ mean shipping something that cannot work, at the cost of a rejected upload.
 `scripts/verify-agent-interoperability.ts` asserts both halves: the standalone
 edition ships it in `Contents/Helpers`, and the Store edition does not ship it.
 
-## Why a Store build will not run locally
+## Local Store-shape testing
 
-It will not launch, and that is correct rather than broken. A Mac App Store
-distribution-signed build can only be installed by the store or by TestFlight;
-launching one directly fails with `Launch failed` and POSIX 163. Local testing
-of the Store shape needs a development-signed build of the same bundle. That
-sub-mode is not written yet.
+A Mac App Store distribution-signed build can only be installed by the store or
+by TestFlight. Launching one directly fails with `Launch failed` and POSIX 163.
+Use `TEXTTEXT_STORE_LOCAL=1 mac/scripts/build-store.sh` to build the same
+sandbox, entitlements, app group, and extension shape with an Apple Development
+identity and development profiles for this Mac. This requires matching
+`mac/profiles/TextText_*_Dev.provisionprofile` files. Without all four profiles,
+the command must fail extension verification rather than presenting a partial
+bundle as a Store-shape proof. That local build is for isolated verification,
+not for upload.
+
+## Preparing a TestFlight package
+
+`release/prepare-testflight-build.sh` is the owner-invoked packaging boundary.
+It builds the Apple Distribution Store edition, verifies the signature,
+extensions, sandbox, application identifier, team-prefixed app group, embedded
+profile, and absence of Sparkle, then signs a component package with a **3rd
+Party Mac Developer Installer** identity. The output is written under
+`release/artifacts` unless an explicit output path is supplied.
+
+The command only creates and validates a `.pkg`. It never uploads, installs,
+opens TestFlight, or changes the app at `/Applications/TextText.app`. Upload is
+a separate owner action so preparing an artifact cannot burn a build number.
+
+Before installing from TestFlight, run
+`release/prepare-testflight-install.sh`. It moves only verified TextText bundles
+out of the way when necessary, preserves a canonical TestFlight-owned app, and
+removes verified numbered duplicates. The intended end state is exactly one
+bundle id at `/Applications/TextText.app`, regardless of which channel owns it.
 
 ## Apple-side identity
 
@@ -79,7 +102,6 @@ manifest, so its file-timestamp use is covered there too.
 
 ## Still open
 
-- No development-signed Store build for local testing.
 - Apple's `/auth/revoke` is not called on account deletion. No Apple refresh
   token is stored anywhere, so it is not currently possible; see
   `src/lib/account-deletion.ts`.

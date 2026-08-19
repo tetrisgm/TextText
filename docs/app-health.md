@@ -18,8 +18,8 @@ integrations, and reports can be reviewed without collecting document content.
 3. The receipt is copied into the app before code signing.
 4. The staged app runs `releaseVerification`. Any non-passing check blocks
    publishing.
-   The isolated verifier seeds an empty sync index and a healthy local Finder
-   fixture because it has no registered File Provider domain; extension
+   The isolated verifier uses a healthy local Finder fixture because it has no
+   registered File Provider domain; extension
    embedding and the real Finder lifecycle are covered by separate checks and
    the deterministic soak. Every staged check must still return `pass`.
 5. The installed app runs on the first launch of each version. An app-owned
@@ -52,6 +52,18 @@ The installed app also samples File Provider readiness for a bounded five-second
 window so the initial `checking` state can settle without hiding persistent
 pending work or provider failures. Runtime reports expose only sample counts and
 stable state flags.
+
+For a linked account, an idle provider is not enough to pass. Runtime health
+also enumerates the real CloudStorage root and requires at least one visible
+workspace folder. This distinguishes a usable domain from the broken state where
+the extension and mount xattrs exist but no active File Provider domain serves
+items. `workspace.storage` separately requires directory enumeration to succeed;
+POSIX readable and writable flags alone are not treated as a Finder proof.
+
+`sync.index` is a transition check, not a requirement that the installed GUI
+create an index. The File Provider extension is the GUI's sole sync owner, so
+an absent legacy `index.json` passes. If an index from the retired headless
+mirror remains, the check still requires it to decode successfully.
 
 Web-owned workflows use signed capability receipts rather than production
 mutation probes. `mac/scripts/verify-workflow-capabilities.sh` evaluates the
@@ -106,12 +118,12 @@ network-variable ship gate.
 destructive evaluators for isolated scratch workspaces. Run a local TextText
 server with `AUTH_DEV_LOGIN=1` before invoking them. They use `.env.local` and
 default to `http://localhost:3000`; production requires an explicit
-`TEXTTEXT_ORIGIN=https://TextText.app`. Both always remove their scratch data in a
+`TEXTTEXT_ORIGIN=https://texttext.app`. Both always remove their scratch data in a
 `finally` block.
 
 `npm run eval:clients:live` owns that local server lifecycle. It refuses a
 non-local database, starts a bounded server on port 3107, runs the workflow and
-sync evaluators, drives OAuth discovery through authenticated MCP tool listing,
+sync evaluators, drives authenticated MCP resource and tool discovery,
 runs the real four-client relay and materialization evaluator, records numeric
 durations, and terminates the server process group even after a failure. The
 release gate requires this evaluator so every shipped source revision proves
@@ -252,7 +264,7 @@ are stored.
    `mac/Sources/TextText/AppHealthReporter.swift`, then run
    `npx tsx scripts/sync-health-checks.ts`.
 5. Add a focused unit test.
-6. Add the equivalent reusable primitive or contract to `~/dev/stack/mac-kit`.
+6. Keep the reusable primitive or contract in this repository beside its tests.
 
 `TextTextHealthChecks.required` is the single source of truth for which checks a
 release must report. `mac/health-checks.json` is generated from it, and both

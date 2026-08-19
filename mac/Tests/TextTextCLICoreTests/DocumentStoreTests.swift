@@ -46,6 +46,21 @@ final class DocumentStoreTests: XCTestCase {
         return destination
     }
 
+    @discardableResult
+    private func makeTextbundle(named name: String, markdown: String) throws -> URL {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: markdown, documentJSON: nil,
+            assets: [], sourceURL: nil, in: temporary)
+        let destination = root.appendingPathComponent("\(name).textbundle", isDirectory: true)
+        try FileManager.default.copyItem(at: package.url, to: destination)
+        return destination
+    }
+
     func testReadsMarkdownOutOfATextpack() throws {
         try makeTextpack(named: "Note", markdown: "# Hello\n\nBody.")
         let url = try store.resolve("Note")
@@ -139,6 +154,63 @@ final class DocumentStoreTests: XCTestCase {
             "package internals must not be listed as documents")
 
         XCTAssertEqual(try store.list(under: "Blog"), ["Blog/Two.textpack"])
+    }
+
+    func testListsAndReadsEveryFileProviderDocumentRepresentation() throws {
+        try makeTextpack(named: "Packed", markdown: "# Packed")
+        try makeTextbundle(named: "Bundled", markdown: "# Bundled")
+        try Data("# Markdown".utf8).write(to: root.appendingPathComponent("Markdown.md"))
+        try Data("Plain text".utf8).write(to: root.appendingPathComponent("Plain.txt"))
+
+        let listed = try store.list()
+        XCTAssertEqual(listed, [
+            "Bundled.textbundle", "Markdown.md", "Packed.textpack", "Plain.txt",
+        ])
+        XCTAssertEqual(try store.readMarkdown(at: store.resolve("Bundled")), "# Bundled")
+        XCTAssertEqual(try store.readMarkdown(at: store.resolve("Markdown")), "# Markdown")
+        XCTAssertEqual(try store.readMarkdown(at: store.resolve("Packed")), "# Packed")
+        XCTAssertEqual(try store.readMarkdown(at: store.resolve("Plain")), "Plain text")
+    }
+
+    func testPlainTextWriteUsesAtomicPlainFilePath() throws {
+        let url = root.appendingPathComponent("Plain.txt")
+        try Data("Before".utf8).write(to: url)
+
+        try store.writeMarkdown("After", to: url)
+
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "After")
+    }
+
+    func testTextbundleWritePreservesDirectoryRepresentation() throws {
+        let url = try makeTextbundle(named: "Bundled", markdown: "# Before")
+
+        try store.writeMarkdown("# After", to: url)
+
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+        XCTAssertEqual(values.isDirectory, true)
+        XCTAssertEqual(try store.readMarkdown(at: url), "# After")
+    }
+
+    func testListSkipsTheAuxiliaryDataTree() throws {
+        let attachments = root.appendingPathComponent(
+            "Data/Attachments/workspace/item", isDirectory: true)
+        try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+        try Data("not a document".utf8).write(
+            to: attachments.appendingPathComponent("caption.txt"))
+        try Data("# Document".utf8).write(to: root.appendingPathComponent("Document.md"))
+
+        XCTAssertEqual(try store.list(), ["Document.md"])
+    }
+
+    func testUnreadableWorkspaceDoesNotMasqueradeAsAnEmptyWorkspace() throws {
+        let missing = root.appendingPathComponent("missing", isDirectory: true)
+        let unavailable = DocumentStore(root: missing)
+
+        XCTAssertThrowsError(try unavailable.list()) { error in
+            guard case TextTextCLIError.workspaceUnavailable = error else {
+                return XCTFail("expected workspaceUnavailable, got \(error)")
+            }
+        }
     }
 
     func testSectionEditThroughTheStoreIsSurgical() throws {

@@ -21,8 +21,8 @@ if (!["localhost", "127.0.0.1", "::1"].includes(databaseHost)) {
 }
 
 // Next normalizes its local request URL to localhost. Drive the evaluator
-// through that same public origin so OAuth's same-origin approval check tests
-// the real browser contract instead of an equivalent 127.0.0.1 alias.
+// through that same public origin so the public MCP metadata and endpoint use
+// the same origin that a real local client sees.
 const origin = `http://localhost:${port}`;
 const rootDomain = `localhost:${port}`;
 const evaluationDistDir = ".texttext/next-live-eval";
@@ -32,7 +32,7 @@ const suiteNames = new Set([
   "workflow",
   "sync",
   "collaboration",
-  "oauth",
+  "mcp",
   "generation",
 ]);
 const requestedSuites = new Set(
@@ -44,7 +44,7 @@ const requestedSuites = new Set(
 for (const suite of requestedSuites) {
   if (!suiteNames.has(suite)) {
     throw new Error(
-      `TEXTTEXT_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, oauth, or generation.`,
+      `TEXTTEXT_EVAL_ONLY contains unknown suite "${suite}". Use workflow, sync, collaboration, mcp, or generation.`,
     );
   }
 }
@@ -192,11 +192,11 @@ async function main() {
 
   try {
     await waitForServer();
-    if (shouldRun("oauth")) {
-      durations.oauthMcpMilliseconds = await runBounded(
-        "OAuth and MCP connection",
-        "python3",
-        ["scripts/test-oauth-mcp-loop.py", origin],
+    if (shouldRun("mcp")) {
+      durations.workspaceTokenMcpMilliseconds = await runBounded(
+        "workspace token and MCP connection",
+        process.execPath,
+        ["--import", "tsx", "scripts/test-token-mcp-loop.ts"],
       );
     }
     if (shouldRun("workflow")) {

@@ -112,6 +112,7 @@ import {
   CLAUDE_PLUGIN_INSTALL_COMMAND,
   CODEX_PLUGIN_INSTALL_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
+  TEXTTEXT_TOKEN_PROMPT_COMMAND,
 } from "./agent-integrations";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalizeTag, normalizeTags } from "./tags";
@@ -1029,6 +1030,19 @@ const STARTER_AGENT_GUIDES = [
     title: "Connect your AI tools",
     body: `TextText works beside the AI tools you already use. Each connected agent appears in live documents with its own name and avatar.
 
+## Connect Claude Code or Codex securely
+
+Create a workspace token at **Connect**. Their plugin installers do not ask for
+generic bearer tokens. In Terminal, run this hidden prompt and paste the token
+when it asks:
+
+\`\`\`zsh
+${TEXTTEXT_TOKEN_PROMPT_COMMAND}
+\`\`\`
+
+The prompt keeps the token out of the command and shell history. Start the
+client from that same Terminal so it can read \`TEXTTEXT_WORKSPACE_TOKEN\`.
+
 ## Claude
 
 Install the TextText plugin from Terminal:
@@ -1037,7 +1051,12 @@ Install the TextText plugin from Terminal:
 ${CLAUDE_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-For Claude.ai, open **Settings > Connectors**, add ${TEXTTEXT_HOSTED_MCP_URL}, then give Claude a workspace token from **Connect** as its bearer credential.
+Run \`claude\` from the same Terminal, then open \`/mcp\` to confirm TextText
+is connected.
+
+For a Claude surface that permits person-supplied bearer credentials, add
+${TEXTTEXT_HOSTED_MCP_URL}, then give it a workspace token from **Connect**.
+An OAuth-only connector cannot use TextText's current token-only endpoint.
 
 ## Codex
 
@@ -1047,11 +1066,15 @@ Install the TextText plugin from Terminal:
 ${CODEX_PLUGIN_INSTALL_COMMAND}
 \`\`\`
 
-Create a workspace token at **Connect** and paste it into Codex when the plugin asks for the TextText credential. Codex appears as **Codex** while it works in an open document.
+Run \`codex\` from the same Terminal, then open \`/mcp\` to confirm TextText is
+connected. Codex appears as **Codex** while it works in an open document.
 
 ## ChatGPT
 
-Open ${CHATGPT_CONNECTOR_URL}, add a custom app using ${TEXTTEXT_HOSTED_MCP_URL}, and give it a workspace token from **Connect** as its bearer credential.
+If your ChatGPT plan, role, and workspace policy permit a custom MCP app with a
+person-supplied bearer credential, open ${CHATGPT_CONNECTOR_URL}, add
+${TEXTTEXT_HOSTED_MCP_URL}, and give it a workspace token from **Connect**.
+An OAuth-only ChatGPT surface cannot connect to TextText today.
 
 ChatGPT appears as **ChatGPT** while it works in an open document.
 

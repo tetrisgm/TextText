@@ -12,6 +12,7 @@ final class CodexAppServerController {
     private var pending = Data()
     private(set) var isRunning = false
     var onEvent: EventHandler?
+    var onExit: ((Int32) -> Void)?
 
     init(executableURL: URL, environment: [String: String] = [:]) {
         process = Process()
@@ -22,6 +23,12 @@ final class CodexAppServerController {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] process in
+            guard let self else { return }
+            self.output.fileHandleForReading.readabilityHandler = nil
+            self.isRunning = false
+            self.onExit?(process.terminationStatus)
+        }
         var safeEnvironment: [String: String] = [
             "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",

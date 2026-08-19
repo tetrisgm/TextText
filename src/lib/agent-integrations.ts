@@ -8,6 +8,9 @@ export const CLAUDE_PLUGIN_INSTALL_COMMAND =
 export const CODEX_PLUGIN_INSTALL_COMMAND =
   "codex plugin marketplace add tetrisgm/TextText && codex plugin add texttext@texttext";
 
+export const TEXTTEXT_TOKEN_PROMPT_COMMAND =
+  `read -rs "TEXTTEXT_WORKSPACE_TOKEN?Paste your TextText token: "; printf '\\n'; export TEXTTEXT_WORKSPACE_TOKEN`;
+
 export const CHATGPT_CONNECTOR_URL =
   "https://chatgpt.com/#settings/Connectors";
 
@@ -36,7 +39,8 @@ export type AgentIntegration = {
 };
 
 /**
- * Every path in here ends in a token a person creates at /connect and pastes.
+ * Every path in here ends in a token a person creates at /connect and supplies
+ * without placing it in source, shell history, or an install command.
  *
  * These steps described a browser window opening for an approval, which was
  * the OAuth flow; that flow was deleted (owner ruling 2026-08-15) and the copy
@@ -69,7 +73,12 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         copy: { label: "Copy install command", value: CLAUDE_PLUGIN_INSTALL_COMMAND },
       },
       { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Claude Code." },
-      { text: "Create a token at Connect, then paste it into Claude when it asks for the TextText credential." },
+      { text: "Create a token at Connect. The plugin installer does not ask for it." },
+      {
+        text: "In the same Terminal, run this hidden token prompt and paste the token when prompted.",
+        copy: { label: "Copy secure token prompt", value: TEXTTEXT_TOKEN_PROMPT_COMMAND },
+      },
+      { text: "Start Claude Code from that Terminal. Open /mcp to confirm TextText is connected." },
     ],
     outcome: "Claude appears as a collaborator with its own cursor whenever it works in your documents.",
   },
@@ -93,7 +102,12 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         copy: { label: "Copy install command", value: CODEX_PLUGIN_INSTALL_COMMAND },
       },
       { text: "Paste it into Terminal and press Return. It adds the TextText plugin to Codex." },
-      { text: "Create a token at Connect, then paste it into Codex when it asks for the TextText credential." },
+      { text: "Create a token at Connect. The plugin installer does not ask for it." },
+      {
+        text: "In the same Terminal, run this hidden token prompt and paste the token when prompted.",
+        copy: { label: "Copy secure token prompt", value: TEXTTEXT_TOKEN_PROMPT_COMMAND },
+      },
+      { text: "Start Codex from that Terminal. Open /mcp to confirm TextText is connected." },
     ],
     outcome: "Codex appears as a collaborator with its own cursor whenever it works in your documents.",
   },
@@ -103,8 +117,8 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
     company: "OpenAI",
     monogram: "G",
     description:
-      "Connect your TextText workspace as a ChatGPT app, using a token you create and paste.",
-    environment: "ChatGPT apps",
+      "Connect TextText as a custom MCP app where your ChatGPT plan, role, and workspace policy allow it.",
+    environment: "Eligible ChatGPT apps workspaces",
     action: {
       kind: "link",
       label: "Open ChatGPT apps",
@@ -115,10 +129,11 @@ export const AGENT_INTEGRATIONS: readonly AgentIntegration[] = [
         text: "Copy the TextText address first.",
         copy: { label: "Copy TextText address", value: TEXTTEXT_HOSTED_MCP_URL },
       },
-      { text: "Open ChatGPT's settings. The button below takes you there; depending on your plan the section is called Connectors or Plugins." },
-      { text: "Add TextText there with the copied address, and give it a token you created at Connect as its bearer credential." },
+      { text: "Open ChatGPT's Apps settings and confirm your plan and workspace role allow a custom MCP app." },
+      { text: "Add TextText with the copied address and choose bearer-token authentication if your workspace offers it. TextText does not currently provide OAuth." },
+      { text: "Give the app a token you created at Connect. If ChatGPT requires OAuth instead, this connection path is not compatible yet." },
     ],
-    outcome: "ChatGPT can read and edit your documents from any chat, and appears as a collaborator while it works.",
+    outcome: "ChatGPT can use the TextText capabilities allowed by your plan and workspace, and appears as a collaborator while it works.",
   },
   {
     id: "mcp",

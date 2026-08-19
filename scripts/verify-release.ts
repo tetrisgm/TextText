@@ -120,6 +120,14 @@ async function verifyRelease() {
       command: ["swift", "test", "--package-path", "mac"],
     },
     {
+      // The private promotion lane must never drift into a publishing command,
+      // reuse a build identity, or leave the canonical install unrecoverable.
+      // Fixture tests force both health and Trash-cleanup rollback failures.
+      id: "native.local_promotion",
+      timeoutSeconds: 60,
+      command: ["npm", "run", "promote:local:test"],
+    },
+    {
       id: "apple.eval",
       timeoutSeconds: 600,
       command: ["mac/scripts/apple-plan-eval.sh", "--skip-tests"],

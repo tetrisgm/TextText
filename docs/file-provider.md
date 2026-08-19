@@ -75,6 +75,17 @@ The resulting states are `up to date`, `syncing`, `checking`, `not connected`,
 or `needs attention`. The detail includes transfer percentages when Finder
 provides them and states that all Markdown remains local.
 
+An idle pending-items enumerator is not proof that the Finder domain is usable.
+For a linked account, app health also has to enumerate the real CloudStorage
+root and see at least one workspace folder before `finder.provider` can pass.
+This catches the state where the extension bundle and mount xattrs exist but no
+active domain is serving items.
+
+If the domain is disabled, turn on TextText in **System Settings > General >
+Login Items & Extensions > File Providers**, then reopen TextText. macOS does
+not expose the domain's user-enabled flag to a macOS app, so TextText cannot
+toggle or reliably read that setting on the person's behalf.
+
 File Provider versions include both representation and server hash. A format
 change invalidates stale materializations without changing server identity.
 Reimport adopts an existing item by stable ID, then by an unambiguous
@@ -107,8 +118,10 @@ or loading access controls.
 ## Release and runtime checks
 
 The app-owned health suite checks release identity and update configuration,
-embedded extensions, private state persistence, sync-index decoding, workspace
-storage, and Finder provider status. The same checks run:
+embedded extensions, private state persistence, any surviving legacy sync
+index, enumerable workspace storage, and Finder provider status. The GUI's sole
+sync owner is File Provider, so an absent legacy `sync.index` passes. A surviving
+index must still decode. The same checks run:
 
 - against the staged app before release publication
 - on first launch of every version
@@ -129,3 +142,15 @@ Developer ID provisioning profile at:
 
 Release verification confirms the File Provider extension is embedded, signed,
 and present in the staged app before any artifact is uploaded.
+
+## Local agent command
+
+The standalone Developer ID app includes `Contents/Helpers/texttext`. It lists,
+reads, and atomically edits `.textpack`, `.textbundle`, `.md`, and `.txt`
+documents in this File Provider mount while skipping the auxiliary `Data` tree.
+An enumeration error is reported as an unavailable workspace instead of an
+empty list.
+
+The sandboxed TestFlight app intentionally excludes the command. Store rules
+would sandbox that nested executable into a container a normal shell cannot use.
+TestFlight users use the hosted TextText plugin or MCP connection for agents.

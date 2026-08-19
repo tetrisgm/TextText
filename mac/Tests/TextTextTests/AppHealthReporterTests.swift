@@ -115,6 +115,34 @@ final class AppHealthReporterTests: XCTestCase {
             .fail)
     }
 
+    func testMissingLegacyIndexPassesForFileProviderOnlyApp() throws {
+        let root = try temporaryDirectory(name: "workspace-no-index")
+        let state = try temporaryDirectory(name: "state-no-index")
+        let bundle = try releaseBundle()
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
+        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("TEXTTEXT_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("TEXTTEXT_STATE_DIR")
+            }
+        }
+
+        let report = AppHealthReporter(
+            stateStore: StateStore(),
+            syncRootProvider: { root },
+            finderStatusProvider: { .healthyFixture },
+            bundle: bundle
+        ).run(trigger: .manual)
+        let check = try XCTUnwrap(
+            report.checks.first(where: { $0.id == "sync.index" }))
+
+        XCTAssertEqual(check.status, .pass)
+        XCTAssertEqual(check.metrics["present"], 0)
+        XCTAssertEqual(check.metrics["decodable"], 1)
+    }
+
     func testFinderHealthPassesAfterBoundedWorkingStateSettles() throws {
         let root = try temporaryDirectory(name: "workspace-settle")
         let state = try temporaryDirectory(name: "state-settle")
@@ -196,6 +224,58 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertEqual(failedCheck.status, .fail)
         XCTAssertEqual(failedCheck.metrics["warning"], 1)
         XCTAssertEqual(failedCheck.metrics["readiness_samples"], 1)
+    }
+
+    func testFinderHealthDoesNotTrustIdleProviderWithoutAVisibleWorkspace() throws {
+        let root = try temporaryDirectory(name: "workspace-no-visible-folder")
+        let state = try temporaryDirectory(name: "state-no-visible-folder")
+        let bundle = try releaseBundle()
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
+        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("TEXTTEXT_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("TEXTTEXT_STATE_DIR")
+            }
+        }
+        let store = StateStore()
+        store.saveCredentials(Credentials(
+            token: "wsk_health_fixture",
+            serverOrigin: "https://texttext.example",
+            tokenName: "Health fixture",
+            linkedAt: Date(timeIntervalSince1970: 0)))
+        let reporter = AppHealthReporter(
+            stateStore: store,
+            syncRootProvider: { root },
+            finderStatusProvider: { .healthyFixture },
+            bundle: bundle)
+
+        // File Provider owns a root-level Data directory for attachments. Its
+        // presence proves the mount exists, but not that a workspace can be
+        // opened in Finder.
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Data", isDirectory: true),
+            withIntermediateDirectories: true)
+
+        let missing = reporter.run(trigger: .manual)
+        let missingCheck = try XCTUnwrap(
+            missing.checks.first(where: { $0.id == "finder.provider" }))
+        XCTAssertEqual(missingCheck.status, .fail)
+        XCTAssertEqual(missingCheck.metrics["healthy"], 1)
+        XCTAssertEqual(missingCheck.metrics["mount_enumerated"], 1)
+        XCTAssertEqual(missingCheck.metrics["workspace_visible"], 0)
+
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Health workspace", isDirectory: true),
+            withIntermediateDirectories: true)
+        let visible = reporter.run(trigger: .manual)
+        let visibleCheck = try XCTUnwrap(
+            visible.checks.first(where: { $0.id == "finder.provider" }))
+        XCTAssertEqual(visibleCheck.status, .pass)
+        XCTAssertEqual(visibleCheck.metrics["mount_enumerated"], 1)
+        XCTAssertEqual(visibleCheck.metrics["workspace_visible"], 1)
+        XCTAssertEqual(visibleCheck.metrics["mount_entry_count"], 2)
     }
 
     private func temporaryDirectory(name: String) throws -> URL {

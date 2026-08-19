@@ -8,6 +8,7 @@ import {
   CLAUDE_PLUGIN_INSTALL_COMMAND,
   CODEX_PLUGIN_INSTALL_COMMAND,
   TEXTTEXT_HOSTED_MCP_URL,
+  TEXTTEXT_TOKEN_PROMPT_COMMAND,
 } from "@/lib/agent-integrations";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
@@ -93,11 +94,11 @@ export default function AiDocsPage() {
         <section className="connect-section" id="embedded-agent">
           <h2 className="connect-section-title">Use an agent inside TextText</h2>
           <p className="connect-body">
-            In the TextText Mac app, Continue with ChatGPT starts a Codex-powered
-            agent directly in the assistant sidebar. Your existing eligible
-            ChatGPT or Codex plan supplies the model, so TextText does not ask
-            you for API credits. The conversation, approvals, and document work
-            stay in TextText.
+            In the standalone TextText Mac app, Continue with ChatGPT starts a
+            Codex-powered agent directly in the assistant sidebar. Your existing
+            eligible ChatGPT or Codex plan supplies the model, so TextText does
+            not ask you for API credits. The conversation, approvals, and
+            document work stay in TextText.
           </p>
           <ol className="connect-steps">
             <li>Open TextText on your Mac and open a workspace.</li>
@@ -107,8 +108,10 @@ export default function AiDocsPage() {
             <li>Ask: <em>&quot;What folders are in my TextText workspace?&quot;</em></li>
           </ol>
           <p className="connect-body">
-            The embedded connection is Mac-only. In a browser, use an external
-            MCP connection or the advanced API-key path below.
+            The embedded connection is available only in the standalone Mac
+            app, which can launch the local Codex runtime. Apple&apos;s sandbox stops
+            the TestFlight edition from launching it. In TestFlight or a
+            browser, use an external MCP connection or the API-key path below.
           </p>
         </section>
 
@@ -155,14 +158,19 @@ export default function AiDocsPage() {
           <InstallCommand command={CLAUDE_PLUGIN_INSTALL_COMMAND}>
             Claude Code
           </InstallCommand>
+          <InstallCommand command={TEXTTEXT_TOKEN_PROMPT_COMMAND}>
+            Secure token prompt
+          </InstallCommand>
           <p className="connect-body">
-            Create a workspace token at Connect and paste it when Claude asks
-            for the TextText credential. In Claude.ai or Claude Desktop, add a
-            custom connector and paste{" "}
+            Create a workspace token at Connect, then launch Claude from a
+            Terminal where the token is set with the hidden setup prompt. In
+            Claude.ai or Claude Desktop, first confirm the custom connector
+            permits a person-supplied bearer credential, then paste{" "}
             <code className="connect-inline-code">
               {TEXTTEXT_HOSTED_MCP_URL}
             </code>
-            , then use the same kind of token as its bearer credential.
+            , then use the same kind of token as its bearer credential. An
+            OAuth-only connector cannot use TextText&apos;s current endpoint.
           </p>
         </section>
 
@@ -175,18 +183,22 @@ export default function AiDocsPage() {
           <InstallCommand command={CODEX_PLUGIN_INSTALL_COMMAND}>
             Codex app or CLI
           </InstallCommand>
+          <InstallCommand command={TEXTTEXT_TOKEN_PROMPT_COMMAND}>
+            Secure token prompt
+          </InstallCommand>
           <p className="connect-body">
-            Create a workspace token at Connect and paste it when Codex asks
-            for the TextText credential. The plugin is then available in future
-            tasks without repeating the setup.
+            Create a workspace token at Connect, then launch Codex from a
+            Terminal where the token is set with the hidden setup prompt. The
+            plugin stays installed. Set the token again in each new Terminal
+            session before starting Codex.
           </p>
         </section>
 
         <section className="connect-section" id="chatgpt-external">
           <h2 className="connect-section-title">ChatGPT</h2>
           <ol className="connect-steps">
-            <li>Open ChatGPT Settings or Workspace Settings.</li>
-            <li>Open Apps, enable developer mode, then choose Create.</li>
+            <li>Confirm your plan, role, and workspace policy allow a custom MCP app.</li>
+            <li>Open ChatGPT Apps settings, enable developer mode, then choose Create.</li>
             <li>
               Paste{" "}
               <code className="connect-inline-code">
@@ -194,11 +206,13 @@ export default function AiDocsPage() {
               </code>{" "}
               and scan the tools.
             </li>
-            <li>Create a workspace token at Connect and use it as the app&apos;s bearer credential.</li>
+            <li>Choose bearer-token authentication if your workspace offers it.</li>
+            <li>Create a workspace token at Connect and use it as the app&apos;s credential.</li>
           </ol>
           <p className="connect-body">
             ChatGPT supplies the model and billing. TextText never needs your
-            ChatGPT password or API key.
+            ChatGPT password or API key. TextText does not provide OAuth today,
+            so a ChatGPT surface that requires OAuth cannot use this path yet.
           </p>
         </section>
 

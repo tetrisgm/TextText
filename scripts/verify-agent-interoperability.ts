@@ -105,7 +105,8 @@ assert(
 );
 assert(
   publicDocs.includes("command -v texttext") &&
-    publicDocs.includes("/Applications/TextText.app/Contents/MacOS/texttext"),
+    publicDocs.includes("/Applications/TextText.app/Contents/Helpers/texttext") &&
+    publicDocs.includes("TestFlight"),
   "Public agent docs must tell an agent on this Mac to use the CLI, and how to find it",
 );
 
@@ -272,9 +273,12 @@ assert(
   "Standard request headers must be validated against the body",
 );
 assert(
-  source("scripts/test-oauth-mcp-loop.py").includes("server/discover") &&
-    !/"method": "initialize"/.test(source("scripts/test-oauth-mcp-loop.py")),
-  "The OAuth loop gate must exercise the stateless protocol, not initialize",
+  source("scripts/test-token-mcp-loop.ts").includes("server/discover") &&
+    source("scripts/test-token-mcp-loop.ts").includes("revokeApiToken") &&
+    !/method:\s*["']initialize["']/.test(
+      source("scripts/test-token-mcp-loop.ts"),
+    ),
+  "The workspace-token loop gate must exercise authentication, revocation, and the stateless protocol",
 );
 
 console.log(

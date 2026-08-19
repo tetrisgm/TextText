@@ -24,7 +24,9 @@ texttext open <doc>                            # open it in the app
 ```
 
 Check with `command -v texttext`, and fall back to
-`/Applications/TextText.app/Contents/MacOS/texttext` before giving up.
+`/Applications/TextText.app/Contents/Helpers/texttext` before giving up. The
+sandboxed TestFlight edition intentionally excludes the command, so use hosted
+MCP there.
 
 Always pass `--as <your name>` and `--message "<what this change is for>"`. They
 are how the person sees who is working and why, both live in the document and in

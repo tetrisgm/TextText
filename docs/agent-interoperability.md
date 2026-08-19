@@ -6,8 +6,8 @@ where it runs.
 
 | Where the agent runs | How it works | Auth |
 |---|---|---|
-| On this Mac (Claude Code, Codex, a script) | The `texttext` CLI, editing documents as files | The device credential the app already holds |
-| Anywhere else (Claude.ai, ChatGPT, Cursor, a phone) | Hosted MCP at `https://TextText.app/api/mcp` | OAuth, or a `wsk_` token from `/connect` |
+| On this Mac with the standalone app (Claude Code, Codex, a script) | The `texttext` CLI, editing documents as files | The device credential the app already holds |
+| Anywhere else (Claude.ai, ChatGPT, Cursor, a phone) | Hosted MCP at `https://texttext.app/api/mcp` | A `wsk_` workspace token from `/connect` |
 
 The app never calls its own MCP endpoint. There is no loopback server: the local
 MCP endpoint was retired in `0.146`, and with it the port, the transport guard,
@@ -16,9 +16,11 @@ and the whole local-trust problem.
 ## Agents on this Mac: the `texttext` CLI
 
 An agent with a shell should edit files, not drive a protocol. The CLI ships
-inside the app bundle (`mac/Sources/TextTextCLI`, copied to
-`TextText.app/Contents/Helpers/texttext` and signed with the app), so it is present
-whenever the app is, and it runs as the user.
+inside the standalone Developer ID app bundle (`mac/Sources/TextTextCLI`, copied
+to `TextText.app/Contents/Helpers/texttext` and signed with the app), and it runs
+as the user. The sandboxed TestFlight edition does not include the CLI because a
+nested sandboxed command cannot reach the person's shell or the app's container.
+TestFlight users connect a local agent through the hosted plugin or MCP path.
 
 ```text
 texttext ls [folder]                     list documents
@@ -43,7 +45,8 @@ The app stores a device credential at
 `~/Library/Application Support/TextText/credentials.json` (mode 0600, a `wsk_` token
 plus its origin). The CLI runs as the same user and reads it, so it is
 authenticated by construction. Nothing to configure, nothing to paste, and no
-listening socket for a web page to reach.
+listening socket for a web page to reach. This applies to the standalone app and
+its bundled CLI. It is not a promise that the TestFlight app installs a command.
 
 ### Presence is automatic
 
@@ -72,10 +75,11 @@ tightened the pricing copy rather than that something changed.
 
 ### Correctness guarantees
 
-- **The CLI owns the `.textpack` format.** It reuses
+- **The CLI owns the rich package formats.** It reuses
   `TextTextFileProviderKit/TextBundlePackage.swift` rather than reimplementing it,
   so frontmatter, `info.json`, and assets survive a round trip and an agent never
-  touches the zip.
+  touches the zip. Listing and addressing also cover `.textbundle`, `.md`, and
+  `.txt`; the auxiliary `Data` attachment tree is not reported as documents.
 - **Writes are atomic.** The replacement is built in a temporary file and swapped
   in with `replaceItemAt`, a single rename. A crash leaves the previous document
   intact and the File Provider sees one complete replacement, never a partial
@@ -89,12 +93,33 @@ tightened the pricing copy rather than that something changed.
 
 ## Remote agents: hosted MCP
 
-External clients connect to `https://TextText.app/api/mcp` with OAuth
-(click-to-approve) or a manual `wsk_` token from `/connect`. The server
+External clients connect to `https://texttext.app/api/mcp` with a manual `wsk_`
+workspace token from `/connect`. TextText does not implement an OAuth
+authorization server, consent page, refresh token flow, or dynamic client
+registration. A client must support a person-supplied bearer credential. The server
 implements **MCP `2026-07-28`**, the stateless revision: no `initialize`, no
 session header, no GET stream. Call `server/discover` to see what it supports.
 `docs/mcp.md` is the full protocol reference; `src/lib/ai/tools.ts` is the source
 of truth for tool names and schemas.
+
+ChatGPT custom MCP availability depends on the person's plan, workspace role,
+and administrator settings. A ChatGPT surface that requires OAuth cannot connect
+to TextText's current token-only endpoint. Do not describe this as a universal
+one-click ChatGPT connection. OpenAI's current availability and setup rules are
+documented in its [developer mode and custom MCP app guide](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt).
+
+## The assistant inside TextText
+
+The standalone Developer ID app can launch the local Codex runtime and use an
+eligible existing ChatGPT or Codex account. That path does not consume provider
+API credits. The sandboxed TestFlight app cannot launch a command from the
+person's home directory, so it cannot offer that embedded subscription path.
+
+The API-key assistant works in the web product and both Mac channels. Provider
+API billing is separate from ChatGPT and Claude consumer subscriptions. An
+external agent connected over hosted MCP uses the account and model in that
+external product; TextText receives only its workspace bearer token, not the
+person's provider password or subscription credential.
 
 ### Automation contract
 
@@ -166,3 +191,10 @@ These live below the tool and file layers, so no transport can bypass them.
 It asserts the shared tool contract, the public agent docs, the CLI's bundling
 and format ownership, atomic writes, automatic presence, the presence route's
 token-derived identity, and that the loopback MCP server stays retired.
+
+The live client gate starts a local server and runs
+`scripts/test-token-mcp-loop.ts` against an isolated local workspace. It proves
+missing and unknown tokens are rejected, a real workspace token can discover
+the server and read its own workspace, revocation takes effect immediately,
+and a replacement token works. The gate refuses non-local databases and removes
+all scratch rows before it reports success.

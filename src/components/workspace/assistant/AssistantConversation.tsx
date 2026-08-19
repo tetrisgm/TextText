@@ -290,8 +290,10 @@ export function AssistantConversation({
             <p className={styles.emptyBody}>
               {connected
                 ? "Ask about what you are looking at, or start with one of these."
+                : nativeConnection?.state === "unavailable"
+                  ? "This TestFlight build cannot run the built-in ChatGPT agent. Connect another AI app or add an API key to work here."
                 : nativeConnection?.state === "runtime-missing"
-                  ? "The built-in agent needs the Mac app. Connect another AI app or add an API key to work here."
+                  ? "The built-in agent needs the Codex runtime on this Mac. Connect another AI app or add an API key to work here."
                   : "Connect the AI you already use once, and it works right here, beside your documents."}
             </p>
           </div>

@@ -9,6 +9,7 @@
     "workflow.live_clients",
     "web.unit",
     "native.unit",
+    "native.local_promotion",
     "apple.eval"
   ]
 }

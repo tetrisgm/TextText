@@ -47,12 +47,26 @@ TEXTTEXT_SKIP_OPEN_TESTFLIGHT=1 \
 [ -e "$TRASH/TextText 0.175 (182) TestFlight.app" ]
 
 make_app "$APPLICATIONS/TextText.app" app.texttext.mac 1
+make_app "$APPLICATIONS/TextText 4.app" app.texttext.mac
+make_app "$APPLICATIONS/TextText 5.app" example.unrelated
 TEXTTEXT_APPLICATIONS_DIR="$APPLICATIONS" \
 TEXTTEXT_TRASH_DIR="$TRASH" \
 TEXTTEXT_SKIP_OPEN_TESTFLIGHT=1 \
   "$ROOT/release/prepare-testflight-install.sh"
 
 [ -e "$APPLICATIONS/TextText.app" ]
+[ ! -e "$APPLICATIONS/TextText 4.app" ]
+[ -e "$APPLICATIONS/TextText 5.app" ]
+
+matching_count=0
+for candidate in "$APPLICATIONS"/TextText*.app; do
+  [ -e "$candidate/Contents/Info.plist" ] || continue
+  identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+    "$candidate/Contents/Info.plist" 2>/dev/null || true)"
+  [ "$identifier" != "app.texttext.mac" ] || matching_count=$((matching_count + 1))
+done
+[ "$matching_count" -eq 1 ]
+[ -e "$TRASH/TextText 0.175 (182) Standalone.app" ]
 
 REFUSAL_APPLICATIONS="$FIXTURE/Refusal Applications"
 mkdir -p "$REFUSAL_APPLICATIONS"

@@ -7,6 +7,7 @@ import {
   CODEX_PLUGIN_INSTALL_COMMAND,
   hostedMcpUrl,
   TEXTTEXT_HOSTED_MCP_URL,
+  TEXTTEXT_TOKEN_PROMPT_COMMAND,
 } from "@/lib/agent-integrations";
 
 describe("agent integrations", () => {
@@ -42,6 +43,26 @@ describe("agent integrations", () => {
     expect(hostedMcpUrl("https://preview.TextText.app/")).toBe(
       "https://preview.TextText.app/api/mcp",
     );
+  });
+
+  it("prompts for plugin credentials without putting a token in a command", () => {
+    expect(TEXTTEXT_TOKEN_PROMPT_COMMAND).toContain("read -rs");
+    expect(TEXTTEXT_TOKEN_PROMPT_COMMAND).toContain(
+      "export TEXTTEXT_WORKSPACE_TOKEN",
+    );
+    expect(TEXTTEXT_TOKEN_PROMPT_COMMAND).not.toContain("wsk_");
+
+    for (const id of ["claude", "codex"] as const) {
+      const integration = AGENT_INTEGRATIONS.find((entry) => entry.id === id);
+      expect(integration?.steps.map((step) => step.text).join(" ")).toContain(
+        "The plugin installer does not ask for it.",
+      );
+      expect(
+        integration?.steps.some(
+          (step) => step.copy?.value === TEXTTEXT_TOKEN_PROMPT_COMMAND,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("ships distinct reusable workflows", () => {

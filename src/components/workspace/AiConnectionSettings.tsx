@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { nativeAssistantAvailable, requestNativeAssistant, subscribeNativeAssistant } from "@/lib/ai/native-client";
+import {
+  nativeAssistantAvailable,
+  nativeEmbeddedAssistantAvailable,
+  requestNativeAssistant,
+  subscribeNativeAssistant,
+} from "@/lib/ai/native-client";
 import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import styles from "./AiConnectionSettings.module.css";
 
@@ -29,6 +34,7 @@ export function AiConnectionSettings() {
   }, []);
 
   const isMac = nativeAssistantAvailable();
+  const embeddedAgent = nativeEmbeddedAssistantAvailable();
   const ready = connection?.state === "ready";
   return (
     <div className={styles.grid}>
@@ -39,14 +45,20 @@ export function AiConnectionSettings() {
           <p>
             {ready
               ? `Connected${connection?.accountEmail ? ` as ${connection.accountEmail}` : ""}. Use your ChatGPT plan directly in the assistant.`
-              : isMac
+              : embeddedAgent
                 ? "Use your eligible ChatGPT or Codex plan directly inside TextText. No API credits are required."
+                : isMac
+                  ? "This TestFlight build cannot launch a local Codex runtime. Connect another AI app or use an API key instead."
                 : "The embedded agent is available in the TextText Mac app."}
           </p>
         </div>
-        <button type="button" className={styles.primary} onClick={() => requestNativeAssistant("assistantConnect")} disabled={!isMac || ready}>
-          {ready ? "Connected" : "Continue with ChatGPT"}
-        </button>
+        {embeddedAgent ? (
+          <button type="button" className={styles.primary} onClick={() => requestNativeAssistant("assistantConnect")} disabled={ready}>
+            {ready ? "Connected" : "Continue with ChatGPT"}
+          </button>
+        ) : (
+          <a className={styles.secondary} href="/connect">Choose another connection</a>
+        )}
       </article>
       <article className={styles.card}>
         <div>

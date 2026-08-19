@@ -62,6 +62,35 @@ it is never left beside the installed app. Do not launch the bundle from
 `mac/build`, Finder Downloads, or a second Applications directory when testing
 the installed build.
 
+### Promote committed main to this Mac
+
+When the owner wants the current committed `main` on the production origin and
+in `/Applications/TextText.app`, without publishing a Sparkle or TestFlight
+release, run:
+
+    npm run promote:local
+
+This is a deliberate production command. It requires a clean `main` equal to
+`origin/main`, runs the exact release gates, generates the workflow and signed
+build attestations, and chooses a build number greater than source and every
+known local install. It then guards the Keychain-backed production Neon URL,
+runs every ordered migration and content backfill, deploys one uniquely
+identified prebuilt Vercel output, and exercises an authenticated scratch
+workspace through the production MCP command surface.
+
+Only after production passes does it replace the canonical Developer ID app.
+The installer keeps the previous bundle and any numbered TestFlight collision
+recoverable until the new app launches and writes a passing health report for
+its exact version and build. A failed launch or health report restores the old
+canonical app and rolls the Vercel production aliases back to their prior
+deployment. Successful cleanup moves prior bundles to Trash and verifies that
+only one TextText bundle and one app process remain. Database migrations are
+idempotent forward migrations and are not reversed.
+
+This command does not notarize, upload, change `/appcast.xml`, publish a Sparkle
+archive, create a TestFlight package, or submit anything to Apple. `npm run
+ship` and the TestFlight preparation commands remain separate owner decisions.
+
 ### Two executables, two names
 
 The app target is `TextTextApp` and the CLI product is `texttext`. They used to

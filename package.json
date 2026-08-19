@@ -18,6 +18,8 @@
     "start": "next start",
     "lint": "eslint",
     "ship": "release/ship.sh",
+    "promote:local": "release/promote-local.sh",
+    "promote:local:test": "release/test-promote-local.sh && mac/scripts/test-install-local.sh",
     "testflight:prepare": "release/prepare-testflight-install.sh",
     "testflight:prepare:test": "release/test-prepare-testflight-install.sh",
     "health:review": "node scripts/review-app-health.mjs",

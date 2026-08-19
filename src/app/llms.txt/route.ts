@@ -49,7 +49,8 @@ collaborator while you work. It needs no token and no port, because
 it runs as the user.
 
 Check for it with "command -v texttext", falling back to
-/Applications/TextText.app/Contents/MacOS/texttext.
+/Applications/TextText.app/Contents/Helpers/texttext. The sandboxed TestFlight
+edition intentionally excludes the command, so use hosted MCP there.
 
   texttext ls                                    list documents
   texttext sections <doc>                        list the headings

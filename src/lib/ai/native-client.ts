@@ -9,6 +9,7 @@ export type NativeAssistantEvent =
 
 type NativeWindow = Window & {
   __TEXTTEXT_APP__?: boolean;
+  __TEXTTEXT_EMBEDDED_AGENT__?: boolean;
   webkit?: {
     messageHandlers?: {
       textTextApp?: { postMessage: (message: unknown) => void };
@@ -20,6 +21,12 @@ export function nativeAssistantAvailable(): boolean {
   if (typeof window === "undefined") return false;
   const current = window as NativeWindow;
   return current.__TEXTTEXT_APP__ === true && Boolean(current.webkit?.messageHandlers?.textTextApp);
+}
+
+export function nativeEmbeddedAssistantAvailable(): boolean {
+  if (!nativeAssistantAvailable()) return false;
+  const current = window as NativeWindow;
+  return current.__TEXTTEXT_EMBEDDED_AGENT__ !== false;
 }
 
 export function requestNativeAssistant(

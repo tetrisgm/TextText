@@ -6,11 +6,11 @@ import {
 } from "../../../scripts/local-live-readiness";
 
 describe("local live server readiness", () => {
-  it("accepts the public page and OAuth discovery surfaces", () => {
+  it("accepts the public page and MCP discovery surfaces", () => {
     expect(
       isLocalLiveServerReady([
         { path: "/signin", status: 200 },
-        { path: "/.well-known/oauth-authorization-server", status: 200 },
+        { path: "/.well-known/mcp.json", status: 200 },
       ]),
     ).toBe(true);
   });
@@ -19,19 +19,19 @@ describe("local live server readiness", () => {
     expect(
       isLocalLiveServerReady([
         { path: "/signin", status: 200 },
-        { path: "/.well-known/oauth-authorization-server", status: 404 },
+        { path: "/.well-known/mcp.json", status: 404 },
       ]),
     ).toBe(false);
     expect(
       isLocalLiveServerReady([
         { path: "/signin", status: 200 },
-        { path: "/.well-known/oauth-authorization-server", status: "error" },
+        { path: "/.well-known/mcp.json", status: "error" },
       ]),
     ).toBe(false);
     expect(
       isLocalLiveServerReady([
         { path: "/signin", status: 503 },
-        { path: "/.well-known/oauth-authorization-server", status: 200 },
+        { path: "/.well-known/mcp.json", status: 200 },
       ]),
     ).toBe(false);
   });
@@ -44,10 +44,8 @@ describe("local live server readiness", () => {
     expect(
       formatLocalLiveReadiness([
         { path: "/signin", status: 200 },
-        { path: "/.well-known/oauth-authorization-server", status: 404 },
+        { path: "/.well-known/mcp.json", status: 404 },
       ]),
-    ).toBe(
-      "/signin=200, /.well-known/oauth-authorization-server=404",
-    );
+    ).toBe("/signin=200, /.well-known/mcp.json=404");
   });
 });

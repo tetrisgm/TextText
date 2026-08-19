@@ -1,9 +1,10 @@
 # Assistant and workspace command architecture
 
-This document describes the implemented AI architecture as of 2026-07-29.
-TextText has one shared workspace tool contract, an in-app provider adapter, the
-`texttext` CLI for agents on this Mac, and a hosted MCP adapter for remote
-agents. The web product does not call its own MCP server.
+This document describes the implemented AI architecture. TextText has one
+shared workspace tool contract, a standalone-Mac native Codex adapter, an
+in-app API provider adapter, the `texttext` CLI in the standalone app, and a
+hosted MCP adapter for remote agents. The web product does not call its own MCP
+server.
 
 ## Architectural invariants
 
@@ -29,7 +30,7 @@ agents. The web product does not call its own MCP server.
   but no permanent delete.
 
 <!-- generated:tool-contract -->
-## Shared 33-tool contract
+## Shared 34-tool contract
 
 The 10 read-scope tools are:
 
@@ -44,31 +45,32 @@ The 10 read-scope tools are:
 9. `list_responses`
 10. `list_document_templates`
 
-The 23 sync-scope tools are:
+The 24 sync-scope tools are:
 
 1. `list_access`
-2. `save_item_as_look`
-3. `set_folder_template`
-4. `retire_document_template`
-5. `set_item_template`
-6. `create_item`
-7. `update_item`
-8. `append_to_item`
-9. `set_item_status`
-10. `move_item`
-11. `delete_item`
-12. `restore_item`
-13. `add_item_asset`
-14. `remove_item_asset`
-15. `recapture_bookmark`
-16. `add_comment`
-17. `set_comment_resolved`
-18. `create_folder`
-19. `rename_folder`
-20. `delete_folder`
-21. `restore_folder`
-22. `set_access`
-23. `revoke_access`
+2. `create_item_type`
+3. `save_item_as_look`
+4. `set_folder_template`
+5. `retire_document_template`
+6. `set_item_template`
+7. `create_item`
+8. `update_item`
+9. `append_to_item`
+10. `set_item_status`
+11. `move_item`
+12. `delete_item`
+13. `restore_item`
+14. `add_item_asset`
+15. `remove_item_asset`
+16. `recapture_bookmark`
+17. `add_comment`
+18. `set_comment_resolved`
+19. `create_folder`
+20. `rename_folder`
+21. `delete_folder`
+22. `restore_folder`
+23. `set_access`
+24. `revoke_access`
 <!-- /generated:tool-contract -->
 
 `list_access` is read-only but requires `sync` because membership information is
@@ -105,22 +107,30 @@ ones the current token may call.
 
 ### In-app assistant
 
-The in-app assistant calls the workspace command surface through the
+The standalone Developer ID app can launch a local Codex App Server process and
+stream a native turn over its private JSON-RPC pipe. It uses an eligible account
+already available to that local runtime and registers TextText's workspace
+commands as dynamic tools. The sandboxed TestFlight app cannot launch a command
+from the person's home directory, so it cannot offer this path.
+
+The in-app assistant can also call the workspace command surface through the
 workspace-configured Anthropic or OpenAI provider. The workspace owner chooses
 the provider and model in Settings and supplies the API key. The key is
 encrypted server-side, is write-only in the UI, and is never returned to the
-browser.
+browser. This path works in the web product and both Mac channels.
 
 TextText does not send an in-app assistant request through `/api/mcp`. MCP is an
 external interoperability adapter, not an internal transport.
 
 ### Agents on this Mac
 
-An agent running on the same Mac does not speak a protocol. It uses the
-`texttext` CLI (`mac/Sources/TextTextCLI`), which ships inside the app bundle and
-edits documents as files in the File Provider workspace. There is no port, no
-token to paste, and no pairing step: the CLI runs as the user and reads the
-device credential the app already stores.
+An agent running on the same Mac with the standalone app does not speak a
+protocol. It uses the `texttext` CLI (`mac/Sources/TextTextCLI`), which ships
+inside that app bundle and edits documents as files in the File Provider
+workspace. There is no port, no token to paste, and no pairing step: the CLI
+runs as the user and reads the device credential the app already stores. The
+sandboxed TestFlight edition excludes the CLI and uses hosted MCP for external
+agents.
 
 Every mutating command publishes agent presence before it acts and clears it
 afterwards, so an agent appears as a named collaborator in the open document
@@ -131,9 +141,10 @@ Deleting the port deleted the whole local trust problem with it.
 
 ## Assistant status
 
-The assistant is available on the Mac app and web after a workspace owner
-connects Anthropic or OpenAI. TextText does not use an owner-funded shared
-gateway and does not automatically fall back to an on-device model.
+The assistant is available through the native Codex path in the standalone Mac
+app, or on either Mac channel and the web after a workspace owner connects
+Anthropic or OpenAI. TextText does not use an owner-funded shared gateway and
+does not automatically fall back to an on-device model.
 
 Current assistant behavior includes:
 
@@ -154,29 +165,36 @@ leaking workspace data or provider credentials.
 
 ## Provider connections
 
-1. **Bring-your-own API key: shipped.** A workspace owner can add an Anthropic
+1. **Native Codex in the standalone Mac app: shipped.** The Developer ID app
+   can use an eligible ChatGPT or Codex account already connected to the local
+   Codex runtime. It does not consume provider API credits. TestFlight cannot
+   launch this runtime because of the App Sandbox.
+2. **Bring-your-own API key: shipped.** A workspace owner can add an Anthropic
    or OpenAI API key and select a supported model in Settings. The encrypted
    key stays server-side and is never returned to the browser. The assistant
    exposes only tools that need no confirmation and cannot fetch a
    model-chosen URL.
-2. **Agents on this Mac: shipped.** Claude Code, Codex, and any other local
-   agent use the `texttext` CLI rather than a network endpoint. The model and
-   billing stay with that client, presence and audit intent are automatic, and
-   local file changes remain immediate.
-3. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
+3. **Agents on this Mac: shipped in the standalone app.** Claude Code, Codex,
+   and any other local agent use the `texttext` CLI rather than a network
+   endpoint. The model and billing stay with that client, presence and audit
+   intent are automatic, and local file changes remain immediate.
+4. **Hosted external agents over MCP: shipped.** Claude.ai, hosted Codex,
    ChatGPT, Cursor, and other MCP hosts connect to `/api/mcp` with a workspace token.
    Claude, Codex, and ChatGPT are the primary documented clients. Cursor and
    other standards-compatible hosts remain supported secondary clients.
-4. **Native agent plugins: shipped.** The repository is a Claude and Codex
+5. **Native agent plugins: shipped.** The repository is a Claude and Codex
    plugin marketplace. `plugins/texttext` packages the hosted MCP
    connection with reusable skills for conversation capture, project
    changelogs, publishing, and collaboration. The product connection center
    leads with these installs. Raw MCP commands and bearer tokens are advanced
    fallbacks, not the primary experience.
 
-ChatGPT connects as a hosted app because it does not install repository plugins.
-It uses the same endpoint and command surface. TextText never receives a
-user's Claude, ChatGPT, or Codex password.
+ChatGPT can connect as a hosted app where the person's plan, role, workspace
+policy, and available authentication choices permit a custom MCP app. TextText
+does not run an OAuth authorization server, so an OAuth-only ChatGPT surface is
+not compatible with the current token flow. When connected, it uses the same
+endpoint and command surface. TextText never receives a user's Claude, ChatGPT,
+or Codex password.
 
 No provider secret is stored in a Markdown folder. The cloud rung remains
 opt-in and executes the same workspace contract rather than creating a

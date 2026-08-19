@@ -2,7 +2,11 @@
   "mcpServers": {
     "texttext": {
       "type": "http",
-      "url": "https://TextText.app/api/mcp"
+      "url": "https://texttext.app/api/mcp",
+      "bearer_token_env_var": "TEXTTEXT_WORKSPACE_TOKEN",
+      "headers": {
+        "Authorization": "Bearer ${TEXTTEXT_WORKSPACE_TOKEN}"
+      }
     }
   }
 }

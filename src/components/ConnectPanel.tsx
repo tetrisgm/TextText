@@ -32,6 +32,31 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function CodeRecipe({
+  copyKey,
+  value,
+  copiedKey,
+  onCopy,
+}: {
+  copyKey: string;
+  value: string;
+  copiedKey: string | null;
+  onCopy: (value: string, copyKey: string) => void;
+}) {
+  return (
+    <div className="connect-code-wrap">
+      <pre className="connect-code">{value}</pre>
+      <button
+        className="ac-btn ac-btn-gray connect-code-copy"
+        type="button"
+        onClick={() => onCopy(value, copyKey)}
+      >
+        {copiedKey === copyKey ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 export function ConnectPanel({
   initialTokens,
   origin,
@@ -55,9 +80,10 @@ export function ConnectPanel({
   const remoteMcpUrl = hostedMcpUrl(remoteOrigin);
 
   const commands = {
-    claudeRemote: `claude mcp add --transport http --scope user texttext ${remoteMcpUrl}`,
+    tokenPrompt: `read -rs "TEXTTEXT_WORKSPACE_TOKEN?Paste your TextText token: "; printf '\\n'; export TEXTTEXT_WORKSPACE_TOKEN`,
+    claudeRemote: `claude mcp add --transport http --scope user texttext ${remoteMcpUrl} --header 'Authorization: Bearer \${TEXTTEXT_WORKSPACE_TOKEN}'`,
     cliCheck: "texttext ls",
-    codexRemote: `codex mcp add texttext --url ${remoteMcpUrl}\ncodex mcp login texttext`,
+    codexRemote: `codex mcp add texttext --url ${remoteMcpUrl} --bearer-token-env-var TEXTTEXT_WORKSPACE_TOKEN`,
   };
   const tokenConfig = `{
   "mcpServers": {
@@ -117,29 +143,13 @@ export function ConnectPanel({
     }
   }
 
-  function CodeRecipe({
-    copyKey,
-    value,
-  }: {
-    copyKey: string;
-    value: string;
-  }) {
-    return (
-      <div className="connect-code-wrap">
-        <pre className="connect-code">{value}</pre>
-        <button
-          className="ac-btn ac-btn-gray connect-code-copy"
-          type="button"
-          onClick={() => void copy(value, copyKey)}
-        >
-          {copiedKey === copyKey ? "Copied" : "Copy"}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div>
+      {error && (
+        <p className="connect-error" role="alert">
+          {error}
+        </p>
+      )}
       <section className="connect-section" aria-labelledby="connect-primary">
         <h2 className="connect-section-title" id="connect-primary">
           Add TextText to your agents
@@ -260,9 +270,11 @@ export function ConnectPanel({
           In-app assistant
         </h2>
         <p className="connect-body">
-          To use the TextText assistant sidebar, add a workspace-owned Anthropic
-          or OpenAI API key in Workspace Settings and choose a model. Provider
-          API billing is separate from Claude.ai and ChatGPT subscriptions.
+          In the standalone TextText Mac app, an eligible ChatGPT or Codex
+          account can power the local Codex agent without provider API credits.
+          The sandboxed TestFlight app and the browser cannot launch that local
+          runtime. In those channels, add a workspace-owned Anthropic or OpenAI
+          API key in Workspace Settings, or work from an external MCP app.
         </p>
       </section>
 
@@ -276,15 +288,44 @@ export function ConnectPanel({
 
         <h3 className="connect-minor-title">Agents on this Mac</h3>
         <p className="connect-body">
-          Nothing to connect. The Mac app installs a <code>texttext</code>
-          {" "}command, and Codex, Claude, and other coding agents use it to work
-          in your documents directly. Check it is there with:
+          The standalone Mac app includes a <code>texttext</code> command for
+          Codex, Claude, and other local coding agents. Run
+          {" "}<code>texttext install</code> once to add it to your PATH, then
+          check it with the command below. The TestFlight app intentionally
+          excludes this shell command; use the hosted plugin or MCP connection
+          with that channel.
         </p>
-        <CodeRecipe copyKey="cli-check" value={commands.cliCheck} />
+        <CodeRecipe
+          copyKey="cli-check"
+          value={commands.cliCheck}
+          copiedKey={copiedKey}
+          onCopy={(value, key) => void copy(value, key)}
+        />
 
         <h3 className="connect-minor-title">Direct hosted connection</h3>
-        <CodeRecipe copyKey="claude-remote" value={commands.claudeRemote} />
-        <CodeRecipe copyKey="codex-remote" value={commands.codexRemote} />
+        <p className="connect-body">
+          Create a token below, set it with this hidden prompt, then add the
+          connection from the same Terminal. The token stays out of shell
+          history and the saved client configuration.
+        </p>
+        <CodeRecipe
+          copyKey="token-prompt"
+          value={commands.tokenPrompt}
+          copiedKey={copiedKey}
+          onCopy={(value, key) => void copy(value, key)}
+        />
+        <CodeRecipe
+          copyKey="claude-remote"
+          value={commands.claudeRemote}
+          copiedKey={copiedKey}
+          onCopy={(value, key) => void copy(value, key)}
+        />
+        <CodeRecipe
+          copyKey="codex-remote"
+          value={commands.codexRemote}
+          copiedKey={copiedKey}
+          onCopy={(value, key) => void copy(value, key)}
+        />
 
         <h3 className="connect-minor-title">Manual access tokens</h3>
         <form className="connect-form" onSubmit={handleCreate}>
@@ -371,7 +412,12 @@ export function ConnectPanel({
         )}
 
         <h3 className="connect-minor-title">Bearer configuration</h3>
-        <CodeRecipe copyKey="token-config" value={tokenConfig} />
+        <CodeRecipe
+          copyKey="token-config"
+          value={tokenConfig}
+          copiedKey={copiedKey}
+          onCopy={(value, key) => void copy(value, key)}
+        />
         <p className="connect-body">
           File sync lives at{" "}
           <code className="connect-inline-code">{remoteOrigin}/api/sync/v1</code>.

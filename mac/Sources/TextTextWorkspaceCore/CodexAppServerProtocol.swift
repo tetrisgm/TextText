@@ -44,6 +44,99 @@ public enum CodexAppServerError: Error, Equatable {
     case notRunning
 }
 
+/// Typed values extracted from `account/read`. App Server represents a signed
+/// out account as JSON null, which must not be confused with a present result
+/// dictionary.
+public struct CodexAccountSummary: Equatable {
+    public let email: String?
+    public let planType: String?
+
+    public init(email: String?, planType: String?) {
+        self.email = email
+        self.planType = planType
+    }
+
+    public init?(result: [String: Any]?) {
+        guard let account = result?["account"] as? [String: Any] else { return nil }
+        email = account["email"] as? String
+        planType = account["planType"] as? String
+    }
+}
+
+public enum CodexTurnOutcome: Equatable {
+    case completed
+    case failed(String?)
+    case interrupted
+
+    public init?(params: [String: Any]?) {
+        guard let turn = params?["turn"] as? [String: Any],
+              let status = turn["status"] as? String else { return nil }
+        switch status {
+        case "completed":
+            self = .completed
+        case "failed":
+            let error = turn["error"] as? [String: Any]
+            self = .failed(error?["message"] as? String)
+        case "interrupted":
+            self = .interrupted
+        default:
+            return nil
+        }
+    }
+}
+
+/// Current App Server request shapes used by the native assistant. Keeping
+/// these at the protocol boundary makes silent schema drift testable. In
+/// particular, App Server ignores the old `sandboxPolicy` field and falls back
+/// to workspace-write, while `sandbox: "read-only"` produces a read-only
+/// thread.
+public enum CodexAppServerRequests {
+    /// Extracts only server names from `config/read`. No server command, URL,
+    /// environment value, or OAuth material crosses this boundary.
+    public static func effectiveMCPServerNames(configReadResult: [String: Any]?) -> [String]? {
+        guard let config = configReadResult?["config"] as? [String: Any],
+              let servers = config["mcp_servers"] as? [String: Any] else { return nil }
+        return servers.keys.sorted()
+    }
+
+    /// Starts an isolated embedded thread. App Server otherwise inherits every
+    /// MCP configured in the owner's global Codex profile, including servers
+    /// unrelated to TextText and servers that may currently require login.
+    /// Disable each effective server explicitly because an empty map would be
+    /// merged with, rather than replace, the inherited configuration.
+    public static func threadStart(
+        dynamicTools: [[String: Any]],
+        disabledMCPServers: [String]
+    ) -> [String: Any] {
+        let disabledServers = Dictionary(uniqueKeysWithValues:
+            Set(disabledMCPServers).sorted().map { ($0, ["enabled": false]) })
+        var params: [String: Any] = [
+            "approvalPolicy": "never",
+            "sandbox": "read-only",
+            "ephemeral": true,
+            "dynamicTools": dynamicTools,
+        ]
+        params["config"] = ["mcp_servers": disabledServers]
+        return params
+    }
+
+    public static var chatGPTLoginStart: [String: Any] {
+        [
+            "type": "chatgpt",
+            "appBrand": "chatgpt",
+            "codexStreamlinedLogin": true,
+            "useHostedLoginSuccessPage": true,
+        ]
+    }
+
+    public static func dynamicToolResult(text: String, success: Bool) -> [String: Any] {
+        [
+            "contentItems": [["type": "inputText", "text": text]],
+            "success": success,
+        ]
+    }
+}
+
 public struct CodexRuntimeLocator {
     public let executableURL: URL?
 

@@ -1,6 +1,6 @@
 export const localLiveReadinessPaths = [
   "/signin",
-  "/.well-known/oauth-authorization-server",
+  "/.well-known/mcp.json",
 ] as const;
 
 export type LocalLiveReadinessProbe = {

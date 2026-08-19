@@ -41,7 +41,7 @@ polish ledger.
 - How to run the loop: mint a token (POST /api/link/start, approve in a
   signed-in browser, poll), then drive `/api/mcp` per the transport contract
   in scratchpad agent.py: `_meta` trio in the body plus MCP-Protocol-Version,
-  Mcp-Method, and Mcp-Name headers. 34 tools.
+  Mcp-Method, and Mcp-Name headers. 33 tools.
 
 ## The spec and the removal pass (2026-08-14)
 
@@ -303,9 +303,10 @@ Two traps worth keeping:
 - Work on `main` in `~/dev/TextText` (contract of 2026-08-12; no worktrees,
   no merge-gate). A stale pre-commit hook still demands merge-gate; commit
   with `OWNER_OVERRIDE=1`. The hook is a persistent job, not ours to remove.
-- Dev loop: `npm run dev`; build the Mac app with
-  `TEXTTEXT_PRODUCT_ORIGIN=http://localhost:3000` plus the usual bundle id,
-  app group, and Sparkle key; install with `mac/scripts/install-local.sh`.
+- Dev loop: use `npm run try`. It starts the local server, opens an isolated Mac
+  app against it, and tears both down. `mac/scripts/install-local.sh` replaces
+  the owner's canonical `/Applications/TextText.app`; it is a promotion tool,
+  not a development preview command.
 - Dev builds (http origin) are Safari-inspectable and append one layout line
   per load to `$(getconf DARWIN_USER_TEMP_DIR)/texttext-layout.log`. Trust the
   probe over screenshots; computer-use screenshots downscale and lie about
@@ -411,6 +412,51 @@ Two traps worth keeping:
 - ASC credentials: login Keychain service `asc` (JSON: `key_id`,
   `issuer_id`); .p8 in `~/.appstoreconnect/private_keys`. TestFlight internal
   group "Internal"; the owner must be enrolled as a tester like anyone else.
+- `release/prepare-testflight-build.sh` is the non-uploading package boundary.
+  It builds the Store edition, verifies Apple Distribution signing, arm64 app
+  and extensions, App Sandbox, application identifier, team-prefixed app
+  group, embedded profile, and absence of Sparkle, then signs a `.pkg` with a
+  3rd Party Mac Developer Installer identity. It never uploads, installs, opens
+  TestFlight, or changes `/Applications/TextText.app`.
+  On 2026-08-19, the real Apple Distribution build completed with all three
+  signed arm64 extensions, and the command produced a 3rd Party Mac Developer
+  Installer-signed `0.181 (184)` package in an isolated temporary directory.
+  Signature verification passed; the proof package was moved to Trash. Nothing
+  was uploaded or installed.
+- Channel capabilities are intentionally different. The standalone Developer
+  ID app can launch the local Codex runtime and includes
+  `Contents/Helpers/texttext`. The App Sandbox prevents TestFlight from
+  launching `~/.local/bin/codex`, and the Store bundle excludes the CLI. In
+  TestFlight, use a provider API key or an external hosted MCP/app connection.
+- The hosted MCP endpoint uses manually created `wsk_` workspace bearer tokens.
+  TextText has no OAuth authorization server. OAuth-only clients cannot connect,
+  and ChatGPT custom MCP availability varies by plan, role, and workspace
+  policy. Do not promise a universal one-click ChatGPT connection.
+
+## Finder and CLI verification (2026-08-19)
+
+- The bundled CLI used to turn every File Provider enumeration error into an
+  empty list because `DocumentStore.list()` used `try? ... ?? []`. It now fails
+  with an actionable unavailable-workspace error. It lists and edits
+  `.textpack`, `.textbundle`, `.md`, and `.txt`, and skips the auxiliary `Data`
+  tree. An isolated CLI round trip proved list, read, append, lint, and reread
+  against a real `.textpack` without touching owner data.
+- The GUI does not own `sync.index`; File Provider is the sole sync owner. A
+  missing legacy index is a passing transition state. A surviving index must
+  still decode or health fails.
+- A File Provider status with zero pending errors is not proof that Finder is
+  usable. For a linked account, `finder.provider` now passes only after the real
+  CloudStorage root enumerates and exposes at least one workspace folder. The
+  root-level attachment `Data` directory does not count as a workspace.
+- On 2026-08-19 the installed mount existed at
+  `~/Library/CloudStorage/TextText-TextText`, but shell enumeration returned
+  `Operation not permitted`, and `fileproviderctl dump
+  app.texttext.mac.fileprovider` showed the provider and mount xattrs without an
+  active `domain:` section. That state is not a successful Finder proof. If it
+  persists, the owner must enable TextText in **System Settings > General >
+  Login Items & Extensions > File Providers** and reopen TextText. macOS does
+  not expose `NSFileProviderDomain.userEnabled` to macOS apps, so code cannot
+  toggle or reliably detect this setting.
 
 ## Public URLs (live since 0.175)
 
@@ -501,7 +547,7 @@ Two traps worth keeping:
   selected text. Transformation shortcuts expose the same workspace update
   tools as typed instructions; Structure produces a reversible full-body
   proposal rather than editing around the document command surface.
-- The final 2026-08-19 gate passed 920 web tests, 446 Swift tests, TypeScript,
+- The final 2026-08-19 gate passed 924 web tests, 456 Swift tests, TypeScript,
   the 42-page production build, the item-type, feature, look, home-layout,
   outbound MCP, collaboration, and real-model sidebar evaluations, plus 36
   inspected light/dark screenshots across 1440, 768, and 375 pixel widths.

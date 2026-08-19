@@ -5,14 +5,15 @@ the product UI, the workspace-configured assistant, and external agents over
 MCP. The application calls the commands directly. It does not call its own MCP
 endpoint.
 
-This document covers the hosted endpoint, which is for agents that are not on
-the user's Mac. An agent running on the same Mac uses the `texttext` CLI
-instead, and does not need a token or a port. See
+This document covers the hosted endpoint. The standalone Developer ID Mac app
+also includes the `texttext` CLI for same-Mac agents, with no token to paste and
+no port. The sandboxed TestFlight app cannot ship a useful shell command, so
+agents used with that channel connect through this hosted endpoint instead. See
 `docs/agent-interoperability.md`. There is no local MCP server; the loopback
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 33 tool
+`src/lib/ai/tools.ts` is the source of truth for the 34 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -109,7 +110,7 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 | Scope | Access |
 |-------|--------|
 | `read` | Call the 10 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`. |
-| `sync` | Call all 33 tools, including the 23 that mutate content or read administration data. It also grants every `read` operation. |
+| `sync` | Call all 34 tools, including the 24 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -139,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (33)
+## Tools (34)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -154,6 +155,7 @@ or workspace selector that could cross that boundary.
 | `list_responses` | `read` or `sync` | List reader responses to one item's poll nodes: per-option tallies plus individual responses. Responder identity is a name only when the reader was signed in. |
 | `list_access` | `sync` | List who can access the workspace, one folder, or one item, and their role. |
 | `list_document_templates` | `read` or `sync` | List the immutable built-in and workspace templates available for shaping documents. |
+| `create_item_type` | `sync` | Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's look and existing items are restyled by default. |
 | `save_item_as_look` | `sync` | Take the way one item currently renders and save it as a reusable look, under a name. The look then appears in the look pickers and can be applied to other items or given to a folder with set_folder_template. This replaced an operations-based authoring API: shape a document the ordinary way, with update_item and the item's own theme, then save what you made. It never changes the item. |
 | `set_folder_template` | `sync` | Give a folder a look, and by default restyle everything already in it. The template becomes what the folder's index page renders from, what new items are created with, and what the items already there use. This is how a request like 'make this folder a magazine' actually lands. Pass apply_to_existing false only if the person asked for the change to affect new items alone: leaving old items behind means the index changes and not one article does, which reads as nothing having happened. |
 | `retire_document_template` | `sync` | Stop offering one workspace look. It disappears from the look pickers and from list_document_templates, and every document and folder already using it keeps rendering exactly as it does now, because template versions are immutable and nothing is deleted. Built-in looks cannot be retired. Use this when someone says a look they made is no longer wanted, rather than leaving a picker full of abandoned experiments. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
@@ -192,13 +194,22 @@ or workspace selector that could cross that boundary.
 
 ## In-app assistant status
 
-The workspace owner can connect an Anthropic or OpenAI API account and choose
-the model used by the in-app assistant. The API key is encrypted on the server,
-is write-only in Settings, and is sent only to the selected provider.
+The standalone Developer ID Mac app can run an embedded Codex agent with an
+eligible existing ChatGPT or Codex account. That path does not use provider API
+credits. It depends on launching a local runtime, so the sandboxed TestFlight
+app cannot offer it.
 
-A ChatGPT or Claude consumer subscription does not include provider API usage.
-People who want to work from those subscribed products can connect ChatGPT,
-Claude, Cursor, or another MCP host to the endpoint documented here.
+The workspace owner can also connect an Anthropic or OpenAI API account and
+choose the model used by the in-app assistant. The API key is encrypted on the
+server, is write-only in Settings, and is sent only to the selected provider.
+Provider API billing is separate from ChatGPT and Claude consumer
+subscriptions.
+
+People can instead work from Claude, Codex, ChatGPT, Cursor, or another MCP
+host using that product's model account and the TextText workspace token. The
+client must support a manual bearer credential because TextText does not run an
+OAuth authorization server. Plan, role, and workspace policy can limit which
+custom MCP capabilities a host makes available.
 
 ## Sibling surface: sync API
 

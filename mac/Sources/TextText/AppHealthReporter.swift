@@ -241,6 +241,13 @@ private final class HealthSubmissionResult: @unchecked Sendable {
 final class AppHealthReporter {
     typealias FinderStatusProvider = () -> FileProviderStatusSnapshot
 
+    private struct FinderMountProbe {
+        let resolved: Bool
+        let enumerated: Bool
+        let workspaceVisible: Bool
+        let entryCount: Int
+    }
+
     private let stateStore: StateStore
     private let healthStore: TextTextHealthStore
     private let syncRootProvider: () -> URL?
@@ -476,9 +483,17 @@ final class AppHealthReporter {
     private func checkBundleRelease() -> (TextTextHealthStatus, [String: Double]) {
         let feed = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String
         let key = bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
+        #if TEXTTEXT_STORE
+        // TestFlight and App Store own updates for the sandboxed edition, and
+        // the package gate rejects Sparkle metadata there. Its healthy update
+        // configuration is therefore the deliberate absence of both values.
+        let validFeed = feed == nil || feed?.isEmpty == true
+        let validKey = key == nil || key?.isEmpty == true
+        #else
         let validFeed = feed.flatMap(URL.init(string:))?.scheme == "https"
         let validKey = !(key?.isEmpty ?? true)
             && key != "REPLACE_WITH_SPARKLE_PUBLIC_KEY"
+        #endif
         let validIdentity = bundle.bundleIdentifier != nil
             && bundleVersion != "dev" && buildNumber != "0"
         let valid = validFeed && validKey && validIdentity
@@ -730,7 +745,7 @@ final class AppHealthReporter {
     }
 
     private func checkPublicLinkMapping() -> (TextTextHealthStatus, [String: Double]) {
-        let privateURL = "https://TextText.app/api/sync/v1/files/health-item"
+        let privateURL = "https://texttext.app/api/sync/v1/files/health-item"
         let publicURL = "https://demo.TextText.app/blog/health-item"
         let entry = TextTextManifestItem(
             file: "health-item.md", kind: "article", slug: "health-item",
@@ -802,8 +817,12 @@ final class AppHealthReporter {
     }
 
     private func checkSyncIndex() -> (TextTextHealthStatus, [String: Double]) {
+        // The GUI's sole sync owner is the File Provider extension. index.json
+        // belongs only to the legacy headless mirror, so a normal installed app
+        // does not create it. If an older index remains, still decode it to catch
+        // corruption during the transition, but absence is the healthy state.
         guard FileManager.default.fileExists(atPath: stateStore.indexURL.path) else {
-            return (.warning, ["present": 0, "decodable": 1, "entry_count": 0])
+            return (.pass, ["present": 0, "decodable": 1, "entry_count": 0])
         }
         guard let data = try? Data(contentsOf: stateStore.indexURL),
               let index = try? JSONDecoder.textTextHealthDecoder.decode(SyncIndex.self, from: data)
@@ -832,13 +851,18 @@ final class AppHealthReporter {
         let exists = fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory)
         let readable = exists && fileManager.isReadableFile(atPath: root.path)
         let writable = exists && fileManager.isWritableFile(atPath: root.path)
-        let valid = exists && isDirectory.boolValue && readable && writable
+        let enumerated = (try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) != nil
+        let valid = exists && isDirectory.boolValue && readable && writable && enumerated
         return (valid ? .pass : .fail, [
             "mount_resolved": 1,
             "present": exists ? 1 : 0,
             "directory": isDirectory.boolValue ? 1 : 0,
             "readable": readable ? 1 : 0,
             "writable": writable ? 1 : 0,
+            "enumerated": enumerated ? 1 : 0,
         ])
     }
 
@@ -846,10 +870,17 @@ final class AppHealthReporter {
         let readiness = finderReadinessProbe.run(
             statusProvider: finderStatusProvider)
         let snapshot = readiness.snapshot
+        let linked = stateStore.loadCredentials() != nil
+        let mount = finderMountProbe()
+        let linkedMountUsable = !linked || (mount.enumerated && mount.workspaceVisible)
         let status: TextTextHealthStatus
         switch snapshot.severity {
         case .healthy:
-            status = .pass
+            // A provider can report no pending errors while its domain is
+            // disabled or absent. For a linked account, require a real Finder
+            // enumeration that exposes at least one workspace before calling
+            // the provider usable.
+            status = linkedMountUsable ? .pass : .fail
         case .working, .neutral:
             status = .warning
         case .warning:
@@ -863,7 +894,36 @@ final class AppHealthReporter {
             "started_working": readiness.startedWorking ? 1 : 0,
             "became_healthy": readiness.becameHealthy ? 1 : 0,
             "working_exhausted": readiness.exhausted ? 1 : 0,
+            "linked": linked ? 1 : 0,
+            "mount_resolved": mount.resolved ? 1 : 0,
+            "mount_enumerated": mount.enumerated ? 1 : 0,
+            "workspace_visible": mount.workspaceVisible ? 1 : 0,
+            "mount_entry_count": Double(mount.entryCount),
         ])
+    }
+
+    private func finderMountProbe() -> FinderMountProbe {
+        guard let root = syncRootProvider() else {
+            return FinderMountProbe(
+                resolved: false, enumerated: false,
+                workspaceVisible: false, entryCount: 0)
+        }
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles])
+        else {
+            return FinderMountProbe(
+                resolved: true, enumerated: false,
+                workspaceVisible: false, entryCount: 0)
+        }
+        let workspaceVisible = entries.contains { url in
+            url.lastPathComponent != "Data"
+                && (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+        return FinderMountProbe(
+            resolved: true, enumerated: true,
+            workspaceVisible: workspaceVisible, entryCount: entries.count)
     }
 
     private func flushPending() {
@@ -929,11 +989,10 @@ enum AppHealthCLI {
     static func run() -> Int32 {
         let stateStore = StateStore()
         // Release verification runs in a fresh, isolated workspace with no
-        // registered File Provider domain. Seed the two local runtime
-        // preconditions explicitly; extension embedding and the real Finder
-        // lifecycle are verified independently by this report and the release
-        // test suite.
-        stateStore.clearIndex()
+        // registered File Provider domain. The GUI has no sync index to seed:
+        // the extension owns sync and sync.index treats an absent legacy index
+        // as healthy. Extension embedding and the real Finder lifecycle are
+        // verified independently by this report and the release test suite.
         // The workspace's on-disk home is the File Provider mount; resolve the
         // registered domain's user-visible root (blocking is fine in the CLI).
         // nil on a machine with no domain (signed out / isolated CI), which

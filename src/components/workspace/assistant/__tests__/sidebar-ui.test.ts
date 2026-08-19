@@ -215,6 +215,33 @@ describe("assistant sidebar UI", () => {
     expect(html).not.toContain("Catch me up");
   });
 
+  it("does not offer embedded ChatGPT when the native channel cannot run it", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AssistantConversation, {
+        cloudProvider: null,
+        messages: [],
+        submitting: false,
+        nativeConnection: {
+          state: "unavailable",
+          kind: "native-codex",
+          providerLabel: "Codex with ChatGPT",
+          accountEmail: null,
+          planLabel: null,
+          runtimeVersion: null,
+          rateLimitResetAt: null,
+          lastHealthCheckAt: null,
+          embeddedChatSupported: false,
+          recoveryAction: "open-settings",
+        },
+        onConnectNative: () => {},
+      }),
+    );
+
+    expect(html).toContain("This TestFlight build cannot run the built-in ChatGPT agent.");
+    expect(html).not.toContain("Continue with ChatGPT");
+    expect(html).toContain('aria-label="Ways to connect"');
+  });
+
   it("explains selected-text context and unavailable attachments", () => {
     const html = renderToStaticMarkup(
       React.createElement(AssistantSidebar, {
@@ -259,7 +286,6 @@ describe("starting a new chat", () => {
       onFilesSelected: () => {},
       onRemoveAttachment: () => {},
       onNewConversation: () => {},
-      children: null,
     };
     const withTranscript = renderToStaticMarkup(
       React.createElement(AssistantSidebar, { ...base, hasConversation: true }),
@@ -284,7 +310,6 @@ describe("starting a new chat", () => {
         onFilesSelected: () => {},
         onRemoveAttachment: () => {},
         hasConversation: true,
-        children: null,
       }),
     );
     expect(html).not.toContain('aria-label="New chat"');
