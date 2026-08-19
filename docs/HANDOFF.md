@@ -561,6 +561,40 @@ Two traps worth keeping:
   outbound MCP, collaboration, and real-model sidebar evaluations, plus 36
   inspected light/dark screenshots across 1440, 768, and 375 pixel widths.
 
+## Local promotion and TestFlight state (2026-08-19)
+
+- The complete promotion gate now passes 926 web tests, 460 Swift tests, 17
+  local live workflows, 17 production MCP workflows, the production database
+  audit, a protected immutable-deployment smoke, and the public origin smoke.
+  Vercel protects immutable deployment URLs even when `texttext.app` is public,
+  so the exact-deployment check uses authenticated `vercel curl`. Plain curl is
+  redirected to Vercel SSO and is not an application 500.
+- If `vercel rollback` refuses an older immutable target, promotion now restores
+  the prior production target by repointing the canonical alias. Both failed
+  2026-08-19 promotion attempts left production on
+  `write-nkrmtve2w-shoku-s-projects.vercel.app` and restored the canonical local
+  app to 0.181 (184).
+- The 0.181 (185) Developer ID app reached the final installed runtime gate and
+  failed only `finder.provider`. The transactional installer rejected it and
+  restored 0.181 (184). Do not weaken that health check. Enable TextText in the
+  macOS File Providers settings, reopen the app, prove the mount enumerates a
+  real workspace, and rerun `npm run promote:local`.
+- A signed, sandboxed 0.181 (186) TestFlight installer package was prepared at
+  `/Users/shokunin/Downloads/TextText-0.181-186-TestFlight.pkg`. It contains the
+  arm64 app and all three signed extensions, uses the Apple Distribution app
+  identity and 3rd Party Mac Developer Installer package identity, excludes
+  Sparkle, and has SHA-256
+  `e569c4245716f784f0ed153bc179a6dd150f65421778a5983ec6fa6fd7f12a3e`.
+  It has not been uploaded or installed.
+- Store builds use a manifest that excludes Sparkle. `build-store.sh` now
+  restores the standalone `Package.resolved` on every exit so TestFlight
+  preparation cannot remove the standalone Sparkle pin or dirty the checkout.
+- The final native Codex dynamic-tool evaluation is implemented but the live
+  account is currently quota-blocked until 20:31 local time. Rerun
+  `npm run eval:native-codex` after that time. Deterministic protocol tests and
+  the earlier real read-only account/thread turn are green; do not claim the
+  final live dynamic-tool proof until this command passes.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;
