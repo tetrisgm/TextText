@@ -870,7 +870,9 @@ export function UnifiedDocumentEditor({
           </div>
         ),
         ...Object.fromEntries(
-          activeTemplate.fields.map((field) => [
+          activeTemplate.fields
+            .filter((field) => field.visibility !== "hidden")
+            .map((field) => [
             `content.fields.${field.id}`,
             <FieldInput
               key={field.id}
@@ -879,7 +881,7 @@ export function UnifiedDocumentEditor({
               onChange={(value) => updateField(field.id, value)}
               embedded
             />,
-          ]),
+            ]),
         ),
       },
     }),
@@ -890,7 +892,9 @@ export function UnifiedDocumentEditor({
    * They still need an input, or a declared field is writable only by agents. */
   const unboundFields = useMemo(() => {
     const bound = collectBoundFields(activeTemplate.item);
-    return activeTemplate.fields.filter((field) => !bound.has(field.id));
+    return activeTemplate.fields.filter(
+      (field) => field.visibility !== "hidden" && !bound.has(field.id),
+    );
   }, [activeTemplate]);
 
   if (!active) return null;

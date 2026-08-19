@@ -7,8 +7,6 @@
 
 import { generateText, stepCountIs } from "ai";
 import type { ModelMessage } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
 import { getCurrentUser } from "@/lib/session";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import { getBlogEditRecord, getOwnedBlog, getUserIdBySub } from "@/lib/store";
@@ -29,6 +27,7 @@ import {
   getWorkspaceAiConfigForOwner,
   getWorkspaceAiConfigStatusForOwner,
 } from "@/lib/ai/workspace-ai-config.server";
+import { workspaceLanguageModel } from "@/lib/ai/provider-model.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -243,31 +242,7 @@ export async function POST(request: Request) {
       }
     }),
   );
-  // Development can override two things so the assistant lane is testable
-  // without a real key ever passing through a person or an agent:
-  //   TEXTTEXT_AI_BASE_URL points the provider at a local mock
-  //     (scripts/mock-ai-provider.mjs) - a deterministic, no-key run.
-  //   TEXTTEXT_DEV_AI_KEY supplies a real key read from the login Keychain
-  //     by scripts/dev-secrets.sh, so a real provider can be exercised
-  //     without the key touching the workspace form, the shell history, or
-  //     any log.
-  // Production ignores both entirely and uses the workspace-configured key.
-  const isDev = process.env.NODE_ENV !== "production";
-  const devBaseUrl = isDev ? process.env.TEXTTEXT_AI_BASE_URL || undefined : undefined;
-  const apiKey =
-    isDev && process.env.TEXTTEXT_DEV_AI_KEY
-      ? process.env.TEXTTEXT_DEV_AI_KEY
-      : config.apiKey;
-  const model =
-    config.provider === "anthropic"
-      ? createAnthropic({
-          apiKey,
-          ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
-        })(config.model)
-      : createOpenAI({
-          apiKey,
-          ...(devBaseUrl ? { baseURL: devBaseUrl } : {}),
-        })(config.model);
+  const model = workspaceLanguageModel(config);
 
   const calls: OutboundCallRecord[] = [];
   const remoteTools = outboundAssistantTools(

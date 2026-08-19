@@ -238,11 +238,22 @@ export default function AiDocsPage() {
           </div>
           <ul className="connect-feature-list">
             <li>Create notes, articles, bookmarks, folders, and assets.</li>
+            <li>Create reusable item types that define both item and folder layouts.</li>
             <li>Find, read, append to, reshape, move, and organize documents.</li>
             <li>Maintain one project changelog without duplicate retry entries.</li>
             <li>Publish articles and manage collaborators after confirmation.</li>
             <li>Comment, restore from Trash, and recapture bookmarks.</li>
           </ul>
+        </section>
+
+        <section className="connect-section">
+          <h2 className="connect-section-title">Build a reusable item type</h2>
+          <p className="connect-body">
+            Ask your agent for the fields, item layout, folder layout, visual
+            reference, and destination folder in one request. TextText saves
+            the result as one versioned type and makes it available in the Look
+            gallery. <Link href="/docs/item-types">See prompts and the in-app flow</Link>.
+          </p>
         </section>
 
         <section className="connect-section">

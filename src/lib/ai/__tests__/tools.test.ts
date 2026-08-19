@@ -19,6 +19,7 @@ const EXPECTED_NAMES = [
   "list_responses",
   "list_access",
   "list_document_templates",
+  "create_item_type",
   "save_item_as_look",
   "set_folder_template",
   "retire_document_template",
@@ -170,6 +171,32 @@ describe("workspace tool contract", () => {
         pinned: true,
       }),
     ).toEqual({ id: "post-1", pinned: true });
+    expect(
+      parseWorkspaceToolInput("create_item_type", {
+        blueprint: {
+          name: "Tasks",
+          styleReference: "Notion",
+          fields: [
+            {
+              id: "status",
+              label: "Status",
+              type: "enum",
+              options: [{ value: "todo", label: "To do" }],
+            },
+          ],
+          item: { shape: "task" },
+          collection: {
+            layout: "board",
+            groupBy: "status",
+          },
+        },
+        folder_path: "notes/tasks",
+      }),
+    ).toMatchObject({
+      blueprint: { name: "Tasks", styleReference: "Notion" },
+      folder_path: "notes/tasks",
+      apply_to_existing: true,
+    });
   });
 });
 
@@ -203,4 +230,3 @@ describe("update_item custom fields", () => {
     expect(parsed.success).toBe(false);
   });
 });
-

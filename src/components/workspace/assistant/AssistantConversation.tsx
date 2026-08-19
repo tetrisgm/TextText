@@ -194,6 +194,7 @@ export function AssistantConversation({
   onUndoProposal,
   nativeConnection,
   onConnectNative,
+  onBuildItemType,
 }: {
   activeCloudProvider?: CloudAssistantProviderLabel | null;
   cloudProvider?: CloudAssistantProviderLabel | null;
@@ -215,6 +216,7 @@ export function AssistantConversation({
   onUndoProposal?: (messageId: string) => Promise<void> | void;
   nativeConnection?: AiConnectionSnapshot | null;
   onConnectNative?: () => void;
+  onBuildItemType?: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -314,6 +316,16 @@ export function AssistantConversation({
               </p>
             </div>
           )}
+          {onBuildItemType ? (
+            <button
+              type="button"
+              className={styles.buildType}
+              onClick={onBuildItemType}
+            >
+              <span aria-hidden="true">✦</span>
+              Build a new item type
+            </button>
+          ) : null}
           {connected && onUsePrompt && (
             <div className={styles.examples} aria-label="Prompt starters">
               {startersFor(starterContext ?? FALLBACK_STARTER_CONTEXT).map((starter) => (

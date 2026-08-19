@@ -683,6 +683,42 @@ export const templateDefinitionSchema = z
     collection: collectionRenderSchema,
     capabilities: z.array(z.enum(CAPABILITIES)).max(CAPABILITIES.length).default([]),
     theme: themeTokensSchema.default({}),
+    /** Example content travels with a look so a new or custom type can show a
+     * meaningful preview before the workspace contains any items of that type. */
+    example: z
+      .object({
+        title: z.string().max(20_000).default(""),
+        subtitle: z.string().max(100_000).optional(),
+        body: z.string().max(10_000_000).default(""),
+        fields: z
+          .record(
+            fieldIdSchema,
+            z.union([
+              z.string().max(2_000_000),
+              z.number().finite(),
+              z.boolean(),
+              z.null(),
+              z.array(z.string().max(20_000)).max(500),
+              z
+                .array(
+                  z.record(
+                    fieldIdSchema,
+                    z.union([
+                      z.string().max(20_000),
+                      z.number().finite(),
+                      z.boolean(),
+                      z.null(),
+                    ]),
+                  ),
+                )
+                .max(500),
+            ]),
+          )
+          .default({}),
+        tags: z.array(z.string().trim().min(1).max(120)).max(500).default([]),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -924,6 +960,11 @@ export function validateTemplateDefinition(value: unknown): TemplateDefinition {
       throw new Error(`number field ${field.id} has min greater than max`);
     }
     fields.set(field.id, field);
+  }
+  for (const id of Object.keys(template.example?.fields ?? {})) {
+    if (!fields.has(id)) {
+      throw new Error(`template example references undeclared field ${id}`);
+    }
   }
   validateTreeBindings(template.item, fields, new Set<string>());
   validateTreeBindings(template.collection.item, fields, new Set<string>());

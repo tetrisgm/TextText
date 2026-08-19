@@ -3,13 +3,14 @@
 //   NEXT_PUBLIC_ROOT_DOMAIN=localhost:3000 npm run dev
 //   npm run sweep
 //
-// It asserts nothing. Screenshots exist to be looked at; a pass that scored
+// It does not score visual quality. Screenshots exist to be looked at; a pass that scored
 // itself on selectors is how a surface stays broken while the checks stay
 // green. What this does guarantee is coverage: every listed surface is
-// visited in both themes at the same width, so a comparison is fair, and a
+// visited in both themes at desktop, tablet, and phone widths, so a comparison is fair, and a
 // surface that fails to load is named rather than silently skipped.
 //
 // SWEEP_ONLY=editor npm run sweep    photograph one surface
+// SWEEP_WIDTHS=375 npm run sweep     photograph one or more comma-separated widths
 //
 // It does make one assertion, because a screenshot nobody looks at is worth
 // nothing: a surface that comes back as a blank rectangle is reported. The
@@ -22,6 +23,10 @@ import { mkdirSync } from "node:fs";
 const BASE = process.env.TEXTTEXT_BASE_URL ?? "http://localhost:3000";
 const OUT = process.env.SWEEP_OUT ?? "/tmp/texttext-sweep";
 const ONLY = process.env.SWEEP_ONLY ?? "";
+const WIDTHS = (process.env.SWEEP_WIDTHS ?? "1440,768,375")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isInteger(value) && value >= 320);
 const WHO = { email: "sweep-aug16@example.com", name: "Sweep" };
 
 type Surface = {
@@ -41,11 +46,30 @@ type Surface = {
 async function openSidebar(page: Page, label: string) {
   await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1400);
-  await page
+  const destination = page
     .locator(".post-editor-sidebar button")
     .filter({ hasText: new RegExp(`^${label}$`) })
-    .first()
-    .click();
+    .first();
+  await destination.waitFor({ state: "attached" });
+  // At tablet and phone widths the sidebar is intentionally off canvas. This
+  // helper is route setup, not an interaction check, so invoke the same button
+  // handler directly and photograph the destination rather than the drawer.
+  await destination.evaluate((button) => (button as HTMLButtonElement).click());
+  await page.waitForTimeout(500);
+}
+
+async function openItemTypeStudio(
+  page: Page,
+  surface: "prompt" | "item" | "folder",
+) {
+  await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1400);
+  await page.locator(".workspace-build-type-button").click();
+  if (surface === "prompt") return;
+  await page.getByRole("button", { name: /Project board/ }).click();
+  if (surface === "folder") {
+    await page.getByRole("tab", { name: "Folder" }).click();
+  }
 }
 
 const surfaces: Surface[] = [
@@ -66,6 +90,7 @@ const surfaces: Surface[] = [
   ...[
     "docs",
     "docs/features",
+    "docs/item-types",
     "docs/getting-started",
     "docs/how-it-works",
     "docs/ai",
@@ -95,6 +120,27 @@ const surfaces: Surface[] = [
         .locator('.workspace-view-segmented button[aria-label="Cards"]')
         .first()
         .click();
+    },
+  },
+  {
+    name: "item-type-prompt",
+    go: async (page) => openItemTypeStudio(page, "prompt"),
+  },
+  {
+    name: "item-type-item",
+    go: async (page) => openItemTypeStudio(page, "item"),
+  },
+  {
+    name: "item-type-folder",
+    go: async (page) => openItemTypeStudio(page, "folder"),
+  },
+  {
+    name: "item-type-controls",
+    go: async (page) => {
+      await openItemTypeStudio(page, "item");
+      await page.locator('[role="dialog"]').evaluate((dialog) => {
+        dialog.scrollTop = dialog.scrollHeight;
+      });
     },
   },
   {
@@ -147,11 +193,12 @@ const surfaces: Surface[] = [
       await page.waitForTimeout(1400);
       const options = page.locator('button[aria-label="Folder options for Blog"]');
       await options.waitFor({ state: "attached", timeout: 20000 });
-      await options.hover({ force: true });
-      await page.waitForTimeout(200);
-      await options.click({ force: true });
+      await options.evaluate((button) => (button as HTMLButtonElement).click());
       await page.waitForTimeout(400);
-      await page.locator('button:text-is("Change look")').first().click();
+      await page
+        .locator('button:text-is("Change look")')
+        .first()
+        .evaluate((button) => (button as HTMLButtonElement).click());
       await page.locator('[role="dialog"]').first().waitFor({ timeout: 20000 });
     },
   },
@@ -194,22 +241,44 @@ async function paints(page: Page): Promise<boolean> {
 }
 
 async function devSignIn(page: Page): Promise<string> {
-  await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
-  const form = page.locator("form.ac-devsignin");
-  await form.waitFor({ timeout: 20000 });
-  await form.locator('input[type="email"]').fill(WHO.email);
-  await form
-    .locator('input[placeholder="Name (optional)"]')
-    .first()
-    .fill(WHO.name)
-    .catch(() => undefined);
-  await form.locator('button[type="submit"]').click();
-  await page.waitForTimeout(2500);
-  const match = /\/@([^/?#]+)/.exec(page.url());
-  return match?.[1] ?? "";
+  // This form is client-driven. On a cold compile the markup can arrive before
+  // hydration. A click that produces no auth callback did nothing, so reload
+  // the form and retry instead of navigating away with no session.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await page.goto(`${BASE}/editor`, { waitUntil: "domcontentloaded" });
+    const form = page.locator("form.ac-devsignin");
+    await form.waitFor({ timeout: 20000 });
+    await form.locator('input[type="email"]').fill(WHO.email);
+    await form
+      .locator('input[placeholder="Name (optional)"]')
+      .first()
+      .fill(WHO.name)
+      .catch(() => undefined);
+    const callback = page
+      .waitForResponse((response) => response.url().includes("/api/auth/callback/dev-login"), {
+        timeout: 4000,
+      })
+      .catch(() => null);
+    await form.locator('button[type="submit"]').click();
+    if (await callback) {
+      await page.waitForTimeout(1000);
+      break;
+    }
+  }
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await page.waitForTimeout(1200);
+    await page.goto(`${BASE}/start?to=home`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1200);
+    const match = /\/@([^/?#]+)/.exec(page.url());
+    if (match && (await page.locator(".workspace-library-header").count()) > 0) {
+      return match[1];
+    }
+  }
+  throw new Error(`Sweep workspace never loaded (last url ${page.url()})`);
 }
 
 const blank: string[] = [];
+const overflow: string[] = [];
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
@@ -228,25 +297,34 @@ async function main() {
   });
   const anonPage = await anon.newPage();
 
-  for (const surface of surfaces) {
-    if (ONLY && surface.name !== ONLY) continue;
-    for (const theme of ["light", "dark"] as const) {
-      const target = surface.anonymous ? anonPage : page;
-      await target.emulateMedia({ colorScheme: theme });
-      try {
-        await surface.go(target, handle);
-        await target.waitForTimeout(1800);
-        const shot = await target.screenshot({
-          path: `${OUT}/${surface.name}-${theme}.png`,
-          fullPage: surface.fullPage ?? false,
-        });
-        const painted = await paints(target);
-        if (!painted) blank.push(`${surface.name} ${theme}`);
-        console.log(
-          `  ${surface.name} ${theme}${painted ? "" : "   BLANK"} (${Math.round(shot.length / 1024)}kb)`,
-        );
-      } catch (error) {
-        console.log(`  FAILED ${surface.name} ${theme}: ${String(error).slice(0, 120)}`);
+  for (const width of WIDTHS) {
+    await page.setViewportSize({ width, height: 940 });
+    await anonPage.setViewportSize({ width, height: 940 });
+    console.log(`\n${width}px`);
+    for (const surface of surfaces) {
+      if (ONLY && surface.name !== ONLY) continue;
+      for (const theme of ["light", "dark"] as const) {
+        const target = surface.anonymous ? anonPage : page;
+        await target.emulateMedia({ colorScheme: theme });
+        try {
+          await surface.go(target, handle);
+          await target.waitForTimeout(1800);
+          const shot = await target.screenshot({
+            path: `${OUT}/${surface.name}-${width}-${theme}.png`,
+            fullPage: surface.fullPage ?? false,
+          });
+          const painted = await paints(target);
+          const spills = await target.evaluate(
+            () => document.documentElement.scrollWidth > window.innerWidth + 1,
+          );
+          if (!painted) blank.push(`${surface.name} ${width}px ${theme}`);
+          if (spills) overflow.push(`${surface.name} ${width}px ${theme}`);
+          console.log(
+            `  ${surface.name} ${theme}${painted ? "" : "   BLANK"}${spills ? "   OVERFLOW" : ""} (${Math.round(shot.length / 1024)}kb)`,
+          );
+        } catch (error) {
+          console.log(`  FAILED ${surface.name} ${theme}: ${String(error).slice(0, 120)}`);
+        }
       }
     }
   }
@@ -255,8 +333,9 @@ async function main() {
   console.log(`\nscreenshots in ${OUT}`);
   if (blank.length) {
     console.log(`\nBLANK: ${blank.join(", ")}`);
-    process.exitCode = 1;
   }
+  if (overflow.length) console.log(`\nOVERFLOW: ${overflow.join(", ")}`);
+  if (blank.length || overflow.length) process.exitCode = 1;
 }
 
 main().catch((error) => {

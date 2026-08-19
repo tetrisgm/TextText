@@ -448,6 +448,31 @@ Two traps worth keeping:
   `backfillWorkspaceAgentGuides()` retrofits older workspaces; both are
   idempotent per `(folder_id, slug)`.
 
+## AI-assisted item types (2026-08-19)
+
+- Home, every folder menu, and the Assistant open one focused item-type
+  studio. A prompt or the Editorial publication, Project board, and Quick
+  notes starters produces one validated blueprint for both an item page and
+  its folder page.
+- `item-type-blueprint.ts` is the complete input contract. It compiles fields,
+  item layout, collection layout, safe theme tokens, and example content into
+  one immutable `TemplateDefinition`. Internal fields are hidden from the
+  document editor.
+- The UI, in-app assistant tools, and hosted MCP use
+  `createItemTypeForWorkspace()` as the single persistence path. Saving can
+  set a folder default and can explicitly restyle existing folder items. New
+  items inherit the folder type.
+- `npm run eval:item-type` drives the real browser flow through creation,
+  inheritance, editing generated properties, board movement, and reuse from
+  the Look gallery. `npm run eval:features` checks the documented entry,
+  starters, and dual previews.
+- `/docs/item-types` is the public guide. A private Notes guide titled "Build
+  item types with AI" is provisioned and backfilled with the other AI guides.
+- The visual sweep covers 1440, 768, and 375 pixels in light and dark. On
+  2026-08-19 every listed surface painted with no horizontal overflow. The
+  item-type prompt, item preview, folder preview, controls, and guide were
+  also inspected as pixels at desktop, tablet, and phone sizes.
+
 ## Resolved episodes (one line each, dates in git log)
 
 - Apple consent screen "write app": appleid.apple.com caches its own copy;

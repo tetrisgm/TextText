@@ -316,6 +316,26 @@
   gap: 6px;
 }
 
+.buildType {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 36px;
+  margin: 12px 0 0;
+  border: 1px solid var(--ac-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ac-label);
+  font: 650 13px/1 var(--ac-font-text);
+  cursor: pointer;
+}
+
+.buildType:hover {
+  background: var(--ac-fill-1);
+}
+
 .examples button,
 .examples a {
   width: 100%;

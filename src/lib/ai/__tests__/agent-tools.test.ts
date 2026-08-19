@@ -124,6 +124,7 @@ describe("native workspace tool adapter", () => {
     expect(workspaceAgentToolNamesForView({ level: "section" })).toEqual([
       "get_workspace",
       "list_folders",
+      "create_item_type",
       "create_item",
     ]);
     const itemTools = workspaceAgentToolNamesForView(
@@ -154,14 +155,9 @@ describe("native workspace tool adapter", () => {
       "get_workspace",
       "list_folders",
       "list_document_templates",
-          // A free dry run before the write: a rejected batch is the single most
-      // common way authoring a look fails, and this is how the model finds out
-      // without spending a version on it.
-          // Applying the look to the folder is what finishes the request. Without
-      // it the model can author a look and restyle one item, and the blog the
-      // person actually asked about stays exactly as it was.
+      "create_item_type",
       "save_item_as_look",
-  "set_folder_template",
+      "set_folder_template",
       "set_item_template",
       "create_item",
     ]);

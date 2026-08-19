@@ -1091,6 +1091,35 @@ Tell the agent:
 
 Ask the agent to find an existing item before creating one. For repeated automation, require a stable idempotency key. Keep the target document open when you want to watch and edit alongside the agent. Use sharing controls to decide who can view, comment, or edit.`,
   },
+  {
+    slug: "build-item-types-with-ai",
+    title: "Build item types with AI",
+    body: `Turn the way you describe your work into a reusable item type. One item type controls both the page you write in and the folder that organizes those pages.
+
+## Start from Home
+
+Open Home and choose **Build an item type**. Describe what you want in ordinary language, such as:
+
+> Make a Medium-like publication with a headline, subtitle, hero image, author, and publish date. Show the folder as a clean editorial index.
+
+You can also begin with Editorial publication, Project board, or Quick notes. These starters work without connecting an AI provider.
+
+## Shape the type
+
+Choose the fields people will fill in. Switch between **Item** and **Folder** to see both parts of the design before saving. Pick a destination folder if you want new items there to inherit the type automatically.
+
+## Save and reuse it
+
+Choose **Done** once. The item type is saved to the Look gallery, applied to the folder you chose, and used by new items in that folder. Existing items are updated only when you leave that option on.
+
+## Ask an agent instead
+
+A connected agent can create the same complete type. Try:
+
+> Build a Notion-like project board in my Notes folder with status, priority, due date, and completion fields. Make each item a focused task page and group the folder by status.
+
+The agent creates one reusable type rather than a collection of unrelated styling changes.`,
+  },
 ] as const;
 
 // Workspaces provisioned before 2026-08-08 were handed a set of explanatory
@@ -2330,7 +2359,7 @@ async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
   if (!blogFolderId || !notesFolderId || !bookmarksFolderId) {
     throw new Error("failed to resolve the workspace folders");
   }
-  // A new workspace starts with the two AI guides in Notes (owner decision
+  // A new workspace starts with the AI guides in Notes (owner decision
   // 2026-08-14, reversing the empty-by-default of 2026-08-08): the paths for
   // connecting an AI must be discoverable from the very first Library view,
   // not only from the docs site. They are private notes, they are marked as

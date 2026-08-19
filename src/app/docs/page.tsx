@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 
 const guides = [
   ["Features", "What TextText does today, feature by feature, as verified in a running build.", "/docs/features"],
+  ["Build item types", "Describe fields, item pages, and folder layouts, then save them as one reusable type.", "/docs/item-types"],
   ["Getting started", "Connect an agent and send your first safe workspace request.", "/docs/getting-started"],
   ["How AI works", "Understand native ChatGPT/Codex, API keys, MCP, tools, and billing.", "/docs/how-it-works"],
   ["AI and agent guide", "Complete provider setup, workflows, and verification.", "/docs/ai"],
@@ -40,6 +41,7 @@ export default function DocsIndexPage() {
         <section className="connect-section">
           <h2 className="connect-section-title">Choose your path</h2>
           <ul className="connect-feature-list">
+            <li><Link href="/docs/item-types">I want to build a publication, project board, or notes system.</Link></li>
             <li><Link href="/docs/getting-started">I want AI inside the Mac app.</Link></li>
             <li><Link href="/docs/ai#chatgpt-external">I want ChatGPT, Claude, or Codex to use TextText.</Link></li>
             <li><Link href="/docs/mcp#tools">I am writing an agent and need the tool reference.</Link></li>

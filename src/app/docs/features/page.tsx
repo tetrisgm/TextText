@@ -80,6 +80,15 @@ const sections = [
     ],
   },
   {
+    title: "Build your own item types",
+    body: [
+      "Build an item type opens one focused studio from Home, any folder menu, or the Assistant. Describe what you want or start with Editorial publication, Project board, or Quick notes without connecting a provider.",
+      "Every type defines both sides of the work together: the fields and reading layout of one item, plus the list, cards, board, calendar, timeline, or index that renders its folder. Item and Folder tabs preview the real result before anything is saved.",
+      "Done saves one reusable, versioned type to the Look gallery and can make it the default for a destination folder. New items inherit it. Updating existing folder items stays an explicit choice.",
+      "Connected agents use the same create item type operation as the app, so a request for a Medium-like publication or a Notion-like project board produces the same reusable result.",
+    ],
+  },
+  {
     title: "The AI rail",
     body: [
       "Everything AI lives in the rail on the right. Open, it greets you and offers starters for exactly where you are; the context chip in the composer always says what the AI is looking at. New chat starts over without leaving the page.",
@@ -112,7 +121,8 @@ export default function FeaturesPage() {
           <p>
             <Link href="/docs/getting-started">Getting started</Link> walks the
             first connection. <Link href="/docs/ai">The AI and agent guide</Link>{" "}
-            covers providers, tools, and workflows.{" "}
+            covers providers, tools, and workflows. <Link href="/docs/item-types">Build item types</Link>{" "}
+            covers the complete builder and prompt patterns.{" "}
             <Link href="/docs/security">Security and privacy</Link> explains
             what stays local and what crosses the network.
           </p>

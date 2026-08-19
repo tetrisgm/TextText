@@ -66,6 +66,7 @@ import {
   randomCover,
 } from "@/components/editor/EditableCover";
 import { FolderLookPicker } from "@/components/workspace/FolderLookPicker";
+import { ItemTypeStudio } from "@/components/workspace/ItemTypeStudio";
 import { ShareDialog } from "@/components/workspace/ShareDialog";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
@@ -1338,6 +1339,7 @@ function FolderTreeNav({
   canManageFolders,
   onSelectFolder,
   onChangeFolderLook,
+  onBuildItemType,
   onShareFolder,
   homePath,
 }: {
@@ -1351,6 +1353,7 @@ function FolderTreeNav({
   canManageFolders: boolean;
   onSelectFolder: (folder: SidebarFolderId) => void;
   onChangeFolderLook: (folder: Folder) => void;
+  onBuildItemType?: (folder: Folder) => void;
   onShareFolder: (folder: Folder) => void;
   homePath?: string;
 }) {
@@ -1587,6 +1590,19 @@ function FolderTreeNav({
                       role="menuitem"
                       onClick={() => {
                         setMoreOpenFor(null);
+                        onBuildItemType?.(folder);
+                      }}
+                    >
+                      Build with AI
+                    </button>
+                  )}
+                  {canManageFolders && (
+                    <button
+                      type="button"
+                      className="folder-action-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpenFor(null);
                         setRenamingFolder(folder.path);
                         setRenameName(folder.name);
                         setError(null);
@@ -1708,6 +1724,7 @@ export function PostFolderSidebar({
   onSidebarFocus,
   onSidebarEmptyPointerDown,
   onSettings,
+  onBuildItemType,
   onToggleCollapsed,
   sharedCount = 0,
   starredCount = 0,
@@ -1731,6 +1748,7 @@ export function PostFolderSidebar({
   onSidebarFocus?: (path: string) => void;
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
   onSettings?: () => void;
+  onBuildItemType?: (folder: Folder) => void;
   onToggleCollapsed: () => void;
   sharedCount?: number;
   starredCount?: number;
@@ -1901,6 +1919,7 @@ export function PostFolderSidebar({
           homePath={homePath}
           onSelectFolder={onSelectFolder}
           onChangeFolderLook={setFolderLook}
+          onBuildItemType={onBuildItemType}
           onShareFolder={setSharingFolder}
         />
       </nav>
@@ -1953,6 +1972,7 @@ export function WorkspaceSidebarChrome({
   onSidebarFocus,
   onSidebarEmptyPointerDown,
   onSettings,
+  onBuildItemType,
   onSelectRoot,
   prefetchFolders = true,
   onToggleCollapsed,
@@ -1979,6 +1999,7 @@ export function WorkspaceSidebarChrome({
   onSidebarFocus?: (path: string) => void;
   onSidebarEmptyPointerDown?: (nav: HTMLElement) => void;
   onSettings?: () => void;
+  onBuildItemType?: (folder: Folder) => void;
   onSelectRoot?: () => void;
   prefetchFolders?: boolean;
   onToggleCollapsed: () => void;
@@ -2144,6 +2165,7 @@ export function WorkspaceSidebarChrome({
           onSidebarEmptyPointerDown={onSidebarEmptyPointerDown}
           onSelectRoot={selectRoot}
           onSettings={onSettings}
+          onBuildItemType={onBuildItemType}
           prefetchFolders={prefetchFolders}
           onToggleCollapsed={toggleSidebar}
           sharedCount={sharedCount}
@@ -2510,6 +2532,7 @@ function WorkspaceRootLanding({
   assistantCloudProvider,
   onConnectAssistant,
   onOpenAssistant,
+  onBuildItemType,
   settingsHref,
 }: {
   canManageItems: boolean;
@@ -2536,6 +2559,7 @@ function WorkspaceRootLanding({
   assistantCloudProvider?: string | null;
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
+  onBuildItemType: () => void;
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
@@ -2968,6 +2992,14 @@ function WorkspaceRootLanding({
                   handle={pool.blog.handle}
                   onCreateItem={onCreateItem}
                 />
+                <button
+                  type="button"
+                  className="workspace-build-type-button"
+                  onClick={onBuildItemType}
+                >
+                  <span aria-hidden="true">✦</span>
+                  Build a new item type with AI
+                </button>
               </section>
             ) : null}
             <section
@@ -4022,6 +4054,7 @@ function LocalWorkspaceContent({
   assistantCloudProvider,
   onConnectAssistant,
   onOpenAssistant,
+  onBuildItemType,
 }: {
   blog: Blog;
   canCommentPost: boolean;
@@ -4063,6 +4096,7 @@ function LocalWorkspaceContent({
   assistantCloudProvider?: string | null;
   onConnectAssistant?: () => void;
   onOpenAssistant: () => void;
+  onBuildItemType: (folderPath?: string) => void;
 }) {
   let page: ReactNode;
   let activePost: WorkspacePoolPost | null = null;
@@ -4089,6 +4123,7 @@ function LocalWorkspaceContent({
       assistantCloudProvider={assistantCloudProvider}
       onConnectAssistant={onConnectAssistant}
       onOpenAssistant={onOpenAssistant}
+      onBuildItemType={() => onBuildItemType()}
       settingsHref={workspaceSettingsHref(homePath)}
     />
   );
@@ -4333,6 +4368,9 @@ function LocalWorkspaceShell({
   const [createBookmarkRequestKey, setCreateBookmarkRequestKey] = useState(0);
   const [editFolderRequestKey, setEditFolderRequestKey] = useState(0);
   const [pendingDeletePostIds, setPendingDeletePostIds] = useState<string[]>([]);
+  const [itemTypeStudioFolderPath, setItemTypeStudioFolderPath] = useState<
+    string | null
+  >(null);
   const { state: assistantState, width: assistantWidth } =
     useWorkspaceAssistantPreferences();
   useSyncExternalStore(
@@ -6573,6 +6611,9 @@ function LocalWorkspaceShell({
       assistantCloudProvider={assistant.cloudProvider}
       onConnectAssistant={assistant.connectNativeAssistant}
       onOpenAssistant={() => changeAssistantState("pinned")}
+      onBuildItemType={(folderPath = "") =>
+        setItemTypeStudioFolderPath(folderPath)
+      }
     />
   );
 
@@ -6619,6 +6660,9 @@ function LocalWorkspaceShell({
           nav.focus({ preventScroll: true });
         }}
         onSettings={navigateSettings}
+        onBuildItemType={(folder) =>
+          setItemTypeStudioFolderPath(folder.path)
+        }
         onSelectRoot={navigateRoot}
         onToggleCollapsed={toggleSidebarCollapsed}
         peeking={leftEdgePeeking}
@@ -6764,9 +6808,29 @@ function LocalWorkspaceShell({
           onUsePrompt={assistantComposer.setText}
           onQuickAction={assistant.runQuickAction}
           onUndoProposal={assistant.undoProposal}
+          onBuildItemType={() => {
+            const activeFolder = localViewActiveFolder(view);
+            setItemTypeStudioFolderPath(
+              activeFolder &&
+                activeFolder !== TRASH_FOLDER_PATH &&
+                activeFolder !== SHARED_FOLDER_PATH &&
+                activeFolder !== STARRED_FOLDER_PATH
+                ? activeFolder
+                : "",
+            );
+          }}
         />
       </AssistantSidebar>
       </div>
+      {itemTypeStudioFolderPath !== null ? (
+        <ItemTypeStudio
+          blogId={displayPool.blogId}
+          folders={displayPool.folders}
+          handle={displayPool.blog.handle}
+          initialFolderPath={itemTypeStudioFolderPath}
+          onClose={() => setItemTypeStudioFolderPath(null)}
+        />
+      ) : null}
       <ConfirmationDialog
         open={Boolean(assistantConfirmation)}
         title="Confirm assistant action"

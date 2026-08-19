@@ -50,6 +50,7 @@ import {
 import { revalidateBlogPaths } from "@/lib/revalidate-blog";
 import { blogPostEditPath, blogPostPath } from "@/lib/public-paths";
 import { normalizeTags } from "@/lib/tags";
+import { createWorkspaceItemType } from "@/lib/presentation/item-type.server";
 import {
   inviteScopeShare,
   listScopeShares,
@@ -714,6 +715,43 @@ export async function executeMcpTool(
       return jsonResult({
         templates: await listDocumentTemplates(resolved.access.blogId),
       });
+    }
+
+    case "create_item_type": {
+      const input = args as WorkspaceToolInput<"create_item_type">;
+      const resolved = await requireWorkspace(extra, true);
+      if (isToolResult(resolved)) return resolved;
+      if (!resolved.access.blogId) return errorResult("Workspace not found.");
+      try {
+        const created = await createWorkspaceItemType({
+          actor: mcpAuditEntry(
+            extra,
+            "mcp.create_item_type",
+            "mode",
+            undefined,
+            input.blueprint.name,
+          ),
+          applyToExisting: input.apply_to_existing,
+          blogId: resolved.access.blogId,
+          blueprint: input.blueprint,
+          folderPath: input.folder_path,
+          handle: resolved.blog.handle,
+        });
+
+        return jsonResult({
+          itemType: created.definition,
+          folder: created.folder,
+          note: input.folder_path
+            ? "The reusable type is saved and the folder now uses it."
+            : "The reusable type is saved and available in every look picker.",
+        });
+      } catch (error) {
+        return errorResult(
+          error instanceof Error
+            ? error.message
+            : "The item type could not be created.",
+        );
+      }
     }
 
     case "save_item_as_look": {

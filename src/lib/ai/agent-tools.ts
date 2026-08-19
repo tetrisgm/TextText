@@ -80,6 +80,7 @@ const ITEM_AGENT_TOOL_NAMES = new Set<WorkspaceToolName>([
   "list_comments",
   "list_access",
   "list_document_templates",
+  "create_item_type",
   "save_item_as_look",
   "set_folder_template",
   "set_item_template",
@@ -106,6 +107,7 @@ const WORKSPACE_BASE_TOOL_NAMES: WorkspaceToolName[] = [
   "get_workspace",
   "list_folders",
   "create_item",
+  "create_item_type",
 ];
 
 const PROMPT_TOOL_GROUPS: Array<{
@@ -150,6 +152,7 @@ const PROMPT_TOOL_GROUPS: Array<{
       /\b(template|look|looks|layout|design|style|theme|blog|magazine|gallery|board|feed)\b/i,
     tools: [
       "list_document_templates",
+      "create_item_type",
       "save_item_as_look",
       "set_folder_template",
       "set_item_template",
@@ -649,6 +652,13 @@ export function createWorkspaceAgentTools(
       case "create_folder": {
         const input = args as WorkspaceToolInput<"create_folder">;
         const result = await runRemote("create_folder", input);
+        await refreshPoolAfterMutation();
+        return { ok: true, ...result };
+      }
+
+      case "create_item_type": {
+        const input = args as WorkspaceToolInput<"create_item_type">;
+        const result = await runRemote("create_item_type", input);
         await refreshPoolAfterMutation();
         return { ok: true, ...result };
       }

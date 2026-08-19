@@ -17,13 +17,15 @@ import styles from "./TemplateGallery.module.css";
 // renderer: this only changes which snapshot is shown.
 function exampleFor(template: TemplateDefinition): DocumentSnapshot {
   const exemplar = exemplarFor(template.id);
+  const example = template.example;
   return validateDocumentSnapshot({
     schemaVersion: 1,
     content: {
-      title: exemplar?.title ?? template.name,
-      body: exemplar?.body ?? "",
-      fields: exemplar?.fields ?? {},
-      tags: [],
+      title: exemplar?.title ?? example?.title ?? template.name,
+      subtitle: example?.subtitle,
+      body: exemplar?.body ?? example?.body ?? "",
+      fields: exemplar?.fields ?? example?.fields ?? {},
+      tags: example?.tags ?? [],
       assets: exemplar?.assets ?? [],
     },
     presentation: {

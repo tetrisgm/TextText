@@ -83,11 +83,33 @@ async function main() {
       "the page still makes the claims this verifier checks",
       claims.includes("Type a thought") &&
         claims.includes("Save as look") &&
-        claims.includes("workspace token"),
+        claims.includes("workspace token") &&
+        claims.includes("Build an item type"),
       "the page was rewritten; update this verifier with it",
     );
 
     await openHome(page);
+
+    // "Build an item type opens one focused studio from Home" and complete
+    // starters work without connecting a provider.
+    const buildItemType = page.locator(".workspace-build-type-button");
+    check("Home offers the item-type builder", (await buildItemType.count()) === 1);
+    await buildItemType.click();
+    check(
+      "the item-type builder is one focused studio with ready-made starters",
+      (await page.getByRole("heading", { name: "What do you want to build?" }).count()) === 1 &&
+        (await page.getByRole("button", { name: /Editorial publication/ }).count()) === 1 &&
+        (await page.getByRole("button", { name: /Project board/ }).count()) === 1 &&
+        (await page.getByRole("button", { name: /Quick notes/ }).count()) === 1,
+    );
+    await page.getByRole("button", { name: /Project board/ }).click();
+    check(
+      "the studio previews both the item and its folder",
+      (await page.getByRole("tab", { name: "Item" }).count()) === 1 &&
+        (await page.getByRole("tab", { name: "Folder" }).count()) === 1,
+    );
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached" });
 
     // "Type a thought, a title, or paste a link into the box at the top of
     //  your Library and it becomes an item immediately."
@@ -193,7 +215,8 @@ async function main() {
       "  looks are immutable and pin a version   -> unit tests on the template store\n" +
       "  a folder's look governs its index       -> npm run eval:home-layout\n" +
       "  an added MCP server is saved switched off -> npm run eval:mcp:outbound\n" +
-      "  agent edits appear as a live collaborator -> npm run eval:collaboration:browser",
+      "  agent edits appear as a live collaborator -> npm run eval:collaboration:browser\n" +
+      "  item-type save, inheritance and folder rendering -> npm run eval:item-type",
   );
   console.log(failures === 0 ? "\npass" : `\n${failures} claim(s) failed`);
   process.exitCode = failures === 0 ? 0 : 1;

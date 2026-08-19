@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 
 export type WorkspaceToolMutability = "read" | "write";
 export type WorkspaceToolConfirmation = "none" | "destructive" | "audience";
@@ -401,6 +402,24 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     description:
       "List the immutable built-in and workspace templates available for shaping documents.",
     inputSchema: emptyInput(),
+  }),
+  create_item_type: defineTool("create_item_type", {
+    title: "Create item type",
+    description:
+      "Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's look and existing items are restyled by default.",
+    inputSchema: z
+      .object({
+        blueprint: itemTypeBlueprintSchema,
+        folder_path: folderPath.optional(),
+        apply_to_existing: z
+          .boolean()
+          .default(true)
+          .describe(
+            "When folder_path is supplied, restyle the items already in that folder. Content is never changed.",
+          ),
+      })
+      .strict(),
+    mutability: "write",
   }),
   save_item_as_look: defineTool("save_item_as_look", {
     title: "Save this item's look",
