@@ -62,8 +62,10 @@ for forbidden in (
     if forbidden in source:
         raise SystemExit(f"non-publishing promotion invokes forbidden lane: {forbidden}")
 
-if '$(date -u +%Y%m%d%H%M%S)-$$' not in source:
+if 'PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(date -u +%s)-$$"' not in source:
     raise SystemExit("deployment identity is not unique per promotion attempt")
+if '${#PROMOTION_ID} > 32' not in source:
+    raise SystemExit("deployment identity no longer enforces Vercel's length limit")
 if 'BUILD=$((MAX_BUILD + 1))' not in source:
     raise SystemExit("local build identity no longer advances past installed builds")
 if 'codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q' in source:

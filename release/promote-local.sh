@@ -123,7 +123,11 @@ for candidate in "${installed_candidates[@]}"; do
   (( candidate_build > MAX_BUILD )) && MAX_BUILD="$candidate_build"
 done
 BUILD=$((MAX_BUILD + 1))
-PROMOTION_ID="texttext-${VERSION//./_}-${BUILD}-${SOURCE_COMMIT:0:12}-$(date -u +%Y%m%d%H%M%S)-$$"
+PROMOTION_ID="tt-${BUILD}-${SOURCE_COMMIT:0:8}-$(date -u +%s)-$$"
+if (( ${#PROMOTION_ID} > 32 )); then
+  echo "Refusing: promotion identity exceeds Vercel's 32-character limit." >&2
+  exit 1
+fi
 
 export TEXTTEXT_BUNDLE_ID="$BUNDLE_ID"
 export TEXTTEXT_APP_GROUP="group.app.texttext"
