@@ -128,6 +128,14 @@ async function verifyRelease() {
       command: ["npm", "run", "promote:local:test"],
     },
     {
+      // TestFlight packaging is a separate channel from local promotion. Its
+      // fixture proves that only a sandboxed Apple Distribution app with a
+      // positive build number can become a signed installer package.
+      id: "native.testflight_package",
+      timeoutSeconds: 60,
+      command: ["npm", "run", "testflight:build:test"],
+    },
+    {
       id: "apple.eval",
       timeoutSeconds: 600,
       command: ["mac/scripts/apple-plan-eval.sh", "--skip-tests"],

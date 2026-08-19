@@ -58,6 +58,10 @@ The command only creates and validates a `.pkg`. It never uploads, installs,
 opens TestFlight, or changes the app at `/Applications/TextText.app`. Upload is
 a separate owner action so preparing an artifact cannot burn a build number.
 
+`npm run testflight:build:test` exercises this package boundary without using
+Apple credentials. It rejects an unsandboxed app and a zero build number, and
+it is part of the required release gate.
+
 Before installing from TestFlight, run
 `release/prepare-testflight-install.sh`. It moves only verified TextText bundles
 out of the way when necessary, preserves a canonical TestFlight-owned app, and

@@ -423,6 +423,15 @@ Two traps worth keeping:
   Installer-signed `0.181 (184)` package in an isolated temporary directory.
   Signature verification passed; the proof package was moved to Trash. Nothing
   was uploaded or installed.
+- `npm run testflight:build:test` is the fixture contract for that boundary and
+  is a required release check. It proves that an unsandboxed app or a zero
+  build number cannot become a TestFlight package.
+- `npm run eval:native-codex` is the real standalone-channel runtime probe. It
+  verifies the signed-in account, a read-only ephemeral thread, isolation from
+  inherited MCP servers, one safe dynamic tool call, and the exact response.
+  It is deliberately not a release gate because provider availability and
+  account usage limits are external. A quota failure remains red and must not
+  be described as runtime proof.
 - Channel capabilities are intentionally different. The standalone Developer
   ID app can launch the local Codex runtime and includes
   `Contents/Helpers/texttext`. The App Sandbox prevents TestFlight from

@@ -10,6 +10,7 @@
     "web.unit",
     "native.unit",
     "native.local_promotion",
+    "native.testflight_package",
     "apple.eval"
   ]
 }
