@@ -157,7 +157,8 @@ BUILT_APP="$ROOT/mac/build/TextText.app"
 [[ "$($PB -c 'Print :CFBundleVersion' "$BUILT_APP/Contents/Info.plist")" == "$BUILD" ]]
 [[ "$($PB -c 'Print :TextTextServerOrigin' "$BUILT_APP/Contents/Info.plist")" == "$ORIGIN" ]]
 codesign --verify --strict --verbose=2 "$BUILT_APP"
-if ! codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q '^Authority=Developer ID Application:'; then
+SIGNATURE_DETAILS="$(codesign -dv --verbose=4 "$BUILT_APP" 2>&1)"
+if ! grep -q '^Authority=Developer ID Application:' <<<"$SIGNATURE_DETAILS"; then
   echo "Refusing: the promoted app is not signed by a Developer ID Application identity." >&2
   exit 1
 fi

@@ -18,6 +18,7 @@ required = {
     "exact release gates": 'scripts/verify-release.ts',
     "workflow receipt": 'verify-workflow-capabilities.sh',
     "signed build attestation": 'texttext-build-attestation.sh',
+    "Developer ID identity check": 'SIGNATURE_DETAILS="$(codesign -dv',
     "staged app health": 'verify-app-health.sh',
     "production database guard": 'verify-production-database.mjs',
     "all migrations and backfills": 'run-release-migrations.sh',
@@ -65,6 +66,8 @@ if '$(date -u +%Y%m%d%H%M%S)-$$' not in source:
     raise SystemExit("deployment identity is not unique per promotion attempt")
 if 'BUILD=$((MAX_BUILD + 1))' not in source:
     raise SystemExit("local build identity no longer advances past installed builds")
+if 'codesign -dv --verbose=4 "$BUILT_APP" 2>&1 | grep -q' in source:
+    raise SystemExit("codesign identity check can fail under pipefail when grep exits early")
 
 print("promote-local contract: ok")
 PY
