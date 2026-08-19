@@ -28,6 +28,7 @@ required = {
     "explicit product alias": 'vercel alias set "$DEPLOYMENT_URL" texttext.app',
     "protected immutable deployment smoke": 'npx vercel curl "$path?promotion=$PROMOTION_ID-$attempt"',
     "production rollback": 'vercel rollback "$PREVIOUS_DEPLOYMENT_URL" --yes',
+    "production alias rollback fallback": 'vercel alias set "$PREVIOUS_DEPLOYMENT_URL" texttext.app',
     "authenticated workflow smoke": 'verify-workflow-live.ts',
     "atomic canonical installer": 'mac/scripts/install-local.sh',
     "exact runtime health": 'TEXTTEXT_REQUIRE_RUNTIME_HEALTH=1',

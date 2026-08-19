@@ -63,8 +63,13 @@ finish_promotion() {
   trap - EXIT INT TERM HUP
   if [[ "$PRODUCTION_CHANGED" == "1" && "$PROMOTION_COMPLETE" != "1" && -n "$PREVIOUS_DEPLOYMENT_URL" ]]; then
     echo "Promotion did not complete. Restoring the previous production deployment." >&2
-    npx vercel rollback "$PREVIOUS_DEPLOYMENT_URL" --yes >/dev/null 2>&1 || \
-      echo "Automatic Vercel rollback failed; restore $PREVIOUS_DEPLOYMENT_URL manually." >&2
+    if ! npx vercel rollback "$PREVIOUS_DEPLOYMENT_URL" --yes >/dev/null 2>&1; then
+      # `vercel rollback` can refuse an older deployment after a failed alias
+      # promotion. Repointing the canonical alias restores the same immutable
+      # target and is the reliable recovery path.
+      npx vercel alias set "$PREVIOUS_DEPLOYMENT_URL" texttext.app >/dev/null 2>&1 || \
+        echo "Automatic Vercel rollback failed; restore $PREVIOUS_DEPLOYMENT_URL manually." >&2
+    fi
     [[ "$status" != "0" ]] || status=1
   fi
   if [[ -n "${DEPLOY_LOG:-}" ]]; then rm -f "$DEPLOY_LOG"; fi
