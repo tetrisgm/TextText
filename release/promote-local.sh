@@ -239,8 +239,23 @@ smoke_page() {
   return 1
 }
 
+smoke_deployment_page() {
+  local deployment="$1" path="$2" expected="$3" body="" attempt
+  for attempt in {1..30}; do
+    # Vercel protects immutable deployment URLs even when the production alias
+    # is public. `vercel curl` authenticates with the existing CLI session and
+    # bypasses that protection without putting a bypass secret in this script.
+    body="$(npx vercel curl "$path?promotion=$PROMOTION_ID-$attempt" \
+      --deployment "$deployment" --yes -- \
+      --silent --show-error --fail --location 2>/dev/null || true)"
+    if [[ "$body" == *"$expected"* ]]; then return 0; fi
+    [[ "$attempt" == "30" ]] || sleep 2
+  done
+  return 1
+}
+
 echo ">> smoke the deployed product"
-smoke_page "$DEPLOYMENT_URL/docs/item-types" "Build item types with AI" || {
+smoke_deployment_page "$DEPLOYMENT_URL" "/docs/item-types" "Build item types with AI" || {
   echo "The immutable deployment did not render the item-type guide." >&2
   exit 1
 }

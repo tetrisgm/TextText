@@ -26,6 +26,7 @@ required = {
     "prebuilt production build": 'vercel build --prod --yes',
     "prebuilt production deploy": 'vercel deploy --prebuilt --prod --yes --no-color',
     "explicit product alias": 'vercel alias set "$DEPLOYMENT_URL" texttext.app',
+    "protected immutable deployment smoke": 'npx vercel curl "$path?promotion=$PROMOTION_ID-$attempt"',
     "production rollback": 'vercel rollback "$PREVIOUS_DEPLOYMENT_URL" --yes',
     "authenticated workflow smoke": 'verify-workflow-live.ts',
     "atomic canonical installer": 'mac/scripts/install-local.sh',
